@@ -1,0 +1,39 @@
+[package]
+name = "timeboost"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", default-features = false, features = [
+  "macros",
+  "net",
+  "parking_lot",
+  "rt-multi-thread",
+  "sync",
+  "time",
+  "tracing",
+] }
+libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
+async-broadcast = "0.7"
+tracing = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = { version = "0.11" }
+serde_json = { version = "1.0" }
+jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
+jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
+jf-signature = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
+jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
+jf-pcs = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
+jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
+chrono = { version = "0.4", default-features = false, features = ["now"] }
+committable = "0.2"
+digest = "0.10"
+bincode = "1"
+bitvec = { version = "1", default-features = false, features = [
+  "alloc",
+  "atomic",
+  "serde",
+] }
+blake3 = "1.5"
+async-trait = "0.1"
