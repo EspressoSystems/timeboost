@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.89"
+ark-bn254 = "0.4"
+ark-ed-on-bn254 = "0.4"
+ark-ff = "0.4"
+ark-serialize = "0.4"
+ark-std = { version = "0.4", default-features = false }
 tokio = { version = "1", default-features = false, features = [
   "macros",
   "net",
@@ -37,3 +43,10 @@ bitvec = { version = "1", default-features = false, features = [
 ] }
 blake3 = "1.5"
 async-trait = "0.1"
+tagged-base64 = "0.4"
+ethereum-types = { version = "0.14", default-features = false, features = [
+  "serialize",
+] }
+rand_chacha = "0.3.1"
+rand = { version = "0.8", features = ["small_rng"] }
+typenum = "1.17.0"
