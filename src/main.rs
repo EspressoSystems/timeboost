@@ -10,11 +10,11 @@ mod threshold;
 mod timeout;
 
 use crate::{
-    constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
+    constants::INTERNAL_EVENT_CHANNEL_SIZE,
     message::*,
     signature_key::*,
 };
-use async_broadcast::{broadcast, InactiveReceiver, Receiver, Sender};
+use async_broadcast::{broadcast, Receiver, Sender};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 

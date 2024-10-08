@@ -42,3 +42,6 @@ fmt_check:
   cargo fmt --check
 
 lint: clippy fmt_check
+
+fix:
+  cargo fix --allow-dirty --allow-staged

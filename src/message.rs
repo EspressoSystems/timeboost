@@ -1,5 +1,5 @@
 use crate::{
-    certificate::{serialize_signature, Certificate},
+    certificate::Certificate,
     timeout::{NoVoteData, TimeoutData},
     BLSPubKey, SignatureKey,
 };
