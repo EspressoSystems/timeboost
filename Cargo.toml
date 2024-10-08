@@ -50,3 +50,4 @@ ethereum-types = { version = "0.14", default-features = false, features = [
 rand_chacha = "0.3.1"
 rand = { version = "0.8", features = ["small_rng"] }
 typenum = "1.17.0"
+tracing-subscriber = "0.3.18"

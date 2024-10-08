@@ -30,7 +30,7 @@ test *ARGS:
   cargo test {{ARGS}}
 
 run:
-  cargo run
+  RUST_LOG=debug cargo run
 
 clippy:
   cargo clippy -- -D warnings
