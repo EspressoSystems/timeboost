@@ -23,11 +23,6 @@ jobs:
     - name: Build
       run: just build
   test:
-    strategy:
-      matrix:
-        just_variants:
-          - async-std
-          - tokio
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
