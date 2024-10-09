@@ -1,4 +1,9 @@
-use crate::{bincode_utils::bincode_opts, BLSPubKey, RoundNumber, SignatureKey};
+use crate::{
+    bincode_utils::bincode_opts,
+    message::RoundNumber,
+    timeout::{NoVoteData, TimeoutData},
+    BLSPubKey, SignatureKey,
+};
 use bincode::Options;
 use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
@@ -16,6 +21,13 @@ pub struct Certificate<DATA: Committable> {
 
     /// The assembled signature for this certificate.
     signatures: Option<<BLSPubKey as SignatureKey>::QcType>,
+}
+
+impl<DATA: Committable> Certificate<DATA> {
+    /// Returns the round number this certificate is for.
+    pub fn round_number(&self) -> RoundNumber {
+        self.round.clone()
+    }
 }
 
 impl<DATA: Committable> Certificate<DATA> {
@@ -70,3 +82,6 @@ impl<DATA: Committable> Committable for Certificate<DATA> {
             .finalize()
     }
 }
+
+pub type TimeoutCertificate = Certificate<TimeoutData>;
+pub type NoVoteCertificate = Certificate<NoVoteData>;

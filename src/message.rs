@@ -1,13 +1,21 @@
+use std::fmt::Display;
+
 use crate::{
-    certificate::Certificate,
-    timeout::{NoVoteData, TimeoutData},
+    certificate::{NoVoteCertificate, TimeoutCertificate},
     BLSPubKey, SignatureKey,
 };
 use committable::{Commitment, Committable};
+use hotshot_task::task::TaskEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct RoundNumber(u64);
+
+impl Display for RoundNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl Committable for RoundNumber {
     fn commit(&self) -> Commitment<Self> {
@@ -28,10 +36,10 @@ pub struct BlockHeader {
     pub signature: <BLSPubKey as SignatureKey>::QcType,
 
     /// The no-vote certificate for `v.round - 1`.
-    pub no_vote_certificate: Option<Certificate<NoVoteData>>,
+    pub no_vote_certificate: Option<NoVoteCertificate>,
 
     /// The timeout certificate for `v.round - 1`.
-    pub timeout_certificate: Option<Certificate<TimeoutData>>,
+    pub timeout_certificate: Option<TimeoutCertificate>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,9 +48,10 @@ pub struct Block {
     payload: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vertex {
     /// The round of the vertex $v$ in the DAG.
-    round: RoundNumber,
+    pub round: RoundNumber,
 
     /// The source that broadcasted this vertex $v$
     source: BLSPubKey,
@@ -59,8 +68,27 @@ pub struct Vertex {
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum SailfishMessage {
-    Vertex(),
-    Timeout(),
-    NoVote(),
+    Shutdown,
+    Vertex(Vertex),
+    Timeout(TimeoutCertificate),
+    NoVote(NoVoteCertificate),
+}
+
+impl TaskEvent for SailfishMessage {
+    fn shutdown_event() -> Self {
+        SailfishMessage::Shutdown
+    }
+}
+
+impl Display for SailfishMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SailfishMessage::Vertex(v) => write!(f, "Vertex({})", v.round),
+            SailfishMessage::Timeout(timeout) => write!(f, "Timeout({})", timeout.round_number()),
+            SailfishMessage::NoVote(no_vote) => write!(f, "NoVote({})", no_vote.round_number()),
+            SailfishMessage::Shutdown => write!(f, "Shutdown"),
+        }
+    }
 }

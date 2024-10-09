@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hotshot-task = { git = "https://github.com/espressosystems/hotshot.git" }
 anyhow = "1.0.89"
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"

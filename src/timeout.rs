@@ -1,4 +1,4 @@
-use crate::RoundNumber;
+use crate::message::RoundNumber;
 use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
 

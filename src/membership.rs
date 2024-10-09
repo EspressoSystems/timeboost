@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Debug, hash::Hash, num::NonZeroU64};
 
-use crate::{stake_table::StakeTableEntry, RoundNumber, SignatureKey};
+use crate::{message::RoundNumber, stake_table::StakeTableEntry, SignatureKey};
 
 /// A protocol for determining membership in and participating in a committee.
 pub trait Membership<KEY: SignatureKey>:

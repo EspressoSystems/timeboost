@@ -3,45 +3,18 @@ mod certificate;
 mod constants;
 mod membership;
 mod message;
+mod network_utils;
 mod qc;
+mod sailfish;
 mod signature_key;
 mod stake_table;
+mod tasks;
 mod threshold;
 mod timeout;
 
-use crate::{
-    constants::INTERNAL_EVENT_CHANNEL_SIZE,
-    message::*,
-    signature_key::*,
-};
-use async_broadcast::{broadcast, Receiver, Sender};
-use std::sync::Arc;
+use crate::sailfish::Sailfish;
+use signature_key::{BLSPubKey, SignatureKey};
 use tracing_subscriber::EnvFilter;
-
-pub struct Sailfish {
-    /// The public key of the sailfish node.
-    public_key: BLSPubKey,
-
-    /// The private key of the sailfish node.
-    private_key: BLSPrivKey,
-
-    /// The sender of the sailfish node.
-    internal_event_stream: (Sender<Arc<SailfishMessage>>, Receiver<Arc<SailfishMessage>>),
-}
-
-impl Sailfish {
-    pub fn new(public_key: BLSPubKey, private_key: BLSPrivKey) -> Self {
-        Sailfish {
-            public_key,
-            private_key,
-            internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
-        }
-    }
-
-    pub fn run(&self) {
-        tracing::info!("Starting Sailfish");
-    }
-}
 
 fn generate_key_pair<KEY: SignatureKey>(
     seed: [u8; 32],
@@ -67,7 +40,7 @@ async fn main() {
     }
 
     let (private_key, public_key) = generate_key_pair::<BLSPubKey>([0u8; 32], 0);
-    let sailfish = Sailfish::new(public_key, private_key);
+    let mut sailfish = Sailfish::new(public_key, private_key);
 
-    sailfish.run();
+    sailfish.run().await;
 }
