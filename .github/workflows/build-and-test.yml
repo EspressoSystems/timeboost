@@ -21,7 +21,7 @@ jobs:
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Build
-      run: just tokio build
+      run: just build
   test:
     strategy:
       matrix:
@@ -37,4 +37,4 @@ jobs:
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Run tests
-      run: just tokio test
+      run: just test
