@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hotshot = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
-hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
-hotshot-task = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false, branch = "jp/remove-orchestrator-dep" }
+hotshot = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot-types = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot-task = { git = "https://github.com/espressosystems/hotshot.git" }
+libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
 anyhow = "1.0.89"
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
