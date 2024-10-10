@@ -1,11 +1,11 @@
 use crate::{
-    bincode_utils::bincode_opts,
     message::RoundNumber,
     timeout::{NoVoteData, TimeoutData},
     BLSPubKey, SignatureKey,
 };
 use bincode::Options;
 use committable::{Commitment, Committable};
+use hotshot_types::utils::bincode_opts;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

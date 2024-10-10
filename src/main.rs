@@ -1,27 +1,19 @@
-mod bincode_utils;
 mod certificate;
 mod constants;
-mod membership;
 mod message;
 mod network_utils;
-mod qc;
 mod sailfish;
-mod signature_key;
-mod stake_table;
 mod tasks;
-mod threshold;
 mod timeout;
 
 use crate::sailfish::Sailfish;
-use signature_key::{BLSPubKey, SignatureKey};
+use clap::{Arg, Command};
+use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
 use tracing_subscriber::EnvFilter;
 
-fn generate_key_pair<KEY: SignatureKey>(
-    seed: [u8; 32],
-    index: u64,
-) -> (<KEY as SignatureKey>::PrivateKey, KEY) {
-    let private_key = <KEY as SignatureKey>::generated_from_seed_indexed(seed, index).1;
-    let public_key = <KEY as SignatureKey>::from_private(&private_key);
+fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
+    let private_key = BLSPubKey::generated_from_seed_indexed(seed, id).1;
+    let public_key = BLSPubKey::from_private(&private_key);
     (private_key, public_key)
 }
 
@@ -39,8 +31,24 @@ async fn main() {
             .init();
     }
 
-    let (private_key, public_key) = generate_key_pair::<BLSPubKey>([0u8; 32], 0);
+    // TODO: Derive these from somewhere else
+    let (private_key, public_key) = generate_key_pair([0u8; 32], 0);
     let mut sailfish = Sailfish::new(public_key, private_key);
+
+    // Create the command-line arguments
+    let matches = Command::new("sailfish")
+        .arg(
+            Arg::new("id")
+                .long("id")
+                .value_name("ID")
+                .help("The ID of the node that we're running.")
+                .required(true),
+        )
+        .get_matches();
+
+    let id = matches
+        .get_one::<u64>("id")
+        .expect("Node ID is required (for now).");
 
     sailfish.run().await;
 }

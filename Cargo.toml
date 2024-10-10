@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hotshot-task = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
+hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
+hotshot-task = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/remove-orchestrator-dep" }
+libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false, branch = "jp/remove-orchestrator-dep" }
 anyhow = "1.0.89"
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
@@ -20,7 +23,6 @@ tokio = { version = "1", default-features = false, features = [
   "time",
   "tracing",
 ] }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
 async-broadcast = "0.7"
 tracing = "0.1"
 clap = { version = "4", features = ["derive", "env"] }
@@ -52,3 +54,5 @@ rand_chacha = "0.3.1"
 rand = { version = "0.8", features = ["small_rng"] }
 typenum = "1.17.0"
 tracing-subscriber = "0.3.18"
+libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
+async-lock = "3.4.0"

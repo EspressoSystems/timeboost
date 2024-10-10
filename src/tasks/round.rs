@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use hotshot::types::{BLSPrivKey, BLSPubKey};
 use tokio::task::JoinHandle;
 
 use anyhow::Result;
@@ -7,10 +8,7 @@ use async_broadcast::{Receiver, Sender};
 use async_trait::async_trait;
 use hotshot_task::task::{TaskEvent, TaskState};
 
-use crate::{
-    message::{RoundNumber, SailfishMessage},
-    signature_key::{BLSPrivKey, BLSPubKey},
-};
+use crate::message::{RoundNumber, SailfishMessage};
 
 pub struct RoundTaskHandle {
     /// Our public key

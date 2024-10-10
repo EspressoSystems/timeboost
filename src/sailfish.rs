@@ -1,10 +1,10 @@
 use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
     message::*,
-    signature_key::*,
     tasks::network::NetworkTaskState,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
+use hotshot::types::{BLSPrivKey, BLSPubKey};
 use hotshot_task::task::{Task, TaskState};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
