@@ -6,4 +6,7 @@
     // "rust-analyzer.check.workspace": false,
     // "rust-analyzer.cargo.allTargets": false,
     "rust-analyzer.showUnlinkedFileNotification": false,
+    "rust-analyzer.diagnostics.disabled": [
+        "unresolved-proc-macro"
+    ]
 }

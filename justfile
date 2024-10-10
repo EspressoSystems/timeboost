@@ -15,8 +15,8 @@ build_release:
 test *ARGS:
   cargo test {{ARGS}}
 
-run:
-  RUST_LOG=debug cargo run
+run *ARGS:
+  RUST_LOG=debug cargo run {{ARGS}}
 
 clippy:
   cargo clippy -- -D warnings
