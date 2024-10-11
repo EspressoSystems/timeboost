@@ -33,3 +33,14 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Run tests
       run: just test
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Just
+      run: |
+        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
+        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
+        sudo cp just /usr/bin/just
+    - name: Run lint
+      run: just lint
