@@ -7,8 +7,9 @@ use anyhow::Result;
 use async_broadcast::{Receiver, Sender};
 use async_trait::async_trait;
 use hotshot_task::task::TaskState;
+use hotshot_types::data::ViewNumber;
 
-use crate::message::{RoundNumber, SailfishMessage};
+use crate::types::message::SailfishMessage;
 
 pub struct RoundTaskHandle {
     /// Our public key
@@ -29,14 +30,14 @@ impl RoundTaskHandle {
 
 pub struct RoundTaskState {
     /// The current round number.
-    round: RoundNumber,
+    round: ViewNumber,
 
     /// The background round tasks.
-    pub tasks: HashMap<RoundNumber, RoundTaskHandle>,
+    pub tasks: HashMap<ViewNumber, RoundTaskHandle>,
 }
 
 impl RoundTaskState {
-    pub fn new(round: RoundNumber) -> Self {
+    pub fn new(round: ViewNumber) -> Self {
         Self {
             round,
             tasks: HashMap::new(),

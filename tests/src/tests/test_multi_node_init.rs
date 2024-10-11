@@ -34,7 +34,7 @@ pub async fn init_nodes(num_nodes: u64) {
 
     let staked_nodes: Vec<PeerConfig<BLSPubKey>> = nodes
         .iter()
-        .map(|node| node.validator_config.public_config())
+        .map(|node| node.state.validator_config.public_config())
         .collect();
 
     let replication_factor = NonZeroUsize::new(((2 * num_nodes) as usize).div_ceil(3)).unwrap();

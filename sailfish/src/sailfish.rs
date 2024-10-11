@@ -1,7 +1,7 @@
 use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
-    message::*,
     tasks::network::NetworkTaskState,
+    types::{message::SailfishMessage, sailfish_state::SailfishState},
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -17,12 +17,14 @@ use hotshot::{
 };
 use hotshot_task::task::{Task, TaskState};
 use hotshot_types::{
-    network::{Libp2pConfig, NetworkConfig}, PeerConfig, ValidatorConfig,
+    network::{Libp2pConfig, NetworkConfig},
+    PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::{
     network::{
-        behaviours::dht::record::{Namespace, RecordKey, RecordValue}, NetworkNodeConfig,
+        behaviours::dht::record::{Namespace, RecordKey, RecordValue},
+        NetworkNodeConfig,
     },
     reexport::Multiaddr,
 };
@@ -57,11 +59,8 @@ pub struct Sailfish {
     /// The background tasks for the sailfish node.
     background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishMessage>>>>,
 
-    /// The validator config of the sailfish node.
-    pub validator_config: ValidatorConfig<BLSPubKey>,
-
-    /// The ID of the sailfish node.
-    id: u64,
+    /// The state of the sailfish node.
+    pub state: SailfishState,
 }
 
 impl Sailfish {
@@ -94,8 +93,10 @@ impl Sailfish {
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
             external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
             background_tasks: Vec::new(),
-            validator_config,
-            id,
+            state: SailfishState {
+                id,
+                validator_config,
+            },
         }
     }
 
@@ -133,7 +134,7 @@ impl Sailfish {
             self.public_key,
             record_value,
             bootstrap_nodes,
-            usize::try_from(self.id).expect("id is too large"),
+            usize::try_from(self.state.id).expect("id is too large"),
             false,
         )
         .await
@@ -160,7 +161,7 @@ impl Sailfish {
     }
 
     pub async fn run(&mut self) {
-        tracing::info!("Starting Sailfish Node {}", self.id);
+        tracing::info!("Starting Sailfish Node {}", self.state.id);
         self.run_tasks().await;
     }
 }

@@ -1,10 +1,10 @@
-use crate::message::RoundNumber;
 use committable::{Commitment, Committable};
+use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct TimeoutData {
-    pub round: RoundNumber,
+    pub round: ViewNumber,
 }
 
 impl Committable for TimeoutData {
@@ -17,7 +17,7 @@ impl Committable for TimeoutData {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NoVoteData {
-    pub round: RoundNumber,
+    pub round: ViewNumber,
 }
 
 impl Committable for NoVoteData {

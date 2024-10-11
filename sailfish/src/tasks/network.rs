@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use hotshot_task::task::TaskState;
 use std::sync::Arc;
 
-use crate::{message::SailfishMessage, network_utils::broadcast_event};
+use crate::{network_utils::broadcast_event, types::message::SailfishMessage};
 
 pub struct NetworkTaskState {
     internal_event_stream_sender: Sender<Arc<SailfishMessage>>,

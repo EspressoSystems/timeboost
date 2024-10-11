@@ -1,15 +1,12 @@
-use crate::{
-    message::RoundNumber,
-    timeout::{NoVoteData, TimeoutData},
-};
+use crate::types::timeout::{NoVoteData, TimeoutData};
 use bincode::Options;
 use committable::{Commitment, Committable};
 use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::utils::bincode_opts;
+use hotshot_types::{data::ViewNumber, utils::bincode_opts, vote::Certificate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Certificate<DATA: Committable> {
+pub struct SailfishCertificate<DATA: Committable> {
     /// The data this certificate is for.  I.e the thing that was voted on to create this Certificate
     data: DATA,
 
@@ -17,25 +14,25 @@ pub struct Certificate<DATA: Committable> {
     vote_commitment: Commitment<DATA>,
 
     /// The round number this certificate is for.
-    round: RoundNumber,
+    round: ViewNumber,
 
     /// The assembled signature for this certificate.
     signatures: Option<<BLSPubKey as SignatureKey>::QcType>,
 }
 
-impl<DATA: Committable> Certificate<DATA> {
+impl<DATA: Committable> SailfishCertificate<DATA> {
     /// Returns the round number this certificate is for.
-    pub fn round_number(&self) -> RoundNumber {
+    pub fn round_number(&self) -> ViewNumber {
         self.round.clone()
     }
 }
 
-impl<DATA: Committable> Certificate<DATA> {
+impl<DATA: Committable> SailfishCertificate<DATA> {
     /// Creates a new instance of `Certificate`.
     pub fn new(
         data: DATA,
         vote_commitment: Commitment<DATA>,
-        round: RoundNumber,
+        round: ViewNumber,
         signatures: Option<<BLSPubKey as SignatureKey>::QcType>,
     ) -> Self {
         Self {
@@ -67,7 +64,7 @@ pub fn serialize_signature<KEY: SignatureKey>(
     signatures_bytes
 }
 
-impl<DATA: Committable> Committable for Certificate<DATA> {
+impl<DATA: Committable> Committable for SailfishCertificate<DATA> {
     fn commit(&self) -> Commitment<Self> {
         let signature_bytes = match self.signatures.as_ref() {
             Some(sigs) => serialize_signature::<BLSPubKey>(sigs),
@@ -83,5 +80,5 @@ impl<DATA: Committable> Committable for Certificate<DATA> {
     }
 }
 
-pub type TimeoutCertificate = Certificate<TimeoutData>;
-pub type NoVoteCertificate = Certificate<NoVoteData>;
+pub type TimeoutCertificate = SailfishCertificate<TimeoutData>;
+pub type NoVoteCertificate = SailfishCertificate<NoVoteData>;

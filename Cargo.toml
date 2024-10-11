@@ -8,10 +8,10 @@ edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [workspace.dependencies]
-hotshot = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/fix-key-type-in-prp" }
-hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/fix-key-type-in-prp" }
-hotshot-task = { git = "https://github.com/espressosystems/hotshot.git", branch = "jp/fix-key-type-in-prp" }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false, branch = "jp/fix-key-type-in-prp" }
+hotshot = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot-types = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot-task = { git = "https://github.com/espressosystems/hotshot.git" }
+libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
 anyhow = "1.0.89"
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
