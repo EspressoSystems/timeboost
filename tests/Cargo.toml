@@ -1,0 +1,16 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+description.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { workspace = true }
+async-lock = { workspace = true }
+hotshot-types = { workspace = true }
+sailfish = { path = "../sailfish" }
+libp2p-networking = { workspace = true }
+libp2p-identity = { workspace = true }
+hotshot = { workspace = true }

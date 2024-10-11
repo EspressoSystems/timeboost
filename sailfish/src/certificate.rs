@@ -1,10 +1,10 @@
 use crate::{
     message::RoundNumber,
     timeout::{NoVoteData, TimeoutData},
-    BLSPubKey, SignatureKey,
 };
 use bincode::Options;
 use committable::{Commitment, Committable};
+use hotshot::types::{BLSPubKey, SignatureKey};
 use hotshot_types::utils::bincode_opts;
 use serde::{Deserialize, Serialize};
 

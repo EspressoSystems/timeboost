@@ -1,9 +1,12 @@
-[package]
-name = "timeboost"
+[workspace]
+members = ["tests", "sailfish"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+description = "Sailfish is a DAG-based BFT consensus protocol."
 
-[dependencies]
+[workspace.dependencies]
 hotshot = { git = "https://github.com/espressosystems/hotshot.git" }
 hotshot-types = { git = "https://github.com/espressosystems/hotshot.git" }
 hotshot-task = { git = "https://github.com/espressosystems/hotshot.git" }

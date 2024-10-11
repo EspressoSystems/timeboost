@@ -1,10 +1,8 @@
 use std::fmt::Display;
 
-use crate::{
-    certificate::{NoVoteCertificate, TimeoutCertificate},
-    BLSPubKey, SignatureKey,
-};
+use crate::certificate::{NoVoteCertificate, TimeoutCertificate};
 use committable::{Commitment, Committable};
+use hotshot::types::{BLSPubKey, SignatureKey};
 use hotshot_task::task::TaskEvent;
 use serde::{Deserialize, Serialize};
 

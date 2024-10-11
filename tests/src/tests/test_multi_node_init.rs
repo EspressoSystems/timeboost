@@ -9,7 +9,7 @@ use libp2p_networking::reexport::Multiaddr;
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 
-use crate::{
+use sailfish::{
     logging,
     sailfish::{generate_key_pair, Sailfish},
 };

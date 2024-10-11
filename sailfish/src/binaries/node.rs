@@ -1,18 +1,9 @@
-mod certificate;
-mod constants;
-mod logging;
-mod message;
-mod network_utils;
-mod sailfish;
-mod tasks;
-mod testing;
-mod timeout;
-
 use clap::Parser;
-use hotshot::types::{BLSPubKey, SignatureKey};
+use hotshot::types::BLSPubKey;
 use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
+use sailfish::logging;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs};
 
@@ -40,7 +31,7 @@ async fn main() {
         toml::from_str(&fs::read_to_string(cli.config_path).expect("Failed to read config file"))
             .expect("Failed to parse config file");
 
-    sailfish::initialize_and_run_sailfish(
+    sailfish::sailfish::initialize_and_run_sailfish(
         config.id,
         config.network_size,
         config.to_connect_addrs,
