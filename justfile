@@ -13,7 +13,7 @@ build_release:
   cargo build --release
 
 test *ARGS:
-  cargo test {{ARGS}}
+  RUST_LOG=debug cargo test {{ARGS}}
 
 run *ARGS:
   RUST_LOG=debug cargo run {{ARGS}}

@@ -5,10 +5,12 @@ mod message;
 mod network_utils;
 mod sailfish;
 mod tasks;
+mod testing;
 mod timeout;
 
 use clap::Parser;
 use hotshot::types::{BLSPubKey, SignatureKey};
+use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use serde::{Deserialize, Serialize};
@@ -23,6 +25,8 @@ struct Cli {
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
+    staked_nodes: Vec<PeerConfig<BLSPubKey>>,
+    validator_config: ValidatorConfig<BLSPubKey>,
     id: u64,
     network_size: usize,
 }
@@ -36,6 +40,12 @@ async fn main() {
         toml::from_str(&fs::read_to_string(cli.config_path).expect("Failed to read config file"))
             .expect("Failed to parse config file");
 
-    sailfish::initialize_and_run_sailfish(config.id, config.network_size, config.to_connect_addrs)
-        .await;
+    sailfish::initialize_and_run_sailfish(
+        config.id,
+        config.network_size,
+        config.to_connect_addrs,
+        config.staked_nodes,
+        config.validator_config,
+    )
+    .await;
 }

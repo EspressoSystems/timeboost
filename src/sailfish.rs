@@ -18,7 +18,7 @@ use hotshot::{
 use hotshot_task::task::{Task, TaskState};
 use hotshot_types::{
     network::{Libp2pConfig, NetworkConfig},
-    PeerConfig,
+    validator_config, PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::{
@@ -39,16 +39,16 @@ use tracing::{info, span::Record};
 
 pub struct Sailfish {
     /// The public key of the sailfish node.
-    public_key: BLSPubKey,
+    pub public_key: BLSPubKey,
 
     /// The private key of the sailfish node.
-    private_key: BLSPrivKey,
+    pub private_key: BLSPrivKey,
 
     /// The Libp2p PeerId of the sailfish node.
-    peer_id: PeerId,
+    pub peer_id: PeerId,
 
     /// The Libp2p multiaddr of the sailfish node.
-    bind_address: Multiaddr,
+    pub bind_address: Multiaddr,
 
     /// The internal event stream of the sailfish node.
     internal_event_stream: (Sender<Arc<SailfishMessage>>, Receiver<Arc<SailfishMessage>>),
@@ -59,12 +59,20 @@ pub struct Sailfish {
     /// The background tasks for the sailfish node.
     background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishMessage>>>>,
 
+    /// The validator config of the sailfish node.
+    pub validator_config: ValidatorConfig<BLSPubKey>,
+
     /// The ID of the sailfish node.
     id: u64,
 }
 
 impl Sailfish {
-    pub fn new(public_key: BLSPubKey, private_key: BLSPrivKey, id: u64) -> Self {
+    pub fn new(
+        public_key: BLSPubKey,
+        private_key: BLSPrivKey,
+        id: u64,
+        validator_config: ValidatorConfig<BLSPubKey>,
+    ) -> Self {
         // Create the bind address for the sailfish node. The panic here should, essentially, never trigger.
         let bind_address = SocketAddr::new(
             IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -88,6 +96,7 @@ impl Sailfish {
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
             external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
             background_tasks: Vec::new(),
+            validator_config,
             id,
         }
     }
@@ -158,23 +167,37 @@ impl Sailfish {
     }
 }
 
-fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
+pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
     let private_key = BLSPubKey::generated_from_seed_indexed(seed, id).1;
     let public_key = BLSPubKey::from_private(&private_key);
     (private_key, public_key)
 }
 
+/// Initializes and runs a Sailfish node.
+///
+/// # Arguments
+///
+/// * `id` - Node identifier.
+/// * `network_size` - Size of the network.
+/// * `to_connect_addrs` - Addresses to connect to at initialization.
+/// * `staked_nodes` - Configurations of staked nodes.
+///
+/// # Panics
+///
+/// Panics if any configuration or initialization step fails.
 pub async fn initialize_and_run_sailfish(
     id: u64,
     network_size: usize,
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
+    staked_nodes: Vec<PeerConfig<BLSPubKey>>,
+    validator_config: ValidatorConfig<BLSPubKey>,
 ) {
     let seed = [0u8; 32];
 
     let (private_key, public_key) = generate_key_pair(seed, id);
     let libp2p_keypair =
         derive_libp2p_keypair::<BLSPubKey>(&private_key).expect("failed to derive libp2p keypair");
-    let mut sailfish = Sailfish::new(public_key, private_key, id);
+    let mut sailfish = Sailfish::new(public_key, private_key, id, validator_config);
 
     let bind_address = SocketAddr::new(
         IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -194,13 +217,16 @@ pub async fn initialize_and_run_sailfish(
         .keypair(libp2p_keypair)
         .replication_factor(replication_factor)
         .bind_address(Some(bind_address))
-        .to_connect_addrs(to_connect_addrs)
+        .to_connect_addrs(to_connect_addrs.clone())
         .republication_interval(None)
         .build()
         .expect("Failed to build network node config");
 
-    let bootstrap_nodes = Arc::new(RwLock::new(vec![]));
-    let staked_nodes = vec![];
+    let bootstrap_nodes = Arc::new(RwLock::new(
+        to_connect_addrs
+            .into_iter()
+            .collect::<Vec<(PeerId, Multiaddr)>>(),
+    ));
 
     sailfish
         .initialize_networking(network_config, bootstrap_nodes, staked_nodes)
