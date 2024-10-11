@@ -17,14 +17,12 @@ use hotshot::{
 };
 use hotshot_task::task::{Task, TaskState};
 use hotshot_types::{
-    network::{Libp2pConfig, NetworkConfig},
-    validator_config, PeerConfig, ValidatorConfig,
+    network::{Libp2pConfig, NetworkConfig}, PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::{
     network::{
-        behaviours::dht::record::{Namespace, RecordKey, RecordValue},
-        GossipConfig, NetworkNodeConfig,
+        behaviours::dht::record::{Namespace, RecordKey, RecordValue}, NetworkNodeConfig,
     },
     reexport::Multiaddr,
 };
@@ -35,7 +33,7 @@ use std::{
     sync::Arc,
 };
 use tokio::task::JoinHandle;
-use tracing::{info, span::Record};
+use tracing::info;
 
 pub struct Sailfish {
     /// The public key of the sailfish node.

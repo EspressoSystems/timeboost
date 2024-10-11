@@ -6,7 +6,7 @@ use tokio::task::JoinHandle;
 use anyhow::Result;
 use async_broadcast::{Receiver, Sender};
 use async_trait::async_trait;
-use hotshot_task::task::{TaskEvent, TaskState};
+use hotshot_task::task::TaskState;
 
 use crate::message::{RoundNumber, SailfishMessage};
 
