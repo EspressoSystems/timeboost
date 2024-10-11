@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use hotshot_task::task::TaskState;
 use hotshot_types::data::ViewNumber;
 
-use crate::types::message::SailfishMessage;
+use crate::types::message::SailfishEvent;
 
 pub struct RoundTaskHandle {
     /// Our public key
@@ -44,19 +44,19 @@ impl RoundTaskState {
         }
     }
 
-    pub async fn handle(&mut self, event: Arc<SailfishMessage>) {
+    pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
         match event.as_ref() {
-            SailfishMessage::Vertex(vertex) => todo!(),
-            SailfishMessage::Timeout(timeout) => todo!(),
-            SailfishMessage::NoVote(no_vote) => todo!(),
-            SailfishMessage::Shutdown => todo!(),
+            SailfishEvent::Vertex(vertex) => todo!(),
+            SailfishEvent::Timeout(timeout) => todo!(),
+            SailfishEvent::NoVote(no_vote) => todo!(),
+            SailfishEvent::Shutdown => todo!(),
         }
     }
 }
 
 #[async_trait]
 impl TaskState for RoundTaskState {
-    type Event = SailfishMessage;
+    type Event = SailfishEvent;
 
     async fn handle_event(
         &mut self,

@@ -6,26 +6,26 @@ use hotshot_task::task::TaskEvent;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum SailfishMessage {
+pub enum SailfishEvent {
     Shutdown,
     Vertex(Vertex),
     Timeout(TimeoutCertificate),
     NoVote(NoVoteCertificate),
 }
 
-impl TaskEvent for SailfishMessage {
+impl TaskEvent for SailfishEvent {
     fn shutdown_event() -> Self {
-        SailfishMessage::Shutdown
+        SailfishEvent::Shutdown
     }
 }
 
-impl Display for SailfishMessage {
+impl Display for SailfishEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SailfishMessage::Vertex(v) => write!(f, "Vertex({})", v.round),
-            SailfishMessage::Timeout(timeout) => write!(f, "Timeout({})", timeout.round_number()),
-            SailfishMessage::NoVote(no_vote) => write!(f, "NoVote({})", no_vote.round_number()),
-            SailfishMessage::Shutdown => write!(f, "Shutdown"),
+            SailfishEvent::Vertex(v) => write!(f, "Vertex({})", v.round),
+            SailfishEvent::Timeout(timeout) => write!(f, "Timeout({})", timeout.round_number()),
+            SailfishEvent::NoVote(no_vote) => write!(f, "NoVote({})", no_vote.round_number()),
+            SailfishEvent::Shutdown => write!(f, "Shutdown"),
         }
     }
 }

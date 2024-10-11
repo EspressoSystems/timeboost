@@ -4,17 +4,17 @@ use async_trait::async_trait;
 use hotshot_task::task::TaskState;
 use std::sync::Arc;
 
-use crate::{network_utils::broadcast_event, types::message::SailfishMessage};
+use crate::{network_utils::broadcast_event, types::message::SailfishEvent};
 
 pub struct NetworkTaskState {
-    internal_event_stream_sender: Sender<Arc<SailfishMessage>>,
-    internal_event_stream_receiver: Receiver<Arc<SailfishMessage>>,
+    internal_event_stream_sender: Sender<Arc<SailfishEvent>>,
+    internal_event_stream_receiver: Receiver<Arc<SailfishEvent>>,
 }
 
 impl NetworkTaskState {
     pub fn new(
-        internal_event_stream_sender: Sender<Arc<SailfishMessage>>,
-        internal_event_stream_receiver: Receiver<Arc<SailfishMessage>>,
+        internal_event_stream_sender: Sender<Arc<SailfishEvent>>,
+        internal_event_stream_receiver: Receiver<Arc<SailfishEvent>>,
     ) -> Self {
         NetworkTaskState {
             internal_event_stream_sender,
@@ -22,7 +22,7 @@ impl NetworkTaskState {
         }
     }
 
-    pub async fn handle(&mut self, event: Arc<SailfishMessage>) {
+    pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
         // Broadcast an event which is sourced from the external event stream to the
         //internal event stream.
         broadcast_event(event, &self.internal_event_stream_sender).await;
@@ -31,7 +31,7 @@ impl NetworkTaskState {
 
 #[async_trait]
 impl TaskState for NetworkTaskState {
-    type Event = SailfishMessage;
+    type Event = SailfishEvent;
 
     async fn handle_event(
         &mut self,

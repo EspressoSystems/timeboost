@@ -1,7 +1,7 @@
 use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
     tasks::network::NetworkTaskState,
-    types::{message::SailfishMessage, sailfish_state::SailfishState},
+    types::{message::SailfishEvent, sailfish_state::SailfishState},
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -51,13 +51,13 @@ pub struct Sailfish {
     pub bind_address: Multiaddr,
 
     /// The internal event stream of the sailfish node.
-    internal_event_stream: (Sender<Arc<SailfishMessage>>, Receiver<Arc<SailfishMessage>>),
+    internal_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
 
     /// The external event stream of the sailfish node.
-    external_event_stream: (Sender<Arc<SailfishMessage>>, Receiver<Arc<SailfishMessage>>),
+    external_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
 
     /// The background tasks for the sailfish node.
-    background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishMessage>>>>,
+    background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishEvent>>>>,
 
     /// The state of the sailfish node.
     pub state: SailfishState,
@@ -180,6 +180,7 @@ pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
 /// * `network_size` - Size of the network.
 /// * `to_connect_addrs` - Addresses to connect to at initialization.
 /// * `staked_nodes` - Configurations of staked nodes.
+/// * `validator_config` - The validator config for the sailfish node.
 ///
 /// # Panics
 ///
