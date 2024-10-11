@@ -23,7 +23,7 @@ pub struct SailfishCertificate<DATA: Committable> {
 impl<DATA: Committable> SailfishCertificate<DATA> {
     /// Returns the round number this certificate is for.
     pub fn round_number(&self) -> ViewNumber {
-        self.round.clone()
+        self.round
     }
 }
 
