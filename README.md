@@ -14,3 +14,8 @@ just run
 ```shell
 just lint
 ```
+
+## Test
+```shell
+just test
+```
