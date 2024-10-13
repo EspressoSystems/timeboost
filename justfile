@@ -13,10 +13,10 @@ build_release:
   cargo build --release
 
 test *ARGS:
-  RUST_LOG=info cargo test {{ARGS}}
+  cargo test {{ARGS}}
 
 run *ARGS:
-  RUST_LOG=debug cargo run {{ARGS}}
+  cargo run {{ARGS}}
 
 clippy:
   cargo clippy -- -D warnings

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::types::timeout::{NoVoteData, TimeoutData};
 use bincode::Options;
 use committable::{Commitment, Committable};
@@ -18,6 +20,12 @@ pub struct SailfishCertificate<DATA: Committable> {
 
     /// The assembled signature for this certificate.
     signatures: Option<<BLSPubKey as SignatureKey>::QcType>,
+}
+
+impl<DATA: Committable> Display for SailfishCertificate<DATA> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SailfishCertificate(round: {})", self.round)
+    }
 }
 
 impl<DATA: Committable> SailfishCertificate<DATA> {

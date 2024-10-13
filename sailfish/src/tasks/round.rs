@@ -46,10 +46,12 @@ impl RoundTaskState {
 
     pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
         match event.as_ref() {
-            SailfishEvent::Vertex(vertex) => todo!(),
-            SailfishEvent::Timeout(timeout) => todo!(),
-            SailfishEvent::NoVote(no_vote) => todo!(),
-            SailfishEvent::Shutdown => todo!(),
+            SailfishEvent::Vertex(vertex) => tracing::debug!("{}", vertex),
+            SailfishEvent::Timeout(timeout) => tracing::debug!("{}", timeout),
+            SailfishEvent::NoVote(no_vote) => tracing::debug!("{}", no_vote),
+            SailfishEvent::Shutdown => tracing::debug!("{}", "Shutdown"),
+            SailfishEvent::DummySend(dummy) => tracing::debug!("DummySend({})", dummy),
+            SailfishEvent::DummyRecv(dummy) => tracing::debug!("DummyRecv({})", dummy),
         }
     }
 }

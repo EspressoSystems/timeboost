@@ -23,9 +23,13 @@ impl NetworkTaskState {
     }
 
     pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
-        // Broadcast an event which is sourced from the external event stream to the
-        //internal event stream.
-        broadcast_event(event, &self.internal_event_stream_sender).await;
+        tracing::error!("Handling event: {}", event);
+        match event.as_ref() {
+            SailfishEvent::DummySend(id) => {
+                tracing::info!("Received dummy event with id: {}", id);
+            }
+            _ => {}
+        }
     }
 }
 

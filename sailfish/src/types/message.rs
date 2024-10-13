@@ -3,11 +3,14 @@ use std::fmt::Display;
 use crate::types::certificate::{NoVoteCertificate, TimeoutCertificate};
 use crate::types::vertex::Vertex;
 use hotshot_task::task::TaskEvent;
+use serde::{Deserialize, Serialize};
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SailfishEvent {
     Shutdown,
+    DummySend(u64),
+    DummyRecv(u64),
     Vertex(Vertex),
     Timeout(TimeoutCertificate),
     NoVote(NoVoteCertificate),
@@ -26,6 +29,8 @@ impl Display for SailfishEvent {
             SailfishEvent::Timeout(timeout) => write!(f, "Timeout({})", timeout.round_number()),
             SailfishEvent::NoVote(no_vote) => write!(f, "NoVote({})", no_vote.round_number()),
             SailfishEvent::Shutdown => write!(f, "Shutdown"),
+            SailfishEvent::DummySend(n) => write!(f, "DummySend({})", n),
+            SailfishEvent::DummyRecv(n) => write!(f, "DummyRecv({})", n),
         }
     }
 }
