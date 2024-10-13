@@ -2,7 +2,8 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use sailfish::{network_utils::broadcast_event, types::message::SailfishEvent};
+use sailfish::types::message::SailfishEvent;
+use sailfish::utils::network::broadcast_event;
 use std::time::Duration;
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
@@ -51,14 +52,13 @@ async fn test_simple_network() {
         handles.push(handle);
     }
 
-    tracing::error!("Sleeping for 5 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    // Wait for all nodes to be ready
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Check that the dummy event was received by all nodes
     let mut received_events = std::collections::HashMap::new();
-    tracing::error!("Receiving events");
     for (id, event_receiver) in event_receivers.iter_mut() {
-        tracing::error!("Receiving events for node {}", id);
+        tracing::info!("Receiving events for node {}", id);
         let mut events = Vec::new();
         loop {
             match timeout(Duration::from_secs(1), event_receiver.1.recv()).await {
@@ -73,26 +73,33 @@ async fn test_simple_network() {
         received_events.insert(*id, events);
     }
 
-    // Assert that each node received a dummy event from every other node
-    tracing::error!("Asserting events");
-    for (id, events) in received_events.iter() {
+    // Assert that each node received a dummy event from every other node, so for 5 nodes, we should
+    // have gotten DummyRecv(0), DummyRecv(1), ..., DummyRecv(4)
+    let expected_events = (0..num_nodes as u64)
+        .map(|i| SailfishEvent::DummyRecv(i))
+        .collect::<Vec<_>>();
+
+    for (id, mut events) in received_events.into_iter() {
         assert_eq!(
             events.len(),
             num_nodes,
             "Node {} did not receive all dummy events",
             id
         );
-        for event in events {
-            match event.as_ref() {
-                SailfishEvent::DummyRecv(sender_id) => {
-                    assert!(
-                        *sender_id < num_nodes as u64,
-                        "Received dummy event from invalid node ID"
-                    );
-                }
-                _ => panic!("Unexpected event type received"),
-            }
-        }
+        // Sort the events by sender ID
+        events.sort_by_key(|event| match event.as_ref() {
+            SailfishEvent::DummyRecv(sender_id) => *sender_id,
+            _ => panic!("Unexpected event type received"),
+        });
+
+        // Now, unwrap the Arc to compare the events
+        assert_eq!(
+            events
+                .into_iter()
+                .map(|e| e.as_ref().clone())
+                .collect::<Vec<_>>(),
+            expected_events
+        );
     }
 
     // Send the shutdown event to all nodes

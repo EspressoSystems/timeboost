@@ -1,8 +1,8 @@
 use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
-    network_utils::broadcast_event,
-    tasks::network::NetworkTaskState,
+    networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
+    utils::network::broadcast_event,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -140,100 +140,118 @@ impl Sailfish {
         .await
         .expect("failed to initialize libp2p network");
 
-        info!("Waiting for network to be ready");
-        network.wait_for_ready().await;
+        let external_network = ExternalNetwork::new(
+            network,
+            self.state.id,
+            self.internal_event_stream.0.clone(),
+            self.internal_event_stream.1.clone(),
+        );
 
-        let internal_event_sender = self.internal_event_stream.0.clone();
-        let mut internal_event_receiver = self.internal_event_stream.1.clone();
-
-        // Kickstart the network with a dummy send event
-        network
-            .broadcast_message(
-                bincode::serialize(&SailfishEvent::DummySend(self.state.id)).unwrap(),
-                Topic::Global,
-                BroadcastDelay::None,
-            )
+        external_network
+            .initialize()
             .await
-            .expect("failed to broadcast starter event");
+            .expect("failed to initialize external network");
 
-        let node_id = self.state.id;
-        // Read from the external event stream, create a match from the events after parsing the bincode into a SailfishEvent.
-        let _ = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    msg = network.recv_message() => {
-                        let message = match msg {
-                            Ok(msg) => msg,
-                            Err(e) => {
-                                tracing::error!("Failed to deserialize message: {}", e);
-                                continue;
-                            }
-                        };
+        external_network.spawn_network_task();
 
-                        let event: SailfishEvent =
-                            bincode::deserialize(&message).expect("failed to deserialize message");
+        let internal_network =
+            InternalNetwork::new(self.state.id, self.internal_event_stream.0.clone());
+        internal_network.spawn_network_task(self.internal_event_stream.1.clone());
 
-                        tracing::error!("Node {} received message from network: {}", node_id, event);
+        // info!("Waiting for network to be ready");
+        // network.wait_for_ready().await;
 
-                        if event == SailfishEvent::Shutdown {
-                            tracing::info!("Received shutdown event, shutting down");
-                            break;
-                        }
+        // let internal_event_sender = self.internal_event_stream.0.clone();
+        // let mut internal_event_receiver = self.internal_event_stream.1.clone();
 
-                        if matches!(event, SailfishEvent::DummySend(_)) {
-                            broadcast_event(Arc::new(SailfishEvent::DummyRecv(node_id)), &internal_event_sender).await;
-                        }
-                    }
-                    outgoing_msg = internal_event_receiver.recv() => {
-                        let event = match outgoing_msg {
-                            Ok(event) => event,
-                            Err(e) => {
-                                tracing::error!("failed to receive event: {}", e);
-                                continue;
-                            }
-                        };
-                        tracing::error!("Node {} received event from internal event stream: {}", node_id, event);
+        // // Kickstart the network with a dummy send event
+        // network
+        //     .broadcast_message(
+        //         bincode::serialize(&SailfishEvent::DummySend(self.state.id)).unwrap(),
+        //         Topic::Global,
+        //         BroadcastDelay::None,
+        //     )
+        //     .await
+        //     .expect("failed to broadcast starter event");
 
-                        match event.as_ref() {
-                            SailfishEvent::DummyRecv(_) => {
-                                tracing::error!("Node {} received dummy recv event", node_id);
-                            }
-                            _ => {}
-                        }
+        // let node_id = self.state.id;
+        // // Read from the external event stream, create a match from the events after parsing the bincode into a SailfishEvent.
+        // let _ = tokio::spawn(async move {
+        //     loop {
+        //         tokio::select! {
+        //             msg = network.recv_message() => {
+        //                 let message = match msg {
+        //                     Ok(msg) => msg,
+        //                     Err(e) => {
+        //                         tracing::error!("Failed to deserialize message: {}", e);
+        //                         continue;
+        //                     }
+        //                 };
 
-                        // match network.broadcast_message(
-                        //     bincode::serialize(&event).unwrap(),
-                        //     Topic::Global,
-                        //     BroadcastDelay::None,
-                        // )
-                        // .await {
-                        //     Ok(_) => {
-                        //         tracing::info!("Broadcasted event to network: {}", event);
-                        //     }
-                        //     Err(e) => {
-                        //         tracing::error!("Failed to broadcast message: {}", e);
-                        //     }
-                        // }
-                    }
-                }
-            }
-        });
+        //                 let event: SailfishEvent =
+        //                     bincode::deserialize(&message).expect("failed to deserialize message");
+
+        //                 tracing::error!("Node {} received message from network: {}", node_id, event);
+
+        //                 if event == SailfishEvent::Shutdown {
+        //                     tracing::info!("Received shutdown event, shutting down");
+        //                     break;
+        //                 }
+
+        //                 if matches!(event, SailfishEvent::DummySend(_)) {
+        //                     broadcast_event(Arc::new(SailfishEvent::DummyRecv(node_id)), &internal_event_sender).await;
+        //                 }
+        //             }
+        //             outgoing_msg = internal_event_receiver.recv() => {
+        //                 let event = match outgoing_msg {
+        //                     Ok(event) => event,
+        //                     Err(e) => {
+        //                         tracing::error!("failed to receive event: {}", e);
+        //                         continue;
+        //                     }
+        //                 };
+        //                 tracing::error!("Node {} received event from internal event stream: {}", node_id, event);
+
+        //                 match event.as_ref() {
+        //                     SailfishEvent::DummyRecv(_) => {
+        //                         tracing::error!("Node {} received dummy recv event", node_id);
+        //                     }
+        //                     _ => {}
+        //                 }
+
+        //                 // match network.broadcast_message(
+        //                 //     bincode::serialize(&event).unwrap(),
+        //                 //     Topic::Global,
+        //                 //     BroadcastDelay::None,
+        //                 // )
+        //                 // .await {
+        //                 //     Ok(_) => {
+        //                 //         tracing::info!("Broadcasted event to network: {}", event);
+        //                 //     }
+        //                 //     Err(e) => {
+        //                 //         tracing::error!("Failed to broadcast message: {}", e);
+        //                 //     }
+        //                 // }
+        //             }
+        //         }
+        //     }
+        // });
 
         info!("Network is ready.");
     }
 
     async fn run_tasks(&mut self) {
         info!("Starting background tasks for Sailfish");
-        let network_handle = Task::new(
-            NetworkTaskState::new(
-                self.internal_event_stream.0.clone(),
-                self.internal_event_stream.1.clone(),
-            ),
-            self.internal_event_stream.0.clone(),
-            self.internal_event_stream.1.clone(),
-        );
+        // let network_handle = Task::new(
+        //     NetworkTaskState::new(
+        //         self.internal_event_stream.0.clone(),
+        //         self.internal_event_stream.1.clone(),
+        //     ),
+        //     self.internal_event_stream.0.clone(),
+        //     self.internal_event_stream.1.clone(),
+        // );
 
-        self.background_tasks.push(network_handle.run());
+        // self.background_tasks.push(network_handle.run());
     }
 
     pub async fn run(&mut self) {
