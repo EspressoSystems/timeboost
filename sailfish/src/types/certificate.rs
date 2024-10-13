@@ -4,7 +4,7 @@ use crate::types::timeout::{NoVoteData, TimeoutData};
 use bincode::Options;
 use committable::{Commitment, Committable};
 use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::{data::ViewNumber, utils::bincode_opts, vote::Certificate};
+use hotshot_types::{data::ViewNumber, utils::bincode_opts};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

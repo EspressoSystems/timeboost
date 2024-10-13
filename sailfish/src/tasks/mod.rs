@@ -2,14 +2,10 @@ use crate::types::message::SailfishEvent;
 use anyhow::Result;
 use async_broadcast::{Receiver, Sender};
 use async_trait::async_trait;
-use std::{net::Incoming, sync::Arc};
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 pub mod round;
-
-/// If the `handle_event` method returns `SHOULD_SHUTDOWN`, the task will shut down.
-/// This is just an alias to aid readability.
-const SHOULD_SHUTDOWN: bool = true;
 
 #[async_trait]
 pub trait Task: Send + Sync + 'static {
@@ -18,7 +14,7 @@ pub trait Task: Send + Sync + 'static {
         Self: Sized;
 
     /// Handle an event.  If this returns `SHOULD_SHUTDOWN`, the task will shut down.
-    async fn handle_event(&mut self, event: Arc<SailfishEvent>) -> Result<bool> {
+    async fn handle_event(&mut self, _event: Arc<SailfishEvent>) -> Result<bool> {
         Ok(false)
     }
 

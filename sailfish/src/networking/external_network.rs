@@ -8,12 +8,14 @@ use hotshot::{
 use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 pub struct ExternalNetwork {
     id: u64,
     network: Libp2pNetwork<BLSPubKey>,
     internal_event_sender: Sender<Arc<SailfishEvent>>,
+
+    #[allow(dead_code)]
     internal_event_receiver: Receiver<Arc<SailfishEvent>>,
 }
 
@@ -56,8 +58,11 @@ impl ExternalNetwork {
     pub fn spawn_network_task(self) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                let msg = self.network.recv_message().await;
-                self.handle_incoming_message(msg).await;
+                tokio::select! {
+                    msg = self.network.recv_message() => {
+                        self.handle_incoming_message(msg).await;
+                    }
+                }
             }
         })
     }
@@ -87,6 +92,10 @@ impl ExternalNetwork {
         }
 
         match event {
+            SailfishEvent::Shutdown => {
+                info!("Received shutdown event, shutting down");
+                // TODO: Propagate shutdown signal.
+            }
             SailfishEvent::DummySend(sender_id) => {
                 broadcast_event(
                     Arc::new(SailfishEvent::DummyRecv(sender_id)),
@@ -94,7 +103,9 @@ impl ExternalNetwork {
                 )
                 .await;
             }
-            _ => {}
+            _ => {
+                broadcast_event(Arc::new(event), &self.internal_event_sender).await;
+            }
         }
     }
 }

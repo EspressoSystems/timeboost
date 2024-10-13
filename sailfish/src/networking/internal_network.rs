@@ -2,12 +2,13 @@ use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{tasks::Task, types::message::SailfishEvent};
 
 pub struct InternalNetwork {
     id: u64,
+    #[allow(dead_code)]
     sender: Sender<Arc<SailfishEvent>>,
     tasks: Vec<Arc<RwLock<Box<dyn Task>>>>,
 }
@@ -49,7 +50,17 @@ impl InternalNetwork {
         );
         for task in &mut self.tasks {
             let mut task = task.write().await;
-            task.handle_event(event.clone()).await;
+            match task.handle_event(event.clone()).await {
+                Ok(should_shutdown) => {
+                    if should_shutdown {
+                        info!("Task {} returned shutdown, shutting down", task.name());
+                        return;
+                    }
+                }
+                Err(e) => {
+                    warn!("Task {} returned error; error = {e:#}", task.name());
+                }
+            }
         }
     }
 }

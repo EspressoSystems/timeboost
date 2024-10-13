@@ -13,7 +13,7 @@ build_release:
   cargo build --release
 
 test *ARGS:
-  cargo test {{ARGS}}
+  cargo test -- --test-threads 1 --nocapture {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}

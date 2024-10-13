@@ -1,12 +1,10 @@
 use crate::{
-    constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
+    constants::INTERNAL_EVENT_CHANNEL_SIZE,
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
-    utils::network::broadcast_event,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
-use core::net;
 use hotshot::{
     traits::{
         implementations::{
@@ -17,10 +15,8 @@ use hotshot::{
     },
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
-use hotshot_task::task::{Task, TaskState};
 use hotshot_types::{
     network::{Libp2pConfig, NetworkConfig},
-    traits::network::{BroadcastDelay, ConnectedNetwork, Topic},
     PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
@@ -36,9 +32,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
     sync::Arc,
-    time::Duration,
 };
-use tokio::task::JoinHandle;
 use tracing::info;
 
 pub struct Sailfish {
@@ -56,9 +50,6 @@ pub struct Sailfish {
 
     /// The internal event stream of the sailfish node.
     pub internal_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
-
-    /// The background tasks for the sailfish node.
-    background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishEvent>>>>,
 
     /// The state of the sailfish node.
     pub state: SailfishState,
@@ -92,7 +83,6 @@ impl Sailfish {
             peer_id,
             bind_address,
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
-            background_tasks: Vec::new(),
             state: SailfishState {
                 id,
                 validator_config,
@@ -115,6 +105,8 @@ impl Sailfish {
         network_config.libp2p_config = Some(Libp2pConfig {
             bootstrap_nodes: bootstrap_nodes.read().await.clone(),
         });
+
+        // We don't have any DA nodes in Sailfish.
         network_config.config.known_da_nodes = vec![];
 
         let libp2p_keypair = derive_libp2p_keypair::<BLSPubKey>(&self.private_key)
@@ -158,100 +150,11 @@ impl Sailfish {
             InternalNetwork::new(self.state.id, self.internal_event_stream.0.clone());
         internal_network.spawn_network_task(self.internal_event_stream.1.clone());
 
-        // info!("Waiting for network to be ready");
-        // network.wait_for_ready().await;
-
-        // let internal_event_sender = self.internal_event_stream.0.clone();
-        // let mut internal_event_receiver = self.internal_event_stream.1.clone();
-
-        // // Kickstart the network with a dummy send event
-        // network
-        //     .broadcast_message(
-        //         bincode::serialize(&SailfishEvent::DummySend(self.state.id)).unwrap(),
-        //         Topic::Global,
-        //         BroadcastDelay::None,
-        //     )
-        //     .await
-        //     .expect("failed to broadcast starter event");
-
-        // let node_id = self.state.id;
-        // // Read from the external event stream, create a match from the events after parsing the bincode into a SailfishEvent.
-        // let _ = tokio::spawn(async move {
-        //     loop {
-        //         tokio::select! {
-        //             msg = network.recv_message() => {
-        //                 let message = match msg {
-        //                     Ok(msg) => msg,
-        //                     Err(e) => {
-        //                         tracing::error!("Failed to deserialize message: {}", e);
-        //                         continue;
-        //                     }
-        //                 };
-
-        //                 let event: SailfishEvent =
-        //                     bincode::deserialize(&message).expect("failed to deserialize message");
-
-        //                 tracing::error!("Node {} received message from network: {}", node_id, event);
-
-        //                 if event == SailfishEvent::Shutdown {
-        //                     tracing::info!("Received shutdown event, shutting down");
-        //                     break;
-        //                 }
-
-        //                 if matches!(event, SailfishEvent::DummySend(_)) {
-        //                     broadcast_event(Arc::new(SailfishEvent::DummyRecv(node_id)), &internal_event_sender).await;
-        //                 }
-        //             }
-        //             outgoing_msg = internal_event_receiver.recv() => {
-        //                 let event = match outgoing_msg {
-        //                     Ok(event) => event,
-        //                     Err(e) => {
-        //                         tracing::error!("failed to receive event: {}", e);
-        //                         continue;
-        //                     }
-        //                 };
-        //                 tracing::error!("Node {} received event from internal event stream: {}", node_id, event);
-
-        //                 match event.as_ref() {
-        //                     SailfishEvent::DummyRecv(_) => {
-        //                         tracing::error!("Node {} received dummy recv event", node_id);
-        //                     }
-        //                     _ => {}
-        //                 }
-
-        //                 // match network.broadcast_message(
-        //                 //     bincode::serialize(&event).unwrap(),
-        //                 //     Topic::Global,
-        //                 //     BroadcastDelay::None,
-        //                 // )
-        //                 // .await {
-        //                 //     Ok(_) => {
-        //                 //         tracing::info!("Broadcasted event to network: {}", event);
-        //                 //     }
-        //                 //     Err(e) => {
-        //                 //         tracing::error!("Failed to broadcast message: {}", e);
-        //                 //     }
-        //                 // }
-        //             }
-        //         }
-        //     }
-        // });
-
         info!("Network is ready.");
     }
 
     async fn run_tasks(&mut self) {
         info!("Starting background tasks for Sailfish");
-        // let network_handle = Task::new(
-        //     NetworkTaskState::new(
-        //         self.internal_event_stream.0.clone(),
-        //         self.internal_event_stream.1.clone(),
-        //     ),
-        //     self.internal_event_stream.0.clone(),
-        //     self.internal_event_stream.1.clone(),
-        // );
-
-        // self.background_tasks.push(network_handle.run());
     }
 
     pub async fn run(&mut self) {

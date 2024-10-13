@@ -63,7 +63,6 @@ async fn test_simple_network() {
         loop {
             match timeout(Duration::from_secs(1), event_receiver.1.recv()).await {
                 Ok(Ok(event)) => {
-                    tracing::error!("Received event: {}", event);
                     events.push(event);
                 }
                 Ok(Err(_)) => break, // Channel closed
@@ -89,7 +88,7 @@ async fn test_simple_network() {
         // Sort the events by sender ID
         events.sort_by_key(|event| match event.as_ref() {
             SailfishEvent::DummyRecv(sender_id) => *sender_id,
-            _ => panic!("Unexpected event type received"),
+            other => panic!("Unexpected event type received; event = {}", other),
         });
 
         // Now, unwrap the Arc to compare the events
@@ -103,12 +102,10 @@ async fn test_simple_network() {
     }
 
     // Send the shutdown event to all nodes
-    tracing::error!("Sending shutdown event");
     for (_, event_stream) in event_receivers {
         broadcast_event(Arc::new(SailfishEvent::Shutdown), &event_stream.0).await;
     }
 
-    tracing::error!("Waiting for tasks to finish");
     for handle in handles {
         handle.await.expect("Task failed");
     }

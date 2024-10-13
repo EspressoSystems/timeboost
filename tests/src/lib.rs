@@ -36,7 +36,7 @@ pub fn init_nodes(num_nodes: usize) -> TestableNode {
 
     let bootstrap_nodes: Vec<(PeerId, Multiaddr)> = nodes
         .iter()
-        .map(|node| (node.peer_id.clone(), node.bind_address.clone()))
+        .map(|node| (node.peer_id, node.bind_address.clone()))
         .collect();
 
     let staked_nodes: Vec<PeerConfig<BLSPubKey>> = nodes

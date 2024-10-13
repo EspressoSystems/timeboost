@@ -13,9 +13,11 @@ use crate::types::message::SailfishEvent;
 
 pub struct RoundTaskHandle {
     /// Our public key
+    #[allow(dead_code)]
     public_key: BLSPubKey,
 
     /// Our private key
+    #[allow(dead_code)]
     private_key: BLSPrivKey,
 
     /// The background round task.
@@ -30,6 +32,7 @@ impl RoundTaskHandle {
 
 pub struct RoundTaskState {
     /// The current round number.
+    #[allow(dead_code)]
     round: ViewNumber,
 
     /// The background round tasks.
@@ -63,8 +66,8 @@ impl TaskState for RoundTaskState {
     async fn handle_event(
         &mut self,
         event: Arc<Self::Event>,
-        sender: &Sender<Arc<Self::Event>>,
-        receiver: &Receiver<Arc<Self::Event>>,
+        _sender: &Sender<Arc<Self::Event>>,
+        _receiver: &Receiver<Arc<Self::Event>>,
     ) -> Result<()> {
         self.handle(event).await;
 
