@@ -1,5 +1,5 @@
 use crate::{
-    constants::INTERNAL_EVENT_CHANNEL_SIZE,
+    constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
 };
@@ -51,6 +51,9 @@ pub struct Sailfish {
     /// The internal event stream of the sailfish node.
     pub internal_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
 
+    /// The external event stream of the sailfish node.
+    pub external_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
+
     /// The state of the sailfish node.
     pub state: SailfishState,
 }
@@ -83,6 +86,7 @@ impl Sailfish {
             peer_id,
             bind_address,
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
+            external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
             state: SailfishState {
                 id,
                 validator_config,
@@ -137,6 +141,8 @@ impl Sailfish {
             self.state.id,
             self.internal_event_stream.0.clone(),
             self.internal_event_stream.1.clone(),
+            self.external_event_stream.0.clone(),
+            self.external_event_stream.1.clone(),
         );
 
         external_network
@@ -146,8 +152,11 @@ impl Sailfish {
 
         external_network.spawn_network_task();
 
-        let internal_network =
-            InternalNetwork::new(self.state.id, self.internal_event_stream.0.clone());
+        let internal_network = InternalNetwork::new(
+            self.state.id,
+            self.internal_event_stream.0.clone(),
+            self.external_event_stream.0.clone(),
+        );
         internal_network.spawn_network_task(self.internal_event_stream.1.clone());
 
         info!("Network is ready.");

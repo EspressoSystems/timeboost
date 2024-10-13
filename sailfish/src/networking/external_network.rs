@@ -1,22 +1,31 @@
 use crate::{types::message::SailfishEvent, utils::network::broadcast_event};
 use anyhow::Result;
 use async_broadcast::{Receiver, Sender};
-use hotshot::{
-    traits::{implementations::Libp2pNetwork, NetworkError},
-    types::BLSPubKey,
-};
+use hotshot::{traits::implementations::Libp2pNetwork, types::BLSPubKey};
 use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+/// Represents the external network interface for Sailfish nodes.
+/// This struct manages communication between the local node and the wider network.
 pub struct ExternalNetwork {
+    /// Unique identifier for this node.
     id: u64,
+    /// The underlying libp2p network implementation.
     network: Libp2pNetwork<BLSPubKey>,
+    /// Sender for events that need to be processed internally by the node.
     internal_event_sender: Sender<Arc<SailfishEvent>>,
 
+    /// Receiver for internal events. Currently unused.
     #[allow(dead_code)]
     internal_event_receiver: Receiver<Arc<SailfishEvent>>,
+
+    /// Sender for events that need to be broadcast to the external network. Currently unused.
+    #[allow(dead_code)]
+    external_event_sender: Sender<Arc<SailfishEvent>>,
+    /// Receiver for events that need to be broadcast to the external network.
+    external_event_receiver: Receiver<Arc<SailfishEvent>>,
 }
 
 impl ExternalNetwork {
@@ -25,12 +34,16 @@ impl ExternalNetwork {
         id: u64,
         internal_event_sender: Sender<Arc<SailfishEvent>>,
         internal_event_receiver: Receiver<Arc<SailfishEvent>>,
+        external_event_sender: Sender<Arc<SailfishEvent>>,
+        external_event_receiver: Receiver<Arc<SailfishEvent>>,
     ) -> Self {
         Self {
             id,
             network,
             internal_event_sender,
             internal_event_receiver,
+            external_event_sender,
+            external_event_receiver,
         }
     }
 
@@ -55,27 +68,51 @@ impl ExternalNetwork {
         Ok(())
     }
 
-    pub fn spawn_network_task(self) -> JoinHandle<()> {
+    pub fn spawn_network_task(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     msg = self.network.recv_message() => {
-                        self.handle_incoming_message(msg).await;
+                        let message = match msg {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                warn!("Failed to deserialize network message; error = {e:#}");
+                                continue;
+                            }
+                        };
+                        self.handle_incoming_message(message).await;
+                    }
+                    msg = self.external_event_receiver.recv() => {
+                        // First, verify that the message is validly received.
+                        let msg = match msg {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                warn!("Failed to receive event; error = {e:#}");
+                                continue;
+                            }
+                        };
+
+                        // Then, serialize the message.
+                        let serialized_msg = match bincode::serialize(&msg) {
+                            Ok(serialized_msg) => serialized_msg,
+                            Err(e) => {
+                                warn!("Failed to serialize SailfishEvent; error = {e:#}");
+                                continue;
+                            }
+                        };
+
+                        // TODO: Verify that the message is supposed to be sent to the network.
+                        // this can be accomplished by some type of specification on the SailfishEvent.
+
+                        // Finally, broadcast the message to the other nodes in the network.
+                        self.network.broadcast_message(serialized_msg, Topic::Global, BroadcastDelay::None).await.unwrap();
                     }
                 }
             }
         })
     }
 
-    async fn handle_incoming_message(&self, msg: Result<Vec<u8>, NetworkError>) {
-        let message = match msg {
-            Ok(msg) => msg,
-            Err(e) => {
-                warn!("Failed to deserialize network message; error = {e:#}");
-                return;
-            }
-        };
-
+    async fn handle_incoming_message(&self, message: Vec<u8>) {
         let event: SailfishEvent = match bincode::deserialize(&message) {
             Ok(event) => event,
             Err(e) => {
@@ -95,13 +132,6 @@ impl ExternalNetwork {
             SailfishEvent::Shutdown => {
                 info!("Received shutdown event, shutting down");
                 // TODO: Propagate shutdown signal.
-            }
-            SailfishEvent::DummySend(sender_id) => {
-                broadcast_event(
-                    Arc::new(SailfishEvent::DummyRecv(sender_id)),
-                    &self.internal_event_sender,
-                )
-                .await;
             }
             _ => {
                 broadcast_event(Arc::new(event), &self.internal_event_sender).await;
