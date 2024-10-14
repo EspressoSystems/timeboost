@@ -133,6 +133,13 @@ impl ExternalNetwork {
                 info!("Received shutdown event, shutting down");
                 // TODO: Propagate shutdown signal.
             }
+            SailfishEvent::DummySend(sender_node_id) => {
+                broadcast_event(
+                    Arc::new(SailfishEvent::DummyRecv(sender_node_id)),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
             _ => {
                 broadcast_event(Arc::new(event), &self.internal_event_sender).await;
             }
