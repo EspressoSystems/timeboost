@@ -5,7 +5,7 @@ use hotshot::{traits::implementations::Libp2pNetwork, types::BLSPubKey};
 use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 /// Represents the external network interface for Sailfish nodes.
 /// This struct manages communication between the local node and the wider network.
@@ -47,27 +47,22 @@ impl ExternalNetwork {
         }
     }
 
+    #[instrument(
+        skip_all,
+        target = "initialize",
+        fields(id = self.id)
+    )]
     pub async fn initialize(&self) -> Result<()> {
         info!("Waiting for network to be ready");
         self.network.wait_for_ready().await;
-
-        debug!(
-            "Sending dummy event to network {}",
-            SailfishEvent::DummySend(self.id)
-        );
-
-        // Kickstart the network with a dummy send event
-        self.network
-            .broadcast_message(
-                bincode::serialize(&SailfishEvent::DummySend(self.id))?,
-                Topic::Global,
-                BroadcastDelay::None,
-            )
-            .await?;
-
         Ok(())
     }
 
+    #[instrument(
+        skip_all,
+        target = "network",
+        fields(id = self.id)
+    )]
     pub fn spawn_network_task(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
@@ -112,6 +107,11 @@ impl ExternalNetwork {
         })
     }
 
+    #[instrument(
+        skip_all,
+        target = "network",
+        fields(id = self.id)
+    )]
     async fn handle_incoming_message(&self, message: Vec<u8>) {
         let event: SailfishEvent = match bincode::deserialize(&message) {
             Ok(event) => event,

@@ -2,9 +2,6 @@
     "rust-analyzer.cargo.extraEnv": {
         "RUSTFLAGS": "--cfg async_executor_impl=\"tokio\" --cfg async_channel_impl=\"tokio\""
     },
-    // "rust-analyzer.checkOnSave": false,
-    // "rust-analyzer.check.workspace": false,
-    // "rust-analyzer.cargo.allTargets": false,
     "rust-analyzer.showUnlinkedFileNotification": false,
     "rust-analyzer.diagnostics.disabled": [
         "unresolved-proc-macro"

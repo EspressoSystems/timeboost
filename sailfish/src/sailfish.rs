@@ -2,6 +2,7 @@ use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
+    utils::network::broadcast_event,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -33,7 +34,7 @@ use std::{
     num::NonZeroUsize,
     sync::Arc,
 };
-use tracing::info;
+use tracing::{info, instrument};
 
 pub struct Sailfish {
     /// The public key of the sailfish node.
@@ -98,6 +99,11 @@ impl Sailfish {
     ///
     /// # Panics
     /// - If the port cast fails.
+    #[instrument(
+        skip_all,
+        target = "initialize_networking",
+        fields(id = self.state.id)
+    )]
     pub async fn initialize_networking(
         &self,
         config: NetworkNodeConfig<BLSPubKey>,
@@ -162,13 +168,31 @@ impl Sailfish {
         info!("Network is ready.");
     }
 
+    #[instrument(
+        skip_all,
+        target = "run_tasks",
+        fields(id = self.state.id)
+    )]
     async fn run_tasks(&mut self) {
         info!("Starting background tasks for Sailfish");
     }
 
+    #[instrument(
+        skip_all,
+        target = "run",
+        fields(id = self.state.id)
+    )]
     pub async fn run(&mut self) {
         tracing::info!("Starting Sailfish Node {}", self.state.id);
         self.run_tasks().await;
+
+        // Kickstart the network with a dummy send event.
+        // TODO: This is not required later when we have actual consensus messages.
+        broadcast_event(
+            Arc::new(SailfishEvent::DummySend(self.state.id)),
+            &self.external_event_stream.0,
+        )
+        .await;
     }
 }
 

@@ -4,7 +4,7 @@ use hotshot::{
 };
 use sailfish::types::message::SailfishEvent;
 use sailfish::utils::network::broadcast_event;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -21,19 +21,23 @@ async fn test_simple_network_startup_message() {
     let mut handles: Vec<JoinHandle<()>> = vec![];
 
     // Get the event streams of each node
-    let mut event_receivers = nodes
+    let event_receivers = nodes
         .nodes
         .iter()
         .map(|node| (node.state.id, node.internal_event_stream.clone()))
         .collect::<Vec<_>>();
 
+    // This barrier ensures that all nodes are ready to receive events before we start the event loop.
+    let barrier = Arc::new(tokio::sync::Barrier::new(num_nodes));
     for mut node in nodes.nodes.into_iter() {
         let bootstrap_nodes = Arc::clone(&nodes.bootstrap_nodes);
         let staked_nodes = Arc::clone(&nodes.staked_nodes);
+        let barrier = Arc::clone(&barrier);
 
         let handle = tokio::spawn(async move {
             let libp2p_keypair = derive_libp2p_keypair::<BLSPubKey>(&node.private_key)
                 .expect("failed to derive libp2p keypair");
+
             let network_config = NetworkNodeConfigBuilder::default()
                 .keypair(libp2p_keypair)
                 .replication_factor(replication_factor)
@@ -46,30 +50,42 @@ async fn test_simple_network_startup_message() {
             node.initialize_networking(network_config, bootstrap_nodes, (*staked_nodes).clone())
                 .await;
 
+            barrier.wait().await;
+
             node.run().await;
         });
 
         handles.push(handle);
     }
 
-    // Wait for all nodes to be ready
-    tokio::time::sleep(Duration::from_secs(8)).await;
+    // Wait for all networks to be ready.
+    futures::future::join_all(handles.into_iter()).await;
 
-    // Check that the dummy event was received by all nodes
-    let mut received_events = std::collections::HashMap::new();
-    for (id, event_receiver) in event_receivers.iter_mut() {
-        tracing::info!("Receiving events for node {}", id);
-        let mut events = Vec::new();
-        loop {
-            match timeout(Duration::from_secs(1), event_receiver.1.recv()).await {
-                Ok(Ok(event)) => {
-                    events.push(event);
+    // Receive events from all nodes
+    let mut receive_handles = Vec::new();
+    for (id, mut event_receiver) in event_receivers.iter().cloned() {
+        let handle = tokio::spawn(async move {
+            tracing::info!("Receiving events for node {}", id);
+            let mut events = Vec::<Arc<SailfishEvent>>::new();
+            loop {
+                match timeout(Duration::from_millis(250), event_receiver.1.recv()).await {
+                    Ok(Ok(event)) => {
+                        tracing::info!("Node {} received event: {}", id, event);
+                        events.push(event);
+                    }
+                    Ok(Err(_)) | Err(_) => break,
                 }
-                Ok(Err(_)) => break,
-                Err(_) => break,
             }
-        }
-        received_events.insert(*id, events);
+            (id, events)
+        });
+        receive_handles.push(handle);
+    }
+
+    // Resolve the tokio join handles
+    let mut received_events = HashMap::new();
+    for handle in receive_handles {
+        let (id, events) = handle.await.expect("Task failed");
+        received_events.insert(id, events);
     }
 
     // Assert that each node received a dummy event from every other node, so for 5 nodes, we should
@@ -104,9 +120,5 @@ async fn test_simple_network_startup_message() {
     // Send the shutdown event to all nodes
     for (_, event_stream) in event_receivers {
         broadcast_event(Arc::new(SailfishEvent::Shutdown), &event_stream.0).await;
-    }
-
-    for handle in handles {
-        handle.await.expect("Task failed");
     }
 }
