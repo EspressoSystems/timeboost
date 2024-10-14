@@ -12,7 +12,7 @@ pub trait Task: Send + Sync + 'static {
     where
         Self: Sized;
 
-    /// Handle an event.  If this returns `SHOULD_SHUTDOWN`, the task will shut down.
+    /// Handle an event. If this returns `true`, the task will shut down.
     async fn handle_event(
         &mut self,
         _event: Arc<SailfishEvent>,

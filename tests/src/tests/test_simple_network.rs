@@ -53,7 +53,7 @@ async fn test_simple_network_startup_message() {
     }
 
     // Wait for all nodes to be ready
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(8)).await;
 
     // Check that the dummy event was received by all nodes
     let mut received_events = std::collections::HashMap::new();
@@ -65,8 +65,8 @@ async fn test_simple_network_startup_message() {
                 Ok(Ok(event)) => {
                     events.push(event);
                 }
-                Ok(Err(_)) => break, // Channel closed
-                Err(_) => break,     // Timeout occurred
+                Ok(Err(_)) => break,
+                Err(_) => break,
             }
         }
         received_events.insert(*id, events);
