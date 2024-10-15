@@ -11,7 +11,7 @@ use tokio::time::timeout;
 
 use crate::init_nodes;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_startup_message() {
     let num_nodes: usize = 5;
     let nodes = init_nodes(num_nodes);

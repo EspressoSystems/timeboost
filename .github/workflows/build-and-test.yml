@@ -32,7 +32,7 @@ jobs:
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Run tests
-      run: just test
+      run: RUST_LOG=sailfish=debug,tests=debug just test
   lint:
     runs-on: ubuntu-latest
     steps:
