@@ -123,11 +123,6 @@ impl ExternalNetwork {
 
         debug!("Node {} received message from network: {}", self.id, event);
 
-        if event == SailfishEvent::Shutdown {
-            info!("Received shutdown event, shutting down");
-            return;
-        }
-
         match event {
             SailfishEvent::Shutdown => {
                 info!("Received shutdown event, shutting down");

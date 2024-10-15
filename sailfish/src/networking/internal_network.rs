@@ -96,7 +96,7 @@ impl InternalNetwork {
             self.id, event
         );
 
-        // TODO: This is a potential bottleneck as a single lagging node
+        // TODO: This is a potential bottleneck as a single lagging task
         // can cause all events to be delayed. This will be alleviated when
         // we move to a model where each node runs in a background task.
         for task in &mut self.tasks {
