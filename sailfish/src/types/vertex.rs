@@ -1,10 +1,14 @@
 use std::fmt::Display;
 
-use hotshot::types::BLSPubKey;
+use committable::Committable;
+use hotshot::types::{BLSPubKey, SignatureKey};
 use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
-use super::block::Block;
+use super::{
+    block::Block,
+    certificate::{NoVoteCertificate, SailfishCertificate, TimeoutCertificate},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vertex {
@@ -17,16 +21,42 @@ pub struct Vertex {
     /// The block of transactions being transmitted
     block: Block,
 
-    /// The at-least `2f + 1` vertices from round `r - 1`.
-    strong_edges: u64,
+    /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
+    parents: Vec<SailfishCertificate<Block>>,
 
-    /// The up-to `f` vertices from round < `r - 1` such that there is no path
-    /// from `v` to these vertices.
-    weak_edges: u64,
+    /// The aggregate certificate of the vertex
+    certificate: SailfishCertificate<Block>,
+
+    /// The signature over the commitment to the vertex.
+    signature: <BLSPubKey as SignatureKey>::PureAssembledSignatureType,
+
+    /// The no-vote certificate for `v.round - 1`.
+    pub no_vote_certificate: Option<NoVoteCertificate>,
+
+    /// The timeout certificate for `v.round - 1`.
+    pub timeout_certificate: Option<TimeoutCertificate>,
 }
 
 impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Vertex(round: {}, source: {})", self.round, self.source)
+    }
+}
+
+impl Committable for Vertex {
+    fn commit(&self) -> committable::Commitment<Self> {
+        committable::RawCommitmentBuilder::new("Vertex")
+            .field("round", self.round.commit())
+            .constant_str("source")
+            .var_size_bytes(&self.source.to_bytes())
+            .field("block", self.block.commit())
+            .array_field(
+                "parents",
+                &self.parents.iter().map(|p| p.commit()).collect::<Vec<_>>(),
+            )
+            .field("certificate", self.certificate.commit())
+            .optional("no_vote_certificate", &self.no_vote_certificate)
+            .optional("timeout_certificate", &self.timeout_certificate)
+            .finalize()
     }
 }

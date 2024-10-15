@@ -1,21 +1,11 @@
-use crate::types::certificate::{NoVoteCertificate, TimeoutCertificate};
-use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::data::ViewNumber;
+use committable::Committable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BlockHeader {
-    pub author: BLSPubKey,
+pub struct BlockHeader {}
 
-    /// The round number of the block.
-    pub round: ViewNumber,
-
-    /// The signature of the block.
-    pub signature: <BLSPubKey as SignatureKey>::QcType,
-
-    /// The no-vote certificate for `v.round - 1`.
-    pub no_vote_certificate: Option<NoVoteCertificate>,
-
-    /// The timeout certificate for `v.round - 1`.
-    pub timeout_certificate: Option<TimeoutCertificate>,
+impl Committable for BlockHeader {
+    fn commit(&self) -> committable::Commitment<Self> {
+        committable::RawCommitmentBuilder::new("BlockHeader").finalize()
+    }
 }
