@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use hotshot::types::BLSPubKey;
 use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
@@ -21,4 +23,10 @@ pub struct Vertex {
     /// The up-to `f` vertices from round < `r - 1` such that there is no path
     /// from `v` to these vertices.
     weak_edges: u64,
+}
+
+impl Display for Vertex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Vertex(round: {}, source: {})", self.round, self.source)
+    }
 }

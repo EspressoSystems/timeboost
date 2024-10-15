@@ -1,52 +1,23 @@
-use async_lock::RwLock;
 use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use hotshot_types::{PeerConfig, ValidatorConfig};
-use libp2p_identity::PeerId;
-use libp2p_networking::reexport::Multiaddr;
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 
-use sailfish::{
-    logging,
-    sailfish::{generate_key_pair, Sailfish},
-};
+use crate::init_nodes;
 
-const SEED: [u8; 32] = [0u8; 32];
+#[tokio::test]
+async fn test_multi_node_init() {
+    let nodes = init_nodes(10);
 
-pub async fn init_nodes(num_nodes: u64) {
-    logging::init_logging();
-
-    let mut nodes = vec![];
-    for i in 0..num_nodes {
-        let validator_config = ValidatorConfig::generated_from_seed_indexed(SEED, i, 1, false);
-        let (private_key, public_key) = generate_key_pair(SEED, i);
-        let sailfish = Sailfish::new(public_key, private_key, i, validator_config);
-        nodes.push(sailfish);
-    }
-
-    let bootstrap_nodes: Vec<(PeerId, Multiaddr)> = nodes
-        .iter()
-        .map(|node| (node.peer_id.clone(), node.bind_address.clone()))
-        .collect();
-
-    let staked_nodes: Vec<PeerConfig<BLSPubKey>> = nodes
-        .iter()
-        .map(|node| node.state.validator_config.public_config())
-        .collect();
-
-    let replication_factor = NonZeroUsize::new(((2 * num_nodes) as usize).div_ceil(3)).unwrap();
-
-    let bootstrap_nodes = Arc::new(RwLock::new(bootstrap_nodes));
-    let staked_nodes = Arc::new(staked_nodes);
+    let replication_factor = NonZeroUsize::new(((2 * 10) as usize).div_ceil(3)).unwrap();
 
     let mut handles: Vec<JoinHandle<()>> = vec![];
 
-    for node in nodes.into_iter() {
-        let bootstrap_nodes = Arc::clone(&bootstrap_nodes);
-        let staked_nodes = Arc::clone(&staked_nodes);
+    for node in nodes.nodes.into_iter() {
+        let bootstrap_nodes = Arc::clone(&nodes.bootstrap_nodes);
+        let staked_nodes = Arc::clone(&nodes.staked_nodes);
 
         let handle = tokio::spawn(async move {
             let libp2p_keypair = derive_libp2p_keypair::<BLSPubKey>(&node.private_key)
@@ -70,9 +41,4 @@ pub async fn init_nodes(num_nodes: u64) {
     for handle in handles {
         handle.await.expect("Task failed");
     }
-}
-
-#[tokio::test]
-async fn test_multi_node_init() {
-    init_nodes(10).await;
 }

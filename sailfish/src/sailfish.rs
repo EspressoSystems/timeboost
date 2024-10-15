@@ -1,7 +1,8 @@
 use crate::{
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
-    tasks::network::NetworkTaskState,
+    networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
+    utils::network::broadcast_event,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -15,7 +16,6 @@ use hotshot::{
     },
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
-use hotshot_task::task::{Task, TaskState};
 use hotshot_types::{
     network::{Libp2pConfig, NetworkConfig},
     PeerConfig, ValidatorConfig,
@@ -34,8 +34,7 @@ use std::{
     num::NonZeroUsize,
     sync::Arc,
 };
-use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{info, instrument};
 
 pub struct Sailfish {
     /// The public key of the sailfish node.
@@ -51,13 +50,10 @@ pub struct Sailfish {
     pub bind_address: Multiaddr,
 
     /// The internal event stream of the sailfish node.
-    internal_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
+    pub internal_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
 
     /// The external event stream of the sailfish node.
-    external_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
-
-    /// The background tasks for the sailfish node.
-    background_tasks: Vec<JoinHandle<Box<dyn TaskState<Event = SailfishEvent>>>>,
+    pub external_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
 
     /// The state of the sailfish node.
     pub state: SailfishState,
@@ -92,7 +88,6 @@ impl Sailfish {
             bind_address,
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
             external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
-            background_tasks: Vec::new(),
             state: SailfishState {
                 id,
                 validator_config,
@@ -104,6 +99,11 @@ impl Sailfish {
     ///
     /// # Panics
     /// - If the port cast fails.
+    #[instrument(
+        skip_all,
+        target = "initialize_networking",
+        fields(id = self.state.id)
+    )]
     pub async fn initialize_networking(
         &self,
         config: NetworkNodeConfig<BLSPubKey>,
@@ -115,6 +115,8 @@ impl Sailfish {
         network_config.libp2p_config = Some(Libp2pConfig {
             bootstrap_nodes: bootstrap_nodes.read().await.clone(),
         });
+
+        // We don't have any DA nodes in Sailfish.
         network_config.config.known_da_nodes = vec![];
 
         let libp2p_keypair = derive_libp2p_keypair::<BLSPubKey>(&self.private_key)
@@ -140,29 +142,57 @@ impl Sailfish {
         .await
         .expect("failed to initialize libp2p network");
 
-        info!("Waiting for network to be ready");
-        network.wait_for_ready().await;
-
-        info!("Network is ready, starting consensus");
-    }
-
-    async fn run_tasks(&mut self) {
-        info!("Starting background tasks for Sailfish");
-        let network_handle = Task::new(
-            NetworkTaskState::new(
-                self.internal_event_stream.0.clone(),
-                self.internal_event_stream.1.clone(),
-            ),
+        let external_network = ExternalNetwork::new(
+            network,
+            self.state.id,
             self.internal_event_stream.0.clone(),
             self.internal_event_stream.1.clone(),
+            self.external_event_stream.0.clone(),
+            self.external_event_stream.1.clone(),
         );
 
-        self.background_tasks.push(network_handle.run());
+        external_network
+            .initialize()
+            .await
+            .expect("failed to initialize external network");
+
+        external_network.spawn_network_task();
+
+        let internal_network = InternalNetwork::new(
+            self.state.id,
+            self.internal_event_stream.0.clone(),
+            self.external_event_stream.0.clone(),
+        );
+        internal_network.spawn_network_task(self.internal_event_stream.1.clone());
+
+        info!("Network is ready.");
     }
 
+    #[instrument(
+        skip_all,
+        target = "run_tasks",
+        fields(id = self.state.id)
+    )]
+    async fn run_tasks(&mut self) {
+        info!("Starting background tasks for Sailfish");
+    }
+
+    #[instrument(
+        skip_all,
+        target = "run",
+        fields(id = self.state.id)
+    )]
     pub async fn run(&mut self) {
         tracing::info!("Starting Sailfish Node {}", self.state.id);
         self.run_tasks().await;
+
+        // Kickstart the network with a dummy send event.
+        // TODO: This is not required later when we have actual consensus messages.
+        broadcast_event(
+            SailfishEvent::DummySend(self.state.id),
+            &self.external_event_stream.0,
+        )
+        .await;
     }
 }
 

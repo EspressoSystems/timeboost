@@ -14,3 +14,5 @@ sailfish = { path = "../sailfish" }
 libp2p-networking = { workspace = true }
 libp2p-identity = { workspace = true }
 hotshot = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }

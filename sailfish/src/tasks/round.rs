@@ -1,77 +1,74 @@
+use anyhow::Result;
 use std::{collections::HashMap, sync::Arc};
 
+use async_lock::RwLock;
 use hotshot::types::{BLSPrivKey, BLSPubKey};
-use tokio::task::JoinHandle;
 
-use anyhow::Result;
-use async_broadcast::{Receiver, Sender};
+use async_broadcast::Sender;
 use async_trait::async_trait;
-use hotshot_task::task::TaskState;
-use hotshot_types::data::ViewNumber;
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
+use tracing::debug;
 
-use crate::types::message::SailfishEvent;
+use crate::{tasks::Task, types::message::SailfishEvent};
 
 pub struct RoundTaskHandle {
     /// Our public key
+    #[allow(dead_code)]
     public_key: BLSPubKey,
 
     /// Our private key
+    #[allow(dead_code)]
     private_key: BLSPrivKey,
-
-    /// The background round task.
-    handle: JoinHandle<()>,
 }
 
-impl RoundTaskHandle {
-    pub fn shutdown(self) {
-        self.handle.abort();
-    }
-}
+impl RoundTaskHandle {}
 
 pub struct RoundTaskState {
     /// The current round number.
+    #[allow(dead_code)]
     round: ViewNumber,
 
     /// The background round tasks.
-    pub tasks: HashMap<ViewNumber, RoundTaskHandle>,
+    pub tasks: HashMap<ViewNumber, Arc<RwLock<Box<dyn Task>>>>,
+
+    /// The external event sender.
+    #[allow(dead_code)]
+    external_sender: Sender<SailfishEvent>,
 }
 
 impl RoundTaskState {
-    pub fn new(round: ViewNumber) -> Self {
+    pub fn new(round: ViewNumber, external_sender: Sender<SailfishEvent>) -> Self {
         Self {
             round,
             tasks: HashMap::new(),
+            external_sender,
         }
     }
 
-    pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
-        match event.as_ref() {
-            SailfishEvent::Vertex(vertex) => todo!(),
-            SailfishEvent::Timeout(timeout) => todo!(),
-            SailfishEvent::NoVote(no_vote) => todo!(),
-            SailfishEvent::Shutdown => todo!(),
-        }
+    pub async fn handle(&mut self, event: SailfishEvent) {
+        debug!("{}", event);
     }
 }
 
 #[async_trait]
-impl TaskState for RoundTaskState {
-    type Event = SailfishEvent;
-
-    async fn handle_event(
-        &mut self,
-        event: Arc<Self::Event>,
-        sender: &Sender<Arc<Self::Event>>,
-        receiver: &Receiver<Arc<Self::Event>>,
-    ) -> Result<()> {
-        self.handle(event).await;
-
-        Ok(())
+impl Task for RoundTaskState {
+    fn new(external_sender: Sender<SailfishEvent>) -> Self {
+        Self {
+            round: ViewNumber::genesis(),
+            tasks: HashMap::new(),
+            external_sender,
+        }
     }
 
-    async fn cancel_subtasks(&mut self) {
-        for handle in self.tasks.drain().map(|(_round, handle)| handle) {
-            handle.shutdown();
-        }
+    fn name(&self) -> &str {
+        "RoundTask"
+    }
+
+    fn make_identifier(&self, identifier: &str) -> String {
+        format!("{}::{}", self.name(), identifier)
+    }
+
+    async fn handle_event(&mut self, _event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
     }
 }

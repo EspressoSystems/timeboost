@@ -31,7 +31,6 @@ async-broadcast = "0.7"
 tracing = "0.1"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
-serde_bytes = { version = "0.11" }
 serde_json = { version = "1.0" }
 jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
@@ -61,3 +60,4 @@ tracing-subscriber = "0.3.18"
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 async-lock = "2"
 toml = "0.8.19"
+futures = { version = "0.3", default-features = false }
