@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::{collections::HashMap, sync::Arc};
 
 use async_lock::RwLock;
@@ -65,5 +66,9 @@ impl Task for RoundTaskState {
 
     fn make_identifier(&self, identifier: &str) -> String {
         format!("{}::{}", self.name(), identifier)
+    }
+
+    async fn handle_event(&mut self, _event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
     }
 }

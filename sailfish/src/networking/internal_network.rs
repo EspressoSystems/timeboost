@@ -2,9 +2,9 @@ use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
-use crate::{tasks::Task, types::message::SailfishEvent};
+use crate::{tasks::Task, types::message::SailfishEvent, utils::network::broadcast_event};
 
 pub struct InternalNetwork {
     /// The ID of the node.
@@ -78,6 +78,7 @@ impl InternalNetwork {
     ///
     /// This method iterates through all tasks and calls their `handle_event` method
     /// with the received event. It also handles task shutdown requests and errors.
+    /// When a task returns new events, they are broadcast to all other nodes.
     ///
     /// # Arguments
     ///
@@ -98,14 +99,12 @@ impl InternalNetwork {
         // we move to a model where each node runs in a background task.
         for task in &mut self.tasks {
             let mut task = task.write().await;
-            match task
-                .handle_event(event.clone(), external_sender.clone())
-                .await
-            {
-                Ok(should_shutdown) => {
-                    if should_shutdown {
-                        info!("Task {} returned shutdown, shutting down", task.name());
-                        return;
+            match task.handle_event(event.clone()).await {
+                Ok(events) => {
+                    // TODO: This is a bottleneck since broadcast_event, while quick, can
+                    // add up in a serial operation. This will be addresed later.
+                    for event in events {
+                        broadcast_event(event, &external_sender).await;
                     }
                 }
                 Err(e) => {

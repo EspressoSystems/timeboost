@@ -11,21 +11,8 @@ pub trait Task: Send + Sync + 'static {
     where
         Self: Sized;
 
-    /// Handle an event. If this returns `true`, the task will shut down.
-    async fn handle_event(
-        &mut self,
-        event: SailfishEvent,
-        _external_sender: Sender<SailfishEvent>,
-    ) -> Result<bool> {
-        match event {
-            SailfishEvent::Shutdown => Ok(true),
-            SailfishEvent::DummySend(_) => Ok(false),
-            SailfishEvent::DummyRecv(_) => Ok(false),
-            SailfishEvent::Vertex(_vertex) => Ok(false),
-            SailfishEvent::Timeout(_timeout_certificate) => Ok(false),
-            SailfishEvent::NoVote(_no_vote_certificate) => Ok(false),
-        }
-    }
+    /// Handle a [`SailfishEvent`] and return any new events to be broadcast in the event loop.
+    async fn handle_event(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>>;
 
     /// Trivial getter for the name of the task.
     fn name(&self) -> &str;
