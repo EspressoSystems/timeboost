@@ -12,9 +12,17 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install Just
       run: |
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
@@ -22,17 +30,30 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Build
       run: just build
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: binary
+        path: target/tokio/release/sailfish
+
   test:
+    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: taiki-e/install-action@nextest
+    - uses: actions/download-artifact@v3
+      with:
+        name: binary
+        path: target/release/
     - name: Install Just
       run: |
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Run tests
-      run: RUST_LOG=sailfish=debug,tests=debug just test
+      run: just test-ci
+
   lint:
     runs-on: ubuntu-latest
     steps:

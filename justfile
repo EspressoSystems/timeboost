@@ -13,7 +13,10 @@ build_release:
   cargo build --release
 
 test *ARGS:
-  cargo test -- --test-threads 1 --nocapture {{ARGS}}
+  cargo nextest -- --test-threads 1 --nocapture {{ARGS}}
+
+test-ci *ARGS:
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --test-threads 1 {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}
