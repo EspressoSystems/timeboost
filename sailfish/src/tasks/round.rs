@@ -32,11 +32,11 @@ pub struct RoundTaskState {
 
     /// The external event sender.
     #[allow(dead_code)]
-    external_sender: Sender<Arc<SailfishEvent>>,
+    external_sender: Sender<SailfishEvent>,
 }
 
 impl RoundTaskState {
-    pub fn new(round: ViewNumber, external_sender: Sender<Arc<SailfishEvent>>) -> Self {
+    pub fn new(round: ViewNumber, external_sender: Sender<SailfishEvent>) -> Self {
         Self {
             round,
             tasks: HashMap::new(),
@@ -44,14 +44,14 @@ impl RoundTaskState {
         }
     }
 
-    pub async fn handle(&mut self, event: Arc<SailfishEvent>) {
+    pub async fn handle(&mut self, event: SailfishEvent) {
         debug!("{}", event);
     }
 }
 
 #[async_trait]
 impl Task for RoundTaskState {
-    fn new(external_sender: Sender<Arc<SailfishEvent>>) -> Self {
+    fn new(external_sender: Sender<SailfishEvent>) -> Self {
         Self {
             round: ViewNumber::genesis(),
             tasks: HashMap::new(),

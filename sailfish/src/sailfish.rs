@@ -50,10 +50,10 @@ pub struct Sailfish {
     pub bind_address: Multiaddr,
 
     /// The internal event stream of the sailfish node.
-    pub internal_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
+    pub internal_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
 
     /// The external event stream of the sailfish node.
-    pub external_event_stream: (Sender<Arc<SailfishEvent>>, Receiver<Arc<SailfishEvent>>),
+    pub external_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
 
     /// The state of the sailfish node.
     pub state: SailfishState,
@@ -189,7 +189,7 @@ impl Sailfish {
         // Kickstart the network with a dummy send event.
         // TODO: This is not required later when we have actual consensus messages.
         broadcast_event(
-            Arc::new(SailfishEvent::DummySend(self.state.id)),
+            SailfishEvent::DummySend(self.state.id),
             &self.external_event_stream.0,
         )
         .await;

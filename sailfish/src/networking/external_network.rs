@@ -3,7 +3,6 @@ use anyhow::Result;
 use async_broadcast::{Receiver, Sender};
 use hotshot::{traits::implementations::Libp2pNetwork, types::BLSPubKey};
 use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, instrument, warn};
 
@@ -15,27 +14,27 @@ pub struct ExternalNetwork {
     /// The underlying libp2p network implementation.
     network: Libp2pNetwork<BLSPubKey>,
     /// Sender for events that need to be processed internally by the node.
-    internal_event_sender: Sender<Arc<SailfishEvent>>,
+    internal_event_sender: Sender<SailfishEvent>,
 
     /// Receiver for internal events. Currently unused.
     #[allow(dead_code)]
-    internal_event_receiver: Receiver<Arc<SailfishEvent>>,
+    internal_event_receiver: Receiver<SailfishEvent>,
 
     /// Sender for events that need to be broadcast to the external network. Currently unused.
     #[allow(dead_code)]
-    external_event_sender: Sender<Arc<SailfishEvent>>,
+    external_event_sender: Sender<SailfishEvent>,
     /// Receiver for events that need to be broadcast to the external network.
-    external_event_receiver: Receiver<Arc<SailfishEvent>>,
+    external_event_receiver: Receiver<SailfishEvent>,
 }
 
 impl ExternalNetwork {
     pub fn new(
         network: Libp2pNetwork<BLSPubKey>,
         id: u64,
-        internal_event_sender: Sender<Arc<SailfishEvent>>,
-        internal_event_receiver: Receiver<Arc<SailfishEvent>>,
-        external_event_sender: Sender<Arc<SailfishEvent>>,
-        external_event_receiver: Receiver<Arc<SailfishEvent>>,
+        internal_event_sender: Sender<SailfishEvent>,
+        internal_event_receiver: Receiver<SailfishEvent>,
+        external_event_sender: Sender<SailfishEvent>,
+        external_event_receiver: Receiver<SailfishEvent>,
     ) -> Self {
         Self {
             id,
@@ -130,13 +129,13 @@ impl ExternalNetwork {
             }
             SailfishEvent::DummySend(sender_node_id) => {
                 broadcast_event(
-                    Arc::new(SailfishEvent::DummyRecv(sender_node_id)),
+                    SailfishEvent::DummyRecv(sender_node_id),
                     &self.internal_event_sender,
                 )
                 .await;
             }
             _ => {
-                broadcast_event(Arc::new(event), &self.internal_event_sender).await;
+                broadcast_event(event, &self.internal_event_sender).await;
             }
         }
     }

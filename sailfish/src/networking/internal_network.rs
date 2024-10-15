@@ -12,10 +12,10 @@ pub struct InternalNetwork {
 
     /// The internal sender is responsible for sending messages inside of the node.
     #[allow(dead_code)]
-    internal_sender: Sender<Arc<SailfishEvent>>,
+    internal_sender: Sender<SailfishEvent>,
 
     /// The external sender is responsible for sending messages outside of the node.
-    external_sender: Sender<Arc<SailfishEvent>>,
+    external_sender: Sender<SailfishEvent>,
 
     /// The tasks that the node is responsible for.
     tasks: Vec<Arc<RwLock<Box<dyn Task>>>>,
@@ -35,8 +35,8 @@ impl InternalNetwork {
     /// A new `InternalNetwork` instance.
     pub fn new(
         id: u64,
-        internal_sender: Sender<Arc<SailfishEvent>>,
-        external_sender: Sender<Arc<SailfishEvent>>,
+        internal_sender: Sender<SailfishEvent>,
+        external_sender: Sender<SailfishEvent>,
     ) -> Self {
         Self {
             id,
@@ -58,10 +58,7 @@ impl InternalNetwork {
     /// # Returns
     ///
     /// A `JoinHandle` for the spawned task.
-    pub fn spawn_network_task(
-        mut self,
-        mut receiver: Receiver<Arc<SailfishEvent>>,
-    ) -> JoinHandle<()> {
+    pub fn spawn_network_task(mut self, mut receiver: Receiver<SailfishEvent>) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 match receiver.recv().await {
@@ -88,8 +85,8 @@ impl InternalNetwork {
     /// * `external_sender` - The sender for messages to be sent outside the node.
     async fn handle_message(
         &mut self,
-        event: Arc<SailfishEvent>,
-        external_sender: Sender<Arc<SailfishEvent>>,
+        event: SailfishEvent,
+        external_sender: Sender<SailfishEvent>,
     ) {
         debug!(
             "Node {} received event from internal event stream: {}",

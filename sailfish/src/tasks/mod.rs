@@ -2,45 +2,28 @@ use crate::types::message::SailfishEvent;
 use anyhow::Result;
 use async_broadcast::Sender;
 use async_trait::async_trait;
-use std::sync::Arc;
-use tracing::debug;
 
 pub mod round;
 
 #[async_trait]
 pub trait Task: Send + Sync + 'static {
-    fn new(external_sender: Sender<Arc<SailfishEvent>>) -> Self
+    fn new(external_sender: Sender<SailfishEvent>) -> Self
     where
         Self: Sized;
 
     /// Handle an event. If this returns `true`, the task will shut down.
     async fn handle_event(
         &mut self,
-        event: Arc<SailfishEvent>,
-        _external_sender: Sender<Arc<SailfishEvent>>,
+        event: SailfishEvent,
+        _external_sender: Sender<SailfishEvent>,
     ) -> Result<bool> {
-        match event.as_ref() {
+        match event {
             SailfishEvent::Shutdown => Ok(true),
-            SailfishEvent::DummySend(_) => {
-                debug!("{:?}", event);
-                Ok(false)
-            }
-            SailfishEvent::DummyRecv(_) => {
-                debug!("{:?}", event);
-                Ok(false)
-            }
-            SailfishEvent::Vertex(_vertex) => {
-                debug!("{:?}", event);
-                Ok(false)
-            }
-            SailfishEvent::Timeout(_timeout_certificate) => {
-                debug!("{:?}", event);
-                Ok(false)
-            }
-            SailfishEvent::NoVote(_no_vote_certificate) => {
-                debug!("{:?}", event);
-                Ok(false)
-            }
+            SailfishEvent::DummySend(_) => Ok(false),
+            SailfishEvent::DummyRecv(_) => Ok(false),
+            SailfishEvent::Vertex(_vertex) => Ok(false),
+            SailfishEvent::Timeout(_timeout_certificate) => Ok(false),
+            SailfishEvent::NoVote(_no_vote_certificate) => Ok(false),
         }
     }
 

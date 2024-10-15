@@ -66,7 +66,7 @@ async fn test_simple_network_startup_message() {
     for (id, mut event_receiver) in event_receivers.iter().cloned() {
         let handle = tokio::spawn(async move {
             tracing::info!("Receiving events for node {}", id);
-            let mut events = Vec::<Arc<SailfishEvent>>::new();
+            let mut events = Vec::<SailfishEvent>::new();
             loop {
                 match timeout(Duration::from_millis(250), event_receiver.1.recv()).await {
                     Ok(Ok(event)) => {
@@ -102,23 +102,20 @@ async fn test_simple_network_startup_message() {
             id
         );
         // Sort the events by sender ID
-        events.sort_by_key(|event| match event.as_ref() {
+        events.sort_by_key(|event| match event {
             SailfishEvent::DummyRecv(sender_id) => *sender_id,
             other => panic!("Unexpected event type received; event = {}", other),
         });
 
         // Now, unwrap the Arc to compare the events
         assert_eq!(
-            events
-                .into_iter()
-                .map(|e| e.as_ref().clone())
-                .collect::<Vec<_>>(),
+            events.into_iter().map(|e| e.clone()).collect::<Vec<_>>(),
             expected_events
         );
     }
 
     // Send the shutdown event to all nodes
     for (_, event_stream) in event_receivers {
-        broadcast_event(Arc::new(SailfishEvent::Shutdown), &event_stream.0).await;
+        broadcast_event(SailfishEvent::Shutdown, &event_stream.0).await;
     }
 }
