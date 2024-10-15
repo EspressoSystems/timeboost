@@ -1,3 +1,4 @@
+pub mod consensus;
 pub mod constants;
 pub mod impls;
 pub mod logging;

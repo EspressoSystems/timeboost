@@ -1,10 +1,8 @@
 use async_broadcast::{Receiver, Sender};
-use async_lock::RwLock;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
-use crate::{tasks::Task, types::message::SailfishEvent, utils::network::broadcast_event};
+use crate::types::message::SailfishEvent;
 
 pub struct InternalNetwork {
     /// The ID of the node.
@@ -16,9 +14,6 @@ pub struct InternalNetwork {
 
     /// The external sender is responsible for sending messages outside of the node.
     external_sender: Sender<SailfishEvent>,
-
-    /// The tasks that the node is responsible for.
-    tasks: Vec<Arc<RwLock<Box<dyn Task>>>>,
 }
 
 impl InternalNetwork {
@@ -42,7 +37,6 @@ impl InternalNetwork {
             id,
             internal_sender,
             external_sender,
-            tasks: Vec::new(),
         }
     }
 
@@ -87,34 +81,23 @@ impl InternalNetwork {
     async fn handle_message(
         &mut self,
         event: SailfishEvent,
-        external_sender: Sender<SailfishEvent>,
+        _external_sender: Sender<SailfishEvent>,
     ) {
         debug!(
             "Node {} received event from internal event stream: {}",
             self.id, event
         );
 
-        // TODO: This is a potential bottleneck as a single lagging task
-        // can cause all events to be delayed. This will be alleviated when
-        // we move to a model where each node runs in a background task.
-        for task in &mut self.tasks {
-            let mut task = task.write().await;
-            match task.handle_event(event.clone()).await {
-                Ok(events) => {
-                    // TODO: This is a bottleneck since broadcast_event, while quick, can
-                    // add up in a serial operation. This will be addresed later.
-                    for event in events {
-                        broadcast_event(event, &external_sender).await;
-                    }
-                }
-                Err(e) => {
-                    warn!("Task {} returned error; error = {e:#}", task.name());
-                }
-            }
-        }
-    }
+        // let events = match round_task(event) {
+        //     Ok(events) => events,
+        //     Err(e) => {
+        //         warn!("Task returned error; error = {e:#}");
+        //         return;
+        //     }
+        // };
 
-    pub fn register_task(&mut self, task: Arc<RwLock<Box<dyn Task>>>) {
-        self.tasks.push(task);
+        // for event in events {
+        //     broadcast_event(event, &external_sender).await;
+        // }
     }
 }
