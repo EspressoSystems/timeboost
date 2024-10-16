@@ -4,6 +4,9 @@ use tracing::{debug, warn};
 
 use crate::{consensus::Consensus, types::message::SailfishEvent, utils::network::broadcast_event};
 
+const SHOULD_SHUTDOWN: bool = true;
+const SHOULD_NOT_SHUTDOWN: bool = false;
+
 pub struct InternalNetwork {
     /// The ID of the node.
     id: u64,
@@ -61,7 +64,11 @@ impl InternalNetwork {
         tokio::spawn(async move {
             loop {
                 match receiver.recv().await {
-                    Ok(event) => self.handle_message(event).await,
+                    Ok(event) => {
+                        if self.handle_message(event).await {
+                            break;
+                        }
+                    }
                     Err(e) => {
                         warn!("Failed to receive event; error = {e:#}");
                     }
@@ -79,22 +86,28 @@ impl InternalNetwork {
     /// # Arguments
     ///
     /// * `event` - The `SailfishEvent` to be processed.
-    async fn handle_message(&mut self, event: SailfishEvent) {
+    async fn handle_message(&mut self, event: SailfishEvent) -> bool {
         debug!(
             "Node {} received event from internal event stream: {}",
             self.id, event
         );
 
+        if let SailfishEvent::Shutdown = event {
+            return SHOULD_SHUTDOWN;
+        }
+
         let events = match self.consensus.handle_event(event) {
             Ok(events) => events,
             Err(e) => {
                 warn!("Consensus returned error; error = {e:#}");
-                return;
+                return SHOULD_NOT_SHUTDOWN;
             }
         };
 
         for event in events {
             broadcast_event(event, &self.external_sender).await;
         }
+
+        SHOULD_NOT_SHUTDOWN
     }
 }

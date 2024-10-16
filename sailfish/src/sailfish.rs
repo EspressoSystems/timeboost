@@ -19,7 +19,6 @@ use hotshot::{
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
 use hotshot_types::{
-    data::ViewNumber,
     network::{Libp2pConfig, NetworkConfig},
     traits::{election::Membership, network::Topic, node_implementation::NodeType},
     PeerConfig, ValidatorConfig,
@@ -113,7 +112,6 @@ impl Sailfish {
         config: NetworkNodeConfig<BLSPubKey>,
         bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
         staked_nodes: Vec<PeerConfig<BLSPubKey>>,
-        gc_depth: ViewNumber,
     ) {
         let mut network_config = NetworkConfig::default();
         network_config.config.known_nodes_with_stake = staked_nodes.clone();
@@ -169,7 +167,7 @@ impl Sailfish {
             Topic::Global,
         );
 
-        let consensus = Consensus::new(quorum_membership, gc_depth);
+        let consensus = Consensus::new(quorum_membership);
 
         let internal_network = InternalNetwork::new(
             self.state.id,
@@ -224,7 +222,6 @@ pub async fn initialize_and_run_sailfish(
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<BLSPubKey>>,
     validator_config: ValidatorConfig<BLSPubKey>,
-    gc_depth: ViewNumber,
 ) {
     let seed = [0u8; 32];
 
@@ -263,7 +260,7 @@ pub async fn initialize_and_run_sailfish(
     ));
 
     sailfish
-        .initialize_networking(network_config, bootstrap_nodes, staked_nodes, gc_depth)
+        .initialize_networking(network_config, bootstrap_nodes, staked_nodes)
         .await;
 
     sailfish.run().await;

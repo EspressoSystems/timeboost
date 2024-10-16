@@ -1,23 +1,36 @@
 use crate::types::block_header::BlockHeader;
+use anyhow::{ensure, Result};
 use committable::Committable;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct Transaction(Vec<u8>);
+pub struct Transaction {
+    bytes: Vec<u8>,
+}
 
 impl Committable for Transaction {
     fn commit(&self) -> committable::Commitment<Self> {
         committable::RawCommitmentBuilder::new("Transaction")
             .constant_str("transaction")
-            .var_size_bytes(self.0.as_slice())
+            .var_size_bytes(self.bytes.as_slice())
             .finalize()
     }
 }
-impl Transaction {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self(data)
-    }
 
+impl TryFrom<Vec<u8>> for Transaction {
+    type Error = anyhow::Error;
+
+    fn try_from(data: Vec<u8>) -> Result<Self, Self::Error> {
+        ensure!(
+            data.len() <= u32::MAX as usize,
+            "Transaction data length exceeds u32::MAX"
+        );
+        Ok(Self { bytes: data })
+    }
+}
+
+impl Transaction {
     /// Encode a list of transactions into bytes.
     ///
     /// # Errors
@@ -26,18 +39,16 @@ impl Transaction {
         let mut encoded = Vec::new();
 
         for txn in transactions {
-            // The transaction length is converted from `usize` to `u32` to ensure consistent
-            // number of bytes on different platforms.
-            let txn_size = u32::try_from(txn.0.len())
-                .expect("Invalid transaction length")
-                .to_le_bytes();
-
             // Concatenate the bytes of the transaction size and the transaction itself.
-            encoded.extend(txn_size);
-            encoded.extend(&txn.0);
+            encoded.extend(txn.as_bytes().len().to_le_bytes());
+            encoded.extend(&txn.bytes);
         }
 
         encoded
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
     }
 }
 
@@ -51,7 +62,12 @@ impl Committable for Payload {
         committable::RawCommitmentBuilder::new("Payload")
             .field(
                 "transactions",
-                Transaction::new(Transaction::encode(&self.transactions)).commit(),
+                // This unwrap is safe because we know that the encoding of the transactions will
+                // never fail due to the above requirement that the transaction length is less than
+                // u32::MAX always.
+                Transaction::try_from(Transaction::encode(&self.transactions))
+                    .unwrap()
+                    .commit(),
             )
             .finalize()
     }

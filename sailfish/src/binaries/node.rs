@@ -1,6 +1,6 @@
 use clap::Parser;
 use hotshot::types::BLSPubKey;
-use hotshot_types::{data::ViewNumber, PeerConfig, ValidatorConfig};
+use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use sailfish::logging;
@@ -20,7 +20,6 @@ struct Config {
     validator_config: ValidatorConfig<BLSPubKey>,
     id: u64,
     network_size: usize,
-    gc_depth: ViewNumber,
 }
 
 #[tokio::main]
@@ -38,7 +37,6 @@ async fn main() {
         config.to_connect_addrs,
         config.staked_nodes,
         config.validator_config,
-        config.gc_depth,
     )
     .await;
 }

@@ -56,10 +56,6 @@ pub struct Consensus {
     /// The last committed round number.
     last_committed_round_number: ViewNumber,
 
-    /// The depth of the garbage collector.
-    #[allow(dead_code)]
-    gc_depth: ViewNumber,
-
     /// The map of certificates
     #[allow(dead_code)]
     vertex_certificates: BTreeMap<ViewNumber, Vertex>,
@@ -91,11 +87,10 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    pub fn new(quorum_membership: StaticCommittee<SailfishTypes>, gc_depth: ViewNumber) -> Self {
+    pub fn new(quorum_membership: StaticCommittee<SailfishTypes>) -> Self {
         Self {
             quorum_membership,
             last_committed_round_number: ViewNumber::genesis(),
-            gc_depth,
             vertex_certificates: BTreeMap::new(),
             dag: Dag::new(),
             vertex_accumulator_map: BTreeMap::new(),
