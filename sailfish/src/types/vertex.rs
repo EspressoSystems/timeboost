@@ -2,12 +2,14 @@ use std::fmt::Display;
 
 use committable::Committable;
 use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::data::ViewNumber;
+use hotshot_types::{data::ViewNumber, simple_certificate::QuorumCertificate};
 use serde::{Deserialize, Serialize};
+
+use crate::impls::sailfish_types::SailfishTypes;
 
 use super::{
     block::Block,
-    certificate::{NoVoteCertificate, SailfishCertificate, TimeoutCertificate},
+    certificate::{NoVoteCertificate, TimeoutCertificate},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,10 +24,7 @@ pub struct Vertex {
     block: Block,
 
     /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
-    parents: Vec<SailfishCertificate<Block>>,
-
-    /// The aggregate certificate of the vertex
-    certificate: SailfishCertificate<Block>,
+    parents: Vec<QuorumCertificate<SailfishTypes>>,
 
     /// The signature over the commitment to the vertex.
     signature: <BLSPubKey as SignatureKey>::PureAssembledSignatureType,
@@ -54,7 +53,6 @@ impl Committable for Vertex {
                 "parents",
                 &self.parents.iter().map(|p| p.commit()).collect::<Vec<_>>(),
             )
-            .field("certificate", self.certificate.commit())
             .optional("no_vote_certificate", &self.no_vote_certificate)
             .optional("timeout_certificate", &self.timeout_certificate)
             .finalize()

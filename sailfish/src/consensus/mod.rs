@@ -5,10 +5,7 @@ use hotshot::{
     traits::election::static_committee::StaticCommittee,
     types::{BLSPrivKey, BLSPubKey},
 };
-use hotshot_types::{
-    data::ViewNumber,
-    traits::{election::Membership, node_implementation::ConsensusTime},
-};
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use tracing::warn;
 
 use crate::{
@@ -36,28 +33,34 @@ pub struct TaskContext {
 /// The core consensus state.
 pub struct Consensus {
     /// The quorum membership.
+    #[allow(dead_code)]
     quorum_membership: StaticCommittee<SailfishTypes>,
 
     /// The last committed round number.
     last_committed_round_number: ViewNumber,
 
     /// The depth of the garbage collector.
+    #[allow(dead_code)]
     gc_depth: ViewNumber,
 
     /// The map of certificates
+    #[allow(dead_code)]
     vertex_certificates: BTreeMap<ViewNumber, Vertex>,
 }
 
 impl Consensus {
-    pub fn new() -> Self {
+    pub fn new(quorum_membership: StaticCommittee<SailfishTypes>, gc_depth: ViewNumber) -> Self {
         Self {
+            quorum_membership,
             last_committed_round_number: ViewNumber::genesis(),
+            gc_depth,
+            vertex_certificates: BTreeMap::new(),
         }
     }
 
     pub fn handle_event(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
         // Skip all send events. Those are not for us.
-        if !matches!(
+        if matches!(
             event,
             SailfishEvent::DummySend(_)
                 | SailfishEvent::VertexSend(_)
