@@ -8,7 +8,6 @@ use hotshot::{
 use hotshot_types::{
     data::ViewNumber, traits::node_implementation::ConsensusTime, vote::VoteAccumulator,
 };
-use tracing::warn;
 
 use crate::{
     impls::sailfish_types::SailfishTypes,
@@ -106,22 +105,42 @@ impl Consensus {
     }
 
     pub fn handle_event(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
-        // Skip all send events. Those are not for us.
-        if matches!(
-            event,
-            SailfishEvent::DummySend(_)
-                | SailfishEvent::VertexSend(_)
-                | SailfishEvent::TimeoutSend(_)
-                | SailfishEvent::NoVoteSend(_),
-        ) {
-            warn!("Somehow received a send event: {event}");
-            return Ok(vec![]);
+        match event {
+            SailfishEvent::VertexRecv(vertex) => self.handle_vertex_recv(vertex),
+            SailfishEvent::TimeoutRecv(view_number) => self.handle_timeout_recv(view_number),
+            SailfishEvent::NoVoteRecv(view_number) => self.handle_no_vote_recv(view_number),
+            SailfishEvent::TimeoutVoteRecv(vote) => self.handle_timeout_vote_recv(vote),
+            SailfishEvent::NoVoteVoteRecv(vote) => self.handle_no_vote_vote_recv(vote),
+            SailfishEvent::VertexVoteRecv(vote) => self.handle_vertex_vote_recv(vote),
+            _ => Ok(vec![]),
         }
-
-        Ok(vec![])
     }
 
     pub fn last_committed_round_number(&self) -> ViewNumber {
         self.last_committed_round_number
+    }
+
+    fn handle_vertex_recv(&mut self, _vertex: Vertex) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
+    }
+
+    fn handle_timeout_recv(&mut self, _view_number: ViewNumber) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
+    }
+
+    fn handle_no_vote_recv(&mut self, _view_number: ViewNumber) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
+    }
+
+    fn handle_timeout_vote_recv(&mut self, _vote: TimeoutVote) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
+    }
+
+    fn handle_no_vote_vote_recv(&mut self, _vote: NoVoteVote) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
+    }
+
+    fn handle_vertex_vote_recv(&mut self, _vote: VertexVote) -> Result<Vec<SailfishEvent>> {
+        Ok(vec![])
     }
 }
