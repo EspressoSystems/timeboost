@@ -6,3 +6,4 @@ pub mod sailfish_state;
 pub mod sailfish_types;
 pub mod timeout;
 pub mod vertex;
+pub mod vote;

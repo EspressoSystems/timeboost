@@ -3,15 +3,33 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use hotshot::{
     traits::election::static_committee::StaticCommittee,
-    types::{BLSPrivKey, BLSPubKey},
+    types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
+use hotshot_types::{
+    data::ViewNumber, traits::node_implementation::ConsensusTime, vote::VoteAccumulator,
+};
 use tracing::warn;
 
 use crate::{
     impls::sailfish_types::SailfishTypes,
-    types::{message::SailfishEvent, vertex::Vertex},
+    types::{
+        certificate::{NoVoteCertificate, TimeoutCertificate, VertexCertificate},
+        message::SailfishEvent,
+        sailfish_types::UnusedVersions,
+        vertex::Vertex,
+        vote::{NoVoteVote, TimeoutVote, VertexVote},
+    },
 };
+
+/// The DAG is a mapping of the round number to the vertex and the signature computed over the
+/// commitment to the vertex to prove the authenticity of the vertex.
+pub type Dag = BTreeMap<
+    ViewNumber,
+    (
+        Vertex,
+        <BLSPubKey as SignatureKey>::PureAssembledSignatureType,
+    ),
+>;
 
 /// The context of a task, including its public and private keys. The context is passed
 /// immutably to the task function.
@@ -46,6 +64,31 @@ pub struct Consensus {
     /// The map of certificates
     #[allow(dead_code)]
     vertex_certificates: BTreeMap<ViewNumber, Vertex>,
+
+    /// The DAG of vertices
+    #[allow(dead_code)]
+    dag: Dag,
+
+    /// The accumulator for the vertices of a given round.
+    #[allow(dead_code)]
+    vertex_accumulator_map: BTreeMap<
+        ViewNumber,
+        VoteAccumulator<SailfishTypes, VertexVote, VertexCertificate, UnusedVersions>,
+    >,
+
+    /// The accumulator for the timeouts of a given round.
+    #[allow(dead_code)]
+    timeout_accumulator_map: BTreeMap<
+        ViewNumber,
+        VoteAccumulator<SailfishTypes, TimeoutVote, TimeoutCertificate, UnusedVersions>,
+    >,
+
+    /// The accumulator for the no votes of a given round.
+    #[allow(dead_code)]
+    no_vote_accumulator_map: BTreeMap<
+        ViewNumber,
+        VoteAccumulator<SailfishTypes, NoVoteVote, NoVoteCertificate, UnusedVersions>,
+    >,
 }
 
 impl Consensus {
@@ -55,6 +98,10 @@ impl Consensus {
             last_committed_round_number: ViewNumber::genesis(),
             gc_depth,
             vertex_certificates: BTreeMap::new(),
+            dag: Dag::new(),
+            vertex_accumulator_map: BTreeMap::new(),
+            timeout_accumulator_map: BTreeMap::new(),
+            no_vote_accumulator_map: BTreeMap::new(),
         }
     }
 

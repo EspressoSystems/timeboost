@@ -57,7 +57,7 @@ impl Committable for Payload {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Block {
     header: BlockHeader,
     payload: Payload,

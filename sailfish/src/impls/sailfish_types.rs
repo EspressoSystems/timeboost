@@ -11,18 +11,18 @@ use hotshot_types::{
         block_contents::{
             BlockHeader as HotShotBlockHeader, EncodeBytes, Transaction as HotShotTransaction,
         },
-        node_implementation::{HasUrls, NodeType},
+        node_implementation::{HasUrls, NodeType, Versions},
         states::{InstanceState, StateDelta},
     },
     utils::BuilderCommitment,
 };
 use serde::{Deserialize, Serialize};
 use url::Url;
-use vbs::version::Version;
+use vbs::version::{StaticVersion, Version};
 
 use crate::types::sailfish_types::{
     UnusedAuctionResult, UnusedBlockHeader, UnusedBlockPayload, UnusedDelta, UnusedError,
-    UnusedInstanceState, UnusedMetadata, UnusedTransaction, UnusedValidatedState,
+    UnusedInstanceState, UnusedMetadata, UnusedTransaction, UnusedValidatedState, UnusedVersions,
 };
 // TODO: This sucks.
 impl HasUrls for UnusedAuctionResult {
@@ -273,4 +273,14 @@ impl NodeType for SailfishTypes {
     type Membership = StaticCommittee<Self>;
 
     type BuilderSignatureKey = BLSPubKey;
+}
+
+impl Versions for UnusedVersions {
+    type Base = StaticVersion<0, 1>;
+
+    type Upgrade = StaticVersion<0, 1>;
+
+    const UPGRADE_HASH: [u8; 32] = [0; 32];
+
+    type Marketplace = StaticVersion<0, 1>;
 }

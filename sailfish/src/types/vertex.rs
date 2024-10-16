@@ -12,7 +12,7 @@ use super::{
     certificate::{NoVoteCertificate, TimeoutCertificate},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Vertex {
     /// The round of the vertex $v$ in the DAG.
     pub round: ViewNumber,
@@ -25,9 +25,6 @@ pub struct Vertex {
 
     /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
     parents: Vec<QuorumCertificate<SailfishTypes>>,
-
-    /// The signature over the commitment to the vertex.
-    signature: <BLSPubKey as SignatureKey>::PureAssembledSignatureType,
 
     /// The no-vote certificate for `v.round - 1`.
     pub no_vote_certificate: Option<NoVoteCertificate>,

@@ -4,8 +4,8 @@ use crate::{
 };
 use hotshot_types::simple_certificate::{SimpleCertificate, SuccessThreshold};
 
-use super::block::Block;
+use super::vertex::Vertex;
 
-pub type VertexCertificate = SimpleCertificate<SailfishTypes, Block, SuccessThreshold>;
+pub type VertexCertificate = SimpleCertificate<SailfishTypes, Vertex, SuccessThreshold>;
 pub type TimeoutCertificate = SimpleCertificate<SailfishTypes, TimeoutData, SuccessThreshold>;
 pub type NoVoteCertificate = SimpleCertificate<SailfishTypes, NoVoteData, SuccessThreshold>;

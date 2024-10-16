@@ -44,3 +44,6 @@ pub struct UnusedDelta;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnusedError;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Copy)]
+pub struct UnusedVersions;
