@@ -2,7 +2,7 @@ use async_broadcast::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
-use crate::types::message::SailfishEvent;
+use crate::{consensus::Consensus, types::message::SailfishEvent, utils::network::broadcast_event};
 
 pub struct InternalNetwork {
     /// The ID of the node.
@@ -14,6 +14,9 @@ pub struct InternalNetwork {
 
     /// The external sender is responsible for sending messages outside of the node.
     external_sender: Sender<SailfishEvent>,
+
+    /// The core consensus instance
+    consensus: Consensus,
 }
 
 impl InternalNetwork {
@@ -32,11 +35,13 @@ impl InternalNetwork {
         id: u64,
         internal_sender: Sender<SailfishEvent>,
         external_sender: Sender<SailfishEvent>,
+        consensus: Consensus,
     ) -> Self {
         Self {
             id,
             internal_sender,
             external_sender,
+            consensus,
         }
     }
 
@@ -56,10 +61,7 @@ impl InternalNetwork {
         tokio::spawn(async move {
             loop {
                 match receiver.recv().await {
-                    Ok(event) => {
-                        self.handle_message(event, self.external_sender.clone())
-                            .await
-                    }
+                    Ok(event) => self.handle_message(event).await,
                     Err(e) => {
                         warn!("Failed to receive event; error = {e:#}");
                     }
@@ -77,27 +79,22 @@ impl InternalNetwork {
     /// # Arguments
     ///
     /// * `event` - The `SailfishEvent` to be processed.
-    /// * `external_sender` - The sender for messages to be sent outside the node.
-    async fn handle_message(
-        &mut self,
-        event: SailfishEvent,
-        _external_sender: Sender<SailfishEvent>,
-    ) {
+    async fn handle_message(&mut self, event: SailfishEvent) {
         debug!(
             "Node {} received event from internal event stream: {}",
             self.id, event
         );
 
-        // let events = match round_task(event) {
-        //     Ok(events) => events,
-        //     Err(e) => {
-        //         warn!("Task returned error; error = {e:#}");
-        //         return;
-        //     }
-        // };
+        let events = match self.consensus.handle_event(event) {
+            Ok(events) => events,
+            Err(e) => {
+                warn!("Consensus returned error; error = {e:#}");
+                return;
+            }
+        };
 
-        // for event in events {
-        //     broadcast_event(event, &external_sender).await;
-        // }
+        for event in events {
+            broadcast_event(event, &self.external_sender).await;
+        }
     }
 }
