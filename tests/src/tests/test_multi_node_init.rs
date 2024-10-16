@@ -2,7 +2,6 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 
@@ -32,13 +31,8 @@ async fn test_multi_node_init() {
                 .build()
                 .expect("Failed to build network node config");
 
-            node.initialize_networking(
-                network_config,
-                bootstrap_nodes,
-                (*staked_nodes).clone(),
-                ViewNumber::new(1),
-            )
-            .await;
+            node.initialize_networking(network_config, bootstrap_nodes, (*staked_nodes).clone())
+                .await;
         });
 
         handles.push(handle);

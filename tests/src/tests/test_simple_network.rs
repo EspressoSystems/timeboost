@@ -2,7 +2,6 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::types::message::SailfishEvent;
 use sailfish::utils::network::broadcast_event;
 use std::{collections::HashMap, time::Duration};
@@ -48,13 +47,8 @@ async fn test_simple_network_startup_message() {
                 .build()
                 .expect("Failed to build network node config");
 
-            node.initialize_networking(
-                network_config,
-                bootstrap_nodes,
-                (*staked_nodes).clone(),
-                ViewNumber::new(1),
-            )
-            .await;
+            node.initialize_networking(network_config, bootstrap_nodes, (*staked_nodes).clone())
+                .await;
 
             barrier.wait().await;
 
