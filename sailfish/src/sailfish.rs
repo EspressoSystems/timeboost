@@ -1,5 +1,7 @@
 use crate::{
+    consensus::Consensus,
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
+    impls::sailfish_types::SailfishTypes,
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
     utils::network::broadcast_event,
@@ -18,6 +20,7 @@ use hotshot::{
 };
 use hotshot_types::{
     network::{Libp2pConfig, NetworkConfig},
+    traits::{election::Membership, network::Topic, node_implementation::NodeType},
     PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
@@ -111,7 +114,7 @@ impl Sailfish {
         staked_nodes: Vec<PeerConfig<BLSPubKey>>,
     ) {
         let mut network_config = NetworkConfig::default();
-        network_config.config.known_nodes_with_stake = staked_nodes;
+        network_config.config.known_nodes_with_stake = staked_nodes.clone();
         network_config.libp2p_config = Some(Libp2pConfig {
             bootstrap_nodes: bootstrap_nodes.read().await.clone(),
         });
@@ -158,23 +161,23 @@ impl Sailfish {
 
         external_network.spawn_network_task();
 
+        let quorum_membership = <SailfishTypes as NodeType>::Membership::new(
+            staked_nodes.clone(),
+            staked_nodes,
+            Topic::Global,
+        );
+
+        let consensus = Consensus::new(quorum_membership);
+
         let internal_network = InternalNetwork::new(
             self.state.id,
             self.internal_event_stream.0.clone(),
             self.external_event_stream.0.clone(),
+            consensus,
         );
         internal_network.spawn_network_task(self.internal_event_stream.1.clone());
 
         info!("Network is ready.");
-    }
-
-    #[instrument(
-        skip_all,
-        target = "run_tasks",
-        fields(id = self.state.id)
-    )]
-    async fn run_tasks(&mut self) {
-        info!("Starting background tasks for Sailfish");
     }
 
     #[instrument(
@@ -184,8 +187,6 @@ impl Sailfish {
     )]
     pub async fn run(&mut self) {
         tracing::info!("Starting Sailfish Node {}", self.state.id);
-        self.run_tasks().await;
-
         // Kickstart the network with a dummy send event.
         // TODO: This is not required later when we have actual consensus messages.
         broadcast_event(

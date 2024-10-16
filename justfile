@@ -11,7 +11,7 @@ build:
   cargo build
 
 build_release:
-  cargo build --release
+  cargo build --release --workspace
 
 test *ARGS:
   cargo nextest run --test-threads 1 --release {{ARGS}}

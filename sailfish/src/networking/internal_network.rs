@@ -1,10 +1,11 @@
 use async_broadcast::{Receiver, Sender};
-use async_lock::RwLock;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
-use crate::{tasks::Task, types::message::SailfishEvent, utils::network::broadcast_event};
+use crate::{consensus::Consensus, types::message::SailfishEvent, utils::network::broadcast_event};
+
+const SHOULD_SHUTDOWN: bool = true;
+const SHOULD_NOT_SHUTDOWN: bool = false;
 
 pub struct InternalNetwork {
     /// The ID of the node.
@@ -17,8 +18,8 @@ pub struct InternalNetwork {
     /// The external sender is responsible for sending messages outside of the node.
     external_sender: Sender<SailfishEvent>,
 
-    /// The tasks that the node is responsible for.
-    tasks: Vec<Arc<RwLock<Box<dyn Task>>>>,
+    /// The core consensus instance
+    consensus: Consensus,
 }
 
 impl InternalNetwork {
@@ -37,12 +38,13 @@ impl InternalNetwork {
         id: u64,
         internal_sender: Sender<SailfishEvent>,
         external_sender: Sender<SailfishEvent>,
+        consensus: Consensus,
     ) -> Self {
         Self {
             id,
             internal_sender,
             external_sender,
-            tasks: Vec::new(),
+            consensus,
         }
     }
 
@@ -63,8 +65,9 @@ impl InternalNetwork {
             loop {
                 match receiver.recv().await {
                     Ok(event) => {
-                        self.handle_message(event, self.external_sender.clone())
-                            .await
+                        if self.handle_message(event).await {
+                            break;
+                        }
                     }
                     Err(e) => {
                         warn!("Failed to receive event; error = {e:#}");
@@ -83,38 +86,28 @@ impl InternalNetwork {
     /// # Arguments
     ///
     /// * `event` - The `SailfishEvent` to be processed.
-    /// * `external_sender` - The sender for messages to be sent outside the node.
-    async fn handle_message(
-        &mut self,
-        event: SailfishEvent,
-        external_sender: Sender<SailfishEvent>,
-    ) {
+    async fn handle_message(&mut self, event: SailfishEvent) -> bool {
         debug!(
             "Node {} received event from internal event stream: {}",
             self.id, event
         );
 
-        // TODO: This is a potential bottleneck as a single lagging task
-        // can cause all events to be delayed. This will be alleviated when
-        // we move to a model where each node runs in a background task.
-        for task in &mut self.tasks {
-            let mut task = task.write().await;
-            match task.handle_event(event.clone()).await {
-                Ok(events) => {
-                    // TODO: This is a bottleneck since broadcast_event, while quick, can
-                    // add up in a serial operation. This will be addresed later.
-                    for event in events {
-                        broadcast_event(event, &external_sender).await;
-                    }
-                }
-                Err(e) => {
-                    warn!("Task {} returned error; error = {e:#}", task.name());
-                }
-            }
+        if let SailfishEvent::Shutdown = event {
+            return SHOULD_SHUTDOWN;
         }
-    }
 
-    pub fn register_task(&mut self, task: Arc<RwLock<Box<dyn Task>>>) {
-        self.tasks.push(task);
+        let events = match self.consensus.handle_event(event) {
+            Ok(events) => events,
+            Err(e) => {
+                warn!("Consensus returned error; error = {e:#}");
+                return SHOULD_NOT_SHUTDOWN;
+            }
+        };
+
+        for event in events {
+            broadcast_event(event, &self.external_sender).await;
+        }
+
+        SHOULD_NOT_SHUTDOWN
     }
 }
