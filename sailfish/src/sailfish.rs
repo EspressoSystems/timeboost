@@ -1,5 +1,5 @@
 use crate::{
-    consensus::Consensus,
+    consensus::{Consensus, TaskContext},
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
     impls::sailfish_types::SailfishTypes,
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
@@ -19,8 +19,13 @@ use hotshot::{
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
 use hotshot_types::{
+    data::ViewNumber,
     network::{Libp2pConfig, NetworkConfig},
-    traits::{election::Membership, network::Topic, node_implementation::NodeType},
+    traits::{
+        election::Membership,
+        network::Topic,
+        node_implementation::{ConsensusTime, NodeType},
+    },
     PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
@@ -167,7 +172,15 @@ impl Sailfish {
             Topic::Global,
         );
 
-        let consensus = Consensus::new(quorum_membership);
+        let consensus = Consensus::new(
+            TaskContext {
+                id: self.state.id,
+                view_number: ViewNumber::genesis(),
+                public_key: self.public_key,
+                private_key: self.private_key.clone(),
+            },
+            quorum_membership,
+        );
 
         let internal_network = InternalNetwork::new(
             self.state.id,

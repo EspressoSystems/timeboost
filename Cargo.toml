@@ -60,3 +60,4 @@ libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 async-lock = "2"
 toml = "0.8.19"
 futures = { version = "0.3", default-features = false }
+either = "1.13.0"
