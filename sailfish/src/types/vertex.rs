@@ -1,9 +1,17 @@
 use std::fmt::Display;
 
-use committable::Committable;
-use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::data::ViewNumber;
+use committable::{Commitment, Committable};
+use hotshot::{
+    traits::election::static_committee::StaticCommittee,
+    types::{BLSPubKey, SignatureKey},
+};
+use hotshot_types::{
+    data::ViewNumber,
+    traits::{election::Membership, node_implementation::ConsensusTime},
+};
 use serde::{Deserialize, Serialize};
+
+use crate::impls::sailfish_types::SailfishTypes;
 
 use super::{
     block::Block,
@@ -51,5 +59,18 @@ impl Committable for Vertex {
             .optional("no_vote_certificate", &self.no_vote_certificate)
             .optional("timeout_certificate", &self.timeout_certificate)
             .finalize()
+    }
+}
+
+impl Vertex {
+    pub fn genesis(public_key: BLSPubKey) -> Self {
+        Self {
+            round: ViewNumber::genesis(),
+            source: public_key,
+            block: Block::empty(),
+            parents: vec![],
+            no_vote_certificate: None,
+            timeout_certificate: None,
+        }
     }
 }

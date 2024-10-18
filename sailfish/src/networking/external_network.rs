@@ -127,9 +127,9 @@ impl ExternalNetwork {
                 info!("Received shutdown event, shutting down");
                 // TODO: Propagate shutdown signal.
             }
-            SailfishEvent::DummySend(sender_node_id) => {
+            SailfishEvent::VertexCertificateSend(certificate) => {
                 broadcast_event(
-                    SailfishEvent::DummyRecv(sender_node_id),
+                    SailfishEvent::VertexCertificateRecv(certificate),
                     &self.internal_event_sender,
                 )
                 .await;

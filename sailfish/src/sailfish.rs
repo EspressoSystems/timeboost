@@ -186,6 +186,7 @@ impl Sailfish {
             self.state.id,
             self.internal_event_stream.0.clone(),
             self.external_event_stream.0.clone(),
+            self.public_key,
             consensus,
         );
         internal_network.spawn_network_task(self.internal_event_stream.1.clone());
@@ -200,13 +201,6 @@ impl Sailfish {
     )]
     pub async fn run(&mut self) {
         tracing::info!("Starting Sailfish Node {}", self.state.id);
-        // Kickstart the network with a dummy send event.
-        // TODO: This is not required later when we have actual consensus messages.
-        broadcast_event(
-            SailfishEvent::DummySend(self.state.id),
-            &self.external_event_stream.0,
-        )
-        .await;
     }
 }
 

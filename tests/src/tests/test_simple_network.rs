@@ -2,9 +2,12 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use sailfish::types::message::SailfishEvent;
+use sailfish::types::{certificate::make_genesis_vertex_certificate, message::SailfishEvent};
 use sailfish::utils::network::broadcast_event;
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -15,6 +18,11 @@ use crate::init_nodes;
 async fn test_simple_network_startup_message() {
     let num_nodes: usize = 5;
     let nodes = init_nodes(num_nodes);
+    let public_keys = nodes
+        .nodes
+        .iter()
+        .map(|node| node.public_key)
+        .collect::<Vec<_>>();
 
     let replication_factor = NonZeroUsize::new(((2 * num_nodes) as usize).div_ceil(3)).unwrap();
 
@@ -88,29 +96,33 @@ async fn test_simple_network_startup_message() {
         received_events.insert(id, events);
     }
 
-    // Assert that each node received a dummy event from every other node, so for 5 nodes, we should
-    // have gotten DummyRecv(0), DummyRecv(1), ..., DummyRecv(4)
-    let expected_events = (0..num_nodes as u64)
-        .map(|i| SailfishEvent::DummyRecv(i))
-        .collect::<Vec<_>>();
+    // We want to assert that we've received a VertexCertificateRecv event for the genesis certificate
+    // from every node, including ourselves.
+    let expected_events: HashSet<SailfishEvent> = (0..num_nodes)
+        .map(|i| {
+            SailfishEvent::VertexCertificateRecv(make_genesis_vertex_certificate(public_keys[i]))
+        })
+        .collect();
 
-    for (id, mut events) in received_events.into_iter() {
+    for (id, events) in received_events.into_iter() {
+        tracing::info!(
+            "Node {} received events: {:?}",
+            id,
+            events.iter().map(|e| format!("{e}")).collect::<Vec<_>>()
+        );
         assert_eq!(
             events.len(),
             num_nodes,
-            "Node {} did not receive all dummy events",
+            "Node {} did not receive all expected events",
             id
         );
-        // Sort the events by sender ID
-        events.sort_by_key(|event| match event {
-            SailfishEvent::DummyRecv(sender_id) => *sender_id,
-            other => panic!("Unexpected event type received; event = {}", other),
-        });
 
-        // Now, unwrap the Arc to compare the events
+        let events_set: HashSet<SailfishEvent> = events.into_iter().collect();
+
         assert_eq!(
-            events.into_iter().map(|e| e.clone()).collect::<Vec<_>>(),
-            expected_events
+            events_set, expected_events,
+            "Node {} did not receive the expected set of events",
+            id
         );
     }
 

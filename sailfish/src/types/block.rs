@@ -87,3 +87,14 @@ impl Committable for Block {
             .finalize()
     }
 }
+
+impl Block {
+    pub fn empty() -> Self {
+        Self {
+            header: BlockHeader {},
+            payload: BlockPayload {
+                transactions: vec![],
+            },
+        }
+    }
+}

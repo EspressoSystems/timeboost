@@ -10,17 +10,11 @@ use super::{
     vote::{NoVoteVote, TimeoutVote, VertexVote},
 };
 
-#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize, Hash)]
 #[allow(clippy::large_enum_variant)]
 pub enum SailfishEvent {
     /// Signal a shutdown to the node.
     Shutdown,
-
-    /// Placeholder event
-    DummySend(u64),
-
-    /// Placeholder event
-    DummyRecv(u64),
 
     /// Send a vertex to the network.
     VertexSend(
@@ -120,8 +114,6 @@ impl Display for SailfishEvent {
                 write!(f, "RoundChange({})", round)
             }
             SailfishEvent::Shutdown => write!(f, "Shutdown"),
-            SailfishEvent::DummySend(n) => write!(f, "DummySend({})", n),
-            SailfishEvent::DummyRecv(n) => write!(f, "DummyRecv({})", n),
             SailfishEvent::VertexCertificateSend(cert) => {
                 write!(f, "VertexCertificateSend({})", cert.view_number())
             }

@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use async_broadcast::{Receiver, Sender};
+use hotshot::types::{BLSPrivKey, BLSPubKey};
 use hotshot_types::data::ViewNumber;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
 use crate::{
     consensus::{verify_committed_round, Consensus},
-    types::message::SailfishEvent,
+    types::{certificate::make_genesis_vertex_certificate, message::SailfishEvent},
     utils::network::broadcast_event,
 };
 
@@ -17,6 +18,9 @@ const SHOULD_NOT_SHUTDOWN: bool = false;
 pub struct InternalNetwork {
     /// The ID of the node.
     id: u64,
+
+    /// The public key of the node.
+    public_key: BLSPubKey,
 
     /// The internal sender is responsible for sending messages inside of the node.
     #[allow(dead_code)]
@@ -48,6 +52,7 @@ impl InternalNetwork {
         id: u64,
         internal_sender: Sender<SailfishEvent>,
         external_sender: Sender<SailfishEvent>,
+        public_key: BLSPubKey,
         consensus: Consensus,
     ) -> Self {
         let round = consensus.round() + 1;
@@ -56,6 +61,7 @@ impl InternalNetwork {
             id,
             internal_sender: internal_sender.clone(),
             external_sender,
+            public_key,
             consensus,
             timeout_handle: Self::spawn_timeout_task(round, internal_sender),
         }
@@ -75,6 +81,17 @@ impl InternalNetwork {
     /// A `JoinHandle` for the spawned task.
     pub fn spawn_network_task(mut self, mut receiver: Receiver<SailfishEvent>) -> JoinHandle<()> {
         tokio::spawn(async move {
+            // Create a genesis vertex certificate.
+            let certificate = make_genesis_vertex_certificate(self.public_key);
+
+            // Broadcast the genesis certificate to the network. This will kickstart the network.
+            // All nodes will aggregate these certificates and use them as their basis.
+            broadcast_event(
+                SailfishEvent::VertexCertificateSend(certificate),
+                &self.external_sender,
+            )
+            .await;
+
             loop {
                 match receiver.recv().await {
                     Ok(event) => {
