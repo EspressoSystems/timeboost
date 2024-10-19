@@ -48,7 +48,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "initialize",
         fields(id = self.id)
     )]
     pub async fn initialize(&self) -> Result<()> {
@@ -59,7 +58,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "network",
         fields(id = self.id)
     )]
     pub fn spawn_network_task(mut self) -> JoinHandle<()> {
@@ -108,7 +106,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "network",
         fields(id = self.id)
     )]
     async fn handle_incoming_message(&self, message: Vec<u8>) {
@@ -122,63 +119,14 @@ impl ExternalNetwork {
 
         debug!("Node {} received message from network: {}", self.id, event);
 
-        match event {
-            SailfishEvent::Shutdown => {
-                info!("Received shutdown event, shutting down");
-                // TODO: Propagate shutdown signal.
-            }
-            SailfishEvent::VertexCertificateSend(certificate) => {
-                broadcast_event(
-                    SailfishEvent::VertexCertificateRecv(certificate),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::VertexSend(vertex, signature) => {
-                broadcast_event(
-                    SailfishEvent::VertexRecv(vertex, signature),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::TimeoutSend(round) => {
-                broadcast_event(
-                    SailfishEvent::TimeoutRecv(round),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::NoVoteSend(round) => {
-                broadcast_event(
-                    SailfishEvent::NoVoteRecv(round),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::TimeoutVoteSend(vote) => {
-                broadcast_event(
-                    SailfishEvent::TimeoutVoteRecv(vote),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::NoVoteVoteSend(vote) => {
-                broadcast_event(
-                    SailfishEvent::NoVoteVoteRecv(vote),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            SailfishEvent::VertexVoteSend(vote) => {
-                broadcast_event(
-                    SailfishEvent::VertexVoteRecv(vote),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            _ => {
-                warn!("Received unprocessable event from network: {}", event);
-            }
+        if event == SailfishEvent::Shutdown {
+            info!("Received shutdown event, shutting down");
+            // TODO: Propagate shutdown signal.
+            return;
         }
+
+        // Otherwise, transform and send the event.
+        let out_event = event.transform_send_to_recv();
+        broadcast_event(out_event, &self.internal_event_sender).await;
     }
 }

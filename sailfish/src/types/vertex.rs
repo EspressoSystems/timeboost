@@ -41,7 +41,7 @@ pub struct Vertex {
 
 impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vertex(round: {}, source: {})", self.round, self.source)
+        write!(f, "Vertex(round: {})", self.round)
     }
 }
 

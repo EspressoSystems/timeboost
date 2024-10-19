@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_broadcast::{Receiver, Sender};
-use hotshot::types::{BLSPrivKey, BLSPubKey};
+use hotshot::types::BLSPubKey;
 use hotshot_types::data::ViewNumber;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -138,6 +138,9 @@ impl InternalNetwork {
             {
                 warn!("Failed to verify committed round; error = {e:#}");
             } else {
+                // TODO: This assumes that the round that we're committing is the round that the timeout is
+                // targeting. We need to add a check to make sure that this is the case. (self.round + 1 == round)
+
                 // Cancel the previous timeout handle.
                 self.timeout_handle.abort();
 

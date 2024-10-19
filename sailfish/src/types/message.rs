@@ -123,3 +123,18 @@ impl Display for SailfishEvent {
         }
     }
 }
+
+impl SailfishEvent {
+    pub fn transform_send_to_recv(self) -> Self {
+        match self {
+            Self::VertexSend(vertex, signature) => Self::VertexRecv(vertex, signature),
+            Self::TimeoutSend(view_number) => Self::TimeoutRecv(view_number),
+            Self::NoVoteSend(view_number) => Self::NoVoteRecv(view_number),
+            Self::TimeoutVoteSend(vote) => Self::TimeoutVoteRecv(vote),
+            Self::NoVoteVoteSend(vote) => Self::NoVoteVoteRecv(vote),
+            Self::VertexVoteSend(vote) => Self::VertexVoteRecv(vote),
+            Self::VertexCertificateSend(cert) => Self::VertexCertificateRecv(cert),
+            _ => self,
+        }
+    }
+}

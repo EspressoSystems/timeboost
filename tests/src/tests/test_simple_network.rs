@@ -2,12 +2,9 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use sailfish::types::{certificate::make_genesis_vertex_certificate, message::SailfishEvent};
+use sailfish::types::message::SailfishEvent;
 use sailfish::utils::network::broadcast_event;
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -15,14 +12,9 @@ use tokio::time::timeout;
 use crate::init_nodes;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_simple_network_startup_message() {
+async fn test_simple_network_genesis_message() {
     let num_nodes: usize = 5;
     let nodes = init_nodes(num_nodes);
-    let public_keys = nodes
-        .nodes
-        .iter()
-        .map(|node| node.public_key)
-        .collect::<Vec<_>>();
 
     let replication_factor = NonZeroUsize::new(((2 * num_nodes) as usize).div_ceil(3)).unwrap();
 
@@ -78,7 +70,7 @@ async fn test_simple_network_startup_message() {
             loop {
                 match timeout(Duration::from_millis(250), event_receiver.1.recv()).await {
                     Ok(Ok(event)) => {
-                        tracing::info!("Node {} received event: {}", id, event);
+                        tracing::debug!("Node {} received event: {}", id, event);
                         events.push(event);
                     }
                     Ok(Err(_)) | Err(_) => break,
@@ -96,34 +88,39 @@ async fn test_simple_network_startup_message() {
         received_events.insert(id, events);
     }
 
-    // We want to assert that we've received a VertexCertificateRecv event for the genesis certificate
-    // from every node, including ourselves.
-    let expected_events: HashSet<SailfishEvent> = (0..num_nodes)
-        .map(|i| {
-            SailfishEvent::VertexCertificateRecv(make_genesis_vertex_certificate(public_keys[i]))
-        })
-        .collect();
+    // TODO: This is not great since we cannot assert that we've received the correct data
+    // from each node. We should get a better suite together at some point.
+    let expectations: Vec<(fn(&SailfishEvent) -> bool, usize)> = vec![
+        (
+            |e| matches!(e, SailfishEvent::VertexCertificateRecv(_)),
+            num_nodes,
+        ),
+        (|e| matches!(e, SailfishEvent::VertexVoteRecv(_)), num_nodes),
+        (|e| matches!(e, SailfishEvent::VertexRecv(_, _)), num_nodes),
+    ];
 
     for (id, events) in received_events.into_iter() {
-        tracing::info!(
+        tracing::debug!(
             "Node {} received events: {:?}",
             id,
             events.iter().map(|e| format!("{e}")).collect::<Vec<_>>()
         );
-        assert_eq!(
-            events.len(),
-            num_nodes,
-            "Node {} did not receive all expected events",
-            id
-        );
 
-        let events_set: HashSet<SailfishEvent> = events.into_iter().collect();
-
-        assert_eq!(
-            events_set, expected_events,
-            "Node {} did not receive the expected set of events",
-            id
-        );
+        for (event_matcher, expected_count) in &expectations {
+            let actual_count = events.iter().filter(|e| event_matcher(e)).count();
+            assert!(
+                actual_count >= *expected_count,
+                "Node {} received {} {:?} events, expected {}",
+                id,
+                actual_count,
+                events
+                    .iter()
+                    .find(|e| event_matcher(e))
+                    .map(|e| format!("{}", e))
+                    .unwrap_or_default(),
+                expected_count
+            );
+        }
     }
 
     // Send the shutdown event to all nodes

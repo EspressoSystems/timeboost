@@ -166,6 +166,10 @@ impl Consensus {
         self.round
     }
 
+    #[instrument(
+        skip(self),
+        fields(event = %event, round = %self.round, id = %self.context.id),
+    )]
     pub async fn handle_event(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
         #[cfg(test)]
         {
@@ -194,12 +198,22 @@ impl Consensus {
         self.last_committed_round_number
     }
 
+    #[instrument(
+        skip_all,
+        fields(vertex = %vertex, round = %self.round, id = %self.context.id)
+    )]
     async fn handle_vertex_recv(
         &mut self,
         vertex: Vertex,
         signature: <BLSPubKey as SignatureKey>::PureAssembledSignatureType,
     ) -> Result<Vec<SailfishEvent>> {
         let round = vertex.round;
+
+        debug!(
+            "Received a vertex for round: {}, voting for round: {}",
+            round,
+            round + 1
+        );
 
         // TODO: Validation
 
@@ -213,7 +227,7 @@ impl Consensus {
         // Assuming that the vertex is valid, we can now submit our vote for the vertex.
         let vote = VertexVote::create_signed_vote::<UnusedVersions>(
             VertexCertificateData::new(vertex.commit(), round),
-            round,
+            round + 1,
             &self.context.public_key,
             &self.context.private_key,
             &UpgradeLock::new(),
@@ -222,12 +236,16 @@ impl Consensus {
 
         // This is a valid vertex, so we vote for it and change our round to the next round.
         let output_events = vec![
+            SailfishEvent::RoundChange(vote.view_number()),
             SailfishEvent::VertexVoteSend(vote),
-            SailfishEvent::RoundChange(vertex.round),
         ];
         Ok(output_events)
     }
 
+    #[instrument(
+        skip_all,
+        fields(round = %self.round, id = %self.context.id, vote = %vote.view_number())
+    )]
     async fn handle_vertex_vote_recv(&mut self, vote: VertexVote) -> Result<Vec<SailfishEvent>> {
         let round = vote.view_number();
 
@@ -391,11 +409,11 @@ impl Consensus {
 
     fn handle_round_change(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
         if round <= self.round {
-            trace!(
-                "Received round change for a prior round; ignoring: {} <= {}",
-                round,
-                self.round
-            );
+            // trace!(
+            //     "Received round change for a prior round; ignoring: {} <= {}",
+            //     round,
+            //     self.round
+            // );
             return Ok(vec![]);
         }
 
@@ -405,7 +423,7 @@ impl Consensus {
 
     #[instrument(
         skip_all,
-        fields(id = self.context.id, round = %self.round)
+        fields(id = self.context.id, round = %self.round, last_proposed_round_number = %self.last_proposed_round_number)
     )]
     fn handle_vertex_certificate_recv(
         &mut self,
@@ -414,7 +432,7 @@ impl Consensus {
         let mut output_events = vec![];
         let round = cert.view_number();
 
-        if round <= self.last_proposed_round_number {
+        if round < self.last_proposed_round_number {
             trace!(
                 "Received a vertex certificate for a prior round; ignoring: {} < {}",
                 round,
