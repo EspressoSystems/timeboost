@@ -1,17 +1,9 @@
 use std::fmt::Display;
 
-use committable::{Commitment, Committable};
-use hotshot::{
-    traits::election::static_committee::StaticCommittee,
-    types::{BLSPubKey, SignatureKey},
-};
-use hotshot_types::{
-    data::ViewNumber,
-    traits::{election::Membership, node_implementation::ConsensusTime},
-};
+use committable::Committable;
+use hotshot::types::{BLSPubKey, SignatureKey};
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
-
-use crate::impls::sailfish_types::SailfishTypes;
 
 use super::{
     block::Block,

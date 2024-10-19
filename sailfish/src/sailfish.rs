@@ -4,7 +4,6 @@ use crate::{
     impls::sailfish_types::SailfishTypes,
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
     types::{message::SailfishEvent, sailfish_state::SailfishState},
-    utils::network::broadcast_event,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
