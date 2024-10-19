@@ -109,7 +109,6 @@ impl Sailfish {
     /// - If the port cast fails.
     #[instrument(
         skip_all,
-        target = "initialize_networking",
         fields(id = self.state.id)
     )]
     pub async fn initialize_networking(

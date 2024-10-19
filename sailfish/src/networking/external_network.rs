@@ -134,8 +134,50 @@ impl ExternalNetwork {
                 )
                 .await;
             }
+            SailfishEvent::VertexSend(vertex, signature) => {
+                broadcast_event(
+                    SailfishEvent::VertexRecv(vertex, signature),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
+            SailfishEvent::TimeoutSend(round) => {
+                broadcast_event(
+                    SailfishEvent::TimeoutRecv(round),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
+            SailfishEvent::NoVoteSend(round) => {
+                broadcast_event(
+                    SailfishEvent::NoVoteRecv(round),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
+            SailfishEvent::TimeoutVoteSend(vote) => {
+                broadcast_event(
+                    SailfishEvent::TimeoutVoteRecv(vote),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
+            SailfishEvent::NoVoteVoteSend(vote) => {
+                broadcast_event(
+                    SailfishEvent::NoVoteVoteRecv(vote),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
+            SailfishEvent::VertexVoteSend(vote) => {
+                broadcast_event(
+                    SailfishEvent::VertexVoteRecv(vote),
+                    &self.internal_event_sender,
+                )
+                .await;
+            }
             _ => {
-                broadcast_event(event, &self.internal_event_sender).await;
+                warn!("Received unprocessable event from network: {}", event);
             }
         }
     }

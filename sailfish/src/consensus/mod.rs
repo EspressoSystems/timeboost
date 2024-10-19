@@ -13,7 +13,7 @@ use hotshot_types::{
     traits::{election::Membership, node_implementation::ConsensusTime},
     vote::{HasViewNumber, VoteAccumulator},
 };
-use tracing::{error, warn};
+use tracing::{debug, error, instrument, trace, warn};
 use vote::create_vote_accumulator;
 
 use crate::{
@@ -74,6 +74,9 @@ pub struct Consensus {
 
     /// The last committed round number.
     pub last_committed_round_number: ViewNumber,
+
+    /// The last proposed round number.
+    pub last_proposed_round_number: ViewNumber,
 
     /// The current round number.
     pub round: ViewNumber,
@@ -143,6 +146,7 @@ impl Consensus {
             context,
             quorum_membership,
             last_committed_round_number: ViewNumber::genesis(),
+            last_proposed_round_number: ViewNumber::genesis(),
             round: ViewNumber::genesis(),
             uncommitted_vertices: BTreeMap::new(),
             vertex_certificates: BTreeMap::new(),
@@ -216,8 +220,11 @@ impl Consensus {
         )
         .await?;
 
-        // This is a valid vertex, so we vote for it.
-        let output_events = vec![SailfishEvent::VertexVoteSend(vote)];
+        // This is a valid vertex, so we vote for it and change our round to the next round.
+        let output_events = vec![
+            SailfishEvent::VertexVoteSend(vote),
+            SailfishEvent::RoundChange(vertex.round),
+        ];
         Ok(output_events)
     }
 
@@ -383,8 +390,12 @@ impl Consensus {
     }
 
     fn handle_round_change(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
-        if round < self.round {
-            warn!("Received round change for a prior round; ignoring");
+        if round <= self.round {
+            trace!(
+                "Received round change for a prior round; ignoring: {} <= {}",
+                round,
+                self.round
+            );
             return Ok(vec![]);
         }
 
@@ -392,12 +403,25 @@ impl Consensus {
         Ok(vec![])
     }
 
+    #[instrument(
+        skip_all,
+        fields(id = self.context.id, round = %self.round)
+    )]
     fn handle_vertex_certificate_recv(
         &mut self,
         cert: VertexCertificate,
     ) -> Result<Vec<SailfishEvent>> {
         let mut output_events = vec![];
         let round = cert.view_number();
+
+        if round <= self.last_proposed_round_number {
+            trace!(
+                "Received a vertex certificate for a prior round; ignoring: {} < {}",
+                round,
+                self.last_proposed_round_number
+            );
+            return Ok(vec![]);
+        }
 
         // TODO: Validation
 
@@ -424,8 +448,10 @@ impl Consensus {
             // Do we have a no vote certificate?
             let no_vote_certificate = self.no_vote_certificates.get(&round).cloned();
 
-            // If we're the leader, we can commit our prior vertex
-            if self.quorum_membership.leader(round) == self.context.public_key {
+            // If we're the leader, we can commit our prior vertex, if it's genesis, we don't have a prior vertex.
+            if self.quorum_membership.leader(round) == self.context.public_key
+                && self.round != ViewNumber::genesis()
+            {
                 // This should never happen, but it's very bad if it does.
                 let Some(vertex) = self
                     .uncommitted_vertices
@@ -452,7 +478,7 @@ impl Consensus {
 
             // Yes, so we can generate a new vertex.
             let vertex = Vertex {
-                round: self.round,
+                round: self.round + 1,
                 source: self.context.public_key,
                 // TODO: Fill in the block
                 block: Block {
@@ -466,10 +492,23 @@ impl Consensus {
                 timeout_certificate,
             };
 
+            debug!(
+                "Submitting a vertex for round {} to the network",
+                vertex.round
+            );
+
             // Compute a signature to the commitment of the vertex.
             let vertex_commitment = vertex.commit();
             let signature = BLSPubKey::sign(&self.context.private_key, vertex_commitment.as_ref())
                 .context("failed to sign the vertex commitment")?;
+
+            // Make sure we don't double-propose for a given round.
+            self.last_proposed_round_number = vertex.round;
+
+            debug!(
+                "Last proposed round number is now {}",
+                self.last_proposed_round_number
+            );
 
             let output_events = vec![SailfishEvent::VertexSend(vertex, signature)];
             Ok(output_events)
