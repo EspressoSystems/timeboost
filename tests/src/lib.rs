@@ -1,16 +1,14 @@
 use async_lock::RwLock;
-use hotshot::{traits::election::static_committee::StaticCommittee, types::BLSPubKey};
+use hotshot::types::BLSPubKey;
 use hotshot_types::{
-    data::ViewNumber,
-    traits::{election::Membership, network::Topic, node_implementation::ConsensusTime},
-    PeerConfig, ValidatorConfig,
+    data::ViewNumber, traits::node_implementation::ConsensusTime, PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use std::sync::Arc;
 
 use sailfish::{
-    consensus::{Consensus, TaskContext},
+    consensus::{committee::StaticCommittee, Consensus, TaskContext},
     logging,
     sailfish::{generate_key_pair, Sailfish},
 };
@@ -32,11 +30,13 @@ pub fn init_nodes(num_nodes: usize) -> TestableNode {
     let num_nodes = num_nodes as u64;
 
     let mut nodes = vec![];
+    let mut validator_configs = vec![];
     for i in 0..num_nodes {
         let validator_config = ValidatorConfig::generated_from_seed_indexed(SEED, i, 1, false);
         let (private_key, public_key) = generate_key_pair(SEED, i);
-        let sailfish = Sailfish::new(public_key, private_key, i, validator_config);
+        let sailfish = Sailfish::new(public_key, private_key, i);
         nodes.push(sailfish);
+        validator_configs.push(validator_config);
     }
 
     let bootstrap_nodes: Vec<(PeerId, Multiaddr)> = nodes
@@ -44,9 +44,9 @@ pub fn init_nodes(num_nodes: usize) -> TestableNode {
         .map(|node| (node.peer_id, node.bind_address.clone()))
         .collect();
 
-    let staked_nodes: Vec<PeerConfig<BLSPubKey>> = nodes
+    let staked_nodes: Vec<PeerConfig<BLSPubKey>> = validator_configs
         .iter()
-        .map(|node| node.state.validator_config.public_config())
+        .map(|validator_config| validator_config.public_config())
         .collect();
 
     let bootstrap_nodes = Arc::new(RwLock::new(bootstrap_nodes));
@@ -61,7 +61,7 @@ pub fn init_nodes(num_nodes: usize) -> TestableNode {
 
 pub fn make_consensus_nodes(num_nodes: usize) -> Vec<Consensus> {
     let mut contexts = vec![];
-    let mut public_configs = vec![];
+    let mut public_keys = vec![];
     for i in 0..num_nodes {
         let (private_key, public_key) = generate_key_pair(SEED, i as u64);
         let validator_config =
@@ -70,14 +70,13 @@ pub fn make_consensus_nodes(num_nodes: usize) -> Vec<Consensus> {
             public_key,
             private_key,
             id: i as u64,
-            view_number: ViewNumber::genesis(),
+            round: ViewNumber::genesis(),
         };
         contexts.push(context);
-        public_configs.push(validator_config.public_config());
+        public_keys.push(validator_config.public_key);
     }
 
-    let quorum_membership =
-        StaticCommittee::new(public_configs.clone(), public_configs, Topic::Global);
+    let quorum_membership = StaticCommittee::new(public_keys);
 
     let mut consensus_instances = vec![];
     for context in contexts.into_iter() {

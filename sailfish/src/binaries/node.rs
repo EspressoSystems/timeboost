@@ -36,7 +36,6 @@ async fn main() {
         config.network_size,
         config.to_connect_addrs,
         config.staked_nodes,
-        config.validator_config,
     )
     .await;
 }

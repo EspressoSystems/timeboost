@@ -2,8 +2,8 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
-use sailfish::types::message::SailfishEvent;
 use sailfish::utils::network::broadcast_event;
+use sailfish::{networking::external_network, types::message::SailfishEvent};
 use std::{collections::HashMap, time::Duration};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
@@ -24,7 +24,13 @@ async fn test_simple_network_genesis_message() {
     let event_receivers = nodes
         .nodes
         .iter()
-        .map(|node| (node.state.id, node.internal_event_stream.clone()))
+        .map(|node| (node.id, node.internal_event_stream.clone()))
+        .collect::<Vec<_>>();
+
+    let external_streams = nodes
+        .nodes
+        .iter()
+        .map(|node| node.external_event_stream.clone())
         .collect::<Vec<_>>();
 
     // This barrier ensures that all nodes are ready to receive events before we start the event loop.
@@ -51,8 +57,6 @@ async fn test_simple_network_genesis_message() {
                 .await;
 
             barrier.wait().await;
-
-            node.run().await;
         });
 
         handles.push(handle);
@@ -67,14 +71,22 @@ async fn test_simple_network_genesis_message() {
         let handle = tokio::spawn(async move {
             tracing::info!("Receiving events for node {}", id);
             let mut events = Vec::<SailfishEvent>::new();
-            loop {
-                match timeout(Duration::from_millis(250), event_receiver.1.recv()).await {
-                    Ok(Ok(event)) => {
-                        tracing::debug!("Node {} received event: {}", id, event);
-                        events.push(event);
+            let result = timeout(Duration::from_millis(250), async {
+                loop {
+                    match event_receiver.1.recv().await {
+                        Ok(event) => {
+                            tracing::debug!("Node {} received event: {}", id, event);
+                            events.push(event);
+                            tokio::task::yield_now().await;
+                        }
+                        Err(_) => break,
                     }
-                    Ok(Err(_)) | Err(_) => break,
                 }
+            })
+            .await;
+            match result {
+                Ok(_) => tracing::debug!("Node {} finished receiving events", id),
+                Err(_) => tracing::debug!("Node {} timed out after 250ms", id),
             }
             (id, events)
         });
@@ -124,6 +136,10 @@ async fn test_simple_network_genesis_message() {
     }
 
     // Send the shutdown event to all nodes
+    for event_stream in external_streams {
+        broadcast_event(SailfishEvent::Shutdown, &event_stream.0).await;
+    }
+
     for (_, event_stream) in event_receivers {
         broadcast_event(SailfishEvent::Shutdown, &event_stream.0).await;
     }

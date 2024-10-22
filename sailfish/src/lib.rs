@@ -1,6 +1,5 @@
 pub mod consensus;
 pub mod constants;
-pub mod impls;
 pub mod logging;
 pub mod networking;
 pub mod sailfish;

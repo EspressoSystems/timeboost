@@ -120,9 +120,8 @@ impl ExternalNetwork {
         debug!("Node {} received message from network: {}", self.id, event);
 
         if event == SailfishEvent::Shutdown {
-            info!("Received shutdown event, shutting down");
-            // TODO: Propagate shutdown signal.
-            return;
+            tracing::error!("Received shutdown event, shutting down");
+            std::process::exit(0);
         }
 
         // Otherwise, transform and send the event.

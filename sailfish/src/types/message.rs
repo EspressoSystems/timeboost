@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::types::vertex::Vertex;
 use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::{data::ViewNumber, vote::HasViewNumber};
+use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -90,22 +90,22 @@ impl Display for SailfishEvent {
             SailfishEvent::TimeoutRecv(round) => write!(f, "TimeoutRecv({})", round),
             SailfishEvent::NoVoteRecv(round) => write!(f, "NoVoteRecv({})", round),
             SailfishEvent::TimeoutVoteSend(vote) => {
-                write!(f, "TimeoutVoteSend({})", vote.view_number())
+                write!(f, "TimeoutVoteSend({})", vote.round_number())
             }
             SailfishEvent::TimeoutVoteRecv(vote) => {
-                write!(f, "TimeoutVoteRecv({})", vote.view_number())
+                write!(f, "TimeoutVoteRecv({})", vote.round_number())
             }
             SailfishEvent::NoVoteVoteSend(vote) => {
-                write!(f, "NoVoteVoteSend({})", vote.view_number())
+                write!(f, "NoVoteVoteSend({})", vote.round_number())
             }
             SailfishEvent::NoVoteVoteRecv(vote) => {
-                write!(f, "NoVoteVoteRecv({})", vote.view_number())
+                write!(f, "NoVoteVoteRecv({})", vote.round_number())
             }
             SailfishEvent::VertexVoteSend(vote) => {
-                write!(f, "VertexVoteSend({})", vote.view_number())
+                write!(f, "VertexVoteSend({})", vote.round_number())
             }
             SailfishEvent::VertexVoteRecv(vote) => {
-                write!(f, "VertexVoteRecv({})", vote.view_number())
+                write!(f, "VertexVoteRecv({})", vote.round_number())
             }
             SailfishEvent::VertexCommitted(round, _) => {
                 write!(f, "VertexCommitted({})", round)
@@ -115,10 +115,10 @@ impl Display for SailfishEvent {
             }
             SailfishEvent::Shutdown => write!(f, "Shutdown"),
             SailfishEvent::VertexCertificateSend(cert) => {
-                write!(f, "VertexCertificateSend({})", cert.view_number())
+                write!(f, "VertexCertificateSend({})", cert.round_number())
             }
             SailfishEvent::VertexCertificateRecv(cert) => {
-                write!(f, "VertexCertificateRecv({})", cert.view_number())
+                write!(f, "VertexCertificateRecv({})", cert.round_number())
             }
         }
     }

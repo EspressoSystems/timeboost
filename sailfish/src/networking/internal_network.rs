@@ -4,11 +4,11 @@ use async_broadcast::{Receiver, Sender};
 use hotshot::types::BLSPubKey;
 use hotshot_types::data::ViewNumber;
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     consensus::{verify_committed_round, Consensus},
-    types::{certificate::make_genesis_vertex_certificate, message::SailfishEvent},
+    types::{certificate::VertexCertificate, message::SailfishEvent},
     utils::network::broadcast_event,
 };
 
@@ -82,7 +82,7 @@ impl InternalNetwork {
     pub fn spawn_network_task(mut self, mut receiver: Receiver<SailfishEvent>) -> JoinHandle<()> {
         tokio::spawn(async move {
             // Create a genesis vertex certificate.
-            let certificate = make_genesis_vertex_certificate(self.public_key);
+            let certificate = VertexCertificate::genesis(self.public_key);
 
             // Broadcast the genesis certificate to the network. This will kickstart the network.
             // All nodes will aggregate these certificates and use them as their basis.
@@ -96,6 +96,7 @@ impl InternalNetwork {
                 match receiver.recv().await {
                     Ok(event) => {
                         if self.handle_message(event).await {
+                            info!("Received shutdown event, shutting down");
                             break;
                         }
                     }
