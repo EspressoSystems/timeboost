@@ -218,10 +218,7 @@ impl Consensus {
         )?;
 
         // This is a valid vertex, so we vote for it and change our round to the next round.
-        let output_events = vec![
-            SailfishEvent::RoundChange(vote.round_number()),
-            SailfishEvent::VertexVoteSend(vote),
-        ];
+        let output_events = vec![SailfishEvent::VertexVoteSend(vote)];
         Ok(output_events)
     }
 
@@ -494,10 +491,13 @@ impl Consensus {
                 self.last_proposed_round_number
             );
 
-            let output_events = vec![SailfishEvent::VertexSend(vertex, signature)];
-            Ok(output_events)
-        } else {
-            Ok(vec![])
+            // Move to the next round.
+            output_events.push(SailfishEvent::RoundChange(vertex.round));
+
+            // Submit the vertex to the network.
+            output_events.push(SailfishEvent::VertexSend(vertex, signature));
         }
+
+        Ok(output_events)
     }
 }
