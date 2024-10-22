@@ -2,8 +2,8 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
+use sailfish::types::message::SailfishEvent;
 use sailfish::utils::network::broadcast_event;
-use sailfish::{networking::external_network, types::message::SailfishEvent};
 use std::{collections::HashMap, time::Duration};
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
@@ -35,7 +35,7 @@ async fn test_simple_network_genesis_message() {
 
     // This barrier ensures that all nodes are ready to receive events before we start the event loop.
     let barrier = Arc::new(tokio::sync::Barrier::new(num_nodes));
-    for mut node in nodes.nodes.into_iter() {
+    for node in nodes.nodes.into_iter() {
         let bootstrap_nodes = Arc::clone(&nodes.bootstrap_nodes);
         let staked_nodes = Arc::clone(&nodes.staked_nodes);
         let barrier = Arc::clone(&barrier);
