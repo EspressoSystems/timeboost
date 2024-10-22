@@ -48,7 +48,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "initialize",
         fields(id = self.id)
     )]
     pub async fn initialize(&self) -> Result<()> {
@@ -59,7 +58,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "network",
         fields(id = self.id)
     )]
     pub fn spawn_network_task(mut self) -> JoinHandle<()> {
@@ -108,7 +106,6 @@ impl ExternalNetwork {
 
     #[instrument(
         skip_all,
-        target = "network",
         fields(id = self.id)
     )]
     async fn handle_incoming_message(&self, message: Vec<u8>) {
@@ -122,21 +119,13 @@ impl ExternalNetwork {
 
         debug!("Node {} received message from network: {}", self.id, event);
 
-        match event {
-            SailfishEvent::Shutdown => {
-                info!("Received shutdown event, shutting down");
-                // TODO: Propagate shutdown signal.
-            }
-            SailfishEvent::DummySend(sender_node_id) => {
-                broadcast_event(
-                    SailfishEvent::DummyRecv(sender_node_id),
-                    &self.internal_event_sender,
-                )
-                .await;
-            }
-            _ => {
-                broadcast_event(event, &self.internal_event_sender).await;
-            }
+        if event == SailfishEvent::Shutdown {
+            tracing::error!("Received shutdown event, shutting down");
+            std::process::exit(0);
         }
+
+        // Otherwise, transform and send the event.
+        let out_event = event.transform_send_to_recv();
+        broadcast_event(out_event, &self.internal_event_sender).await;
     }
 }

@@ -1,10 +1,8 @@
 use crate::{
-    consensus::Consensus,
+    consensus::{committee::StaticCommittee, Consensus, TaskContext},
     constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
-    impls::sailfish_types::SailfishTypes,
     networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
-    types::{message::SailfishEvent, sailfish_state::SailfishState},
-    utils::network::broadcast_event,
+    types::message::SailfishEvent,
 };
 use async_broadcast::{broadcast, Receiver, Sender};
 use async_lock::RwLock;
@@ -19,9 +17,10 @@ use hotshot::{
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };
 use hotshot_types::{
+    data::ViewNumber,
     network::{Libp2pConfig, NetworkConfig},
-    traits::{election::Membership, network::Topic, node_implementation::NodeType},
-    PeerConfig, ValidatorConfig,
+    traits::node_implementation::ConsensusTime,
+    PeerConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::{
@@ -40,6 +39,9 @@ use std::{
 use tracing::{info, instrument};
 
 pub struct Sailfish {
+    /// The ID of the sailfish node.
+    pub id: u64,
+
     /// The public key of the sailfish node.
     pub public_key: BLSPubKey,
 
@@ -57,18 +59,10 @@ pub struct Sailfish {
 
     /// The external event stream of the sailfish node.
     pub external_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
-
-    /// The state of the sailfish node.
-    pub state: SailfishState,
 }
 
 impl Sailfish {
-    pub fn new(
-        public_key: BLSPubKey,
-        private_key: BLSPrivKey,
-        id: u64,
-        validator_config: ValidatorConfig<BLSPubKey>,
-    ) -> Self {
+    pub fn new(public_key: BLSPubKey, private_key: BLSPrivKey, id: u64) -> Self {
         // Create the bind address for the sailfish node. The panic here should, essentially, never trigger.
         let bind_address = SocketAddr::new(
             IpAddr::V4(Ipv4Addr::UNSPECIFIED),
@@ -85,16 +79,13 @@ impl Sailfish {
             .expect("failed to derive libp2p peer id");
 
         Sailfish {
+            id,
             public_key,
             private_key,
             peer_id,
             bind_address,
             internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
             external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
-            state: SailfishState {
-                id,
-                validator_config,
-            },
         }
     }
 
@@ -104,8 +95,7 @@ impl Sailfish {
     /// - If the port cast fails.
     #[instrument(
         skip_all,
-        target = "initialize_networking",
-        fields(id = self.state.id)
+        fields(id = self.id)
     )]
     pub async fn initialize_networking(
         &self,
@@ -139,7 +129,7 @@ impl Sailfish {
             self.public_key,
             record_value,
             bootstrap_nodes,
-            usize::try_from(self.state.id).expect("id is too large"),
+            usize::try_from(self.id).expect("id is too large"),
             false,
         )
         .await
@@ -147,7 +137,7 @@ impl Sailfish {
 
         let external_network = ExternalNetwork::new(
             network,
-            self.state.id,
+            self.id,
             self.internal_event_stream.0.clone(),
             self.internal_event_stream.1.clone(),
             self.external_event_stream.0.clone(),
@@ -161,18 +151,28 @@ impl Sailfish {
 
         external_network.spawn_network_task();
 
-        let quorum_membership = <SailfishTypes as NodeType>::Membership::new(
-            staked_nodes.clone(),
-            staked_nodes,
-            Topic::Global,
+        let quorum_membership = StaticCommittee::new(
+            staked_nodes
+                .iter()
+                .map(|node| node.stake_table_entry.stake_key)
+                .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(quorum_membership);
+        let consensus = Consensus::new(
+            TaskContext {
+                id: self.id,
+                round: ViewNumber::genesis(),
+                public_key: self.public_key,
+                private_key: self.private_key.clone(),
+            },
+            quorum_membership,
+        );
 
         let internal_network = InternalNetwork::new(
-            self.state.id,
+            self.id,
             self.internal_event_stream.0.clone(),
             self.external_event_stream.0.clone(),
+            self.public_key,
             consensus,
         );
         internal_network.spawn_network_task(self.internal_event_stream.1.clone());
@@ -183,17 +183,10 @@ impl Sailfish {
     #[instrument(
         skip_all,
         target = "run",
-        fields(id = self.state.id)
+        fields(id = self.id)
     )]
     pub async fn run(&mut self) {
-        tracing::info!("Starting Sailfish Node {}", self.state.id);
-        // Kickstart the network with a dummy send event.
-        // TODO: This is not required later when we have actual consensus messages.
-        broadcast_event(
-            SailfishEvent::DummySend(self.state.id),
-            &self.external_event_stream.0,
-        )
-        .await;
+        tracing::info!("Starting Sailfish Node {}", self.id);
     }
 }
 
@@ -221,14 +214,13 @@ pub async fn initialize_and_run_sailfish(
     network_size: usize,
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<BLSPubKey>>,
-    validator_config: ValidatorConfig<BLSPubKey>,
 ) {
     let seed = [0u8; 32];
 
     let (private_key, public_key) = generate_key_pair(seed, id);
     let libp2p_keypair =
         derive_libp2p_keypair::<BLSPubKey>(&private_key).expect("failed to derive libp2p keypair");
-    let mut sailfish = Sailfish::new(public_key, private_key, id, validator_config);
+    let mut sailfish = Sailfish::new(public_key, private_key, id);
 
     let bind_address = SocketAddr::new(
         IpAddr::V4(Ipv4Addr::UNSPECIFIED),

@@ -53,11 +53,11 @@ impl Transaction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct Payload {
+pub struct BlockPayload {
     pub transactions: Vec<Transaction>,
 }
 
-impl Committable for Payload {
+impl Committable for BlockPayload {
     fn commit(&self) -> committable::Commitment<Self> {
         committable::RawCommitmentBuilder::new("Payload")
             .field(
@@ -75,8 +75,8 @@ impl Committable for Payload {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Block {
-    header: BlockHeader,
-    payload: Payload,
+    pub header: BlockHeader,
+    pub payload: BlockPayload,
 }
 
 impl Committable for Block {
@@ -85,5 +85,16 @@ impl Committable for Block {
             .field("header", self.header.commit())
             .field("payload", self.payload.commit())
             .finalize()
+    }
+}
+
+impl Block {
+    pub fn empty() -> Self {
+        Self {
+            header: BlockHeader {},
+            payload: BlockPayload {
+                transactions: vec![],
+            },
+        }
     }
 }

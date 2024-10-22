@@ -2,14 +2,12 @@ use std::fmt::Display;
 
 use committable::Committable;
 use hotshot::types::{BLSPubKey, SignatureKey};
-use hotshot_types::{data::ViewNumber, simple_certificate::QuorumCertificate};
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
-
-use crate::impls::sailfish_types::SailfishTypes;
 
 use super::{
     block::Block,
-    certificate::{NoVoteCertificate, TimeoutCertificate},
+    certificate::{NoVoteCertificate, TimeoutCertificate, VertexCertificate},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -18,13 +16,13 @@ pub struct Vertex {
     pub round: ViewNumber,
 
     /// The source that broadcasted this vertex $v$
-    source: BLSPubKey,
+    pub source: BLSPubKey,
 
     /// The block of transactions being transmitted
-    block: Block,
+    pub block: Block,
 
     /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
-    parents: Vec<QuorumCertificate<SailfishTypes>>,
+    pub parents: Vec<VertexCertificate>,
 
     /// The no-vote certificate for `v.round - 1`.
     pub no_vote_certificate: Option<NoVoteCertificate>,
@@ -35,7 +33,7 @@ pub struct Vertex {
 
 impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vertex(round: {}, source: {})", self.round, self.source)
+        write!(f, "Vertex(round: {})", self.round)
     }
 }
 
@@ -53,5 +51,18 @@ impl Committable for Vertex {
             .optional("no_vote_certificate", &self.no_vote_certificate)
             .optional("timeout_certificate", &self.timeout_certificate)
             .finalize()
+    }
+}
+
+impl Vertex {
+    pub fn genesis(public_key: BLSPubKey) -> Self {
+        Self {
+            round: ViewNumber::genesis(),
+            source: public_key,
+            block: Block::empty(),
+            parents: vec![],
+            no_vote_certificate: None,
+            timeout_certificate: None,
+        }
     }
 }
