@@ -61,3 +61,4 @@ async-lock = "2"
 toml = "0.8.19"
 futures = { version = "0.3", default-features = false }
 either = "1.13.0"
+futures-util = "0.3.31"

@@ -8,6 +8,9 @@ description = "Sailfish is a DAG-based BFT consensus protocol."
 name = "sailfish"
 path = "src/binaries/node.rs"
 
+[features]
+sailfish-testing = []
+
 [dependencies]
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }
@@ -49,3 +52,5 @@ toml = { workspace = true }
 url = "2.5.2"
 vbs = "0.1.6"
 either = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }

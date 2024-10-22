@@ -5,7 +5,7 @@ use hotshot::{
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 
-use crate::init_nodes;
+use crate::{init_nodes, make_network};
 
 #[tokio::test]
 async fn test_multi_node_init() {
@@ -31,7 +31,17 @@ async fn test_multi_node_init() {
                 .build()
                 .expect("Failed to build network node config");
 
-            node.initialize_networking(network_config, bootstrap_nodes, (*staked_nodes).clone())
+            let network = make_network(
+                bootstrap_nodes,
+                (*staked_nodes).clone(),
+                node.public_key,
+                node.private_key.clone(),
+                network_config,
+                node.id,
+            )
+            .await;
+
+            node.initialize((*staked_nodes).clone(), Box::new(network))
                 .await;
         });
 

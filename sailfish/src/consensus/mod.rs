@@ -2,35 +2,24 @@ use std::collections::BTreeMap;
 
 use anyhow::{ensure, Context, Result};
 use committable::Committable;
-use either::Either;
-use hotshot::{
-    traits::election::static_committee::StaticCommittee,
-    types::{BLSPrivKey, BLSPubKey, SignatureKey},
-};
-use hotshot_types::{
-    data::ViewNumber,
-    message::UpgradeLock,
-    traits::{election::Membership, node_implementation::ConsensusTime},
-    vote::{HasViewNumber, VoteAccumulator},
-};
+use committee::StaticCommittee;
+use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use tracing::{debug, error, instrument, trace, warn};
-use vote::create_vote_accumulator;
+use vote::{HasRoundNumber, VoteAccumulator};
 
-use crate::{
-    impls::sailfish_types::SailfishTypes,
-    types::{
-        block::{Block, BlockPayload, Transaction},
-        block_header::BlockHeader,
-        certificate::{
-            NoVoteCertificate, TimeoutCertificate, VertexCertificate, VertexCertificateData,
-        },
-        message::SailfishEvent,
-        sailfish_types::UnusedVersions,
-        timeout::{NoVoteData, TimeoutData},
-        vertex::Vertex,
-        vote::{NoVoteVote, TimeoutVote, VertexVote},
+use crate::types::{
+    block::{Block, BlockPayload, Transaction},
+    block_header::BlockHeader,
+    certificate::{
+        Certificate, NoVoteCertificate, NoVoteData, TimeoutCertificate, TimeoutData,
+        VertexCertificate, VertexCertificateData,
     },
+    message::SailfishEvent,
+    vertex::Vertex,
+    vote::{NoVoteVote, TimeoutVote, VertexVote},
 };
+pub mod committee;
 pub mod vote;
 
 /// The DAG is a mapping of the round number to the vertex and the signature computed over the
@@ -60,8 +49,8 @@ pub struct TaskContext {
     /// The ID of the node running this task.
     pub id: u64,
 
-    /// The view number of the node running this task.
-    pub view_number: ViewNumber,
+    /// The round number of the node running this task.
+    pub round_number: ViewNumber,
 }
 
 /// The core consensus state.
@@ -70,7 +59,7 @@ pub struct Consensus {
     pub context: TaskContext,
 
     /// The quorum membership.
-    pub quorum_membership: StaticCommittee<SailfishTypes>,
+    pub quorum_membership: StaticCommittee,
 
     /// The last committed round number.
     pub last_committed_round_number: ViewNumber,
@@ -84,9 +73,7 @@ pub struct Consensus {
     /// The uncomitted vertices that we've generated so far.
     pub uncommitted_vertices: BTreeMap<ViewNumber, Vec<Vertex>>,
 
-    /// The map of vertex certificates that we've generated so far. We keep a vector of certificates
-    /// for each round to handle getting 2f + 1 certificates for a vertex. To be able to propose, the
-    /// vector of certificates must be of length 2f + 1.
+    /// The map of vertex certificates that we've generated so far.
     pub vertex_certificates: BTreeMap<ViewNumber, Vec<VertexCertificate>>,
 
     /// The map of timeout certificates that we've generated so far.
@@ -98,23 +85,17 @@ pub struct Consensus {
     /// The DAG of vertices
     pub dag: Dag,
 
-    /// The accumulator for the vertices of a given round.
-    pub vertex_accumulator_map: BTreeMap<
-        ViewNumber,
-        VoteAccumulator<SailfishTypes, VertexVote, VertexCertificate, UnusedVersions>,
-    >,
+    /// The map of vertex certificates that we've generated so far.
+    pub vertex_accumulator_map:
+        BTreeMap<ViewNumber, VoteAccumulator<VertexVote, VertexCertificate>>,
 
     /// The accumulator for the timeouts of a given round.
-    pub timeout_accumulator_map: BTreeMap<
-        ViewNumber,
-        VoteAccumulator<SailfishTypes, TimeoutVote, TimeoutCertificate, UnusedVersions>,
-    >,
+    pub timeout_accumulator_map:
+        BTreeMap<ViewNumber, VoteAccumulator<TimeoutVote, TimeoutCertificate>>,
 
     /// The accumulator for the no votes of a given round.
-    pub no_vote_accumulator_map: BTreeMap<
-        ViewNumber,
-        VoteAccumulator<SailfishTypes, NoVoteVote, NoVoteCertificate, UnusedVersions>,
-    >,
+    pub no_vote_accumulator_map:
+        BTreeMap<ViewNumber, VoteAccumulator<NoVoteVote, NoVoteCertificate>>,
 
     /// The transactions that this node has accumulated.
     pub transactions: Vec<Transaction>,
@@ -127,7 +108,7 @@ pub struct Consensus {
 pub fn verify_committed_round(
     round: ViewNumber,
     signature: &<BLSPubKey as SignatureKey>::PureAssembledSignatureType,
-    quorum_membership: &StaticCommittee<SailfishTypes>,
+    quorum_membership: &StaticCommittee,
 ) -> Result<()> {
     // Make sure that the signature is valid for the provided round.
     ensure!(
@@ -141,7 +122,7 @@ pub fn verify_committed_round(
 }
 
 impl Consensus {
-    pub fn new(context: TaskContext, quorum_membership: StaticCommittee<SailfishTypes>) -> Self {
+    pub fn new(context: TaskContext, quorum_membership: StaticCommittee) -> Self {
         Self {
             context,
             quorum_membership,
@@ -166,11 +147,39 @@ impl Consensus {
         self.round
     }
 
+    pub async fn on_timeout(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
+        if round < self.round {
+            return Ok(vec![]);
+        }
+
+        let vote = TimeoutVote::create_signed_vote(
+            TimeoutData { round },
+            self.context.public_key,
+            self.context.private_key.clone(),
+        )?;
+
+        Ok(vec![SailfishEvent::TimeoutVoteSend(vote)])
+    }
+
+    pub async fn on_no_vote(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
+        if round < self.round {
+            return Ok(vec![]);
+        }
+
+        let vote = NoVoteVote::create_signed_vote(
+            NoVoteData { round },
+            self.context.public_key,
+            self.context.private_key.clone(),
+        )?;
+
+        Ok(vec![SailfishEvent::NoVoteVoteSend(vote)])
+    }
+
     #[instrument(
         skip(self),
         fields(event = %event, round = %self.round, id = %self.context.id),
     )]
-    pub async fn handle_event(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
+    pub async fn on_message(&mut self, event: SailfishEvent) -> Result<Vec<SailfishEvent>> {
         #[cfg(test)]
         {
             self.events.push(event.clone());
@@ -209,11 +218,7 @@ impl Consensus {
     ) -> Result<Vec<SailfishEvent>> {
         let round = vertex.round;
 
-        debug!(
-            "Received a vertex for round: {}, voting for round: {}",
-            round,
-            round + 1
-        );
+        debug!("Received a vertex for round: {}", round);
 
         // TODO: Validation
 
@@ -225,29 +230,26 @@ impl Consensus {
             .insert(self.context.public_key, (vertex.clone(), signature));
 
         // Assuming that the vertex is valid, we can now submit our vote for the vertex.
-        let vote = VertexVote::create_signed_vote::<UnusedVersions>(
-            VertexCertificateData::new(vertex.commit(), round),
-            round + 1,
-            &self.context.public_key,
-            &self.context.private_key,
-            &UpgradeLock::new(),
-        )
-        .await?;
+        let vote = VertexVote::create_signed_vote(
+            VertexCertificateData {
+                round,
+                source: self.context.public_key,
+            },
+            self.context.public_key,
+            self.context.private_key.clone(),
+        )?;
 
         // This is a valid vertex, so we vote for it and change our round to the next round.
-        let output_events = vec![
-            SailfishEvent::RoundChange(vote.view_number()),
-            SailfishEvent::VertexVoteSend(vote),
-        ];
+        let output_events = vec![SailfishEvent::VertexVoteSend(vote)];
         Ok(output_events)
     }
 
     #[instrument(
         skip_all,
-        fields(round = %self.round, id = %self.context.id, vote = %vote.view_number())
+        fields(round = %self.round, id = %self.context.id, vote = %vote.round_number())
     )]
     async fn handle_vertex_vote_recv(&mut self, vote: VertexVote) -> Result<Vec<SailfishEvent>> {
-        let round = vote.view_number();
+        let round = vote.round_number();
 
         // TODO: Validation
 
@@ -255,30 +257,29 @@ impl Consensus {
         if let std::collections::btree_map::Entry::Vacant(e) =
             self.vertex_accumulator_map.entry(round)
         {
-            let accumulator = create_vote_accumulator(&vote, &self.quorum_membership).await;
+            let accumulator = VoteAccumulator::new(&vote, &self.quorum_membership).await;
             e.insert(accumulator);
         }
 
         // Add the vote to the accumulator.
-        match self
+        if let Some(cert) = self
             .vertex_accumulator_map
             .get_mut(&round)
             .unwrap()
             .accumulate(&vote, &self.quorum_membership)
             .await
         {
-            Either::Right(cert) => {
-                self.vertex_certificates
-                    .entry(round)
-                    .or_default()
-                    .push(cert.clone());
+            self.vertex_certificates
+                .entry(round)
+                .or_default()
+                .push(cert.clone());
 
-                self.vertex_accumulator_map =
-                    self.vertex_accumulator_map.split_off(&vote.view_number());
+            self.vertex_accumulator_map =
+                self.vertex_accumulator_map.split_off(&vote.round_number());
 
-                Ok(vec![SailfishEvent::VertexCertificateSend(cert)])
-            }
-            Either::Left(_) => Ok(vec![]),
+            Ok(vec![SailfishEvent::VertexCertificateSend(cert)])
+        } else {
+            Ok(vec![])
         }
     }
 
@@ -290,14 +291,11 @@ impl Consensus {
         ensure!(self.round < round, "Received timeout for an old round");
 
         // We made it past the round check, let's vote to timeout.
-        let vote = TimeoutVote::create_signed_vote::<UnusedVersions>(
+        let vote = TimeoutVote::create_signed_vote(
             TimeoutData { round },
-            round,
-            &self.context.public_key,
-            &self.context.private_key,
-            &UpgradeLock::new(),
-        )
-        .await?;
+            self.context.public_key,
+            self.context.private_key.clone(),
+        )?;
 
         Ok(vec![SailfishEvent::TimeoutVoteSend(vote)])
     }
@@ -307,14 +305,11 @@ impl Consensus {
         ensure!(self.round < round, "Received no vote for an old round");
 
         // We made it past the round check, let's vote to no vote.
-        let vote = NoVoteVote::create_signed_vote::<UnusedVersions>(
+        let vote = NoVoteVote::create_signed_vote(
             NoVoteData { round },
-            round,
-            &self.context.public_key,
-            &self.context.private_key,
-            &UpgradeLock::new(),
-        )
-        .await?;
+            self.context.public_key,
+            self.context.private_key.clone(),
+        )?;
 
         Ok(vec![SailfishEvent::NoVoteVoteSend(vote)])
     }
@@ -322,35 +317,32 @@ impl Consensus {
     async fn handle_timeout_vote_recv(&mut self, vote: TimeoutVote) -> Result<Vec<SailfishEvent>> {
         // TODO: Validation
 
-        let round = vote.view_number();
+        let round = vote.round_number();
 
         // Check if we have an accumulator for this round.
         if let std::collections::btree_map::Entry::Vacant(e) =
             self.timeout_accumulator_map.entry(round)
         {
-            let accumulator = create_vote_accumulator(&vote, &self.quorum_membership).await;
+            let accumulator = VoteAccumulator::new(&vote, &self.quorum_membership).await;
             e.insert(accumulator);
         }
 
         // Add the vote to the accumulator.
-        match self
+        if let Some(cert) = self
             .timeout_accumulator_map
             .get_mut(&round)
             .unwrap()
             .accumulate(&vote, &self.quorum_membership)
             .await
         {
-            Either::Right(cert) => {
-                // If we get threshold for a vertex, then we can generate a certificate for it. This will
-                // go into the set of certificates that we've generated so far for valid vertices, and will
-                // form the basis of our parent set when we create our next vertex.
-                self.timeout_certificates.entry(round).or_insert(cert);
+            // If we get threshold for a vertex, then we can generate a certificate for it. This will
+            // go into the set of certificates that we've generated so far for valid vertices, and will
+            // form the basis of our parent set when we create our next vertex.
+            self.timeout_certificates.entry(round).or_insert(cert);
 
-                // Remove the old accumulators for prior views.
-                self.timeout_accumulator_map =
-                    self.timeout_accumulator_map.split_off(&vote.view_number());
-            }
-            Either::Left(_) => {}
+            // Remove the old accumulators for prior views.
+            self.timeout_accumulator_map =
+                self.timeout_accumulator_map.split_off(&vote.round_number());
         }
 
         Ok(vec![])
@@ -359,35 +351,32 @@ impl Consensus {
     async fn handle_no_vote_vote_recv(&mut self, vote: NoVoteVote) -> Result<Vec<SailfishEvent>> {
         // TODO: Validation
 
-        let round = vote.view_number();
+        let round = vote.round_number();
 
         // Check if we have an accumulator for this round.
         if let std::collections::btree_map::Entry::Vacant(e) =
             self.no_vote_accumulator_map.entry(round)
         {
-            let accumulator = create_vote_accumulator(&vote, &self.quorum_membership).await;
+            let accumulator = VoteAccumulator::new(&vote, &self.quorum_membership).await;
             e.insert(accumulator);
         }
 
         //tchd the vote to the accumulator.
-        match self
+        if let Some(cert) = self
             .no_vote_accumulator_map
             .get_mut(&round)
             .unwrap()
             .accumulate(&vote, &self.quorum_membership)
             .await
         {
-            Either::Right(cert) => {
-                // If we get threshold for a vertex, then we can generate a certificate for it. This will
-                // go into the set of certificates that we've generated so far for valid vertices, and will
-                // form the basis of our parent set when we create our next vertex.
-                self.no_vote_certificates.entry(round).or_insert(cert);
+            // If we get threshold for a vertex, then we can generate a certificate for it. This will
+            // go into the set of certificates that we've generated so far for valid vertices, and will
+            // form the basis of our parent set when we create our next vertex.
+            self.no_vote_certificates.entry(round).or_insert(cert);
 
-                // Remove the old accumulators for prior views.
-                self.no_vote_accumulator_map =
-                    self.no_vote_accumulator_map.split_off(&vote.view_number());
-            }
-            Either::Left(_) => {}
+            // Remove the old accumulators for prior views.
+            self.no_vote_accumulator_map =
+                self.no_vote_accumulator_map.split_off(&vote.round_number());
         }
 
         Ok(vec![])
@@ -430,7 +419,8 @@ impl Consensus {
         cert: VertexCertificate,
     ) -> Result<Vec<SailfishEvent>> {
         let mut output_events = vec![];
-        let round = cert.view_number();
+        let round = cert.data().round_number();
+        let next_round = round + 1;
 
         if round < self.last_proposed_round_number {
             trace!(
@@ -444,6 +434,9 @@ impl Consensus {
         // TODO: Validation
 
         // TODO: Make sure that the vertex certificate data contains a vertex that we've generated.
+
+        // Now that we've validated, submit a round change to the network.
+        output_events.push(SailfishEvent::RoundChange(next_round));
 
         // Add the certificate to the set of certificates that we've received so far.
         self.vertex_certificates
@@ -496,7 +489,7 @@ impl Consensus {
 
             // Yes, so we can generate a new vertex.
             let vertex = Vertex {
-                round: self.round + 1,
+                round: next_round,
                 source: self.context.public_key,
                 // TODO: Fill in the block
                 block: Block {
@@ -505,7 +498,8 @@ impl Consensus {
                         transactions: self.transactions.clone(),
                     },
                 },
-                parents: certs.clone(),
+                strong_edges: certs.clone(),
+                weak_edges: vec![],
                 no_vote_certificate,
                 timeout_certificate,
             };
@@ -528,10 +522,8 @@ impl Consensus {
                 self.last_proposed_round_number
             );
 
-            let output_events = vec![SailfishEvent::VertexSend(vertex, signature)];
-            Ok(output_events)
-        } else {
-            Ok(vec![])
+            output_events.push(SailfishEvent::VertexSend(vertex, signature));
         }
+        Ok(output_events)
     }
 }

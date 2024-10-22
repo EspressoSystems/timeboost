@@ -4,7 +4,7 @@ use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime
 use sailfish::{
     consensus::Consensus,
     logging,
-    types::{certificate::make_genesis_vertex_certificate, message::SailfishEvent},
+    types::{certificate::VertexCertificate, message::SailfishEvent},
 };
 
 use crate::make_consensus_nodes;
@@ -36,7 +36,7 @@ impl FakeNetwork {
             .nodes
             .iter()
             .map(|(_, (node, _))| {
-                SailfishEvent::VertexCertificateRecv(make_genesis_vertex_certificate(
+                SailfishEvent::VertexCertificateRecv(VertexCertificate::genesis(
                     node.context.public_key,
                 ))
             })
@@ -56,7 +56,7 @@ impl FakeNetwork {
         for (_, (node, queue)) in self.nodes.iter_mut() {
             while let Some(event) = queue.pop_front() {
                 let in_event = event.transform_send_to_recv();
-                let next_events = node.handle_event(in_event).await.unwrap();
+                let next_events = node.on_message(in_event).await.unwrap();
                 new_events.extend(next_events);
             }
         }

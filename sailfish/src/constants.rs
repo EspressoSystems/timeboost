@@ -1,2 +1,1 @@
 pub const EXTERNAL_EVENT_CHANNEL_SIZE: usize = 100_000;
-pub const INTERNAL_EVENT_CHANNEL_SIZE: usize = 100_000;

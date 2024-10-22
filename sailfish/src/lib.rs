@@ -1,8 +1,8 @@
 pub mod consensus;
 pub mod constants;
-pub mod impls;
+pub mod coordinator;
 pub mod logging;
-pub mod networking;
+pub mod net;
 pub mod sailfish;
 pub mod tasks;
 pub mod types;

@@ -22,7 +22,10 @@ pub struct Vertex {
     pub block: Block,
 
     /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
-    pub parents: Vec<VertexCertificate>,
+    pub strong_edges: Vec<VertexCertificate>,
+
+    /// The weak edges to this vertex (the 2f + 1 vertices from round r - 2)
+    pub weak_edges: Vec<VertexCertificate>,
 
     /// The no-vote certificate for `v.round - 1`.
     pub no_vote_certificate: Option<NoVoteCertificate>,
@@ -46,7 +49,11 @@ impl Committable for Vertex {
             .field("block", self.block.commit())
             .array_field(
                 "parents",
-                &self.parents.iter().map(|p| p.commit()).collect::<Vec<_>>(),
+                &self
+                    .strong_edges
+                    .iter()
+                    .map(|p| p.commit())
+                    .collect::<Vec<_>>(),
             )
             .optional("no_vote_certificate", &self.no_vote_certificate)
             .optional("timeout_certificate", &self.timeout_certificate)
@@ -60,7 +67,8 @@ impl Vertex {
             round: ViewNumber::genesis(),
             source: public_key,
             block: Block::empty(),
-            parents: vec![],
+            strong_edges: vec![],
+            weak_edges: vec![],
             no_vote_certificate: None,
             timeout_certificate: None,
         }

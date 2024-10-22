@@ -10,7 +10,7 @@ description.workspace = true
 tokio = { workspace = true }
 async-lock = { workspace = true }
 hotshot-types = { workspace = true }
-sailfish = { path = "../sailfish" }
+sailfish = { path = "../sailfish", features = ["sailfish-testing"] }
 libp2p-networking = { workspace = true }
 libp2p-identity = { workspace = true }
 hotshot = { workspace = true }
