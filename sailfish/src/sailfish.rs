@@ -9,7 +9,7 @@ use hotshot::{
             derive_libp2p_keypair, derive_libp2p_multiaddr, derive_libp2p_peer_id,
             Libp2pMetricsValue, Libp2pNetwork,
         },
-        NetworkError, NetworkNodeConfigBuilder,
+        NetworkNodeConfigBuilder,
     },
     types::{BLSPrivKey, BLSPubKey, SignatureKey},
 };

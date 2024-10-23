@@ -3,7 +3,6 @@ pub mod constants;
 pub mod coordinator;
 pub mod logging;
 pub mod net;
-pub mod networking;
 pub mod sailfish;
 pub mod tasks;
 pub mod types;
