@@ -15,28 +15,28 @@ pub mod committee;
 
 pub struct Consensus {
     /// The public key of the node running this task.
-    pub pkey: PublicKey,
+    pkey: PublicKey,
 
     /// The private key of the node running this task.
-    pub skey: SecretKey,
+    skey: SecretKey,
 
     /// The DAG of vertices
-    pub dag: Dag,
+    dag: Dag,
 
     /// The quorum membership.
-    pub committee: StaticCommittee,
+    committee: StaticCommittee,
 
     /// The current round number.
-    pub round: ViewNumber,
+    round: ViewNumber,
 
     /// The set of vertices that we've received so far per round.
-    pub vertices: BTreeMap<ViewNumber, HashSet<Vertex>>,
+    vertices: BTreeMap<ViewNumber, HashSet<Vertex>>,
 
     /// The set of timeouts that we've received so far per round.
-    pub timeouts: BTreeMap<ViewNumber, VoteAccumulator<Timeout>>,
+    timeouts: BTreeMap<ViewNumber, VoteAccumulator<Timeout>>,
 
     /// The set of no votes that we've received so far.
-    pub no_votes: VoteAccumulator<NoVote>,
+    no_votes: VoteAccumulator<NoVote>,
 }
 
 impl Consensus {
@@ -51,6 +51,14 @@ impl Consensus {
             no_votes: VoteAccumulator::new(committee.clone()),
             committee
         }
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.pkey
+    }
+
+    pub fn round(&self) -> ViewNumber {
+        self.round
     }
 
     pub async fn timeout(&mut self, r: ViewNumber) -> Result<Vec<Action>> {

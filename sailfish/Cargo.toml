@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
-[[bin]]
-name = "sailfish"
-path = "src/binaries/node.rs"
+[features]
+test = []
 
 [dependencies]
 anyhow = { workspace = true }
@@ -49,3 +48,7 @@ tracing-subscriber = { workspace = true }
 typenum = { workspace = true }
 url = "2.5.2"
 vbs = "0.1.6"
+
+[[bin]]
+name = "sailfish"
+path = "src/binaries/node.rs"

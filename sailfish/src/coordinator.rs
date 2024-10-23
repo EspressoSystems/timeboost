@@ -27,6 +27,11 @@ impl Coordinator {
         self.id
     }
 
+    #[cfg(feature = "test")]
+    pub fn consensus(&self) -> &Consensus {
+        &self.consensus
+    }
+
     pub async fn go(mut self) -> ! {
         let mut timer: BoxFuture<'static, ViewNumber> = pending().boxed();
         loop {
