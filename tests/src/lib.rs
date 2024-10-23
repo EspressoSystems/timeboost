@@ -1,3 +1,4 @@
+/*
 use async_lock::RwLock;
 use hotshot::types::BLSPubKey;
 use hotshot_types::{
@@ -86,3 +87,4 @@ pub fn make_consensus_nodes(num_nodes: usize) -> Vec<Consensus> {
 
     consensus_instances
 }
+*/

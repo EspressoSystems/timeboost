@@ -7,12 +7,12 @@ description.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { workspace = true }
 async-lock = { workspace = true }
-hotshot-types = { workspace = true }
-sailfish = { path = "../sailfish" }
-libp2p-networking = { workspace = true }
-libp2p-identity = { workspace = true }
-hotshot = { workspace = true }
-tracing = { workspace = true }
 futures = { workspace = true }
+hotshot = { workspace = true }
+hotshot-types = { workspace = true }
+libp2p-identity = { workspace = true }
+libp2p-networking = { workspace = true }
+sailfish = { path = "../sailfish" }
+tokio = { workspace = true }
+tracing = { workspace = true }

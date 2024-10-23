@@ -1,10 +1,7 @@
 use crate::{
-    consensus::{committee::StaticCommittee, Consensus, TaskContext},
-    constants::{EXTERNAL_EVENT_CHANNEL_SIZE, INTERNAL_EVENT_CHANNEL_SIZE},
-    networking::{external_network::ExternalNetwork, internal_network::InternalNetwork},
-    types::message::SailfishEvent,
+    consensus::{committee::StaticCommittee, Consensus}, coordinator::Coordinator, types::{NodeId, PublicKey, SecretKey}
 };
-use async_broadcast::{broadcast, Receiver, Sender};
+use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::{
     traits::{
@@ -14,7 +11,7 @@ use hotshot::{
         },
         NetworkNodeConfigBuilder,
     },
-    types::{BLSPrivKey, BLSPubKey, SignatureKey},
+    types::SignatureKey,
 };
 use hotshot_types::{
     data::ViewNumber,
@@ -40,69 +37,40 @@ use tracing::{info, instrument};
 
 pub struct Sailfish {
     /// The ID of the sailfish node.
-    pub id: u64,
+    pub id: NodeId,
 
     /// The public key of the sailfish node.
-    pub public_key: BLSPubKey,
+    pub public_key: PublicKey,
 
     /// The private key of the sailfish node.
-    pub private_key: BLSPrivKey,
+    pub private_key: SecretKey,
 
     /// The Libp2p PeerId of the sailfish node.
     pub peer_id: PeerId,
 
     /// The Libp2p multiaddr of the sailfish node.
     pub bind_address: Multiaddr,
-
-    /// The internal event stream of the sailfish node.
-    pub internal_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
-
-    /// The external event stream of the sailfish node.
-    pub external_event_stream: (Sender<SailfishEvent>, Receiver<SailfishEvent>),
 }
 
 impl Sailfish {
-    pub fn new(public_key: BLSPubKey, private_key: BLSPrivKey, id: u64) -> Self {
-        // Create the bind address for the sailfish node. The panic here should, essentially, never trigger.
-        let bind_address = SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            (8000 + id)
-                .try_into()
-                .expect("failed to create advertise address due to invalid port cast"),
-        )
-        .to_string();
-
-        let bind_address =
-            derive_libp2p_multiaddr(&bind_address).expect("failed to derive libp2p multiaddr");
-
-        let peer_id = derive_libp2p_peer_id::<BLSPubKey>(&private_key)
-            .expect("failed to derive libp2p peer id");
-
-        Sailfish {
+    pub fn new(id: NodeId, pk: PublicKey, sk: SecretKey, bind: Multiaddr) -> Result<Self> {
+        let peer_id = derive_libp2p_peer_id::<PublicKey>(&sk)?;
+        Ok(Sailfish {
             id,
-            public_key,
-            private_key,
+            public_key: pk,
+            private_key: sk,
             peer_id,
-            bind_address,
-            internal_event_stream: broadcast(INTERNAL_EVENT_CHANNEL_SIZE),
-            external_event_stream: broadcast(EXTERNAL_EVENT_CHANNEL_SIZE),
-        }
+            bind_address: bind,
+        })
     }
 
-    /// Initialize the networking for the sailfish node.
-    ///
-    /// # Panics
-    /// - If the port cast fails.
-    #[instrument(
-        skip_all,
-        fields(id = self.id)
-    )]
-    pub async fn initialize_networking(
-        &self,
-        config: NetworkNodeConfig<BLSPubKey>,
+    #[instrument(skip_all, fields(id = u64::from(self.id)))]
+    pub async fn init(
+        self,
+        config: NetworkNodeConfig<PublicKey>,
         bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
-        staked_nodes: Vec<PeerConfig<BLSPubKey>>,
-    ) {
+        staked_nodes: Vec<PeerConfig<PublicKey>>,
+    ) -> Result<Coordinator> {
         let mut network_config = NetworkConfig::default();
         network_config.config.known_nodes_with_stake = staked_nodes.clone();
         network_config.libp2p_config = Some(Libp2pConfig {
@@ -112,15 +80,13 @@ impl Sailfish {
         // We don't have any DA nodes in Sailfish.
         network_config.config.known_da_nodes = vec![];
 
-        let libp2p_keypair = derive_libp2p_keypair::<BLSPubKey>(&self.private_key)
-            .expect("failed to derive libp2p keypair");
+        let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&self.private_key)?;
 
         let record_value = RecordValue::new_signed(
             &RecordKey::new(Namespace::Lookup, self.public_key.to_bytes()),
             libp2p_keypair.public().to_peer_id().to_bytes(),
             &self.private_key,
-        )
-        .expect("failed to create record value");
+        )?;
 
         // Create the Libp2p network
         let network = Libp2pNetwork::new(
@@ -129,27 +95,14 @@ impl Sailfish {
             self.public_key,
             record_value,
             bootstrap_nodes,
-            usize::try_from(self.id).expect("id is too large"),
+            u64::from(self.id) as usize,
             false,
         )
-        .await
-        .expect("failed to initialize libp2p network");
+        .await?;
 
-        let external_network = ExternalNetwork::new(
-            network,
-            self.id,
-            self.internal_event_stream.0.clone(),
-            self.internal_event_stream.1.clone(),
-            self.external_event_stream.0.clone(),
-            self.external_event_stream.1.clone(),
-        );
+        network.wait_for_ready().await;
 
-        external_network
-            .initialize()
-            .await
-            .expect("failed to initialize external network");
-
-        external_network.spawn_network_task();
+        info!("Network is ready.");
 
         let quorum_membership = StaticCommittee::new(
             staked_nodes
@@ -158,41 +111,16 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(
-            TaskContext {
-                id: self.id,
-                round: ViewNumber::genesis(),
-                public_key: self.public_key,
-                private_key: self.private_key.clone(),
-            },
-            quorum_membership,
-        );
+        let consensus =
+            Consensus::new(self.public_key, self.private_key, quorum_membership);
 
-        let internal_network = InternalNetwork::new(
-            self.id,
-            self.internal_event_stream.0.clone(),
-            self.external_event_stream.0.clone(),
-            self.public_key,
-            consensus,
-        );
-        internal_network.spawn_network_task(self.internal_event_stream.1.clone());
-
-        info!("Network is ready.");
-    }
-
-    #[instrument(
-        skip_all,
-        target = "run",
-        fields(id = self.id)
-    )]
-    pub async fn run(&mut self) {
-        tracing::info!("Starting Sailfish Node {}", self.id);
+        Ok(Coordinator::new(self.id, network, consensus))
     }
 }
 
-pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
-    let private_key = BLSPubKey::generated_from_seed_indexed(seed, id).1;
-    let public_key = BLSPubKey::from_private(&private_key);
+pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (SecretKey, PublicKey) {
+    let private_key = PublicKey::generated_from_seed_indexed(seed, id).1;
+    let public_key = PublicKey::from_private(&private_key);
     (private_key, public_key)
 }
 
@@ -201,6 +129,7 @@ pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
 /// # Arguments
 ///
 /// * `id` - Node identifier.
+/// * `port` - Listen port.
 /// * `network_size` - Size of the network.
 /// * `to_connect_addrs` - Addresses to connect to at initialization.
 /// * `staked_nodes` - Configurations of staked nodes.
@@ -209,41 +138,30 @@ pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (BLSPrivKey, BLSPubKey) {
 /// # Panics
 ///
 /// Panics if any configuration or initialization step fails.
-pub async fn initialize_and_run_sailfish(
-    id: u64,
-    network_size: usize,
+pub async fn run(
+    id: NodeId,
+    port: u16,
+    network_size: NonZeroUsize,
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
-    staked_nodes: Vec<PeerConfig<BLSPubKey>>,
-) {
+    staked_nodes: Vec<PeerConfig<PublicKey>>,
+) -> Result<()> {
     let seed = [0u8; 32];
 
-    let (private_key, public_key) = generate_key_pair(seed, id);
-    let libp2p_keypair =
-        derive_libp2p_keypair::<BLSPubKey>(&private_key).expect("failed to derive libp2p keypair");
-    let mut sailfish = Sailfish::new(public_key, private_key, id);
-
-    let bind_address = SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-        (8000 + id)
-            .try_into()
-            .expect("failed to create advertise address due to invalid port cast"),
-    )
-    .to_string();
-
-    let bind_address =
-        derive_libp2p_multiaddr(&bind_address).expect("failed to derive libp2p multiaddr");
+    let (private_key, public_key) = generate_key_pair(seed, id.into());
+    let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&private_key)?;
+    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))?;
 
     let replication_factor =
-        NonZeroUsize::new((2 * network_size).div_ceil(3)).expect("network size must be non-zero");
+        NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
+            .expect("ceil(2n/3) with n > 0 never gives 0");
 
     let network_config = NetworkNodeConfigBuilder::default()
         .keypair(libp2p_keypair)
         .replication_factor(replication_factor)
-        .bind_address(Some(bind_address))
+        .bind_address(Some(bind_address.clone()))
         .to_connect_addrs(to_connect_addrs.clone())
         .republication_interval(None)
-        .build()
-        .expect("Failed to build network node config");
+        .build()?;
 
     let bootstrap_nodes = Arc::new(RwLock::new(
         to_connect_addrs
@@ -251,9 +169,9 @@ pub async fn initialize_and_run_sailfish(
             .collect::<Vec<(PeerId, Multiaddr)>>(),
     ));
 
-    sailfish
-        .initialize_networking(network_config, bootstrap_nodes, staked_nodes)
-        .await;
-
-    sailfish.run().await;
+   Sailfish::new(id, public_key, private_key, bind_address)?
+        .init(network_config, bootstrap_nodes, staked_nodes)
+        .await?
+        .go()
+        .await
 }
