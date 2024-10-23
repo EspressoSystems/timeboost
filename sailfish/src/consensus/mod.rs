@@ -265,7 +265,7 @@ impl Consensus {
     ///
     /// This method is responsible for handling the internal timeout event, which is triggered when a
     /// timeout occurs. This event triggers the node to vote to timeout for the given round.
-    async fn handle_timeout_recv(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
+    pub async fn handle_timeout_recv(&mut self, round: ViewNumber) -> Result<Vec<SailfishEvent>> {
         ensure!(self.round < round, "Received timeout for an old round");
 
         // We made it past the round check, let's vote to timeout.

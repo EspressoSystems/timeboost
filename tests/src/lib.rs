@@ -1,11 +1,17 @@
 use async_lock::RwLock;
-use hotshot::types::BLSPubKey;
+use hotshot::{
+    traits::implementations::{derive_libp2p_multiaddr, derive_libp2p_peer_id},
+    types::BLSPubKey,
+};
 use hotshot_types::{
     data::ViewNumber, traits::node_implementation::ConsensusTime, PeerConfig, ValidatorConfig,
 };
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
-use std::sync::Arc;
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
 use sailfish::{
     consensus::{committee::StaticCommittee, Consensus, TaskContext},
@@ -34,7 +40,21 @@ pub fn init_nodes(num_nodes: usize) -> TestableNode {
     for i in 0..num_nodes {
         let validator_config = ValidatorConfig::generated_from_seed_indexed(SEED, i, 1, false);
         let (private_key, public_key) = generate_key_pair(SEED, i);
-        let sailfish = Sailfish::new(public_key, private_key, i);
+        let peer_id = derive_libp2p_peer_id::<BLSPubKey>(&private_key)
+            .expect("failed to derive libp2p peer id");
+
+        let bind_address = SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            (8000 + i)
+                .try_into()
+                .expect("failed to create advertise address due to invalid port cast"),
+        )
+        .to_string();
+
+        let bind_address =
+            derive_libp2p_multiaddr(&bind_address).expect("failed to derive libp2p multiaddr");
+
+        let sailfish = Sailfish::new(i, public_key, private_key, bind_address, peer_id);
         nodes.push(sailfish);
         validator_configs.push(validator_config);
     }

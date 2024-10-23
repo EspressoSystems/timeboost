@@ -2,6 +2,7 @@ use hotshot::{
     traits::{implementations::derive_libp2p_keypair, NetworkNodeConfigBuilder},
     types::BLSPubKey,
 };
+use sailfish::logging;
 use std::{num::NonZeroUsize, sync::Arc};
 use tokio::task::JoinHandle;
 
@@ -9,13 +10,14 @@ use crate::init_nodes;
 
 #[tokio::test]
 async fn test_multi_node_init() {
+    logging::init_logging();
     let nodes = init_nodes(10);
 
     let replication_factor = NonZeroUsize::new(((2 * 10) as usize).div_ceil(3)).unwrap();
 
     let mut handles: Vec<JoinHandle<()>> = vec![];
 
-    for node in nodes.nodes.into_iter() {
+    for mut node in nodes.nodes.into_iter() {
         let bootstrap_nodes = Arc::clone(&nodes.bootstrap_nodes);
         let staked_nodes = Arc::clone(&nodes.staked_nodes);
 
@@ -31,7 +33,7 @@ async fn test_multi_node_init() {
                 .build()
                 .expect("Failed to build network node config");
 
-            node.initialize_networking(network_config, bootstrap_nodes, (*staked_nodes).clone())
+            node.init(network_config, bootstrap_nodes, (*staked_nodes).clone())
                 .await;
         });
 

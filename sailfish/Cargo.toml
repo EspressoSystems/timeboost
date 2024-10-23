@@ -49,3 +49,4 @@ toml = { workspace = true }
 url = "2.5.2"
 vbs = "0.1.6"
 either = { workspace = true }
+futures = { workspace = true }
