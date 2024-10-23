@@ -15,7 +15,9 @@ impl StaticCommittee {
     /// Create a new election
     pub fn new(nodes: Vec<PublicKey>) -> Self {
         assert!(!nodes.is_empty());
-        Self { stake_table: Arc::new(nodes) }
+        Self {
+            stake_table: Arc::new(nodes),
+        }
     }
 
     /// Get the stake table for the current view

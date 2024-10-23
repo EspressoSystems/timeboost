@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 pub struct Star<T> {
     inbound: mpsc::UnboundedReceiver<Event<T>>,
     outbound: mpsc::UnboundedSender<Event<T>>,
-    members: HashMap<PublicKey, mpsc::UnboundedSender<T>>
+    members: HashMap<PublicKey, mpsc::UnboundedSender<T>>,
 }
 
 /// A single network connection.
@@ -22,7 +22,7 @@ pub struct Star<T> {
 pub struct Conn<T> {
     id: PublicKey,
     tx: mpsc::UnboundedSender<Event<T>>,
-    rx: mpsc::UnboundedReceiver<T>
+    rx: mpsc::UnboundedReceiver<T>,
 }
 
 /// A network event.
@@ -31,33 +31,33 @@ pub enum Event<T> {
     Unicast {
         src: PublicKey,
         dest: PublicKey,
-        data: T
+        data: T,
     },
     Multicast {
         src: PublicKey,
-        data: T
-    }
+        data: T,
+    },
 }
 
 impl<T> Event<T> {
     pub fn source(&self) -> &PublicKey {
         match self {
             Self::Unicast { src, .. } => src,
-            Self::Multicast { src, .. } => src
+            Self::Multicast { src, .. } => src,
         }
     }
 
     pub fn data(&self) -> &T {
         match self {
             Self::Unicast { data, .. } => data,
-            Self::Multicast { data, .. } => data
+            Self::Multicast { data, .. } => data,
         }
     }
 
     pub fn into_data(self) -> T {
         match self {
             Self::Unicast { data, .. } => data,
-            Self::Multicast { data, .. } => data
+            Self::Multicast { data, .. } => data,
         }
     }
 }
@@ -68,14 +68,18 @@ impl<T> Star<T> {
         Self {
             inbound: rx,
             outbound: tx,
-            members: HashMap::new()
+            members: HashMap::new(),
         }
     }
 
     pub fn join(&mut self, id: PublicKey) -> Conn<T> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.members.insert(id.clone(), tx);
-        Conn { id, tx: self.outbound.clone(), rx }
+        Conn {
+            id,
+            tx: self.outbound.clone(),
+            rx,
+        }
     }
 
     pub fn leave(&mut self, id: PublicKey, _: Conn<T>) -> bool {
@@ -83,16 +87,19 @@ impl<T> Star<T> {
     }
 
     pub async fn recv(&mut self) -> Event<T> {
-        self.inbound.recv().await.expect("sender and receiver have equal lifetimes")
+        self.inbound
+            .recv()
+            .await
+            .expect("sender and receiver have equal lifetimes")
     }
 
     pub fn send(&mut self, to: PublicKey, msg: T) -> Result<(), T> {
         if let Some(tx) = self.members.get(&to) {
             if let Err(e) = tx.send(msg) {
                 self.members.remove(&to);
-                return Err(e.0)
+                return Err(e.0);
             }
-            return Ok(())
+            return Ok(());
         }
         Err(msg)
     }
@@ -121,17 +128,31 @@ impl Comm for Conn<Vec<u8>> {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
-        let e = Event::Multicast { src: self.id.clone(), data: msg };
-        self.tx.send(e).map_err(|e| NetworkError::ChannelSendError(e.to_string()))
+        let e = Event::Multicast {
+            src: self.id.clone(),
+            data: msg,
+        };
+        self.tx
+            .send(e)
+            .map_err(|e| NetworkError::ChannelSendError(e.to_string()))
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
-        let e = Event::Unicast { src: self.id.clone(), dest: to, data: msg };
-        self.tx.send(e).map_err(|e| NetworkError::ChannelSendError(e.to_string()))
+        let e = Event::Unicast {
+            src: self.id.clone(),
+            dest: to,
+            data: msg,
+        };
+        self.tx
+            .send(e)
+            .map_err(|e| NetworkError::ChannelSendError(e.to_string()))
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
-        self.rx.recv().await.ok_or_else(|| NetworkError::ChannelReceiveError("channel closed".to_string()))
+        self.rx
+            .recv()
+            .await
+            .ok_or_else(|| NetworkError::ChannelReceiveError("channel closed".to_string()))
     }
 }
 

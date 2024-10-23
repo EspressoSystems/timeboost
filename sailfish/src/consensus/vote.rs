@@ -10,7 +10,6 @@ use crate::types::{certificate::Certificate, envelope::Envelope, PublicKey, Sign
 
 use super::committee::StaticCommittee;
 
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {
     committee: StaticCommittee,
@@ -23,7 +22,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         Self {
             votes: BTreeMap::new(),
             signers: (bitvec![0; committee.total_nodes()], Vec::new()),
-            committee
+            committee,
         }
     }
 
@@ -37,7 +36,12 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             return None;
         }
 
-        let Some(index) = self.committee.committee().iter().position(|k| k == vote.signing_key()) else {
+        let Some(index) = self
+            .committee
+            .committee()
+            .iter()
+            .position(|k| k == vote.signing_key())
+        else {
             return None;
         };
 
@@ -47,7 +51,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.votes.insert(vote.signing_key().clone(), vote.clone());
 
         if self.votes.len() < self.committee.success_threshold().get() as usize {
-            return None
+            return None;
         }
 
         let pp = <PublicKey as SignatureKey>::public_parameter(

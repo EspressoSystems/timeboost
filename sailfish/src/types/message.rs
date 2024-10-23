@@ -16,7 +16,7 @@ pub enum Message {
     /// A no-vote to a round leader from a node.
     NoVote(Envelope<NoVote>),
     /// A timeout certificate from a node.
-    TimeoutCert(Certificate<Timeout>)
+    TimeoutCert(Certificate<Timeout>),
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +58,7 @@ impl fmt::Display for Message {
             Self::Vertex(e) => write!(f, "vertex proposal, id := {}", e.data().id()),
             Self::Timeout(e) => write!(f, "timeout, round := {}", e.data().round),
             Self::NoVote(e) => write!(f, "no-vote, round := {}", e.data().round),
-            Self::TimeoutCert(c) => write!(f, "timeout cert, round := {}", c.data().round)
+            Self::TimeoutCert(c) => write!(f, "timeout cert, round := {}", c.data().round),
         }
     }
 }

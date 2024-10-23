@@ -39,7 +39,8 @@ impl Comm for Libp2pNetwork<PublicKey> {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.broadcast_message(msg, Topic::Global, BroadcastDelay::None).await
+        self.broadcast_message(msg, Topic::Global, BroadcastDelay::None)
+            .await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {

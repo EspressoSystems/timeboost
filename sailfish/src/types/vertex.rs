@@ -5,7 +5,12 @@ use hotshot::types::SignatureKey;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 
-use super::{block::Block, certificate::Certificate, message::{NoVote, Timeout}, PublicKey};
+use super::{
+    block::Block,
+    certificate::Certificate,
+    message::{NoVote, Timeout},
+    PublicKey,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct VertexId {
@@ -38,7 +43,7 @@ impl Vertex {
         Self {
             id: VertexId {
                 round: ViewNumber::genesis(),
-                source
+                source,
             },
             block: Block::empty(),
             strong: BTreeSet::new(),
@@ -65,7 +70,11 @@ impl Vertex {
 
 impl Display for VertexId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "VertexId {{ round := {}, source := {} }}", self.round, self.source)
+        write!(
+            f,
+            "VertexId {{ round := {}, source := {} }}",
+            self.round, self.source
+        )
     }
 }
 

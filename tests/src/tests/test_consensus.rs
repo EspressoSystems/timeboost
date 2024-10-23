@@ -2,7 +2,12 @@ use std::collections::{HashMap, VecDeque};
 
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{
-    consensus::Consensus, logging, types::{message::{Action, Message}, NodeId}
+    consensus::Consensus,
+    logging,
+    types::{
+        message::{Action, Message},
+        NodeId,
+    },
 };
 
 use crate::make_consensus_nodes;
@@ -45,7 +50,7 @@ impl FakeNetwork {
                         Action::SendProposal(e) => Message::Vertex(e),
                         Action::SendTimeout(e) => Message::Timeout(e),
                         Action::SendTimeoutCert(c) => Message::TimeoutCert(c),
-                        Action::SendNoVote(..) => todo!("unicast")
+                        Action::SendNoVote(..) => todo!("unicast"),
                     };
                     next.push(m)
                 }

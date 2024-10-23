@@ -1,5 +1,7 @@
 use crate::{
-    consensus::{committee::StaticCommittee, Consensus}, coordinator::Coordinator, types::{comm::Comm, NodeId, PublicKey, SecretKey}
+    consensus::{committee::StaticCommittee, Consensus},
+    coordinator::Coordinator,
+    types::{comm::Comm, NodeId, PrivateKey, PublicKey},
 };
 use anyhow::Result;
 use async_lock::RwLock;
@@ -8,7 +10,8 @@ use hotshot::{
         implementations::{
             derive_libp2p_keypair, derive_libp2p_multiaddr, derive_libp2p_peer_id,
             Libp2pMetricsValue, Libp2pNetwork,
-        }, NetworkError, NetworkNodeConfigBuilder
+        },
+        NetworkError, NetworkNodeConfigBuilder,
     },
     types::SignatureKey,
 };
@@ -24,11 +27,7 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
-use std::{
-    collections::HashSet,
-    num::NonZeroUsize,
-    sync::Arc,
-};
+use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -39,7 +38,7 @@ pub struct Sailfish {
     public_key: PublicKey,
 
     /// The private key of the sailfish node.
-    private_key: SecretKey,
+    private_key: PrivateKey,
 
     /// The Libp2p PeerId of the sailfish node.
     peer_id: PeerId,
@@ -49,12 +48,20 @@ pub struct Sailfish {
 }
 
 impl Sailfish {
-    pub fn new<N: Into<NodeId>>(id: N, pk: PublicKey, sk: SecretKey, bind: Multiaddr) -> Result<Self> {
-        let peer_id = derive_libp2p_peer_id::<PublicKey>(&sk)?;
+    pub fn new<N>(
+        id: N,
+        public_key: PublicKey,
+        private_key: PrivateKey,
+        bind: Multiaddr,
+    ) -> Result<Self>
+    where
+        N: Into<NodeId>,
+    {
+        let peer_id = derive_libp2p_peer_id::<PublicKey>(&private_key)?;
         Ok(Sailfish {
             id: id.into(),
-            public_key: pk,
-            private_key: sk,
+            public_key,
+            private_key,
             peer_id,
             bind_address: bind,
         })
@@ -69,7 +76,7 @@ impl Sailfish {
     }
 
     #[cfg(feature = "test")]
-    pub fn private_key(&self) -> &SecretKey {
+    pub fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }
 
@@ -125,7 +132,7 @@ impl Sailfish {
 
     pub fn init<C>(self, comm: C, staked_nodes: Vec<PeerConfig<PublicKey>>) -> Coordinator
     where
-        C: Comm<Err = NetworkError> + Send + 'static
+        C: Comm<Err = NetworkError> + Send + 'static,
     {
         let quorum_membership = StaticCommittee::new(
             staked_nodes
@@ -134,14 +141,13 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus =
-            Consensus::new(self.public_key, self.private_key, quorum_membership);
+        let consensus = Consensus::new(self.public_key, self.private_key, quorum_membership);
 
         Coordinator::new(self.id, comm, consensus)
     }
 }
 
-pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (SecretKey, PublicKey) {
+pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (PrivateKey, PublicKey) {
     let private_key = PublicKey::generated_from_seed_indexed(seed, id).1;
     let public_key = PublicKey::from_private(&private_key);
     (private_key, public_key)
@@ -174,9 +180,8 @@ pub async fn run(
     let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&private_key)?;
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))?;
 
-    let replication_factor =
-        NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
-            .expect("ceil(2n/3) with n > 0 never gives 0");
+    let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
+        .expect("ceil(2n/3) with n > 0 never gives 0");
 
     let network_config = NetworkNodeConfigBuilder::default()
         .keypair(libp2p_keypair)
@@ -192,7 +197,9 @@ pub async fn run(
             .collect::<Vec<(PeerId, Multiaddr)>>(),
     ));
 
-   let s = Sailfish::new(id, public_key, private_key, bind_address)?;
-   let n = s.setup_libp2p(network_config, bootstrap_nodes, &staked_nodes).await?;
-   s.init(n, staked_nodes).go().await
+    let s = Sailfish::new(id, public_key, private_key, bind_address)?;
+    let n = s
+        .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
+        .await?;
+    s.init(n, staked_nodes).go().await
 }

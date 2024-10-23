@@ -10,7 +10,7 @@ pub mod message;
 pub mod vertex;
 
 pub type PublicKey = BLSPubKey;
-pub type SecretKey = BLSPrivKey;
+pub type PrivateKey = BLSPrivKey;
 pub type Signature = <PublicKey as SignatureKey>::PureAssembledSignatureType;
 pub type QuorumSignature = <PublicKey as SignatureKey>::QcType;
 

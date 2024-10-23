@@ -1,6 +1,6 @@
 use sailfish::types::message::Message;
-use tracing::debug;
 use tokio::task::JoinSet;
+use tracing::debug;
 
 use crate::net::Event;
 use crate::{net, Group};

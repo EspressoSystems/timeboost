@@ -6,12 +6,14 @@ use crate::types::vertex::Vertex;
 
 #[derive(Debug)]
 pub struct Dag {
-    elements: BTreeMap<ViewNumber, BTreeSet<Vertex>>
+    elements: BTreeMap<ViewNumber, BTreeSet<Vertex>>,
 }
 
 impl Dag {
     pub fn new() -> Self {
-        Self { elements: BTreeMap::new() }
+        Self {
+            elements: BTreeMap::new(),
+        }
     }
 
     /// Is there a connection between two vertices?

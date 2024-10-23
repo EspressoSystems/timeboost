@@ -6,7 +6,13 @@ use dag::Dag;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use vote::VoteAccumulator;
 
-use crate::types::{certificate::Certificate, envelope::Envelope, message::{Action, Message, NoVote, Timeout}, vertex::Vertex, PublicKey, SecretKey};
+use crate::types::{
+    certificate::Certificate,
+    envelope::Envelope,
+    message::{Action, Message, NoVote, Timeout},
+    vertex::Vertex,
+    PrivateKey, PublicKey,
+};
 
 mod dag;
 mod vote;
@@ -15,10 +21,10 @@ pub mod committee;
 
 pub struct Consensus {
     /// The public key of the node running this task.
-    pkey: PublicKey,
+    public_key: PublicKey,
 
     /// The private key of the node running this task.
-    skey: SecretKey,
+    private_key: PrivateKey,
 
     /// The DAG of vertices
     dag: Dag,
@@ -40,21 +46,21 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    pub fn new(pk: PublicKey, sk: SecretKey, committee: StaticCommittee) -> Self {
+    pub fn new(public_key: PublicKey, private_key: PrivateKey, committee: StaticCommittee) -> Self {
         Self {
-            pkey: pk,
-            skey: sk,
+            public_key,
+            private_key,
             dag: Dag::new(),
             round: ViewNumber::genesis(),
             vertices: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: VoteAccumulator::new(committee.clone()),
-            committee
+            committee,
         }
     }
 
     pub fn public_key(&self) -> &PublicKey {
-        &self.pkey
+        &self.public_key
     }
 
     pub fn round(&self) -> ViewNumber {
@@ -70,7 +76,7 @@ impl Consensus {
             Message::Vertex(e) => self.handle_vertex(e).await,
             Message::Timeout(e) => self.handle_timeout(e).await,
             Message::TimeoutCert(c) => self.handle_timeout_cert(c).await,
-            Message::NoVote(e) => self.handle_no_vote(e).await
+            Message::NoVote(e) => self.handle_no_vote(e).await,
         }
     }
 
