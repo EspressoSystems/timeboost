@@ -26,6 +26,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         }
     }
 
+    #[allow(unused)]
     pub fn accumulate(&mut self, vote: Envelope<D>) -> Option<Certificate<D>> {
         if self.votes.contains_key(vote.signing_key()) {
             return None;
@@ -36,19 +37,16 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             return None;
         }
 
-        let Some(index) = self
+        let index = self
             .committee
             .committee()
             .iter()
-            .position(|k| k == vote.signing_key())
-        else {
-            return None;
-        };
+            .position(|k| k == vote.signing_key())?;
 
         self.signers.0.set(index, true);
         self.signers.1.push(vote.signature().clone());
 
-        self.votes.insert(vote.signing_key().clone(), vote.clone());
+        self.votes.insert(*vote.signing_key(), vote.clone());
 
         if self.votes.len() < self.committee.success_threshold().get() as usize {
             return None;
@@ -64,6 +62,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         Some(Certificate::new(vote.into_data(), sig))
     }
 
+    #[allow(unused)]
     pub fn vote(&self, from: &PublicKey) -> Option<&D> {
         self.votes.get(from).map(|env| env.data())
     }

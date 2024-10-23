@@ -64,7 +64,7 @@ impl Group {
 
         let bootstrap_nodes: Vec<(PeerId, Multiaddr)> = nodes
             .iter()
-            .map(|node| (node.peer_id().clone(), node.bind_addr().clone()))
+            .map(|node| (*node.peer_id(), node.bind_addr().clone()))
             .collect();
 
         let staked_nodes: Vec<PeerConfig<PublicKey>> =

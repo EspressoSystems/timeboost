@@ -108,7 +108,7 @@ impl Coordinator {
     async fn unicast(&mut self, to: PublicKey, msg: Message) {
         match bincode::serialize(&msg) {
             Ok(bytes) => {
-                if let Err(err) = self.comm.send(to.clone(), bytes).await {
+                if let Err(err) = self.comm.send(to, bytes).await {
                     warn!(%err, %to, "failed to send message")
                 }
             }

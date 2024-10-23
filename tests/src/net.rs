@@ -62,6 +62,12 @@ impl<T> Event<T> {
     }
 }
 
+impl<T> Default for Star<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Star<T> {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
@@ -74,7 +80,7 @@ impl<T> Star<T> {
 
     pub fn join(&mut self, id: PublicKey) -> Conn<T> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.members.insert(id.clone(), tx);
+        self.members.insert(id, tx);
         Conn {
             id,
             tx: self.outbound.clone(),
@@ -114,7 +120,7 @@ impl<T: Clone> Star<T> {
         let mut to_remove = Vec::new();
         for (id, tx) in &mut self.members {
             if tx.send(msg.clone()).is_err() {
-                to_remove.push(id.clone())
+                to_remove.push(*id)
             }
         }
         for id in to_remove {
@@ -129,7 +135,7 @@ impl Comm for Conn<Vec<u8>> {
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
         let e = Event::Multicast {
-            src: self.id.clone(),
+            src: self.id,
             data: msg,
         };
         self.tx
@@ -139,7 +145,7 @@ impl Comm for Conn<Vec<u8>> {
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
         let e = Event::Unicast {
-            src: self.id.clone(),
+            src: self.id,
             dest: to,
             data: msg,
         };

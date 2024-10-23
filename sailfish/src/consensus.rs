@@ -24,24 +24,30 @@ pub struct Consensus {
     public_key: PublicKey,
 
     /// The private key of the node running this task.
+    #[allow(unused)]
     private_key: PrivateKey,
 
     /// The DAG of vertices
+    #[allow(unused)]
     dag: Dag,
 
     /// The quorum membership.
+    #[allow(unused)]
     committee: StaticCommittee,
 
     /// The current round number.
     round: ViewNumber,
 
     /// The set of vertices that we've received so far per round.
+    #[allow(unused)]
     vertices: BTreeMap<ViewNumber, HashSet<Vertex>>,
 
     /// The set of timeouts that we've received so far per round.
+    #[allow(unused)]
     timeouts: BTreeMap<ViewNumber, VoteAccumulator<Timeout>>,
 
     /// The set of no votes that we've received so far.
+    #[allow(unused)]
     no_votes: VoteAccumulator<NoVote>,
 }
 
@@ -67,7 +73,7 @@ impl Consensus {
         self.round
     }
 
-    pub async fn timeout(&mut self, r: ViewNumber) -> Result<Vec<Action>> {
+    pub async fn timeout(&mut self, _r: ViewNumber) -> Result<Vec<Action>> {
         Ok(Vec::new())
     }
 
@@ -80,19 +86,19 @@ impl Consensus {
         }
     }
 
-    pub async fn handle_vertex(&mut self, x: Envelope<Vertex>) -> Result<Vec<Action>> {
+    pub async fn handle_vertex(&mut self, _x: Envelope<Vertex>) -> Result<Vec<Action>> {
         Ok(Vec::new())
     }
 
-    pub async fn handle_no_vote(&mut self, x: Envelope<NoVote>) -> Result<Vec<Action>> {
+    pub async fn handle_no_vote(&mut self, _x: Envelope<NoVote>) -> Result<Vec<Action>> {
         Ok(Vec::new())
     }
 
-    pub async fn handle_timeout(&mut self, x: Envelope<Timeout>) -> Result<Vec<Action>> {
+    pub async fn handle_timeout(&mut self, _x: Envelope<Timeout>) -> Result<Vec<Action>> {
         Ok(Vec::new())
     }
 
-    pub async fn handle_timeout_cert(&mut self, x: Certificate<Timeout>) -> Result<Vec<Action>> {
+    pub async fn handle_timeout_cert(&mut self, _x: Certificate<Timeout>) -> Result<Vec<Action>> {
         Ok(Vec::new())
     }
 }
