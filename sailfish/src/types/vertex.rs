@@ -1,68 +1,113 @@
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
 use committable::Committable;
-use hotshot::types::{BLSPubKey, SignatureKey};
+use hotshot::types::SignatureKey;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 
 use super::{
     block::Block,
-    certificate::{NoVoteCertificate, TimeoutCertificate, VertexCertificate},
+    certificate::Certificate,
+    message::{NoVote, Timeout},
+    PublicKey,
 };
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct VertexId {
+    round: ViewNumber,
+    source: PublicKey,
+}
+
+impl VertexId {
+    pub fn round(&self) -> ViewNumber {
+        self.round
+    }
+
+    pub fn source(&self) -> &PublicKey {
+        &self.source
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Vertex {
-    /// The round of the vertex $v$ in the DAG.
-    pub round: ViewNumber,
+    id: VertexId,
+    block: Block,
+    strong: BTreeSet<VertexId>,
+    weak: BTreeSet<VertexId>,
+    no_vote: Option<Certificate<NoVote>>,
+    timeout: Option<Certificate<Timeout>>,
+}
 
-    /// The source that broadcasted this vertex $v$
-    pub source: BLSPubKey,
+impl Vertex {
+    pub fn genesis(source: PublicKey) -> Self {
+        Self {
+            id: VertexId {
+                round: ViewNumber::genesis(),
+                source,
+            },
+            block: Block::empty(),
+            strong: BTreeSet::new(),
+            weak: BTreeSet::new(),
+            no_vote: None,
+            timeout: None,
+        }
+    }
 
-    /// The block of transactions being transmitted
-    pub block: Block,
+    pub fn id(&self) -> &VertexId {
+        &self.id
+    }
 
-    /// The parents to this vertex (the 2f + 1 vertices from round r - 1)
-    pub parents: Vec<VertexCertificate>,
+    /// Does this vertex have a strong (direct) connection to the given `VertexId`?
+    pub fn has_strong(&self, id: &VertexId) -> bool {
+        self.strong.contains(id)
+    }
 
-    /// The no-vote certificate for `v.round - 1`.
-    pub no_vote_certificate: Option<NoVoteCertificate>,
+    /// Does this vextex have a weak (indirect) connection to the given `VertexId`?
+    pub fn has_weak(&self, id: &VertexId) -> bool {
+        self.weak.contains(id)
+    }
+}
 
-    /// The timeout certificate for `v.round - 1`.
-    pub timeout_certificate: Option<TimeoutCertificate>,
+impl Display for VertexId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "VertexId {{ round := {}, source := {} }}",
+            self.round, self.source
+        )
+    }
 }
 
 impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vertex(round: {})", self.round)
+        write!(f, "Vertex {{ id := {} }}", self.id)
+    }
+}
+
+impl Committable for VertexId {
+    fn commit(&self) -> committable::Commitment<Self> {
+        committable::RawCommitmentBuilder::new("VertexId")
+            .field("round", self.round.commit())
+            .var_size_field("source", &self.source.to_bytes())
+            .finalize()
     }
 }
 
 impl Committable for Vertex {
     fn commit(&self) -> committable::Commitment<Self> {
         committable::RawCommitmentBuilder::new("Vertex")
-            .field("round", self.round.commit())
-            .constant_str("source")
-            .var_size_bytes(&self.source.to_bytes())
+            .field("id", self.id.commit())
             .field("block", self.block.commit())
             .array_field(
-                "parents",
-                &self.parents.iter().map(|p| p.commit()).collect::<Vec<_>>(),
+                "strong",
+                &self.strong.iter().map(|p| p.commit()).collect::<Vec<_>>(),
             )
-            .optional("no_vote_certificate", &self.no_vote_certificate)
-            .optional("timeout_certificate", &self.timeout_certificate)
+            .array_field(
+                "weak",
+                &self.weak.iter().map(|p| p.commit()).collect::<Vec<_>>(),
+            )
+            .optional("no_vote", &self.no_vote)
+            .optional("timeout", &self.timeout)
             .finalize()
-    }
-}
-
-impl Vertex {
-    pub fn genesis(public_key: BLSPubKey) -> Self {
-        Self {
-            round: ViewNumber::genesis(),
-            source: public_key,
-            block: Block::empty(),
-            parents: vec![],
-            no_vote_certificate: None,
-            timeout_certificate: None,
-        }
     }
 }
