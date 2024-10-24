@@ -4,72 +4,81 @@ use bitvec::{bitvec, vec::BitVec};
 use committable::Committable;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use tracing::warn;
 
-use crate::types::{certificate::Certificate, envelope::Envelope, PublicKey, Signature};
+use crate::types::{certificate::Certificate, envelope::{Envelope, Validated}, PublicKey, Signature};
 
 use super::committee::StaticCommittee;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {
     committee: StaticCommittee,
-    votes: BTreeMap<PublicKey, Envelope<D>>,
+    votes: BTreeMap<PublicKey, Envelope<D, Validated>>,
     signers: (BitVec, Vec<Signature>),
+    cert: Option<Certificate<D>>
 }
 
-impl<D: Committable + Clone> VoteAccumulator<D> {
+impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     pub fn new(committee: StaticCommittee) -> Self {
         Self {
             votes: BTreeMap::new(),
             signers: (bitvec![0; committee.total_nodes()], Vec::new()),
             committee,
+            cert: None
         }
+    }
+
+    pub fn votes(&self) -> usize {
+        self.votes.len()
     }
 
     #[allow(unused)]
     pub fn clear(&mut self) {
         self.votes.clear();
-        self.signers = (bitvec![0; self.committee.total_nodes()], Vec::new())
+        self.signers = (bitvec![0; self.committee.total_nodes()], Vec::new());
+        self.cert = None
     }
 
-    #[allow(unused)]
-    pub fn accumulate(&mut self, vote: Envelope<D>) -> Option<Certificate<D>> {
+    pub fn add(&mut self, vote: Envelope<D, Validated>) -> bool {
         if self.votes.contains_key(vote.signing_key()) {
-            return None;
+            return true;
         }
 
-        if !vote.is_valid(&self.committee) {
-            warn!("invalid vote signature");
-            return None;
-        }
-
-        let index = self
-            .committee
-            .committee()
-            .iter()
-            .position(|k| k == vote.signing_key())?;
+        let Some(index) = self.committee.committee().iter().position(|k| k == vote.signing_key()) else {
+            return false
+        };
 
         self.signers.0.set(index, true);
         self.signers.1.push(vote.signature().clone());
+        self.insert(vote)
+    }
 
-        self.votes.insert(*vote.signing_key(), vote.clone());
-
-        if self.votes.len() < self.committee.success_threshold().get() as usize {
-            return None;
+    pub fn certificate(&mut self) -> Option<&Certificate<D>> {
+        if self.cert.is_some() {
+            return self.cert.as_ref()
         }
-
+        if self.votes.len() < self.committee.success_threshold().get() as usize {
+            return None
+        }
         let pp = <PublicKey as SignatureKey>::public_parameter(
             self.committee.stake_table(),
             U256::from(self.committee.success_threshold().get()),
         );
-
         let sig = <PublicKey as SignatureKey>::assemble(&pp, &self.signers.0, &self.signers.1);
-
-        Some(Certificate::new(vote.into_data(), sig))
+        let env = self.votes.first_key_value().expect("non-empty set of votes").1;
+        let crt = Certificate::new(env.data().clone(), sig);
+        self.cert = Some(crt);
+        self.cert.as_ref()
     }
 
-    #[allow(unused)]
-    pub fn vote(&self, from: &PublicKey) -> Option<&D> {
-        self.votes.get(from).map(|env| env.data())
+    #[must_use]
+    fn insert(&mut self, vote: Envelope<D, Validated>) -> bool {
+        if let Some((_, e)) = self.votes.first_key_value() {
+            // TODO: Is this necessary?
+            if e.data() != vote.data() {
+                return false
+            }
+        }
+        self.votes.insert(*vote.signing_key(), vote);
+        true
     }
 }

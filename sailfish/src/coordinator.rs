@@ -14,7 +14,7 @@ use futures::{future::BoxFuture, FutureExt};
 use hotshot::traits::NetworkError;
 use hotshot_types::data::ViewNumber;
 use tokio::time::sleep;
-use tracing::{error, warn};
+use tracing::{info, warn};
 
 pub struct Coordinator {
     id: NodeId,
@@ -47,14 +47,9 @@ impl Coordinator {
         let mut timer: BoxFuture<'static, ViewNumber> = pending().boxed();
         loop {
             tokio::select! { biased;
-                vnr = &mut timer => match self.consensus.timeout(vnr).await {
-                    Ok(actions) => {
-                        for a in actions {
-                            self.on_action(a, &mut timer).await
-                        }
-                    }
-                    Err(err) => {
-                        error!(%err, "consensus error on internal timeout")
+                vnr = &mut timer => {
+                    for a in self.consensus.timeout(vnr) {
+                        self.on_action(a, &mut timer).await
                     }
                 },
                 msg = self.comm.receive() => match msg {
@@ -79,16 +74,17 @@ impl Coordinator {
 
     async fn on_message(&mut self, m: &[u8]) -> Result<Vec<Action>> {
         let m = bincode::deserialize(m)?;
-        self.consensus.handle_message(m).await
+        Ok(self.consensus.handle_message(m))
     }
 
     async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, ViewNumber>) {
         match action {
             Action::ResetTimer(r) => *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed(),
-            Action::SendProposal(e) => self.broadcast(Message::Vertex(e)).await,
-            Action::SendTimeout(e) => self.broadcast(Message::Timeout(e)).await,
+            Action::Deliver(_, r, src) => info!(%r, %src, "deliver"), // TODO
+            Action::SendProposal(e) => self.broadcast(Message::Vertex(e.cast())).await,
+            Action::SendTimeout(e) => self.broadcast(Message::Timeout(e.cast())).await,
             Action::SendTimeoutCert(c) => self.broadcast(Message::TimeoutCert(c)).await,
-            Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v)).await,
+            Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v.cast())).await,
         }
     }
 

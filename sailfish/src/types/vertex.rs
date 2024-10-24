@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fmt::Display};
 
 use committable::Committable;
 use hotshot::types::SignatureKey;
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
+use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -39,12 +39,9 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    pub fn genesis(source: PublicKey) -> Self {
+    pub fn new(r: ViewNumber, s: PublicKey) -> Self {
         Self {
-            id: VertexId {
-                round: ViewNumber::genesis(),
-                source,
-            },
+            id: VertexId { round: r, source: s },
             block: Block::empty(),
             strong: BTreeSet::new(),
             weak: BTreeSet::new(),
@@ -57,14 +54,87 @@ impl Vertex {
         &self.id
     }
 
+    pub fn edge_count(&self) -> usize {
+        self.strong_edge_count() + self.weak_edge_count()
+    }
+
+    pub fn strong_edge_count(&self) -> usize {
+        self.strong.len()
+    }
+
+    pub fn weak_edge_count(&self) -> usize {
+        self.weak.len()
+    }
+
+    pub fn strong_edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.strong.iter()
+    }
+
+    pub fn weak_edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.weak.iter()
+    }
+
     /// Does this vertex have a strong (direct) connection to the given `VertexId`?
-    pub fn has_strong(&self, id: &VertexId) -> bool {
+    pub fn has_strong_edge(&self, id: &VertexId) -> bool {
         self.strong.contains(id)
     }
 
     /// Does this vextex have a weak (indirect) connection to the given `VertexId`?
-    pub fn has_weak(&self, id: &VertexId) -> bool {
+    pub fn has_weak_edge(&self, id: &VertexId) -> bool {
         self.weak.contains(id)
+    }
+
+    pub fn timeout_cert(&self) -> Option<&Certificate<Timeout>> {
+        self.timeout.as_ref()
+    }
+
+    pub fn no_vote_cert(&self) -> Option<&Certificate<NoVote>> {
+        self.no_vote.as_ref()
+    }
+
+    pub fn block(&self) -> &Block {
+        &self.block
+    }
+
+    pub fn set_block(&mut self, b: Block) -> &mut Self {
+        self.block = b;
+        self
+    }
+
+    pub fn add_strong_edge(&mut self, e: VertexId) -> &mut Self {
+        self.strong.insert(e);
+        self
+    }
+
+    pub fn add_weak_edge(&mut self, e: VertexId) -> &mut Self {
+        self.weak.insert(e);
+        self
+    }
+
+    pub fn add_strong_edges<I>(&mut self, e: I) -> &mut Self
+    where
+        I: IntoIterator<Item = VertexId>
+    {
+        self.strong.extend(e);
+        self
+    }
+
+    pub fn add_weak_edges<I>(&mut self, e: I) -> &mut Self
+    where
+        I: IntoIterator<Item = VertexId>
+    {
+        self.weak.extend(e);
+        self
+    }
+
+    pub fn set_no_vote(&mut self, n: Certificate<NoVote>) -> &mut Self {
+        self.no_vote = Some(n);
+        self
+    }
+
+    pub fn set_timeout(&mut self, t: Certificate<Timeout>) -> &mut Self {
+        self.timeout = Some(t);
+        self
     }
 }
 

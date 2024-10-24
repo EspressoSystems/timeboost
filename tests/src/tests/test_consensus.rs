@@ -9,6 +9,7 @@ use sailfish::{
         NodeId,
     },
 };
+use tracing::info;
 
 use crate::make_consensus_nodes;
 
@@ -44,11 +45,15 @@ impl FakeNetwork {
         let mut next = Vec::new();
         for (_, (node, queue)) in self.nodes.iter_mut() {
             while let Some(m) = queue.pop_front() {
-                for a in node.handle_message(m).await.unwrap() {
+                for a in node.handle_message(m) {
                     let m = match a {
                         Action::ResetTimer(_) => todo!("reset timer"),
-                        Action::SendProposal(e) => Message::Vertex(e),
-                        Action::SendTimeout(e) => Message::Timeout(e),
+                        Action::Deliver(_b, r, src) => {
+                            info!(%r, %src, "deliver"); // TODO: What to do here?
+                            continue;
+                        }
+                        Action::SendProposal(e) => Message::Vertex(e.cast()),
+                        Action::SendTimeout(e) => Message::Timeout(e.cast()),
                         Action::SendTimeoutCert(c) => Message::TimeoutCert(c),
                         Action::SendNoVote(..) => todo!("unicast"),
                     };

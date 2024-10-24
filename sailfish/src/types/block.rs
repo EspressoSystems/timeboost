@@ -76,6 +76,12 @@ impl Committable for Block {
     }
 }
 
+impl Default for Block {
+    fn default() -> Self {
+        Block::empty()
+    }
+}
+
 impl Block {
     pub fn empty() -> Self {
         Self {
