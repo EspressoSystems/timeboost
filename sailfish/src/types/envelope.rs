@@ -1,8 +1,8 @@
 use committable::{Commitment, Committable};
 use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 use std::{hash::Hash, marker::PhantomData};
+use tracing::warn;
 
 use crate::{
     consensus::committee::StaticCommittee,
@@ -23,7 +23,7 @@ pub struct Envelope<D: Committable, S> {
     commitment: Commitment<D>,
     signature: Signature,
     signing_key: PublicKey,
-    _marker: PhantomData<fn(S)>
+    _marker: PhantomData<fn(S)>,
 }
 
 impl<D: Committable, S> Envelope<D, S> {
@@ -34,7 +34,7 @@ impl<D: Committable, S> Envelope<D, S> {
             commitment,
             signature,
             signing_key,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -48,14 +48,14 @@ impl<D: Committable, S> Envelope<D, S> {
     pub fn validated(self, membership: &StaticCommittee) -> Option<Envelope<D, Validated>> {
         if !self.is_valid(membership) {
             warn!(from = %self.signing_key, commit = %self.commitment, "invalid envelope");
-            return None
+            return None;
         }
         Some(Envelope {
             data: self.data,
             commitment: self.commitment,
             signature: self.signature,
             signing_key: self.signing_key,
-            _marker: PhantomData
+            _marker: PhantomData,
         })
     }
 
@@ -93,7 +93,7 @@ impl<D: Committable> Envelope<D, Validated> {
             commitment: self.commitment,
             signature: self.signature,
             signing_key: self.signing_key,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 }

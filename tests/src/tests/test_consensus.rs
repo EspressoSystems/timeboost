@@ -68,17 +68,17 @@ impl FakeNetwork {
             Action::ResetTimer(_) => {
                 // TODO
                 info!("reset timer");
-                return
+                return;
             }
             Action::Deliver(_b, r, src) => {
                 // TODO
                 info!(%r, %src, "deliver");
-                return
+                return;
             }
             Action::SendNoVote(..) => {
                 // TODO
                 info!("unicast");
-                return
+                return;
             }
             Action::SendProposal(e) => Message::Vertex(e.cast()),
             Action::SendTimeout(e) => Message::Timeout(e.cast()),
@@ -102,8 +102,8 @@ async fn test_multi_round_consensus() {
     let mut round = ViewNumber::genesis();
 
     // Spin the test for some rounds.
-    for _ in 0 .. 3 {
-    // while *round < 10 {
+    for _ in 0..3 {
+        // while *round < 10 {
         network.process();
         round = network.current_round();
     }

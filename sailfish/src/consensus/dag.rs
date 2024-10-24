@@ -9,6 +9,12 @@ pub struct Dag {
     elements: BTreeMap<ViewNumber, BTreeMap<PublicKey, Vertex>>,
 }
 
+impl Default for Dag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Dag {
     pub fn new() -> Self {
         Self {
@@ -19,10 +25,7 @@ impl Dag {
     pub fn add(&mut self, v: Vertex) {
         let r = v.id().round();
         let s = v.id().source();
-        self.elements
-            .entry(r)
-            .or_insert_with(|| BTreeMap::new())
-            .insert(*s, v);
+        self.elements.entry(r).or_default().insert(*s, v);
     }
 
     pub fn max_round(&self) -> Option<ViewNumber> {
@@ -55,16 +58,18 @@ impl Dag {
             current = nodes
                 .iter()
                 .filter_map(|(_, v)| {
-                    current.iter().any(|x| {
-                        if x.has_strong_edge(v.id()) {
-                            return true;
-                        }
-                        if !strong_only && x.has_weak_edge(v.id()) {
-                            return true;
-                        }
-                        false
-                    })
-                    .then_some(v)
+                    current
+                        .iter()
+                        .any(|x| {
+                            if x.has_strong_edge(v.id()) {
+                                return true;
+                            }
+                            if !strong_only && x.has_weak_edge(v.id()) {
+                                return true;
+                            }
+                            false
+                        })
+                        .then_some(v)
                 })
                 .collect();
 

@@ -5,7 +5,12 @@ use committable::{Commitment, Committable};
 use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
-use super::{block::Block, certificate::Certificate, envelope::{Envelope, Unchecked, Validated}, PublicKey};
+use super::{
+    block::Block,
+    certificate::Certificate,
+    envelope::{Envelope, Unchecked, Validated},
+    PublicKey,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum Message {

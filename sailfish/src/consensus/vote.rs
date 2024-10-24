@@ -5,7 +5,11 @@ use committable::Committable;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 
-use crate::types::{certificate::Certificate, envelope::{Envelope, Validated}, PublicKey, Signature};
+use crate::types::{
+    certificate::Certificate,
+    envelope::{Envelope, Validated},
+    PublicKey, Signature,
+};
 
 use super::committee::StaticCommittee;
 
@@ -14,7 +18,7 @@ pub struct VoteAccumulator<D: Committable> {
     committee: StaticCommittee,
     votes: BTreeMap<PublicKey, Envelope<D, Validated>>,
     signers: (BitVec, Vec<Signature>),
-    cert: Option<Certificate<D>>
+    cert: Option<Certificate<D>>,
 }
 
 impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
@@ -23,7 +27,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
             votes: BTreeMap::new(),
             signers: (bitvec![0; committee.total_nodes()], Vec::new()),
             committee,
-            cert: None
+            cert: None,
         }
     }
 
@@ -44,8 +48,13 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
             return true;
         }
 
-        let Some(index) = self.committee.committee().iter().position(|k| k == vote.signing_key()) else {
-            return false
+        let Some(index) = self
+            .committee
+            .committee()
+            .iter()
+            .position(|k| k == vote.signing_key())
+        else {
+            return false;
         };
 
         self.signers.0.set(index, true);
@@ -55,17 +64,21 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
 
     pub fn certificate(&mut self) -> Option<&Certificate<D>> {
         if self.cert.is_some() {
-            return self.cert.as_ref()
+            return self.cert.as_ref();
         }
         if self.votes.len() < self.committee.success_threshold().get() as usize {
-            return None
+            return None;
         }
         let pp = <PublicKey as SignatureKey>::public_parameter(
             self.committee.stake_table(),
             U256::from(self.committee.success_threshold().get()),
         );
         let sig = <PublicKey as SignatureKey>::assemble(&pp, &self.signers.0, &self.signers.1);
-        let env = self.votes.first_key_value().expect("non-empty set of votes").1;
+        let env = self
+            .votes
+            .first_key_value()
+            .expect("non-empty set of votes")
+            .1;
         let crt = Certificate::new(env.data().clone(), sig);
         self.cert = Some(crt);
         self.cert.as_ref()
@@ -76,7 +89,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         if let Some((_, e)) = self.votes.first_key_value() {
             // TODO: Is this necessary?
             if e.data() != vote.data() {
-                return false
+                return false;
             }
         }
         self.votes.insert(*vote.signing_key(), vote);

@@ -141,7 +141,12 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(self.id, self.public_key, self.private_key, quorum_membership);
+        let consensus = Consensus::new(
+            self.id,
+            self.public_key,
+            self.private_key,
+            quorum_membership,
+        );
 
         Coordinator::new(self.id, comm, consensus)
     }

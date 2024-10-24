@@ -41,7 +41,10 @@ pub struct Vertex {
 impl Vertex {
     pub fn new(r: ViewNumber, s: PublicKey) -> Self {
         Self {
-            id: VertexId { round: r, source: s },
+            id: VertexId {
+                round: r,
+                source: s,
+            },
             block: Block::empty(),
             strong: BTreeSet::new(),
             weak: BTreeSet::new(),
@@ -113,7 +116,7 @@ impl Vertex {
 
     pub fn add_strong_edges<I>(&mut self, e: I) -> &mut Self
     where
-        I: IntoIterator<Item = VertexId>
+        I: IntoIterator<Item = VertexId>,
     {
         self.strong.extend(e);
         self
@@ -121,7 +124,7 @@ impl Vertex {
 
     pub fn add_weak_edges<I>(&mut self, e: I) -> &mut Self
     where
-        I: IntoIterator<Item = VertexId>
+        I: IntoIterator<Item = VertexId>,
     {
         self.weak.extend(e);
         self
