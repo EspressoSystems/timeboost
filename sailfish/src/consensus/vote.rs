@@ -27,6 +27,12 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     }
 
     #[allow(unused)]
+    pub fn clear(&mut self) {
+        self.votes.clear();
+        self.signers = (bitvec![0; self.committee.total_nodes()], Vec::new())
+    }
+
+    #[allow(unused)]
     pub fn accumulate(&mut self, vote: Envelope<D>) -> Option<Certificate<D>> {
         if self.votes.contains_key(vote.signing_key()) {
             return None;

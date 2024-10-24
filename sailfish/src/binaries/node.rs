@@ -1,7 +1,9 @@
-use ::sailfish::{logging, types::NodeId};
+use ::sailfish::{
+    logging,
+    types::{NodeId, PublicKey},
+};
 use anyhow::Result;
 use clap::Parser;
-use hotshot::types::BLSPubKey;
 use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
@@ -18,8 +20,8 @@ struct Cli {
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
-    staked_nodes: Vec<PeerConfig<BLSPubKey>>,
-    validator_config: ValidatorConfig<BLSPubKey>,
+    staked_nodes: Vec<PeerConfig<PublicKey>>,
+    validator_config: ValidatorConfig<PublicKey>,
     id: NodeId,
     port: u16,
     network_size: NonZeroUsize,
