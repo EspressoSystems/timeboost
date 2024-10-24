@@ -27,10 +27,8 @@ pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(NodeId, Consensus)> {
     keys.into_iter()
         .enumerate()
         .map(|(i, (sk, pk))| {
-            (
-                NodeId::from(i as u64),
-                Consensus::new(pk, sk, committee.clone()),
-            )
+            let n = NodeId::from(i as u64);
+            (n, Consensus::new(n, pk, sk, committee.clone()))
         })
         .collect()
 }

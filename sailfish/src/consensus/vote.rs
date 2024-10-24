@@ -38,6 +38,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.cert = None
     }
 
+    #[must_use]
     pub fn add(&mut self, vote: Envelope<D, Validated>) -> bool {
         if self.votes.contains_key(vote.signing_key()) {
             return true;

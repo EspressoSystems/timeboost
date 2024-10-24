@@ -1,3 +1,5 @@
+use core::fmt;
+
 use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
 use serde::{Deserialize, Serialize};
 
@@ -27,5 +29,11 @@ impl From<u64> for NodeId {
 impl From<NodeId> for u64 {
     fn from(val: NodeId) -> Self {
         val.0
+    }
+}
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
