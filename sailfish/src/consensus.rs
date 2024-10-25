@@ -120,6 +120,16 @@ impl Consensus {
     }
 
     pub fn handle_message(&mut self, m: Message) -> Vec<Action> {
+        trace! {
+            node      = %self.id,
+            round     = %self.round,
+            committed = %self.committed_round,
+            buffered  = %self.buffer.len(),
+            delivered = %self.delivered.len(),
+            leaders   = %self.leader_stack.len(),
+            timeouts  = %self.timeouts.len(),
+            "handle_message"
+        }
         match m {
             Message::Vertex(e) => self.handle_vertex(e),
             Message::Timeout(e) => self.handle_timeout(e),
@@ -379,6 +389,11 @@ impl Consensus {
         }
 
         self.dag.add(v.clone());
+
+        if v.is_genesis() {
+            // A genesis vertex has no edges to prior rounds.
+            return Ok(Vec::new());
+        }
 
         if self.dag.vertices(v.round()).count() as u64 >= self.committee.success_threshold().get() {
             // We have enough edges => try to commit the leader vertex:
