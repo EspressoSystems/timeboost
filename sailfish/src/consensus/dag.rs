@@ -32,8 +32,8 @@ impl Dag {
         self.elements.keys().max().cloned()
     }
 
-    pub fn all_vertices(&self) -> impl Iterator<Item = &Vertex> + Clone {
-        self.elements.values().flat_map(|m| m.values())
+    pub fn vertices_from(&self, r: ViewNumber) -> impl Iterator<Item = &Vertex> + Clone {
+        self.elements.range(r..).flat_map(|(_, m)| m.values())
     }
 
     pub fn vertices(&self, r: ViewNumber) -> impl Iterator<Item = &Vertex> + Clone {

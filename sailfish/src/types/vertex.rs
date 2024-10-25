@@ -77,6 +77,10 @@ impl Vertex {
         self.weak.iter()
     }
 
+    pub fn edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.strong_edges().chain(self.weak_edges())
+    }
+
     /// Does this vertex have a strong (direct) connection to the given `VertexId`?
     pub fn has_strong_edge(&self, id: &VertexId) -> bool {
         self.strong.contains(id)
