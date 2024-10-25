@@ -9,8 +9,8 @@ description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [profile.test]
 codegen-units = 16
-incremental   = false
-opt-level     = 3
+incremental = false
+opt-level = 3
 
 [workspace.dependencies]
 anyhow = "1.0.89"
@@ -20,17 +20,24 @@ ark-ff = "0.4"
 ark-serialize = "0.4"
 ark-std = { version = "0.4", default-features = false }
 async-broadcast = "0.7"
+async-channel = "2"
 async-lock = "2"
 async-trait = "0.1"
 bincode = "1"
-bitvec = { version = "1", default-features = false, features = [ "alloc", "atomic", "serde" ] }
+bitvec = { version = "1", default-features = false, features = [
+    "alloc",
+    "atomic",
+    "serde",
+] }
 blake3 = "1.5"
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
 digest = "0.10"
 either = "1.13.0"
-ethereum-types = { version = "0.14", default-features = false, features = [ "serialize" ] }
+ethereum-types = { version = "0.14", default-features = false, features = [
+    "serialize",
+] }
 futures = { version = "0.3", default-features = false }
 hotshot = { git = "https://github.com/espressosystems/hotshot.git" }
 hotshot-types = { git = "https://github.com/espressosystems/hotshot.git" }
@@ -48,7 +55,15 @@ rand_chacha = "0.3.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0" }
 tagged-base64 = "0.4"
-tokio = { version = "1", default-features = false, features = [ "macros", "net", "parking_lot", "rt-multi-thread", "sync", "time", "tracing" ] }
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "net",
+    "parking_lot",
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "tracing",
+] }
 toml = "0.8.19"
 tracing = "0.1"
 tracing-subscriber = "0.3.18"

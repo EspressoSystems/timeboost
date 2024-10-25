@@ -1,7 +1,7 @@
-use std::{future::pending, time::Duration};
+use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
-    consensus::Consensus,
+    consensus::{Consensus, Dag},
     types::{
         comm::Comm,
         message::{Action, Message},
@@ -10,20 +10,57 @@ use crate::{
 };
 
 use anyhow::Result;
+use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use hotshot::traits::NetworkError;
 use hotshot_types::data::ViewNumber;
-use tokio::time::sleep;
-use tracing::{info, warn};
+use tokio::{
+    sync::oneshot::{self},
+    time::sleep,
+};
+use tracing::{trace, warn};
 
 pub struct Coordinator {
+    /// The node ID of this coordinator.
     id: NodeId,
+
+    /// The communication channel for this coordinator.
     comm: Box<dyn Comm<Err = NetworkError> + Send>,
+
+    /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
+
+    /// The shutdown signal for this coordinator.
+    shutdown_rx: oneshot::Receiver<()>,
+
+    #[cfg(feature = "test")]
+    event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+}
+
+#[cfg(feature = "test")]
+pub enum CoordinatorAuditEvent {
+    ActionTaken(Action),
+    MessageReceived(Message),
+}
+
+#[cfg(feature = "test")]
+impl std::fmt::Display for CoordinatorAuditEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
+            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
+        }
+    }
 }
 
 impl Coordinator {
-    pub fn new<C>(id: NodeId, comm: C, cons: Consensus) -> Self
+    pub fn new<C>(
+        id: NodeId,
+        comm: C,
+        cons: Consensus,
+        shutdown_rx: oneshot::Receiver<()>,
+        #[cfg(feature = "test")] event_sender: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+    ) -> Self
     where
         C: Comm<Err = NetworkError> + Send + 'static,
     {
@@ -31,6 +68,9 @@ impl Coordinator {
             id,
             comm: Box::new(comm),
             consensus: cons,
+            shutdown_rx,
+            #[cfg(feature = "test")]
+            event_log: event_sender,
         }
     }
 
@@ -45,10 +85,24 @@ impl Coordinator {
 
     pub async fn go(mut self) -> ! {
         let mut timer: BoxFuture<'static, ViewNumber> = pending().boxed();
+
+        tracing::info!(id = %self.id, "Starting coordinator");
+        // TODO: Restart behavior
+        for action in self.consensus.go(Dag::new()) {
+            self.on_action(action, &mut timer).await;
+        }
+
         loop {
             tokio::select! { biased;
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
+                        #[cfg(feature = "test")]
+                        self.event_log
+                            .as_ref()
+                            .unwrap()
+                            .write()
+                            .await
+                            .push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -56,6 +110,13 @@ impl Coordinator {
                     Ok(msg) => match self.on_message(&msg).await {
                         Ok(actions) => {
                             for a in actions {
+                                #[cfg(feature = "test")]
+                                self.event_log
+                                    .as_ref()
+                                    .unwrap()
+                                    .write()
+                                    .await
+                                    .push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                                 self.on_action(a, &mut timer).await
                             }
                         }
@@ -64,23 +125,36 @@ impl Coordinator {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to deserialize network message; error = {e:#}");
+                        // warn!("Failed to deserialize network message; error = {e:#}");
                         continue;
                     }
+                },
+                _ = &mut self.shutdown_rx => {
+                    tracing::info!("Node {} received shutdown signal; exiting", self.id);
+                    std::process::exit(0);
                 }
             }
         }
     }
 
     async fn on_message(&mut self, m: &[u8]) -> Result<Vec<Action>> {
-        let m = bincode::deserialize(m)?;
+        let m: Message = bincode::deserialize(m)?;
+
+        #[cfg(feature = "test")]
+        self.event_log
+            .as_ref()
+            .unwrap()
+            .write()
+            .await
+            .push(CoordinatorAuditEvent::MessageReceived(m.clone()));
+
         Ok(self.consensus.handle_message(m))
     }
 
     async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, ViewNumber>) {
         match action {
             Action::ResetTimer(r) => *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed(),
-            Action::Deliver(_, r, src) => info!(%r, %src, "deliver"), // TODO
+            Action::Deliver(_, r, src) => trace!(%r, %src, "deliver"), // TODO
             Action::SendProposal(e) => self.broadcast(Message::Vertex(e.cast())).await,
             Action::SendTimeout(e) => self.broadcast(Message::Timeout(e.cast())).await,
             Action::SendTimeoutCert(c) => self.broadcast(Message::TimeoutCert(c)).await,

@@ -3,7 +3,7 @@ use std::mem;
 
 use committee::StaticCommittee;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use tracing::{debug, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
 
 use crate::types::{
@@ -103,6 +103,11 @@ impl Consensus {
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
+    #[instrument(
+        skip_all,
+        fields(id = %self.id, round = %self.round)
+        level="info"
+    )]
     pub fn go(&mut self, d: Dag) -> Vec<Action> {
         let r = d.max_round().unwrap_or(ViewNumber::genesis());
 

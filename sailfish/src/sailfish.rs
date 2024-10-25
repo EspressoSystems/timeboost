@@ -3,6 +3,10 @@ use crate::{
     coordinator::Coordinator,
     types::{comm::Comm, NodeId, PrivateKey, PublicKey},
 };
+
+#[cfg(feature = "test")]
+use crate::coordinator::CoordinatorAuditEvent;
+
 use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::{
@@ -27,7 +31,11 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
-use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashSet, net::Shutdown, num::NonZeroUsize, sync::Arc};
+use tokio::signal;
+#[cfg(feature = "test")]
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -130,7 +138,13 @@ impl Sailfish {
         Ok(network)
     }
 
-    pub fn init<C>(self, comm: C, staked_nodes: Vec<PeerConfig<PublicKey>>) -> Coordinator
+    pub fn init<C>(
+        self,
+        comm: C,
+        staked_nodes: Vec<PeerConfig<PublicKey>>,
+        shutdown_rx: oneshot::Receiver<()>,
+        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+    ) -> Coordinator
     where
         C: Comm<Err = NetworkError> + Send + 'static,
     {
@@ -148,7 +162,14 @@ impl Sailfish {
             quorum_membership,
         );
 
-        Coordinator::new(self.id, comm, consensus)
+        Coordinator::new(
+            self.id,
+            comm,
+            consensus,
+            shutdown_rx,
+            #[cfg(feature = "test")]
+            event_log,
+        )
     }
 }
 
@@ -206,5 +227,18 @@ pub async fn run(
     let n = s
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
-    s.init(n, staked_nodes).go().await
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let coordinator_handle = tokio::spawn(s.init(n, staked_nodes, shutdown_rx, None).go());
+
+    tokio::select! {
+        _ = coordinator_handle => {}
+        _ = signal::ctrl_c() => {
+            println!("Received termination signal, shutting down...");
+            shutdown_tx.send(()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+        }
+    }
+
+    Ok(())
 }

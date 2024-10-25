@@ -16,22 +16,55 @@ use super::{
 pub enum Message {
     /// A vertex proposal from a node.
     Vertex(Envelope<Vertex, Unchecked>),
+
     /// A timeout message from a node.
     Timeout(Envelope<Timeout, Unchecked>),
+
     /// A no-vote to a round leader from a node.
     NoVote(Envelope<NoVote, Unchecked>),
+
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
+    /// Reset the timer to the given round.
     ResetTimer(ViewNumber),
+
+    /// Deliver a block to the application layer.
     Deliver(Block, ViewNumber, PublicKey),
+
+    /// Send a vertex proposal to the given node.
     SendProposal(Envelope<Vertex, Validated>),
+
+    /// Send a timeout message to the given node.
     SendTimeout(Envelope<Timeout, Validated>),
+
+    /// Send a no-vote message to the given node.
     SendNoVote(PublicKey, Envelope<NoVote, Validated>),
+
+    /// Send a timeout certificate to the given node.
     SendTimeoutCert(Certificate<Timeout>),
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
+            Action::Deliver(_, round, _) => write!(f, "Deliver({})", round),
+            Action::SendProposal(envelope) => {
+                write!(f, "SendProposal({})", envelope.data().round())
+            }
+            Action::SendTimeout(envelope) => write!(f, "SendTimeout({})", envelope.data().round()),
+            Action::SendNoVote(ver_key, envelope) => {
+                write!(f, "SendNoVote({}, {})", ver_key, envelope.data().round())
+            }
+            Action::SendTimeoutCert(certificate) => {
+                write!(f, "SendTimeoutCert({})", certificate.data().round())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -81,10 +114,10 @@ impl Message {
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Vertex(e) => write!(f, "vertex proposal, id := {}", e.data().id()),
-            Self::Timeout(e) => write!(f, "timeout, round := {}", e.data().round),
-            Self::NoVote(e) => write!(f, "no-vote, round := {}", e.data().round),
-            Self::TimeoutCert(c) => write!(f, "timeout cert, round := {}", c.data().round),
+            Self::Vertex(e) => write!(f, "Vertex({})", e.data().id().round()),
+            Self::Timeout(e) => write!(f, "Timeout({})", e.data().round),
+            Self::NoVote(e) => write!(f, "NoVote({})", e.data().round),
+            Self::TimeoutCert(c) => write!(f, "TimeoutCert({})", c.data().round),
         }
     }
 }
