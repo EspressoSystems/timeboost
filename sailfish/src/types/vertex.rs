@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fmt::Display};
 
 use committable::Committable;
 use hotshot::types::SignatureKey;
-use hotshot_types::data::ViewNumber;
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -51,6 +51,10 @@ impl Vertex {
             no_vote: None,
             timeout: None,
         }
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        self.id.round == ViewNumber::genesis()
     }
 
     pub fn id(&self) -> &VertexId {

@@ -6,7 +6,7 @@ use sailfish::{
     logging,
     types::{
         message::{Action, Message},
-        NodeId,
+        NodeId, PublicKey,
     },
 };
 use tracing::info;
@@ -34,7 +34,7 @@ impl FakeNetwork {
                 Self::handle_action(a, &mut next)
             }
         }
-        self.broadcast(next)
+        self.dispatch(next)
     }
 
     fn current_round(&self) -> ViewNumber {
@@ -45,9 +45,23 @@ impl FakeNetwork {
             .unwrap()
     }
 
-    fn broadcast(&mut self, msgs: Vec<Message>) {
-        for (_, (_, queue)) in self.nodes.iter_mut() {
-            queue.extend(msgs.clone());
+    fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {
+        for m in msgs {
+            match m {
+                (None, m) => {
+                    for (_, queue) in self.nodes.values_mut() {
+                        queue.push_back(m.clone());
+                    }
+                }
+                (Some(p), m) => {
+                    let (_, q) = self
+                        .nodes
+                        .values_mut()
+                        .find(|(n, _)| n.public_key() == &p)
+                        .unwrap();
+                    q.push_back(m);
+                }
+            }
         }
     }
 
@@ -60,10 +74,10 @@ impl FakeNetwork {
                 }
             }
         }
-        self.broadcast(next);
+        self.dispatch(next);
     }
 
-    fn handle_action(a: Action, msgs: &mut Vec<Message>) {
+    fn handle_action(a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
         let m = match a {
             Action::ResetTimer(_) => {
                 // TODO
@@ -75,14 +89,10 @@ impl FakeNetwork {
                 info!(%r, %src, "deliver");
                 return;
             }
-            Action::SendNoVote(..) => {
-                // TODO
-                info!("unicast");
-                return;
-            }
-            Action::SendProposal(e) => Message::Vertex(e.cast()),
-            Action::SendTimeout(e) => Message::Timeout(e.cast()),
-            Action::SendTimeoutCert(c) => Message::TimeoutCert(c),
+            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
+            Action::SendProposal(e) => (None, Message::Vertex(e.cast())),
+            Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
+            Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
         };
         msgs.push(m)
     }
@@ -102,8 +112,7 @@ async fn test_multi_round_consensus() {
     let mut round = ViewNumber::genesis();
 
     // Spin the test for some rounds.
-    for _ in 0..3 {
-        // while *round < 10 {
+    while *round < 10 {
         network.process();
         round = network.current_round();
     }

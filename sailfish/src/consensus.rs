@@ -103,16 +103,18 @@ impl Consensus {
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
-    pub fn go(&mut self, mut d: Dag) -> Vec<Action> {
+    pub fn go(&mut self, d: Dag) -> Vec<Action> {
         let r = d.max_round().unwrap_or(ViewNumber::genesis());
-
-        if r == ViewNumber::genesis() {
-            d.add(Vertex::new(r, self.public_key))
-        }
 
         self.dag = d;
         self.round = r;
         // TODO: Save and restore other states (committed_round, buffer, etc.)
+
+        if r == ViewNumber::genesis() {
+            let gen = Vertex::new(r, self.public_key);
+            let env = Envelope::signed(gen, &self.private_key, self.public_key);
+            return vec![Action::SendProposal(env)];
+        }
 
         self.advance_round(r + 1)
     }
@@ -154,24 +156,26 @@ impl Consensus {
 
         let vertex = e.into_data();
 
-        if (vertex.strong_edge_count() as u64) < self.committee.success_threshold().get() {
-            debug! {
-                node   = %self.id,
-                round  = %self.round,
-                vround = %vertex.round(),
-                "rejecting vertex with not enough strong edges"
+        if !vertex.is_genesis() {
+            if (vertex.strong_edge_count() as u64) < self.committee.success_threshold().get() {
+                debug! {
+                    node   = %self.id,
+                    round  = %self.round,
+                    vround = %vertex.round(),
+                    "rejecting vertex with not enough strong edges"
+                }
+                return actions;
             }
-            return actions;
-        }
 
-        if !self.is_valid(&vertex) {
-            debug! {
-                node   = %self.id,
-                round  = %self.round,
-                vround = %vertex.round(),
-                "rejecting invalid vertex"
+            if !self.is_valid(&vertex) {
+                debug! {
+                    node   = %self.id,
+                    round  = %self.round,
+                    vround = %vertex.round(),
+                    "rejecting invalid vertex"
+                }
+                return actions;
             }
-            return actions;
         }
 
         match self.try_to_add_to_dag(&vertex) {
@@ -349,7 +353,7 @@ impl Consensus {
                 .expect("> 2f timeouts");
             new.set_timeout(t.clone());
 
-            if self.public_key != leader {
+            if self.public_key == leader {
                 let n = self.no_votes.certificate().expect("> 2f no-votes");
                 new.set_no_vote(n.clone());
             }
@@ -369,7 +373,7 @@ impl Consensus {
                 node   = %self.id,
                 round  = %self.round,
                 vround = %v.round(),
-                "not all edges are present in dag"
+                "not all vertices are present in dag"
             }
             return Err(());
         }
