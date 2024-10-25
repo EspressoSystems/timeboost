@@ -3,7 +3,7 @@ use std::mem;
 
 use committee::StaticCommittee;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use tracing::{debug, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
 
 use crate::types::{
@@ -119,17 +119,16 @@ impl Consensus {
         self.advance_round(r + 1)
     }
 
+    #[instrument(level = "trace", skip_all, fields(
+        node      = %self.id,
+        round     = %self.round,
+        committed = %self.committed_round,
+        buffered  = %self.buffer.len(),
+        delivered = %self.delivered.len(),
+        leaders   = %self.leader_stack.len(),
+        timeouts  = %self.timeouts.len())
+    )]
     pub fn handle_message(&mut self, m: Message) -> Vec<Action> {
-        trace! {
-            node      = %self.id,
-            round     = %self.round,
-            committed = %self.committed_round,
-            buffered  = %self.buffer.len(),
-            delivered = %self.delivered.len(),
-            leaders   = %self.leader_stack.len(),
-            timeouts  = %self.timeouts.len(),
-            "handle_message"
-        }
         match m {
             Message::Vertex(e) => self.handle_vertex(e),
             Message::Timeout(e) => self.handle_timeout(e),
@@ -138,15 +137,19 @@ impl Consensus {
         }
     }
 
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     pub fn timeout(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "timeout");
         debug_assert_eq!(r, self.round);
         let e = Envelope::signed(Timeout::new(r), &self.private_key, self.public_key);
         vec![Action::SendTimeout(e)]
     }
 
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %e.data().round())
+    )]
     pub fn handle_vertex(&mut self, e: Envelope<Vertex, Unchecked>) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, vround = %e.data().round(), "handle_vertex");
         let mut actions = Vec::new();
 
         let Some(e) = e.validated(&self.committee) else {
@@ -154,13 +157,7 @@ impl Consensus {
         };
 
         if e.data().source() != e.signing_key() {
-            trace! {
-                node  = %self.id,
-                round = %self.round,
-                src   = %e.data().source(),
-                sig   = %e.signing_key(),
-                "vertex sender != signer"
-            }
+            warn!(src = %e.data().source(), sig = %e.signing_key(), "vertex sender != signer");
             return actions;
         }
 
@@ -238,8 +235,8 @@ impl Consensus {
         Vec::new()
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     pub fn handle_timeout(&mut self, e: Envelope<Timeout, Unchecked>) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, "handle_timeout");
         let mut actions = Vec::new();
 
         let Some(e) = e.validated(&self.committee) else {
@@ -290,12 +287,13 @@ impl Consensus {
         actions
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     pub fn handle_timeout_cert(&mut self, _x: Certificate<Timeout>) -> Vec<Action> {
         Vec::new()
     }
 
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn advance_round(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "advance_round");
         debug_assert_ne!(r, ViewNumber::genesis());
 
         let mut actions = Vec::new();
@@ -322,8 +320,8 @@ impl Consensus {
         actions
     }
 
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn broadcast_vertex(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "broadcast_vertex");
         let mut actions = Vec::new();
         let v = self.create_new_vertex(r);
         if let Ok(a) = self.try_to_add_to_dag(&v) {
@@ -334,9 +332,8 @@ impl Consensus {
         actions
     }
 
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn create_new_vertex(&mut self, r: ViewNumber) -> Vertex {
-        trace!(node = %self.id, round = %self.round, %r, "create_new_vertex");
-
         let leader = self.committee.leader(r - 1);
         let prev = self.dag.vertices(r - 1);
 
@@ -372,9 +369,8 @@ impl Consensus {
         new
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
-        trace!(node = %self.id, round = %self.round, vround = %v.round(), "try_to_add_to_dag");
-
         if !v
             .edges()
             .all(|id| self.dag.vertex(id.round(), id.source()).is_some())
@@ -421,8 +417,8 @@ impl Consensus {
         Ok(Vec::new())
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, vround = %v.id(), "commit_leader");
         self.leader_stack.push(v.clone());
         for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
             let Some(l) = self.leader_vertex(ViewNumber::new(r)).cloned() else {
@@ -434,12 +430,12 @@ impl Consensus {
             }
         }
         self.committed_round = v.round();
-        trace!(node = %self.id, round = %self.round, commit = %self.committed_round, "committed round");
+        trace!(commit = %self.committed_round, "committed round");
         self.order_vertices()
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     fn order_vertices(&mut self) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, "order_vertices");
         let mut actions = Vec::new();
         let mut delivered = mem::take(&mut self.delivered);
         while let Some(v) = self.leader_stack.pop() {
@@ -462,9 +458,8 @@ impl Consensus {
         actions
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn is_valid(&self, v: &Vertex) -> bool {
-        trace!(node = %self.id, round = %self.round, vround = %v.round(), "is_valid");
-
         let Some(l) = self.leader_vertex(v.round() - 1) else {
             warn! {
                 node   = %self.id,
