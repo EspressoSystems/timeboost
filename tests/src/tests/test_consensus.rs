@@ -29,9 +29,9 @@ impl FakeNetwork {
 
     fn start(&mut self) {
         let mut next = Vec::new();
-        for (node, _) in self.nodes.values_mut() {
+        for (id, (node, _)) in self.nodes.iter_mut() {
             for a in node.go(Dag::new()) {
-                Self::handle_action(a, &mut next)
+                Self::handle_action(*id, a, &mut next)
             }
         }
         self.dispatch(next)
@@ -67,26 +67,26 @@ impl FakeNetwork {
 
     fn process(&mut self) {
         let mut next = Vec::new();
-        for (node, queue) in self.nodes.values_mut() {
+        for (id, (node, queue)) in self.nodes.iter_mut() {
             while let Some(m) = queue.pop_front() {
                 for a in node.handle_message(m) {
-                    Self::handle_action(a, &mut next)
+                    Self::handle_action(*id, a, &mut next)
                 }
             }
         }
         self.dispatch(next);
     }
 
-    fn handle_action(a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
+    fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
         let m = match a {
             Action::ResetTimer(_) => {
                 // TODO
-                info!("reset timer");
+                info!(%node, "reset timer");
                 return;
             }
             Action::Deliver(_b, r, src) => {
                 // TODO
-                info!(%r, %src, "deliver");
+                info!(%node, %r, %src, "deliver");
                 return;
             }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
