@@ -98,6 +98,21 @@ impl Consensus {
         self.round
     }
 
+    #[cfg(feature = "test")]
+    pub fn committee(&self) -> &StaticCommittee {
+        &self.committee
+    }
+
+    #[cfg(feature = "test")]
+    pub fn private_key(&self) -> &PrivateKey {
+        &self.private_key
+    }
+
+    #[cfg(feature = "test")]
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
     pub fn add_block(&mut self, b: Block) {
         self.blocks.push_back(b);
     }
@@ -220,8 +235,31 @@ impl Consensus {
         actions
     }
 
-    pub fn handle_no_vote(&mut self, _x: Envelope<NoVote, Validated>) -> Vec<Action> {
-        Vec::new()
+    pub fn handle_no_vote(&mut self, e: Envelope<NoVote, Validated>) -> Vec<Action> {
+        trace!(node = %self.id, round = %self.round, "handle_no_vote");
+        let mut actions = Vec::new();
+        let round = e.data().round();
+        if round != self.round {
+            return actions;
+        }
+        // if self.public_key != self.committee.leader(round + 1) {
+        //     return actions;
+        // }
+
+        let Some(validated_envelope) = e.validated(&self.committee) else {
+            return actions;
+        };
+        // did we add the vote and have enough votes to move on
+        if self.no_votes.add(validated_envelope) && self.no_votes.certificate().is_some() {
+            // we need to reset round timer and broadcast vertex for this round with timeout cert
+            // should all be handled here
+            self.round = round + 1;
+            tracing::error!("round: {}", self.round);
+            actions.push(Action::ResetTimer(self.round));
+            actions.extend(self.broadcast_vertex(self.round));
+        }
+
+        return actions;
     }
 
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]

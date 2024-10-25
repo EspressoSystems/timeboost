@@ -19,7 +19,7 @@ mod tests;
 
 const SEED: [u8; 32] = [0u8; 32];
 
-pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(NodeId, Consensus)> {
+pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)> {
     let keys = (0..num_nodes)
         .map(|i| generate_key_pair(SEED, i))
         .collect::<Vec<_>>();
@@ -28,7 +28,7 @@ pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(NodeId, Consensus)> {
         .enumerate()
         .map(|(i, (sk, pk))| {
             let n = NodeId::from(i as u64);
-            (n, Consensus::new(n, pk, sk, committee.clone()))
+            (pk, Consensus::new(n, pk, sk, committee.clone()))
         })
         .collect()
 }

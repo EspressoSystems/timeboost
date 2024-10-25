@@ -5,7 +5,8 @@ use sailfish::{
     consensus::{Consensus, Dag},
     logging,
     types::{
-        message::{Action, Message},
+        envelope::Envelope,
+        message::{Action, Message, Timeout},
         NodeId, PublicKey,
     },
 };
@@ -14,11 +15,11 @@ use tracing::info;
 use crate::make_consensus_nodes;
 
 struct FakeNetwork {
-    nodes: HashMap<NodeId, (Consensus, VecDeque<Message>)>,
+    nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
 }
 
 impl FakeNetwork {
-    fn new(nodes: Vec<(NodeId, Consensus)>) -> Self {
+    fn new(nodes: Vec<(PublicKey, Consensus)>) -> Self {
         Self {
             nodes: nodes
                 .into_iter()
@@ -29,9 +30,9 @@ impl FakeNetwork {
 
     fn start(&mut self) {
         let mut next = Vec::new();
-        for (id, (node, _)) in self.nodes.iter_mut() {
+        for (_pub_key, (node, _)) in self.nodes.iter_mut() {
             for a in node.go(Dag::new()) {
-                Self::handle_action(*id, a, &mut next)
+                Self::handle_action(node.id(), a, &mut next)
             }
         }
         self.dispatch(next)
@@ -53,13 +54,9 @@ impl FakeNetwork {
                         queue.push_back(m.clone());
                     }
                 }
-                (Some(p), m) => {
-                    let (_, q) = self
-                        .nodes
-                        .values_mut()
-                        .find(|(n, _)| n.public_key() == &p)
-                        .unwrap();
-                    q.push_back(m);
+                (Some(pub_key), m) => {
+                    let (_, queue) = self.nodes.get_mut(&pub_key).unwrap();
+                    queue.push_back(m);
                 }
             }
         }
@@ -67,10 +64,10 @@ impl FakeNetwork {
 
     fn process(&mut self) {
         let mut next = Vec::new();
-        for (id, (node, queue)) in self.nodes.iter_mut() {
+        for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
             while let Some(m) = queue.pop_front() {
                 for a in node.handle_message(m) {
-                    Self::handle_action(*id, a, &mut next)
+                    Self::handle_action(node.id(), a, &mut next)
                 }
             }
         }
@@ -96,6 +93,73 @@ impl FakeNetwork {
         };
         msgs.push(m)
     }
+
+    // TODO: clean up
+    fn mock_timeouts(&mut self, round: ViewNumber) {
+        let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
+        for (node, queue) in self.nodes.values_mut() {
+            // clear queue
+            queue.clear();
+            let data = Timeout::new(round);
+            let e = Envelope::signed(data, node.private_key(), node.public_key().clone());
+            let action = Action::SendTimeout(e);
+
+            Self::handle_action(node.id(), action, &mut msgs);
+        }
+        self.dispatch(msgs);
+    }
+
+    // TODO: clean up
+    fn verify_outputs(&mut self) -> bool {
+        for (_node, queue) in self.nodes.values() {
+            if queue.len() != 1 {
+                return false;
+            }
+
+            let Some(msg) = queue.get(0) else {
+                return false;
+            };
+
+            match msg {
+                Message::Vertex(v) => {
+                    if v.data().no_vote_cert().is_none() {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        return true;
+    }
+}
+
+#[tokio::test]
+async fn test_timeout() {
+    logging::init_logging();
+    let num_nodes = 4;
+    let nodes = make_consensus_nodes(num_nodes);
+
+    let mut network = FakeNetwork::new(nodes);
+
+    network.start();
+
+    // process 2 rounds
+    network.process();
+    network.process();
+
+    // mock timeout
+    let round = ViewNumber::new(2);
+    network.mock_timeouts(round);
+
+    // process timeout (create TC)
+    network.process();
+
+    // process no vote (send NVC)
+    network.process();
+
+    // leader send vertex no vote (accumulate NVC and propose vertex)
+    network.process();
+    assert!(network.verify_outputs());
 }
 
 #[tokio::test]
