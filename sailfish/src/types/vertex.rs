@@ -57,6 +57,14 @@ impl Vertex {
         &self.id
     }
 
+    pub fn round(&self) -> ViewNumber {
+        self.id.round
+    }
+
+    pub fn source(&self) -> &PublicKey {
+        &self.id.source
+    }
+
     pub fn edge_count(&self) -> usize {
         self.strong_edge_count() + self.weak_edge_count()
     }

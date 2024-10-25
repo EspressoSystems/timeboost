@@ -23,8 +23,8 @@ impl Dag {
     }
 
     pub fn add(&mut self, v: Vertex) {
-        let r = v.id().round();
-        let s = v.id().source();
+        let r = v.round();
+        let s = v.source();
         self.elements.entry(r).or_default().insert(*s, v);
     }
 
@@ -51,7 +51,7 @@ impl Dag {
         let mut current = vec![from];
         for nodes in self
             .elements
-            .range(ViewNumber::genesis()..from.id().round())
+            .range(ViewNumber::genesis()..from.round())
             .rev()
             .map(|e| e.1)
         {

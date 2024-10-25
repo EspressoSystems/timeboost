@@ -134,18 +134,18 @@ impl Consensus {
     }
 
     pub fn handle_vertex(&mut self, e: Envelope<Vertex, Unchecked>) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, vround = %e.data().id().round(), "handle_vertex");
+        trace!(node = %self.id, round = %self.round, vround = %e.data().round(), "handle_vertex");
         let mut actions = Vec::new();
 
         let Some(e) = e.validated(&self.committee) else {
             return actions;
         };
 
-        if e.data().id().source() != e.signing_key() {
+        if e.data().source() != e.signing_key() {
             trace! {
                 node  = %self.id,
                 round = %self.round,
-                src   = %e.data().id().source(),
+                src   = %e.data().source(),
                 sig   = %e.signing_key(),
                 "vertex sender != signer"
             }
@@ -158,7 +158,7 @@ impl Consensus {
             debug! {
                 node   = %self.id,
                 round  = %self.round,
-                vround = %vertex.id().round(),
+                vround = %vertex.round(),
                 "rejecting vertex with not enough strong edges"
             }
             return actions;
@@ -168,7 +168,7 @@ impl Consensus {
             debug! {
                 node   = %self.id,
                 round  = %self.round,
-                vround = %vertex.id().round(),
+                vround = %vertex.round(),
                 "rejecting invalid vertex"
             }
             return actions;
@@ -183,10 +183,7 @@ impl Consensus {
                 // Try to add all buffered vertices to the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
-                for w in buffer
-                    .into_iter()
-                    .filter(|w| w.id().round() <= vertex.id().round())
-                {
+                for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
                     if let Ok(b) = self.try_to_add_to_dag(&w) {
                         actions.extend(b)
                     } else {
@@ -198,24 +195,24 @@ impl Consensus {
 
                 // Check if we can advance to vertex round + 1:
 
-                if vertex.id().round() < self.round {
+                if vertex.round() < self.round {
                     return actions;
                 }
 
-                if (self.dag.vertices(vertex.id().round()).count() as u64)
+                if (self.dag.vertices(vertex.round()).count() as u64)
                     < self.committee.success_threshold().get()
                 {
                     return actions;
                 }
 
-                if self.leader_vertex(vertex.id().round()).is_some()
+                if self.leader_vertex(vertex.round()).is_some()
                     || self
                         .timeouts
-                        .get_mut(&vertex.id().round())
+                        .get_mut(&vertex.round())
                         .and_then(|t| t.certificate())
                         .is_some()
                 {
-                    actions.extend(self.advance_round(vertex.id().round() + 1))
+                    actions.extend(self.advance_round(vertex.round() + 1))
                 }
             }
         }
@@ -362,7 +359,7 @@ impl Consensus {
     }
 
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
-        trace!(node = %self.id, round = %self.round, vround = %v.id().round(), "try_to_add_to_dag");
+        trace!(node = %self.id, round = %self.round, vround = %v.round(), "try_to_add_to_dag");
 
         if !v
             .edges()
@@ -371,7 +368,7 @@ impl Consensus {
             debug! {
                 node   = %self.id,
                 round  = %self.round,
-                vround = %v.id().round(),
+                vround = %v.round(),
                 "not all edges are present in dag"
             }
             return Err(());
@@ -379,15 +376,13 @@ impl Consensus {
 
         self.dag.add(v.clone());
 
-        if self.dag.vertices(v.id().round()).count() as u64
-            >= self.committee.success_threshold().get()
-        {
+        if self.dag.vertices(v.round()).count() as u64 >= self.committee.success_threshold().get() {
             // We have enough edges => try to commit the leader vertex:
-            let Some(l) = self.leader_vertex(v.id().round() - 1).cloned() else {
+            let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
                 warn! {
                     node   = %self.id,
                     round  = %self.round,
-                    vround = %v.id().round(),
+                    vround = %v.round(),
                     "no leader vertex in vround - 1 => can not commit"
                 }
                 return Ok(Vec::new());
@@ -395,7 +390,7 @@ impl Consensus {
             // If enough edges to the leader of the previous round exist we can commit the leader.
             if self
                 .dag
-                .vertices(v.id().round())
+                .vertices(v.round())
                 .filter(|v| self.dag.is_connected(v, &l, true))
                 .count() as u64
                 >= self.committee.success_threshold().get()
@@ -410,7 +405,7 @@ impl Consensus {
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
         trace!(node = %self.id, round = %self.round, vround = %v.id(), "commit_leader");
         self.leader_stack.push(v.clone());
-        for r in ((self.committed_round + 1).u64()..v.id().round().u64()).rev() {
+        for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
             let Some(l) = self.leader_vertex(ViewNumber::new(r)).cloned() else {
                 continue; // TODO: This should not happen
             };
@@ -419,7 +414,7 @@ impl Consensus {
                 v = l
             }
         }
-        self.committed_round = v.id().round();
+        self.committed_round = v.round();
         trace!(node = %self.id, round = %self.round, commit = %self.committed_round, "committed round");
         self.order_vertices()
     }
@@ -438,8 +433,8 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                let r = to_deliver.id().round();
-                let s = *to_deliver.id().source();
+                let r = to_deliver.round();
+                let s = *to_deliver.source();
                 actions.push(Action::Deliver(b, r, s));
                 delivered.insert(to_deliver.clone());
             }
@@ -449,14 +444,14 @@ impl Consensus {
     }
 
     fn is_valid(&self, v: &Vertex) -> bool {
-        trace!(node = %self.id, round = %self.round, vround = %v.id().round(), "is_valid");
+        trace!(node = %self.id, round = %self.round, vround = %v.round(), "is_valid");
 
-        let Some(l) = self.leader_vertex(v.id().round() - 1) else {
+        let Some(l) = self.leader_vertex(v.round() - 1) else {
             warn! {
                 node   = %self.id,
                 round  = %self.round,
-                vround = %v.id().round(),
-                vsrc   = %v.id().source(),
+                vround = %v.round(),
+                vsrc   = %v.source(),
                 "no leader vertex for vround - 1 found"
             }
             return false;
@@ -471,15 +466,15 @@ impl Consensus {
                 warn! {
                     node   = %self.id,
                     round  = %self.round,
-                    vround = %v.id().round(),
-                    vsrc   = %v.id().source(),
+                    vround = %v.round(),
+                    vsrc   = %v.source(),
                     "vertex has timeout certificate with invalid quorum"
                 }
                 return false;
             }
         }
 
-        if v.id().source() != &self.committee.leader(v.id().round()) {
+        if v.source() != &self.committee.leader(v.round()) {
             return true;
         }
 
@@ -488,8 +483,8 @@ impl Consensus {
                 warn! {
                     node   = %self.id,
                     round  = %self.round,
-                    vround = %v.id().round(),
-                    vsrc   = %v.id().source(),
+                    vround = %v.round(),
+                    vsrc   = %v.source(),
                     "vertex has no-vote certificate with invalid quorum"
                 }
                 return false;
