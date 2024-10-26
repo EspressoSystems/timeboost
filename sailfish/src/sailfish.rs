@@ -31,10 +31,8 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
-use std::{collections::HashSet, net::Shutdown, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use tokio::signal;
-#[cfg(feature = "test")]
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use tracing::{info, instrument};
 

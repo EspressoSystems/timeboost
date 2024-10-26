@@ -125,7 +125,7 @@ impl Coordinator {
                         }
                     }
                     Err(e) => {
-                        // warn!("Failed to deserialize network message; error = {e:#}");
+                        warn!("Failed to deserialize network message; error = {e:#}");
                         continue;
                     }
                 },

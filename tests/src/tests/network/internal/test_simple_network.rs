@@ -3,12 +3,7 @@ use std::sync::Arc;
 use async_lock::RwLock;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{coordinator::CoordinatorAuditEvent, types::message::Message};
-use tokio::{
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    sync::oneshot,
-    task::JoinSet,
-    time::{timeout, Duration},
-};
+use tokio::{sync::oneshot, task::JoinSet, time::Duration};
 
 use crate::{net, Group};
 
@@ -22,7 +17,7 @@ async fn test_simple_network_genesis() {
     let event_logs: Vec<Arc<RwLock<Vec<CoordinatorAuditEvent>>>> = (0..num_nodes)
         .map(|_| Arc::new(RwLock::new(Vec::new())))
         .collect();
-    let (mut shutdown_senders, mut shutdown_receivers): (
+    let (shutdown_senders, mut shutdown_receivers): (
         Vec<oneshot::Sender<()>>,
         Vec<oneshot::Receiver<()>>,
     ) = (0..num_nodes).map(|_| oneshot::channel()).unzip();
