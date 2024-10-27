@@ -49,33 +49,33 @@ impl FakeNetwork {
     fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {
         for m in msgs {
             match m {
-                (None, m) => {
+                (None, msg) => {
                     for (_, queue) in self.nodes.values_mut() {
-                        queue.push_back(m.clone());
+                        queue.push_back(msg.clone());
                     }
                 }
-                (Some(pub_key), m) => {
+                (Some(pub_key), msg) => {
                     let (_, queue) = self.nodes.get_mut(&pub_key).unwrap();
-                    queue.push_back(m);
+                    queue.push_back(msg);
                 }
             }
         }
     }
 
     fn process(&mut self) {
-        let mut next = Vec::new();
+        let mut next_msgs = Vec::new();
         for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
-            while let Some(m) = queue.pop_front() {
-                for a in node.handle_message(m) {
-                    Self::handle_action(node.id(), a, &mut next)
+            while let Some(msg) = queue.pop_front() {
+                for a in node.handle_message(msg) {
+                    Self::handle_action(node.id(), a, &mut next_msgs)
                 }
             }
         }
-        self.dispatch(next);
+        self.dispatch(next_msgs);
     }
 
     fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
-        let m = match a {
+        let msg = match a {
             Action::ResetTimer(_) => {
                 // TODO
                 info!(%node, "reset timer");
@@ -91,10 +91,9 @@ impl FakeNetwork {
             Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
             Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
         };
-        msgs.push(m)
+        msgs.push(msg)
     }
 
-    // TODO: clean up
     fn mock_timeouts(&mut self, round: ViewNumber) {
         let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
         for (node, queue) in self.nodes.values_mut() {
@@ -109,32 +108,18 @@ impl FakeNetwork {
         self.dispatch(msgs);
     }
 
-    // TODO: clean up
-    fn verify_outputs(&mut self) -> bool {
-        for (_node, queue) in self.nodes.values() {
-            if queue.len() != 1 {
-                return false;
-            }
-
-            let Some(msg) = queue.get(0) else {
-                return false;
-            };
-
-            match msg {
-                Message::Vertex(v) => {
-                    if v.data().no_vote_cert().is_none() {
-                        return false;
-                    }
-                }
-                _ => return false,
-            }
-        }
-        return true;
+    fn get_msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
+        let nodes_msgs = self
+            .nodes
+            .values()
+            .map(|node| (node.0.id(), node.1.clone()))
+            .collect();
+        nodes_msgs
     }
 }
 
 #[tokio::test]
-async fn test_timeout() {
+async fn test_timeout_round_and_note_vote() {
     logging::init_logging();
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);
@@ -159,7 +144,27 @@ async fn test_timeout() {
 
     // leader send vertex no vote (accumulate NVC and propose vertex)
     network.process();
-    assert!(network.verify_outputs());
+
+    let nodes_msgs = network.get_msgs_in_queue();
+
+    // ensure we have messages from all nodes
+    assert_eq!(nodes_msgs.len() as u64, num_nodes);
+
+    for (_id, msgs) in nodes_msgs {
+        // the next msg to be processed should be only 1
+        assert_eq!(msgs.len(), 1);
+
+        let msg = msgs.get(0);
+        assert!(msg.is_some());
+
+        match msg.unwrap() {
+            Message::Vertex(vertex) => {
+                // next message should be a vertex proposal with the no vote cert from leader
+                assert!(vertex.data().no_vote_cert().is_some());
+            }
+            _ => assert!(false),
+        }
+    }
 }
 
 #[tokio::test]

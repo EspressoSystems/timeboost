@@ -239,22 +239,41 @@ impl Consensus {
         trace!(node = %self.id, round = %self.round, "handle_no_vote");
         let mut actions = Vec::new();
         let round = e.data().round();
-        if round != self.round {
+
+        if round < self.round {
+            debug! {
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "ignoring old NVC"
+            }
             return actions;
         }
-        // if self.public_key != self.committee.leader(round + 1) {
-        //     return actions;
-        // }
+
+        // Here the no vote is sent from round r - 1 to leader in round r that is why we add 1 to round to get correct leader
+        if self.public_key != self.committee.leader(round + 1) {
+            return actions;
+        }
 
         let Some(validated_envelope) = e.validated(&self.committee) else {
             return actions;
         };
-        // did we add the vote and have enough votes to move on
-        if self.no_votes.add(validated_envelope) && self.no_votes.certificate().is_some() {
-            // we need to reset round timer and broadcast vertex for this round with timeout cert
+
+        if !self.no_votes.add(validated_envelope) {
+            warn! {
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "could not add no vote certificate to vote accumulator"
+            }
+            return actions;
+        }
+
+        // certificate is formed when we have 2f + 1 votes added to accumulator
+        if self.no_votes.certificate().is_some() {
+            // we need to reset round timer and broadcast vertex for this round with no vote certifcate from leader
             // should all be handled here
             self.round = round + 1;
-            tracing::error!("round: {}", self.round);
             actions.push(Action::ResetTimer(self.round));
             actions.extend(self.broadcast_vertex(self.round));
         }
