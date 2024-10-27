@@ -60,7 +60,7 @@ impl Coordinator {
         comm: C,
         cons: Consensus,
         shutdown_rx: oneshot::Receiver<()>,
-        #[cfg(feature = "test")] event_sender: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Self
     where
         C: Comm<Err = NetworkError> + Send + 'static,
@@ -71,7 +71,7 @@ impl Coordinator {
             consensus: cons,
             shutdown_rx,
             #[cfg(feature = "test")]
-            event_log: event_sender,
+            event_log,
         }
     }
 

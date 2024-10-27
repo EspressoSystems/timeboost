@@ -63,7 +63,7 @@ async fn test_simple_network_genesis2() {
         Err(_) => {
             for (node_id, status) in st_interim.iter() {
                 if *status != TestOutcome::Passed {
-                    println!("Node {} had missing status: {:?}", node_id, status);
+                    tracing::error!("Node {} had missing status: {:?}", node_id, status);
                 }
             }
 
