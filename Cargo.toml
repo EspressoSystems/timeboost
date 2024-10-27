@@ -50,6 +50,7 @@ jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfis
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
 multiaddr = "0.18.2"
+portpicker = "0.1.1"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 serde = { version = "1", features = ["derive"] }

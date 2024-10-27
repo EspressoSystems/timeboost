@@ -37,6 +37,7 @@ pub struct Coordinator {
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg(feature = "test")]
 pub enum CoordinatorAuditEvent {
     ActionTaken(Action),
