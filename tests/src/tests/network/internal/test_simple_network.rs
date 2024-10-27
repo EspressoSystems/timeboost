@@ -26,8 +26,8 @@ async fn test_simple_network_genesis() {
     for (i, n) in nodes.fish.into_iter().enumerate() {
         let shutdown_rx = shutdown_receivers
             .pop()
-            .expect(format!("No shutdown receiver available for node {}", i).as_str());
-        let ch = net.join(n.public_key().clone());
+            .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
+        let ch = net.join(*n.public_key());
         let co = n.init(
             ch,
             (*nodes.staked_nodes).clone(),
@@ -43,20 +43,14 @@ async fn test_simple_network_genesis() {
     tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Get the events from each stream
-    for i in 0..num_nodes {
+    for log in event_logs.iter() {
         // Make sure we got 5 genesis vertices
         let mut gv = 0;
-        for event in event_logs[i].read().await.iter() {
-            match event {
-                CoordinatorAuditEvent::MessageReceived(m) => match m {
-                    Message::Vertex(v) => {
-                        if v.data().id().round() == ViewNumber::genesis() {
-                            gv += 1;
-                        }
-                    }
-                    _ => {}
-                },
-                CoordinatorAuditEvent::ActionTaken(_) => {}
+        for event in log.read().await.iter() {
+            if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = event {
+                if v.data().id().round() == ViewNumber::genesis() {
+                    gv += 1;
+                }
             }
         }
         assert_eq!(gv, num_nodes);

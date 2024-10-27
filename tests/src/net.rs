@@ -139,6 +139,12 @@ impl<T: Clone> Star<T> {
     }
 }
 
+impl<T: Clone> Default for Star<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Comm for Conn<Vec<u8>> {
     type Err = NetworkError;

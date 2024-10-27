@@ -1,23 +1,18 @@
-use async_trait::async_trait;
-use std::{collections::HashMap, num::NonZeroUsize, pin::Pin, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use async_lock::RwLock;
 use hotshot::traits::{
     implementations::{derive_libp2p_keypair, derive_libp2p_multiaddr, Libp2pNetwork},
-    NetworkError, NetworkNodeConfigBuilder,
+    NetworkNodeConfigBuilder,
 };
 use portpicker::pick_unused_port;
-use sailfish::{
-    coordinator::CoordinatorAuditEvent,
-    sailfish::Sailfish,
-    types::{comm::Comm, PublicKey},
-};
+use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish, types::PublicKey};
 use tokio::{
     sync::oneshot::{self, Receiver, Sender},
     task::JoinSet,
 };
 
-use crate::{net::Star, Group};
+use crate::Group;
 
 use super::{TestCondition, TestOutcome};
 
@@ -57,7 +52,7 @@ impl Libp2pTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let bootstrap_nodes = Arc::clone(&self.group.bootstrap_nodes);
             let port = pick_unused_port().expect("Failed to pick an unused port");
-            let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&node.private_key())
+            let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(node.private_key())
                 .expect("Failed to derive libp2p keypair");
             let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))
                 .expect("Failed to derive libp2p multiaddr");
@@ -77,12 +72,7 @@ impl Libp2pTest {
                 (node, net)
             });
         }
-        handles
-            .join_all()
-            .await
-            .into_iter()
-            .map(|(n, net)| (n, net))
-            .collect()
+        handles.join_all().await.into_iter().collect()
     }
 
     pub async fn start(
@@ -92,7 +82,7 @@ impl Libp2pTest {
         let mut handles = JoinSet::new();
         for (i, (node, network)) in networks.into_iter().enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let log = Arc::clone(&self.event_logs.get(&i).unwrap());
+            let log = Arc::clone(self.event_logs.get(&i).unwrap());
             let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
             handles.spawn(async move {
                 let co = node.init(
@@ -109,11 +99,8 @@ impl Libp2pTest {
     }
 
     pub async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
-        let mut statuses = HashMap::from_iter(
-            self.outcomes
-                .iter()
-                .map(|(k, _)| (*k, TestOutcome::Waiting)),
-        );
+        let mut statuses =
+            HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
         for (node_id, conditions) in self.outcomes.iter() {
             tracing::info!("Evaluating node {}", node_id);
             let log = self.event_logs.get(node_id).unwrap().read().await;
