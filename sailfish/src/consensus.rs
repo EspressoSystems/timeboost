@@ -9,7 +9,7 @@ use vote::VoteAccumulator;
 use crate::types::{
     block::Block,
     certificate::Certificate,
-    envelope::{Envelope, Unchecked},
+    envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     vertex::Vertex,
     NodeId, PrivateKey, PublicKey,
@@ -21,6 +21,9 @@ mod vote;
 pub mod committee;
 
 pub use dag::Dag;
+
+/// A `NewVertex` may need to have a timeout or no-vote certificate set.
+struct NewVertex(Vertex);
 
 pub struct Consensus {
     /// The ID of the node running this consensus instance.
@@ -121,76 +124,66 @@ impl Consensus {
             return vec![Action::SendProposal(env)];
         }
 
-        self.advance_round(r + 1)
+        self.advance_from_round(r)
     }
 
+    #[instrument(level = "trace", skip_all, fields(
+        node      = %self.id,
+        round     = %self.round,
+        committed = %self.committed_round,
+        buffered  = %self.buffer.len(),
+        delivered = %self.delivered.len(),
+        leaders   = %self.leader_stack.len(),
+        timeouts  = %self.timeouts.len())
+    )]
     pub fn handle_message(&mut self, m: Message) -> Vec<Action> {
-        trace! {
-            node      = %self.id,
-            round     = %self.round,
-            committed = %self.committed_round,
-            buffered  = %self.buffer.len(),
-            delivered = %self.delivered.len(),
-            leaders   = %self.leader_stack.len(),
-            timeouts  = %self.timeouts.len(),
-            "handle_message"
-        }
         match m {
-            Message::Vertex(e) => self.handle_vertex(e),
-            Message::Timeout(e) => self.handle_timeout(e),
+            Message::Vertex(e) => {
+                let Some(e) = e.validated(&self.committee) else {
+                    return Vec::new();
+                };
+                self.handle_vertex(e)
+            }
+            Message::NoVote(e) => {
+                let Some(e) = e.validated(&self.committee) else {
+                    return Vec::new();
+                };
+                self.handle_no_vote(e)
+            }
+            Message::Timeout(e) => {
+                let Some(e) = e.validated(&self.committee) else {
+                    return Vec::new();
+                };
+                self.handle_timeout(e)
+            }
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
-            Message::NoVote(e) => self.handle_no_vote(e),
         }
     }
 
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     pub fn timeout(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "timeout");
         debug_assert_eq!(r, self.round);
         let e = Envelope::signed(Timeout::new(r), &self.private_key, self.public_key);
         vec![Action::SendTimeout(e)]
     }
 
-    pub fn handle_vertex(&mut self, e: Envelope<Vertex, Unchecked>) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, vround = %e.data().round(), "handle_vertex");
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %e.data().round())
+    )]
+    pub fn handle_vertex(&mut self, e: Envelope<Vertex, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        let Some(e) = e.validated(&self.committee) else {
-            return actions;
-        };
-
         if e.data().source() != e.signing_key() {
-            trace! {
-                node  = %self.id,
-                round = %self.round,
-                src   = %e.data().source(),
-                sig   = %e.signing_key(),
-                "vertex sender != signer"
-            }
+            warn!(src = %e.data().source(), sig = %e.signing_key(), "vertex sender != signer");
             return actions;
         }
 
         let vertex = e.into_data();
 
-        if !vertex.is_genesis() {
-            if (vertex.strong_edge_count() as u64) < self.committee.success_threshold().get() {
-                debug! {
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %vertex.round(),
-                    "rejecting vertex with not enough strong edges"
-                }
-                return actions;
-            }
-
-            if !self.is_valid(&vertex) {
-                debug! {
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %vertex.round(),
-                    "rejecting invalid vertex"
-                }
-                return actions;
-            }
+        if !(vertex.is_genesis() || self.is_valid(&vertex)) {
+            return actions;
         }
 
         match self.try_to_add_to_dag(&vertex) {
@@ -199,7 +192,8 @@ impl Consensus {
             }
             Ok(a) => {
                 actions.extend(a);
-                // Try to add all buffered vertices to the DAG too:
+
+                // Since we managed to add another vertex, try to add all buffered vertices to the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
                 for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
@@ -212,44 +206,32 @@ impl Consensus {
                 debug_assert!(self.buffer.is_empty());
                 self.buffer = retained;
 
-                // Check if we can advance to vertex round + 1:
+                // Check if we can advance to the next round.
 
                 if vertex.round() < self.round {
                     return actions;
                 }
 
-                if (self.dag.vertices(vertex.round()).count() as u64)
+                if (self.dag.vertex_count(vertex.round()) as u64)
                     < self.committee.success_threshold().get()
                 {
                     return actions;
                 }
 
-                if self.leader_vertex(vertex.round()).is_some()
-                    || self
-                        .timeouts
-                        .get_mut(&vertex.round())
-                        .and_then(|t| t.certificate())
-                        .is_some()
-                {
-                    actions.extend(self.advance_round(vertex.round() + 1))
-                }
+                actions.extend(self.advance_from_round(vertex.round()));
             }
         }
 
         actions
     }
 
-    pub fn handle_no_vote(&mut self, _x: Envelope<NoVote, Unchecked>) -> Vec<Action> {
+    pub fn handle_no_vote(&mut self, _x: Envelope<NoVote, Validated>) -> Vec<Action> {
         Vec::new()
     }
 
-    pub fn handle_timeout(&mut self, e: Envelope<Timeout, Unchecked>) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, "handle_timeout");
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
+    pub fn handle_timeout(&mut self, e: Envelope<Timeout, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
-
-        let Some(e) = e.validated(&self.committee) else {
-            return actions;
-        };
 
         let round = e.data().round();
 
@@ -289,65 +271,107 @@ impl Consensus {
             let cert = accum
                 .certificate()
                 .expect("> 2f votes => certificate is available");
-            actions.push(Action::SendTimeoutCert(cert.clone()))
+            actions.push(Action::SendTimeoutCert(cert.clone()));
         }
 
         actions
     }
 
-    pub fn handle_timeout_cert(&mut self, _x: Certificate<Timeout>) -> Vec<Action> {
-        Vec::new()
-    }
-
-    fn advance_round(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "advance_round");
-        debug_assert_ne!(r, ViewNumber::genesis());
-
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
+    pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        if self.leader_vertex(r - 1).is_some() {
-            self.round = r;
-            actions.push(Action::ResetTimer(r));
-            actions.extend(self.broadcast_vertex(r));
+        let round = cert.data().round();
+
+        if round < self.round {
+            debug! {
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "ignoring old timeout certificate"
+            }
             return actions;
         }
 
-        let e = Envelope::signed(NoVote::new(r - 1), &self.private_key, self.public_key);
-        let leader = self.committee.leader(r);
-        actions.push(Action::SendNoVote(leader, e));
-
-        // As leader of the current round we need to wait for > 2f no-votes
-        // or a leader vertex, otherwise we can move on to the next round.
-        if self.public_key != leader || self.no_votes.certificate().is_some() {
-            self.round = r;
-            actions.push(Action::ResetTimer(r));
-            actions.extend(self.broadcast_vertex(r));
+        if self.dag.vertex_count(round) as u64 >= self.committee.success_threshold().get() {
+            actions.extend(self.advance_from_round(round));
         }
 
         actions
     }
 
-    fn broadcast_vertex(&mut self, r: ViewNumber) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, %r, "broadcast_vertex");
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    fn advance_from_round(&mut self, round: ViewNumber) -> Vec<Action> {
         let mut actions = Vec::new();
-        let v = self.create_new_vertex(r);
-        if let Ok(a) = self.try_to_add_to_dag(&v) {
-            actions.extend(a)
+
+        // With a leader vertex we can move on to the next round immediately.
+        if self.leader_vertex(round).is_some() {
+            self.round = round + 1;
+            actions.push(Action::ResetTimer(self.round));
+            let v = self.create_new_vertex(self.round);
+            actions.extend(self.add_and_broadcast_vertex(v.0));
+            return actions;
         }
+
+        // Otherwise we need a timeout certificate.
+        let Some(tc) = self
+            .timeouts
+            .get_mut(&round)
+            .and_then(|t| t.certificate())
+            .cloned()
+        else {
+            return actions;
+        };
+
+        // We inform the leader of the next round that we did not note in the previous round.
+        let e = Envelope::signed(NoVote::new(round), &self.private_key, self.public_key);
+        let leader = self.committee.leader(round + 1);
+        actions.push(Action::SendNoVote(leader, e));
+
+        // If we are not ourselves leader of the next round we can move to it directly.
+        if self.public_key != leader {
+            self.round = round + 1;
+            actions.push(Action::ResetTimer(self.round));
+            let NewVertex(mut v) = self.create_new_vertex(self.round);
+            v.set_timeout(tc);
+            actions.extend(self.add_and_broadcast_vertex(v));
+            return actions;
+        }
+
+        // As leader of the next round we need to wait for > 2f no-votes of the current round
+        // since we have no leader vertex.
+        let Some(nc) = self.no_votes.certificate().cloned() else {
+            return actions;
+        };
+
+        self.round = round + 1;
+        actions.push(Action::ResetTimer(self.round));
+        let NewVertex(mut v) = self.create_new_vertex(self.round);
+        v.set_no_vote(nc);
+        v.set_timeout(tc);
+        actions.extend(self.add_and_broadcast_vertex(v));
+        actions
+    }
+
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
+        self.dag.add(v.clone());
+        let mut actions = Vec::new();
         let e = Envelope::signed(v, &self.private_key, self.public_key);
         actions.push(Action::SendProposal(e));
         actions
     }
 
-    fn create_new_vertex(&mut self, r: ViewNumber) -> Vertex {
-        trace!(node = %self.id, round = %self.round, %r, "create_new_vertex");
-
-        let leader = self.committee.leader(r - 1);
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    fn create_new_vertex(&mut self, r: ViewNumber) -> NewVertex {
         let prev = self.dag.vertices(r - 1);
 
         let mut new = Vertex::new(r, self.public_key);
         new.set_block(self.blocks.pop_front().unwrap_or_default());
         new.add_strong_edges(prev.map(Vertex::id).cloned());
+
+        // Every vertex in our DAG has > 2f edges to the previous round:
+        debug_assert!(new.strong_edge_count() as u64 >= self.committee.success_threshold().get());
 
         // Set weak edges:
         for r in (1..r.u64() - 1).rev() {
@@ -358,28 +382,11 @@ impl Consensus {
             }
         }
 
-        // Set timeout and no-vote certificates:
-        if self.leader_vertex(r - 1).is_none() {
-            let t = self
-                .timeouts
-                .get_mut(&(r - 1))
-                .expect("no leader vertex => timeout cert")
-                .certificate()
-                .expect("> 2f timeouts");
-            new.set_timeout(t.clone());
-
-            if self.public_key == leader {
-                let n = self.no_votes.certificate().expect("> 2f no-votes");
-                new.set_no_vote(n.clone());
-            }
-        }
-
-        new
+        NewVertex(new)
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
-        trace!(node = %self.id, round = %self.round, vround = %v.round(), "try_to_add_to_dag");
-
         if !v
             .edges()
             .all(|id| self.dag.vertex(id.round(), id.source()).is_some())
@@ -426,8 +433,8 @@ impl Consensus {
         Ok(Vec::new())
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, vround = %v.id(), "commit_leader");
         self.leader_stack.push(v.clone());
         for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
             let Some(l) = self.leader_vertex(ViewNumber::new(r)).cloned() else {
@@ -439,12 +446,12 @@ impl Consensus {
             }
         }
         self.committed_round = v.round();
-        trace!(node = %self.id, round = %self.round, commit = %self.committed_round, "committed round");
+        trace!(commit = %self.committed_round, "committed round");
         self.order_vertices()
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     fn order_vertices(&mut self) -> Vec<Action> {
-        trace!(node = %self.id, round = %self.round, "order_vertices");
         let mut actions = Vec::new();
         let mut delivered = mem::take(&mut self.delivered);
         while let Some(v) = self.leader_stack.pop() {
@@ -467,8 +474,19 @@ impl Consensus {
         actions
     }
 
+    /// Validate an incoming vertex.
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn is_valid(&self, v: &Vertex) -> bool {
-        trace!(node = %self.id, round = %self.round, vround = %v.round(), "is_valid");
+        if (v.strong_edge_count() as u64) < self.committee.success_threshold().get() {
+            warn! {
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex has not enough strong edges"
+            }
+            return false;
+        }
 
         let Some(l) = self.leader_vertex(v.round() - 1) else {
             warn! {
@@ -486,6 +504,16 @@ impl Consensus {
         }
 
         if let Some(cert) = v.timeout_cert() {
+            if cert.data().round() != v.round() - 1 {
+                warn! {
+                    node   = %self.id,
+                    round  = %self.round,
+                    vround = %v.round(),
+                    vsrc   = %v.source(),
+                    "vertex has timeout certificate from invalid round"
+                }
+                return false;
+            }
             if !cert.is_valid_quorum(&self.committee) {
                 warn! {
                     node   = %self.id,
@@ -503,6 +531,16 @@ impl Consensus {
         }
 
         if let Some(cert) = v.no_vote_cert() {
+            if cert.data().round() != v.round() - 1 {
+                warn! {
+                    node   = %self.id,
+                    round  = %self.round,
+                    vround = %v.round(),
+                    vsrc   = %v.source(),
+                    "vertex has no-vote certificate from invalid round"
+                }
+                return false;
+            }
             if !cert.is_valid_quorum(&self.committee) {
                 warn! {
                     node   = %self.id,

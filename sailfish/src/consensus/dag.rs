@@ -44,6 +44,10 @@ impl Dag {
         self.elements.get(&r)?.get(l)
     }
 
+    pub fn vertex_count(&self, r: ViewNumber) -> usize {
+        self.elements.get(&r).map(|m| m.len()).unwrap_or(0)
+    }
+
     /// Is there a connection between two vertices?
     ///
     /// If `strong_only` is true, only strong edges are considered at each step.

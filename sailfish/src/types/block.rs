@@ -91,4 +91,8 @@ impl Block {
             },
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.payload.transactions.is_empty()
+    }
 }

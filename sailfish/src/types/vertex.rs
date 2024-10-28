@@ -55,6 +55,11 @@ impl Vertex {
 
     pub fn is_genesis(&self) -> bool {
         self.id.round == ViewNumber::genesis()
+            && self.block.is_empty()
+            && self.strong.is_empty()
+            && self.weak.is_empty()
+            && self.no_vote.is_none()
+            && self.timeout.is_none()
     }
 
     pub fn id(&self) -> &VertexId {
