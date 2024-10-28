@@ -23,7 +23,7 @@ run *ARGS:
   cargo run {{ARGS}}
 
 clippy:
-  cargo clippy --workspace -- -D warnings
+  cargo clippy --workspace --lib --tests -- -D warnings
 
 fmt:
   cargo fmt

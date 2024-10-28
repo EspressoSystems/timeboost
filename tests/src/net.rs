@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 /// Every `Conn` is connected to `Star` and messages are send to `Star` which
 /// dispatches them to all connected `Conn` endpoints, or to specific ones.
 #[derive(Debug)]
-pub struct Star<T> {
+pub struct Star<T: Clone> {
     inbound: mpsc::UnboundedReceiver<Event<T>>,
     outbound: mpsc::UnboundedSender<Event<T>>,
     members: HashMap<PublicKey, mpsc::UnboundedSender<T>>,
@@ -26,7 +26,7 @@ pub struct Conn<T> {
 }
 
 /// A network event.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Event<T> {
     Unicast {
         src: PublicKey,
@@ -62,13 +62,7 @@ impl<T> Event<T> {
     }
 }
 
-impl<T> Default for Star<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> Star<T> {
+impl<T: Clone> Star<T> {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
@@ -113,6 +107,22 @@ impl<T> Star<T> {
     pub fn events(&mut self) -> impl Iterator<Item = Event<T>> + '_ {
         iter::from_fn(|| self.inbound.try_recv().ok())
     }
+
+    pub async fn run(mut self) {
+        while let Some(event) = self.inbound.recv().await {
+            match event {
+                Event::Unicast { dest, data, .. } => {
+                    let tx = self.members.get_mut(&dest).unwrap();
+                    tx.send(data).unwrap();
+                }
+                Event::Multicast { data, .. } => {
+                    for (_, tx) in self.members.iter_mut() {
+                        tx.send(data.clone()).unwrap();
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<T: Clone> Star<T> {
@@ -126,6 +136,12 @@ impl<T: Clone> Star<T> {
         for id in to_remove {
             self.members.remove(&id);
         }
+    }
+}
+
+impl<T: Clone> Default for Star<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
