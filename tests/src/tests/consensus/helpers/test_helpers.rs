@@ -3,6 +3,8 @@ use sailfish::consensus::committee::StaticCommittee;
 use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
 use sailfish::types::envelope::Envelope;
+use sailfish::types::message::Message;
+use sailfish::types::vertex::Vertex;
 use sailfish::types::{
     message::{Action, Timeout},
     PublicKey,
@@ -36,4 +38,14 @@ pub(crate) fn create_timeout_vote_action(
     let data = Timeout::new(timeout_round);
     let e = Envelope::signed(data, private_key, pub_key);
     Action::SendTimeout(e)
+}
+
+pub(crate) fn create_vertex_proposal(
+    round: ViewNumber,
+    pub_key: PublicKey,
+    private_key: &PrivateKey,
+) -> Message {
+    let data = Vertex::new(round, pub_key);
+    let e = Envelope::signed(data, private_key, pub_key);
+    Message::Vertex(e.cast())
 }

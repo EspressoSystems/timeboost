@@ -9,19 +9,24 @@ use sailfish::{
 use std::collections::{HashMap, VecDeque};
 use tracing::info;
 
-use super::test_helpers::create_timeout_vote_action;
+use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
 
 pub struct FakeNetwork {
     pub(crate) nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
+    msg_interceptor: Option<Interceptor>,
 }
 
 impl FakeNetwork {
-    pub(crate) fn new(nodes: Vec<(PublicKey, Consensus)>) -> Self {
+    pub(crate) fn new(
+        nodes: Vec<(PublicKey, Consensus)>,
+        msg_interceptor: Option<Interceptor>,
+    ) -> Self {
         Self {
             nodes: nodes
                 .into_iter()
                 .map(|(id, n)| (id, (n, VecDeque::new())))
                 .collect(),
+            msg_interceptor,
         }
     }
 
@@ -43,7 +48,7 @@ impl FakeNetwork {
             .unwrap()
     }
 
-    pub(crate) fn get_leader_for_round(&self, round: ViewNumber) -> PublicKey {
+    pub(crate) fn leader_for_round(&self, round: ViewNumber) -> PublicKey {
         self.nodes
             .values()
             .map(|(node, _)| node.committe().leader(round))
@@ -55,7 +60,7 @@ impl FakeNetwork {
         let mut next_msgs = Vec::new();
         for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
             while let Some(msg) = queue.pop_front() {
-                for a in node.handle_message(msg) {
+                for a in Self::handle_message(node, msg, &self.msg_interceptor) {
                     Self::handle_action(node.id(), a, &mut next_msgs)
                 }
             }
@@ -63,7 +68,7 @@ impl FakeNetwork {
         self.dispatch(next_msgs);
     }
 
-    pub(crate) fn get_msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
+    pub(crate) fn msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
         let nodes_msgs = self
             .nodes
             .values()
@@ -101,6 +106,19 @@ impl FakeNetwork {
 
         // Send out msgs
         self.dispatch(msgs);
+    }
+
+    fn handle_message(
+        node: &mut Consensus,
+        msg: Message,
+        interceptor: &Option<Interceptor>,
+    ) -> Vec<Action> {
+        let msg = if let Some(interceptor) = interceptor {
+            interceptor.intercept_message(msg)
+        } else {
+            msg
+        };
+        node.handle_message(msg)
     }
 
     fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {

@@ -27,6 +27,17 @@ pub enum Message {
     TimeoutCert(Certificate<Timeout>),
 }
 
+impl Message {
+    pub fn round(&self) -> ViewNumber {
+        match self {
+            Message::Vertex(v) => v.data().round(),
+            Message::Timeout(t) => t.data().round(),
+            Message::NoVote(nv) => nv.data().round(),
+            Message::TimeoutCert(c) => c.data().round(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
     /// Reset the timer to the given round.
