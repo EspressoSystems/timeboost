@@ -87,7 +87,6 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     #[must_use]
     fn insert(&mut self, vote: Envelope<D, Validated>) -> bool {
         if let Some((_, e)) = self.votes.first_key_value() {
-            // TODO: Is this necessary?
             if e.data() != vote.data() {
                 return false;
             }
