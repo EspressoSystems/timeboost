@@ -1,0 +1,141 @@
+use hotshot_types::data::ViewNumber;
+use sailfish::{
+    consensus::{Consensus, Dag},
+    types::{
+        message::{Action, Message},
+        NodeId, PublicKey,
+    },
+};
+use std::collections::{HashMap, VecDeque};
+use tracing::info;
+
+use super::test_helpers::create_timeout_vote_action;
+
+pub struct FakeNetwork {
+    pub(crate) nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
+}
+
+impl FakeNetwork {
+    pub(crate) fn new(nodes: Vec<(PublicKey, Consensus)>) -> Self {
+        Self {
+            nodes: nodes
+                .into_iter()
+                .map(|(id, n)| (id, (n, VecDeque::new())))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn start(&mut self) {
+        let mut next = Vec::new();
+        for (_pub_key, (node, _)) in self.nodes.iter_mut() {
+            for a in node.go(Dag::new()) {
+                Self::handle_action(node.id(), a, &mut next)
+            }
+        }
+        self.dispatch(next)
+    }
+
+    pub(crate) fn current_round(&self) -> ViewNumber {
+        self.nodes
+            .values()
+            .map(|(node, _)| node.round())
+            .max()
+            .unwrap()
+    }
+
+    pub(crate) fn get_leader_for_round(&self, round: ViewNumber) -> PublicKey {
+        self.nodes
+            .values()
+            .map(|(node, _)| node.committe().leader(round))
+            .max()
+            .unwrap()
+    }
+
+    pub(crate) fn process(&mut self) {
+        let mut next_msgs = Vec::new();
+        for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
+            while let Some(msg) = queue.pop_front() {
+                for a in node.handle_message(msg) {
+                    Self::handle_action(node.id(), a, &mut next_msgs)
+                }
+            }
+        }
+        self.dispatch(next_msgs);
+    }
+
+    pub(crate) fn get_msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
+        let nodes_msgs = self
+            .nodes
+            .values()
+            .map(|node| (node.0.id(), node.1.clone()))
+            .collect();
+        nodes_msgs
+    }
+
+    pub(crate) fn timeout_round(&mut self, round: ViewNumber) {
+        let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
+        for (node, queue) in self.nodes.values_mut() {
+            let mut keep = VecDeque::new();
+            while let Some(msg) = queue.pop_front() {
+                if let Message::Vertex(v) = msg.clone() {
+                    // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
+                    // To simulate a timeout we just drop the message with the leader vertex
+                    // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
+                    // And be able to propose a vertex with timeout cert
+                    if *v.signing_key() == node.committe().leader(v.data().round()) {
+                        continue;
+                    }
+                }
+
+                // Keep the message if it is not a vertex or if it is a vertex from a non-leader
+                keep.push_back(msg);
+            }
+            queue.extend(keep);
+
+            let timeout_action =
+                create_timeout_vote_action(round, *node.public_key(), node.private_key());
+
+            // Process timeout actions
+            Self::handle_action(node.id(), timeout_action, &mut msgs);
+        }
+
+        // Send out msgs
+        self.dispatch(msgs);
+    }
+
+    fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {
+        for m in msgs {
+            match m {
+                (None, msg) => {
+                    for (_, queue) in self.nodes.values_mut() {
+                        queue.push_back(msg.clone());
+                    }
+                }
+                (Some(pub_key), msg) => {
+                    let (_, queue) = self.nodes.get_mut(&pub_key).unwrap();
+                    queue.push_back(msg);
+                }
+            }
+        }
+    }
+
+    fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
+        let msg = match a {
+            Action::ResetTimer(_) => {
+                // TODO
+                info!(%node, "reset timer");
+                return;
+            }
+            Action::Deliver(_b, r, src) => {
+                // TODO
+                info!(%node, %r, %src, "deliver");
+                return;
+            }
+            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
+            Action::SendProposal(e) => (None, Message::Vertex(e.cast())),
+            Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
+            Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
+        };
+        msgs.push(msg)
+    }
+}
