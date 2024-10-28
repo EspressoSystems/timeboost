@@ -35,13 +35,13 @@ pub enum Action {
     /// Deliver a block to the application layer.
     Deliver(Block, ViewNumber, PublicKey),
 
-    /// Send a vertex proposal to the given node.
+    /// Send a vertex proposal to all nodes.
     SendProposal(Envelope<Vertex, Validated>),
 
-    /// Send a timeout message to the given node.
+    /// Send a timeout message to all nodes.
     SendTimeout(Envelope<Timeout, Validated>),
 
-    /// Send a no-vote message to all nodes.
+    /// Send a no-vote message to the given node.
     SendNoVote(PublicKey, Envelope<NoVote, Validated>),
 
     /// Send a timeout certificate to all nodes.
