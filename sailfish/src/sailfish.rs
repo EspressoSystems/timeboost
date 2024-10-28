@@ -71,6 +71,12 @@ impl ShutdownToken {
     }
 }
 
+impl Default for ShutdownToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sailfish {
     pub fn new<N>(
         id: N,
