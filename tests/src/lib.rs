@@ -6,10 +6,9 @@ use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use multiaddr::multiaddr;
 use sailfish::{
-    consensus::{committee::StaticCommittee, Consensus},
     logging,
     sailfish::{generate_key_pair, Sailfish},
-    types::{NodeId, PublicKey},
+    types::PublicKey,
 };
 
 pub mod net;
@@ -18,23 +17,6 @@ pub mod net;
 mod tests;
 
 const SEED: [u8; 32] = [0u8; 32];
-
-pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)> {
-    let keys = (0..num_nodes)
-        .map(|i| generate_key_pair(SEED, i))
-        .collect::<Vec<_>>();
-    let committee = StaticCommittee::new(keys.iter().map(|(_, k)| k).cloned().collect());
-    keys.into_iter()
-        .enumerate()
-        .map(|(i, (private_key, pub_key))| {
-            let node_id = NodeId::from(i as u64);
-            (
-                pub_key,
-                Consensus::new(node_id, pub_key, private_key, committee.clone()),
-            )
-        })
-        .collect()
-}
 
 pub struct Group {
     pub fish: Vec<Sailfish>,
