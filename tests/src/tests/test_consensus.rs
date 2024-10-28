@@ -2,13 +2,14 @@ use std::collections::{HashMap, VecDeque};
 
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{
-    consensus::Consensus,
+    consensus::{Consensus, Dag},
     logging,
     types::{
         message::{Action, Message},
-        NodeId,
+        NodeId, PublicKey,
     },
 };
+use tracing::info;
 
 use crate::make_consensus_nodes;
 
@@ -26,6 +27,16 @@ impl FakeNetwork {
         }
     }
 
+    fn start(&mut self) {
+        let mut next = Vec::new();
+        for (id, (node, _)) in self.nodes.iter_mut() {
+            for a in node.go(Dag::new()) {
+                Self::handle_action(*id, a, &mut next)
+            }
+        }
+        self.dispatch(next)
+    }
+
     fn current_round(&self) -> ViewNumber {
         self.nodes
             .values()
@@ -34,33 +45,59 @@ impl FakeNetwork {
             .unwrap()
     }
 
-    fn broadcast(&mut self, msgs: Vec<Message>) {
-        for (_, (_, queue)) in self.nodes.iter_mut() {
-            queue.extend(msgs.clone());
-        }
-    }
-
-    async fn process(&mut self) {
-        let mut next = Vec::new();
-        for (_, (node, queue)) in self.nodes.iter_mut() {
-            while let Some(m) = queue.pop_front() {
-                for a in node.handle_message(m).await.unwrap() {
-                    let m = match a {
-                        Action::ResetTimer(_) => todo!("reset timer"),
-                        Action::SendProposal(e) => Message::Vertex(e),
-                        Action::SendTimeout(e) => Message::Timeout(e),
-                        Action::SendTimeoutCert(c) => Message::TimeoutCert(c),
-                        Action::SendNoVote(..) => todo!("unicast"),
-                    };
-                    next.push(m)
+    fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {
+        for m in msgs {
+            match m {
+                (None, m) => {
+                    for (_, queue) in self.nodes.values_mut() {
+                        queue.push_back(m.clone());
+                    }
+                }
+                (Some(p), m) => {
+                    let (_, q) = self
+                        .nodes
+                        .values_mut()
+                        .find(|(n, _)| n.public_key() == &p)
+                        .unwrap();
+                    q.push_back(m);
                 }
             }
         }
-        self.broadcast(next);
+    }
+
+    fn process(&mut self) {
+        let mut next = Vec::new();
+        for (id, (node, queue)) in self.nodes.iter_mut() {
+            while let Some(m) = queue.pop_front() {
+                for a in node.handle_message(m) {
+                    Self::handle_action(*id, a, &mut next)
+                }
+            }
+        }
+        self.dispatch(next);
+    }
+
+    fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
+        let m = match a {
+            Action::ResetTimer(_) => {
+                // TODO
+                info!(%node, "reset timer");
+                return;
+            }
+            Action::Deliver(_b, r, src) => {
+                // TODO
+                info!(%node, %r, %src, "deliver");
+                return;
+            }
+            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
+            Action::SendProposal(e) => (None, Message::Vertex(e.cast())),
+            Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
+            Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
+        };
+        msgs.push(m)
     }
 }
 
-// TODO: actually make progress
 #[tokio::test]
 async fn test_multi_round_consensus() {
     logging::init_logging();
@@ -69,19 +106,16 @@ async fn test_multi_round_consensus() {
     let nodes = make_consensus_nodes(num_nodes);
 
     let mut network = FakeNetwork::new(nodes);
-    network.process().await;
+    network.start();
+    network.process();
 
     let mut round = ViewNumber::genesis();
 
-    // Spin the test for one second.
-    let _ = tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
-        while *round < 10 {
-            network.process().await;
-            round = network.current_round();
-            tokio::task::yield_now().await;
-        }
-    })
-    .await;
+    // Spin the test for some rounds.
+    while *round < 10 {
+        network.process();
+        round = network.current_round();
+    }
 
     for (_, (node, _)) in network.nodes.iter() {
         assert_eq!(node.round(), round);

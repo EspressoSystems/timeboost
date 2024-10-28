@@ -39,11 +39,11 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    pub fn genesis(source: PublicKey) -> Self {
+    pub fn new(r: ViewNumber, s: PublicKey) -> Self {
         Self {
             id: VertexId {
-                round: ViewNumber::genesis(),
-                source,
+                round: r,
+                source: s,
             },
             block: Block::empty(),
             strong: BTreeSet::new(),
@@ -53,18 +53,112 @@ impl Vertex {
         }
     }
 
+    pub fn is_genesis(&self) -> bool {
+        self.id.round == ViewNumber::genesis()
+            && self.block.is_empty()
+            && self.strong.is_empty()
+            && self.weak.is_empty()
+            && self.no_vote.is_none()
+            && self.timeout.is_none()
+    }
+
     pub fn id(&self) -> &VertexId {
         &self.id
     }
 
+    pub fn round(&self) -> ViewNumber {
+        self.id.round
+    }
+
+    pub fn source(&self) -> &PublicKey {
+        &self.id.source
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.strong_edge_count() + self.weak_edge_count()
+    }
+
+    pub fn strong_edge_count(&self) -> usize {
+        self.strong.len()
+    }
+
+    pub fn weak_edge_count(&self) -> usize {
+        self.weak.len()
+    }
+
+    pub fn strong_edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.strong.iter()
+    }
+
+    pub fn weak_edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.weak.iter()
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &VertexId> {
+        self.strong_edges().chain(self.weak_edges())
+    }
+
     /// Does this vertex have a strong (direct) connection to the given `VertexId`?
-    pub fn has_strong(&self, id: &VertexId) -> bool {
+    pub fn has_strong_edge(&self, id: &VertexId) -> bool {
         self.strong.contains(id)
     }
 
     /// Does this vextex have a weak (indirect) connection to the given `VertexId`?
-    pub fn has_weak(&self, id: &VertexId) -> bool {
+    pub fn has_weak_edge(&self, id: &VertexId) -> bool {
         self.weak.contains(id)
+    }
+
+    pub fn timeout_cert(&self) -> Option<&Certificate<Timeout>> {
+        self.timeout.as_ref()
+    }
+
+    pub fn no_vote_cert(&self) -> Option<&Certificate<NoVote>> {
+        self.no_vote.as_ref()
+    }
+
+    pub fn block(&self) -> &Block {
+        &self.block
+    }
+
+    pub fn set_block(&mut self, b: Block) -> &mut Self {
+        self.block = b;
+        self
+    }
+
+    pub fn add_strong_edge(&mut self, e: VertexId) -> &mut Self {
+        self.strong.insert(e);
+        self
+    }
+
+    pub fn add_weak_edge(&mut self, e: VertexId) -> &mut Self {
+        self.weak.insert(e);
+        self
+    }
+
+    pub fn add_strong_edges<I>(&mut self, e: I) -> &mut Self
+    where
+        I: IntoIterator<Item = VertexId>,
+    {
+        self.strong.extend(e);
+        self
+    }
+
+    pub fn add_weak_edges<I>(&mut self, e: I) -> &mut Self
+    where
+        I: IntoIterator<Item = VertexId>,
+    {
+        self.weak.extend(e);
+        self
+    }
+
+    pub fn set_no_vote(&mut self, n: Certificate<NoVote>) -> &mut Self {
+        self.no_vote = Some(n);
+        self
+    }
+
+    pub fn set_timeout(&mut self, t: Certificate<Timeout>) -> &mut Self {
+        self.timeout = Some(t);
+        self
     }
 }
 

@@ -14,10 +14,10 @@ build_release:
   cargo build --release --workspace
 
 test *ARGS:
-  cargo nextest run --release --no-capture {{ARGS}}
+  cargo nextest run --no-capture {{ARGS}}
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --release --retries 3 --no-capture  {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --no-capture  {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}

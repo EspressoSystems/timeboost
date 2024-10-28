@@ -1,13 +1,12 @@
 use crate::consensus::committee::StaticCommittee;
 use bincode::Options;
-use bitvec::vec::BitVec;
 use committable::{Commitment, Committable};
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 use hotshot_types::utils::bincode_opts;
 use serde::{Deserialize, Serialize};
 
-use super::{vertex::Vertex, PrivateKey, PublicKey, QuorumSignature};
+use super::{PublicKey, QuorumSignature};
 
 #[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Debug, Clone)]
 pub struct Certificate<D: Committable> {
@@ -42,21 +41,6 @@ impl<D: Committable> Certificate<D> {
 
         let commit = self.commitment();
         PublicKey::check(&real_qc_pp, commit.as_ref(), &self.quorum)
-    }
-}
-
-impl Certificate<Vertex> {
-    pub fn genesis(private_key: &PrivateKey, public_key: PublicKey) -> Self {
-        let d = Vertex::genesis(public_key);
-        let c = d.commit();
-        let s = PublicKey::sign(private_key, c.as_ref()).expect("Signing never fails");
-        Self {
-            data: d,
-            commitment: c,
-            // Fake the quorum signature. Validation will fail.
-            // It is up to the caller to handle the genesis case.
-            quorum: (s, BitVec::new()),
-        }
     }
 }
 

@@ -76,6 +76,12 @@ impl Committable for Block {
     }
 }
 
+impl Default for Block {
+    fn default() -> Self {
+        Block::empty()
+    }
+}
+
 impl Block {
     pub fn empty() -> Self {
         Self {
@@ -84,5 +90,9 @@ impl Block {
                 transactions: vec![],
             },
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.payload.transactions.is_empty()
     }
 }

@@ -5,16 +5,21 @@ use committable::{Commitment, Committable};
 use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
-use super::{certificate::Certificate, envelope::Envelope, PublicKey};
+use super::{
+    block::Block,
+    certificate::Certificate,
+    envelope::{Envelope, Unchecked, Validated},
+    PublicKey,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum Message {
     /// A vertex proposal from a node.
-    Vertex(Envelope<Vertex>),
+    Vertex(Envelope<Vertex, Unchecked>),
     /// A timeout message from a node.
-    Timeout(Envelope<Timeout>),
+    Timeout(Envelope<Timeout, Unchecked>),
     /// A no-vote to a round leader from a node.
-    NoVote(Envelope<NoVote>),
+    NoVote(Envelope<NoVote, Unchecked>),
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
 }
@@ -22,9 +27,10 @@ pub enum Message {
 #[derive(Debug, Clone)]
 pub enum Action {
     ResetTimer(ViewNumber),
-    SendProposal(Envelope<Vertex>),
-    SendTimeout(Envelope<Timeout>),
-    SendNoVote(PublicKey, Envelope<NoVote>),
+    Deliver(Block, ViewNumber, PublicKey),
+    SendProposal(Envelope<Vertex, Validated>),
+    SendTimeout(Envelope<Timeout, Validated>),
+    SendNoVote(PublicKey, Envelope<NoVote, Validated>),
     SendTimeoutCert(Certificate<Timeout>),
 }
 
@@ -35,7 +41,27 @@ pub struct Timeout {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NoVote {
-    pub round: ViewNumber,
+    round: ViewNumber,
+}
+
+impl Timeout {
+    pub fn new(r: ViewNumber) -> Self {
+        Self { round: r }
+    }
+
+    pub fn round(&self) -> ViewNumber {
+        self.round
+    }
+}
+
+impl NoVote {
+    pub fn new(r: ViewNumber) -> Self {
+        Self { round: r }
+    }
+
+    pub fn round(&self) -> ViewNumber {
+        self.round
+    }
 }
 
 impl Message {
