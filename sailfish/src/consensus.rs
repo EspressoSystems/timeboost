@@ -230,6 +230,7 @@ impl Consensus {
         actions
     }
 
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     pub fn handle_no_vote(&mut self, e: Envelope<NoVote, Validated>) -> Vec<Action> {
         trace!(node = %self.id, round = %self.round, "handle_no_vote");
         let mut actions = Vec::new();
@@ -240,21 +241,23 @@ impl Consensus {
                 node  = %self.id,
                 round = %self.round,
                 r     = %round,
-                "ignoring old NVC"
+                "ignoring old no vote"
             }
             return actions;
         }
 
         // Here the no vote is sent from round r - 1 to leader in round r that is why we add 1 to round to get correct leader
         if self.public_key != self.committee.leader(round + 1) {
+            warn! {
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "received no vote for round in which we are not the leader"
+            }
             return actions;
         }
 
-        let Some(validated_envelope) = e.validated(&self.committee) else {
-            return actions;
-        };
-
-        if !self.no_votes.add(validated_envelope) {
+        if !self.no_votes.add(e) {
             warn! {
                 node  = %self.id,
                 round = %self.round,
@@ -270,7 +273,7 @@ impl Consensus {
             // should all be handled here
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
-            actions.extend(self.broadcast_vertex(self.round));
+            actions.extend(self.advance_from_round(self.round));
         }
 
         actions
