@@ -99,11 +99,6 @@ impl Consensus {
     }
 
     #[cfg(feature = "test")]
-    pub fn committee(&self) -> &StaticCommittee {
-        &self.committee
-    }
-
-    #[cfg(feature = "test")]
     pub fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }
@@ -278,7 +273,7 @@ impl Consensus {
             actions.extend(self.broadcast_vertex(self.round));
         }
 
-        return actions;
+        actions
     }
 
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
@@ -323,7 +318,7 @@ impl Consensus {
             let cert = accum
                 .certificate()
                 .expect("> 2f votes => certificate is available");
-            actions.push(Action::SendTimeoutCert(cert.clone()));
+            actions.push(Action::SendTimeoutCert(cert.clone()))
         }
 
         actions

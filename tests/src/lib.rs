@@ -26,9 +26,12 @@ pub fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)> {
     let committee = StaticCommittee::new(keys.iter().map(|(_, k)| k).cloned().collect());
     keys.into_iter()
         .enumerate()
-        .map(|(i, (sk, pk))| {
-            let n = NodeId::from(i as u64);
-            (pk, Consensus::new(n, pk, sk, committee.clone()))
+        .map(|(i, (private_key, pub_key))| {
+            let node_id = NodeId::from(i as u64);
+            (
+                pub_key,
+                Consensus::new(node_id, pub_key, private_key, committee.clone()),
+            )
         })
         .collect()
 }
