@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[tokio::test]
-async fn test_simple_network_genesis2() {
+async fn test_simple_network_genesis() {
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
     // Each node should see the genesis vertex from every other node.
