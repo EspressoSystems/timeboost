@@ -21,19 +21,16 @@ async fn test_simple_network_genesis() {
                 .iter()
                 .map(|n| {
                     let node_public_key = *n.public_key();
-                    TestCondition::new(
-                        format!("Genesis Vertex from {}", node_id),
-                        Box::new(move |e| {
-                            if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                                if v.data().id().round() == ViewNumber::genesis()
-                                    && node_public_key == *v.data().source()
-                                {
-                                    return TestOutcome::Passed;
-                                }
+                    TestCondition::new(format!("Genesis Vertex from {}", node_id), move |e| {
+                        if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
+                            if v.data().id().round() == ViewNumber::genesis()
+                                && node_public_key == *v.data().source()
+                            {
+                                return TestOutcome::Passed;
                             }
-                            TestOutcome::Waiting
-                        }),
-                    )
+                        }
+                        TestOutcome::Waiting
+                    })
                 })
                 .collect();
             (node_id, conditions)

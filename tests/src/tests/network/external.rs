@@ -6,7 +6,11 @@ use hotshot::traits::{
     NetworkNodeConfigBuilder,
 };
 use portpicker::pick_unused_port;
-use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish, types::PublicKey};
+use sailfish::{
+    coordinator::CoordinatorAuditEvent,
+    sailfish::{Sailfish, ShutdownToken},
+    types::PublicKey,
+};
 use tokio::{
     sync::oneshot::{self, Receiver, Sender},
     task::JoinSet,
@@ -20,16 +24,18 @@ pub mod test_simple_network;
 
 pub struct Libp2pTest {
     group: Group,
-    shutdown_txs: HashMap<usize, Sender<()>>,
-    shutdown_rxs: HashMap<usize, Receiver<()>>,
+    shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
+    shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
 }
 
 impl Libp2pTest {
     pub fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
-        let (shutdown_txs, shutdown_rxs): (Vec<Sender<()>>, Vec<Receiver<()>>) =
-            (0..group.fish.len()).map(|_| oneshot::channel()).unzip();
+        let (shutdown_txs, shutdown_rxs): (
+            Vec<Sender<ShutdownToken>>,
+            Vec<Receiver<ShutdownToken>>,
+        ) = (0..group.fish.len()).map(|_| oneshot::channel()).unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
@@ -125,7 +131,7 @@ impl Libp2pTest {
 
     pub async fn shutdown(self, handles: JoinSet<()>) {
         for send in self.shutdown_txs.into_values() {
-            let _ = send.send(());
+            let _ = send.send(ShutdownToken::new());
         }
         handles.join_all().await;
     }

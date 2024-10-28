@@ -21,11 +21,14 @@ impl std::fmt::Display for TestCondition {
 }
 
 impl TestCondition {
-    pub fn new(
-        identifier: String,
-        eval: Box<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome>,
-    ) -> Self {
-        Self { identifier, eval }
+    pub fn new<F>(identifier: String, eval: F) -> Self
+    where
+        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + 'static,
+    {
+        Self {
+            identifier,
+            eval: Box::new(eval),
+        }
     }
 
     pub fn evaluate(&self, logs: &[CoordinatorAuditEvent]) -> TestOutcome {

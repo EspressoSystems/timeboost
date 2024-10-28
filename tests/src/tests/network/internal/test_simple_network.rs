@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_lock::RwLock;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{coordinator::CoordinatorAuditEvent, types::message::Message};
+use sailfish::{
+    coordinator::CoordinatorAuditEvent, sailfish::ShutdownToken, types::message::Message,
+};
 use tokio::{sync::oneshot, task::JoinSet, time::Duration};
 
 use crate::{net, Group};
@@ -18,8 +20,8 @@ async fn test_simple_network_genesis() {
         .map(|_| Arc::new(RwLock::new(Vec::new())))
         .collect();
     let (shutdown_senders, mut shutdown_receivers): (
-        Vec<oneshot::Sender<()>>,
-        Vec<oneshot::Receiver<()>>,
+        Vec<oneshot::Sender<ShutdownToken>>,
+        Vec<oneshot::Receiver<ShutdownToken>>,
     ) = (0..num_nodes).map(|_| oneshot::channel()).unzip();
 
     tracing::debug!("Starting the network");
@@ -59,6 +61,6 @@ async fn test_simple_network_genesis() {
     // Send a shutdown signal to all coordinators
     tracing::debug!("Shutting down the network");
     for send in shutdown_senders.into_iter() {
-        let _ = send.send(());
+        let _ = send.send(ShutdownToken::new());
     }
 }

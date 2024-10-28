@@ -41,10 +41,10 @@ pub enum Action {
     /// Send a timeout message to the given node.
     SendTimeout(Envelope<Timeout, Validated>),
 
-    /// Send a no-vote message to the given node.
+    /// Send a no-vote message to all nodes.
     SendNoVote(PublicKey, Envelope<NoVote, Validated>),
 
-    /// Send a timeout certificate to the given node.
+    /// Send a timeout certificate to all nodes.
     SendTimeoutCert(Certificate<Timeout>),
 }
 

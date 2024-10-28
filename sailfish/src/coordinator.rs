@@ -2,6 +2,7 @@ use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
     consensus::{Consensus, Dag},
+    sailfish::ShutdownToken,
     types::{
         comm::Comm,
         message::{Action, Message},
@@ -31,7 +32,7 @@ pub struct Coordinator {
     consensus: Consensus,
 
     /// The shutdown signal for this coordinator.
-    shutdown_rx: oneshot::Receiver<()>,
+    shutdown_rx: oneshot::Receiver<ShutdownToken>,
 
     #[cfg(feature = "test")]
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -59,7 +60,7 @@ impl Coordinator {
         id: NodeId,
         comm: C,
         cons: Consensus,
-        shutdown_rx: oneshot::Receiver<()>,
+        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Self
     where
@@ -84,7 +85,12 @@ impl Coordinator {
         &self.consensus
     }
 
-    pub async fn go(mut self) -> ! {
+    #[cfg(feature = "test")]
+    pub async fn append_test_event(&mut self, event: CoordinatorAuditEvent) {
+        self.event_log.as_ref().unwrap().write().await.push(event);
+    }
+
+    pub async fn go(mut self) -> ShutdownToken {
         let mut timer: BoxFuture<'static, ViewNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
@@ -98,12 +104,8 @@ impl Coordinator {
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
                         #[cfg(feature = "test")]
-                        self.event_log
-                            .as_ref()
-                            .unwrap()
-                            .write()
-                            .await
-                            .push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                        self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                            .await;
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -112,12 +114,8 @@ impl Coordinator {
                         Ok(actions) => {
                             for a in actions {
                                 #[cfg(feature = "test")]
-                                self.event_log
-                                    .as_ref()
-                                    .unwrap()
-                                    .write()
-                                    .await
-                                    .push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                                    .await;
                                 self.on_action(a, &mut timer).await
                             }
                         }
@@ -130,9 +128,9 @@ impl Coordinator {
                         continue;
                     }
                 },
-                _ = &mut self.shutdown_rx => {
+                token = &mut self.shutdown_rx => {
                     tracing::info!("Node {} received shutdown signal; exiting", self.id);
-                    std::process::exit(0);
+                    return token.expect("The shutdown sender was dropped before the receiver could receive the token");
                 }
             }
         }
@@ -142,12 +140,8 @@ impl Coordinator {
         let m: Message = bincode::deserialize(m)?;
 
         #[cfg(feature = "test")]
-        self.event_log
-            .as_ref()
-            .unwrap()
-            .write()
-            .await
-            .push(CoordinatorAuditEvent::MessageReceived(m.clone()));
+        self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
+            .await;
 
         Ok(self.consensus.handle_message(m))
     }

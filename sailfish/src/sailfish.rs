@@ -53,6 +53,24 @@ pub struct Sailfish {
     bind_address: Multiaddr,
 }
 
+pub struct ShutdownToken(());
+
+impl ShutdownToken {
+    /// This constructor is intentionally private to ensure that only the
+    /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
+    #[cfg(not(feature = "test"))]
+    fn new() -> Self {
+        Self(())
+    }
+
+    /// This constructor is public for testing purposes so the shutdown token
+    /// can be created within tests.
+    #[cfg(feature = "test")]
+    pub fn new() -> Self {
+        Self(())
+    }
+}
+
 impl Sailfish {
     pub fn new<N>(
         id: N,
@@ -140,7 +158,7 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<()>,
+        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator
     where
@@ -234,7 +252,7 @@ pub async fn run(
         _ = coordinator_handle => {}
         _ = signal::ctrl_c() => {
             println!("Received termination signal, shutting down...");
-            shutdown_tx.send(()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+            shutdown_tx.send(ShutdownToken::new()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
         }
     }
 
