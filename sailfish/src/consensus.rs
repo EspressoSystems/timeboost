@@ -177,7 +177,7 @@ impl Consensus {
 
         let vertex = e.into_data();
 
-        if !(self.is_valid(&vertex) || vertex.is_genesis()) {
+        if !(vertex.is_genesis() || self.is_valid(&vertex)) {
             return actions;
         }
 
@@ -266,15 +266,33 @@ impl Consensus {
             let cert = accum
                 .certificate()
                 .expect("> 2f votes => certificate is available");
-            actions.push(Action::SendTimeoutCert(cert.clone()))
+            actions.push(Action::SendTimeoutCert(cert.clone()));
         }
 
         actions
     }
 
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
-    pub fn handle_timeout_cert(&mut self, _x: Certificate<Timeout>) -> Vec<Action> {
-        Vec::new()
+    pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
+        let mut actions = Vec::new();
+
+        let round = cert.data().round();
+
+        if round < self.round {
+            debug! {
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "ignoring old timeout certificate"
+            }
+            return actions;
+        }
+
+        if self.dag.vertex_count(round) as u64 >= self.committee.success_threshold().get() {
+            actions.extend(self.advance_from_round(round));
+        }
+
+        actions
     }
 
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
