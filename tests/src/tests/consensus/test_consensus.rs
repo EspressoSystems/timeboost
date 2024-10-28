@@ -41,7 +41,7 @@ async fn test_timeout_round_and_note_vote() {
         // The next msg to be processed should be only 1
         assert_eq!(msgs.len(), 1);
 
-        if let Some(Message::Vertex(vertex)) = msgs.get(0) {
+        if let Some(Message::Vertex(vertex)) = msgs.front() {
             let data = vertex.data();
 
             // Assert that no_vote_cert and timeout_cert are present

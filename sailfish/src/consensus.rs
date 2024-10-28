@@ -121,6 +121,11 @@ impl Consensus {
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
+    #[instrument(
+        skip_all,
+        fields(id = %self.id, round = %self.round)
+        level="info"
+    )]
     pub fn go(&mut self, d: Dag) -> Vec<Action> {
         let r = d.max_round().unwrap_or(ViewNumber::genesis());
 
@@ -137,6 +142,7 @@ impl Consensus {
         self.advance_from_round(r)
     }
 
+    /// Main entry point to process a `Message`.
     #[instrument(level = "trace", skip_all, fields(
         node      = %self.id,
         round     = %self.round,
@@ -170,13 +176,24 @@ impl Consensus {
         }
     }
 
+    /// An internal timeout occurred.
+    ///
+    /// This means we did not receive a leader vertex in a round and
+    /// results in a timeout message being broadcasted to all nodes.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     pub fn timeout(&mut self, r: ViewNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round);
+        debug_assert!(self.leader_vertex(r).is_none());
         let e = Envelope::signed(Timeout::new(r), &self.private_key, self.public_key);
         vec![Action::SendTimeout(e)]
     }
 
+    /// Handle a vertex proposal of some node.
+    ///
+    /// We validate the vertex and try to add it to our DAG. If the vertex is valid
+    /// but we can not yet add it (e.g. because not all of its edges resolve to other
+    /// DAG elements yet), we store it in a buffer and retry adding it once we have
+    /// received another vertex which we sucessfully added.
     #[instrument(level = "trace", skip_all, fields(
         node   = %self.id,
         round  = %self.round,
@@ -295,6 +312,11 @@ impl Consensus {
         actions
     }
 
+    /// Handle a timeout message of some node.
+    ///
+    /// Once we have collected more than f timeouts we start broadcasting our own timeout.
+    /// Eventually, if we receive more than 2f timeouts we form a timeout certificate and
+    /// broadcast that too.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     pub fn handle_timeout(&mut self, e: Envelope<Timeout, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -343,6 +365,11 @@ impl Consensus {
         actions
     }
 
+    /// Handle a timeout certificate, representing more than 2f timeouts.
+    ///
+    /// If we also have more than 2f vertex proposals (i.e. we are just missing the
+    /// leader vertex), we can move to the next round and include the certificate in
+    /// our next vertex proposal.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -367,6 +394,13 @@ impl Consensus {
         actions
     }
 
+    /// Try to advance from the given round `r` to `r + 1`.
+    ///
+    /// We can only advance to the next round if
+    ///
+    ///   1. we have a leader vertex in `r`, or else
+    ///   2. we have a timeout certificate for `r`, and,
+    ///   3. if we are leader of `r + 1`, we have a no-vote certificate for `r`.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn advance_from_round(&mut self, round: ViewNumber) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -390,7 +424,7 @@ impl Consensus {
             return actions;
         };
 
-        // We inform the leader of the next round that we did not note in the previous round.
+        // We inform the leader of the next round that we did not vote in the previous round.
         let e = Envelope::signed(NoVote::new(round), &self.private_key, self.public_key);
         let leader = self.committee.leader(round + 1);
         actions.push(Action::SendNoVote(leader, e));
@@ -430,6 +464,7 @@ impl Consensus {
         actions
     }
 
+    /// Add a new vertex to the DAG and send it as a proposal to nodes.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
@@ -439,6 +474,11 @@ impl Consensus {
         actions
     }
 
+    /// Create a new vertex for the given round `r`.
+    ///
+    /// NB that the returned value requires further processing iff there is no
+    /// leader vertex in `r - 1`. In that case a timeout certificate (and potentially
+    /// a no-vote certificate) is required.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn create_new_vertex(&mut self, r: ViewNumber) -> NewVertex {
         let prev = self.dag.vertices(r - 1);
@@ -462,6 +502,11 @@ impl Consensus {
         NewVertex(new)
     }
 
+    /// Try to add a vertex to the DAG.
+    ///
+    /// If all edges of the vertex point to other vertices in the DAG we add the
+    /// vertex to the DAG. If we also have more than 2f vertices for the given
+    /// round, we can try to commit the leader vertex of a round.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
         if !v
@@ -487,7 +532,7 @@ impl Consensus {
         if self.dag.vertices(v.round()).count() as u64 >= self.committee.success_threshold().get() {
             // We have enough edges => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
-                warn!(
+                debug!(
                     node   = %self.id,
                     round  = %self.round,
                     vround = %v.round(),
@@ -495,7 +540,7 @@ impl Consensus {
                 );
                 return Ok(Vec::new());
             };
-            // If enough edges to the leader of the previous round exist we can commit the leader.
+            // If enough (strong) edges to the leader of the previous round exist we can commit the leader.
             if self
                 .dag
                 .vertices(v.round())
@@ -510,12 +555,26 @@ impl Consensus {
         Ok(Vec::new())
     }
 
+    /// Commit a leader vertex.
+    ///
+    /// Leader vertices are organised in a stack, with other vertices of a round
+    /// ordered relative to them (cf. `order_vertices`).
+    ///
+    /// In addition to committing the argument vertex, this will also commit leader
+    /// vertices between the last previously committed leader vertex and the current
+    /// leader vertex, if there is a strong path between them.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
         self.leader_stack.push(v.clone());
         for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
             let Some(l) = self.leader_vertex(ViewNumber::new(r)).cloned() else {
-                continue; // TODO: This should not happen
+                debug! {
+                    node   = %self.id,
+                    round  = %self.round,
+                    r      = %r,
+                    "no leader vertex in round r => can not commit"
+                }
+                continue;
             };
             if self.dag.is_connected(&v, &l, true) {
                 self.leader_stack.push(l.clone());
@@ -527,11 +586,19 @@ impl Consensus {
         self.order_vertices()
     }
 
+    /// Order vertices relative to leader vertices.
+    ///
+    /// Leader vertices are ordered on the leader stack. The other vertices of a round
+    /// are ordered arbitrarily, but consistently, relative to the leaders.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     fn order_vertices(&mut self) -> Vec<Action> {
         let mut actions = Vec::new();
         let mut delivered = mem::take(&mut self.delivered);
         while let Some(v) = self.leader_stack.pop() {
+            // This orders vertices by round and source.
+            //
+            // TODO: Maybe we want an ordering based on the vertices themselves, i.e.
+            // independent of the committee members.
             for to_deliver in self
                 .dag
                 .vertices_from(ViewNumber::genesis() + 1)

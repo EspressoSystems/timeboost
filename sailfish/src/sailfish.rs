@@ -3,6 +3,10 @@ use crate::{
     coordinator::Coordinator,
     types::{comm::Comm, NodeId, PrivateKey, PublicKey},
 };
+
+#[cfg(feature = "test")]
+use crate::coordinator::CoordinatorAuditEvent;
+
 use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::{
@@ -28,6 +32,8 @@ use libp2p_networking::{
     reexport::Multiaddr,
 };
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use tokio::signal;
+use tokio::sync::oneshot;
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -45,6 +51,30 @@ pub struct Sailfish {
 
     /// The Libp2p multiaddr of the sailfish node.
     bind_address: Multiaddr,
+}
+
+pub struct ShutdownToken(());
+
+impl ShutdownToken {
+    /// This constructor is intentionally private to ensure that only the
+    /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
+    #[cfg(not(feature = "test"))]
+    fn new() -> Self {
+        Self(())
+    }
+
+    /// This constructor is public for testing purposes so the shutdown token
+    /// can be created within tests.
+    #[cfg(feature = "test")]
+    pub fn new() -> Self {
+        Self(())
+    }
+}
+
+impl Default for ShutdownToken {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Sailfish {
@@ -130,7 +160,13 @@ impl Sailfish {
         Ok(network)
     }
 
-    pub fn init<C>(self, comm: C, staked_nodes: Vec<PeerConfig<PublicKey>>) -> Coordinator
+    pub fn init<C>(
+        self,
+        comm: C,
+        staked_nodes: Vec<PeerConfig<PublicKey>>,
+        shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+    ) -> Coordinator
     where
         C: Comm<Err = NetworkError> + Send + 'static,
     {
@@ -148,7 +184,14 @@ impl Sailfish {
             quorum_membership,
         );
 
-        Coordinator::new(self.id, comm, consensus)
+        Coordinator::new(
+            self.id,
+            comm,
+            consensus,
+            shutdown_rx,
+            #[cfg(feature = "test")]
+            event_log,
+        )
     }
 }
 
@@ -206,5 +249,18 @@ pub async fn run(
     let n = s
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
-    s.init(n, staked_nodes).go().await
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let coordinator_handle = tokio::spawn(s.init(n, staked_nodes, shutdown_rx, None).go());
+
+    tokio::select! {
+        _ = coordinator_handle => {}
+        _ = signal::ctrl_c() => {
+            println!("Received termination signal, shutting down...");
+            shutdown_tx.send(ShutdownToken::new()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+        }
+    }
+
+    Ok(())
 }
