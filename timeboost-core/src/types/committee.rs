@@ -1,4 +1,7 @@
-use std::{num::NonZeroU64, sync::Arc};
+use std::{
+    num::{NonZeroU64, NonZeroUsize},
+    sync::Arc,
+};
 
 use ethereum_types::U256;
 use hotshot_types::stake_table::StakeTableEntry;
@@ -21,7 +24,7 @@ impl StaticCommittee {
     }
 
     /// Get the stake table for the current view
-    pub fn committee(&self) -> &Vec<PublicKey> {
+    pub fn committee(&self) -> &[PublicKey] {
         &self.stake_table
     }
 
@@ -37,8 +40,9 @@ impl StaticCommittee {
     }
 
     /// Get the total number of nodes in the committee
-    pub fn total_nodes(&self) -> usize {
-        self.stake_table.len()
+    pub fn total_nodes(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.stake_table.len())
+            .expect("`StaticCommittee::new` ensures non-empty committee")
     }
 
     pub fn leader(&self, round_number: RoundNumber) -> PublicKey {

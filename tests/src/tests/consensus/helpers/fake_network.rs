@@ -1,5 +1,8 @@
 use sailfish::consensus::{Consensus, Dag};
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
+};
 use timeboost_core::types::{
     message::{Action, Message},
     round_number::RoundNumber,
@@ -28,8 +31,9 @@ impl FakeNetwork {
 
     pub(crate) fn start(&mut self) {
         let mut next = Vec::new();
+        let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for (_pub_key, (node, _)) in self.nodes.iter_mut() {
-            for a in node.go(Dag::new()) {
+            for a in node.go(Dag::new(committee_size)) {
                 Self::handle_action(node.id(), a, &mut next)
             }
         }

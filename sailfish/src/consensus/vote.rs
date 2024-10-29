@@ -24,7 +24,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     pub fn new(committee: StaticCommittee) -> Self {
         Self {
             votes: BTreeMap::new(),
-            signers: (bitvec![0; committee.total_nodes()], Vec::new()),
+            signers: (bitvec![0; committee.total_nodes().get()], Vec::new()),
             committee,
             cert: None,
         }
@@ -37,7 +37,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     #[allow(unused)]
     pub fn clear(&mut self) {
         self.votes.clear();
-        self.signers = (bitvec![0; self.committee.total_nodes()], Vec::new());
+        self.signers = (bitvec![0; self.committee.total_nodes().get()], Vec::new());
         self.cert = None
     }
 
