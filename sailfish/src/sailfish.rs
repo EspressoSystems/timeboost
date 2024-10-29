@@ -150,7 +150,6 @@ impl Sailfish {
             record_value,
             bootstrap_nodes,
             u64::from(self.id) as usize,
-            false,
         )
         .await?;
 
