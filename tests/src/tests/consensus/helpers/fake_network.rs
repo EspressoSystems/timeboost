@@ -14,14 +14,11 @@ use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
 /// Mock the network
 pub struct FakeNetwork {
     pub(crate) nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
-    msg_interceptor: Option<Interceptor>,
+    msg_interceptor: Interceptor,
 }
 
 impl FakeNetwork {
-    pub(crate) fn new(
-        nodes: Vec<(PublicKey, Consensus)>,
-        msg_interceptor: Option<Interceptor>,
-    ) -> Self {
+    pub(crate) fn new(nodes: Vec<(PublicKey, Consensus)>, msg_interceptor: Interceptor) -> Self {
         Self {
             nodes: nodes
                 .into_iter()
@@ -117,13 +114,9 @@ impl FakeNetwork {
     fn handle_message(
         node: &mut Consensus,
         msg: Message,
-        interceptor: &Option<Interceptor>,
+        interceptor: &Interceptor,
     ) -> Vec<Action> {
-        let msgs = if let Some(interceptor) = interceptor {
-            interceptor.intercept_message(msg, node.committe())
-        } else {
-            vec![msg]
-        };
+        let msgs = interceptor.intercept_message(msg, node.committe());
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));

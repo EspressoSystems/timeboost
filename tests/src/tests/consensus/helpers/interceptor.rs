@@ -1,4 +1,4 @@
-use hotshot_types::data::ViewNumber;
+use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{consensus::committee::StaticCommittee, types::message::Message};
 
 use super::test_helpers::MessageModifier;
@@ -29,5 +29,14 @@ impl Interceptor {
         }
 
         vec![msg]
+    }
+}
+
+impl Default for Interceptor {
+    fn default() -> Self {
+        Self {
+            modify_at_round: ViewNumber::new(0),
+            msg_modifier: Box::new(|msg: &Message, _committee: &StaticCommittee| vec![msg.clone()]),
+        }
     }
 }

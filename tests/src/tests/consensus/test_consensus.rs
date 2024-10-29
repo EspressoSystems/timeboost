@@ -25,7 +25,7 @@ async fn test_timeout_round_and_note_vote() {
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);
 
-    let mut network = FakeNetwork::new(nodes, None);
+    let mut network = FakeNetwork::new(nodes, Interceptor::default());
 
     network.start();
 
@@ -84,7 +84,7 @@ async fn test_multi_round_consensus() {
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);
 
-    let mut network = FakeNetwork::new(nodes, None);
+    let mut network = FakeNetwork::new(nodes, Interceptor::default());
     network.start();
     network.process();
 
@@ -131,7 +131,7 @@ async fn test_invalid_vertex_signatures() {
         invalid_msg_at_round,
     );
 
-    let mut network = FakeNetwork::new(nodes, Some(interceptor));
+    let mut network = FakeNetwork::new(nodes, interceptor);
     network.start();
     network.process();
 
@@ -163,8 +163,8 @@ async fn test_invalid_timeout_certificate() {
     let interceptor = Interceptor::new(
         Box::new(move |msg: &Message, committee: &StaticCommittee| {
             if let Message::Vertex(e) = msg {
-                // Generate keys for invalid node for a nodes that are not in stake table
-                // And create a certificate from this
+                // Generate keys for invalid nodes (nodes that are not in stake table)
+                // And create a certificate from them
                 let mut signers: (BitVec, Vec<Signature>) =
                     (bitvec![0; num_nodes as usize], Vec::new());
                 let mut timeout = None;
@@ -176,7 +176,7 @@ async fn test_invalid_timeout_certificate() {
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
 
-                // process current message and the invalid certificate
+                // Process current message and the invalid certificate
                 // We should discard the message with the invalid certificate in consensus
                 // And never broadcast a vertex with a timeout certificate
                 vec![
@@ -191,7 +191,7 @@ async fn test_invalid_timeout_certificate() {
         invalid_msg_at_round,
     );
 
-    let mut network = FakeNetwork::new(nodes, Some(interceptor));
+    let mut network = FakeNetwork::new(nodes, interceptor);
     network.start();
 
     // Spin the test for some rounds
@@ -213,7 +213,7 @@ async fn test_invalid_timeout_certificate() {
         i += 1;
     }
 
-    // verify no progress was made
+    // verify progress was made
     for (_, (node, _)) in network.nodes.iter() {
         assert_eq!(*node.round(), rounds);
     }
