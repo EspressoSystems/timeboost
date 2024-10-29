@@ -1,10 +1,10 @@
-use hotshot_types::data::ViewNumber;
 use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
 use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::Envelope,
     message::{Action, Timeout},
+    round_number::RoundNumber,
     NodeId, PrivateKey, PublicKey,
 };
 
@@ -28,7 +28,7 @@ pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)
 }
 
 pub(crate) fn create_timeout_vote_action(
-    timeout_round: ViewNumber,
+    timeout_round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
 ) -> Action {

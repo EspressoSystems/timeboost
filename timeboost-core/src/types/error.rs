@@ -1,4 +1,4 @@
-use hotshot_types::data::ViewNumber;
+use crate::types::round_number::RoundNumber;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -38,7 +38,7 @@ pub enum SailfishError {
     /// A timeout has occurred.
     #[error("Timeout: {round} {stage:?}")]
     Timeout {
-        round: ViewNumber,
+        round: RoundNumber,
         stage: RoundTimeoutStage,
     },
 }

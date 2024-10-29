@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use async_lock::RwLock;
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::ShutdownToken};
-use timeboost_core::types::message::Message;
+use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use tokio::{sync::oneshot, task::JoinSet, time::Duration};
 
 use crate::{net, Group};
@@ -49,7 +48,7 @@ async fn test_simple_network_genesis() {
         let mut gv = 0;
         for event in log.read().await.iter() {
             if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = event {
-                if v.data().id().round() == ViewNumber::genesis() {
+                if v.data().id().round() == RoundNumber::genesis() {
                     gv += 1;
                 }
             }

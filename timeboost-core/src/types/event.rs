@@ -1,7 +1,6 @@
-use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{block::Transaction, error::SailfishError};
+use crate::types::{block::Transaction, error::SailfishError, round_number::RoundNumber};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EventType {
@@ -9,13 +8,13 @@ pub enum EventType {
     Error { error: SailfishError },
 
     /// Consensus has finished a round.
-    RoundFinished { round: ViewNumber },
+    RoundFinished { round: RoundNumber },
 
     /// New transactions that have been received from the network.
     Transactions { transactions: Vec<Transaction> },
 }
 
 pub struct SailfishStatusEvent {
-    pub round: ViewNumber,
+    pub round: RoundNumber,
     pub event: EventType,
 }

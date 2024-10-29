@@ -1,6 +1,5 @@
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use timeboost_core::logging;
-use timeboost_core::types::message::Message;
+use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork, test_helpers::make_consensus_nodes,
@@ -21,7 +20,7 @@ async fn test_timeout_round_and_no_vote() {
     network.process();
 
     // Process a round without proposal from leader
-    let round = ViewNumber::new(2);
+    let round = RoundNumber::new(2);
     network.timeout_round(round);
 
     // Process timeout (create TC)
@@ -78,7 +77,7 @@ async fn test_multi_round_consensus() {
     network.start();
     network.process();
 
-    let mut round = ViewNumber::genesis();
+    let mut round = RoundNumber::genesis();
 
     // Spin the test for some rounds.
     while *round < 10 {

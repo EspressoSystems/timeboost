@@ -1,9 +1,9 @@
 use std::{num::NonZeroU64, sync::Arc};
 
 use ethereum_types::U256;
-use hotshot_types::{data::ViewNumber, stake_table::StakeTableEntry};
+use hotshot_types::stake_table::StakeTableEntry;
 
-use crate::types::PublicKey;
+use crate::types::{round_number::RoundNumber, PublicKey};
 
 /// The static committee is just a list of public keys whose stake is equivalent across all nodes.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -41,7 +41,7 @@ impl StaticCommittee {
         self.stake_table.len()
     }
 
-    pub fn leader(&self, round_number: ViewNumber) -> PublicKey {
+    pub fn leader(&self, round_number: RoundNumber) -> PublicKey {
         self.stake_table[*round_number as usize % self.stake_table.len()]
     }
 

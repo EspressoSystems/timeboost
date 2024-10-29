@@ -6,6 +6,7 @@ pub mod envelope;
 pub mod error;
 pub mod event;
 pub mod message;
+pub mod round_number;
 pub mod vertex;
 
 use core::fmt;
