@@ -257,7 +257,7 @@ pub async fn run(
     tokio::select! {
         _ = coordinator_handle => {}
         _ = signal::ctrl_c() => {
-            println!("Received termination signal, shutting down...");
+            tracing::info!("Received termination signal, shutting down...");
             shutdown_tx.send(ShutdownToken::new()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
         }
     }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{coordinator::CoordinatorAuditEvent, types::message::Message};
+use timeboost_core::logging;
 use tokio::time::{timeout, Duration};
 
 use crate::{
@@ -11,6 +12,8 @@ use crate::{
 
 #[tokio::test]
 async fn test_simple_network_genesis() {
+    logging::init_logging();
+
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
     // Each node should see the genesis vertex from every other node.

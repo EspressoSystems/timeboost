@@ -6,11 +6,10 @@ use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use multiaddr::multiaddr;
 use sailfish::{
-    logging,
     sailfish::{generate_key_pair, Sailfish},
     types::PublicKey,
 };
-
+use timeboost_core::logging;
 pub mod net;
 
 #[cfg(test)]

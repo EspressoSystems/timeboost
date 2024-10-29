@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 async-channel = { workspace = true }
 async-lock = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
 futures = { workspace = true }
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }
