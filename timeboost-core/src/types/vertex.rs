@@ -6,11 +6,11 @@ use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime
 use serde::{Deserialize, Serialize};
 
 use super::{
-    block::Block,
     certificate::Certificate,
     message::{NoVote, Timeout},
     PublicKey,
 };
+use crate::types::block::Block;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct VertexId {

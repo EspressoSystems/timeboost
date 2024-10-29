@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::mem;
 
-use committee::StaticCommittee;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
+use timeboost_core::types::block::Block;
 use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
 
-use crate::types::{
-    block::Block,
+use timeboost_core::types::{
     certificate::Certificate,
+    committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     vertex::Vertex,
@@ -17,8 +17,6 @@ use crate::types::{
 
 mod dag;
 mod vote;
-
-pub mod committee;
 
 pub use dag::Dag;
 

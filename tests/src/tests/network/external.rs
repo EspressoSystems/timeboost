@@ -9,8 +9,8 @@ use portpicker::pick_unused_port;
 use sailfish::{
     coordinator::CoordinatorAuditEvent,
     sailfish::{Sailfish, ShutdownToken},
-    types::PublicKey,
 };
+use timeboost_core::types::PublicKey;
 use tokio::{
     sync::oneshot::{self, Receiver, Sender},
     task::JoinSet,

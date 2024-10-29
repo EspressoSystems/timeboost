@@ -1,13 +1,13 @@
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::types::message::Message;
 use timeboost_core::logging;
+use timeboost_core::types::message::Message;
 
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork, test_helpers::make_consensus_nodes,
 };
 
 #[tokio::test]
-async fn test_timeout_round_and_note_vote() {
+async fn test_timeout_round_and_no_vote() {
     logging::init_logging();
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);

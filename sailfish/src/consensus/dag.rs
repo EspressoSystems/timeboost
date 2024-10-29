@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 
-use crate::types::{vertex::Vertex, PublicKey};
+use timeboost_core::types::{vertex::Vertex, PublicKey};
 
 #[derive(Debug)]
 pub struct Dag {

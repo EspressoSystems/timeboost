@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use async_lock::RwLock;
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{
-    coordinator::CoordinatorAuditEvent, sailfish::ShutdownToken, types::message::Message,
-};
+use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::ShutdownToken};
+use timeboost_core::types::message::Message;
 use tokio::{sync::oneshot, task::JoinSet, time::Duration};
 
 use crate::{net, Group};

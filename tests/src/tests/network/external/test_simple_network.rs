@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{coordinator::CoordinatorAuditEvent, types::message::Message};
-use timeboost_core::logging;
+use sailfish::coordinator::CoordinatorAuditEvent;
+use timeboost_core::{logging, types::message::Message};
 use tokio::time::{timeout, Duration};
 
 use crate::{

@@ -1,13 +1,12 @@
 use hotshot_types::data::ViewNumber;
-use sailfish::consensus::committee::StaticCommittee;
 use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
-use sailfish::types::envelope::Envelope;
-use sailfish::types::{
+use timeboost_core::types::{
+    committee::StaticCommittee,
+    envelope::Envelope,
     message::{Action, Timeout},
-    PublicKey,
+    NodeId, PrivateKey, PublicKey,
 };
-use sailfish::types::{NodeId, PrivateKey};
 
 const SEED: [u8; 32] = [0u8; 32];
 

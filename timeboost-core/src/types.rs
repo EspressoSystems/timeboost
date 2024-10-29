@@ -1,15 +1,17 @@
+pub mod block;
+pub mod block_header;
+pub mod certificate;
+pub mod committee;
+pub mod envelope;
+pub mod error;
+pub mod event;
+pub mod message;
+pub mod vertex;
+
 use core::fmt;
 
 use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
 use serde::{Deserialize, Serialize};
-
-pub mod block;
-pub mod block_header;
-pub mod certificate;
-pub mod comm;
-pub mod envelope;
-pub mod message;
-pub mod vertex;
 
 pub type PublicKey = BLSPubKey;
 pub type PrivateKey = BLSPrivKey;

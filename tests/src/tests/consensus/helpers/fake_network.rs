@@ -1,12 +1,10 @@
 use hotshot_types::data::ViewNumber;
-use sailfish::{
-    consensus::{Consensus, Dag},
-    types::{
-        message::{Action, Message},
-        NodeId, PublicKey,
-    },
-};
+use sailfish::consensus::{Consensus, Dag};
 use std::collections::{HashMap, VecDeque};
+use timeboost_core::types::{
+    message::{Action, Message},
+    NodeId, PublicKey,
+};
 use tracing::info;
 
 use super::test_helpers::create_timeout_vote_action;

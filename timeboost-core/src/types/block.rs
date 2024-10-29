@@ -1,4 +1,5 @@
 use crate::types::block_header::BlockHeader;
+
 use anyhow::{ensure, Result};
 use committable::Committable;
 use serde::{Deserialize, Serialize};

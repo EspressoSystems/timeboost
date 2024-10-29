@@ -5,8 +5,9 @@ use committable::{Commitment, Committable};
 use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
+use crate::types::block::Block;
+
 use super::{
-    block::Block,
     certificate::Certificate,
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
