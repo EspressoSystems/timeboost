@@ -619,6 +619,11 @@ impl Consensus {
     }
 
     /// Validate an incoming vertex.
+    ///
+    /// Every vertex needs to have more than 2f strong edges. In addition, a
+    /// vertex needs to have either a strong path to the leader vertex of the
+    /// previous round, or a timeout certificate and (if from the leader) a
+    /// no-vote certificate.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn is_valid(&self, v: &Vertex) -> bool {
         if (v.strong_edge_count() as u64) < self.committee.success_threshold().get() {
@@ -632,69 +637,80 @@ impl Consensus {
             return false;
         }
 
-        let Some(l) = self.leader_vertex(v.round() - 1) else {
+        if let Some(l) = self.leader_vertex(v.round() - 1) {
+            if v.has_strong_edge(l.id()) {
+                return true;
+            }
+        }
+
+        let Some(tcert) = v.timeout_cert() else {
             warn!(
                 node   = %self.id,
                 round  = %self.round,
                 vround = %v.round(),
                 vsrc   = %v.source(),
-                "no leader vertex for vround - 1 found"
+                "vertex has no strong path to leader vertex and no timeout certificate"
             );
             return false;
         };
 
-        if v.has_strong_edge(l.id()) {
-            return true;
+        if tcert.data().round() != v.round() - 1 {
+            warn!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex has timeout certificate from invalid round"
+            );
+            return false;
         }
 
-        if let Some(cert) = v.timeout_cert() {
-            if cert.data().round() != v.round() - 1 {
-                warn!(
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %v.round(),
-                    vsrc   = %v.source(),
-                    "vertex has timeout certificate from invalid round"
-                );
-                return false;
-            }
-            if !cert.is_valid_quorum(&self.committee) {
-                warn!(
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %v.round(),
-                    vsrc   = %v.source(),
-                    "vertex has timeout certificate with invalid quorum"
-                );
-                return false;
-            }
+        if !tcert.is_valid_quorum(&self.committee) {
+            warn!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex has timeout certificate with invalid quorum"
+            );
+            return false;
         }
 
         if v.source() != &self.committee.leader(v.round()) {
             return true;
         }
 
-        if let Some(cert) = v.no_vote_cert() {
-            if cert.data().round() != v.round() - 1 {
-                warn!(
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %v.round(),
-                    vsrc   = %v.source(),
-                    "vertex has no-vote certificate from invalid round"
-                );
-                return false;
-            }
-            if !cert.is_valid_quorum(&self.committee) {
-                warn!(
-                    node   = %self.id,
-                    round  = %self.round,
-                    vround = %v.round(),
-                    vsrc   = %v.source(),
-                    "vertex has no-vote certificate with invalid quorum"
-                );
-                return false;
-            }
+        let Some(ncert) = v.no_vote_cert() else {
+            warn!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex is missing no-vote certificate"
+            );
+            return false;
+        };
+
+        if ncert.data().round() != v.round() - 1 {
+            warn!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex has no-vote certificate from invalid round"
+            );
+            return false;
+        }
+
+        if !ncert.is_valid_quorum(&self.committee) {
+            warn!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex has no-vote certificate with invalid quorum"
+            );
+            return false;
         }
 
         true
