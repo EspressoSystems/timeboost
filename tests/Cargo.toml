@@ -22,3 +22,5 @@ portpicker = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
+ethereum-types = { workspace = true }
+bitvec = { workspace = true }
