@@ -1,5 +1,5 @@
 [workspace]
-members = ["tests", "sailfish"]
+members = ["tests", "sailfish", "timeboost", "timeboost-core"]
 resolver = "2"
 
 [workspace.package]

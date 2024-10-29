@@ -1,0 +1,17 @@
+[package]
+name = "timeboost"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+hotshot-types = { workspace = true }
+libp2p-identity = { workspace = true }
+libp2p-networking = { workspace = true }
+sailfish = { path = "../sailfish" }
+serde = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
+tokio = { workspace = true }
+toml = { workspace = true }

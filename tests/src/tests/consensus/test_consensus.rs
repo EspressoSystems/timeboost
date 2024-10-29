@@ -1,5 +1,6 @@
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{logging, types::message::Message};
+use sailfish::types::message::Message;
+use timeboost_core::logging;
 
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork, test_helpers::make_consensus_nodes,

@@ -1,13 +1,15 @@
-use ::sailfish::types::{NodeId, PublicKey};
 use anyhow::Result;
+use std::{collections::HashSet, fs, num::NonZeroUsize};
+
 use clap::Parser;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
-use sailfish::sailfish;
+use sailfish::{
+    sailfish::run,
+    types::{NodeId, PublicKey},
+};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs, num::NonZeroUsize};
-use timeboost_core::logging;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -25,11 +27,11 @@ struct Config {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    logging::init_logging();
+    timeboost_core::logging::init_logging();
     let cli = Cli::parse();
     let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
     let network_size = NonZeroUsize::new(cfg.staked_nodes.len()).unwrap();
-    sailfish::run(
+    run(
         cfg.id,
         cfg.port,
         network_size,

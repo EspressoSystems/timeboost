@@ -1,6 +1,5 @@
 pub mod consensus;
 pub mod coordinator;
-pub mod logging;
 pub mod sailfish;
 pub mod types;
 
