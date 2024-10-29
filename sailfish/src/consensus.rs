@@ -386,8 +386,16 @@ impl Consensus {
             return actions;
         }
 
-        let res = self.dag.vertex_count(round);
-        if res as u64 >= self.committee.success_threshold().get() {
+        if !cert.is_valid_quorum(&self.committee) {
+            warn!(
+                node  = %self.id,
+                round = %self.round,
+                r     = %round,
+                "received invalid certificate"
+            );
+        }
+
+        if self.dag.vertex_count(round) as u64 >= self.committee.success_threshold().get() {
             actions.extend(self.advance_from_round(round));
         }
 

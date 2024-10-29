@@ -11,6 +11,7 @@ use tracing::info;
 
 use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
 
+/// Mock the network
 pub struct FakeNetwork {
     pub(crate) nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
     msg_interceptor: Option<Interceptor>,
@@ -56,6 +57,8 @@ impl FakeNetwork {
             .unwrap()
     }
 
+    /// Process the current message on the queue
+    /// Push the next messages after processing
     pub(crate) fn process(&mut self) {
         let mut next_msgs = Vec::new();
         for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
@@ -68,6 +71,8 @@ impl FakeNetwork {
         self.dispatch(next_msgs);
     }
 
+    /// Look in each node and grab their queue of messages
+    /// Used for asserting in tests to make sure outputs are expected
     pub(crate) fn msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
         let nodes_msgs = self
             .nodes
@@ -108,17 +113,22 @@ impl FakeNetwork {
         self.dispatch(msgs);
     }
 
+    /// Handle a message, and apply any transformations as setup in the test
     fn handle_message(
         node: &mut Consensus,
         msg: Message,
         interceptor: &Option<Interceptor>,
     ) -> Vec<Action> {
-        let msg = if let Some(interceptor) = interceptor {
-            interceptor.intercept_message(msg)
+        let msgs = if let Some(interceptor) = interceptor {
+            interceptor.intercept_message(msg, node.committe())
         } else {
-            msg
+            vec![msg]
         };
-        node.handle_message(msg)
+        let mut actions = Vec::new();
+        for msg in msgs {
+            actions.extend(node.handle_message(msg));
+        }
+        actions
     }
 
     fn dispatch(&mut self, msgs: Vec<(Option<PublicKey>, Message)>) {
