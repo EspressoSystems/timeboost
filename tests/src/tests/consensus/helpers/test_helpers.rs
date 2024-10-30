@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
@@ -12,7 +14,8 @@ use timeboost_core::types::{
     vertex::Vertex,
     NodeId, PrivateKey, PublicKey, Signature,
 };
-pub(crate) type MessageModifier = Box<dyn Fn(&Message, &StaticCommittee) -> Vec<Message>>;
+pub(crate) type MessageModifier =
+    Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
