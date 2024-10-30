@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, ops::Div, sync::Arc};
+use std::{num::NonZeroU64, sync::Arc};
 
 use ethereum_types::U256;
 use hotshot_types::stake_table::StakeTableEntry;
