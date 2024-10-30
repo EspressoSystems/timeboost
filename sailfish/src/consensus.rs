@@ -1,20 +1,19 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::mem;
-
-use timeboost_core::types::block::Block;
-use timeboost_core::types::round_number::RoundNumber;
-use timeboost_core::types::vertex::VertexId;
-use tracing::{debug, instrument, trace, warn};
-use vote::VoteAccumulator;
+use std::num::NonZeroUsize;
 
 use timeboost_core::types::{
+    block::Block,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    vertex::Vertex,
+    round_number::RoundNumber,
+    vertex::{Vertex, VertexId},
     NodeId, PrivateKey, PublicKey,
 };
+use tracing::{debug, instrument, trace, warn};
+use vote::VoteAccumulator;
 
 mod dag;
 mod vote;
@@ -76,7 +75,7 @@ impl Consensus {
             id,
             public_key,
             private_key,
-            dag: Dag::new(),
+            dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
             buffer: HashSet::new(),
@@ -89,12 +88,20 @@ impl Consensus {
         }
     }
 
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
 
     pub fn round(&self) -> RoundNumber {
         self.round
+    }
+
+    pub fn committee_size(&self) -> NonZeroUsize {
+        self.committee.size()
     }
 
     #[cfg(feature = "test")]
@@ -108,8 +115,13 @@ impl Consensus {
     }
 
     #[cfg(feature = "test")]
-    pub fn id(&self) -> NodeId {
-        self.id
+    pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
+        &self.no_votes
+    }
+
+    #[cfg(feature = "test")]
+    pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
+        &self.timeouts
     }
 
     pub fn add_block(&mut self, b: Block) {
@@ -208,6 +220,17 @@ impl Consensus {
         }
 
         let vertex = e.into_data();
+
+        if self.dag.contains(vertex.id()) {
+            debug!(
+                node   = %self.id,
+                round  = %self.round,
+                ours   = %(self.public_key == *vertex.source()),
+                vround = %vertex.round(),
+                "vertex already in dag"
+            );
+            return actions;
+        }
 
         if !(vertex.is_genesis() || self.is_valid(&vertex)) {
             return actions;
@@ -419,6 +442,7 @@ impl Consensus {
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);
             actions.extend(self.add_and_broadcast_vertex(v.0));
+            self.clear_timeout_aggregators(self.round);
             return actions;
         }
 
@@ -444,6 +468,7 @@ impl Consensus {
             let NewVertex(mut v) = self.create_new_vertex(self.round);
             v.set_timeout(tc);
             actions.extend(self.add_and_broadcast_vertex(v));
+            self.clear_timeout_aggregators(self.round);
             return actions;
         }
 
@@ -471,6 +496,8 @@ impl Consensus {
         v.set_no_vote(nc);
         v.set_timeout(tc);
         actions.extend(self.add_and_broadcast_vertex(v));
+        self.clear_timeout_aggregators(self.round);
+        self.no_votes.clear();
         actions
     }
 
@@ -626,6 +653,13 @@ impl Consensus {
         }
         self.delivered = delivered;
         actions
+    }
+
+    /// Remove timeout vote aggregators up to the given round.
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    fn clear_timeout_aggregators(&mut self, to: RoundNumber) {
+        let mut t = mem::take(&mut self.timeouts);
+        self.timeouts = t.split_off(&to);
     }
 
     /// Validate an incoming vertex.
