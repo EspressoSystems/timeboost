@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use hotshot::traits::{implementations::Libp2pNetwork, NetworkError};
 use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
 
-use timeboost_core::types::PublicKey;
+use crate::types::PublicKey;
 
 #[async_trait]
 pub trait Comm {

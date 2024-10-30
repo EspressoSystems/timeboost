@@ -18,7 +18,7 @@ use tokio::{
 
 use crate::Group;
 
-use super::{TestCondition, TestOutcome};
+use super::{TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
@@ -30,8 +30,12 @@ pub struct Libp2pNetworkTest {
     outcomes: HashMap<usize, Vec<TestCondition>>,
 }
 
-impl Libp2pNetworkTest {
-    pub fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+impl TestableNetwork for Libp2pNetworkTest {
+    type Node = Sailfish;
+    type Network = Libp2pNetwork<PublicKey>;
+    type Shutdown = ();
+
+    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (
             Vec<Sender<ShutdownToken>>,
             Vec<Receiver<ShutdownToken>>,
@@ -49,7 +53,7 @@ impl Libp2pNetworkTest {
         }
     }
 
-    pub async fn init(&mut self) -> Vec<(Sailfish, Libp2pNetwork<PublicKey>)> {
+    async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
         let replication_factor = NonZeroUsize::new((2 * self.group.fish.len()).div_ceil(3))
             .expect("ceil(2n/3) with n > 0 never gives 0");
         let mut handles = JoinSet::new();
@@ -80,12 +84,20 @@ impl Libp2pNetworkTest {
         handles.join_all().await.into_iter().collect()
     }
 
-    pub async fn start(
+    async fn start(
         &mut self,
-        networks: Vec<(Sailfish, Libp2pNetwork<PublicKey>)>,
-    ) -> JoinSet<()> {
+        nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
+    ) -> JoinSet<Self::Shutdown> {
         let mut handles = JoinSet::new();
-        for (i, (node, network)) in networks.into_iter().enumerate() {
+        let (nodes, networks) = nodes_and_networks;
+
+        assert_eq!(
+            nodes.len(),
+            networks.len(),
+            "Nodes and networks vectors must be the same length"
+        );
+
+        for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let log = Arc::clone(self.event_logs.get(&i).unwrap());
             let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
@@ -103,7 +115,7 @@ impl Libp2pNetworkTest {
         handles
     }
 
-    pub async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
+    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
         let mut statuses =
             HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
         for (node_id, conditions) in self.outcomes.iter() {
@@ -128,7 +140,7 @@ impl Libp2pNetworkTest {
         statuses
     }
 
-    pub async fn shutdown(self, handles: JoinSet<()>) {
+    async fn shutdown(self, handles: JoinSet<()>) {
         for send in self.shutdown_txs.into_values() {
             let _ = send.send(ShutdownToken::new());
         }

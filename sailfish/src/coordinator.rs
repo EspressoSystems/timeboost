@@ -1,7 +1,6 @@
 use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
-    comm::Comm,
     consensus::{Consensus, Dag},
     sailfish::ShutdownToken,
 };
@@ -10,10 +9,13 @@ use anyhow::Result;
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use hotshot::traits::NetworkError;
-use timeboost_core::types::{
-    message::{Action, Message},
-    round_number::RoundNumber,
-    NodeId, PublicKey,
+use timeboost_core::{
+    traits::comm::Comm,
+    types::{
+        message::{Action, Message},
+        round_number::RoundNumber,
+        NodeId, PublicKey,
+    },
 };
 use tokio::{
     sync::oneshot::{self},
