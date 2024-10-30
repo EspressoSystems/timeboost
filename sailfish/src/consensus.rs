@@ -3,6 +3,7 @@ use std::mem;
 
 use timeboost_core::types::block::Block;
 use timeboost_core::types::round_number::RoundNumber;
+use timeboost_core::types::vertex::VertexId;
 use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
 
@@ -646,10 +647,8 @@ impl Consensus {
             return false;
         }
 
-        if let Some(l) = self.leader_vertex(v.round() - 1) {
-            if v.has_strong_edge(l.id()) {
-                return true;
-            }
+        if v.has_strong_edge(&self.leader_vertex_id(v.round() - 1)) {
+            return true;
         }
 
         let Some(tcert) = v.timeout_cert() else {
@@ -658,6 +657,7 @@ impl Consensus {
                 round  = %self.round,
                 vround = %v.round(),
                 vsrc   = %v.source(),
+                leader = %self.leader_vertex(v.round() - 1).is_some(),
                 "vertex has no strong path to leader vertex and no timeout certificate"
             );
             return false;
@@ -727,5 +727,9 @@ impl Consensus {
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
         self.dag.vertex(r, &self.committee.leader(r))
+    }
+
+    fn leader_vertex_id(&self, r: RoundNumber) -> VertexId {
+        VertexId::new(r, self.committee.leader(r))
     }
 }
