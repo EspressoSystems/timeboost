@@ -12,9 +12,12 @@ pub struct Interceptor {
 }
 
 impl Interceptor {
-    pub(crate) fn new(msg_modifier: MessageModifier, modify_at_round: RoundNumber) -> Self {
+    pub(crate) fn new<F>(msg_modifier: F, modify_at_round: RoundNumber) -> Self
+    where
+        F: Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message> + 'static,
+    {
         Self {
-            msg_modifier,
+            msg_modifier: Box::new(msg_modifier),
             modify_at_round,
         }
     }
