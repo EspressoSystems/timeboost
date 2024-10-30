@@ -1,8 +1,4 @@
-use crate::{
-    consensus::{committee::StaticCommittee, Consensus},
-    coordinator::Coordinator,
-    types::{comm::Comm, NodeId, PrivateKey, PublicKey},
-};
+use crate::{comm::Comm, consensus::Consensus, coordinator::Coordinator};
 
 #[cfg(feature = "test")]
 use crate::coordinator::CoordinatorAuditEvent;
@@ -32,6 +28,7 @@ use libp2p_networking::{
     reexport::Multiaddr,
 };
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use timeboost_core::types::{committee::StaticCommittee, NodeId, PrivateKey, PublicKey};
 use tokio::signal;
 use tokio::sync::oneshot;
 use tracing::{info, instrument};
@@ -150,7 +147,6 @@ impl Sailfish {
             record_value,
             bootstrap_nodes,
             u64::from(self.id) as usize,
-            false,
         )
         .await?;
 
@@ -170,19 +166,14 @@ impl Sailfish {
     where
         C: Comm<Err = NetworkError> + Send + 'static,
     {
-        let quorum_membership = StaticCommittee::new(
+        let committee = StaticCommittee::new(
             staked_nodes
                 .iter()
                 .map(|node| node.stake_table_entry.stake_key)
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(
-            self.id,
-            self.public_key,
-            self.private_key,
-            quorum_membership,
-        );
+        let consensus = Consensus::new(self.id, self.public_key, self.private_key, committee);
 
         Coordinator::new(
             self.id,

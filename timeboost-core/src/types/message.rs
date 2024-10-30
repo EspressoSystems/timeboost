@@ -2,15 +2,15 @@ use core::fmt;
 
 use crate::types::vertex::Vertex;
 use committable::{Commitment, Committable};
-use hotshot_types::data::ViewNumber;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    block::Block,
     certificate::Certificate,
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
+use crate::types::block::Block;
+use crate::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum Message {
@@ -28,7 +28,7 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn round(&self) -> ViewNumber {
+    pub fn round(&self) -> RoundNumber {
         match self {
             Message::Vertex(v) => v.data().round(),
             Message::Timeout(t) => t.data().round(),
@@ -41,10 +41,10 @@ impl Message {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action {
     /// Reset the timer to the given round.
-    ResetTimer(ViewNumber),
+    ResetTimer(RoundNumber),
 
     /// Deliver a block to the application layer.
-    Deliver(Block, ViewNumber, PublicKey),
+    Deliver(Block, RoundNumber, PublicKey),
 
     /// Send a vertex proposal to all nodes.
     SendProposal(Envelope<Vertex, Validated>),
@@ -80,30 +80,30 @@ impl fmt::Display for Action {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Timeout {
-    pub round: ViewNumber,
+    pub round: RoundNumber,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NoVote {
-    round: ViewNumber,
+    round: RoundNumber,
 }
 
 impl Timeout {
-    pub fn new(r: ViewNumber) -> Self {
+    pub fn new(r: RoundNumber) -> Self {
         Self { round: r }
     }
 
-    pub fn round(&self) -> ViewNumber {
+    pub fn round(&self) -> RoundNumber {
         self.round
     }
 }
 
 impl NoVote {
-    pub fn new(r: ViewNumber) -> Self {
+    pub fn new(r: RoundNumber) -> Self {
         Self { round: r }
     }
 
-    pub fn round(&self) -> ViewNumber {
+    pub fn round(&self) -> RoundNumber {
         self.round
     }
 }

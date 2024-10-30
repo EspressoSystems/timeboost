@@ -5,11 +5,8 @@ use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use multiaddr::multiaddr;
-use sailfish::{
-    sailfish::{generate_key_pair, Sailfish},
-    types::PublicKey,
-};
-use timeboost_core::logging;
+use sailfish::sailfish::{generate_key_pair, Sailfish};
+use timeboost_core::{logging, types::PublicKey};
 pub mod net;
 
 #[cfg(test)]

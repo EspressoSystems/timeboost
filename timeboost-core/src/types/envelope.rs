@@ -4,10 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{hash::Hash, marker::PhantomData};
 use tracing::warn;
 
-use crate::{
-    consensus::committee::StaticCommittee,
-    types::{PrivateKey, PublicKey, Signature},
-};
+use crate::types::{committee::StaticCommittee, PrivateKey, PublicKey, Signature};
 
 /// Marker type to denote envelopes whose signature has not been validated.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]

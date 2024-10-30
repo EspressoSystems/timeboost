@@ -1,4 +1,3 @@
-use ::sailfish::types::{NodeId, PublicKey};
 use anyhow::Result;
 use clap::Parser;
 use hotshot_types::PeerConfig;
@@ -8,6 +7,7 @@ use sailfish::sailfish;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, num::NonZeroUsize};
 use timeboost_core::logging;
+use timeboost_core::types::{NodeId, PublicKey};
 
 #[derive(Parser, Debug)]
 struct Cli {

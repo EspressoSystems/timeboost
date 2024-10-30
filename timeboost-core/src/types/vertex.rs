@@ -2,24 +2,30 @@ use std::{collections::BTreeSet, fmt::Display};
 
 use committable::Committable;
 use hotshot::types::SignatureKey;
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    block::Block,
     certificate::Certificate,
     message::{NoVote, Timeout},
     PublicKey,
 };
+use crate::types::{block::Block, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct VertexId {
-    round: ViewNumber,
+    round: RoundNumber,
     source: PublicKey,
 }
 
 impl VertexId {
-    pub fn round(&self) -> ViewNumber {
+    pub fn new(r: RoundNumber, s: PublicKey) -> Self {
+        Self {
+            round: r,
+            source: s,
+        }
+    }
+
+    pub fn round(&self) -> RoundNumber {
         self.round
     }
 
@@ -39,7 +45,7 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    pub fn new(r: ViewNumber, s: PublicKey) -> Self {
+    pub fn new(r: RoundNumber, s: PublicKey) -> Self {
         Self {
             id: VertexId {
                 round: r,
@@ -54,7 +60,7 @@ impl Vertex {
     }
 
     pub fn is_genesis(&self) -> bool {
-        self.id.round == ViewNumber::genesis()
+        self.id.round == RoundNumber::genesis()
             && self.block.is_empty()
             && self.strong.is_empty()
             && self.weak.is_empty()
@@ -66,7 +72,7 @@ impl Vertex {
         &self.id
     }
 
-    pub fn round(&self) -> ViewNumber {
+    pub fn round(&self) -> RoundNumber {
         self.id.round
     }
 

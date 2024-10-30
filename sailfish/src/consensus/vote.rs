@@ -5,13 +5,12 @@ use committable::Committable;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 
-use crate::types::{
+use timeboost_core::types::{
     certificate::Certificate,
+    committee::StaticCommittee,
     envelope::{Envelope, Validated},
     PublicKey, Signature,
 };
-
-use super::committee::StaticCommittee;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {
@@ -25,7 +24,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     pub fn new(committee: StaticCommittee) -> Self {
         Self {
             votes: BTreeMap::new(),
-            signers: (bitvec![0; committee.total_nodes()], Vec::new()),
+            signers: (bitvec![0; committee.size()], Vec::new()),
             committee,
             cert: None,
         }
@@ -38,7 +37,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
     #[allow(unused)]
     pub fn clear(&mut self) {
         self.votes.clear();
-        self.signers = (bitvec![0; self.committee.total_nodes()], Vec::new());
+        self.signers = (bitvec![0; self.committee.size()], Vec::new());
         self.cert = None
     }
 
@@ -66,12 +65,12 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         if self.cert.is_some() {
             return self.cert.as_ref();
         }
-        if self.votes.len() < self.committee.success_threshold().get() as usize {
+        if self.votes.len() < self.committee.quorum_size().get() as usize {
             return None;
         }
         let pp = <PublicKey as SignatureKey>::public_parameter(
             self.committee.stake_table(),
-            U256::from(self.committee.success_threshold().get()),
+            U256::from(self.committee.quorum_size().get()),
         );
         let sig = <PublicKey as SignatureKey>::assemble(&pp, &self.signers.0, &self.signers.1);
         let env = self

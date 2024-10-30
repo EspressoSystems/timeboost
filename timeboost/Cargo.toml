@@ -5,6 +5,7 @@ edition.workspace = true
 description.workspace = true
 
 [dependencies]
+async-broadcast = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 hotshot-types = { workspace = true }
@@ -15,3 +16,7 @@ serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 tokio = { workspace = true }
 toml = { workspace = true }
+
+[[bin]]
+name = "timeboost"
+path = "src/binaries/builder.rs"

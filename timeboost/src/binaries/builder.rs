@@ -5,11 +5,9 @@ use clap::Parser;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
-use sailfish::{
-    sailfish::run,
-    types::{NodeId, PublicKey},
-};
+use sailfish::sailfish::run;
 use serde::{Deserialize, Serialize};
+use timeboost_core::types::{NodeId, PublicKey};
 
 #[derive(Parser, Debug)]
 struct Cli {

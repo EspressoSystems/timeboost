@@ -1,12 +1,10 @@
 use std::collections::VecDeque;
 
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{
-    consensus::committee::StaticCommittee,
-    sailfish::generate_key_pair,
-    types::{message::Message, Signature},
-};
+use sailfish::sailfish::generate_key_pair;
 use timeboost_core::logging;
+use timeboost_core::types::committee::StaticCommittee;
+use timeboost_core::types::Signature;
+use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
 use crate::{
     tests::consensus::helpers::{
@@ -22,7 +20,7 @@ use crate::{
 use bitvec::{bitvec, vec::BitVec};
 
 #[tokio::test]
-async fn test_timeout_round_and_note_vote() {
+async fn test_timeout_round_and_no_vote() {
     logging::init_logging();
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);
@@ -36,7 +34,7 @@ async fn test_timeout_round_and_note_vote() {
     network.process();
 
     // Process a round without proposal from leader
-    let round = ViewNumber::new(2);
+    let round = RoundNumber::new(2);
     network.timeout_round(round);
 
     // Process timeout (create TC)
@@ -90,7 +88,7 @@ async fn test_multi_round_consensus() {
     network.start();
     network.process();
 
-    let mut round = ViewNumber::genesis();
+    let mut round = RoundNumber::genesis();
 
     // Spin the test for some rounds.
     while *round < 10 {
@@ -112,24 +110,26 @@ async fn test_invalid_vertex_signatures() {
 
     let nodes = make_consensus_nodes(num_nodes);
 
-    let invalid_msg_at_round = ViewNumber::new(5);
+    let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
-        Box::new(move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
-            if let Message::Vertex(_e) = msg {
-                // generate keys for invalid node for a node one not in stake table
-                let new_keys = generate_key_pair(SEED, invalid_node_id);
-                // modify current network message with this invalid one
-                vec![create_vertex_proposal_msg(
-                    msg.round(),
-                    new_keys.1,
-                    &new_keys.0,
-                )]
-            } else {
-                // if not vertex leave msg alone
-                vec![msg.clone()]
-            }
-        }),
+        Box::new(
+            move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
+                if let Message::Vertex(_e) = msg {
+                    // generate keys for invalid node for a node one not in stake table
+                    let new_keys = generate_key_pair(SEED, invalid_node_id);
+                    // modify current network message with this invalid one
+                    vec![create_vertex_proposal_msg(
+                        msg.round(),
+                        new_keys.1,
+                        &new_keys.0,
+                    )]
+                } else {
+                    // if not vertex leave msg alone
+                    vec![msg.clone()]
+                }
+            },
+        ),
         invalid_msg_at_round,
     );
 
@@ -160,41 +160,46 @@ async fn test_invalid_timeout_certificate() {
 
     let nodes = make_consensus_nodes(num_nodes);
 
-    let invalid_msg_at_round = ViewNumber::new(3);
+    let invalid_msg_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
-        Box::new(move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
-            if let Message::Vertex(e) = msg {
-                // Generate keys for invalid nodes (nodes that are not in stake table)
-                // And create a timeout certificate from them
-                let mut signers: (BitVec, Vec<Signature>) =
-                    (bitvec![0; num_nodes as usize], Vec::new());
-                let mut timeout = None;
-                for i in 0..num_nodes {
-                    let fake_node_id = i + invalid_node_id;
-                    let new_keys = generate_key_pair(SEED, fake_node_id);
-                    timeout = Some(create_vote(e.data().round(), new_keys.1, &new_keys.0));
-                    signers.0.set(i as usize, true);
-                    signers.1.push(timeout.clone().unwrap().signature().clone());
+        Box::new(
+            move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
+                if let Message::Vertex(e) = msg {
+                    // Generate keys for invalid nodes (nodes that are not in stake table)
+                    // And create a timeout certificate from them
+                    let mut signers: (BitVec, Vec<Signature>) =
+                        (bitvec![0; num_nodes as usize], Vec::new());
+                    let mut timeout = None;
+                    for i in 0..num_nodes {
+                        let fake_node_id = i + invalid_node_id;
+                        let new_keys = generate_key_pair(SEED, fake_node_id);
+                        timeout = Some(create_vote(e.data().round(), new_keys.1, &new_keys.0));
+                        signers.0.set(i as usize, true);
+                        signers.1.push(timeout.clone().unwrap().signature().clone());
+                    }
+
+                    // Process current message this should be the leader vertex and the invalid certificate
+                    // We should discard the message with the invalid certificate in `handle_timeout_cert` since the signers are invalid
+                    // And never broadcast a vertex with a timeout certificate and send a no vote message
+                    // End of queue should be leader vertex inject process the certificate first
+                    if queue.is_empty() {
+                        return vec![
+                            create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
+                            msg.clone(),
+                        ];
+                    }
+                    // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
+                    if *e.signing_key() == committee.leader(e.data().round()) {
+                        queue.push_back(msg.clone());
+                        return vec![];
+                    }
                 }
 
-                // Process current message this should be the leader vertex and the invalid certificate
-                // We should discard the message with the invalid certificate in `handle_timeout_cert` since the signers are invalid
-                // And never broadcast a vertex with a timeout certificate and send a no vote message
-                // End of queue should be leader vertex inject process the certificate first
-                if queue.len() == 0 {
-                    return vec![create_timeout_certificate_msg(timeout.unwrap(), &signers, committee), msg.clone()];
-                }
-                // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
-                if *e.signing_key() == committee.leader(e.data().round()) {
-                    queue.push_back(msg.clone());
-                    return vec![];
-                }
-            }
-
-            // Everthing else handle as normal
-            vec![msg.clone()]
-        }),
+                // Everthing else handle as normal
+                vec![msg.clone()]
+            },
+        ),
         invalid_msg_at_round,
     );
 
@@ -210,7 +215,10 @@ async fn test_invalid_timeout_certificate() {
             for msg in msgs {
                 match msg {
                     Message::Vertex(v) => {
-                        assert!(v.data().timeout_cert().is_none(), "We should never have a timeout cert in a message");
+                        assert!(
+                            v.data().timeout_cert().is_none(),
+                            "We should never have a timeout cert in a message"
+                        );
                     }
                     Message::NoVote(_nv) => {
                         panic!("We should never process a no vote message");

@@ -1,12 +1,10 @@
-use hotshot_types::data::ViewNumber;
-use sailfish::{
-    consensus::{Consensus, Dag},
-    types::{
-        message::{Action, Message},
-        NodeId, PublicKey,
-    },
-};
+use sailfish::consensus::{Consensus, Dag};
 use std::collections::{HashMap, VecDeque};
+use timeboost_core::types::{
+    message::{Action, Message},
+    round_number::RoundNumber,
+    NodeId, PublicKey,
+};
 use tracing::info;
 
 use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
@@ -38,7 +36,7 @@ impl FakeNetwork {
         self.dispatch(next)
     }
 
-    pub(crate) fn current_round(&self) -> ViewNumber {
+    pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
             .map(|(node, _)| node.round())
@@ -46,10 +44,10 @@ impl FakeNetwork {
             .unwrap()
     }
 
-    pub(crate) fn leader_for_round(&self, round: ViewNumber) -> PublicKey {
+    pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
-            .map(|(node, _)| node.committe().leader(round))
+            .map(|(node, _)| node.committee().leader(round))
             .max()
             .unwrap()
     }
@@ -79,7 +77,7 @@ impl FakeNetwork {
         nodes_msgs
     }
 
-    pub(crate) fn timeout_round(&mut self, round: ViewNumber) {
+    pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
         let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
         for (node, queue) in self.nodes.values_mut() {
             let mut keep = VecDeque::new();
@@ -89,7 +87,7 @@ impl FakeNetwork {
                     // To simulate a timeout we just drop the message with the leader vertex
                     // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
                     // And be able to propose a vertex with timeout cert
-                    if *v.signing_key() == node.committe().leader(v.data().round()) {
+                    if *v.signing_key() == node.committee().leader(v.data().round()) {
                         continue;
                     }
                 }
@@ -115,9 +113,9 @@ impl FakeNetwork {
         node: &mut Consensus,
         msg: Message,
         interceptor: &Interceptor,
-        queue: &mut VecDeque<Message>
+        queue: &mut VecDeque<Message>,
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node.committe(), queue);
+        let msgs = interceptor.intercept_message(msg, node.committee(), queue);
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));
