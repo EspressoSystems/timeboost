@@ -8,7 +8,7 @@ use timeboost_core::{
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    tests::network::{external::Libp2pTest, TestCondition, TestOutcome},
+    tests::network::{external::Libp2pNetworkTest, TestCondition, TestOutcome},
     Group,
 };
 
@@ -42,7 +42,7 @@ async fn test_simple_network_genesis() {
         })
         .collect();
 
-    let mut test = Libp2pTest::new(group, node_outcomes);
+    let mut test = Libp2pNetworkTest::new(group, node_outcomes);
     let networks = test.init().await;
     let test_handles = test.start(networks).await;
 
