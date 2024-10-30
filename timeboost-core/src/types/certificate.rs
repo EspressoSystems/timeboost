@@ -36,7 +36,7 @@ impl<D: Committable> Certificate<D> {
     pub fn is_valid_quorum(&self, membership: &StaticCommittee) -> bool {
         let real_qc_pp = PublicKey::public_parameter(
             membership.stake_table(),
-            U256::from(membership.success_threshold().get()),
+            U256::from(membership.quorum_size().get()),
         );
 
         let commit = self.commitment();

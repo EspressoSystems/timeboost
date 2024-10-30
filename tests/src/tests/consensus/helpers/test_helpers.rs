@@ -68,7 +68,7 @@ pub(crate) fn create_timeout_certificate_msg(
 ) -> Message {
     let pp = <PublicKey as SignatureKey>::public_parameter(
         committee.stake_table(),
-        U256::from(committee.success_threshold().get()),
+        U256::from(committee.quorum_size().get()),
     );
     let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
     let cert = Certificate::new(env.data().clone(), sig);
