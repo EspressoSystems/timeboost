@@ -664,6 +664,8 @@ impl Consensus {
                 delivered.insert(to_deliver.clone());
             }
         }
+        self.dag.prune(self.committed_round);
+        delivered.retain(|v| self.dag.contains(v.id()));
         self.delivered = delivered;
         actions
     }

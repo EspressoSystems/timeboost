@@ -1,10 +1,14 @@
-use std::{collections::BTreeMap, num::NonZeroUsize};
+use std::{
+    collections::{BTreeMap, HashSet},
+    num::NonZeroUsize,
+};
 
 use timeboost_core::types::{
     round_number::RoundNumber,
     vertex::{Vertex, VertexId},
     PublicKey,
 };
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct Dag {
@@ -98,5 +102,44 @@ impl Dag {
             }
         }
         false
+    }
+
+    /// Remove the vertex denoted by the given ID from the DAG.
+    ///
+    /// If this removes the last vertex of a source in a round, the whole entry is removed.
+    #[instrument(level = "trace", skip(self))]
+    fn remove(&mut self, id: &VertexId) {
+        let Some(m) = self.elements.get_mut(&id.round()) else {
+            return;
+        };
+        m.remove(id.source());
+        if m.is_empty() {
+            self.elements.remove(&id.round());
+        }
+    }
+
+    /// Remove vertices from rounds < r if they are not referenced in rounds >= r.
+    #[instrument(level = "trace", skip(self))]
+    pub fn prune(&mut self, r: RoundNumber) {
+        // Consider all IDs from rounds < r:
+        let candidates: HashSet<VertexId> = {
+            let ids = self
+                .elements
+                .range(RoundNumber::genesis()..r)
+                .flat_map(|(_, m)| m.values().map(|v| v.id().clone()));
+            HashSet::from_iter(ids)
+        };
+
+        // We can remove those IDs which are not referenced from vertices in rounds >= r:
+        let to_remove = self.vertices_from(r).fold(candidates, |mut set, v| {
+            for e in v.strong_edges().chain(v.weak_edges()) {
+                set.remove(e);
+            }
+            set
+        });
+
+        for id in &to_remove {
+            self.remove(id)
+        }
     }
 }
