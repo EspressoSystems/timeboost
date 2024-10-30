@@ -22,7 +22,7 @@ use super::{TestCondition, TestOutcome};
 
 pub mod test_simple_network;
 
-pub struct Libp2pTest {
+pub struct Libp2pNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
     shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
@@ -30,7 +30,7 @@ pub struct Libp2pTest {
     outcomes: HashMap<usize, Vec<TestCondition>>,
 }
 
-impl Libp2pTest {
+impl Libp2pNetworkTest {
     pub fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (
             Vec<Sender<ShutdownToken>>,
@@ -39,7 +39,6 @@ impl Libp2pTest {
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
-        tracing::info!("Event logs: {}", event_logs.len());
 
         Self {
             group,
