@@ -8,7 +8,7 @@ use timeboost_core::{
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    tests::network::{internal::MemoryNetworkTest, TestCondition, TestOutcome},
+    tests::network::{internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome},
     Group,
 };
 
@@ -44,7 +44,7 @@ async fn test_simple_network_genesis() {
 
     let mut test = MemoryNetworkTest::new(group, node_outcomes);
     let networks = test.init().await;
-    test.start(networks).await;
+    let handles = test.start(networks).await;
 
     let mut st_interim = HashMap::new();
     let final_statuses = match timeout(Duration::from_millis(250), async {
@@ -73,7 +73,7 @@ async fn test_simple_network_genesis() {
         }
     };
 
-    test.shutdown().await;
+    test.shutdown(handles).await;
 
     // Now verify all statuses are Passed
     assert!(

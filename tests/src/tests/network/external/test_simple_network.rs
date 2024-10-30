@@ -8,7 +8,7 @@ use timeboost_core::{
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    tests::network::{external::Libp2pNetworkTest, TestCondition, TestOutcome},
+    tests::network::{external::Libp2pNetworkTest, NetworkTest, TestCondition, TestOutcome},
     Group,
 };
 
@@ -44,7 +44,7 @@ async fn test_simple_network_genesis() {
 
     let mut test = Libp2pNetworkTest::new(group, node_outcomes);
     let networks = test.init().await;
-    let test_handles = test.start(networks).await;
+    let handles = test.start(networks).await;
 
     let mut st_interim = HashMap::new();
     let final_statuses = match timeout(Duration::from_millis(250), async {
@@ -73,7 +73,7 @@ async fn test_simple_network_genesis() {
         }
     };
 
-    test.shutdown(test_handles).await;
+    test.shutdown(handles).await;
 
     // Now verify all statuses are Passed
     assert!(

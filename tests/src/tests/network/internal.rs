@@ -1,13 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{net::Star, Group};
+use crate::Group;
 
-use super::{TestCondition, TestOutcome};
+use super::{NetworkTest, TestCondition, TestOutcome};
 use async_lock::RwLock;
 use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
     sailfish::ShutdownToken,
 };
+use timeboost_core::types::test::net::Star;
 use tokio::{
     sync::oneshot::{self, Receiver, Sender},
     task::JoinSet,
@@ -20,7 +21,6 @@ pub struct MemoryNetworkTest {
     shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
     shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    coordinators: JoinSet<ShutdownToken>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
 }
 
@@ -39,11 +39,16 @@ impl MemoryNetworkTest {
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             outcomes,
             event_logs,
-            coordinators: JoinSet::new(),
         }
     }
+}
 
-    pub async fn init(&mut self) -> (Vec<Coordinator>, Star<Vec<u8>>) {
+impl NetworkTest for MemoryNetworkTest {
+    type Node = Coordinator;
+    type Network = Star<Vec<u8>>;
+    type Shutdown = ShutdownToken;
+
+    async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
         // This is intentionally *not* a member of the struct due to `run` consuming
         // the instance.
         let mut net = Star::new();
@@ -69,19 +74,27 @@ impl MemoryNetworkTest {
             coordinators.push(co);
         }
 
-        (coordinators, net)
+        (coordinators, vec![net])
     }
 
-    pub async fn start(&mut self, cos_and_net: (Vec<Coordinator>, Star<Vec<u8>>)) {
-        let (coordinators, net) = cos_and_net;
+    async fn start(
+        &mut self,
+        nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
+    ) -> JoinSet<Self::Shutdown> {
+        let mut co_handles = JoinSet::new();
+        // There's always only one network for the memory network test.
+        let (coordinators, mut nets) = nodes_and_networks;
         for co in coordinators {
-            self.coordinators.spawn(co.go());
+            co_handles.spawn(co.go());
         }
 
+        let net = nets.pop().expect("memory network to be present");
         tokio::spawn(net.run());
+
+        co_handles
     }
 
-    pub async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
+    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
         let mut statuses =
             HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
         for (node_id, conditions) in self.outcomes.iter() {
@@ -106,10 +119,10 @@ impl MemoryNetworkTest {
         statuses
     }
 
-    pub async fn shutdown(self) {
+    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
         for send in self.shutdown_txs.into_values() {
             let _ = send.send(ShutdownToken::new());
         }
-        self.coordinators.join_all().await;
+        handles.join_all().await;
     }
 }

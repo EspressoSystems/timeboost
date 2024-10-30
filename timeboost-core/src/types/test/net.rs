@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::iter;
 
+use crate::traits::comm::Comm;
+use crate::types::PublicKey;
 use async_trait::async_trait;
 use hotshot::traits::NetworkError;
-use sailfish::comm::Comm;
-use timeboost_core::types::PublicKey;
 use tokio::sync::mpsc;
 
 /// Network with star topology.
@@ -137,6 +137,25 @@ impl<T: Clone> Star<T> {
         for id in to_remove {
             self.members.remove(&id);
         }
+    }
+}
+
+#[async_trait]
+impl Comm for Star<Vec<u8>> {
+    type Err = NetworkError;
+
+    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+        self.broadcast(msg);
+        Ok(())
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+        self.send(to, msg)
+            .map_err(|_| NetworkError::ChannelSendError("Star network failed to send".to_string()))
+    }
+
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+        Ok(self.recv().await.data().to_vec())
     }
 }
 
