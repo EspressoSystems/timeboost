@@ -40,7 +40,7 @@ async fn test_simple_network_genesis() {
 
     tokio::spawn(net.run());
 
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Get the events from each stream
     for log in event_logs.iter() {

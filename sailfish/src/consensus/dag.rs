@@ -1,29 +1,32 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, num::NonZeroUsize};
 
-use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
+use timeboost_core::types::{
+    round_number::RoundNumber,
+    vertex::{Vertex, VertexId},
+    PublicKey,
+};
 
 #[derive(Debug)]
 pub struct Dag {
     elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
-}
-
-impl Default for Dag {
-    fn default() -> Self {
-        Self::new()
-    }
+    max_keys: NonZeroUsize,
 }
 
 impl Dag {
-    pub fn new() -> Self {
+    pub fn new(max_keys: NonZeroUsize) -> Self {
         Self {
             elements: BTreeMap::new(),
+            max_keys,
         }
     }
 
     pub fn add(&mut self, v: Vertex) {
+        debug_assert!(!self.contains(v.id()));
         let r = v.round();
         let s = v.source();
-        self.elements.entry(r).or_default().insert(*s, v);
+        let m = self.elements.entry(r).or_default();
+        debug_assert!(m.len() < self.max_keys.get());
+        m.insert(*s, v);
     }
 
     pub fn depth(&self) -> usize {
@@ -32,6 +35,13 @@ impl Dag {
 
     pub fn max_round(&self) -> Option<RoundNumber> {
         self.elements.keys().max().cloned()
+    }
+
+    pub fn contains(&self, v: &VertexId) -> bool {
+        self.elements
+            .get(&v.round())
+            .map(|m| m.contains_key(v.source()))
+            .unwrap_or(false)
     }
 
     pub fn vertices_from(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {

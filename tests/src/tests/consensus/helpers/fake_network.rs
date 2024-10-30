@@ -1,5 +1,8 @@
 use sailfish::consensus::{Consensus, Dag};
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
+};
 use timeboost_core::types::{
     message::{Action, Message},
     round_number::RoundNumber,
@@ -28,12 +31,17 @@ impl FakeNetwork {
 
     pub(crate) fn start(&mut self) {
         let mut next = Vec::new();
+        let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for (_pub_key, (node, _)) in self.nodes.iter_mut() {
-            for a in node.go(Dag::new()) {
+            for a in node.go(Dag::new(committee_size)) {
                 Self::handle_action(node.id(), a, &mut next)
             }
         }
         self.dispatch(next)
+    }
+
+    pub(crate) fn consensus(&self) -> impl Iterator<Item = &Consensus> {
+        self.nodes.values().map(|(c, _)| c)
     }
 
     pub(crate) fn current_round(&self) -> RoundNumber {
@@ -50,6 +58,18 @@ impl FakeNetwork {
             .map(|(node, _)| node.committee().leader(round))
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {
+        let key = self
+            .nodes
+            .values()
+            .next()
+            .expect("at least one node exists")
+            .0
+            .committee()
+            .leader(round);
+        self.consensus().find(|c| c.public_key() == &key).unwrap()
     }
 
     /// Process the current message on the queue
