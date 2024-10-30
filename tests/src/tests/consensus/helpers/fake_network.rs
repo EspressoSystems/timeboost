@@ -1,6 +1,6 @@
 use sailfish::consensus::{Consensus, Dag};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     num::NonZeroUsize,
 };
 use timeboost_core::types::{
@@ -10,7 +10,11 @@ use timeboost_core::types::{
 };
 use tracing::info;
 
-use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
+use super::{
+    action_validator::{ActionTaken, ConsensusValidator, ProcessedState},
+    interceptor::Interceptor,
+    test_helpers::create_timeout_vote_action,
+};
 
 /// Mock the network
 pub struct FakeNetwork {
@@ -34,7 +38,7 @@ impl FakeNetwork {
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for (_pub_key, (node, _)) in self.nodes.iter_mut() {
             for a in node.go(Dag::new(committee_size)) {
-                Self::handle_action(node.id(), a, &mut next)
+                Self::handle_action(node.id(), a, &mut next);
             }
         }
         self.dispatch(next)
@@ -74,14 +78,27 @@ impl FakeNetwork {
 
     /// Process the current message on the queue
     /// Push the next messages after processing
-    pub(crate) fn process(&mut self) {
+    pub(crate) fn process(&mut self, expected: Option<HashSet<ActionTaken>>) {
         let mut next_msgs = Vec::new();
+        let validator = if let Some(e) = expected {
+            ConsensusValidator::new(e)
+        } else {
+            ConsensusValidator::default()
+        };
+
         for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
+            let mut actions_taken = HashSet::new();
             while let Some(msg) = queue.pop_front() {
                 for a in Self::handle_message(node, msg, &self.msg_interceptor, queue) {
-                    Self::handle_action(node.id(), a, &mut next_msgs)
+                    let action = Self::handle_action(node.id(), a, &mut next_msgs);
+                    actions_taken.insert(action);
                 }
             }
+            let leader = node.committee().leader(node.round());
+            validator.validate_state(
+                ProcessedState::new(node.id(), node.round(), actions_taken),
+                leader == *node.public_key(),
+            );
         }
         self.dispatch(next_msgs);
     }
@@ -135,7 +152,7 @@ impl FakeNetwork {
         interceptor: &Interceptor,
         queue: &mut VecDeque<Message>,
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node.committee(), queue);
+        let msgs = interceptor.intercept_message(msg, node, queue);
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));
@@ -159,23 +176,41 @@ impl FakeNetwork {
         }
     }
 
-    fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
-        let msg = match a {
+    fn handle_action(
+        node: NodeId,
+        a: Action,
+        msgs: &mut Vec<(Option<PublicKey>, Message)>,
+    ) -> ActionTaken {
+        let action_taken: ActionTaken;
+        let msg: (Option<PublicKey>, Message) = match a {
             Action::ResetTimer(_) => {
                 // TODO
                 info!(%node, "reset timer");
-                return;
+                return ActionTaken::ResetTimer;
             }
             Action::Deliver(_b, r, src) => {
                 // TODO
                 info!(%node, %r, %src, "deliver");
-                return;
+                return ActionTaken::Deliver;
             }
-            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
-            Action::SendProposal(e) => (None, Message::Vertex(e.cast())),
-            Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
-            Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
+            Action::SendNoVote(to, e) => {
+                action_taken = ActionTaken::SendNoVote;
+                (Some(to), Message::NoVote(e.cast()))
+            }
+            Action::SendProposal(e) => {
+                action_taken = ActionTaken::SendProposal;
+                (None, Message::Vertex(e.cast()))
+            }
+            Action::SendTimeout(e) => {
+                action_taken = ActionTaken::SendTimeout;
+                (None, Message::Timeout(e.cast()))
+            }
+            Action::SendTimeoutCert(c) => {
+                action_taken = ActionTaken::SendTimeoutCert;
+                (None, Message::TimeoutCert(c))
+            }
         };
-        msgs.push(msg)
+        msgs.push(msg);
+        action_taken
     }
 }

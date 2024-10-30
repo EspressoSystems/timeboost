@@ -1,18 +1,19 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
+use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
 use timeboost_core::logging;
-use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::Signature;
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
+use crate::tests::consensus::helpers::action_validator::ActionTaken;
+use crate::tests::consensus::helpers::test_helpers::create_timeout_vote;
 use crate::{
     tests::consensus::helpers::{
         fake_network::FakeNetwork,
         interceptor::Interceptor,
         test_helpers::{
-            create_timeout_certificate_msg, create_vertex_proposal_msg, create_vote,
-            make_consensus_nodes,
+            create_timeout_certificate_msg, create_vertex_proposal_msg, make_consensus_nodes,
         },
     },
     SEED,
@@ -30,8 +31,8 @@ async fn test_timeout_round_and_no_vote() {
     network.start();
 
     // Process 2 rounds
-    network.process();
-    network.process();
+    network.process(None);
+    network.process(None);
 
     // No timeout messages expected:
     assert!(network
@@ -48,7 +49,8 @@ async fn test_timeout_round_and_no_vote() {
         .all(|c| c.timeout_accumulators().is_empty()));
 
     // Process timeout (create TC)
-    network.process();
+    let expected = HashSet::from([ActionTaken::SendTimeout, ActionTaken::SendTimeoutCert]);
+    network.process(Some(expected));
 
     // Some nodes should have received timeout messages.
     assert!(network
@@ -56,13 +58,125 @@ async fn test_timeout_round_and_no_vote() {
         .any(|c| !c.timeout_accumulators().is_empty()));
 
     // Process no vote msgs
-    network.process();
+    network.process(None);
 
     // Leader send vertex with no vote certificate and timeout certificate
-    network.process();
+    network.process(None);
 
     // After the NVC has been created, the no-vote accumulator is empty.
     assert!(network.leader(round).no_vote_accumulator().votes() == 0);
+
+    // Everyone moved to the next round, so timeout accumulators should be empty again.
+    assert!(network
+        .consensus()
+        .all(|c| c.timeout_accumulators().is_empty()));
+
+    let nodes_msgs = network.msgs_in_queue();
+
+    // Ensure we have messages from all nodes
+    assert_eq!(nodes_msgs.len() as u64, num_nodes);
+
+    for (_id, msgs) in nodes_msgs {
+        if let Some(Message::Vertex(vertex)) = msgs.front() {
+            let data = vertex.data();
+
+            // Assert that no_vote_cert and timeout_cert are present
+            assert!(
+                data.no_vote_cert().is_some(),
+                "No vote certificate should be present."
+            );
+            assert!(
+                data.timeout_cert().is_some(),
+                "Timeout certificate should be present."
+            );
+
+            // Ensure the vertex is from the leader
+            let expected_leader = network.leader_for_round(data.round());
+            assert!(
+                *vertex.signing_key() == expected_leader,
+                "Vertex should be signed by the leader."
+            );
+        } else {
+            panic!("Expected a vertex message, but got none or a different type.");
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_timeout_round_and_no_vote_2() {
+    logging::init_logging();
+    let num_nodes = 4;
+    let nodes = make_consensus_nodes(num_nodes);
+
+    let timeout_at_round = RoundNumber::new(2);
+
+    let interceptor = Interceptor::new(
+        move |msg: &Message, node: &mut Consensus, queue: &mut VecDeque<Message>| {
+            if let Message::Vertex(v) = msg {
+                if *v.signing_key() == node.committee().leader(v.data().round()) {
+                    if queue.is_empty() {
+                        let e = create_timeout_vote(
+                            msg.round(),
+                            *node.public_key(),
+                            node.private_key(),
+                        );
+                        return vec![Message::Timeout(e.cast())];
+                    }
+                    return vec![];
+                }
+            }
+            if queue.is_empty() {
+                let mut msgs = Vec::new();
+                for node_id in 0..num_nodes {
+                    let keys = generate_key_pair(SEED, node_id);
+                    let e = create_timeout_vote(msg.round(), keys.1, &keys.0);
+                    let msg = Message::Timeout(e.cast());
+                    msgs.push(msg);
+                }
+                return msgs;
+            }
+            vec![msg.clone()]
+        },
+        timeout_at_round,
+    );
+
+    let mut network = FakeNetwork::new(nodes, interceptor);
+
+    network.start();
+
+    // Process 2 rounds
+    network.process(None);
+    network.process(None);
+
+    // No timeout messages expected:
+    assert!(network
+        .consensus()
+        .all(|c| c.timeout_accumulators().is_empty()));
+
+    network.process(None);
+
+    // No timeout messages expected:
+    // assert!(network
+    //     .consensus()
+    //     .all(|c| c.timeout_accumulators().is_empty()));
+
+    // Process timeout (create TC)
+    let expected = HashSet::from([ActionTaken::SendTimeout, ActionTaken::SendTimeoutCert]);
+    network.process(Some(expected));
+
+    // Some nodes should have received timeout messages.
+    assert!(network
+        .consensus()
+        .any(|c| !c.timeout_accumulators().is_empty()));
+
+    // Process no vote msgs
+    network.process(None);
+
+    // Leader send vertex with no vote certificate and timeout certificate
+    network.process(None);
+
+    // After the NVC has been created, the no-vote accumulator is empty.
+    // assert!(network.leader(round).no_vote_accumulator().votes() == 0);
 
     // Everyone moved to the next round, so timeout accumulators should be empty again.
     assert!(network
@@ -109,13 +223,13 @@ async fn test_multi_round_consensus() {
 
     let mut network = FakeNetwork::new(nodes, Interceptor::default());
     network.start();
-    network.process();
+    network.process(None);
 
     let mut round = RoundNumber::genesis();
 
     // Spin the test for some rounds.
     while *round < 10 {
-        network.process();
+        network.process(None);
         round = network.current_round();
     }
 
@@ -136,7 +250,7 @@ async fn test_invalid_vertex_signatures() {
     let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
+        move |msg: &Message, _node: &mut Consensus, _queue: &mut VecDeque<Message>| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
                 let new_keys = generate_key_pair(SEED, invalid_node_id);
@@ -156,13 +270,13 @@ async fn test_invalid_vertex_signatures() {
 
     let mut network = FakeNetwork::new(nodes, interceptor);
     network.start();
-    network.process();
+    network.process(None);
 
     // Spin the test for some rounds, progress should stop at `invalid_msg_at_round`
     // but go for some extra cycles
     let mut i = 0;
     while i < *invalid_msg_at_round + 5 {
-        network.process();
+        network.process(None);
         i += 1;
     }
 
@@ -184,7 +298,7 @@ async fn test_invalid_timeout_certificate() {
     let invalid_msg_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
+        move |msg: &Message, node: &mut Consensus, queue: &mut VecDeque<Message>| {
             if let Message::Vertex(e) = msg {
                 // Generate keys for invalid nodes (nodes that are not in stake table)
                 // And create a timeout certificate from them
@@ -194,7 +308,11 @@ async fn test_invalid_timeout_certificate() {
                 for i in 0..num_nodes {
                     let fake_node_id = i + invalid_node_id;
                     let new_keys = generate_key_pair(SEED, fake_node_id);
-                    timeout = Some(create_vote(e.data().round(), new_keys.1, &new_keys.0));
+                    timeout = Some(create_timeout_vote(
+                        e.data().round(),
+                        new_keys.1,
+                        &new_keys.0,
+                    ));
                     signers.0.set(i as usize, true);
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
@@ -205,12 +323,16 @@ async fn test_invalid_timeout_certificate() {
                 // End of queue should be leader vertex inject process the certificate first
                 if queue.is_empty() {
                     return vec![
-                        create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
+                        create_timeout_certificate_msg(
+                            timeout.unwrap(),
+                            &signers,
+                            node.committee(),
+                        ),
                         msg.clone(),
                     ];
                 }
                 // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
-                if *e.signing_key() == committee.leader(e.data().round()) {
+                if *e.signing_key() == node.committee().leader(e.data().round()) {
                     queue.push_back(msg.clone());
                     return vec![];
                 }
@@ -229,7 +351,8 @@ async fn test_invalid_timeout_certificate() {
     let mut i = 0;
     let rounds = 7;
     while i < 7 {
-        network.process();
+        // only the default actions should be hit
+        network.process(None);
         for (_id, msgs) in network.msgs_in_queue() {
             for msg in msgs {
                 match msg {

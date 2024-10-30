@@ -15,7 +15,7 @@ use timeboost_core::types::{
     NodeId, PrivateKey, PublicKey, Signature,
 };
 pub(crate) type MessageModifier =
-    Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
+    Box<dyn Fn(&Message, &mut Consensus, &mut VecDeque<Message>) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
@@ -36,7 +36,7 @@ pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)
         .collect()
 }
 
-pub(crate) fn create_vote(
+pub(crate) fn create_timeout_vote(
     round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
@@ -50,7 +50,7 @@ pub(crate) fn create_timeout_vote_action(
     pub_key: PublicKey,
     private_key: &PrivateKey,
 ) -> Action {
-    let e = create_vote(timeout_round, pub_key, private_key);
+    let e = create_timeout_vote(timeout_round, pub_key, private_key);
     Action::SendTimeout(e)
 }
 
