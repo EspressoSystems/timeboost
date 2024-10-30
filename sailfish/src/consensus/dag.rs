@@ -26,6 +26,10 @@ impl Dag {
         self.elements.entry(r).or_default().insert(*s, v);
     }
 
+    pub fn depth(&self) -> usize {
+        self.elements.len()
+    }
+
     pub fn max_round(&self) -> Option<RoundNumber> {
         self.elements.keys().max().cloned()
     }
