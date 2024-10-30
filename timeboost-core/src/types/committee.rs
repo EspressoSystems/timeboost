@@ -47,7 +47,7 @@ impl StaticCommittee {
 
     /// Get the quorum size for the committee
     pub fn quorum_size(&self) -> NonZeroU64 {
-        let q = (self.size() * 2).div(3) + 1;
+        let q = self.size() * 2 / 3 + 1;
         NonZeroU64::new(q as u64).expect("ceil(2n/3) with n > 0 never gives 0")
     }
 
