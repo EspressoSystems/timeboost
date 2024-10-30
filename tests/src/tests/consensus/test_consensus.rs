@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{
     consensus::committee::StaticCommittee,
@@ -113,7 +115,7 @@ async fn test_invalid_vertex_signatures() {
     let invalid_msg_at_round = ViewNumber::new(5);
 
     let interceptor = Interceptor::new(
-        Box::new(move |msg: &Message, _committee: &StaticCommittee| {
+        Box::new(move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
                 let new_keys = generate_key_pair(SEED, invalid_node_id);
@@ -161,10 +163,10 @@ async fn test_invalid_timeout_certificate() {
     let invalid_msg_at_round = ViewNumber::new(3);
 
     let interceptor = Interceptor::new(
-        Box::new(move |msg: &Message, committee: &StaticCommittee| {
+        Box::new(move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
             if let Message::Vertex(e) = msg {
                 // Generate keys for invalid nodes (nodes that are not in stake table)
-                // And create a certificate from them
+                // And create a timeout certificate from them
                 let mut signers: (BitVec, Vec<Signature>) =
                     (bitvec![0; num_nodes as usize], Vec::new());
                 let mut timeout = None;
@@ -176,17 +178,22 @@ async fn test_invalid_timeout_certificate() {
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
 
-                // Process current message and the invalid certificate
-                // We should discard the message with the invalid certificate in consensus
-                // And never broadcast a vertex with a timeout certificate
-                vec![
-                    msg.clone(),
-                    create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
-                ]
-            } else {
-                // if not vertex leave msg alone
-                vec![msg.clone()]
+                // Process current message this should be the leader vertex and the invalid certificate
+                // We should discard the message with the invalid certificate in `handle_timeout_cert` since the signers are invalid
+                // And never broadcast a vertex with a timeout certificate and send a no vote message
+                // End of queue should be leader vertex inject process the certificate first
+                if queue.len() == 0 {
+                    return vec![create_timeout_certificate_msg(timeout.unwrap(), &signers, committee), msg.clone()];
+                }
+                // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
+                if *e.signing_key() == committee.leader(e.data().round()) {
+                    queue.push_back(msg.clone());
+                    return vec![];
+                }
             }
+
+            // Everthing else handle as normal
+            vec![msg.clone()]
         }),
         invalid_msg_at_round,
     );
@@ -201,11 +208,14 @@ async fn test_invalid_timeout_certificate() {
         network.process();
         for (_id, msgs) in network.msgs_in_queue() {
             for msg in msgs {
-                if let Message::Vertex(vertex) = msg {
-                    assert!(
-                        vertex.data().timeout_cert().is_none(),
-                        "We should never receive a vertex with a timeout certificate"
-                    );
+                match msg {
+                    Message::Vertex(v) => {
+                        assert!(v.data().timeout_cert().is_none(), "We should never have a timeout cert in a message");
+                    }
+                    Message::NoVote(_nv) => {
+                        panic!("We should never process a no vote message");
+                    }
+                    _ => {}
                 }
             }
         }

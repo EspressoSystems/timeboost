@@ -60,7 +60,7 @@ impl FakeNetwork {
         let mut next_msgs = Vec::new();
         for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
             while let Some(msg) = queue.pop_front() {
-                for a in Self::handle_message(node, msg, &self.msg_interceptor) {
+                for a in Self::handle_message(node, msg, &self.msg_interceptor, queue) {
                     Self::handle_action(node.id(), a, &mut next_msgs)
                 }
             }
@@ -115,8 +115,9 @@ impl FakeNetwork {
         node: &mut Consensus,
         msg: Message,
         interceptor: &Interceptor,
+        queue: &mut VecDeque<Message>
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node.committe());
+        let msgs = interceptor.intercept_message(msg, node.committe(), queue);
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));

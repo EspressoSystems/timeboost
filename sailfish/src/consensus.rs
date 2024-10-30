@@ -393,6 +393,7 @@ impl Consensus {
                 r     = %round,
                 "received invalid certificate"
             );
+            return actions;
         }
 
         if self.dag.vertex_count(round) as u64 >= self.committee.success_threshold().get() {

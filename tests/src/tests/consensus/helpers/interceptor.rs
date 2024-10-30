@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use sailfish::{consensus::committee::StaticCommittee, types::message::Message};
 
@@ -21,10 +23,11 @@ impl Interceptor {
         &self,
         msg: Message,
         committe: &StaticCommittee,
+        queue: &mut VecDeque<Message>
     ) -> Vec<Message> {
         let round = msg.round();
         if self.modify_at_round == round {
-            let new_msg = (self.msg_modifier)(&msg, committe);
+            let new_msg = (self.msg_modifier)(&msg, committe, queue);
             return new_msg;
         }
 
@@ -36,7 +39,7 @@ impl Default for Interceptor {
     fn default() -> Self {
         Self {
             modify_at_round: ViewNumber::new(0),
-            msg_modifier: Box::new(|msg: &Message, _committee: &StaticCommittee| vec![msg.clone()]),
+            msg_modifier: Box::new(|msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| vec![msg.clone()]),
         }
     }
 }

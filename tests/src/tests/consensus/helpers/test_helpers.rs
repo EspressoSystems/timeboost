@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
@@ -15,7 +17,7 @@ use sailfish::types::{
 };
 use sailfish::types::{NodeId, PrivateKey, Signature};
 
-pub(crate) type MessageModifier = Box<dyn Fn(&Message, &StaticCommittee) -> Vec<Message>>;
+pub(crate) type MessageModifier = Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
