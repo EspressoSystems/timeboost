@@ -347,7 +347,7 @@ impl Consensus {
         }
 
         // Have we received more than f timeouts?
-        if accum.votes() as u64 == self.committee.failure_threshold().get() {
+        if accum.votes() as u64 == self.committee.threshold().get() + 1 {
             let e = Envelope::signed(Timeout::new(round), &self.private_key, self.public_key);
             actions.push(Action::SendTimeout(e))
         }
