@@ -97,7 +97,7 @@ impl Coordinator {
 
         tracing::info!(id = %self.id, "Starting coordinator");
         // TODO: Restart behavior
-        for action in self.consensus.go(Dag::new()) {
+        for action in self.consensus.go(Dag::new(self.consensus.committee_size())) {
             self.on_action(action, &mut timer).await;
         }
 
