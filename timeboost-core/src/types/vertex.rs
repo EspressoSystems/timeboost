@@ -18,6 +18,13 @@ pub struct VertexId {
 }
 
 impl VertexId {
+    pub fn new(r: RoundNumber, s: PublicKey) -> Self {
+        Self {
+            round: r,
+            source: s,
+        }
+    }
+
     pub fn round(&self) -> RoundNumber {
         self.round
     }
