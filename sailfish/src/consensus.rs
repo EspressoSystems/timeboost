@@ -3,6 +3,7 @@ use std::mem;
 
 use timeboost_core::types::block::Block;
 use timeboost_core::types::round_number::RoundNumber;
+use timeboost_core::types::vertex::VertexId;
 use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
 
@@ -97,7 +98,7 @@ impl Consensus {
     }
 
     #[cfg(feature = "test")]
-    pub fn committe(&self) -> &StaticCommittee {
+    pub fn committee(&self) -> &StaticCommittee {
         &self.committee
     }
 
@@ -148,7 +149,8 @@ impl Consensus {
         buffered  = %self.buffer.len(),
         delivered = %self.delivered.len(),
         leaders   = %self.leader_stack.len(),
-        timeouts  = %self.timeouts.len())
+        timeouts  = %self.timeouts.len(),
+        dag       = %self.dag.depth())
     )]
     pub fn handle_message(&mut self, m: Message) -> Vec<Action> {
         match m {
@@ -287,7 +289,7 @@ impl Consensus {
         }
 
         // certificate is formed when we have 2f + 1 votes added to accumulator
-        if self.no_votes.certificate().is_some() {
+        if let Some(nc) = self.no_votes.certificate().cloned() {
             // we need to reset round timer and broadcast vertex with timeout certificate and no vote certificate
             let Some(tc) = self
                 .timeouts
@@ -304,7 +306,7 @@ impl Consensus {
                 return actions;
             };
 
-            actions.extend(self.advance_leader_with_no_vote_certificate(round, tc));
+            actions.extend(self.advance_leader_with_no_vote_certificate(round, tc, nc));
         }
 
         actions
@@ -447,20 +449,22 @@ impl Consensus {
 
         // As leader of the next round we need to wait for > 2f no-votes of the current round
         // since we have no leader vertex.
-        actions.extend(self.advance_leader_with_no_vote_certificate(round, tc));
-        actions
-    }
-
-    fn advance_leader_with_no_vote_certificate(
-        &mut self,
-        round: RoundNumber,
-        tc: Certificate<Timeout>,
-    ) -> Vec<Action> {
-        let mut actions = Vec::new();
         let Some(nc) = self.no_votes.certificate().cloned() else {
             return actions;
         };
 
+        actions.extend(self.advance_leader_with_no_vote_certificate(round, tc, nc));
+        actions
+    }
+
+    #[instrument(level = "trace", skip(self, tc, nc), fields(node = %self.id, round = %self.round))]
+    fn advance_leader_with_no_vote_certificate(
+        &mut self,
+        round: RoundNumber,
+        tc: Certificate<Timeout>,
+        nc: Certificate<NoVote>,
+    ) -> Vec<Action> {
+        let mut actions = Vec::new();
         self.round = round + 1;
         actions.push(Action::ResetTimer(self.round));
         let NewVertex(mut v) = self.create_new_vertex(self.round);
@@ -471,7 +475,7 @@ impl Consensus {
     }
 
     /// Add a new vertex to the DAG and send it as a proposal to nodes.
-    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
         let mut actions = Vec::new();
@@ -643,10 +647,8 @@ impl Consensus {
             return false;
         }
 
-        if let Some(l) = self.leader_vertex(v.round() - 1) {
-            if v.has_strong_edge(l.id()) {
-                return true;
-            }
+        if v.has_strong_edge(&self.leader_vertex_id(v.round() - 1)) {
+            return true;
         }
 
         let Some(tcert) = v.timeout_cert() else {
@@ -655,6 +657,7 @@ impl Consensus {
                 round  = %self.round,
                 vround = %v.round(),
                 vsrc   = %v.source(),
+                leader = %self.leader_vertex(v.round() - 1).is_some(),
                 "vertex has no strong path to leader vertex and no timeout certificate"
             );
             return false;
@@ -724,5 +727,9 @@ impl Consensus {
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
         self.dag.vertex(r, &self.committee.leader(r))
+    }
+
+    fn leader_vertex_id(&self, r: RoundNumber) -> VertexId {
+        VertexId::new(r, self.committee.leader(r))
     }
 }
