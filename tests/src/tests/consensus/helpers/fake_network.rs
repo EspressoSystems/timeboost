@@ -40,6 +40,10 @@ impl FakeNetwork {
         self.dispatch(next)
     }
 
+    pub(crate) fn consensus(&self) -> impl Iterator<Item = &Consensus> {
+        self.nodes.values().map(|(c, _)| c)
+    }
+
     pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
@@ -54,6 +58,18 @@ impl FakeNetwork {
             .map(|(node, _)| node.committe().leader(round))
             .max()
             .unwrap()
+    }
+
+    pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {
+        let key = self
+            .nodes
+            .values()
+            .next()
+            .expect("at least one node exists")
+            .0
+            .committe()
+            .leader(round);
+        self.consensus().find(|c| c.public_key() == &key).unwrap()
     }
 
     /// Process the current message on the queue

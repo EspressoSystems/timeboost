@@ -88,6 +88,10 @@ impl Consensus {
         }
     }
 
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
@@ -111,8 +115,13 @@ impl Consensus {
     }
 
     #[cfg(feature = "test")]
-    pub fn id(&self) -> NodeId {
-        self.id
+    pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
+        &self.no_votes
+    }
+
+    #[cfg(feature = "test")]
+    pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
+        &self.timeouts
     }
 
     pub fn add_block(&mut self, b: Block) {
