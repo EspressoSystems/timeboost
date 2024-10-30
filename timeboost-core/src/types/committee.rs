@@ -40,7 +40,7 @@ impl StaticCommittee {
     }
 
     /// Get the total number of nodes in the committee
-    pub fn total_nodes(&self) -> NonZeroUsize {
+    pub fn size(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.stake_table.len())
             .expect("`StaticCommittee::new` ensures non-empty committee")
     }
@@ -49,14 +49,14 @@ impl StaticCommittee {
         self.stake_table[*round_number as usize % self.stake_table.len()]
     }
 
-    /// Get the voting success threshold for the committee
-    pub fn success_threshold(&self) -> NonZeroU64 {
-        let t = (self.stake_table.len() * 2).div_ceil(3);
-        NonZeroU64::new(t as u64).expect("ceil(2n/3) with n > 0 never gives 0")
+    /// Get the quorum size for the committee
+    pub fn quorum_size(&self) -> NonZeroU64 {
+        let q = self.size().get() * 2 / 3 + 1;
+        NonZeroU64::new(q as u64).expect("n + 1 > 0")
     }
 
-    /// Get the voting failure threshold for the committee
-    pub fn failure_threshold(&self) -> NonZeroU64 {
+    /// Get the voting threshold for the committee
+    pub fn threshold(&self) -> NonZeroU64 {
         let t = self.stake_table.len().div_ceil(3);
         NonZeroU64::new(t as u64).expect("ceil(n/3) with n > 0 never gives 0")
     }

@@ -166,19 +166,14 @@ impl Sailfish {
     where
         C: Comm<Err = NetworkError> + Send + 'static,
     {
-        let quorum_membership = StaticCommittee::new(
+        let committee = StaticCommittee::new(
             staked_nodes
                 .iter()
                 .map(|node| node.stake_table_entry.stake_key)
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(
-            self.id,
-            self.public_key,
-            self.private_key,
-            quorum_membership,
-        );
+        let consensus = Consensus::new(self.id, self.public_key, self.private_key, committee);
 
         Coordinator::new(
             self.id,
