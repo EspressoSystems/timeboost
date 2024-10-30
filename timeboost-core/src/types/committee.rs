@@ -47,7 +47,7 @@ impl StaticCommittee {
 
     /// Get the voting success threshold for the committee
     pub fn success_threshold(&self) -> NonZeroU64 {
-        let t = (self.stake_table.len() * 2).div_ceil(3);
+        let t = (self.total_nodes() * 2).div(3) + 1;
         NonZeroU64::new(t as u64).expect("ceil(2n/3) with n > 0 never gives 0")
     }
 
