@@ -240,7 +240,7 @@ impl Consensus {
                 }
 
                 if (self.dag.vertex_count(vertex.round()) as u64)
-                    < self.committee.success_threshold().get()
+                    < self.committee.quorum_size().get()
                 {
                     return actions;
                 }
@@ -349,13 +349,13 @@ impl Consensus {
         }
 
         // Have we received more than f timeouts?
-        if accum.votes() as u64 == self.committee.failure_threshold().get() {
+        if accum.votes() as u64 == self.committee.threshold().get() + 1 {
             let e = Envelope::signed(Timeout::new(round), &self.private_key, self.public_key);
             actions.push(Action::SendTimeout(e))
         }
 
         // Have we received more than 2f timeouts?
-        if accum.votes() as u64 == self.committee.success_threshold().get() {
+        if accum.votes() as u64 == self.committee.quorum_size().get() {
             let cert = accum
                 .certificate()
                 .expect("> 2f votes => certificate is available");
@@ -395,7 +395,7 @@ impl Consensus {
             );
         }
 
-        if self.dag.vertex_count(round) as u64 >= self.committee.success_threshold().get() {
+        if self.dag.vertex_count(round) as u64 >= self.committee.quorum_size().get() {
             actions.extend(self.advance_from_round(round));
         }
 
@@ -498,7 +498,7 @@ impl Consensus {
         new.add_strong_edges(prev.map(Vertex::id).cloned());
 
         // Every vertex in our DAG has > 2f edges to the previous round:
-        debug_assert!(new.strong_edge_count() as u64 >= self.committee.success_threshold().get());
+        debug_assert!(new.strong_edge_count() as u64 >= self.committee.quorum_size().get());
 
         // Set weak edges:
         for r in (1..r.u64() - 1).rev() {
@@ -539,7 +539,7 @@ impl Consensus {
             return Ok(Vec::new());
         }
 
-        if self.dag.vertex_count(v.round()) as u64 >= self.committee.success_threshold().get() {
+        if self.dag.vertices(v.round()).count() as u64 >= self.committee.quorum_size().get() {
             // We have enough edges => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
                 debug!(
@@ -556,7 +556,7 @@ impl Consensus {
                 .vertices(v.round())
                 .filter(|v| self.dag.is_connected(v, &l, true))
                 .count() as u64
-                >= self.committee.success_threshold().get()
+                >= self.committee.quorum_size().get()
             {
                 return Ok(self.commit_leader(l));
             }
@@ -636,7 +636,7 @@ impl Consensus {
     /// no-vote certificate.
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
     fn is_valid(&self, v: &Vertex) -> bool {
-        if (v.strong_edge_count() as u64) < self.committee.success_threshold().get() {
+        if (v.strong_edge_count() as u64) < self.committee.quorum_size().get() {
             warn!(
                 node   = %self.id,
                 round  = %self.round,
