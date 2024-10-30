@@ -5,12 +5,9 @@ use timeboost_core::{
     logging,
     types::{message::Message, round_number::RoundNumber},
 };
-use tokio::time::{timeout, Duration};
 
 use crate::{
-    tests::network::{
-        internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome, TestableNetwork,
-    },
+    tests::network::{internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome},
     Group,
 };
 

@@ -1,4 +1,5 @@
-use std::{any::Any, collections::HashMap, time::Duration};
+use std::collections::HashMap;
+use std::time::Duration;
 
 use hotshot::traits::NetworkError;
 use sailfish::coordinator::CoordinatorAuditEvent;
@@ -52,7 +53,7 @@ impl TestCondition {
 }
 
 pub trait TestableNetwork {
-    type Node: Any + Send;
+    type Node: Send;
     type Network: Comm<Err = NetworkError> + Send;
     type Shutdown: Send;
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self;
