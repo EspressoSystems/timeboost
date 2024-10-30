@@ -40,7 +40,7 @@ impl Dag {
     pub fn contains(&self, v: &VertexId) -> bool {
         self.elements
             .get(&v.round())
-            .map(|m| m.contains_key(&v.source()))
+            .map(|m| m.contains_key(v.source()))
             .unwrap_or(false)
     }
 

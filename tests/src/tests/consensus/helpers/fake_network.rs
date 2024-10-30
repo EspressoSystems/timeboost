@@ -55,7 +55,7 @@ impl FakeNetwork {
     pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
-            .map(|(node, _)| node.committe().leader(round))
+            .map(|(node, _)| node.committee().leader(round))
             .max()
             .unwrap()
     }
@@ -67,7 +67,7 @@ impl FakeNetwork {
             .next()
             .expect("at least one node exists")
             .0
-            .committe()
+            .committee()
             .leader(round);
         self.consensus().find(|c| c.public_key() == &key).unwrap()
     }
@@ -107,7 +107,7 @@ impl FakeNetwork {
                     // To simulate a timeout we just drop the message with the leader vertex
                     // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
                     // And be able to propose a vertex with timeout cert
-                    if *v.signing_key() == node.committe().leader(v.data().round()) {
+                    if *v.signing_key() == node.committee().leader(v.data().round()) {
                         continue;
                     }
                 }
@@ -134,7 +134,7 @@ impl FakeNetwork {
         msg: Message,
         interceptor: &Interceptor,
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node.committe());
+        let msgs = interceptor.intercept_message(msg, node.committee());
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));
