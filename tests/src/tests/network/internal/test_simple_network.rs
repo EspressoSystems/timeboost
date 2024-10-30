@@ -8,7 +8,9 @@ use timeboost_core::{
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    tests::network::{internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome},
+    tests::network::{
+        internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome, TestableNetwork,
+    },
     Group,
 };
 
@@ -42,43 +44,7 @@ async fn test_simple_network_genesis() {
         })
         .collect();
 
-    let mut test = MemoryNetworkTest::new(group, node_outcomes);
-    let networks = test.init().await;
-    let handles = test.start(networks).await;
-
-    let mut st_interim = HashMap::new();
-    let final_statuses = match timeout(Duration::from_millis(250), async {
-        loop {
-            let statuses = test.evaluate().await;
-            st_interim = statuses.clone();
-            if !statuses.values().all(|s| *s == TestOutcome::Passed) {
-                tokio::time::sleep(Duration::from_millis(2)).await;
-                tokio::task::yield_now().await;
-            } else {
-                return statuses;
-            }
-        }
-    })
-    .await
-    {
-        Ok(statuses) => statuses,
-        Err(_) => {
-            for (node_id, status) in st_interim.iter() {
-                if *status != TestOutcome::Passed {
-                    tracing::error!("Node {} had missing status: {:?}", node_id, status);
-                }
-            }
-
-            panic!("Test timed out after 250ms")
-        }
-    };
-
-    test.shutdown(handles).await;
-
-    // Now verify all statuses are Passed
-    assert!(
-        final_statuses.values().all(|s| *s == TestOutcome::Passed),
-        "Not all nodes passed. Final statuses: {:?}",
-        final_statuses
-    );
+    NetworkTest::<MemoryNetworkTest>::new(group, node_outcomes)
+        .run()
+        .await;
 }

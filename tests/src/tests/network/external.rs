@@ -18,7 +18,7 @@ use tokio::{
 
 use crate::Group;
 
-use super::{NetworkTest, TestCondition, TestOutcome};
+use super::{TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
@@ -30,8 +30,12 @@ pub struct Libp2pNetworkTest {
     outcomes: HashMap<usize, Vec<TestCondition>>,
 }
 
-impl Libp2pNetworkTest {
-    pub fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+impl TestableNetwork for Libp2pNetworkTest {
+    type Node = Sailfish;
+    type Network = Libp2pNetwork<PublicKey>;
+    type Shutdown = ();
+
+    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (
             Vec<Sender<ShutdownToken>>,
             Vec<Receiver<ShutdownToken>>,
@@ -48,12 +52,6 @@ impl Libp2pNetworkTest {
             outcomes,
         }
     }
-}
-
-impl NetworkTest for Libp2pNetworkTest {
-    type Node = Sailfish;
-    type Network = Libp2pNetwork<PublicKey>;
-    type Shutdown = ();
 
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
         let replication_factor = NonZeroUsize::new((2 * self.group.fish.len()).div_ceil(3))

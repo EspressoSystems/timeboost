@@ -6,6 +6,8 @@ use crate::types::PublicKey;
 use async_trait::async_trait;
 use hotshot::traits::NetworkError;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot::Receiver;
+use tracing::warn;
 
 /// Network with star topology.
 ///
@@ -109,16 +111,23 @@ impl<T: Clone> Star<T> {
         iter::from_fn(|| self.inbound.try_recv().ok())
     }
 
-    pub async fn run(mut self) {
-        while let Some(event) = self.inbound.recv().await {
-            match event {
-                Event::Unicast { dest, data, .. } => {
-                    let tx = self.members.get_mut(&dest).unwrap();
-                    tx.send(data).unwrap();
-                }
-                Event::Multicast { data, .. } => {
-                    for (_, tx) in self.members.iter_mut() {
-                        tx.send(data.clone()).unwrap();
+    pub async fn run(mut self, mut shutdown_rx: Receiver<()>) {
+        loop {
+            tokio::select! { biased;
+                _ = &mut shutdown_rx => return,
+                Some(event) = self.inbound.recv() => {
+                    match event {
+                        Event::Unicast { dest, data, .. } => {
+                            let tx = self.members.get_mut(&dest).unwrap();
+                            tx.send(data).unwrap();
+                        }
+                        Event::Multicast { data, .. } => {
+                            for (_, tx) in self.members.iter_mut() {
+                                if let Err(e) = tx.send(data.clone()) {
+                                    warn!("Failed to send message to member: {:?}", e);
+                                }
+                            }
+                        }
                     }
                 }
             }
