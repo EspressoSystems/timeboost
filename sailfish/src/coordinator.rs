@@ -1,20 +1,20 @@
 use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
+    comm::Comm,
     consensus::{Consensus, Dag},
     sailfish::ShutdownToken,
-    types::{
-        comm::Comm,
-        message::{Action, Message},
-        NodeId, PublicKey,
-    },
 };
 
 use anyhow::Result;
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use hotshot::traits::NetworkError;
-use hotshot_types::data::ViewNumber;
+use timeboost_core::types::{
+    message::{Action, Message},
+    round_number::RoundNumber,
+    NodeId, PublicKey,
+};
 use tokio::{
     sync::oneshot::{self},
     time::sleep,
@@ -91,7 +91,7 @@ impl Coordinator {
     }
 
     pub async fn go(mut self) -> ShutdownToken {
-        let mut timer: BoxFuture<'static, ViewNumber> = pending().boxed();
+        let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
         // TODO: Restart behavior
@@ -146,7 +146,7 @@ impl Coordinator {
         Ok(self.consensus.handle_message(m))
     }
 
-    async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, ViewNumber>) {
+    async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, RoundNumber>) {
         match action {
             Action::ResetTimer(r) => *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed(),
             Action::Deliver(_, r, src) => trace!(%r, %src, "deliver"), // TODO

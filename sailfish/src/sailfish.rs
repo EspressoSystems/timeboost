@@ -1,8 +1,4 @@
-use crate::{
-    consensus::{committee::StaticCommittee, Consensus},
-    coordinator::Coordinator,
-    types::{comm::Comm, NodeId, PrivateKey, PublicKey},
-};
+use crate::{comm::Comm, consensus::Consensus, coordinator::Coordinator};
 
 #[cfg(feature = "test")]
 use crate::coordinator::CoordinatorAuditEvent;
@@ -32,6 +28,7 @@ use libp2p_networking::{
     reexport::Multiaddr,
 };
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use timeboost_core::types::{committee::StaticCommittee, NodeId, PrivateKey, PublicKey};
 use tokio::signal;
 use tokio::sync::oneshot;
 use tracing::{info, instrument};

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{coordinator::CoordinatorAuditEvent, types::message::Message};
-use timeboost_core::logging;
+use sailfish::coordinator::CoordinatorAuditEvent;
+use timeboost_core::{
+    logging,
+    types::{message::Message, round_number::RoundNumber},
+};
 use tokio::time::{timeout, Duration};
 
 use crate::{
@@ -26,7 +28,7 @@ async fn test_simple_network_genesis() {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Genesis Vertex from {}", node_id), move |e| {
                         if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            if v.data().id().round() == ViewNumber::genesis()
+                            if v.data().id().round() == RoundNumber::genesis()
                                 && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;

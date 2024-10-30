@@ -3,7 +3,8 @@ use std::iter;
 
 use async_trait::async_trait;
 use hotshot::traits::NetworkError;
-use sailfish::types::{comm::Comm, PublicKey};
+use sailfish::comm::Comm;
+use timeboost_core::types::PublicKey;
 use tokio::sync::mpsc;
 
 /// Network with star topology.

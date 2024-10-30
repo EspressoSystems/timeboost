@@ -1,12 +1,10 @@
 use std::collections::BTreeMap;
 
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-
-use crate::types::{vertex::Vertex, PublicKey};
+use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
 
 #[derive(Debug)]
 pub struct Dag {
-    elements: BTreeMap<ViewNumber, BTreeMap<PublicKey, Vertex>>,
+    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
 }
 
 impl Default for Dag {
@@ -28,23 +26,23 @@ impl Dag {
         self.elements.entry(r).or_default().insert(*s, v);
     }
 
-    pub fn max_round(&self) -> Option<ViewNumber> {
+    pub fn max_round(&self) -> Option<RoundNumber> {
         self.elements.keys().max().cloned()
     }
 
-    pub fn vertices_from(&self, r: ViewNumber) -> impl Iterator<Item = &Vertex> + Clone {
+    pub fn vertices_from(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
         self.elements.range(r..).flat_map(|(_, m)| m.values())
     }
 
-    pub fn vertices(&self, r: ViewNumber) -> impl Iterator<Item = &Vertex> + Clone {
+    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
         self.elements.get(&r).into_iter().flat_map(|m| m.values())
     }
 
-    pub fn vertex(&self, r: ViewNumber, l: &PublicKey) -> Option<&Vertex> {
+    pub fn vertex(&self, r: RoundNumber, l: &PublicKey) -> Option<&Vertex> {
         self.elements.get(&r)?.get(l)
     }
 
-    pub fn vertex_count(&self, r: ViewNumber) -> usize {
+    pub fn vertex_count(&self, r: RoundNumber) -> usize {
         self.elements.get(&r).map(|m| m.len()).unwrap_or(0)
     }
 
@@ -55,7 +53,7 @@ impl Dag {
         let mut current = vec![from];
         for nodes in self
             .elements
-            .range(ViewNumber::genesis()..from.round())
+            .range(RoundNumber::genesis()..from.round())
             .rev()
             .map(|e| e.1)
         {

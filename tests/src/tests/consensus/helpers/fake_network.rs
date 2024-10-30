@@ -1,12 +1,10 @@
-use hotshot_types::data::ViewNumber;
-use sailfish::{
-    consensus::{Consensus, Dag},
-    types::{
-        message::{Action, Message},
-        NodeId, PublicKey,
-    },
-};
+use sailfish::consensus::{Consensus, Dag};
 use std::collections::{HashMap, VecDeque};
+use timeboost_core::types::{
+    message::{Action, Message},
+    round_number::RoundNumber,
+    NodeId, PublicKey,
+};
 use tracing::info;
 
 use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
@@ -38,7 +36,7 @@ impl FakeNetwork {
         self.dispatch(next)
     }
 
-    pub(crate) fn current_round(&self) -> ViewNumber {
+    pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
             .map(|(node, _)| node.round())
@@ -46,7 +44,7 @@ impl FakeNetwork {
             .unwrap()
     }
 
-    pub(crate) fn leader_for_round(&self, round: ViewNumber) -> PublicKey {
+    pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
             .map(|(node, _)| node.committe().leader(round))
@@ -79,7 +77,7 @@ impl FakeNetwork {
         nodes_msgs
     }
 
-    pub(crate) fn timeout_round(&mut self, round: ViewNumber) {
+    pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
         let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
         for (node, queue) in self.nodes.values_mut() {
             let mut keep = VecDeque::new();

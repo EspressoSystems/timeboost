@@ -1,4 +1,4 @@
-use crate::consensus::committee::StaticCommittee;
+use crate::types::committee::StaticCommittee;
 use bincode::Options;
 use committable::{Commitment, Committable};
 use ethereum_types::U256;

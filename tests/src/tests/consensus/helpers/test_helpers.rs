@@ -1,20 +1,17 @@
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use hotshot_types::data::ViewNumber;
-use sailfish::consensus::committee::StaticCommittee;
 use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
-use sailfish::types::certificate::Certificate;
-use sailfish::types::envelope::{Envelope, Validated};
-use sailfish::types::message::Message;
-use sailfish::types::vertex::Vertex;
-use sailfish::types::{
-    message::{Action, Timeout},
-    PublicKey,
+use timeboost_core::types::{
+    certificate::Certificate,
+    committee::StaticCommittee,
+    envelope::{Envelope, Validated},
+    message::{Action, Message, Timeout},
+    round_number::RoundNumber,
+    vertex::Vertex,
+    NodeId, PrivateKey, PublicKey, Signature,
 };
-use sailfish::types::{NodeId, PrivateKey, Signature};
-
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &StaticCommittee) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
@@ -37,7 +34,7 @@ pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)
 }
 
 pub(crate) fn create_vote(
-    round: ViewNumber,
+    round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
 ) -> Envelope<Timeout, Validated> {
@@ -46,7 +43,7 @@ pub(crate) fn create_vote(
 }
 
 pub(crate) fn create_timeout_vote_action(
-    timeout_round: ViewNumber,
+    timeout_round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
 ) -> Action {
@@ -55,7 +52,7 @@ pub(crate) fn create_timeout_vote_action(
 }
 
 pub(crate) fn create_vertex_proposal_msg(
-    round: ViewNumber,
+    round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
 ) -> Message {

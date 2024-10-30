@@ -1,15 +1,16 @@
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{consensus::committee::StaticCommittee, types::message::Message};
+use timeboost_core::types::{
+    committee::StaticCommittee, message::Message, round_number::RoundNumber,
+};
 
 use super::test_helpers::MessageModifier;
 /// Intercept a message before a node processes it and apply transformations if any provided
 pub struct Interceptor {
     msg_modifier: MessageModifier,
-    modify_at_round: ViewNumber,
+    modify_at_round: RoundNumber,
 }
 
 impl Interceptor {
-    pub(crate) fn new(msg_modifier: MessageModifier, modify_at_round: ViewNumber) -> Self {
+    pub(crate) fn new(msg_modifier: MessageModifier, modify_at_round: RoundNumber) -> Self {
         Self {
             msg_modifier,
             modify_at_round,
@@ -35,7 +36,7 @@ impl Interceptor {
 impl Default for Interceptor {
     fn default() -> Self {
         Self {
-            modify_at_round: ViewNumber::new(0),
+            modify_at_round: RoundNumber::genesis(),
             msg_modifier: Box::new(|msg: &Message, _committee: &StaticCommittee| vec![msg.clone()]),
         }
     }

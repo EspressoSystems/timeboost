@@ -5,13 +5,12 @@ use committable::Committable;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 
-use crate::types::{
+use timeboost_core::types::{
     certificate::Certificate,
+    committee::StaticCommittee,
     envelope::{Envelope, Validated},
     PublicKey, Signature,
 };
-
-use super::committee::StaticCommittee;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {

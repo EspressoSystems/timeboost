@@ -1,10 +1,8 @@
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
-use sailfish::{
-    consensus::committee::StaticCommittee,
-    sailfish::generate_key_pair,
-    types::{message::Message, Signature},
-};
+use sailfish::sailfish::generate_key_pair;
 use timeboost_core::logging;
+use timeboost_core::types::committee::StaticCommittee;
+use timeboost_core::types::Signature;
+use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
 use crate::{
     tests::consensus::helpers::{
@@ -20,7 +18,7 @@ use crate::{
 use bitvec::{bitvec, vec::BitVec};
 
 #[tokio::test]
-async fn test_timeout_round_and_note_vote() {
+async fn test_timeout_round_and_no_vote() {
     logging::init_logging();
     let num_nodes = 4;
     let nodes = make_consensus_nodes(num_nodes);
@@ -34,7 +32,7 @@ async fn test_timeout_round_and_note_vote() {
     network.process();
 
     // Process a round without proposal from leader
-    let round = ViewNumber::new(2);
+    let round = RoundNumber::new(2);
     network.timeout_round(round);
 
     // Process timeout (create TC)
@@ -88,7 +86,7 @@ async fn test_multi_round_consensus() {
     network.start();
     network.process();
 
-    let mut round = ViewNumber::genesis();
+    let mut round = RoundNumber::genesis();
 
     // Spin the test for some rounds.
     while *round < 10 {
@@ -110,7 +108,7 @@ async fn test_invalid_vertex_signatures() {
 
     let nodes = make_consensus_nodes(num_nodes);
 
-    let invalid_msg_at_round = ViewNumber::new(5);
+    let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
         Box::new(move |msg: &Message, _committee: &StaticCommittee| {
@@ -158,7 +156,7 @@ async fn test_invalid_timeout_certificate() {
 
     let nodes = make_consensus_nodes(num_nodes);
 
-    let invalid_msg_at_round = ViewNumber::new(3);
+    let invalid_msg_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
         Box::new(move |msg: &Message, committee: &StaticCommittee| {
