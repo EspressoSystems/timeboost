@@ -41,7 +41,7 @@ async fn test_simple_network_genesis() {
         })
         .collect();
 
-    NetworkTest::<MemoryNetworkTest>::new(group, node_outcomes)
+    NetworkTest::<MemoryNetworkTest>::new(group, node_outcomes, None)
         .run()
         .await;
 }
