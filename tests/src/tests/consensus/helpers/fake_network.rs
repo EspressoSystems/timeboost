@@ -10,7 +10,10 @@ use timeboost_core::types::{
 };
 use tracing::info;
 
-use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
+use super::{
+    interceptor::Interceptor, node_instrument::TestNodeInstrument,
+    test_helpers::create_timeout_vote_action,
+};
 
 /// Mock the network
 pub struct FakeNetwork {
@@ -24,7 +27,7 @@ impl FakeNetwork {
         msg_interceptor: Interceptor,
     ) -> Self {
         Self {
-            nodes: nodes,
+            nodes,
             msg_interceptor,
         }
     }
@@ -104,36 +107,40 @@ impl FakeNetwork {
         nodes_msgs
     }
 
-    // pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
-    //     let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
-    //     for (node, queue) in self.nodes.values_mut() {
-    //         let mut keep = VecDeque::new();
-    //         while let Some(msg) = queue.pop_front() {
-    //             if let Message::Vertex(v) = msg.clone() {
-    //                 // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
-    //                 // To simulate a timeout we just drop the message with the leader vertex
-    //                 // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
-    //                 // And be able to propose a vertex with timeout cert
-    //                 if *v.signing_key() == node.committee().leader(v.data().round()) {
-    //                     continue;
-    //                 }
-    //             }
+    pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
+        let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
+        for node_instrument in self.nodes.values_mut() {
+            let mut keep = VecDeque::new();
+            while let Some(msg) = node_instrument.msg_queue.pop_front() {
+                if let Message::Vertex(v) = msg.clone() {
+                    // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
+                    // To simulate a timeout we just drop the message with the leader vertex
+                    // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
+                    // And be able to propose a vertex with timeout cert
+                    if *v.signing_key() == node_instrument.node.committee().leader(v.data().round())
+                    {
+                        continue;
+                    }
+                }
 
-    //             // Keep the message if it is not a vertex or if it is a vertex from a non-leader
-    //             keep.push_back(msg);
-    //         }
-    //         queue.extend(keep);
+                // Keep the message if it is not a vertex or if it is a vertex from a non-leader
+                keep.push_back(msg);
+            }
+            node_instrument.msg_queue.extend(keep);
 
-    //         let timeout_action =
-    //             create_timeout_vote_action(round, *node.public_key(), node.private_key());
+            let timeout_action = create_timeout_vote_action(
+                round,
+                *node_instrument.node.public_key(),
+                node_instrument.node.private_key(),
+            );
 
-    //         // Process timeout actions
-    //         Self::handle_action(node.id(), timeout_action, &mut msgs);
-    //     }
+            // Process timeout actions
+            Self::handle_action(node_instrument.node.id(), timeout_action, &mut msgs);
+        }
 
-    //     // Send out msgs
-    //     self.dispatch(msgs);
-    // }
+        // Send out msgs
+        self.dispatch(msgs);
+    }
 
     /// Handle a message, and apply any transformations as setup in the test
     fn handle_message(

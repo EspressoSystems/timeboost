@@ -9,6 +9,7 @@ use timeboost_core::types::{
 pub(crate) struct TestNodeInstrument {
     pub node: Consensus,
     pub msg_queue: VecDeque<Message>,
+    #[allow(dead_code)]
     pub assertions: BTreeMap<RoundNumber, Vec<Action>>,
 }
 
@@ -25,7 +26,7 @@ impl TestNodeInstrument {
         self.msg_queue.push_back(msg);
     }
 
-    pub fn handle_action(&self, action: Vec<Action>) {
+    pub fn handle_action(&self, _action: Vec<Action>) {
         // todo
     }
 }
