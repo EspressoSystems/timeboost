@@ -41,7 +41,7 @@ async fn test_simple_network_genesis() {
         })
         .collect();
 
-    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes)
+    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes, None)
         .run()
         .await;
 }

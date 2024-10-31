@@ -67,12 +67,18 @@ pub trait TestableNetwork {
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
+    duration: Duration,
     network: N,
 }
 
 impl<N: TestableNetwork> NetworkTest<N> {
-    pub fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    pub fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        duration: Option<Duration>,
+    ) -> Self {
         Self {
+            duration: duration.unwrap_or(Duration::from_secs(4)),
             network: N::new(group, outcomes),
         }
     }
@@ -81,10 +87,11 @@ impl<N: TestableNetwork> NetworkTest<N> {
         logging::init_logging();
 
         let nodes_and_networks = self.network.init().await;
-        let handles = self.network.start(nodes_and_networks).await;
         let mut st_interim = HashMap::new();
+        let handles = self.network.start(nodes_and_networks).await;
 
-        let final_statuses = match timeout(Duration::from_millis(250), async {
+        // Run the test, evaluating the statuses of the nodes until all have passed, or the test times out.
+        let result = timeout(self.duration, async {
             loop {
                 let statuses = self.network.evaluate().await;
                 st_interim = statuses.clone();
@@ -92,31 +99,34 @@ impl<N: TestableNetwork> NetworkTest<N> {
                     tokio::time::sleep(Duration::from_millis(2)).await;
                     tokio::task::yield_now().await;
                 } else {
-                    return statuses;
+                    break statuses;
                 }
             }
         })
-        .await
-        {
-            Ok(statuses) => statuses,
+        .await;
+
+        // Always shutdown the network.
+        self.network.shutdown(handles).await;
+
+        // Now handle the test result
+        match result {
+            Ok(st) => {
+                // We pretty much won't get here as we'd timeout before this would break and return,
+                // but we keep this check as a backstop.
+                assert!(
+                    st.values().all(|s| *s == TestOutcome::Passed),
+                    "Not all nodes passed. Final statuses: {:?}",
+                    st
+                );
+            }
             Err(_) => {
                 for (node_id, status) in st_interim.iter() {
                     if *status != TestOutcome::Passed {
                         tracing::error!("Node {} had missing status: {:?}", node_id, status);
                     }
                 }
-
-                panic!("Test timed out after 250ms")
+                panic!("Test timed out after {:?}", self.duration);
             }
         };
-
-        self.network.shutdown(handles).await;
-
-        // Now verify all statuses are Passed
-        assert!(
-            final_statuses.values().all(|s| *s == TestOutcome::Passed),
-            "Not all nodes passed. Final statuses: {:?}",
-            final_statuses
-        );
     }
 }
