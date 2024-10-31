@@ -132,11 +132,7 @@ impl Consensus {
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
-    #[instrument(
-        skip_all,
-        fields(id = %self.id, round = %self.round)
-        level="info"
-    )]
+    #[instrument(level="info", skip_all, fields(id = %self.id, round = %self.round))]
     pub fn go(&mut self, d: Dag) -> Vec<Action> {
         let r = d.max_round().unwrap_or(RoundNumber::genesis());
 
@@ -243,7 +239,8 @@ impl Consensus {
             Ok(a) => {
                 actions.extend(a);
 
-                // Since we managed to add another vertex, try to add all buffered vertices to the DAG too:
+                // Since we managed to add another vertex, try to add all buffered vertices to
+                // the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
                 for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
@@ -290,7 +287,8 @@ impl Consensus {
             return actions;
         }
 
-        // Here the no vote is sent from round r - 1 to leader in round r that is why we add 1 to round to get correct leader
+        // Here the no-vote is sent from round r - 1 to leader in round r that is why we add 1 to
+        // round to get correct leader
         if self.public_key != self.committee.leader(round + 1) {
             warn!(
                 node  = %self.id,
@@ -311,9 +309,10 @@ impl Consensus {
             return actions;
         }
 
-        // certificate is formed when we have 2f + 1 votes added to accumulator
+        // Certificate is formed when we have 2f + 1 votes added to accumulator.
         if let Some(nc) = self.no_votes.certificate().cloned() {
-            // we need to reset round timer and broadcast vertex with timeout certificate and no vote certificate
+            // We need to reset round timer and broadcast vertex with timeout certificate and
+            // no-vote certificate.
             let Some(tc) = self
                 .timeouts
                 .get_mut(&round)
@@ -324,7 +323,7 @@ impl Consensus {
                     node  = %self.id,
                     round = %self.round,
                     r     = %round,
-                    "leader received 2f + 1 no votes, but could not find a timeout certificate for the round"
+                    "leader received 2f + 1 no votes, but has no timeout certificate for the round"
                 );
                 return actions;
             };
@@ -503,7 +502,11 @@ impl Consensus {
     }
 
     /// Add a new vertex to the DAG and send it as a proposal to nodes.
-    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %v.round())
+    )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
         let mut actions = Vec::new();
@@ -545,7 +548,11 @@ impl Consensus {
     /// If all edges of the vertex point to other vertices in the DAG we add the
     /// vertex to the DAG. If we also have more than 2f vertices for the given
     /// round, we can try to commit the leader vertex of a round.
-    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %v.round())
+    )]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
         if !v
             .edges()
@@ -578,7 +585,8 @@ impl Consensus {
                 );
                 return Ok(Vec::new());
             };
-            // If enough (strong) edges to the leader of the previous round exist we can commit the leader.
+            // If enough strong edges to the leader of the previous round exist we can commit the
+            // leader vertex.
             if self
                 .dag
                 .vertices(v.round())
@@ -601,7 +609,11 @@ impl Consensus {
     /// In addition to committing the argument vertex, this will also commit leader
     /// vertices between the last previously committed leader vertex and the current
     /// leader vertex, if there is a strong path between them.
-    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %v.round())
+    )]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
         self.leader_stack.push(v.clone());
         for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
@@ -669,7 +681,11 @@ impl Consensus {
     /// vertex needs to have either a strong path to the leader vertex of the
     /// previous round, or a timeout certificate and (if from the leader) a
     /// no-vote certificate.
-    #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round, vround = %v.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.id,
+        round  = %self.round,
+        vround = %v.round())
+    )]
     fn is_valid(&self, v: &Vertex) -> bool {
         if (v.strong_edge_count() as u64) < self.committee.quorum_size().get() {
             warn!(
