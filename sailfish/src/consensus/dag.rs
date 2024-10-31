@@ -3,6 +3,7 @@ use std::{
     num::NonZeroUsize,
 };
 
+use either::Either;
 use timeboost_core::types::{
     round_number::RoundNumber,
     vertex::{Vertex, VertexId},
@@ -76,10 +77,10 @@ impl Dag {
                 return true;
             }
 
-            let edges: Box<dyn Iterator<Item = &VertexId>> = if strong_only {
-                Box::new(current.strong_edges())
+            let edges = if strong_only {
+                Either::Right(current.strong_edges())
             } else {
-                Box::new(current.strong_edges().chain(current.weak_edges()))
+                Either::Left(current.strong_edges().chain(current.weak_edges()))
             };
 
             for edge in edges {
