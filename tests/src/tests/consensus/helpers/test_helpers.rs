@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
@@ -14,12 +14,14 @@ use timeboost_core::types::{
     vertex::Vertex,
     NodeId, PrivateKey, PublicKey, Signature,
 };
+
+use super::node_instrument::TestNodeInstrument;
 pub(crate) type MessageModifier =
     Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
-pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)> {
+pub(crate) fn create_nodes(num_nodes: u64, _rounds: u64) -> HashMap<PublicKey, TestNodeInstrument> {
     let keys = (0..num_nodes)
         .map(|i| generate_key_pair(SEED, i))
         .collect::<Vec<_>>();
@@ -30,7 +32,10 @@ pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)
             let node_id = NodeId::from(i as u64);
             (
                 pub_key,
-                Consensus::new(node_id, pub_key, private_key, committee.clone()),
+                TestNodeInstrument::new(
+                    Consensus::new(node_id, pub_key, private_key, committee.clone()),
+                    BTreeMap::new(),
+                ),
             )
         })
         .collect()

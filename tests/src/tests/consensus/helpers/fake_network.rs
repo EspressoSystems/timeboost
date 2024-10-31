@@ -10,21 +10,21 @@ use timeboost_core::types::{
 };
 use tracing::info;
 
-use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
+use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
 
 /// Mock the network
 pub struct FakeNetwork {
-    pub(crate) nodes: HashMap<PublicKey, (Consensus, VecDeque<Message>)>,
+    pub(crate) nodes: HashMap<PublicKey, TestNodeInstrument>,
     msg_interceptor: Interceptor,
 }
 
 impl FakeNetwork {
-    pub(crate) fn new(nodes: Vec<(PublicKey, Consensus)>, msg_interceptor: Interceptor) -> Self {
+    pub(crate) fn new(
+        nodes: HashMap<PublicKey, TestNodeInstrument>,
+        msg_interceptor: Interceptor,
+    ) -> Self {
         Self {
-            nodes: nodes
-                .into_iter()
-                .map(|(id, n)| (id, (n, VecDeque::new())))
-                .collect(),
+            nodes: nodes,
             msg_interceptor,
         }
     }
@@ -32,22 +32,23 @@ impl FakeNetwork {
     pub(crate) fn start(&mut self) {
         let mut next = Vec::new();
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
-        for (_pub_key, (node, _)) in self.nodes.iter_mut() {
-            for a in node.go(Dag::new(committee_size)) {
-                Self::handle_action(node.id(), a, &mut next)
+        for node_instrument in self.nodes.values_mut() {
+            let node_state = &mut node_instrument.node;
+            for a in node_state.go(Dag::new(committee_size)) {
+                Self::handle_action(node_state.id(), a, &mut next)
             }
         }
         self.dispatch(next)
     }
 
     pub(crate) fn consensus(&self) -> impl Iterator<Item = &Consensus> {
-        self.nodes.values().map(|(c, _)| c)
+        self.nodes.values().map(|c| &c.node)
     }
 
     pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
-            .map(|(node, _)| node.round())
+            .map(|node_instrument| node_instrument.node.round())
             .max()
             .unwrap()
     }
@@ -55,7 +56,7 @@ impl FakeNetwork {
     pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
-            .map(|(node, _)| node.committee().leader(round))
+            .map(|node_instrument| node_instrument.node.committee().leader(round))
             .max()
             .unwrap()
     }
@@ -66,7 +67,7 @@ impl FakeNetwork {
             .values()
             .next()
             .expect("at least one node exists")
-            .0
+            .node
             .committee()
             .leader(round);
         self.consensus().find(|c| c.public_key() == &key).unwrap()
@@ -76,12 +77,18 @@ impl FakeNetwork {
     /// Push the next messages after processing
     pub(crate) fn process(&mut self) {
         let mut next_msgs = Vec::new();
-        for (_pub_key, (node, queue)) in self.nodes.iter_mut() {
-            while let Some(msg) = queue.pop_front() {
-                for a in Self::handle_message(node, msg, &self.msg_interceptor, queue) {
-                    Self::handle_action(node.id(), a, &mut next_msgs)
+        for node_instrument in self.nodes.values_mut() {
+            let state = &mut node_instrument.node;
+            let msg_queue = &mut node_instrument.msg_queue;
+            let mut actions_processed = Vec::new();
+            while let Some(msg) = msg_queue.pop_front() {
+                for a in Self::handle_message(state, msg, &self.msg_interceptor, msg_queue) {
+                    // node_instrument.handle_action(a);
+                    actions_processed.push(a.clone());
+                    Self::handle_action(state.id(), a, &mut next_msgs);
                 }
             }
+            node_instrument.handle_action(actions_processed);
         }
         self.dispatch(next_msgs);
     }
@@ -92,41 +99,41 @@ impl FakeNetwork {
         let nodes_msgs = self
             .nodes
             .values()
-            .map(|node| (node.0.id(), node.1.clone()))
+            .map(|node_instrument| (node_instrument.node.id(), node_instrument.msg_queue.clone()))
             .collect();
         nodes_msgs
     }
 
-    pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
-        let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
-        for (node, queue) in self.nodes.values_mut() {
-            let mut keep = VecDeque::new();
-            while let Some(msg) = queue.pop_front() {
-                if let Message::Vertex(v) = msg.clone() {
-                    // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
-                    // To simulate a timeout we just drop the message with the leader vertex
-                    // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
-                    // And be able to propose a vertex with timeout cert
-                    if *v.signing_key() == node.committee().leader(v.data().round()) {
-                        continue;
-                    }
-                }
+    // pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
+    //     let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
+    //     for (node, queue) in self.nodes.values_mut() {
+    //         let mut keep = VecDeque::new();
+    //         while let Some(msg) = queue.pop_front() {
+    //             if let Message::Vertex(v) = msg.clone() {
+    //                 // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
+    //                 // To simulate a timeout we just drop the message with the leader vertex
+    //                 // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
+    //                 // And be able to propose a vertex with timeout cert
+    //                 if *v.signing_key() == node.committee().leader(v.data().round()) {
+    //                     continue;
+    //                 }
+    //             }
 
-                // Keep the message if it is not a vertex or if it is a vertex from a non-leader
-                keep.push_back(msg);
-            }
-            queue.extend(keep);
+    //             // Keep the message if it is not a vertex or if it is a vertex from a non-leader
+    //             keep.push_back(msg);
+    //         }
+    //         queue.extend(keep);
 
-            let timeout_action =
-                create_timeout_vote_action(round, *node.public_key(), node.private_key());
+    //         let timeout_action =
+    //             create_timeout_vote_action(round, *node.public_key(), node.private_key());
 
-            // Process timeout actions
-            Self::handle_action(node.id(), timeout_action, &mut msgs);
-        }
+    //         // Process timeout actions
+    //         Self::handle_action(node.id(), timeout_action, &mut msgs);
+    //     }
 
-        // Send out msgs
-        self.dispatch(msgs);
-    }
+    //     // Send out msgs
+    //     self.dispatch(msgs);
+    // }
 
     /// Handle a message, and apply any transformations as setup in the test
     fn handle_message(
@@ -147,13 +154,13 @@ impl FakeNetwork {
         for m in msgs {
             match m {
                 (None, msg) => {
-                    for (_, queue) in self.nodes.values_mut() {
-                        queue.push_back(msg.clone());
+                    for node_instrument in self.nodes.values_mut() {
+                        node_instrument.add_msg(msg.clone());
                     }
                 }
                 (Some(pub_key), msg) => {
-                    let (_, queue) = self.nodes.get_mut(&pub_key).unwrap();
-                    queue.push_back(msg);
+                    let node_instrument = self.nodes.get_mut(&pub_key).unwrap();
+                    node_instrument.add_msg(msg);
                 }
             }
         }
