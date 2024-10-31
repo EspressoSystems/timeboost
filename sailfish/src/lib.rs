@@ -1,4 +1,3 @@
-pub mod comm;
 pub mod consensus;
 pub mod coordinator;
 pub mod sailfish;

@@ -7,6 +7,8 @@ pub mod error;
 pub mod event;
 pub mod message;
 pub mod round_number;
+#[cfg(feature = "test")]
+pub mod test;
 pub mod vertex;
 
 use core::fmt;
