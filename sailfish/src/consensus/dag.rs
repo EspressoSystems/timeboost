@@ -122,13 +122,11 @@ impl Dag {
     #[instrument(level = "trace", skip(self))]
     pub fn prune(&mut self, r: RoundNumber) {
         // Consider all IDs from rounds < r:
-        let candidates: HashSet<VertexId> = {
-            let ids = self
-                .elements
-                .range(RoundNumber::genesis()..r)
-                .flat_map(|(_, m)| m.values().map(|v| v.id().clone()));
-            HashSet::from_iter(ids)
-        };
+        let candidates: HashSet<VertexId> = self
+            .elements
+            .range(RoundNumber::genesis()..r)
+            .flat_map(|(_, m)| m.values().map(|v| v.id().clone()))
+            .collect();
 
         // We can remove those IDs which are not referenced from vertices in rounds >= r:
         let to_remove = self.vertices_from(r).fold(candidates, |mut set, v| {
