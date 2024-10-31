@@ -9,7 +9,7 @@ use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
-    message::{Action, Message, Timeout},
+    message::{Message, Timeout},
     round_number::RoundNumber,
     vertex::Vertex,
     NodeId, PrivateKey, PublicKey, Signature,
@@ -17,7 +17,7 @@ use timeboost_core::types::{
 
 use super::node_instrument::TestNodeInstrument;
 pub(crate) type MessageModifier =
-    Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
+    Box<dyn Fn(&Message, &mut Consensus, &mut VecDeque<Message>) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
@@ -41,7 +41,7 @@ pub(crate) fn create_nodes(num_nodes: u64, _rounds: u64) -> HashMap<PublicKey, T
         .collect()
 }
 
-pub(crate) fn create_vote(
+pub(crate) fn create_timeout_vote(
     round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
@@ -50,13 +50,13 @@ pub(crate) fn create_vote(
     Envelope::signed(data, private_key, pub_key)
 }
 
-pub(crate) fn create_timeout_vote_action(
+pub(crate) fn create_timeout_vote_msg(
     timeout_round: RoundNumber,
     pub_key: PublicKey,
     private_key: &PrivateKey,
-) -> Action {
-    let e = create_vote(timeout_round, pub_key, private_key);
-    Action::SendTimeout(e)
+) -> Message {
+    let e = create_timeout_vote(timeout_round, pub_key, private_key);
+    Message::Timeout(e.cast())
 }
 
 pub(crate) fn create_vertex_proposal_msg(

@@ -10,10 +10,7 @@ use timeboost_core::types::{
 };
 use tracing::info;
 
-use super::{
-    interceptor::Interceptor, node_instrument::TestNodeInstrument,
-    test_helpers::create_timeout_vote_action,
-};
+use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
 
 /// Mock the network
 pub struct FakeNetwork {
@@ -107,41 +104,6 @@ impl FakeNetwork {
         nodes_msgs
     }
 
-    pub(crate) fn timeout_round(&mut self, round: RoundNumber) {
-        let mut msgs: Vec<(Option<PublicKey>, Message)> = Vec::new();
-        for node_instrument in self.nodes.values_mut() {
-            let mut keep = VecDeque::new();
-            while let Some(msg) = node_instrument.msg_queue.pop_front() {
-                if let Message::Vertex(v) = msg.clone() {
-                    // TODO: Byzantine framework to simulate a dishonest leader who doesnt propose
-                    // To simulate a timeout we just drop the message with the leader vertex
-                    // We still keep the other vertices from non leader nodes so we will have 2f + 1 vertices
-                    // And be able to propose a vertex with timeout cert
-                    if *v.signing_key() == node_instrument.node.committee().leader(v.data().round())
-                    {
-                        continue;
-                    }
-                }
-
-                // Keep the message if it is not a vertex or if it is a vertex from a non-leader
-                keep.push_back(msg);
-            }
-            node_instrument.msg_queue.extend(keep);
-
-            let timeout_action = create_timeout_vote_action(
-                round,
-                *node_instrument.node.public_key(),
-                node_instrument.node.private_key(),
-            );
-
-            // Process timeout actions
-            Self::handle_action(node_instrument.node.id(), timeout_action, &mut msgs);
-        }
-
-        // Send out msgs
-        self.dispatch(msgs);
-    }
-
     /// Handle a message, and apply any transformations as setup in the test
     fn handle_message(
         node: &mut Consensus,
@@ -149,7 +111,7 @@ impl FakeNetwork {
         interceptor: &Interceptor,
         queue: &mut VecDeque<Message>,
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node.committee(), queue);
+        let msgs = interceptor.intercept_message(msg, node, queue);
         let mut actions = Vec::new();
         for msg in msgs {
             actions.extend(node.handle_message(msg));

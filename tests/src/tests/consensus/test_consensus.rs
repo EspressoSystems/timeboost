@@ -1,17 +1,19 @@
 use std::collections::VecDeque;
 
+use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
 use timeboost_core::logging;
-use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::Signature;
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
-use crate::tests::consensus::helpers::test_helpers::create_nodes;
+use crate::tests::consensus::helpers::test_helpers::{
+    create_nodes, create_timeout_vote, create_timeout_vote_msg,
+};
 use crate::{
     tests::consensus::helpers::{
         fake_network::FakeNetwork,
         interceptor::Interceptor,
-        test_helpers::{create_timeout_certificate_msg, create_vertex_proposal_msg, create_vote},
+        test_helpers::{create_timeout_certificate_msg, create_vertex_proposal_msg},
     },
     SEED,
 };
@@ -34,7 +36,6 @@ async fn test_multi_round_consensus() {
     while *round < 10 {
         network.process();
         round = network.current_round();
-        tracing::error!("rounds: {}", *round)
     }
 
     for node_instrument in network.nodes.values() {
@@ -48,7 +49,28 @@ async fn test_timeout_round_and_no_vote() {
     let num_nodes = 4;
     let nodes = create_nodes(num_nodes, 0);
 
-    let mut network = FakeNetwork::new(nodes, Interceptor::default());
+    let timeout_at_round = RoundNumber::new(2);
+
+    let interceptor = Interceptor::new(
+        move |msg: &Message, node: &mut Consensus, queue: &mut VecDeque<Message>| {
+            if let Message::Vertex(v) = msg {
+                if v.data().round() == timeout_at_round
+                    && *v.signing_key() == node.committee().leader(v.data().round())
+                {
+                    for i in 0..num_nodes {
+                        let keys = generate_key_pair(SEED, i);
+                        let msg = create_timeout_vote_msg(msg.round(), keys.1, &keys.0);
+                        queue.push_back(msg);
+                    }
+                    return vec![];
+                }
+            }
+            vec![msg.clone()]
+        },
+        timeout_at_round,
+    );
+
+    let mut network = FakeNetwork::new(nodes, interceptor);
 
     network.start();
 
@@ -61,14 +83,8 @@ async fn test_timeout_round_and_no_vote() {
         .consensus()
         .all(|c| c.timeout_accumulators().is_empty()));
 
-    // Process a round without proposal from leader
-    let round = RoundNumber::new(2);
-    network.timeout_round(round);
-
-    // No timeout messages expected:
-    assert!(network
-        .consensus()
-        .all(|c| c.timeout_accumulators().is_empty()));
+    // Process timeouts
+    network.process();
 
     // Process timeout (create TC)
     network.process();
@@ -78,14 +94,17 @@ async fn test_timeout_round_and_no_vote() {
         .consensus()
         .any(|c| !c.timeout_accumulators().is_empty()));
 
-    // Process no vote msgs
-    network.process();
-
     // Leader send vertex with no vote certificate and timeout certificate
     network.process();
 
     // After the NVC has been created, the no-vote accumulator is empty.
-    assert!(network.leader(round).no_vote_accumulator().votes() == 0);
+    assert!(
+        network
+            .leader(timeout_at_round)
+            .no_vote_accumulator()
+            .votes()
+            == 0
+    );
 
     // Everyone moved to the next round, so timeout accumulators should be empty again.
     assert!(network
@@ -135,7 +154,7 @@ async fn test_invalid_vertex_signatures() {
     let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
+        move |msg: &Message, _node: &mut Consensus, _queue: &mut VecDeque<Message>| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
                 let new_keys = generate_key_pair(SEED, invalid_node_id);
@@ -183,7 +202,7 @@ async fn test_invalid_timeout_certificate() {
     let invalid_msg_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
+        move |msg: &Message, node: &mut Consensus, queue: &mut VecDeque<Message>| {
             if let Message::Vertex(e) = msg {
                 // Generate keys for invalid nodes (nodes that are not in stake table)
                 // And create a timeout certificate from them
@@ -193,7 +212,11 @@ async fn test_invalid_timeout_certificate() {
                 for i in 0..num_nodes {
                     let fake_node_id = i + invalid_node_id;
                     let new_keys = generate_key_pair(SEED, fake_node_id);
-                    timeout = Some(create_vote(e.data().round(), new_keys.1, &new_keys.0));
+                    timeout = Some(create_timeout_vote(
+                        e.data().round(),
+                        new_keys.1,
+                        &new_keys.0,
+                    ));
                     signers.0.set(i as usize, true);
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
@@ -204,12 +227,16 @@ async fn test_invalid_timeout_certificate() {
                 // End of queue should be leader vertex inject process the certificate first
                 if queue.is_empty() {
                     return vec![
-                        create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
+                        create_timeout_certificate_msg(
+                            timeout.unwrap(),
+                            &signers,
+                            node.committee(),
+                        ),
                         msg.clone(),
                     ];
                 }
                 // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
-                if *e.signing_key() == committee.leader(e.data().round()) {
+                if *e.signing_key() == node.committee().leader(e.data().round()) {
                     queue.push_back(msg.clone());
                     return vec![];
                 }
