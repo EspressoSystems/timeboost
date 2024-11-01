@@ -535,7 +535,7 @@ impl Consensus {
         for r in (1..r.u64() - 1).rev() {
             for v in self.dag.vertices(RoundNumber::new(r)) {
                 if !self.dag.is_connected(&new, v, false) {
-                    new.add_weak_edge(v.id().clone());
+                    new.add_weak_edge(*v.id());
                 }
             }
         }

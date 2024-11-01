@@ -11,7 +11,7 @@ use super::{
 };
 use crate::types::{block::Block, round_number::RoundNumber};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct VertexId {
     round: RoundNumber,
     source: PublicKey,
