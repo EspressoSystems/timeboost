@@ -9,7 +9,7 @@ use timeboost_core::types::{
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     round_number::RoundNumber,
-    vertex::{Vertex, VertexId},
+    vertex::Vertex,
     NodeId, PrivateKey, PublicKey,
 };
 use tracing::{debug, instrument, trace, warn};
@@ -217,7 +217,7 @@ impl Consensus {
 
         let vertex = e.into_data();
 
-        if self.dag.contains(vertex.id()) {
+        if self.dag.contains(&vertex) {
             debug!(
                 node   = %self.id,
                 round  = %self.round,
@@ -526,19 +526,10 @@ impl Consensus {
 
         let mut new = Vertex::new(r, self.public_key);
         new.set_block(self.blocks.pop_front().unwrap_or_default());
-        new.add_strong_edges(prev.map(Vertex::id).cloned());
+        new.add_edges(prev.map(Vertex::source).cloned());
 
         // Every vertex in our DAG has > 2f edges to the previous round:
-        debug_assert!(new.strong_edge_count() as u64 >= self.committee.quorum_size().get());
-
-        // Set weak edges:
-        for r in (1..r.u64() - 1).rev() {
-            for v in self.dag.vertices(RoundNumber::new(r)) {
-                if !self.dag.is_connected(&new, v, false) {
-                    new.add_weak_edge(*v.id());
-                }
-            }
-        }
+        debug_assert!(new.num_edges() as u64 >= self.committee.quorum_size().get());
 
         NewVertex(new)
     }
@@ -556,13 +547,13 @@ impl Consensus {
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
         if !v
             .edges()
-            .all(|id| self.dag.vertex(id.round(), id.source()).is_some())
+            .all(|w| self.dag.vertex(v.round() - 1, w).is_some())
         {
             debug!(
                 node   = %self.id,
                 round  = %self.round,
                 vround = %v.round(),
-                "not all vertices are present in dag"
+                "not all edges are resolved in dag"
             );
             return Err(());
         }
@@ -590,7 +581,7 @@ impl Consensus {
             if self
                 .dag
                 .vertices(v.round())
-                .filter(|v| self.dag.is_connected(v, &l, true))
+                .filter(|v| self.dag.is_connected(v, &l))
                 .count() as u64
                 >= self.committee.quorum_size().get()
             {
@@ -626,7 +617,7 @@ impl Consensus {
                 }
                 continue;
             };
-            if self.dag.is_connected(&v, &l, true) {
+            if self.dag.is_connected(&v, &l) {
                 self.leader_stack.push(l.clone());
                 v = l
             }
@@ -646,13 +637,10 @@ impl Consensus {
         let mut delivered = mem::take(&mut self.delivered);
         while let Some(v) = self.leader_stack.pop() {
             // This orders vertices by round and source.
-            //
-            // TODO: Maybe we want an ordering based on the vertices themselves, i.e.
-            // independent of the committee members.
             for to_deliver in self
                 .dag
                 .vertices_from(RoundNumber::genesis() + 1)
-                .filter(|w| self.dag.is_connected(&v, w, false))
+                .filter(|w| self.dag.is_connected(&v, w))
             {
                 if delivered.contains(to_deliver) {
                     continue;
@@ -665,7 +653,7 @@ impl Consensus {
             }
         }
         self.dag.prune(self.committed_round);
-        delivered.retain(|v| self.dag.contains(v.id()));
+        delivered.retain(|v| self.dag.contains(v));
         self.delivered = delivered;
         actions
     }
@@ -689,18 +677,18 @@ impl Consensus {
         vround = %v.round())
     )]
     fn is_valid(&self, v: &Vertex) -> bool {
-        if (v.strong_edge_count() as u64) < self.committee.quorum_size().get() {
+        if (v.num_edges() as u64) < self.committee.quorum_size().get() {
             warn!(
                 node   = %self.id,
                 round  = %self.round,
                 vround = %v.round(),
                 vsrc   = %v.source(),
-                "vertex has not enough strong edges"
+                "vertex has not enough edges"
             );
             return false;
         }
 
-        if v.has_strong_edge(&self.leader_vertex_id(v.round() - 1)) {
+        if v.has_edge(&self.committee.leader(v.round() - 1)) {
             return true;
         }
 
@@ -711,7 +699,7 @@ impl Consensus {
                 vround = %v.round(),
                 vsrc   = %v.source(),
                 leader = %self.leader_vertex(v.round() - 1).is_some(),
-                "vertex has no strong path to leader vertex and no timeout certificate"
+                "vertex has no path to leader vertex and no timeout certificate"
             );
             return false;
         };
@@ -780,9 +768,5 @@ impl Consensus {
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
         self.dag.vertex(r, &self.committee.leader(r))
-    }
-
-    fn leader_vertex_id(&self, r: RoundNumber) -> VertexId {
-        VertexId::new(r, self.committee.leader(r))
     }
 }
