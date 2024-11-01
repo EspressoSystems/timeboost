@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::HashMap;
 
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
@@ -17,27 +17,40 @@ use timeboost_core::types::{
 
 use super::node_instrument::TestNodeInstrument;
 pub(crate) type MessageModifier =
-    Box<dyn Fn(&Message, &mut Consensus, &mut VecDeque<Message>) -> Vec<Message>>;
+    Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 
-pub(crate) fn create_nodes(num_nodes: u64, _rounds: u64) -> HashMap<PublicKey, TestNodeInstrument> {
-    let keys = (0..num_nodes)
+pub(crate) fn create_keys(num_nodes: u64) -> Vec<(PrivateKey, PublicKey)> {
+    (0..num_nodes)
         .map(|i| generate_key_pair(SEED, i))
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
+
+pub(crate) fn create_node_instruments(
+    keys: Vec<(PrivateKey, PublicKey)>,
+) -> Vec<TestNodeInstrument> {
     let committee = StaticCommittee::new(keys.iter().map(|(_, k)| k).cloned().collect());
     keys.into_iter()
         .enumerate()
-        .map(|(i, (private_key, pub_key))| {
-            let node_id = NodeId::from(i as u64);
-            (
+        .map(|(id, (private_key, pub_key))| {
+            let node_id = NodeId::from(id as u64);
+            TestNodeInstrument::new(Consensus::new(
+                node_id,
                 pub_key,
-                TestNodeInstrument::new(
-                    Consensus::new(node_id, pub_key, private_key, committee.clone()),
-                    BTreeMap::new(),
-                ),
-            )
+                private_key,
+                committee.clone(),
+            ))
         })
+        .collect()
+}
+
+pub(crate) fn create_nodes(num_nodes: u64) -> HashMap<PublicKey, TestNodeInstrument> {
+    let keys = create_keys(num_nodes);
+    let nodes = create_node_instruments(keys);
+    nodes
+        .into_iter()
+        .map(|node_instrument| (*node_instrument.node.public_key(), node_instrument))
         .collect()
 }
 
@@ -81,4 +94,8 @@ pub(crate) fn create_timeout_certificate_msg(
     let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
     let cert = Certificate::new(env.data().clone(), sig);
     Message::TimeoutCert(cert)
+}
+
+pub(crate) fn create_vertex(round: u64, source: PublicKey) -> Vertex {
+    Vertex::new(RoundNumber::new(round), source)
 }

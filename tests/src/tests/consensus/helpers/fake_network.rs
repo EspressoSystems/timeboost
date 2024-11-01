@@ -77,44 +77,37 @@ impl FakeNetwork {
     /// Push the next messages after processing
     pub(crate) fn process(&mut self) {
         let mut next_msgs = Vec::new();
-        for node_instrument in self.nodes.values_mut() {
-            let state = &mut node_instrument.node;
-            let msg_queue = &mut node_instrument.msg_queue;
-            let mut actions_processed = Vec::new();
-            while let Some(msg) = msg_queue.pop_front() {
-                for a in Self::handle_message(state, msg, &self.msg_interceptor, msg_queue) {
-                    // node_instrument.handle_action(a);
-                    actions_processed.push(a.clone());
-                    Self::handle_action(state.id(), a, &mut next_msgs);
+        for node_handle in self.nodes.values_mut() {
+            while let Some(msg) = node_handle.pop_msg() {
+                for a in Self::handle_message(node_handle, msg, &self.msg_interceptor) {
+                    Self::handle_action(node_handle.node.id(), a, &mut next_msgs);
                 }
             }
-            node_instrument.handle_action(actions_processed);
         }
         self.dispatch(next_msgs);
     }
 
     /// Look in each node and grab their queue of messages
     /// Used for asserting in tests to make sure outputs are expected
-    pub(crate) fn msgs_in_queue(&self) -> HashMap<NodeId, VecDeque<Message>> {
+    pub(crate) fn msgs_in_queue(&self) -> HashMap<NodeId, &VecDeque<Message>> {
         let nodes_msgs = self
             .nodes
             .values()
-            .map(|node_instrument| (node_instrument.node.id(), node_instrument.msg_queue.clone()))
+            .map(|node_instrument| (node_instrument.node.id(), node_instrument.msg_queue()))
             .collect();
         nodes_msgs
     }
 
     /// Handle a message, and apply any transformations as setup in the test
     fn handle_message(
-        node: &mut Consensus,
+        node_handle: &mut TestNodeInstrument,
         msg: Message,
         interceptor: &Interceptor,
-        queue: &mut VecDeque<Message>,
     ) -> Vec<Action> {
-        let msgs = interceptor.intercept_message(msg, node, queue);
+        let msgs = interceptor.intercept_message(msg, node_handle);
         let mut actions = Vec::new();
         for msg in msgs {
-            actions.extend(node.handle_message(msg));
+            actions.extend(node_handle.node.handle_message(msg));
         }
         actions
     }

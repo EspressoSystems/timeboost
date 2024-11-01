@@ -124,6 +124,11 @@ impl Consensus {
         &self.timeouts
     }
 
+    #[cfg(feature = "test")]
+    pub fn add_vertex_to_dag(&mut self, v: Vertex) {
+        self.dag.add(v);
+    }
+
     pub fn add_block(&mut self, b: Block) {
         self.blocks.push_back(b);
     }
@@ -218,7 +223,7 @@ impl Consensus {
         let vertex = e.into_data();
 
         if self.dag.contains(vertex.id()) {
-            debug!(
+            tracing::error!(
                 node   = %self.id,
                 round  = %self.round,
                 ours   = %(self.public_key == *vertex.source()),
