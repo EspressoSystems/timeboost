@@ -226,11 +226,7 @@ async fn test_invalid_timeout_certificate() {
                 // End of queue should be leader vertex inject process the certificate first
                 if node_handle.msg_queue().is_empty() {
                     return vec![
-                        create_timeout_certificate_msg(
-                            timeout.unwrap(),
-                            &signers,
-                            committee,
-                        ),
+                        create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
                         msg.clone(),
                     ];
                 }

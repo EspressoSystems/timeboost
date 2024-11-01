@@ -16,8 +16,7 @@ use timeboost_core::types::{
 };
 
 use super::node_instrument::TestNodeInstrument;
-pub(crate) type MessageModifier =
-    Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
+pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
 

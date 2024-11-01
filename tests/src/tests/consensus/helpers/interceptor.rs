@@ -38,11 +38,9 @@ impl Default for Interceptor {
     fn default() -> Self {
         Self {
             modify_at_round: RoundNumber::new(0),
-            msg_modifier: Box::new(
-                |msg: &Message, _node: &mut TestNodeInstrument| {
-                    vec![msg.clone()]
-                },
-            ),
+            msg_modifier: Box::new(|msg: &Message, _node: &mut TestNodeInstrument| {
+                vec![msg.clone()]
+            }),
         }
     }
 }

@@ -9,7 +9,7 @@ use timeboost_core::types::{
 pub(crate) struct TestNodeInstrument {
     pub node: Consensus,
     msg_queue: VecDeque<Message>,
-    pub actions_taken: Vec<Action>
+    pub actions_taken: Vec<Action>,
 }
 
 impl TestNodeInstrument {
@@ -17,7 +17,7 @@ impl TestNodeInstrument {
         Self {
             node,
             msg_queue: VecDeque::new(),
-            actions_taken: Vec::new()
+            actions_taken: Vec::new(),
         }
     }
 
@@ -41,7 +41,5 @@ impl TestNodeInstrument {
         &self.msg_queue
     }
 
-    pub fn _assert_actions(&self, _expected: Action) {
-
-    }
+    pub fn _assert_actions(&self, _expected: Action) {}
 }
