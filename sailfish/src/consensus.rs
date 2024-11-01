@@ -223,7 +223,7 @@ impl Consensus {
         let vertex = e.into_data();
 
         if self.dag.contains(vertex.id()) {
-            tracing::error!(
+            debug!(
                 node   = %self.id,
                 round  = %self.round,
                 ours   = %(self.public_key == *vertex.source()),
