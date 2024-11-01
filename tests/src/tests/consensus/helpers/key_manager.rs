@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+use sailfish::consensus::Consensus;
 use timeboost_core::types::{
-    envelope::Envelope, message::Message, vertex::VertexId, PrivateKey, PublicKey,
+    committee::StaticCommittee, envelope::Envelope, message::Message, vertex::VertexId, NodeId,
+    PrivateKey, PublicKey,
 };
 
 use super::{node_instrument::TestNodeInstrument, test_helpers::create_vertex};
 
+#[derive(Clone, Debug)]
 struct KeyMapping {
     private_key: PrivateKey,
     public_key: PublicKey,
@@ -28,11 +31,11 @@ impl KeyMapping {
     }
 }
 
-pub struct MessageHelper {
+pub struct KeyManager {
     keys: HashMap<u64, KeyMapping>,
 }
 
-impl MessageHelper {
+impl KeyManager {
     pub(crate) fn new(keys: &[(PrivateKey, PublicKey)]) -> Self {
         Self {
             keys: keys
@@ -43,6 +46,23 @@ impl MessageHelper {
                 })
                 .collect(),
         }
+    }
+
+    pub(crate) fn create_node_instruments(&self) -> Vec<TestNodeInstrument> {
+        let committee =
+            StaticCommittee::new(self.keys.values().map(|keys| keys.public_key()).collect());
+        self.keys
+            .iter()
+            .map(|(id, keys)| {
+                let node_id = NodeId::from(*id);
+                TestNodeInstrument::new(Consensus::new(
+                    node_id,
+                    keys.public_key,
+                    keys.private_key.clone(),
+                    committee.clone(),
+                ))
+            })
+            .collect()
     }
 
     pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<VertexId>) -> Vec<Message> {

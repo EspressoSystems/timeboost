@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use sailfish::consensus::Consensus;
 use sailfish::sailfish::generate_key_pair;
 use timeboost_core::types::{
     certificate::Certificate,
@@ -12,10 +11,10 @@ use timeboost_core::types::{
     message::{Message, Timeout},
     round_number::RoundNumber,
     vertex::Vertex,
-    NodeId, PrivateKey, PublicKey, Signature,
+    PrivateKey, PublicKey, Signature,
 };
 
-use super::node_instrument::TestNodeInstrument;
+use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
 const SEED: [u8; 32] = [0u8; 32];
@@ -26,27 +25,10 @@ pub(crate) fn create_keys(num_nodes: u64) -> Vec<(PrivateKey, PublicKey)> {
         .collect::<Vec<_>>()
 }
 
-pub(crate) fn create_node_instruments(
-    keys: Vec<(PrivateKey, PublicKey)>,
-) -> Vec<TestNodeInstrument> {
-    let committee = StaticCommittee::new(keys.iter().map(|(_, k)| k).cloned().collect());
-    keys.into_iter()
-        .enumerate()
-        .map(|(id, (private_key, pub_key))| {
-            let node_id = NodeId::from(id as u64);
-            TestNodeInstrument::new(Consensus::new(
-                node_id,
-                pub_key,
-                private_key,
-                committee.clone(),
-            ))
-        })
-        .collect()
-}
-
 pub(crate) fn create_nodes(num_nodes: u64) -> HashMap<PublicKey, TestNodeInstrument> {
     let keys = create_keys(num_nodes);
-    let nodes = create_node_instruments(keys);
+    let manager = KeyManager::new(&keys);
+    let nodes = manager.create_node_instruments();
     nodes
         .into_iter()
         .map(|node_instrument| (*node_instrument.node.public_key(), node_instrument))
