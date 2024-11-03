@@ -30,7 +30,7 @@ use libp2p_networking::{
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::Comm,
-    types::{committee::StaticCommittee, NodeId, PrivateKey, PublicKey},
+    types::{committee::StaticCommittee, Keypair, NodeId, PublicKey},
 };
 use tokio::signal;
 use tokio::sync::oneshot;
@@ -40,11 +40,7 @@ pub struct Sailfish {
     /// The ID of the sailfish node.
     id: NodeId,
 
-    /// The public key of the sailfish node.
-    public_key: PublicKey,
-
-    /// The private key of the sailfish node.
-    private_key: PrivateKey,
+    keypair: Keypair,
 
     /// The Libp2p PeerId of the sailfish node.
     peer_id: PeerId,
@@ -78,20 +74,14 @@ impl Default for ShutdownToken {
 }
 
 impl Sailfish {
-    pub fn new<N>(
-        id: N,
-        public_key: PublicKey,
-        private_key: PrivateKey,
-        bind: Multiaddr,
-    ) -> Result<Self>
+    pub fn new<N>(id: N, keypair: Keypair, bind: Multiaddr) -> Result<Self>
     where
         N: Into<NodeId>,
     {
-        let peer_id = derive_libp2p_peer_id::<PublicKey>(&private_key)?;
+        let peer_id = derive_libp2p_peer_id::<PublicKey>(keypair.private_key())?;
         Ok(Sailfish {
             id: id.into(),
-            public_key,
-            private_key,
+            keypair,
             peer_id,
             bind_address: bind,
         })
@@ -102,12 +92,7 @@ impl Sailfish {
     }
 
     pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
-    }
-
-    #[cfg(feature = "test")]
-    pub fn private_key(&self) -> &PrivateKey {
-        &self.private_key
+        self.keypair.public_key()
     }
 
     pub fn peer_id(&self) -> &PeerId {
@@ -116,6 +101,11 @@ impl Sailfish {
 
     pub fn bind_addr(&self) -> &Multiaddr {
         &self.bind_address
+    }
+
+    #[cfg(feature = "test")]
+    pub fn derive_libp2p_keypair(&self) -> Result<libp2p_identity::Keypair> {
+        derive_libp2p_keypair::<PublicKey>(self.keypair.private_key())
     }
 
     #[instrument(skip_all, fields(id = u64::from(self.id)))]
@@ -134,19 +124,19 @@ impl Sailfish {
         // We don't have any DA nodes in Sailfish.
         network_config.config.known_da_nodes = vec![];
 
-        let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&self.private_key)?;
+        let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(self.keypair.private_key())?;
 
         let record_value = RecordValue::new_signed(
-            &RecordKey::new(Namespace::Lookup, self.public_key.to_bytes()),
+            &RecordKey::new(Namespace::Lookup, self.keypair.public_key().to_bytes()),
             libp2p_keypair.public().to_peer_id().to_bytes(),
-            &self.private_key,
+            self.keypair.private_key(),
         )?;
 
         // Create the Libp2p network
         let network = Libp2pNetwork::new(
             Libp2pMetricsValue::default(),
             config,
-            self.public_key,
+            *self.keypair.public_key(),
             record_value,
             bootstrap_nodes,
             u64::from(self.id) as usize,
@@ -176,7 +166,7 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(self.id, self.public_key, self.private_key, committee);
+        let consensus = Consensus::new(self.id, self.keypair, committee);
 
         Coordinator::new(
             self.id,
@@ -187,12 +177,6 @@ impl Sailfish {
             event_log,
         )
     }
-}
-
-pub fn generate_key_pair(seed: [u8; 32], id: u64) -> (PrivateKey, PublicKey) {
-    let private_key = PublicKey::generated_from_seed_indexed(seed, id).1;
-    let public_key = PublicKey::from_private(&private_key);
-    (private_key, public_key)
 }
 
 /// Initializes and runs a Sailfish node.
@@ -216,10 +200,8 @@ pub async fn run(
     to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 ) -> Result<()> {
-    let seed = [0u8; 32];
-
-    let (private_key, public_key) = generate_key_pair(seed, id.into());
-    let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&private_key)?;
+    let keypair = Keypair::zero(id); // TODO!
+    let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(keypair.private_key())?;
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))?;
 
     let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
@@ -239,7 +221,7 @@ pub async fn run(
             .collect::<Vec<(PeerId, Multiaddr)>>(),
     ));
 
-    let s = Sailfish::new(id, public_key, private_key, bind_address)?;
+    let s = Sailfish::new(id, keypair, bind_address)?;
     let n = s
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;

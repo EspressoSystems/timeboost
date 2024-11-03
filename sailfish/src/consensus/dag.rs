@@ -1,6 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    hash::Hash,
+    collections::{BTreeMap, HashSet},
     num::NonZeroUsize,
 };
 
@@ -8,12 +7,12 @@ use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey
 use tracing::instrument;
 
 #[derive(Debug)]
-pub struct Dag<T = PublicKey> {
-    elements: BTreeMap<RoundNumber, HashMap<T, Vertex<T>>>,
+pub struct Dag {
+    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
     max_keys: NonZeroUsize,
 }
 
-impl<T: Clone + Eq + Hash> Dag<T> {
+impl Dag {
     pub fn new(max_keys: NonZeroUsize) -> Self {
         Self {
             elements: BTreeMap::new(),
@@ -21,13 +20,13 @@ impl<T: Clone + Eq + Hash> Dag<T> {
         }
     }
 
-    pub fn add(&mut self, v: Vertex<T>) {
+    pub fn add(&mut self, v: Vertex) {
         debug_assert!(!self.contains(&v));
         let r = v.round();
         let s = v.source();
         let m = self.elements.entry(r).or_default();
         debug_assert!(m.len() < self.max_keys.get());
-        m.insert(s.clone(), v);
+        m.insert(*s, v);
     }
 
     pub fn depth(&self) -> usize {
@@ -38,22 +37,22 @@ impl<T: Clone + Eq + Hash> Dag<T> {
         self.elements.keys().max().cloned()
     }
 
-    pub fn contains(&self, v: &Vertex<T>) -> bool {
+    pub fn contains(&self, v: &Vertex) -> bool {
         self.elements
             .get(&v.round())
             .map(|m| m.contains_key(v.source()))
             .unwrap_or(false)
     }
 
-    pub fn vertices_from(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex<T>> + Clone {
+    pub fn vertices_from(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
         self.elements.range(r..).flat_map(|(_, m)| m.values())
     }
 
-    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex<T>> + Clone {
+    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
         self.elements.get(&r).into_iter().flat_map(|m| m.values())
     }
 
-    pub fn vertex(&self, r: RoundNumber, s: &T) -> Option<&Vertex<T>> {
+    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex> {
         self.elements.get(&r)?.get(s)
     }
 
@@ -62,7 +61,7 @@ impl<T: Clone + Eq + Hash> Dag<T> {
     }
 
     /// Is there a connection between two vertices?
-    pub fn is_connected(&self, from: &Vertex<T>, to: &Vertex<T>) -> bool {
+    pub fn is_connected(&self, from: &Vertex, to: &Vertex) -> bool {
         let mut current = vec![from];
         for nodes in self
             .elements
@@ -89,7 +88,8 @@ impl<T: Clone + Eq + Hash> Dag<T> {
     /// Remove the vertex denoted by the given ID from the DAG.
     ///
     /// If this removes the last vertex of a source in a round, the whole entry is removed.
-    fn remove(&mut self, r: RoundNumber, s: &T) {
+    #[instrument(level = "trace", skip(self))]
+    fn remove(&mut self, r: RoundNumber, s: &PublicKey) {
         let Some(m) = self.elements.get_mut(&r) else {
             return;
         };
@@ -103,16 +103,16 @@ impl<T: Clone + Eq + Hash> Dag<T> {
     #[instrument(level = "trace", skip(self))]
     pub fn prune(&mut self, r: RoundNumber) {
         // Consider all IDs from rounds < r:
-        let candidates: HashSet<(RoundNumber, T)> = self
+        let candidates: HashSet<(RoundNumber, PublicKey)> = self
             .elements
             .range(RoundNumber::genesis()..r)
-            .flat_map(|(r, m)| m.values().map(|v| (*r, v.source().clone())))
+            .flat_map(|(r, m)| m.values().map(|v| (*r, *v.source())))
             .collect();
 
         // We can remove those IDs which are not referenced from vertices in rounds >= r:
         let to_remove = self.vertices_from(r).fold(candidates, |mut set, v| {
             for e in v.edges() {
-                set.remove(&(v.round(), e.clone()));
+                set.remove(&(v.round(), *e));
             }
             set
         });
@@ -127,7 +127,7 @@ impl<T: Clone + Eq + Hash> Dag<T> {
 mod tests {
     use std::num::NonZeroUsize;
 
-    use timeboost_core::types::vertex::Vertex;
+    use timeboost_core::types::{vertex::Vertex, Keypair};
 
     use crate::consensus::Dag;
 
@@ -135,11 +135,11 @@ mod tests {
     fn test_is_connected() {
         let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
 
-        let pk1 = "pk1";
-        let pk2 = "pk2";
-        let pk3 = "pk3";
-        let pk4 = "pk4";
-        let pk5 = "pk5";
+        let pk1 = *Keypair::random().public_key();
+        let pk2 = *Keypair::random().public_key();
+        let pk3 = *Keypair::random().public_key();
+        let pk4 = *Keypair::random().public_key();
+        let pk5 = *Keypair::random().public_key();
 
         // Layer 1
         let v11 = Vertex::new(1, pk1);

@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hash};
+use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
@@ -12,21 +12,21 @@ use super::{
 use crate::types::{block::Block, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Vertex<T = PublicKey> {
-    source: T,
+pub struct Vertex {
+    source: PublicKey,
     round: RoundNumber,
-    edges: Vec<T>,
+    edges: BTreeSet<PublicKey>,
     no_vote: Option<Certificate<NoVote>>,
     timeout: Option<Certificate<Timeout>>,
     block: Block,
 }
 
-impl<T: Eq> Vertex<T> {
-    pub fn new<N: Into<RoundNumber>>(r: N, s: T) -> Self {
+impl Vertex {
+    pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
         Self {
             source: s,
             round: r.into(),
-            edges: Vec::new(),
+            edges: BTreeSet::new(),
             no_vote: None,
             timeout: None,
             block: Block::empty(),
@@ -41,7 +41,7 @@ impl<T: Eq> Vertex<T> {
             && self.block.is_empty()
     }
 
-    pub fn source(&self) -> &T {
+    pub fn source(&self) -> &PublicKey {
         &self.source
     }
 
@@ -53,11 +53,11 @@ impl<T: Eq> Vertex<T> {
         self.edges.len()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &T> {
+    pub fn edges(&self) -> impl Iterator<Item = &PublicKey> {
         self.edges.iter()
     }
 
-    pub fn has_edge(&self, id: &T) -> bool {
+    pub fn has_edge(&self, id: &PublicKey) -> bool {
         self.edges.contains(id)
     }
 
@@ -78,20 +78,16 @@ impl<T: Eq> Vertex<T> {
         self
     }
 
-    pub fn add_edge(&mut self, id: T) -> &mut Self {
-        if !self.edges.contains(&id) {
-            self.edges.push(id)
-        }
+    pub fn add_edge(&mut self, id: PublicKey) -> &mut Self {
+        self.edges.insert(id);
         self
     }
 
     pub fn add_edges<I>(&mut self, edges: I) -> &mut Self
     where
-        I: IntoIterator<Item = T>,
+        I: IntoIterator<Item = PublicKey>,
     {
-        for e in edges {
-            self.add_edge(e);
-        }
+        self.edges.extend(edges);
         self
     }
 
@@ -106,7 +102,7 @@ impl<T: Eq> Vertex<T> {
     }
 }
 
-impl<T: Display> Display for Vertex<T> {
+impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -116,7 +112,7 @@ impl<T: Display> Display for Vertex<T> {
     }
 }
 
-impl Committable for Vertex<PublicKey> {
+impl Committable for Vertex {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Vertex")
             .var_size_field("source", &self.source.to_bytes())

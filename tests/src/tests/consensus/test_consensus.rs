@@ -1,21 +1,18 @@
 use std::collections::VecDeque;
 
-use sailfish::sailfish::generate_key_pair;
 use timeboost_core::logging;
 use timeboost_core::types::committee::StaticCommittee;
-use timeboost_core::types::Signature;
+use timeboost_core::types::envelope::Envelope;
+use timeboost_core::types::message::Timeout;
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
+use timeboost_core::types::{Keypair, Signature};
 
-use crate::{
-    tests::consensus::helpers::{
-        fake_network::FakeNetwork,
-        interceptor::Interceptor,
-        test_helpers::{
-            create_timeout_certificate_msg, create_vertex_proposal_msg, create_vote,
-            make_consensus_nodes,
-        },
+use crate::tests::consensus::helpers::{
+    fake_network::FakeNetwork,
+    interceptor::Interceptor,
+    test_helpers::{
+        create_timeout_certificate_msg, create_vertex_proposal_msg, make_consensus_nodes,
     },
-    SEED,
 };
 use bitvec::{bitvec, vec::BitVec};
 
@@ -139,13 +136,9 @@ async fn test_invalid_vertex_signatures() {
         move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
-                let new_keys = generate_key_pair(SEED, invalid_node_id);
+                let new_keys = Keypair::new(invalid_node_id);
                 // modify current network message with this invalid one
-                vec![create_vertex_proposal_msg(
-                    msg.round(),
-                    new_keys.1,
-                    &new_keys.0,
-                )]
+                vec![create_vertex_proposal_msg(msg.round(), &new_keys)]
             } else {
                 // if not vertex leave msg alone
                 vec![msg.clone()]
@@ -193,8 +186,9 @@ async fn test_invalid_timeout_certificate() {
                 let mut timeout = None;
                 for i in 0..num_nodes {
                     let fake_node_id = i + invalid_node_id;
-                    let new_keys = generate_key_pair(SEED, fake_node_id);
-                    timeout = Some(create_vote(e.data().round(), new_keys.1, &new_keys.0));
+                    let new_keys = Keypair::new(fake_node_id);
+                    timeout =
+                        Some(Envelope::signed(Timeout::new(e.data().round()), &new_keys).cast());
                     signers.0.set(i as usize, true);
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }

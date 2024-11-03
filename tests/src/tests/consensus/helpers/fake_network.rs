@@ -4,13 +4,13 @@ use std::{
     num::NonZeroUsize,
 };
 use timeboost_core::types::{
-    message::{Action, Message},
+    message::{Action, Message, Timeout},
     round_number::RoundNumber,
     NodeId, PublicKey,
 };
 use tracing::info;
 
-use super::{interceptor::Interceptor, test_helpers::create_timeout_vote_action};
+use super::interceptor::Interceptor;
 
 /// Mock the network
 pub struct FakeNetwork {
@@ -117,8 +117,7 @@ impl FakeNetwork {
             }
             queue.extend(keep);
 
-            let timeout_action =
-                create_timeout_vote_action(round, *node.public_key(), node.private_key());
+            let timeout_action = Action::SendTimeout(node.sign(Timeout::new(round)));
 
             // Process timeout actions
             Self::handle_action(node.id(), timeout_action, &mut msgs);

@@ -10,7 +10,7 @@ use timeboost_core::types::{
     message::{Action, Message, NoVote, Timeout},
     round_number::RoundNumber,
     vertex::Vertex,
-    NodeId, PrivateKey, PublicKey,
+    Keypair, NodeId, PublicKey,
 };
 use tracing::{debug, instrument, trace, warn};
 use vote::VoteAccumulator;
@@ -27,11 +27,8 @@ pub struct Consensus {
     /// The ID of the node running this consensus instance.
     id: NodeId,
 
-    /// The public key of the node running this task.
-    public_key: PublicKey,
-
-    /// The private key of the node running this task.
-    private_key: PrivateKey,
+    /// The public and private key of this node.
+    keypair: Keypair,
 
     /// The DAG of vertices
     dag: Dag,
@@ -65,16 +62,10 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    pub fn new(
-        id: NodeId,
-        public_key: PublicKey,
-        private_key: PrivateKey,
-        committee: StaticCommittee,
-    ) -> Self {
+    pub fn new(id: NodeId, keypair: Keypair, committee: StaticCommittee) -> Self {
         Self {
             id,
-            public_key,
-            private_key,
+            keypair,
             dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
@@ -93,7 +84,7 @@ impl Consensus {
     }
 
     pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
+        self.keypair.public_key()
     }
 
     pub fn round(&self) -> RoundNumber {
@@ -110,11 +101,6 @@ impl Consensus {
     }
 
     #[cfg(feature = "test")]
-    pub fn private_key(&self) -> &PrivateKey {
-        &self.private_key
-    }
-
-    #[cfg(feature = "test")]
     pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
         &self.no_votes
     }
@@ -122,6 +108,14 @@ impl Consensus {
     #[cfg(feature = "test")]
     pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
         &self.timeouts
+    }
+
+    #[cfg(feature = "test")]
+    pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
+    where
+        D: committable::Committable,
+    {
+        Envelope::signed(d, &self.keypair)
     }
 
     pub fn add_block(&mut self, b: Block) {
@@ -141,8 +135,7 @@ impl Consensus {
         // TODO: Save and restore other states (committed_round, buffer, etc.)
 
         if r == RoundNumber::genesis() {
-            let gen = Vertex::new(r, self.public_key);
-            let env = Envelope::signed(gen, &self.private_key, self.public_key);
+            let env = Envelope::signed(Vertex::new(r, *self.public_key()), &self.keypair);
             return vec![Action::SendProposal(env)];
         }
 
@@ -192,7 +185,7 @@ impl Consensus {
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round);
         debug_assert!(self.leader_vertex(r).is_none());
-        let e = Envelope::signed(Timeout::new(r), &self.private_key, self.public_key);
+        let e = Envelope::signed(Timeout::new(r), &self.keypair);
         vec![Action::SendTimeout(e)]
     }
 
@@ -221,7 +214,7 @@ impl Consensus {
             debug!(
                 node   = %self.id,
                 round  = %self.round,
-                ours   = %(self.public_key == *vertex.source()),
+                ours   = %(self.public_key() == vertex.source()),
                 vround = %vertex.round(),
                 "vertex already in dag"
             );
@@ -289,7 +282,7 @@ impl Consensus {
 
         // Here the no-vote is sent from round r - 1 to leader in round r that is why we add 1 to
         // round to get correct leader
-        if self.public_key != self.committee.leader(round + 1) {
+        if *self.public_key() != self.committee.leader(round + 1) {
             warn!(
                 node  = %self.id,
                 round = %self.round,
@@ -372,7 +365,7 @@ impl Consensus {
 
         // Have we received more than f timeouts?
         if accum.votes() as u64 == self.committee.threshold().get() + 1 {
-            let e = Envelope::signed(Timeout::new(round), &self.private_key, self.public_key);
+            let e = Envelope::signed(Timeout::new(round), &self.keypair);
             actions.push(Action::SendTimeout(e))
         }
 
@@ -457,12 +450,12 @@ impl Consensus {
         };
 
         // We inform the leader of the next round that we did not vote in the previous round.
-        let e = Envelope::signed(NoVote::new(round), &self.private_key, self.public_key);
+        let env = Envelope::signed(NoVote::new(round), &self.keypair);
         let leader = self.committee.leader(round + 1);
-        actions.push(Action::SendNoVote(leader, e));
+        actions.push(Action::SendNoVote(leader, env));
 
         // If we are not ourselves leader of the next round we can move to it directly.
-        if self.public_key != leader {
+        if *self.public_key() != leader {
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let NewVertex(mut v) = self.create_new_vertex(self.round);
@@ -510,7 +503,7 @@ impl Consensus {
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
         let mut actions = Vec::new();
-        let e = Envelope::signed(v, &self.private_key, self.public_key);
+        let e = Envelope::signed(v, &self.keypair);
         actions.push(Action::SendProposal(e));
         actions
     }
@@ -524,7 +517,7 @@ impl Consensus {
     fn create_new_vertex(&mut self, r: RoundNumber) -> NewVertex {
         let prev = self.dag.vertices(r - 1);
 
-        let mut new = Vertex::new(r, self.public_key);
+        let mut new = Vertex::new(r, *self.public_key());
         new.set_block(self.blocks.pop_front().unwrap_or_default());
         new.add_edges(prev.map(Vertex::source).cloned());
 
