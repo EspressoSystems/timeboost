@@ -95,29 +95,6 @@ impl Consensus {
         self.committee.size()
     }
 
-    #[cfg(feature = "test")]
-    pub fn committee(&self) -> &StaticCommittee {
-        &self.committee
-    }
-
-    #[cfg(feature = "test")]
-    pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
-        &self.no_votes
-    }
-
-    #[cfg(feature = "test")]
-    pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
-        &self.timeouts
-    }
-
-    #[cfg(feature = "test")]
-    pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
-    where
-        D: committable::Committable,
-    {
-        Envelope::signed(d, &self.keypair)
-    }
-
     pub fn add_block(&mut self, b: Block) {
         self.blocks.push_back(b);
     }
@@ -781,5 +758,47 @@ impl Consensus {
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
         self.dag.vertex(r, &self.committee.leader(r))
+    }
+}
+
+#[cfg(feature = "test")]
+impl Consensus {
+    pub fn dag(&self) -> &Dag {
+        &self.dag
+    }
+
+    pub fn buffer(&self) -> &HashSet<Vertex> {
+        &self.buffer
+    }
+
+    pub fn delivered(&self) -> &HashSet<Vertex> {
+        &self.delivered
+    }
+
+    pub fn leader_stack(&self) -> &Vec<Vertex> {
+        &self.leader_stack
+    }
+
+    pub fn committed_round(&self) -> RoundNumber {
+        self.committed_round
+    }
+
+    pub fn committee(&self) -> &StaticCommittee {
+        &self.committee
+    }
+
+    pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
+        &self.no_votes
+    }
+
+    pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
+        &self.timeouts
+    }
+
+    pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
+    where
+        D: committable::Committable,
+    {
+        Envelope::signed(d, &self.keypair)
     }
 }

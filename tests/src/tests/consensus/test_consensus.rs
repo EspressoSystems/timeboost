@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
@@ -6,7 +6,7 @@ use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::Envelope;
 use timeboost_core::types::message::{Action, Timeout};
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
-use timeboost_core::types::{Keypair, Signature};
+use timeboost_core::types::{Keypair, NodeId, PublicKey, Signature};
 
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork,
@@ -266,5 +266,63 @@ fn genesis_proposals() {
         };
         assert_eq!(e.signing_key(), e.data().source());
         assert!(e.data().is_genesis());
+    }
+}
+
+#[test]
+fn basic_liveness() {
+    logging::init_logging();
+
+    let mut nodes = make_consensus_nodes(5);
+
+    let mut actions: Vec<(NodeId, Vec<Action>)> = nodes
+        .iter_mut()
+        .enumerate()
+        .map(|(i, c)| ((i as u64).into(), c.go(Dag::new(c.committee_size()))))
+        .collect();
+
+    // Track what each node delivers as output:
+    let mut delivered: HashMap<NodeId, Vec<(RoundNumber, PublicKey)>> = HashMap::new();
+
+    // Run for a couple of rounds:
+    for _ in 0..17 {
+        let mut next = Vec::new();
+        for (id, aa) in &actions {
+            for n in &mut nodes {
+                for a in aa {
+                    let na = match a {
+                        Action::Deliver(_, r, s) => {
+                            delivered.entry(*id).or_default().push((*r, *s));
+                            continue;
+                        }
+                        Action::SendProposal(e) => n.handle_vertex(e.clone()),
+                        Action::SendTimeout(e) => n.handle_timeout(e.clone()),
+                        Action::SendTimeoutCert(x) => n.handle_timeout_cert(x.clone()),
+                        Action::SendNoVote(to, e) if n.public_key() == to => {
+                            n.handle_no_vote(e.clone())
+                        }
+                        Action::SendNoVote(..) | Action::ResetTimer(..) => continue,
+                    };
+                    if !na.is_empty() {
+                        next.push((n.id(), na))
+                    }
+                }
+            }
+        }
+        for n in &nodes {
+            assert!(n.dag().depth() <= 5);
+            // No one is late => buffer should always be empty:
+            assert!(n.buffer().is_empty());
+        }
+        actions = next
+    }
+
+    for n in nodes {
+        assert_eq!(n.committed_round(), 15.into())
+    }
+
+    // Every node should have delivered the same output:
+    for (a, b) in delivered.values().zip(delivered.values().skip(1)) {
+        assert_eq!(a, b)
     }
 }

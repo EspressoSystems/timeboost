@@ -33,6 +33,10 @@ impl Dag {
         self.elements.len()
     }
 
+    pub fn rounds(&self) -> impl Iterator<Item = RoundNumber> + '_ {
+        self.elements.keys().copied()
+    }
+
     pub fn max_round(&self) -> Option<RoundNumber> {
         self.elements.keys().max().cloned()
     }
