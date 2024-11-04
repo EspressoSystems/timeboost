@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use async_lock::RwLock;
 use hotshot::traits::{
-    implementations::{derive_libp2p_keypair, derive_libp2p_multiaddr, Libp2pNetwork},
+    implementations::{derive_libp2p_multiaddr, Libp2pNetwork},
     NetworkNodeConfigBuilder,
 };
 use portpicker::pick_unused_port;
@@ -61,7 +61,8 @@ impl TestableNetwork for Libp2pNetworkTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let bootstrap_nodes = Arc::clone(&self.group.bootstrap_nodes);
             let port = pick_unused_port().expect("Failed to pick an unused port");
-            let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(node.private_key())
+            let libp2p_keypair = node
+                .derive_libp2p_keypair()
                 .expect("Failed to derive libp2p keypair");
             let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))
                 .expect("Failed to derive libp2p multiaddr");

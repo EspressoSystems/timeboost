@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use sailfish::sailfish::generate_key_pair;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
@@ -11,56 +10,22 @@ use timeboost_core::types::{
     message::{Message, Timeout},
     round_number::RoundNumber,
     vertex::Vertex,
-    PrivateKey, PublicKey, Signature,
+    PublicKey, Signature,
 };
 
 use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
-const SEED: [u8; 32] = [0u8; 32];
-
-pub(crate) fn create_keys(num_nodes: u64) -> Vec<(PrivateKey, PublicKey)> {
-    (0..num_nodes)
-        .map(|i| generate_key_pair(SEED, i))
-        .collect::<Vec<_>>()
-}
-
-pub(crate) fn create_nodes(num_nodes: u64) -> HashMap<PublicKey, TestNodeInstrument> {
-    let keys = create_keys(num_nodes);
-    let manager = KeyManager::new(&keys);
+pub(crate) fn make_consensus_nodes(
+    num_nodes: u64,
+) -> (HashMap<PublicKey, TestNodeInstrument>, KeyManager) {
+    let manager = KeyManager::new(num_nodes);
     let nodes = manager.create_node_instruments();
-    nodes
+    let nodes = nodes
         .into_iter()
-        .map(|node_instrument| (*node_instrument.node.public_key(), node_instrument))
-        .collect()
-}
-
-pub(crate) fn create_timeout_vote(
-    round: RoundNumber,
-    pub_key: PublicKey,
-    private_key: &PrivateKey,
-) -> Envelope<Timeout, Validated> {
-    let data = Timeout::new(round);
-    Envelope::signed(data, private_key, pub_key)
-}
-
-pub(crate) fn create_timeout_vote_msg(
-    timeout_round: RoundNumber,
-    pub_key: PublicKey,
-    private_key: &PrivateKey,
-) -> Message {
-    let e = create_timeout_vote(timeout_round, pub_key, private_key);
-    Message::Timeout(e.cast())
-}
-
-pub(crate) fn create_vertex_proposal_msg(
-    round: RoundNumber,
-    pub_key: PublicKey,
-    private_key: &PrivateKey,
-) -> Message {
-    let data = Vertex::new(round, pub_key);
-    let e = Envelope::signed(data, private_key, pub_key);
-    Message::Vertex(e.cast())
+        .map(|node_instrument| (*node_instrument.node().public_key(), node_instrument))
+        .collect();
+    (nodes, manager)
 }
 
 pub(crate) fn create_timeout_certificate_msg(

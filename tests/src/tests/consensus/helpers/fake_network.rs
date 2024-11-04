@@ -33,7 +33,7 @@ impl FakeNetwork {
         let mut next = Vec::new();
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node_instrument in self.nodes.values_mut() {
-            let node_state = &mut node_instrument.node;
+            let node_state = node_instrument.node_mut();
             for a in node_state.go(Dag::new(committee_size)) {
                 Self::handle_action(node_state.id(), a, &mut next)
             }
@@ -42,13 +42,13 @@ impl FakeNetwork {
     }
 
     pub(crate) fn consensus(&self) -> impl Iterator<Item = &Consensus> {
-        self.nodes.values().map(|c| &c.node)
+        self.nodes.values().map(|c| c.node())
     }
 
     pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
-            .map(|node_instrument| node_instrument.node.round())
+            .map(|node_instrument| node_instrument.node().round())
             .max()
             .unwrap()
     }
@@ -56,7 +56,7 @@ impl FakeNetwork {
     pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
-            .map(|node_instrument| node_instrument.node.committee().leader(round))
+            .map(|node_instrument| node_instrument.node().committee().leader(round))
             .max()
             .unwrap()
     }
@@ -67,7 +67,7 @@ impl FakeNetwork {
             .values()
             .next()
             .expect("at least one node exists")
-            .node
+            .node()
             .committee()
             .leader(round);
         self.consensus().find(|c| c.public_key() == &key).unwrap()
@@ -80,7 +80,7 @@ impl FakeNetwork {
         for node_handle in self.nodes.values_mut() {
             while let Some(msg) = node_handle.pop_msg() {
                 for a in Self::handle_message(node_handle, msg, &self.msg_interceptor) {
-                    Self::handle_action(node_handle.node.id(), a, &mut next_msgs);
+                    Self::handle_action(node_handle.node().id(), a, &mut next_msgs);
                 }
             }
         }
@@ -93,7 +93,7 @@ impl FakeNetwork {
         let nodes_msgs = self
             .nodes
             .values()
-            .map(|node_instrument| (node_instrument.node.id(), node_instrument.msg_queue()))
+            .map(|node_instrument| (node_instrument.node().id(), node_instrument.msg_queue()))
             .collect();
         nodes_msgs
     }
@@ -106,8 +106,9 @@ impl FakeNetwork {
     ) -> Vec<Action> {
         let msgs = interceptor.intercept_message(msg, node_handle);
         let mut actions = Vec::new();
+        let n = node_handle.node_mut();
         for msg in msgs {
-            actions.extend(node_handle.node.handle_message(msg));
+            actions.extend(n.handle_message(msg));
         }
         actions
     }

@@ -12,7 +12,7 @@ use super::{
 use crate::types::block::Block;
 use crate::types::round_number::RoundNumber;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message {
     /// A vertex proposal from a node.
     Vertex(Envelope<Vertex, Unchecked>),
@@ -125,7 +125,7 @@ impl Message {
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Vertex(e) => write!(f, "Vertex({})", e.data().id().round()),
+            Self::Vertex(e) => write!(f, "Vertex({})", e.data().round()),
             Self::Timeout(e) => write!(f, "Timeout({})", e.data().round),
             Self::NoVote(e) => write!(f, "NoVote({})", e.data().round),
             Self::TimeoutCert(c) => write!(f, "TimeoutCert({})", c.data().round),

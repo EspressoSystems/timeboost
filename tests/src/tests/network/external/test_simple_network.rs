@@ -27,7 +27,7 @@ async fn test_simple_network_genesis() {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Genesis Vertex from {}", node_id), move |e| {
                         if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            if v.data().id().round() == RoundNumber::genesis()
+                            if v.data().round() == RoundNumber::genesis()
                                 && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;
