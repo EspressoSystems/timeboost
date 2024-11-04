@@ -11,17 +11,20 @@ async fn test_single_node_advance() {
 
     let num_nodes = 5;
 
-    // Setup
+    // Setup key manager and nodes
     let manager = KeyManager::new(num_nodes);
     let mut nodes = manager.create_node_instruments();
     let node_handle = nodes.first_mut().expect("Node 0 should be present");
 
+    // Setup up consensus state
     let mut round = 3;
     let vertices_for_round = manager.add_vertices_to_node(round, node_handle);
 
+    // Craft messages
     round += 1;
     let input_msgs = manager.create_vertex_msgs(round, vertices_for_round);
 
+    // Process
     for msg in input_msgs {
         node_handle.handle_message(msg);
     }
