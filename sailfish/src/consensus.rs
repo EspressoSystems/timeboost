@@ -645,17 +645,26 @@ impl Consensus {
                 delivered.insert(to_deliver.clone());
             }
         }
-        self.dag.prune(self.committed_round);
-        delivered.retain(|v| self.dag.contains(v));
         self.delivered = delivered;
+        self.gc(self.committed_round);
         actions
+    }
+
+    /// Cleanup the DAG and other collections.
+    #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
+    fn gc(&mut self, committed: RoundNumber) {
+        if committed < 2.into() {
+            return;
+        }
+        self.dag.remove(committed - 2);
+        self.delivered.retain(|v| v.round() >= committed - 2);
+        self.buffer.retain(|v| v.round() >= committed - 2);
     }
 
     /// Remove timeout vote aggregators up to the given round.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn clear_timeout_aggregators(&mut self, to: RoundNumber) {
-        let mut t = mem::take(&mut self.timeouts);
-        self.timeouts = t.split_off(&to);
+        self.timeouts = self.timeouts.split_off(&to);
     }
 
     /// Validate an incoming vertex.
@@ -677,6 +686,17 @@ impl Consensus {
                 vround = %v.round(),
                 vsrc   = %v.source(),
                 "vertex has not enough edges"
+            );
+            return false;
+        }
+
+        if self.committed_round > 2.into() && v.round() < self.committed_round - 2 {
+            debug!(
+                node   = %self.id,
+                round  = %self.round,
+                vround = %v.round(),
+                vsrc   = %v.source(),
+                "vertex round is too old"
             );
             return false;
         }
