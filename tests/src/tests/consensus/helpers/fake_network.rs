@@ -19,11 +19,11 @@ pub struct FakeNetwork {
 }
 
 impl FakeNetwork {
-    pub(crate) fn new(nodes: Vec<(PublicKey, Consensus)>, msg_interceptor: Interceptor) -> Self {
+    pub(crate) fn new(nodes: Vec<Consensus>, msg_interceptor: Interceptor) -> Self {
         Self {
             nodes: nodes
                 .into_iter()
-                .map(|(id, n)| (id, (n, VecDeque::new())))
+                .map(|n| (*n.public_key(), (n, VecDeque::new())))
                 .collect(),
             msg_interceptor,
         }

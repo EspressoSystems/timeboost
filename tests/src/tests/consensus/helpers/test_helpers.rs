@@ -16,17 +16,14 @@ use timeboost_core::types::{
 pub(crate) type MessageModifier =
     Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
 
-pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<(PublicKey, Consensus)> {
+pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<Consensus> {
     let keys = (0..num_nodes).map(Keypair::zero).collect::<Vec<_>>();
     let committee = StaticCommittee::new(keys.iter().map(|k| *k.public_key()).collect());
     keys.into_iter()
         .enumerate()
         .map(|(i, kpair)| {
             let node_id = NodeId::from(i as u64);
-            (
-                *kpair.public_key(),
-                Consensus::new(node_id, kpair, committee.clone()),
-            )
+            Consensus::new(node_id, kpair, committee.clone())
         })
         .collect()
 }

@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 
+use sailfish::consensus::Dag;
 use timeboost_core::logging;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::Envelope;
-use timeboost_core::types::message::Timeout;
+use timeboost_core::types::message::{Action, Timeout};
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use timeboost_core::types::{Keypair, Signature};
 
@@ -247,5 +248,23 @@ async fn test_invalid_timeout_certificate() {
     // verify progress was made
     for (_, (node, _)) in network.nodes.iter() {
         assert_eq!(*node.round(), rounds);
+    }
+}
+
+#[test]
+fn genesis_proposals() {
+    let mut conss = make_consensus_nodes(5);
+
+    let actions: Vec<Vec<Action>> = conss
+        .iter_mut()
+        .map(|c| c.go(Dag::new(c.committee_size())))
+        .collect();
+
+    for a in &actions {
+        let [Action::SendProposal(e)] = a.as_slice() else {
+            panic!("expected 1 vertex prooposal")
+        };
+        assert_eq!(e.signing_key(), e.data().source());
+        assert!(e.data().is_genesis());
     }
 }
