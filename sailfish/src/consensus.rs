@@ -634,9 +634,10 @@ impl Consensus {
         if committed < 2.into() {
             return;
         }
-        self.dag.remove(committed - 2);
-        self.delivered.retain(|v| v.round() >= committed - 2);
-        self.buffer.retain(|v| v.round() >= committed - 2);
+        let r = committed - 2;
+        self.dag.remove(r);
+        self.delivered.retain(|v| v.round() >= r);
+        self.buffer.retain(|v| v.round() >= r);
     }
 
     /// Remove timeout vote aggregators up to the given round.

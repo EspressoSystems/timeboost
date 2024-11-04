@@ -332,6 +332,10 @@ fn basic_liveness() {
         for node_handle in nodes.values() {
             let n = node_handle.node();
             assert!(n.dag().depth() <= 5);
+            if n.committed_round() > 2.into() {
+                // The DAG should not contain data below committed round - 2:
+                assert!(n.dag().max_round().unwrap() >= n.committed_round() - 2);
+            }
             // No one is late => buffer should always be empty:
             assert!(n.buffer().is_empty());
         }
