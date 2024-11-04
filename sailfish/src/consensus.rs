@@ -801,10 +801,6 @@ impl Consensus {
         self.keypair.private_key()
     }
 
-    pub fn key_pair(&self) -> &Keypair {
-        &self.keypair
-    }
-
     pub fn add_vertex_to_dag(&mut self, v: Vertex) {
         self.dag.add(v);
     }
