@@ -9,7 +9,7 @@ use crate::tests::consensus::helpers::key_manager::KeyManager;
 async fn test_single_node_advance() {
     logging::init_logging();
 
-    let num_nodes = 5;
+    let num_nodes = 8;
 
     // Setup key manager and nodes
     let manager = KeyManager::new(num_nodes);
@@ -17,8 +17,10 @@ async fn test_single_node_advance() {
     let node_handle = nodes.first_mut().expect("Node 0 should be present");
 
     // Setup up consensus state
-    let mut round = 3;
-    let vertices_for_round = manager.add_vertices_to_node(round, node_handle);
+    let mut round = 7;
+    let node = node_handle.node_mut();
+    let (dag, vertices_for_round) = manager.prepare_dag(round, node.committee());
+    node.go(dag);
 
     // Craft messages
     round += 1;
@@ -33,7 +35,7 @@ async fn test_single_node_advance() {
     assert_eq!(node_handle.actions_taken_len(), 2);
 
     let expected_round = RoundNumber::new(round + 1);
-    let proposal = node_handle.create_vertex_action(expected_round);
+    let proposal = node_handle.create_vertex_proposal_action(expected_round);
     let action_expectations = vec![Action::ResetTimer(expected_round), proposal];
 
     node_handle.assert_actions(action_expectations);

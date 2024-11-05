@@ -4,10 +4,7 @@ use sailfish::consensus::Consensus;
 use timeboost_core::types::{
     message::{Action, Message},
     round_number::RoundNumber,
-    PublicKey,
 };
-
-use super::test_helpers::create_vertex;
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,
@@ -55,16 +52,15 @@ impl TestNodeInstrument {
         self.actions_taken.len()
     }
 
-    pub fn create_vertex_action(&self, round: RoundNumber) -> Action {
-        let vertices: Vec<PublicKey> = self
-            .node
+    pub fn create_vertex_proposal_action(&self, round: RoundNumber) -> Action {
+        // first find what is stored in our dag
+        let v = self
+            .node()
             .dag()
-            .vertices(round - 1)
-            .map(|v| *v.source())
-            .collect();
-        let mut d = create_vertex(*round, *self.node.public_key());
-        d.add_edges(vertices);
-        let e = self.node.sign(d);
+            .vertex(round, self.node().public_key())
+            .unwrap();
+        // sign
+        let e = self.node.sign(v.clone());
         Action::SendProposal(e)
     }
 

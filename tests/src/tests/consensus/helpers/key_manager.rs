@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
-use sailfish::consensus::Consensus;
+use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::Envelope,
     message::{Message, Timeout},
     round_number::RoundNumber,
+    vertex::Vertex,
     Keypair, NodeId, PublicKey,
 };
 
-use super::{node_instrument::TestNodeInstrument, test_helpers::create_vertex};
+use super::node_instrument::TestNodeInstrument;
 
 pub struct KeyManager {
     keys: HashMap<u64, Keypair>,
@@ -68,25 +69,29 @@ impl KeyManager {
         edges: Vec<PublicKey>,
     ) -> Message {
         let kpair = self.keys.get(id).unwrap();
-        let mut v = create_vertex(round, *kpair.public_key());
+        let mut v = Vertex::new(RoundNumber::new(round), *kpair.public_key());
         v.add_edges(edges);
         let e = Envelope::signed(v, kpair);
         Message::Vertex(e.cast())
     }
 
-    pub(crate) fn add_vertices_to_node(
+    pub(crate) fn prepare_dag(
         &self,
         round: u64,
-        node_handle: &mut TestNodeInstrument,
-    ) -> Vec<PublicKey> {
-        self.keys
+        committee: &StaticCommittee,
+    ) -> (Dag, Vec<PublicKey>) {
+        let mut dag = Dag::new(committee.size());
+        let edges = self
+            .keys
             .values()
             .map(|kpair| {
-                let v = create_vertex(round, *kpair.public_key());
-                node_handle.node_mut().add_vertex_to_dag(v.clone());
+                let v = Vertex::new(RoundNumber::new(round), *kpair.public_key());
+                dag.add(v.clone());
                 *v.source()
             })
-            .collect()
+            .collect();
+
+        (dag, edges)
     }
 
     pub(crate) fn create_vertex_proposal_msg(
@@ -94,7 +99,7 @@ impl KeyManager {
         round: RoundNumber,
         kpair: &Keypair,
     ) -> Message {
-        let d = create_vertex(*round, *kpair.public_key());
+        let d = Vertex::new(round, *kpair.public_key());
         let e = Envelope::signed(d, kpair);
         Message::Vertex(e.cast())
     }

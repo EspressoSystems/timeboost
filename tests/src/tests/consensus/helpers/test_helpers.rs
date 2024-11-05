@@ -8,8 +8,6 @@ use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Message, Timeout},
-    round_number::RoundNumber,
-    vertex::Vertex,
     PublicKey, Signature,
 };
 
@@ -40,8 +38,4 @@ pub(crate) fn create_timeout_certificate_msg(
     let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
     let cert = Certificate::new(env.data().clone(), sig);
     Message::TimeoutCert(cert)
-}
-
-pub(crate) fn create_vertex(round: u64, source: PublicKey) -> Vertex {
-    Vertex::new(RoundNumber::new(round), source)
 }

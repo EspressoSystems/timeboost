@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::mem;
 use std::num::NonZeroUsize;
 
-use timeboost_core::types::PrivateKey;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
@@ -795,14 +794,6 @@ impl Consensus {
 
     pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
         &self.timeouts
-    }
-
-    pub fn private_key(&self) -> &PrivateKey {
-        self.keypair.private_key()
-    }
-
-    pub fn add_vertex_to_dag(&mut self, v: Vertex) {
-        self.dag.add(v);
     }
 
     pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
