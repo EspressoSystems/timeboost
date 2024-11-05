@@ -42,3 +42,49 @@ impl fmt::Display for NodeId {
         write!(f, "{}", self.0)
     }
 }
+
+pub struct Keypair {
+    private: PrivateKey,
+    public: PublicKey,
+}
+
+impl Keypair {
+    pub const ZERO_SEED: [u8; 32] = [0; 32];
+
+    pub fn new<N: Into<u64>>(index: N) -> Self {
+        let seed = rand::random();
+        let (p, s) = PublicKey::generated_from_seed_indexed(seed, index.into());
+        Self {
+            private: s,
+            public: p,
+        }
+    }
+
+    pub fn random() -> Self {
+        let seed = rand::random();
+        let index = rand::random();
+        let (public, private) = PublicKey::generated_from_seed_indexed(seed, index);
+        Self { private, public }
+    }
+
+    #[cfg(feature = "test")]
+    pub fn zero<N: Into<u64>>(index: N) -> Self {
+        let (p, s) = PublicKey::generated_from_seed_indexed(Self::ZERO_SEED, index.into());
+        Self {
+            private: s,
+            public: p,
+        }
+    }
+
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        PublicKey::sign(self.private_key(), data).expect("BLS signing never fails")
+    }
+
+    pub fn private_key(&self) -> &PrivateKey {
+        &self.private
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public
+    }
+}

@@ -1,6 +1,6 @@
-use std::{collections::BTreeSet, fmt::Display};
+use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
-use committable::Committable;
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
 
@@ -11,107 +11,54 @@ use super::{
 };
 use crate::types::{block::Block, round_number::RoundNumber};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct VertexId {
-    round: RoundNumber,
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Vertex {
     source: PublicKey,
+    round: RoundNumber,
+    edges: BTreeSet<PublicKey>,
+    no_vote: Option<Certificate<NoVote>>,
+    timeout: Option<Certificate<Timeout>>,
+    block: Block,
 }
 
-impl VertexId {
-    pub fn new(r: RoundNumber, s: PublicKey) -> Self {
+impl Vertex {
+    pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
         Self {
-            round: r,
             source: s,
+            round: r.into(),
+            edges: BTreeSet::new(),
+            no_vote: None,
+            timeout: None,
+            block: Block::empty(),
         }
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        self.round == RoundNumber::genesis()
+            && self.edges.is_empty()
+            && self.no_vote.is_none()
+            && self.timeout.is_none()
+            && self.block.is_empty()
+    }
+
+    pub fn source(&self) -> &PublicKey {
+        &self.source
     }
 
     pub fn round(&self) -> RoundNumber {
         self.round
     }
 
-    pub fn source(&self) -> &PublicKey {
-        &self.source
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct Vertex {
-    id: VertexId,
-    block: Block,
-    strong: BTreeSet<VertexId>,
-    weak: BTreeSet<VertexId>,
-    no_vote: Option<Certificate<NoVote>>,
-    timeout: Option<Certificate<Timeout>>,
-}
-
-impl Vertex {
-    pub fn new(r: RoundNumber, s: PublicKey) -> Self {
-        Self {
-            id: VertexId {
-                round: r,
-                source: s,
-            },
-            block: Block::empty(),
-            strong: BTreeSet::new(),
-            weak: BTreeSet::new(),
-            no_vote: None,
-            timeout: None,
-        }
+    pub fn num_edges(&self) -> usize {
+        self.edges.len()
     }
 
-    pub fn is_genesis(&self) -> bool {
-        self.id.round == RoundNumber::genesis()
-            && self.block.is_empty()
-            && self.strong.is_empty()
-            && self.weak.is_empty()
-            && self.no_vote.is_none()
-            && self.timeout.is_none()
+    pub fn edges(&self) -> impl Iterator<Item = &PublicKey> {
+        self.edges.iter()
     }
 
-    pub fn id(&self) -> &VertexId {
-        &self.id
-    }
-
-    pub fn round(&self) -> RoundNumber {
-        self.id.round
-    }
-
-    pub fn source(&self) -> &PublicKey {
-        &self.id.source
-    }
-
-    pub fn edge_count(&self) -> usize {
-        self.strong_edge_count() + self.weak_edge_count()
-    }
-
-    pub fn strong_edge_count(&self) -> usize {
-        self.strong.len()
-    }
-
-    pub fn weak_edge_count(&self) -> usize {
-        self.weak.len()
-    }
-
-    pub fn strong_edges(&self) -> impl Iterator<Item = &VertexId> {
-        self.strong.iter()
-    }
-
-    pub fn weak_edges(&self) -> impl Iterator<Item = &VertexId> {
-        self.weak.iter()
-    }
-
-    pub fn edges(&self) -> impl Iterator<Item = &VertexId> {
-        self.strong_edges().chain(self.weak_edges())
-    }
-
-    /// Does this vertex have a strong (direct) connection to the given `VertexId`?
-    pub fn has_strong_edge(&self, id: &VertexId) -> bool {
-        self.strong.contains(id)
-    }
-
-    /// Does this vextex have a weak (indirect) connection to the given `VertexId`?
-    pub fn has_weak_edge(&self, id: &VertexId) -> bool {
-        self.weak.contains(id)
+    pub fn has_edge(&self, id: &PublicKey) -> bool {
+        self.edges.contains(id)
     }
 
     pub fn timeout_cert(&self) -> Option<&Certificate<Timeout>> {
@@ -131,29 +78,16 @@ impl Vertex {
         self
     }
 
-    pub fn add_strong_edge(&mut self, e: VertexId) -> &mut Self {
-        self.strong.insert(e);
+    pub fn add_edge(&mut self, id: PublicKey) -> &mut Self {
+        self.edges.insert(id);
         self
     }
 
-    pub fn add_weak_edge(&mut self, e: VertexId) -> &mut Self {
-        self.weak.insert(e);
-        self
-    }
-
-    pub fn add_strong_edges<I>(&mut self, e: I) -> &mut Self
+    pub fn add_edges<I>(&mut self, edges: I) -> &mut Self
     where
-        I: IntoIterator<Item = VertexId>,
+        I: IntoIterator<Item = PublicKey>,
     {
-        self.strong.extend(e);
-        self
-    }
-
-    pub fn add_weak_edges<I>(&mut self, e: I) -> &mut Self
-    where
-        I: IntoIterator<Item = VertexId>,
-    {
-        self.weak.extend(e);
+        self.edges.extend(edges);
         self
     }
 
@@ -168,46 +102,45 @@ impl Vertex {
     }
 }
 
-impl Display for VertexId {
+impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "VertexId {{ round := {}, source := {} }}",
+            "Vertex {{ round := {}, source := {} }}",
             self.round, self.source
         )
     }
 }
 
-impl Display for Vertex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Vertex {{ id := {} }}", self.id)
-    }
-}
-
-impl Committable for VertexId {
-    fn commit(&self) -> committable::Commitment<Self> {
-        committable::RawCommitmentBuilder::new("VertexId")
-            .field("round", self.round.commit())
+impl Committable for Vertex {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Vertex")
             .var_size_field("source", &self.source.to_bytes())
+            .field("round", self.round.commit())
+            .field("block", self.block.commit())
+            .array_field(
+                "parents",
+                &self
+                    .edges
+                    .iter()
+                    .map(|p| CommitPubKey(p).commit())
+                    .collect::<Vec<_>>(),
+            )
+            .optional("no_vote", &self.no_vote)
+            .optional("timeout", &self.timeout)
             .finalize()
     }
 }
 
-impl Committable for Vertex {
-    fn commit(&self) -> committable::Commitment<Self> {
-        committable::RawCommitmentBuilder::new("Vertex")
-            .field("id", self.id.commit())
-            .field("block", self.block.commit())
-            .array_field(
-                "strong",
-                &self.strong.iter().map(|p| p.commit()).collect::<Vec<_>>(),
-            )
-            .array_field(
-                "weak",
-                &self.weak.iter().map(|p| p.commit()).collect::<Vec<_>>(),
-            )
-            .optional("no_vote", &self.no_vote)
-            .optional("timeout", &self.timeout)
+// A newtype to allow implementing `Committable` for public keys.
+//
+// Ideally, `PublicKey` should be its own type or `BLSPublicKey` implements `Committable`.
+struct CommitPubKey<'a>(&'a PublicKey);
+
+impl Committable for CommitPubKey<'_> {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("publickey")
+            .var_size_bytes(&self.0.to_bytes())
             .finalize()
     }
 }

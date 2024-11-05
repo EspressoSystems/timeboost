@@ -39,8 +39,8 @@ ethereum-types = { version = "0.14", default-features = false, features = [
     "serialize",
 ] }
 futures = { version = "0.3", default-features = false }
-hotshot = { git = "https://github.com/espressosystems/hotshot.git" }
-hotshot-types = { git = "https://github.com/espressosystems/hotshot.git" }
+hotshot = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
+hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
 jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-pcs = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
@@ -48,7 +48,7 @@ jf-signature = { version = "0.1.0", git = "https://github.com/EspressoSystems/je
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", version = "0.5", default-features = false }
+libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79", default-features = false }
 multiaddr = "0.18.2"
 portpicker = "0.1.1"
 rand = { version = "0.8", features = ["small_rng"] }

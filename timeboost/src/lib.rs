@@ -2,7 +2,7 @@ use async_broadcast::{broadcast, Receiver, Sender};
 use libp2p_networking::reexport::Multiaddr;
 use sailfish::sailfish::Sailfish;
 
-use timeboost_core::types::{message::Action, NodeId, PrivateKey, PublicKey};
+use timeboost_core::types::{message::Action, Keypair, NodeId};
 
 pub struct EventStream {
     #[allow(unused)]
@@ -31,16 +31,10 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
-    pub fn new(
-        id: NodeId,
-        public_key: PublicKey,
-        private_key: PrivateKey,
-        bind_addr: Multiaddr,
-    ) -> Self {
+    pub fn new(id: NodeId, kpair: Keypair, bind: Multiaddr) -> Self {
         Self {
             id,
-            sailfish: Sailfish::new(id, public_key, private_key, bind_addr)
-                .expect("Failed to create Sailfish instance"),
+            sailfish: Sailfish::new(id, kpair, bind).expect("Failed to create Sailfish instance"),
             event_stream: EventStream::new(100),
         }
     }
