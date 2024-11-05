@@ -8,7 +8,6 @@ use crate::{
 use anyhow::Result;
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
-use hotshot::traits::NetworkError;
 use timeboost_core::{
     traits::comm::Comm,
     types::{
@@ -23,12 +22,12 @@ use tokio::{
 };
 use tracing::{trace, warn};
 
-pub struct Coordinator {
+pub struct Coordinator<C> {
     /// The node ID of this coordinator.
     id: NodeId,
 
     /// The communication channel for this coordinator.
-    comm: Box<dyn Comm<Err = NetworkError> + Send>,
+    comm: C,
 
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
@@ -57,20 +56,17 @@ impl std::fmt::Display for CoordinatorAuditEvent {
     }
 }
 
-impl Coordinator {
-    pub fn new<C>(
+impl<C: Comm> Coordinator<C> {
+    pub fn new(
         id: NodeId,
         comm: C,
         cons: Consensus,
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    ) -> Self
-    where
-        C: Comm<Err = NetworkError> + Send + 'static,
-    {
+    ) -> Self {
         Self {
             id,
-            comm: Box::new(comm),
+            comm,
             consensus: cons,
             shutdown_rx,
             #[cfg(feature = "test")]

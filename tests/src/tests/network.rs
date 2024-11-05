@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use hotshot::traits::NetworkError;
 use sailfish::coordinator::CoordinatorAuditEvent;
 use timeboost_core::{logging, traits::comm::Comm};
 use tokio::{task::JoinSet, time::timeout};
@@ -54,7 +53,7 @@ impl TestCondition {
 
 pub trait TestableNetwork {
     type Node: Send;
-    type Network: Comm<Err = NetworkError> + Send;
+    type Network: Comm + Send;
     type Shutdown: Send;
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
