@@ -12,7 +12,7 @@ use timeboost_core::types::{
     vertex::Vertex,
     Keypair, NodeId, PublicKey,
 };
-use tracing::{debug, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 use vote::VoteAccumulator;
 
 mod dag;
@@ -269,36 +269,37 @@ impl Consensus {
             return actions;
         }
 
-        if !self.no_votes.add(e) {
-            warn!(
+        match self.no_votes.add(e) {
+            // Not enough votes yet.
+            Ok(None) => {}
+            // Certificate is formed when we have 2f + 1 votes added to accumulator.
+            Ok(Some(nc)) => {
+                // We need to reset round timer and broadcast vertex with timeout certificate and
+                // no-vote certificate.
+                let Some(tc) = self
+                    .timeouts
+                    .get_mut(&round)
+                    .and_then(|t| t.certificate())
+                    .cloned()
+                else {
+                    warn!(
+                        node  = %self.id,
+                        round = %self.round,
+                        r     = %round,
+                        "leader received 2f + 1 no votes, but has no timeout certificate for the round"
+                    );
+                    return actions;
+                };
+                let nc = nc.clone();
+                actions.extend(self.advance_leader_with_no_vote_certificate(round, tc, nc));
+            }
+            Err(e) => warn!(
                 node  = %self.id,
                 round = %self.round,
                 r     = %round,
+                err   = %e,
                 "could not add no vote certificate to vote accumulator"
-            );
-            return actions;
-        }
-
-        // Certificate is formed when we have 2f + 1 votes added to accumulator.
-        if let Some(nc) = self.no_votes.certificate().cloned() {
-            // We need to reset round timer and broadcast vertex with timeout certificate and
-            // no-vote certificate.
-            let Some(tc) = self
-                .timeouts
-                .get_mut(&round)
-                .and_then(|t| t.certificate())
-                .cloned()
-            else {
-                warn!(
-                    node  = %self.id,
-                    round = %self.round,
-                    r     = %round,
-                    "leader received 2f + 1 no votes, but has no timeout certificate for the round"
-                );
-                return actions;
-            };
-
-            actions.extend(self.advance_leader_with_no_vote_certificate(round, tc, nc));
+            ),
         }
 
         actions
@@ -330,11 +331,12 @@ impl Consensus {
             .entry(e.data().round())
             .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
 
-        if !accum.add(e) {
+        if let Err(e) = accum.add(e) {
             warn!(
                 node  = %self.id,
                 round = %self.round,
                 r     = %round,
+                err   = %e,
                 "could not add timeout to vote accumulator"
             );
             return actions;
@@ -346,12 +348,17 @@ impl Consensus {
             actions.push(Action::SendTimeout(e))
         }
 
-        // Have we received more than 2f timeouts?
+        // Have we received 2f + 1 timeouts?
         if accum.votes() as u64 == self.committee.quorum_size().get() {
-            let cert = accum
-                .certificate()
-                .expect("> 2f votes => certificate is available");
-            actions.push(Action::SendTimeoutCert(cert.clone()))
+            if let Some(cert) = accum.certificate() {
+                actions.push(Action::SendTimeoutCert(cert.clone()))
+            } else {
+                error!(
+                    node  = %self.id,
+                    round = %self.round,
+                    "no timeout certificate despite enough votes"
+                );
+            }
         }
 
         actions

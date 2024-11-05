@@ -34,17 +34,19 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.votes.len()
     }
 
-    #[allow(unused)]
     pub fn clear(&mut self) {
         self.votes.clear();
         self.signers = (bitvec![0; self.committee.size().get()], Vec::new());
         self.cert = None
     }
 
-    #[must_use]
-    pub fn add(&mut self, vote: Envelope<D, Validated>) -> bool {
+    pub fn certificate(&mut self) -> Option<&Certificate<D>> {
+        self.cert.as_ref()
+    }
+
+    pub fn add(&mut self, vote: Envelope<D, Validated>) -> Result<Option<&Certificate<D>>, Error> {
         if self.votes.contains_key(vote.signing_key()) {
-            return true;
+            return Ok(self.certificate());
         }
 
         let Some(index) = self
@@ -53,44 +55,48 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
             .iter()
             .position(|k| k == vote.signing_key())
         else {
-            return false;
+            return Err(Error::UnknownSigningKey);
         };
 
         self.signers.0.set(index, true);
         self.signers.1.push(vote.signature().clone());
-        self.insert(vote)
-    }
 
-    pub fn certificate(&mut self) -> Option<&Certificate<D>> {
-        if self.cert.is_some() {
-            return self.cert.as_ref();
+        if let Some((_, e)) = self.votes.first_key_value() {
+            if e.data() != vote.data() {
+                return Err(Error::DataMismatch);
+            }
         }
+
+        self.votes.insert(*vote.signing_key(), vote);
+
         if self.votes.len() < self.committee.quorum_size().get() as usize {
-            return None;
+            return Ok(None);
         }
+
         let pp = <PublicKey as SignatureKey>::public_parameter(
             self.committee.stake_table(),
             U256::from(self.committee.quorum_size().get()),
         );
+
         let sig = <PublicKey as SignatureKey>::assemble(&pp, &self.signers.0, &self.signers.1);
+
         let env = self
             .votes
             .first_key_value()
             .expect("non-empty set of votes")
             .1;
+
         let crt = Certificate::new(env.data().clone(), sig);
         self.cert = Some(crt);
-        self.cert.as_ref()
+        Ok(self.certificate())
     }
+}
 
-    #[must_use]
-    fn insert(&mut self, vote: Envelope<D, Validated>) -> bool {
-        if let Some((_, e)) = self.votes.first_key_value() {
-            if e.data() != vote.data() {
-                return false;
-            }
-        }
-        self.votes.insert(*vote.signing_key(), vote);
-        true
-    }
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error("unknown signing key")]
+    UnknownSigningKey,
+    #[error("data mismatch")]
+    DataMismatch,
 }
