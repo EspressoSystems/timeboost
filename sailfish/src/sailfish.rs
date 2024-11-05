@@ -11,7 +11,7 @@ use hotshot::{
             derive_libp2p_keypair, derive_libp2p_multiaddr, derive_libp2p_peer_id,
             Libp2pMetricsValue, Libp2pNetwork,
         },
-        NetworkError, NetworkNodeConfigBuilder,
+        NetworkNodeConfigBuilder,
     },
     types::SignatureKey,
 };
@@ -155,9 +155,9 @@ impl Sailfish {
         staked_nodes: Vec<PeerConfig<PublicKey>>,
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    ) -> Coordinator
+    ) -> Coordinator<C>
     where
-        C: Comm<Err = NetworkError> + Send + 'static,
+        C: Comm + Send + 'static,
     {
         let committee = StaticCommittee::new(
             staked_nodes

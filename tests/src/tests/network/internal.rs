@@ -8,7 +8,7 @@ use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
     sailfish::ShutdownToken,
 };
-use timeboost_core::types::test::net::Star;
+use timeboost_core::types::test::net::{Conn, Star};
 use tokio::{
     sync::oneshot::{self, Receiver, Sender},
     task::JoinSet,
@@ -27,7 +27,7 @@ pub struct MemoryNetworkTest {
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = Coordinator;
+    type Node = Coordinator<Conn<Vec<u8>>>;
     type Network = Star<Vec<u8>>;
     type Shutdown = ShutdownToken;
 

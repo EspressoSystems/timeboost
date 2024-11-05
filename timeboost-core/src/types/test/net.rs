@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::iter;
+use std::{io, iter};
 
 use crate::traits::comm::Comm;
 use crate::types::PublicKey;
 use async_trait::async_trait;
-use hotshot::traits::NetworkError;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot::Receiver;
 use tracing::warn;
@@ -151,7 +150,7 @@ impl<T: Clone> Star<T> {
 
 #[async_trait]
 impl Comm for Star<Vec<u8>> {
-    type Err = NetworkError;
+    type Err = io::Error;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
         self.broadcast(msg);
@@ -160,7 +159,7 @@ impl Comm for Star<Vec<u8>> {
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
         self.send(to, msg)
-            .map_err(|_| NetworkError::ChannelSendError("Star network failed to send".to_string()))
+            .map_err(|_| io::Error::other("Star network failed to send"))
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
@@ -176,7 +175,7 @@ impl<T: Clone> Default for Star<T> {
 
 #[async_trait]
 impl Comm for Conn<Vec<u8>> {
-    type Err = NetworkError;
+    type Err = io::Error;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
         let e = Event::Multicast {
@@ -185,7 +184,7 @@ impl Comm for Conn<Vec<u8>> {
         };
         self.tx
             .send(e)
-            .map_err(|e| NetworkError::ChannelSendError(e.to_string()))
+            .map_err(|_| io::Error::other("Comm: failed to broadcast"))
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
@@ -196,13 +195,13 @@ impl Comm for Conn<Vec<u8>> {
         };
         self.tx
             .send(e)
-            .map_err(|e| NetworkError::ChannelSendError(e.to_string()))
+            .map_err(|_| io::Error::other("Comm: failed to send"))
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
         self.rx
             .recv()
             .await
-            .ok_or_else(|| NetworkError::ChannelReceiveError("channel closed".to_string()))
+            .ok_or_else(|| io::ErrorKind::ConnectionAborted.into())
     }
 }
