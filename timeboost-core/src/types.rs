@@ -43,7 +43,7 @@ impl fmt::Display for NodeId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Keypair {
     private: PrivateKey,
     public: PublicKey,

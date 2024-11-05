@@ -58,11 +58,11 @@ impl KeyManager {
     pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<PublicKey>) -> Vec<Message> {
         self.keys
             .keys()
-            .map(|id| self.create_vertex_msgs_for_node_id(id, round, edges.clone()))
+            .map(|id| self.create_vertex_msg_for_node_id(id, round, edges.clone()))
             .collect()
     }
 
-    pub(crate) fn create_vertex_msgs_for_node_id(
+    pub(crate) fn create_vertex_msg_for_node_id(
         &self,
         id: &u64,
         round: u64,
@@ -73,6 +73,20 @@ impl KeyManager {
         v.add_edges(edges);
         let e = Envelope::signed(v, kpair);
         Message::Vertex(e.cast())
+    }
+
+    pub(crate) fn create_timeout_msgs(&self, round: u64) -> Vec<Message> {
+        self.keys
+            .keys()
+            .map(|id| self.create_timeout_msg_for_node_id(id, round))
+            .collect()
+    }
+
+    pub(crate) fn create_timeout_msg_for_node_id(&self, id: &u64, round: u64) -> Message {
+        let kpair = self.keys.get(id).unwrap();
+        let t = Timeout::new(RoundNumber::new(round));
+        let e = Envelope::signed(t, kpair);
+        Message::Timeout(e.cast())
     }
 
     pub(crate) fn prepare_dag(

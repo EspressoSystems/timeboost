@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 
 use sailfish::consensus::Consensus;
 use timeboost_core::types::{
-    message::{Action, Message},
+    certificate::Certificate,
+    message::{Action, Message, NoVote, Timeout},
     round_number::RoundNumber,
 };
 pub(crate) struct TestNodeInstrument {
@@ -52,16 +53,59 @@ impl TestNodeInstrument {
         self.actions_taken.len()
     }
 
-    pub fn create_vertex_proposal_action(&self, round: RoundNumber) -> Action {
-        // first find what is stored in our dag
+    pub fn clear_actions(&mut self) {
+        self.actions_taken.clear();
+    }
+
+    pub fn expected_vertex_proposal_action(&self, round: RoundNumber) -> Action {
         let v = self
             .node()
             .dag()
             .vertex(round, self.node().public_key())
             .unwrap();
-        // sign
         let e = self.node.sign(v.clone());
         Action::SendProposal(e)
+    }
+
+    pub fn expected_timeout(&self, round: RoundNumber) -> Action {
+        let d = Timeout::new(round);
+        let e = self.node.sign(d.clone());
+        Action::SendTimeout(e)
+    }
+
+    pub fn timeout_cert(&self, round: RoundNumber) -> Option<Certificate<Timeout>> {
+        let mut accumulators = self.node.timeout_accumulators().clone();
+        if let Some(accumulator) = accumulators.get_mut(&round) {
+            return accumulator.certificate().cloned();
+        }
+        None
+    }
+
+    pub fn expected_timeout_cert(&self, round: RoundNumber) -> Option<Action> {
+        if let Some(cert) = self.timeout_cert(round) {
+            return Some(Action::SendTimeoutCert(cert));
+        }
+
+        None
+    }
+
+    pub fn expected_no_vote(&self, round: RoundNumber) -> Action {
+        let nv = NoVote::new(round);
+        let e = self.node.sign(nv);
+        Action::SendNoVote(*self.node.public_key(), e)
+    }
+
+    pub fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
+        let accumulator = self
+            .node
+            .timeout_accumulators()
+            .get(&expected_round)
+            .unwrap();
+        assert_eq!(
+            accumulator.votes(),
+            votes as usize,
+            "Timeout votes accumulated do not match expected votes"
+        );
     }
 
     pub fn assert_actions(&self, expected: Vec<Action>) {
