@@ -93,7 +93,7 @@ async fn test_single_node_timeout() {
 async fn test_single_node_timeout_cert() {
     logging::init_logging();
 
-    let num_nodes = 5;
+    let num_nodes = 6;
 
     // Setup key manager and nodes
     let manager = KeyManager::new(num_nodes);
@@ -155,11 +155,17 @@ async fn test_single_node_timeout_cert() {
     node_handle.assert_timeout_accumulator(expected_round, num_nodes);
     node_handle.clear_actions();
 
-    // Handle certificate msg (send no vote)
+    // Handle certificate msg (send no vote, advance round, reset timer, propose for r + 1)
     let cert = node_handle.timeout_cert(expected_round).unwrap();
     node_handle.handle_message(Message::TimeoutCert(cert));
-    assert_eq!(node_handle.actions_taken_len(), 1);
+    assert_eq!(node_handle.actions_taken_len(), 3);
 
-    node_handle.assert_actions(vec![node_handle.expected_no_vote(expected_round)]);
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
+    node_handle.assert_actions(vec![
+        node_handle.expected_no_vote(expected_round), // No vote for round r to leader in r + 1
+        Action::ResetTimer(expected_round + 1),       // Advance round reset timer
+        node_handle.expected_vertex_proposal_action(expected_round + 1), // Vertex proposal for r + 1
+    ]);
+
+    // Advancing round, timeout accumulator should be cleared for round r
+    node_handle.assert_timeout_accumulator(expected_round, 0);
 }

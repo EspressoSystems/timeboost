@@ -84,20 +84,24 @@ impl TestNodeInstrument {
     pub fn expected_no_vote(&self, round: RoundNumber) -> Action {
         let nv = NoVote::new(round);
         let e = self.node.sign(nv);
-        Action::SendNoVote(*self.node.public_key(), e)
+        let leader = self.node.committee().leader(round + 1);
+        Action::SendNoVote(leader, e)
     }
 
     pub fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
-        let accumulator = self
-            .node
-            .timeout_accumulators()
-            .get(&expected_round)
-            .unwrap();
-        assert_eq!(
-            accumulator.votes(),
-            votes as usize,
-            "Timeout votes accumulated do not match expected votes"
-        );
+        let accumulator = self.node.timeout_accumulators().get(&expected_round);
+
+        // If accumulator is None, assert that votes is 0
+        if accumulator.is_none() {
+            assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
+        } else {
+            // If accumulator exists, assert that its votes match the expected value
+            assert_eq!(
+                accumulator.unwrap().votes(),
+                votes as usize,
+                "Timeout votes accumulated do not match expected votes"
+            );
+        }
     }
 
     pub fn assert_actions(&self, expected: Vec<Action>) {
