@@ -8,7 +8,9 @@ const EPOCH_DURATION: Duration = Duration::from_secs(60);
 /// Epoch number.
 //
 // TODO: Is a `u128` required here?
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
+)]
 pub struct Epoch(u128);
 
 /// Unix timestamp in seconds.
@@ -25,6 +27,20 @@ impl Timestamp {
 
     pub fn epoch(self) -> Epoch {
         Epoch(u128::from(self.0 / EPOCH_DURATION.as_secs()))
+    }
+}
+
+pub fn median(ts: &mut [Timestamp]) -> Option<Timestamp> {
+    if ts.is_empty() {
+        return None;
+    }
+    ts.sort();
+    if ts.len() % 2 == 0 {
+        let a = ts[ts.len() / 2 - 1];
+        let b = ts[ts.len() / 2];
+        Some(Timestamp((*a + *b) / 2))
+    } else {
+        Some(ts[ts.len() / 2])
     }
 }
 
@@ -79,5 +95,28 @@ mod tests {
             let t: u128 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }
+    }
+
+    #[test]
+    fn median() {
+        use super::median;
+
+        let mut ts = [];
+        assert_eq!(None, median(&mut ts));
+
+        let mut ts = [1.into()];
+        assert_eq!(Some(Timestamp::from(1)), median(&mut ts));
+
+        let mut ts = [1.into(), 2.into()];
+        assert_eq!(Some(Timestamp::from(1)), median(&mut ts));
+
+        let mut ts = [1.into(), 2.into(), 3.into()];
+        assert_eq!(Some(Timestamp::from(2)), median(&mut ts));
+
+        let mut ts = [1.into(), 2.into(), 3.into(), 4.into()];
+        assert_eq!(Some(Timestamp::from(2)), median(&mut ts));
+
+        let mut ts = [1.into(), 2.into(), 3.into(), 4.into(), 5.into()];
+        assert_eq!(Some(Timestamp::from(3)), median(&mut ts));
     }
 }

@@ -9,7 +9,7 @@ use super::{
     message::{NoVote, Timeout},
     PublicKey,
 };
-use crate::types::{block::Block, round_number::RoundNumber, time::Timestamp};
+use crate::types::{block::Block, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {
@@ -19,7 +19,6 @@ pub struct Vertex {
     no_vote: Option<Certificate<NoVote>>,
     timeout: Option<Certificate<Timeout>>,
     block: Block,
-    time: Timestamp,
 }
 
 impl Vertex {
@@ -31,7 +30,6 @@ impl Vertex {
             no_vote: None,
             timeout: None,
             block: Block::empty(),
-            time: Timestamp::now(),
         }
     }
 
@@ -41,10 +39,6 @@ impl Vertex {
             && self.no_vote.is_none()
             && self.timeout.is_none()
             && self.block.is_empty()
-    }
-
-    pub fn timestamp(&self) -> Timestamp {
-        self.time
     }
 
     pub fn source(&self) -> &PublicKey {

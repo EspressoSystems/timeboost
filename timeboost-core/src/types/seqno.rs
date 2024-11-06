@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SeqNo(u128);
 
+impl SeqNo {
+    pub fn zero() -> Self {
+        Self(0)
+    }
+}
+
 impl From<u128> for SeqNo {
     fn from(value: u128) -> Self {
         Self(value)
