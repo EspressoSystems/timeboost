@@ -65,10 +65,16 @@ async fn test_single_node_timeout() {
     round += 1;
     let input_msgs = manager.create_timeout_msgs(round);
 
-    // Process
-    // TODO: fix this
-    for msg in input_msgs.iter().skip(1) {
+    // Process timeouts
+    let mut expected_cert = None;
+    for msg in input_msgs {
         node_handle.handle_message(msg.clone());
+        let cert = node_handle.timeout_cert(msg.round());
+        if cert.is_some() && expected_cert.is_none() {
+            // Once we have enough votes store the certificate for expected cert
+            // This is what we out put in the action and can change once we receive more the 2f + 1 signers
+            expected_cert = cert;
+        }
     }
 
     // Expectations
@@ -76,11 +82,11 @@ async fn test_single_node_timeout() {
 
     let expected_round = RoundNumber::new(round);
     let timeout = node_handle.expected_timeout(expected_round);
-    let cert = node_handle.expected_timeout_cert(expected_round).unwrap();
-    let action_expectations = vec![timeout, cert];
+    let send_cert = Action::SendTimeoutCert(expected_cert.unwrap());
+    let action_expectations = vec![timeout, send_cert];
 
     node_handle.assert_actions(action_expectations);
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes - 1);
+    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
 }
 
 #[tokio::test]
@@ -129,18 +135,24 @@ async fn test_single_node_timeout_cert() {
     input_msgs = manager.create_timeout_msgs(round);
 
     // Process timeouts
-    // TODO: fix this
-    for msg in input_msgs.iter().skip(1) {
+    let mut expected_cert = None;
+    for msg in input_msgs {
         node_handle.handle_message(msg.clone());
+        let cert = node_handle.timeout_cert(msg.round());
+        if cert.is_some() && expected_cert.is_none() {
+            // Once we have enough votes store the certificate for expected cert
+            // This is what we out put in the action and can change once we receive more the 2f + 1 signers
+            expected_cert = cert;
+        }
     }
 
     // Verify timeout actions
     let expected_round = RoundNumber::new(round);
     let timeout = node_handle.expected_timeout(expected_round);
-    let cert = node_handle.expected_timeout_cert(expected_round).unwrap();
+    let send_cert = Action::SendTimeoutCert(expected_cert.unwrap());
 
-    node_handle.assert_actions(vec![timeout, cert]);
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes - 1);
+    node_handle.assert_actions(vec![timeout, send_cert]);
+    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
     node_handle.clear_actions();
 
     // Handle certificate msg (send no vote)
@@ -149,5 +161,5 @@ async fn test_single_node_timeout_cert() {
     assert_eq!(node_handle.actions_taken_len(), 1);
 
     node_handle.assert_actions(vec![node_handle.expected_no_vote(expected_round)]);
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes - 1);
+    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
 }

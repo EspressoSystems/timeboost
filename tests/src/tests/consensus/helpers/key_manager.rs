@@ -69,7 +69,7 @@ impl KeyManager {
         edges: Vec<PublicKey>,
     ) -> Message {
         let kpair = self.keys.get(id).unwrap();
-        let mut v = Vertex::new(RoundNumber::new(round), *kpair.public_key());
+        let mut v = Vertex::new(round, *kpair.public_key());
         v.add_edges(edges);
         let e = Envelope::signed(v, kpair);
         Message::Vertex(e.cast())
@@ -99,7 +99,7 @@ impl KeyManager {
             .keys
             .values()
             .map(|kpair| {
-                let v = Vertex::new(RoundNumber::new(round), *kpair.public_key());
+                let v = Vertex::new(round, *kpair.public_key());
                 dag.add(v.clone());
                 *v.source()
             })

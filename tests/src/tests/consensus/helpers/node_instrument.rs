@@ -81,14 +81,6 @@ impl TestNodeInstrument {
         None
     }
 
-    pub fn expected_timeout_cert(&self, round: RoundNumber) -> Option<Action> {
-        if let Some(cert) = self.timeout_cert(round) {
-            return Some(Action::SendTimeoutCert(cert));
-        }
-
-        None
-    }
-
     pub fn expected_no_vote(&self, round: RoundNumber) -> Action {
         let nv = NoVote::new(round);
         let e = self.node.sign(nv);
