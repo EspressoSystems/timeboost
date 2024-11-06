@@ -56,21 +56,16 @@ impl FakeNetwork {
     pub(crate) fn leader_for_round(&self, round: RoundNumber) -> PublicKey {
         self.nodes
             .values()
-            .map(|node_instrument| node_instrument.node().committee().leader(round))
-            .max()
-            .unwrap()
-    }
-
-    pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {
-        let key = self
-            .nodes
-            .values()
             .next()
             .expect("at least one node exists")
             .node()
             .committee()
-            .leader(round);
-        self.consensus().find(|c| c.public_key() == &key).unwrap()
+            .leader(round)
+    }
+
+    pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {
+        let key = self.leader_for_round(round);
+        self.nodes.get(&key).map(|n| n.node()).unwrap()
     }
 
     /// Process the current message on the queue
