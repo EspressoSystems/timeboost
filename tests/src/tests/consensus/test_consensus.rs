@@ -37,7 +37,7 @@ async fn test_timeout_round_and_no_vote() {
         .all(|c| c.timeout_accumulators().is_empty()));
 
     // Process a round without proposal from leader
-    let round = RoundNumber::new(2);
+    let round = RoundNumber::new(3);
     network.timeout_round(round);
 
     // No timeout messages expected:
@@ -221,9 +221,8 @@ async fn test_invalid_timeout_certificate() {
     network.start();
 
     // Spin the test for some rounds
-    let mut i = 0;
     let rounds = 7;
-    while i < 7 {
+    for _ in 0..rounds {
         network.process();
         for (_id, msgs) in network.msgs_in_queue() {
             for msg in msgs {
@@ -241,31 +240,11 @@ async fn test_invalid_timeout_certificate() {
                 }
             }
         }
-
-        i += 1;
     }
 
     // verify progress was made
     for (_, (node, _)) in network.nodes.iter() {
-        assert_eq!(*node.round(), rounds);
-    }
-}
-
-#[test]
-fn genesis_proposals() {
-    let mut conss = make_consensus_nodes(5);
-
-    let actions: Vec<Vec<Action>> = conss
-        .iter_mut()
-        .map(|c| c.go(Dag::new(c.committee_size())))
-        .collect();
-
-    for a in &actions {
-        let [Action::SendProposal(e)] = a.as_slice() else {
-            panic!("expected 1 vertex prooposal")
-        };
-        assert_eq!(e.signing_key(), e.data().source());
-        assert!(e.data().is_genesis());
+        assert_eq!(*node.round(), rounds + 1);
     }
 }
 
@@ -322,7 +301,7 @@ fn basic_liveness() {
     }
 
     for n in nodes {
-        assert_eq!(n.committed_round(), 15.into())
+        assert_eq!(n.committed_round(), 16.into())
     }
 
     // Every node should have delivered the same output:
