@@ -542,8 +542,8 @@ impl Consensus {
             return Ok(Vec::new());
         }
 
-        if self.dag.vertices(v.round()).count() as u64 >= self.committee.quorum_size().get() {
-            // We have enough edges => try to commit the leader vertex:
+        if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
+            // We have enough vertices => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
                 debug!(
                     node   = %self.id,
@@ -553,12 +553,12 @@ impl Consensus {
                 );
                 return Ok(Vec::new());
             };
-            // If enough strong edges to the leader of the previous round exist we can commit the
+            // If enough edges to the leader of the previous round exist we can commit the
             // leader vertex.
             if self
                 .dag
                 .vertices(v.round())
-                .filter(|v| self.dag.is_connected(v, &l))
+                .filter(|v| v.has_edge(l.source()))
                 .count() as u64
                 >= self.committee.quorum_size().get()
             {
@@ -576,7 +576,7 @@ impl Consensus {
     ///
     /// In addition to committing the argument vertex, this will also commit leader
     /// vertices between the last previously committed leader vertex and the current
-    /// leader vertex, if there is a strong path between them.
+    /// leader vertex, if there is a path between them.
     #[instrument(level = "trace", skip_all, fields(
         node   = %self.id,
         round  = %self.round,
@@ -616,7 +616,7 @@ impl Consensus {
             // This orders vertices by round and source.
             for to_deliver in self
                 .dag
-                .vertices_from(RoundNumber::genesis() + 1)
+                .vertex_range(RoundNumber::genesis() + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
                 if delivered.contains(to_deliver) {
@@ -654,8 +654,8 @@ impl Consensus {
 
     /// Validate an incoming vertex.
     ///
-    /// Every vertex needs to have more than 2f strong edges. In addition, a
-    /// vertex needs to have either a strong path to the leader vertex of the
+    /// Every vertex needs to have more than 2f edges. In addition, a
+    /// vertex needs to have either a path to the leader vertex of the
     /// previous round, or a timeout certificate and (if from the leader) a
     /// no-vote certificate.
     #[instrument(level = "trace", skip_all, fields(
