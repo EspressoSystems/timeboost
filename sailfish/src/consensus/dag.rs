@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, num::NonZeroUsize};
+use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
 use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
 
@@ -48,16 +48,19 @@ impl Dag {
             .unwrap_or(false)
     }
 
-    pub fn vertices_from(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
-        self.elements.range(r..).flat_map(|(_, m)| m.values())
-    }
-
     pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
         self.elements.get(&r).into_iter().flat_map(|m| m.values())
     }
 
     pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex> {
         self.elements.get(&r)?.get(s)
+    }
+
+    pub fn vertex_range<R>(&self, r: R) -> impl Iterator<Item = &Vertex> + Clone
+    where
+        R: RangeBounds<RoundNumber>,
+    {
+        self.elements.range(r).flat_map(|(_, m)| m.values())
     }
 
     pub fn vertex_count(&self, r: RoundNumber) -> usize {
