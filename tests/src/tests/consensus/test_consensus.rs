@@ -306,6 +306,7 @@ fn basic_liveness() {
 
     // Every node should have delivered the same output:
     for (a, b) in delivered.values().zip(delivered.values().skip(1)) {
+        assert!(!a.is_empty());
         assert_eq!(a, b)
     }
 }

@@ -40,7 +40,7 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.cert = None
     }
 
-    pub fn certificate(&mut self) -> Option<&Certificate<D>> {
+    pub fn certificate(&self) -> Option<&Certificate<D>> {
         self.cert.as_ref()
     }
 
