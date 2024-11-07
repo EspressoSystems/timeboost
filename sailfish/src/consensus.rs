@@ -21,6 +21,12 @@ mod vote;
 
 pub use dag::Dag;
 
+#[cfg(feature = "metrics")]
+mod metrics;
+
+#[cfg(feature = "metrics")]
+pub use metrics::ConsensusMetrics;
+
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
 
@@ -60,6 +66,9 @@ pub struct Consensus {
 
     /// Transactions to include in vertex proposals.
     transactions: TransactionsQueue,
+
+    #[cfg(feature = "metrics")]
+    metrics: std::sync::Arc<ConsensusMetrics>,
 }
 
 impl Consensus {
@@ -77,6 +86,8 @@ impl Consensus {
             committee,
             leader_stack: Vec::new(),
             transactions: TransactionsQueue::new(),
+            #[cfg(feature = "metrics")]
+            metrics: std::sync::Arc::new(ConsensusMetrics::default()),
         }
     }
 
@@ -98,6 +109,11 @@ impl Consensus {
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
         self.transactions = q
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn set_metrics<M>(&mut self, m: std::sync::Arc<ConsensusMetrics>) {
+        self.metrics = m
     }
 
     /// (Re-)start consensus.
@@ -207,6 +223,8 @@ impl Consensus {
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
                 self.buffer.insert(vertex);
+                #[cfg(feature = "metrics")]
+                self.metrics.vertex_buffer.set(self.buffer.len())
             }
             Ok(a) => {
                 actions.extend(a);
@@ -224,6 +242,9 @@ impl Consensus {
                 }
                 debug_assert!(self.buffer.is_empty());
                 self.buffer = retained;
+
+                #[cfg(feature = "metrics")]
+                self.metrics.vertex_buffer.set(self.buffer.len());
 
                 // Check if we can advance to the next round.
 
@@ -273,7 +294,11 @@ impl Consensus {
 
         match self.no_votes.add(e) {
             // Not enough votes yet.
-            Ok(None) => {}
+            Ok(None) =>
+            {
+                #[cfg(feature = "metrics")]
+                self.metrics.no_votes.set(self.no_votes.votes())
+            }
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
                 // We need to reset round timer and broadcast vertex with timeout certificate and
@@ -284,6 +309,8 @@ impl Consensus {
                     .and_then(|t| t.certificate())
                     .cloned()
                 else {
+                    #[cfg(feature = "metrics")]
+                    self.metrics.no_votes.set(self.no_votes.votes());
                     warn!(
                         node  = %self.id,
                         round = %self.round,
@@ -418,6 +445,8 @@ impl Consensus {
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
             self.round = round + 1;
+            #[cfg(feature = "metrics")]
+            self.metrics.round.set(*self.round as usize);
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);
             actions.extend(self.add_and_broadcast_vertex(v.0));
@@ -443,6 +472,8 @@ impl Consensus {
         // If we are not ourselves leader of the next round we can move to it directly.
         if *self.public_key() != leader {
             self.round = round + 1;
+            #[cfg(feature = "metrics")]
+            self.metrics.round.set(*self.round as usize);
             actions.push(Action::ResetTimer(self.round));
             let NewVertex(mut v) = self.create_new_vertex(self.round);
             v.set_timeout(tc);
@@ -470,6 +501,8 @@ impl Consensus {
     ) -> Vec<Action> {
         let mut actions = Vec::new();
         self.round = round + 1;
+        #[cfg(feature = "metrics")]
+        self.metrics.round.set(*self.round as usize);
         actions.push(Action::ResetTimer(self.round));
         let NewVertex(mut v) = self.create_new_vertex(self.round);
         v.set_no_vote(nc);
@@ -477,6 +510,8 @@ impl Consensus {
         actions.extend(self.add_and_broadcast_vertex(v));
         self.clear_timeout_aggregators(self.round);
         self.no_votes.clear();
+        #[cfg(feature = "metrics")]
+        self.metrics.no_votes.set(0);
         actions
     }
 
@@ -488,6 +523,8 @@ impl Consensus {
     )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
+        #[cfg(feature = "metrics")]
+        self.metrics.dag_depth.set(self.dag.depth());
         let mut actions = Vec::new();
         let e = Envelope::signed(v, &self.keypair);
         actions.push(Action::SendProposal(e));
@@ -538,6 +575,9 @@ impl Consensus {
         }
 
         self.dag.add(v.clone());
+
+        #[cfg(feature = "metrics")]
+        self.metrics.dag_depth.set(self.dag.depth());
 
         if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
@@ -639,6 +679,12 @@ impl Consensus {
         self.dag.remove(r);
         self.delivered.retain(|v| v.round() >= r);
         self.buffer.retain(|v| v.round() >= r);
+
+        #[cfg(feature = "metrics")]
+        {
+            self.metrics.dag_depth.set(self.dag.depth());
+            self.metrics.vertex_buffer.set(self.buffer.len());
+        }
     }
 
     /// Remove timeout vote aggregators up to the given round.
