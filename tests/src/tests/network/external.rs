@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
+use async_broadcast::broadcast;
 use async_lock::RwLock;
 use hotshot::traits::{
     implementations::{derive_libp2p_multiaddr, Libp2pNetwork},
@@ -102,11 +103,15 @@ impl TestableNetwork for Libp2pNetworkTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let log = Arc::clone(self.event_logs.get(&i).unwrap());
             let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
+            let (sf_app_tx, _) = broadcast(1);
+            let (_, tb_app_rx) = broadcast(1);
             handles.spawn(async move {
                 let co = node.init(
                     network,
                     (*staked_nodes).clone(),
                     shutdown_rx,
+                    sf_app_tx,
+                    tb_app_rx,
                     Some(Arc::clone(&log)),
                 );
 

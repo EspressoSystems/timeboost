@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use crate::Group;
 
 use super::{TestCondition, TestOutcome, TestableNetwork};
+use async_broadcast::broadcast;
 use async_lock::RwLock;
 use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
@@ -65,11 +66,16 @@ impl TestableNetwork for MemoryNetworkTest {
             // Join each node to the network
             let ch = net.join(*n.public_key());
 
+            let (sf_app_tx, _) = broadcast(1);
+            let (_, tb_app_rx) = broadcast(1);
+
             // Initialize the coordinator
             let co = n.init(
                 ch,
                 (*self.group.staked_nodes).clone(),
                 shutdown_rx,
+                sf_app_tx,
+                tb_app_rx,
                 Some(Arc::clone(&self.event_logs[&i])),
             );
 

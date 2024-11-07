@@ -2,7 +2,7 @@ use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
     consensus::{Consensus, Dag},
-    sailfish::{Sailfish, ShutdownToken},
+    sailfish::ShutdownToken,
 };
 
 use anyhow::Result;
@@ -22,7 +22,7 @@ use tokio::{
     sync::oneshot::{self},
     time::sleep,
 };
-use tracing::{info, trace, warn};
+use tracing::{info, warn};
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
