@@ -1,123 +1,129 @@
 use std::collections::VecDeque;
 
+use bitvec::vec::BitVec;
+use ethereum_types::U256;
+use hotshot::types::SignatureKey;
 use sailfish::consensus::Consensus;
 use timeboost_core::types::{
     certificate::Certificate,
+    committee::StaticCommittee,
+    envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     round_number::RoundNumber,
+    vertex::Vertex,
+    PublicKey, Signature,
 };
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,
-    actions_taken: Vec<Action>,
+    expected_actions: VecDeque<Action>,
 }
 
 impl TestNodeInstrument {
-    pub fn new(node: Consensus) -> Self {
+    pub(crate) fn new(node: Consensus) -> Self {
         Self {
             node,
             msg_queue: VecDeque::new(),
-            actions_taken: Vec::new(),
+            expected_actions: VecDeque::new(),
         }
     }
 
-    pub fn handle_message(&mut self, msg: Message) {
-        self.actions_taken.extend(self.node.handle_message(msg))
+    pub(crate) fn insert_expected_actions(&mut self, expected_actions: Vec<Action>) {
+        self.expected_actions = VecDeque::from(expected_actions);
     }
 
-    pub fn add_msg(&mut self, msg: Message) {
+    pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
+        let actions = self.node.handle_message(msg);
+        for a in actions {
+            if let Some(expected) = self.expected_actions.pop_front() {
+                assert_eq!(a, expected, "Expected action should match actual action")
+            } else {
+                panic!("Action was processed but expected actions was empty");
+            }
+        }
+    }
+
+    pub(crate) fn add_msg(&mut self, msg: Message) {
         self.msg_queue.push_back(msg);
     }
 
-    pub fn add_msgs(&mut self, msgs: Vec<Message>) {
+    pub(crate) fn add_msgs(&mut self, msgs: Vec<Message>) {
         self.msg_queue.extend(msgs);
     }
 
-    pub fn pop_msg(&mut self) -> Option<Message> {
+    pub(crate) fn pop_msg(&mut self) -> Option<Message> {
         self.msg_queue.pop_front()
     }
 
-    pub fn msg_queue(&self) -> &VecDeque<Message> {
+    pub(crate) fn msg_queue(&self) -> &VecDeque<Message> {
         &self.msg_queue
     }
 
-    pub fn node(&self) -> &Consensus {
+    pub(crate) fn node(&self) -> &Consensus {
         &self.node
     }
 
-    pub fn node_mut(&mut self) -> &mut Consensus {
+    pub(crate) fn node_mut(&mut self) -> &mut Consensus {
         &mut self.node
     }
 
-    pub fn actions_taken_len(&self) -> usize {
-        self.actions_taken.len()
+    pub(crate) fn committee(&self) -> &StaticCommittee {
+        self.node.committee()
     }
 
-    pub fn clear_actions(&mut self) {
-        self.actions_taken.clear();
-    }
-
-    pub fn expected_vertex_proposal_action(&self, round: RoundNumber) -> Action {
-        let v = self
-            .node()
-            .dag()
-            .vertex(round, self.node().public_key())
-            .unwrap();
-        let e = self.node.sign(v.clone());
-        Action::SendProposal(e)
-    }
-
-    pub fn expected_timeout(&self, round: RoundNumber) -> Action {
-        let d = Timeout::new(round);
-        let e = self.node.sign(d.clone());
-        Action::SendTimeout(e)
-    }
-
-    pub fn timeout_cert(&self, round: RoundNumber) -> Option<Certificate<Timeout>> {
-        let mut accumulators = self.node.timeout_accumulators().clone();
-        if let Some(accumulator) = accumulators.get_mut(&round) {
-            return accumulator.certificate().cloned();
+    pub(crate) fn expected_vertex_proposal(
+        &self,
+        round: RoundNumber,
+        edges: Vec<PublicKey>,
+        timeout_cert: Option<Certificate<Timeout>>,
+    ) -> Envelope<Vertex, Validated> {
+        let mut v = Vertex::new(round, *self.node.public_key());
+        v.add_edges(edges);
+        if let Some(tc) = timeout_cert {
+            v.set_timeout(tc);
         }
-        None
+        self.node.sign(v.clone())
     }
 
-    pub fn expected_no_vote(&self, round: RoundNumber) -> Action {
+    pub(crate) fn expected_timeout(&self, round: RoundNumber) -> Envelope<Timeout, Validated> {
+        let d = Timeout::new(round);
+        self.node.sign(d.clone())
+    }
+
+    pub(crate) fn expected_timeout_certificate(
+        &self,
+        round: RoundNumber,
+        signers: &(BitVec, Vec<Signature>),
+    ) -> Certificate<Timeout> {
+        let pp = <PublicKey as SignatureKey>::public_parameter(
+            self.node.committee().stake_table(),
+            U256::from(self.node.committee().quorum_size().get()),
+        );
+        let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
+        Certificate::new(Timeout::new(round), sig)
+    }
+
+    pub(crate) fn expected_no_vote(&self, round: RoundNumber) -> Envelope<NoVote, Validated> {
         let nv = NoVote::new(round);
-        let e = self.node.sign(nv);
-        let leader = self.node.committee().leader(round + 1);
-        Action::SendNoVote(leader, e)
+        self.node.sign(nv)
     }
 
-    pub fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
+    pub(crate) fn actions_is_empty(&self) -> bool {
+        self.expected_actions.is_empty()
+    }
+
+    pub(crate) fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
         let accumulator = self.node.timeout_accumulators().get(&expected_round);
 
-        // If accumulator is None, assert that votes is 0
-        if accumulator.is_none() {
-            assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
-        } else {
-            // If accumulator exists, assert that its votes match the expected value
+        if let Some(accumulator) = accumulator {
             assert_eq!(
-                accumulator.unwrap().votes(),
+                accumulator.votes(),
                 votes as usize,
                 "Timeout votes accumulated do not match expected votes"
             );
+            return;
         }
-    }
 
-    pub fn assert_actions(&self, expected: Vec<Action>) {
-        assert_eq!(
-            expected.len(),
-            self.actions_taken.len(),
-            "Expected Actions should match actual actions len"
-        );
-
-        for idx in 0..expected.len() {
-            let expected_action = expected.get(idx).unwrap();
-            let actual_action = self.actions_taken.get(idx).unwrap();
-            assert_eq!(
-                expected_action, actual_action,
-                "Expected vs Actual actions do not match"
-            );
-        }
+        assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
     }
 }

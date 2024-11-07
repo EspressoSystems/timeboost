@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use super::node_instrument::TestNodeInstrument;
+use bitvec::bitvec;
+use bitvec::vec::BitVec;
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::{
     committee::StaticCommittee,
@@ -7,10 +10,8 @@ use timeboost_core::types::{
     message::{Message, Timeout},
     round_number::RoundNumber,
     vertex::Vertex,
-    Keypair, NodeId, PublicKey,
+    Keypair, NodeId, PublicKey, Signature,
 };
-
-use super::node_instrument::TestNodeInstrument;
 
 pub struct KeyManager {
     keys: HashMap<u64, Keypair>,
@@ -87,6 +88,45 @@ impl KeyManager {
         let t = Timeout::new(RoundNumber::new(round));
         let e = Envelope::signed(t, kpair);
         Message::Timeout(e.cast())
+    }
+
+    pub(crate) fn edges_for_round(
+        &self,
+        round: RoundNumber,
+        committee: &StaticCommittee,
+        ignore_leader: bool,
+    ) -> Vec<PublicKey> {
+        // 2f + 1 edges
+        let threshold = committee.quorum_size().get() as usize;
+        let leader = committee.leader(round);
+        self.keys
+            .values()
+            .map(|kpair| *kpair.public_key())
+            .filter(|pub_key| !ignore_leader || *pub_key != leader)
+            .take(threshold)
+            .collect()
+    }
+
+    pub(crate) fn signers(
+        &self,
+        round: RoundNumber,
+        committee: &StaticCommittee,
+        sign_all: bool,
+    ) -> (BitVec, Vec<Signature>) {
+        // get 2f + 1 threshold or all signers in committee
+        let size = if sign_all {
+            committee.size().get()
+        } else {
+            committee.quorum_size().get() as usize
+        };
+        let mut signers: (BitVec, Vec<Signature>) =
+            (bitvec![0; committee.size().get()], Vec::new());
+        for (i, kpair) in self.keys.values().take(size).enumerate() {
+            let timeout = Envelope::signed(Timeout::new(round), kpair);
+            signers.0.set(i, true);
+            signers.1.push(timeout.signature().clone());
+        }
+        signers
     }
 
     pub(crate) fn prepare_dag(
