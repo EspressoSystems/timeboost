@@ -33,8 +33,7 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
-        let actions = self.node.handle_message(msg);
-        for a in actions {
+        for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
                 assert_eq!(a, expected, "Expected action should match actual action")
             } else {

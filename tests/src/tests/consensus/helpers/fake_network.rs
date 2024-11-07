@@ -33,9 +33,9 @@ impl FakeNetwork {
         let mut next = Vec::new();
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node_instrument in self.nodes.values_mut() {
-            let node_state = node_instrument.node_mut();
-            for a in node_state.go(Dag::new(committee_size)) {
-                Self::handle_action(node_state.id(), a, &mut next)
+            let node = node_instrument.node_mut();
+            for a in node.go(Dag::new(committee_size)) {
+                Self::handle_action(node.id(), a, &mut next)
             }
         }
         self.dispatch(next)

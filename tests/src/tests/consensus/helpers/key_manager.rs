@@ -111,17 +111,11 @@ impl KeyManager {
         &self,
         round: RoundNumber,
         committee: &StaticCommittee,
-        sign_all: bool,
+        count: usize,
     ) -> (BitVec, Vec<Signature>) {
-        // get 2f + 1 threshold or all signers in committee
-        let size = if sign_all {
-            committee.size().get()
-        } else {
-            committee.quorum_size().get() as usize
-        };
         let mut signers: (BitVec, Vec<Signature>) =
             (bitvec![0; committee.size().get()], Vec::new());
-        for (i, kpair) in self.keys.values().take(size).enumerate() {
+        for (i, kpair) in self.keys.values().take(count).enumerate() {
             let timeout = Envelope::signed(Timeout::new(round), kpair);
             signers.0.set(i, true);
             signers.1.push(timeout.signature().clone());

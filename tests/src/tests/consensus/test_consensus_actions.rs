@@ -64,7 +64,11 @@ async fn test_single_node_timeout() {
     // Setup expectations
     let expected_round = RoundNumber::new(5);
     let timeout = node_handle.expected_timeout(expected_round);
-    let signers = manager.signers(expected_round, &committee, false);
+    let signers = manager.signers(
+        expected_round,
+        &committee,
+        committee.quorum_size().get() as usize,
+    );
     let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
@@ -111,13 +115,17 @@ async fn test_single_node_timeout_cert() {
     let no_vote = node_handle.expected_no_vote(expected_round);
 
     // Signers and cert for 2f + 1 nodes
-    let mut signers = manager.signers(expected_round, &committee, false);
+    let mut signers = manager.signers(
+        expected_round,
+        &committee,
+        committee.quorum_size().get() as usize,
+    );
     // The first cert is sent when we see 2f + 1 timeouts
     // We will still get other timeout votes causing cert to change
     let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
 
     // Signers from all nodes and cert
-    signers = manager.signers(expected_round, &committee, true);
+    signers = manager.signers(expected_round, &committee, committee.size().get());
     // Proposal will send with a certificate with all signers
     let expected_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
     let vertex_proposal = node_handle.expected_vertex_proposal(
@@ -170,7 +178,6 @@ async fn test_single_node_timeout_cert() {
         node_handle.handle_message_and_verify_actions(msg);
     }
 
-    // Verify timeout actions
     node_handle.assert_timeout_accumulator(expected_round, num_nodes);
 
     // Handle certificate msg (send no vote, advance round, reset timer, propose for r + 1)
