@@ -45,7 +45,7 @@ async fn test_timeout_round_and_no_vote() {
     let num_nodes = 4;
     let (nodes, manager) = make_consensus_nodes(num_nodes);
 
-    let timeout_at_round = RoundNumber::new(2);
+    let timeout_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
         move |msg: &Message, node_handle: &mut TestNodeInstrument| {
@@ -75,14 +75,17 @@ async fn test_timeout_round_and_no_vote() {
     assert!(network
         .consensus()
         .all(|c| c.timeout_accumulators().is_empty()));
-
+    
     // Process timeouts
     network.process();
 
-    // Process timeout (create TC)
+    assert!(network
+        .consensus()
+        .any(|c| !c.timeout_accumulators().is_empty()));
+
+    // Process timeouts (create Timeout Certificate)
     network.process();
 
-    // Some nodes should have received timeout messages.
     assert!(network
         .consensus()
         .any(|c| !c.timeout_accumulators().is_empty()));
@@ -234,9 +237,8 @@ async fn test_invalid_timeout_certificate() {
     network.start();
 
     // Spin the test for some rounds
-    let mut i = 0;
     let rounds = 7;
-    while i < 7 {
+    for _ in 0..rounds {
         network.process();
         for (_id, msgs) in network.msgs_in_queue() {
             for msg in msgs {
@@ -254,34 +256,11 @@ async fn test_invalid_timeout_certificate() {
                 }
             }
         }
-
-        i += 1;
     }
 
     // verify progress was made
     for node_instrument in network.nodes.values() {
-        assert_eq!(*node_instrument.node().round(), rounds);
-    }
-}
-
-#[test]
-fn genesis_proposals() {
-    let (mut nodes, _manager) = make_consensus_nodes(5);
-
-    let actions: Vec<Vec<Action>> = nodes
-        .values_mut()
-        .map(|node_handle| {
-            let n = node_handle.node_mut();
-            n.go(Dag::new(n.committee_size()))
-        })
-        .collect();
-
-    for a in &actions {
-        let [Action::SendProposal(e)] = a.as_slice() else {
-            panic!("expected 1 vertex prooposal")
-        };
-        assert_eq!(e.signing_key(), e.data().source());
-        assert!(e.data().is_genesis());
+        assert_eq!(*node_instrument.node().round(), rounds+1);
     }
 }
 
@@ -344,7 +323,7 @@ fn basic_liveness() {
 
     for node_handle in nodes.values() {
         let n = node_handle.node();
-        assert_eq!(n.committed_round(), 15.into())
+        assert_eq!(n.committed_round(), 16.into())
     }
 
     // Every node should have delivered the same output:

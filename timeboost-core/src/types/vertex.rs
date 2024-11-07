@@ -33,14 +33,6 @@ impl Vertex {
         }
     }
 
-    pub fn is_genesis(&self) -> bool {
-        self.round == RoundNumber::genesis()
-            && self.edges.is_empty()
-            && self.no_vote.is_none()
-            && self.timeout.is_none()
-            && self.block.is_empty()
-    }
-
     pub fn source(&self) -> &PublicKey {
         &self.source
     }

@@ -112,8 +112,9 @@ impl Consensus {
         // TODO: Save and restore other states (committed_round, buffer, etc.)
 
         if r == RoundNumber::genesis() {
-            let env = Envelope::signed(Vertex::new(r, *self.public_key()), &self.keypair);
-            return vec![Action::SendProposal(env)];
+            for p in self.committee.committee() {
+                self.dag.add(Vertex::new(r, *p))
+            }
         }
 
         self.advance_from_round(r)
@@ -198,7 +199,7 @@ impl Consensus {
             return actions;
         }
 
-        if !(vertex.is_genesis() || self.is_valid(&vertex)) {
+        if !self.is_valid(&vertex) {
             return actions;
         }
 
@@ -536,11 +537,6 @@ impl Consensus {
         }
 
         self.dag.add(v.clone());
-
-        if v.is_genesis() {
-            // A genesis vertex has no edges to prior rounds.
-            return Ok(Vec::new());
-        }
 
         if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
