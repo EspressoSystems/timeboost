@@ -75,7 +75,7 @@ async fn test_timeout_round_and_no_vote() {
     assert!(network
         .consensus()
         .all(|c| c.timeout_accumulators().is_empty()));
-    
+
     // Process timeouts
     network.process();
 
@@ -260,7 +260,7 @@ async fn test_invalid_timeout_certificate() {
 
     // verify progress was made
     for node_instrument in network.nodes.values() {
-        assert_eq!(*node_instrument.node().round(), rounds+1);
+        assert_eq!(*node_instrument.node().round(), rounds + 1);
     }
 }
 
