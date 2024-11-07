@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  node0:
+    image: timeboost:latest
+    command: ["/app/timeboost", "--id", "0"]
+    networks:
+      - timeboost
+
+  node1:
+    image: timeboost:latest
+    command: ["/app/timeboost", "--id", "1"]
+    networks:
+      - timeboost
+
+  node2:
+    image: timeboost:latest
+    command: ["/app/timeboost", "--id", "2"]
+    networks:
+      - timeboost
+
+  node3:
+    image: timeboost:latest
+    command: ["/app/timeboost", "--id", "3"]
+    networks:
+      - timeboost
+
+  node4:
+    image: timeboost:latest
+    command: ["/app/timeboost", "--id", "4"]
+    networks:
+      - timeboost
+
+networks:
+  timeboost:
+    name: timeboost

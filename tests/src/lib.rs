@@ -6,10 +6,7 @@ use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use multiaddr::multiaddr;
 use sailfish::sailfish::Sailfish;
-use timeboost_core::{
-    logging,
-    types::{Keypair, PublicKey},
-};
+use timeboost_core::types::{Keypair, PublicKey};
 
 #[cfg(test)]
 mod tests;
@@ -22,8 +19,6 @@ pub struct Group {
 
 impl Group {
     pub fn new(size: u16) -> Self {
-        logging::init_logging();
-
         let mut nodes = vec![];
         let mut vcgfs = vec![];
 

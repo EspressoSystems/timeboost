@@ -14,6 +14,7 @@ pub enum EventType {
     Transactions { transactions: Vec<Transaction> },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SailfishStatusEvent {
     pub round: RoundNumber,
     pub event: EventType,

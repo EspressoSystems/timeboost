@@ -11,7 +11,7 @@ build:
   cargo build
 
 build_release:
-  cargo build --release --workspace
+  cargo build --release --workspace --all-targets
 
 test *ARGS:
   cargo nextest run --no-capture {{ARGS}}
@@ -35,3 +35,9 @@ lint: clippy fmt_check
 
 fix:
   cargo fix --allow-dirty --allow-staged
+
+build_docker:
+  docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
+
+run_integration:
+  docker compose up --abort-on-container-exit
