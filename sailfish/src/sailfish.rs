@@ -4,6 +4,7 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 use crate::coordinator::CoordinatorAuditEvent;
 
 use anyhow::Result;
+use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use hotshot::{
     traits::{
@@ -29,7 +30,11 @@ use libp2p_networking::{
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::Comm,
-    types::{committee::StaticCommittee, Keypair, NodeId, PublicKey},
+    types::{
+        committee::StaticCommittee,
+        event::{SailfishStatusEvent, TimeboostStatusEvent},
+        Keypair, NodeId, PublicKey,
+    },
 };
 use tokio::signal;
 use tokio::sync::oneshot;
@@ -153,6 +158,8 @@ impl Sailfish {
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        sf_app_tx: Sender<SailfishStatusEvent>,
+        tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
@@ -172,6 +179,8 @@ impl Sailfish {
             comm,
             consensus,
             shutdown_rx,
+            sf_app_tx,
+            tb_app_rx,
             #[cfg(feature = "test")]
             event_log,
         )
@@ -183,8 +192,13 @@ impl Sailfish {
         staked_nodes: Vec<PeerConfig<PublicKey>>,
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         shutdown_tx: oneshot::Sender<ShutdownToken>,
+        sf_app_tx: Sender<SailfishStatusEvent>,
+        tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
-        let coordinator_handle = tokio::spawn(self.init(n, staked_nodes, shutdown_rx, None).go());
+        let coordinator_handle = tokio::spawn(
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
+                .go(),
+        );
 
         tokio::select! {
             _ = coordinator_handle => {}
@@ -218,6 +232,8 @@ pub async fn run_sailfish(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
+    sf_app_tx: Sender<SailfishStatusEvent>,
+    tb_app_rx: Receiver<TimeboostStatusEvent>,
 ) -> Result<()> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
@@ -248,5 +264,13 @@ pub async fn run_sailfish(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    s.go(n, staked_nodes, shutdown_rx, shutdown_tx).await
+    s.go(
+        n,
+        staked_nodes,
+        shutdown_rx,
+        shutdown_tx,
+        sf_app_tx,
+        tb_app_rx,
+    )
+    .await
 }

@@ -2,15 +2,17 @@ use std::{future::pending, sync::Arc, time::Duration};
 
 use crate::{
     consensus::{Consensus, Dag},
-    sailfish::ShutdownToken,
+    sailfish::{Sailfish, ShutdownToken},
 };
 
 use anyhow::Result;
+use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
+        event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
         NodeId, PublicKey,
@@ -20,7 +22,7 @@ use tokio::{
     sync::oneshot::{self},
     time::sleep,
 };
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -34,6 +36,12 @@ pub struct Coordinator<C> {
 
     /// The shutdown signal for this coordinator.
     shutdown_rx: oneshot::Receiver<ShutdownToken>,
+
+    /// The sailfish sender application event stream.
+    sf_app_tx: Sender<SailfishStatusEvent>,
+
+    /// The timeboost receiver application event stream.
+    tb_app_rx: Receiver<TimeboostStatusEvent>,
 
     #[cfg(feature = "test")]
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -62,6 +70,8 @@ impl<C: Comm> Coordinator<C> {
         comm: C,
         cons: Consensus,
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        sf_app_tx: Sender<SailfishStatusEvent>,
+        tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Self {
         Self {
@@ -69,6 +79,8 @@ impl<C: Comm> Coordinator<C> {
             comm,
             consensus: cons,
             shutdown_rx,
+            sf_app_tx,
+            tb_app_rx,
             #[cfg(feature = "test")]
             event_log,
         }
@@ -114,16 +126,25 @@ impl<C: Comm> Coordinator<C> {
                                 #[cfg(feature = "test")]
                                 self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
                                     .await;
+
                                 self.on_action(a, &mut timer).await
                             }
                         }
                         Err(err) => {
-                            warn!(%err, "error processing incoming message")
+                            warn!(%err, "error processing incoming message");
                         }
                     }
                     Err(e) => {
                         warn!("Failed to deserialize network message; error = {e:#}");
                         continue;
+                    }
+                },
+                tb_event = &mut self.tb_app_rx.recv() => match tb_event {
+                    Ok(event) => {
+                        self.on_application_event(event).await;
+                    }
+                    Err(e) => {
+                        warn!("Failed to receive timeboost event; error = {e:#}");
                     }
                 },
                 token = &mut self.shutdown_rx => {
@@ -144,13 +165,43 @@ impl<C: Comm> Coordinator<C> {
         Ok(self.consensus.handle_message(m))
     }
 
+    /// The coordinator has received an event from the timeboost application.
+    async fn on_application_event(&mut self, event: TimeboostStatusEvent) {
+        // TODO
+        info!(%event, "received timeboost event");
+    }
+
     async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, RoundNumber>) {
         match action {
-            Action::ResetTimer(r) => *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed(),
-            Action::Deliver(_, r, src) => trace!(%r, %src, "deliver"), // TODO
+            Action::ResetTimer(r) => {
+                *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed();
+
+                // This is somewhat of a "if you know, you know" event as a reset timer
+                // implies that the protocol has moved to the next round.
+                self.application_broadcast(SailfishStatusEvent {
+                    round: r,
+                    event: SailfishEventType::Timeout { round: r },
+                })
+                .await;
+            }
+            Action::Deliver(_, r, _) => {
+                self.application_broadcast(SailfishStatusEvent {
+                    round: r,
+                    event: SailfishEventType::Committed { round: r },
+                })
+                .await;
+            }
             Action::SendProposal(e) => self.broadcast(Message::Vertex(e.cast())).await,
             Action::SendTimeout(e) => self.broadcast(Message::Timeout(e.cast())).await,
-            Action::SendTimeoutCert(c) => self.broadcast(Message::TimeoutCert(c)).await,
+            Action::SendTimeoutCert(c) => {
+                let round = c.data().round();
+                self.broadcast(Message::TimeoutCert(c)).await;
+                self.application_broadcast(SailfishStatusEvent {
+                    round,
+                    event: SailfishEventType::Timeout { round },
+                })
+                .await;
+            }
             Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v.cast())).await,
         }
     }
@@ -165,6 +216,12 @@ impl<C: Comm> Coordinator<C> {
             Err(err) => {
                 warn!(%err, "failed to serialize message")
             }
+        }
+    }
+
+    async fn application_broadcast(&mut self, event: SailfishStatusEvent) {
+        if let Err(e) = self.sf_app_tx.broadcast(event).await {
+            warn!(%e, "failed to send message to application layer");
         }
     }
 
