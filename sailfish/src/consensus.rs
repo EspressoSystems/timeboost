@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet};
 use std::mem;
 use std::num::NonZeroUsize;
 
@@ -9,6 +9,7 @@ use timeboost_core::types::{
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     round_number::RoundNumber,
+    transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, NodeId, PublicKey,
 };
@@ -57,8 +58,8 @@ pub struct Consensus {
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex>,
 
-    /// Blocks of transtactions to include in vertex proposals.
-    blocks: VecDeque<Block>,
+    /// Transactions to include in vertex proposals.
+    transactions: TransactionsQueue,
 }
 
 impl Consensus {
@@ -75,7 +76,7 @@ impl Consensus {
             no_votes: VoteAccumulator::new(committee.clone()),
             committee,
             leader_stack: Vec::new(),
-            blocks: VecDeque::new(),
+            transactions: TransactionsQueue::new(),
         }
     }
 
@@ -95,8 +96,8 @@ impl Consensus {
         self.committee.size()
     }
 
-    pub fn add_block(&mut self, b: Block) {
-        self.blocks.push_back(b);
+    pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
+        self.transactions = q
     }
 
     /// (Re-)start consensus.
@@ -503,7 +504,7 @@ impl Consensus {
         let prev = self.dag.vertices(r - 1);
 
         let mut new = Vertex::new(r, *self.public_key());
-        new.set_block(self.blocks.pop_front().unwrap_or_default());
+        new.set_block(Block::new().with_transactions(self.transactions.take()));
         new.add_edges(prev.map(Vertex::source).cloned());
 
         // Every vertex in our DAG has > 2f edges to the previous round:
@@ -580,7 +581,7 @@ impl Consensus {
     )]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
         self.leader_stack.push(v.clone());
-        for r in ((self.committed_round + 1).u64()..v.round().u64()).rev() {
+        for r in (*self.committed_round + 1..*v.round()).rev() {
             let Some(l) = self.leader_vertex(RoundNumber::new(r)).cloned() else {
                 debug! {
                     node   = %self.id,
@@ -607,7 +608,6 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(node = %self.id, round = %self.round))]
     fn order_vertices(&mut self) -> Vec<Action> {
         let mut actions = Vec::new();
-        let mut delivered = mem::take(&mut self.delivered);
         while let Some(v) = self.leader_stack.pop() {
             // This orders vertices by round and source.
             for to_deliver in self
@@ -615,17 +615,16 @@ impl Consensus {
                 .vertex_range(RoundNumber::genesis() + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
-                if delivered.contains(to_deliver) {
+                if self.delivered.contains(to_deliver) {
                     continue;
                 }
                 let b = to_deliver.block().clone();
                 let r = to_deliver.round();
                 let s = *to_deliver.source();
                 actions.push(Action::Deliver(b, r, s));
-                delivered.insert(to_deliver.clone());
+                self.delivered.insert(to_deliver.clone());
             }
         }
-        self.delivered = delivered;
         self.gc(self.committed_round);
         actions
     }
