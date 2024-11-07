@@ -13,6 +13,12 @@ pub struct CommitteeContract {
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 
+impl Default for CommitteeContract {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommitteeContract {
     /// This will change, right now we pre-seed the contract with a fixed number of nodes
     /// in the fake committee. Each node's ID will be known ahead of time.
