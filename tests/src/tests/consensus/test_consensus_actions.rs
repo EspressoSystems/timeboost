@@ -45,8 +45,8 @@ async fn test_single_node_advance() {
 
     // Ensure we went through all expected actions
     assert!(
-        node_handle.actions_is_empty(),
-        "Test is done but there are still remaing actions."
+        node_handle.expected_actions_is_empty(),
+        "Test is done but there are still remaining actions."
     );
 }
 
@@ -89,8 +89,8 @@ async fn test_single_node_timeout() {
     // Ensure we went through all expected actions
     node_handle.assert_timeout_accumulator(expected_round, num_nodes);
     assert!(
-        node_handle.actions_is_empty(),
-        "Test is done but there are still remaing actions."
+        node_handle.expected_actions_is_empty(),
+        "Test is done but there are still remaining actions."
     );
 }
 
@@ -112,10 +112,13 @@ async fn test_single_node_timeout_cert() {
 
     // Signers and cert for 2f + 1 nodes
     let mut signers = manager.signers(expected_round, &committee, false);
+    // The first cert is sent when we see 2f + 1 timeouts
+    // We will still get other timeout votes causing cert to change
     let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
 
     // Signers from all nodes and cert
     signers = manager.signers(expected_round, &committee, true);
+    // Proposal will send with a certificate with all signers
     let expected_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
     let vertex_proposal = node_handle.expected_vertex_proposal(
         expected_round + 1,
@@ -176,7 +179,7 @@ async fn test_single_node_timeout_cert() {
     // Ensure we went through all expected actions
     node_handle.assert_timeout_accumulator(expected_round, 0);
     assert!(
-        node_handle.actions_is_empty(),
-        "Test is done but there are still remaing actions."
+        node_handle.expected_actions_is_empty(),
+        "Test is done but there are still remaining actions."
     );
 }

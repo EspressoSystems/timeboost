@@ -108,7 +108,7 @@ impl TestNodeInstrument {
         self.node.sign(nv)
     }
 
-    pub(crate) fn actions_is_empty(&self) -> bool {
+    pub(crate) fn expected_actions_is_empty(&self) -> bool {
         self.expected_actions.is_empty()
     }
 
