@@ -30,6 +30,10 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.votes.is_empty()
+    }
+
     pub fn votes(&self) -> usize {
         self.votes.len()
     }
