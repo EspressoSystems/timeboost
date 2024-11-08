@@ -24,7 +24,7 @@ fn bench_vote_accummulator() {
         let duration = simple_bench(|| {
             let mut accu = VoteAccumulator::<Timeout>::new(comm.clone());
             for k in &mut keys[..] {
-                match accu.add(Envelope::signed(Timeout::new(42.into()), k)) {
+                match accu.add(Envelope::signed(Timeout::new(42), k)) {
                     Ok(None) => {}
                     Ok(Some(_)) => return true,
                     Err(_) => return false,
