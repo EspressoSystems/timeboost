@@ -25,21 +25,39 @@ pub struct Envelope<D: Committable, S> {
     _marker: PhantomData<fn(S)>,
 }
 
-impl<D: Committable, S> Envelope<D, S> {
-    pub fn new(data: D, signature: Signature, signing_key: PublicKey) -> Self {
-        let commitment = data.commit();
+impl<D: Committable> Envelope<D, Validated> {
+    /// Create a (validated) envelope by signing data with a private key.
+    pub fn signed(d: D, keypair: &Keypair) -> Self {
+        let c = d.commit();
+        let s = keypair.sign(c.as_ref());
         Self {
-            data,
-            commitment,
-            signature,
-            signing_key,
+            data: d,
+            commitment: c,
+            signature: s,
+            signing_key: *keypair.public_key(),
             _marker: PhantomData,
         }
     }
 
+    /// A validated envelope can be cast to envelopes of other types.
+    ///
+    /// E.g. Validated -> Unchecked
+    pub fn cast<S>(self) -> Envelope<D, S> {
+        Envelope {
+            data: self.data,
+            commitment: self.commitment,
+            signature: self.signature,
+            signing_key: self.signing_key,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<D: Committable, S> Envelope<D, S> {
     /// Is the signature of this envelope valid?
     pub fn is_valid(&self, membership: &StaticCommittee) -> bool {
         membership.committee().contains(&self.signing_key)
+            && self.data.commit() == self.commitment
             && self
                 .signing_key
                 .validate(&self.signature, self.commitment.as_ref())
@@ -81,27 +99,5 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn into_data(self) -> D {
         self.data
-    }
-}
-
-impl<D: Committable> Envelope<D, Validated> {
-    /// Create a (validated) envelope by signing data with a private key.
-    pub fn signed(d: D, keypair: &Keypair) -> Self {
-        let c = d.commit();
-        let s = keypair.sign(c.as_ref());
-        Self::new(d, s, *keypair.public_key())
-    }
-
-    /// A validated envelope can be cast to envelopes of other types.
-    ///
-    /// E.g. Validated -> Unchecked
-    pub fn cast<S>(self) -> Envelope<D, S> {
-        Envelope {
-            data: self.data,
-            commitment: self.commitment,
-            signature: self.signature,
-            signing_key: self.signing_key,
-            _marker: PhantomData,
-        }
     }
 }
