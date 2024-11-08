@@ -80,7 +80,7 @@ impl fmt::Display for Action {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct Timeout {
-    pub round: RoundNumber,
+    round: RoundNumber,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -89,8 +89,8 @@ pub struct NoVote {
 }
 
 impl Timeout {
-    pub fn new(r: RoundNumber) -> Self {
-        Self { round: r }
+    pub fn new<N: Into<RoundNumber>>(r: N) -> Self {
+        Self { round: r.into() }
     }
 
     pub fn round(&self) -> RoundNumber {
@@ -99,8 +99,8 @@ impl Timeout {
 }
 
 impl NoVote {
-    pub fn new(r: RoundNumber) -> Self {
-        Self { round: r }
+    pub fn new<N: Into<RoundNumber>>(r: N) -> Self {
+        Self { round: r.into() }
     }
 
     pub fn round(&self) -> RoundNumber {

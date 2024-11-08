@@ -14,6 +14,9 @@ use timeboost_core::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod bench;
+
 pub struct Group {
     pub fish: Vec<Sailfish>,
     pub bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
