@@ -1,10 +1,6 @@
-use std::collections::VecDeque;
+use timeboost_core::types::{message::Message, round_number::RoundNumber};
 
-use timeboost_core::types::{
-    committee::StaticCommittee, message::Message, round_number::RoundNumber,
-};
-
-use super::test_helpers::MessageModifier;
+use super::{node_instrument::TestNodeInstrument, test_helpers::MessageModifier};
 /// Intercept a message before a node processes it and apply transformations if any provided
 pub struct Interceptor {
     msg_modifier: MessageModifier,
@@ -14,7 +10,7 @@ pub struct Interceptor {
 impl Interceptor {
     pub(crate) fn new<F>(msg_modifier: F, modify_at_round: RoundNumber) -> Self
     where
-        F: Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message> + 'static,
+        F: Fn(&Message, &mut TestNodeInstrument) -> Vec<Message> + 'static,
     {
         Self {
             msg_modifier: Box::new(msg_modifier),
@@ -26,12 +22,11 @@ impl Interceptor {
     pub(crate) fn intercept_message(
         &self,
         msg: Message,
-        committe: &StaticCommittee,
-        queue: &mut VecDeque<Message>,
+        node_handle: &mut TestNodeInstrument,
     ) -> Vec<Message> {
         let round = msg.round();
         if self.modify_at_round == round {
-            let new_msg = (self.msg_modifier)(&msg, committe, queue);
+            let new_msg = (self.msg_modifier)(&msg, node_handle);
             return new_msg;
         }
 
@@ -43,11 +38,9 @@ impl Default for Interceptor {
     fn default() -> Self {
         Self {
             modify_at_round: RoundNumber::new(0),
-            msg_modifier: Box::new(
-                |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
-                    vec![msg.clone()]
-                },
-            ),
+            msg_modifier: Box::new(|msg: &Message, _node: &mut TestNodeInstrument| {
+                vec![msg.clone()]
+            }),
         }
     }
 }
