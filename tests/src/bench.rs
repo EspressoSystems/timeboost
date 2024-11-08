@@ -1,3 +1,5 @@
+#![cfg(feature = "benchmark")]
+
 use std::time::{Duration, Instant};
 
 use sailfish::consensus::VoteAccumulator;
@@ -16,7 +18,7 @@ fn simple_bench(mut f: impl FnMut() -> bool) -> Duration {
 }
 
 #[test]
-fn bench_vote_accummulator() {
+fn bench_vote_accumulator() {
     for n in [1, 2, 3, 10, 20, 30, 60, 100] {
         let mut keys = (0..n).map(|_| Keypair::random()).collect::<Vec<_>>();
         let comm = StaticCommittee::new(keys.iter().map(|kp| *kp.public_key()).collect());
