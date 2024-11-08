@@ -14,12 +14,12 @@ use timeboost_core::types::{
     Keypair, NodeId, PublicKey,
 };
 use tracing::{debug, error, instrument, trace, warn};
-use vote::VoteAccumulator;
 
 mod dag;
 mod vote;
 
 pub use dag::Dag;
+pub use vote::VoteAccumulator;
 
 #[cfg(feature = "metrics")]
 mod metrics;
