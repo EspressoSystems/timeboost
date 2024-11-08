@@ -1,37 +1,29 @@
-use std::collections::VecDeque;
+use std::collections::HashMap;
 
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use sailfish::consensus::Consensus;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Message, Timeout},
-    round_number::RoundNumber,
-    vertex::Vertex,
-    Keypair, NodeId, PublicKey, Signature,
+    PublicKey, Signature,
 };
-pub(crate) type MessageModifier =
-    Box<dyn Fn(&Message, &StaticCommittee, &mut VecDeque<Message>) -> Vec<Message>>;
 
-pub(crate) fn make_consensus_nodes(num_nodes: u64) -> Vec<Consensus> {
-    let keys = (0..num_nodes).map(Keypair::zero).collect::<Vec<_>>();
-    let committee = StaticCommittee::new(keys.iter().map(|k| *k.public_key()).collect());
-    keys.into_iter()
-        .enumerate()
-        .map(|(i, kpair)| {
-            let node_id = NodeId::from(i as u64);
-            Consensus::new(node_id, kpair, committee.clone())
-        })
-        .collect()
-}
+use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
+pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
-pub(crate) fn create_vertex_proposal_msg(round: RoundNumber, kpair: &Keypair) -> Message {
-    let d = Vertex::new(round, *kpair.public_key());
-    let e = Envelope::signed(d, kpair);
-    Message::Vertex(e.cast())
+pub(crate) fn make_consensus_nodes(
+    num_nodes: u64,
+) -> (HashMap<PublicKey, TestNodeInstrument>, KeyManager) {
+    let manager = KeyManager::new(num_nodes);
+    let nodes = manager.create_node_instruments();
+    let nodes = nodes
+        .into_iter()
+        .map(|node_instrument| (*node_instrument.node().public_key(), node_instrument))
+        .collect();
+    (nodes, manager)
 }
 
 pub(crate) fn create_timeout_certificate_msg(

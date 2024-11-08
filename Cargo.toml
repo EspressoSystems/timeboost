@@ -30,6 +30,7 @@ bitvec = { version = "1", default-features = false, features = [
     "serde",
 ] }
 blake3 = "1.5"
+bytes = { version = "1.8.0", features = ["serde"] }
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
@@ -50,6 +51,7 @@ jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfis
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79", default-features = false }
 multiaddr = "0.18.2"
+parking_lot = "0.12.3"
 portpicker = "0.1.1"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"

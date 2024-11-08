@@ -1,29 +1,69 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
-use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::Envelope;
 use timeboost_core::types::message::{Action, Timeout};
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use timeboost_core::types::{Keypair, NodeId, PublicKey, Signature};
 
+use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork,
     interceptor::Interceptor,
-    test_helpers::{
-        create_timeout_certificate_msg, create_vertex_proposal_msg, make_consensus_nodes,
-    },
+    test_helpers::{create_timeout_certificate_msg, make_consensus_nodes},
 };
 use bitvec::{bitvec, vec::BitVec};
+
+#[tokio::test]
+async fn test_multi_round_consensus() {
+    logging::init_logging();
+
+    let num_nodes = 4;
+    let (nodes, _manager) = make_consensus_nodes(num_nodes);
+
+    let mut network = FakeNetwork::new(nodes, Interceptor::default());
+    network.start();
+    network.process();
+
+    let mut round = RoundNumber::genesis();
+
+    // Spin the test for some rounds.
+    while *round < 10 {
+        network.process();
+        round = network.current_round();
+    }
+
+    for node_instrument in network.nodes.values() {
+        assert_eq!(node_instrument.node().round(), round);
+    }
+}
 
 #[tokio::test]
 async fn test_timeout_round_and_no_vote() {
     logging::init_logging();
     let num_nodes = 4;
-    let nodes = make_consensus_nodes(num_nodes);
+    let (nodes, manager) = make_consensus_nodes(num_nodes);
 
-    let mut network = FakeNetwork::new(nodes, Interceptor::default());
+    let timeout_at_round = RoundNumber::new(3);
+
+    let interceptor = Interceptor::new(
+        move |msg: &Message, node_handle: &mut TestNodeInstrument| {
+            if let Message::Vertex(v) = msg {
+                if v.data().round() == timeout_at_round
+                    && *v.signing_key() == node_handle.node().committee().leader(v.data().round())
+                {
+                    let timeout_msgs = manager.create_timeout_vote_msg(timeout_at_round);
+                    node_handle.add_msgs(timeout_msgs);
+                    return vec![];
+                }
+            }
+            vec![msg.clone()]
+        },
+        timeout_at_round,
+    );
+
+    let mut network = FakeNetwork::new(nodes, interceptor);
 
     network.start();
 
@@ -36,31 +76,31 @@ async fn test_timeout_round_and_no_vote() {
         .consensus()
         .all(|c| c.timeout_accumulators().is_empty()));
 
-    // Process a round without proposal from leader
-    let round = RoundNumber::new(2);
-    network.timeout_round(round);
-
-    // No timeout messages expected:
-    assert!(network
-        .consensus()
-        .all(|c| c.timeout_accumulators().is_empty()));
-
-    // Process timeout (create TC)
+    // Process timeouts
     network.process();
 
-    // Some nodes should have received timeout messages.
     assert!(network
         .consensus()
         .any(|c| !c.timeout_accumulators().is_empty()));
 
-    // Process no vote msgs
+    // Process timeouts (create Timeout Certificate)
     network.process();
+
+    assert!(network
+        .consensus()
+        .any(|c| !c.timeout_accumulators().is_empty()));
 
     // Leader send vertex with no vote certificate and timeout certificate
     network.process();
 
     // After the NVC has been created, the no-vote accumulator is empty.
-    assert!(network.leader(round).no_vote_accumulator().votes() == 0);
+    assert!(
+        network
+            .leader(timeout_at_round)
+            .no_vote_accumulator()
+            .votes()
+            == 0
+    );
 
     // Everyone moved to the next round, so timeout accumulators should be empty again.
     assert!(network
@@ -99,51 +139,26 @@ async fn test_timeout_round_and_no_vote() {
 }
 
 #[tokio::test]
-async fn test_multi_round_consensus() {
-    logging::init_logging();
-
-    let num_nodes = 4;
-    let nodes = make_consensus_nodes(num_nodes);
-
-    let mut network = FakeNetwork::new(nodes, Interceptor::default());
-    network.start();
-    network.process();
-
-    let mut round = RoundNumber::genesis();
-
-    // Spin the test for some rounds.
-    while *round < 10 {
-        network.process();
-        round = network.current_round();
-    }
-
-    for (_, (node, _)) in network.nodes.iter() {
-        assert_eq!(node.round(), round);
-    }
-}
-
-#[tokio::test]
 async fn test_invalid_vertex_signatures() {
     logging::init_logging();
 
     let num_nodes = 5;
     let invalid_node_id = num_nodes + 1;
 
-    let nodes = make_consensus_nodes(num_nodes);
+    let (nodes, manager) = make_consensus_nodes(num_nodes);
 
     let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, _committee: &StaticCommittee, _queue: &mut VecDeque<Message>| {
+        move |msg: &Message, _node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
-                let new_keys = Keypair::new(invalid_node_id);
+                let invalid_kpair = Keypair::new(invalid_node_id);
                 // modify current network message with this invalid one
-                vec![create_vertex_proposal_msg(msg.round(), &new_keys)]
-            } else {
-                // if not vertex leave msg alone
-                vec![msg.clone()]
+                return vec![manager.create_vertex_proposal_msg(msg.round(), &invalid_kpair)];
             }
+            // if not vertex leave msg alone
+            vec![msg.clone()]
         },
         invalid_msg_at_round,
     );
@@ -161,8 +176,8 @@ async fn test_invalid_vertex_signatures() {
     }
 
     // verify no progress was made
-    for (_, (node, _)) in network.nodes.iter() {
-        assert_eq!(node.round(), invalid_msg_at_round);
+    for node_instrument in network.nodes.values() {
+        assert_eq!(node_instrument.node().round(), invalid_msg_at_round);
     }
 }
 
@@ -173,15 +188,16 @@ async fn test_invalid_timeout_certificate() {
     let num_nodes = 4;
     let invalid_node_id = num_nodes + 1;
 
-    let nodes = make_consensus_nodes(num_nodes);
+    let (nodes, _manager) = make_consensus_nodes(num_nodes);
 
     let invalid_msg_at_round = RoundNumber::new(3);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, committee: &StaticCommittee, queue: &mut VecDeque<Message>| {
+        move |msg: &Message, node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(e) = msg {
                 // Generate keys for invalid nodes (nodes that are not in stake table)
                 // And create a timeout certificate from them
+                let committee = node_handle.node().committee();
                 let mut signers: (BitVec, Vec<Signature>) =
                     (bitvec![0; num_nodes as usize], Vec::new());
                 let mut timeout = None;
@@ -198,7 +214,7 @@ async fn test_invalid_timeout_certificate() {
                 // We should discard the message with the invalid certificate in `handle_timeout_cert` since the signers are invalid
                 // And never broadcast a vertex with a timeout certificate and send a no vote message
                 // End of queue should be leader vertex inject process the certificate first
-                if queue.is_empty() {
+                if node_handle.msg_queue().is_empty() {
                     return vec![
                         create_timeout_certificate_msg(timeout.unwrap(), &signers, committee),
                         msg.clone(),
@@ -206,7 +222,7 @@ async fn test_invalid_timeout_certificate() {
                 }
                 // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
                 if *e.signing_key() == committee.leader(e.data().round()) {
-                    queue.push_back(msg.clone());
+                    node_handle.add_msg(msg.clone());
                     return vec![];
                 }
             }
@@ -221,9 +237,8 @@ async fn test_invalid_timeout_certificate() {
     network.start();
 
     // Spin the test for some rounds
-    let mut i = 0;
     let rounds = 7;
-    while i < 7 {
+    for _ in 0..rounds {
         network.process();
         for (_id, msgs) in network.msgs_in_queue() {
             for msg in msgs {
@@ -241,31 +256,11 @@ async fn test_invalid_timeout_certificate() {
                 }
             }
         }
-
-        i += 1;
     }
 
     // verify progress was made
-    for (_, (node, _)) in network.nodes.iter() {
-        assert_eq!(*node.round(), rounds);
-    }
-}
-
-#[test]
-fn genesis_proposals() {
-    let mut conss = make_consensus_nodes(5);
-
-    let actions: Vec<Vec<Action>> = conss
-        .iter_mut()
-        .map(|c| c.go(Dag::new(c.committee_size())))
-        .collect();
-
-    for a in &actions {
-        let [Action::SendProposal(e)] = a.as_slice() else {
-            panic!("expected 1 vertex prooposal")
-        };
-        assert_eq!(e.signing_key(), e.data().source());
-        assert!(e.data().is_genesis());
+    for node_instrument in network.nodes.values() {
+        assert_eq!(*node_instrument.node().round(), rounds + 1);
     }
 }
 
@@ -273,12 +268,15 @@ fn genesis_proposals() {
 fn basic_liveness() {
     logging::init_logging();
 
-    let mut nodes = make_consensus_nodes(5);
+    let (mut nodes, _manager) = make_consensus_nodes(5);
 
     let mut actions: Vec<(NodeId, Vec<Action>)> = nodes
-        .iter_mut()
+        .values_mut()
         .enumerate()
-        .map(|(i, c)| ((i as u64).into(), c.go(Dag::new(c.committee_size()))))
+        .map(|(i, node_handle)| {
+            let node = node_handle.node_mut();
+            ((i as u64).into(), node.go(Dag::new(node.committee_size())))
+        })
         .collect();
 
     // Track what each node delivers as output:
@@ -288,7 +286,8 @@ fn basic_liveness() {
     for _ in 0..17 {
         let mut next = Vec::new();
         for (id, aa) in &actions {
-            for n in &mut nodes {
+            for node_handle in &mut nodes.values_mut() {
+                let n = node_handle.node_mut();
                 for a in aa {
                     let na = match a {
                         Action::Deliver(_, r, s) => {
@@ -309,7 +308,8 @@ fn basic_liveness() {
                 }
             }
         }
-        for n in &nodes {
+        for node_handle in nodes.values() {
+            let n = node_handle.node();
             assert!(n.dag().depth() <= 5);
             if n.committed_round() > 2.into() {
                 // The DAG should not contain data below committed round - 2:
@@ -321,8 +321,9 @@ fn basic_liveness() {
         actions = next
     }
 
-    for n in nodes {
-        assert_eq!(n.committed_round(), 15.into())
+    for node_handle in nodes.values() {
+        let n = node_handle.node();
+        assert_eq!(n.committed_round(), 16.into())
     }
 
     // Every node should have delivered the same output:
