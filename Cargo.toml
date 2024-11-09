@@ -1,11 +1,17 @@
 [workspace]
-members = ["tests", "sailfish", "timeboost", "timeboost-core"]
+members = [
+    "tests",
+    "sailfish",
+    "timeboost",
+    "timeboost-core",
+    "timeboost-crypto",
+]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "Sailfish is a DAG-based BFT consensus protocol."
+description = "Low-latency decentralized sequencer with optional encrypted mempool"
 
 [profile.test]
 codegen-units = 16
@@ -17,6 +23,7 @@ anyhow = "1.0.89"
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
 ark-ff = "0.4"
+ark-ec = "0.4"
 ark-serialize = "0.4"
 ark-std = { version = "0.4", default-features = false }
 async-broadcast = "0.7"
