@@ -114,3 +114,31 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use ark_std::{test_rng, UniformRand};
+
+    use ark_ed_on_bn254::EdwardsProjective as JubJub;
+
+    use crate::sg_encryption::{Randomness, ShoupGennaro, ThresholdEncScheme};
+
+    #[test]
+    fn test_shoup_gennaro_encryption() {
+        let rng = &mut test_rng();
+
+        // setup and key generation
+        let parameters = ShoupGennaro::<JubJub>::setup(rng).unwrap();
+        let (pk, sk) = ShoupGennaro::<JubJub>::keygen(&parameters, rng).unwrap();
+
+        // get a random msg and encryption randomness
+        let msg = JubJub::rand(rng).into();
+        let r = Randomness::rand(rng);
+
+        // encrypt and decrypt the message
+        let cipher = ShoupGennaro::<JubJub>::encrypt(&parameters, &pk, &msg, &r).unwrap();
+        let check_msg = ShoupGennaro::<JubJub>::decrypt(&parameters, &sk, &cipher).unwrap();
+
+        assert_eq!(msg, check_msg);
+    }
+}
