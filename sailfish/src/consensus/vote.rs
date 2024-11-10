@@ -30,6 +30,10 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.votes.is_empty()
+    }
+
     pub fn votes(&self) -> usize {
         self.votes.len()
     }
@@ -62,8 +66,8 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.signers.1.push(vote.signature().clone());
 
         if let Some((_, e)) = self.votes.first_key_value() {
-            if e.data() != vote.data() {
-                return Err(Error::DataMismatch);
+            if e.commitment() != vote.commitment() {
+                return Err(Error::CommitmentMismatch);
             }
         }
 
@@ -97,6 +101,6 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
 pub enum Error {
     #[error("unknown signing key")]
     UnknownSigningKey,
-    #[error("data mismatch")]
-    DataMismatch,
+    #[error("commitment mismatch")]
+    CommitmentMismatch,
 }
