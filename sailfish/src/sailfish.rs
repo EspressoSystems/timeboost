@@ -26,6 +26,7 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
+use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::Comm,
@@ -184,13 +185,32 @@ impl Sailfish {
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         shutdown_tx: oneshot::Sender<ShutdownToken>,
     ) -> Result<()> {
-        let coordinator_handle = tokio::spawn(self.init(n, staked_nodes, shutdown_rx, None).go());
+        let mut coordinator_handle =
+            tokio::spawn(self.init(n, staked_nodes, shutdown_rx, None).go());
+
+        let shutdown_timeout = Duration::from_secs(5);
 
         tokio::select! {
-            _ = coordinator_handle => {}
+            coordinator_result = &mut coordinator_handle => {
+                tracing::info!("Coordinator task completed");
+                coordinator_result?;
+            }
             _ = signal::ctrl_c() => {
-                tracing::info!("Received termination signal, shutting down...");
-                shutdown_tx.send(ShutdownToken::new()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+                tracing::info!("Received termination signal, initiating graceful shutdown...");
+                shutdown_tx.send(ShutdownToken::new())
+                    .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+
+                // Wait for coordinator to shutdown gracefully or timeout
+                match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
+                    Ok(coordinator_result) => {
+                        tracing::info!("Coordinator shutdown gracefully");
+                        coordinator_result?;
+                    }
+                    Err(_) => {
+                        tracing::warn!("Coordinator did not shutdown within grace period, forcing abort");
+                        coordinator_handle.abort();
+                    }
+                }
             }
         }
 

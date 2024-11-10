@@ -9,11 +9,11 @@ use clap::Parser;
 struct Cli {
     /// The ID of the node to build.
     #[clap(long)]
-    id: u64,
+    id: u16,
 
     /// The port of the node to build.
     #[clap(long)]
-    port: Option<u16>,
+    port: u16,
 }
 
 #[tokio::main]
@@ -26,17 +26,15 @@ async fn main() -> Result<()> {
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
 
-    let keypair = Keypair::zero(cli.id);
+    let id = NodeId::from(cli.id as u64);
 
-    let id = NodeId::from(cli.id);
+    let keypair = Keypair::zero(id);
 
-    let port = cli.port.unwrap_or(8000 + cli.id as u16);
-
-    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(port));
+    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cli.port));
 
     run_timeboost(
         id,
-        port,
+        cli.port,
         committee.bootstrap_nodes().into_iter().collect(),
         committee.staked_nodes(),
         keypair,
