@@ -8,8 +8,7 @@ use async_lock::RwLock;
 use hotshot::{
     traits::{
         implementations::{
-            derive_libp2p_keypair, derive_libp2p_multiaddr, derive_libp2p_peer_id,
-            Libp2pMetricsValue, Libp2pNetwork,
+            derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork,
         },
         NetworkNodeConfigBuilder,
     },
@@ -27,6 +26,7 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
+use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::Comm,
@@ -177,6 +177,45 @@ impl Sailfish {
             event_log,
         )
     }
+
+    pub async fn go(
+        self,
+        n: Libp2pNetwork<PublicKey>,
+        staked_nodes: Vec<PeerConfig<PublicKey>>,
+        shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        shutdown_tx: oneshot::Sender<ShutdownToken>,
+    ) -> Result<()> {
+        let mut coordinator_handle =
+            tokio::spawn(self.init(n, staked_nodes, shutdown_rx, None).go());
+
+        let shutdown_timeout = Duration::from_secs(5);
+
+        tokio::select! {
+            coordinator_result = &mut coordinator_handle => {
+                tracing::info!("Coordinator task completed");
+                coordinator_result?;
+            }
+            _ = signal::ctrl_c() => {
+                tracing::info!("Received termination signal, initiating graceful shutdown...");
+                shutdown_tx.send(ShutdownToken::new())
+                    .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+
+                // Wait for coordinator to shutdown gracefully or timeout
+                match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
+                    Ok(coordinator_result) => {
+                        tracing::info!("Coordinator shutdown gracefully");
+                        coordinator_result?;
+                    }
+                    Err(_) => {
+                        tracing::warn!("Coordinator did not shutdown within grace period, forcing abort");
+                        coordinator_handle.abort();
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Initializes and runs a Sailfish node.
@@ -193,16 +232,17 @@ impl Sailfish {
 /// # Panics
 ///
 /// Panics if any configuration or initialization step fails.
-pub async fn run(
+pub async fn run_sailfish(
     id: NodeId,
-    port: u16,
-    network_size: NonZeroUsize,
-    to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
+    bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
+    keypair: Keypair,
+    bind_address: Multiaddr,
 ) -> Result<()> {
-    let keypair = Keypair::zero(id); // TODO!
+    let network_size =
+        NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
+
     let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(keypair.private_key())?;
-    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))?;
 
     let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
         .expect("ceil(2n/3) with n > 0 never gives 0");
@@ -211,12 +251,12 @@ pub async fn run(
         .keypair(libp2p_keypair)
         .replication_factor(replication_factor)
         .bind_address(Some(bind_address.clone()))
-        .to_connect_addrs(to_connect_addrs.clone())
+        .to_connect_addrs(bootstrap_nodes.clone())
         .republication_interval(None)
         .build()?;
 
     let bootstrap_nodes = Arc::new(RwLock::new(
-        to_connect_addrs
+        bootstrap_nodes
             .into_iter()
             .collect::<Vec<(PeerId, Multiaddr)>>(),
     ));
@@ -228,15 +268,5 @@ pub async fn run(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    let coordinator_handle = tokio::spawn(s.init(n, staked_nodes, shutdown_rx, None).go());
-
-    tokio::select! {
-        _ = coordinator_handle => {}
-        _ = signal::ctrl_c() => {
-            tracing::info!("Received termination signal, shutting down...");
-            shutdown_tx.send(ShutdownToken::new()).map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
-        }
-    }
-
-    Ok(())
+    s.go(n, staked_nodes, shutdown_rx, shutdown_tx).await
 }
