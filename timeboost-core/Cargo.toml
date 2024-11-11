@@ -11,13 +11,18 @@ test = []
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+bytes = { workspace = true }
 committable = { workspace = true }
 ethereum-types = { workspace = true }
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+quickcheck = "1"

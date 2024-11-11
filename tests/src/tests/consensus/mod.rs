@@ -1,3 +1,3 @@
 pub mod helpers;
-
-pub mod test_consensus;
+pub mod test_consensus_actions;
+pub mod test_consensus_fake_network;

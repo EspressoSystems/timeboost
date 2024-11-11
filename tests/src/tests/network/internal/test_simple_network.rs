@@ -17,7 +17,7 @@ async fn test_simple_network_genesis() {
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    // Each node should see the genesis vertex from every other node.
+    // Each node should see the initial vertex proposal from every other node.
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
@@ -25,9 +25,9 @@ async fn test_simple_network_genesis() {
                 .iter()
                 .map(|n| {
                     let node_public_key = *n.public_key();
-                    TestCondition::new(format!("Genesis Vertex from {}", node_id), move |e| {
+                    TestCondition::new(format!("Vertex from {}", node_id), move |e| {
                         if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            if v.data().round() == RoundNumber::genesis()
+                            if v.data().round() == RoundNumber::genesis() + 1
                                 && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;

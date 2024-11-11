@@ -38,8 +38,10 @@ impl<D: Committable> Certificate<D> {
             membership.stake_table(),
             U256::from(membership.quorum_size().get()),
         );
-
         let commit = self.commitment();
+        if self.data.commit() != commit {
+            return false;
+        }
         PublicKey::check(&real_qc_pp, commit.as_ref(), &self.quorum)
     }
 }

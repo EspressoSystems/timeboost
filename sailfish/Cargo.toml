@@ -5,6 +5,7 @@ edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [features]
+metrics = []
 test = ['timeboost-core/test']
 
 [dependencies]

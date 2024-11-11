@@ -33,14 +33,6 @@ impl Vertex {
         }
     }
 
-    pub fn is_genesis(&self) -> bool {
-        self.round == RoundNumber::genesis()
-            && self.edges.is_empty()
-            && self.no_vote.is_none()
-            && self.timeout.is_none()
-            && self.block.is_empty()
-    }
-
     pub fn source(&self) -> &PublicKey {
         &self.source
     }
@@ -114,33 +106,16 @@ impl Display for Vertex {
 
 impl Committable for Vertex {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("Vertex")
+        let builder = RawCommitmentBuilder::new("Vertex")
             .var_size_field("source", &self.source.to_bytes())
             .field("round", self.round.commit())
             .field("block", self.block.commit())
-            .array_field(
-                "parents",
-                &self
-                    .edges
-                    .iter()
-                    .map(|p| CommitPubKey(p).commit())
-                    .collect::<Vec<_>>(),
-            )
             .optional("no_vote", &self.no_vote)
             .optional("timeout", &self.timeout)
-            .finalize()
-    }
-}
-
-// A newtype to allow implementing `Committable` for public keys.
-//
-// Ideally, `PublicKey` should be its own type or `BLSPublicKey` implements `Committable`.
-struct CommitPubKey<'a>(&'a PublicKey);
-
-impl Committable for CommitPubKey<'_> {
-    fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("publickey")
-            .var_size_bytes(&self.0.to_bytes())
+            .u64_field("edges", self.edges.len() as u64);
+        self.edges
+            .iter()
+            .fold(builder, |b, e| b.var_size_bytes(&e.to_bytes()))
             .finalize()
     }
 }

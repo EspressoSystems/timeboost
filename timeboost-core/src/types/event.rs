@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::{block::Transaction, error::SailfishError, round_number::RoundNumber};
+use crate::types::{error::SailfishError, round_number::RoundNumber, transaction::Transaction};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SailfishEventType {
