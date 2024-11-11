@@ -114,24 +114,24 @@ mod tests {
         let kp5 = Keypair::random();
 
         // Layer 1
-        let v11 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp1), &kp1);
-        let v12 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp2), &kp2);
-        let v13 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp3), &kp3);
-        let v14 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp4), &kp4);
-        let v15 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp5), &kp5);
+        let v11 = Vertex::new(1, self_certificate(RoundNumber::new(0), &kp1), &kp1);
+        let v12 = Vertex::new(1, self_certificate(RoundNumber::new(0), &kp2), &kp2);
+        let v13 = Vertex::new(1, self_certificate(RoundNumber::new(0), &kp3), &kp3);
+        let v14 = Vertex::new(1, self_certificate(RoundNumber::new(0), &kp4), &kp4);
+        let v15 = Vertex::new(1, self_certificate(RoundNumber::new(0), &kp5), &kp5);
 
         // Layer 2
-        let mut v21 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp1), &kp1);
-        let mut v22 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp2), &kp3);
-        let mut v23 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp3), &kp3);
+        let mut v21 = Vertex::new(2, self_certificate(RoundNumber::new(1), &kp1), &kp1);
+        let mut v22 = Vertex::new(2, self_certificate(RoundNumber::new(1), &kp2), &kp2);
+        let mut v23 = Vertex::new(2, self_certificate(RoundNumber::new(1), &kp3), &kp3);
 
         // Layer 3
-        let mut v31 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp1), &kp1);
-        let mut v32 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp2), &kp2);
-        let mut v33 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp3), &kp3);
+        let mut v31 = Vertex::new(3, self_certificate(RoundNumber::new(2), &kp1), &kp1);
+        let mut v32 = Vertex::new(3, self_certificate(RoundNumber::new(2), &kp2), &kp2);
+        let mut v33 = Vertex::new(3, self_certificate(RoundNumber::new(2), &kp3), &kp3);
 
         // Layer 4
-        let mut v41 = Vertex::new(4, self_certificate(RoundNumber::new(4), &kp1), &kp1);
+        let mut v41 = Vertex::new(4, self_certificate(RoundNumber::new(3), &kp1), &kp1);
 
         v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
 
