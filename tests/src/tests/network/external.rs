@@ -10,7 +10,10 @@ use sailfish::{
     coordinator::CoordinatorAuditEvent,
     sailfish::{Sailfish, ShutdownToken},
 };
-use timeboost_core::types::PublicKey;
+use timeboost_core::types::{
+    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    PublicKey,
+};
 use tokio::{
     sync::{
         mpsc,
@@ -31,6 +34,8 @@ pub struct Libp2pNetworkTest {
     shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
+    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
+    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
@@ -53,6 +58,8 @@ impl TestableNetwork for Libp2pNetworkTest {
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             event_logs,
             outcomes,
+            sf_app_rxs: HashMap::new(),
+            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -105,8 +112,12 @@ impl TestableNetwork for Libp2pNetworkTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let log = Arc::clone(self.event_logs.get(&i).unwrap());
             let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
-            let (sf_app_tx, _) = mpsc::channel(10000);
-            let (_, tb_app_rx) = mpsc::channel(10000);
+            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
+            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
+
+            self.sf_app_rxs.insert(i, sf_app_rx);
+            self.tb_app_txs.insert(i, tb_app_tx);
+
             handles.spawn(async move {
                 let co = node.init(
                     network,
@@ -131,6 +142,8 @@ impl TestableNetwork for Libp2pNetworkTest {
             let log = self.event_logs.get(node_id).unwrap().read().await;
             let eval_result: Vec<TestOutcome> =
                 conditions.iter().map(|c| c.evaluate(&log)).collect();
+
+            // TODO: Add the application layer statuses to the evaluation criteria.
 
             // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
             // set it to Passed.

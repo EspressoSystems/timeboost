@@ -145,7 +145,9 @@ impl<C: Comm> Coordinator<C> {
                     }
                     None => {
                         warn!("Receiver disconnected while awaiting application layer messages.");
-                        debug_assert!(false, "Receiver disconnected while awaiting application layer messages.");
+
+                        // If we get here, it's a big deal.
+                        panic!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
                 token = &mut self.shutdown_rx => {

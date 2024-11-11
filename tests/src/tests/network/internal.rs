@@ -8,7 +8,10 @@ use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
     sailfish::ShutdownToken,
 };
-use timeboost_core::types::test::net::{Conn, Star};
+use timeboost_core::types::{
+    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    test::net::{Conn, Star},
+};
 use tokio::{
     sync::{
         mpsc,
@@ -27,6 +30,8 @@ pub struct MemoryNetworkTest {
     network_shutdown_rx: Option<Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
+    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
+    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
@@ -51,6 +56,8 @@ impl TestableNetwork for MemoryNetworkTest {
             network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
             event_logs,
+            sf_app_rxs: HashMap::new(),
+            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -68,8 +75,11 @@ impl TestableNetwork for MemoryNetworkTest {
             // Join each node to the network
             let ch = net.join(*n.public_key());
 
-            let (sf_app_tx, _) = mpsc::channel(10000);
-            let (_, tb_app_rx) = mpsc::channel(10000);
+            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
+            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
+
+            self.sf_app_rxs.insert(i, sf_app_rx);
+            self.tb_app_txs.insert(i, tb_app_tx);
 
             // Initialize the coordinator
             let co = n.init(
@@ -114,6 +124,8 @@ impl TestableNetwork for MemoryNetworkTest {
             let log = self.event_logs.get(node_id).unwrap().read().await;
             let eval_result: Vec<TestOutcome> =
                 conditions.iter().map(|c| c.evaluate(&log)).collect();
+
+            // TODO: Add the application layer statuses to the evaluation criteria.
 
             // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
             // set it to Passed.
