@@ -7,7 +7,7 @@ use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
-    message::{Message, Timeout},
+    message::{Message, TimeoutMessage},
     PublicKey, Signature,
 };
 
@@ -27,7 +27,7 @@ pub(crate) fn make_consensus_nodes(
 }
 
 pub(crate) fn create_timeout_certificate_msg(
-    env: Envelope<Timeout, Validated>,
+    env: Envelope<TimeoutMessage, Validated>,
     signers: &(BitVec, Vec<Signature>),
     committee: &StaticCommittee,
 ) -> Message {
@@ -36,6 +36,7 @@ pub(crate) fn create_timeout_certificate_msg(
         U256::from(committee.quorum_size().get()),
     );
     let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
-    let cert = Certificate::new(env.data().clone(), sig);
+    let (timeout, _e) = env.into_data().into_parts();
+    let cert = Certificate::new(timeout.into_data(), sig);
     Message::TimeoutCert(cert)
 }

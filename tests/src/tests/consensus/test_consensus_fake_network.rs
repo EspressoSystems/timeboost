@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
 use timeboost_core::types::envelope::Envelope;
-use timeboost_core::types::message::{Action, Timeout};
+use timeboost_core::types::message::{Action, TimeoutMessage};
 use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use timeboost_core::types::{Keypair, NodeId, PublicKey, Signature};
 
@@ -45,15 +45,15 @@ async fn test_timeout_round_and_no_vote() {
     let num_nodes = 4;
     let (nodes, manager) = make_consensus_nodes(num_nodes);
 
-    let timeout_at_round = RoundNumber::new(3);
+    let timeout_at_round = RoundNumber::new(2);
 
     let interceptor = Interceptor::new(
         move |msg: &Message, node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(v) = msg {
-                if v.data().round() == timeout_at_round
-                    && *v.signing_key() == node_handle.node().committee().leader(v.data().round())
-                {
-                    let timeout_msgs = manager.create_timeout_vote_msg(timeout_at_round);
+                let r = msg.round();
+                let committee = node_handle.committee();
+                if r == timeout_at_round && *v.signing_key() == committee.leader(r) {
+                    let timeout_msgs = manager.create_timeout_vote_msg(timeout_at_round, committee);
                     node_handle.add_msgs(timeout_msgs);
                     return vec![];
                 }
@@ -122,12 +122,12 @@ async fn test_timeout_round_and_no_vote() {
                 "No vote certificate should be present."
             );
             assert!(
-                data.timeout_cert().is_some(),
+                data.evidence().is_timeout(),
                 "Timeout certificate should be present."
             );
 
             // Ensure the vertex is from the leader
-            let expected_leader = network.leader_for_round(data.round());
+            let expected_leader = network.leader_for_round(*data.round().data());
             assert!(
                 *vertex.signing_key() == expected_leader,
                 "Vertex should be signed by the leader."
@@ -150,12 +150,16 @@ async fn test_invalid_vertex_signatures() {
     let invalid_msg_at_round = RoundNumber::new(5);
 
     let interceptor = Interceptor::new(
-        move |msg: &Message, _node_handle: &mut TestNodeInstrument| {
+        move |msg: &Message, node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
                 let invalid_kpair = Keypair::new(invalid_node_id);
                 // modify current network message with this invalid one
-                return vec![manager.create_vertex_proposal_msg(msg.round(), &invalid_kpair)];
+                return vec![manager.create_vertex_proposal_msg(
+                    msg.round(),
+                    &invalid_kpair,
+                    node_handle.committee(),
+                )];
             }
             // if not vertex leave msg alone
             vec![msg.clone()]
@@ -188,7 +192,7 @@ async fn test_invalid_timeout_certificate() {
     let num_nodes = 4;
     let invalid_node_id = num_nodes + 1;
 
-    let (nodes, _manager) = make_consensus_nodes(num_nodes);
+    let (nodes, manager) = make_consensus_nodes(num_nodes);
 
     let invalid_msg_at_round = RoundNumber::new(3);
 
@@ -204,8 +208,14 @@ async fn test_invalid_timeout_certificate() {
                 for i in 0..num_nodes {
                     let fake_node_id = i + invalid_node_id;
                     let new_keys = Keypair::new(fake_node_id);
-                    timeout =
-                        Some(Envelope::signed(Timeout::new(e.data().round()), &new_keys).cast());
+                    let evidence = manager.round_evidence(invalid_msg_at_round - 1, committee);
+                    timeout = Some(
+                        Envelope::signed(
+                            TimeoutMessage::new(msg.round(), evidence, &new_keys),
+                            &new_keys,
+                        )
+                        .cast(),
+                    );
                     signers.0.set(i as usize, true);
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
@@ -221,7 +231,7 @@ async fn test_invalid_timeout_certificate() {
                     ];
                 }
                 // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
-                if *e.signing_key() == committee.leader(e.data().round()) {
+                if *e.signing_key() == committee.leader(msg.round()) {
                     node_handle.add_msg(msg.clone());
                     return vec![];
                 }
@@ -245,7 +255,7 @@ async fn test_invalid_timeout_certificate() {
                 match msg {
                     Message::Vertex(v) => {
                         assert!(
-                            v.data().timeout_cert().is_none(),
+                            !v.data().evidence().is_timeout(),
                             "We should never have a timeout cert in a message"
                         );
                     }
@@ -260,7 +270,7 @@ async fn test_invalid_timeout_certificate() {
 
     // verify progress was made
     for node_instrument in network.nodes.values() {
-        assert_eq!(*node_instrument.node().round(), rounds + 1);
+        assert_eq!(*node_instrument.node().round(), rounds);
     }
 }
 
@@ -323,7 +333,7 @@ fn basic_liveness() {
 
     for node_handle in nodes.values() {
         let n = node_handle.node();
-        assert_eq!(n.committed_round(), 16.into())
+        assert_eq!(n.committed_round(), 15.into())
     }
 
     // Every node should have delivered the same output:

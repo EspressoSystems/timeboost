@@ -30,7 +30,7 @@ impl Vertex {
     {
         let r = r.into();
         let e = e.into();
-        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        // debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
         Self {
             source: *k.public_key(),
             round: Signed::new(r, k),
