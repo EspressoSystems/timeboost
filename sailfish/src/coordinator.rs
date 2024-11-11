@@ -144,7 +144,8 @@ impl<C: Comm> Coordinator<C> {
                         self.on_application_event(event).await
                     }
                     None => {
-                        warn!("Receiver disconnected while awaiting application layer messages.")
+                        warn!("Receiver disconnected while awaiting application layer messages.");
+                        debug_assert!(false, "Receiver disconnected while awaiting application layer messages.");
                     }
                 },
                 token = &mut self.shutdown_rx => {
