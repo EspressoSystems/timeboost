@@ -4,7 +4,6 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 use crate::coordinator::CoordinatorAuditEvent;
 
 use anyhow::Result;
-use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use hotshot::{
     traits::{
@@ -38,7 +37,10 @@ use timeboost_core::{
     },
 };
 use tokio::signal;
-use tokio::sync::oneshot;
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    oneshot,
+};
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -196,8 +198,10 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
-        let mut coordinator_handle =
-            tokio::spawn(self.init(n, staked_nodes, shutdown_rx, None).go());
+        let mut coordinator_handle = tokio::spawn(
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
+                .go(),
+        );
 
         let shutdown_timeout = Duration::from_secs(5);
 

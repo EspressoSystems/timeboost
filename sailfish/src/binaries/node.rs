@@ -1,5 +1,4 @@
 use anyhow::Result;
-use async_broadcast::broadcast;
 use clap::Parser;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
 use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use tokio::sync::mpsc::channel;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -35,8 +35,8 @@ async fn main() -> Result<()> {
 
     // Sailfish nodes running individually do not need to communicate with the
     // application layer, so we make dummy streams.
-    let (sf_app_tx, _) = broadcast(1);
-    let (_, tb_app_rx) = broadcast(1);
+    let (sf_app_tx, _) = channel(1);
+    let (_, tb_app_rx) = channel(1);
 
     sailfish::run_sailfish(
         cfg.id,

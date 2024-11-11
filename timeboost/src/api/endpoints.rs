@@ -1,16 +1,16 @@
 use std::io::{self, ErrorKind};
 
 use anyhow::Result;
-use async_broadcast::Sender;
 use async_lock::RwLock;
 use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
 use tide_disco::{error::ServerError, Api, App, StatusCode, Url};
 use timeboost_core::types::{
-    block::Transaction,
     event::{TimeboostEventType, TimeboostStatusEvent},
+    transaction::Transaction,
 };
+use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
@@ -47,13 +47,10 @@ impl TimeboostApi for TimeboostApiState {
             },
         };
 
-        self.app_tx
-            .broadcast(status)
-            .await
-            .map_err(|e| ServerError {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("Failed to broadcast status event: {}", e),
-            })?;
+        self.app_tx.send(status).await.map_err(|e| ServerError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: format!("Failed to broadcast status event: {}", e),
+        })?;
 
         Ok(())
     }

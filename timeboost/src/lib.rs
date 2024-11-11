@@ -2,10 +2,8 @@ use anyhow::Result;
 use api::endpoints::TimeboostApiState;
 use std::collections::HashSet;
 use tide_disco::Url;
-use tokio::signal;
+use tokio::{signal, sync::mpsc::channel};
 use tracing::{error, info, warn};
-
-use async_broadcast::{broadcast, Receiver, Sender};
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
@@ -14,6 +12,7 @@ use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     Keypair, NodeId, PublicKey,
 };
+use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
 pub mod config;
@@ -83,9 +82,9 @@ pub async fn run_timeboost(
     info!("Starting timeboost");
 
     // The application layer will broadcast events to the timeboost node.
-    let (sf_app_tx, sf_app_rx) = broadcast(100);
+    let (sf_app_tx, sf_app_rx) = channel(100);
 
-    let (tb_app_tx, tb_app_rx) = broadcast::<TimeboostStatusEvent>(100);
+    let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.

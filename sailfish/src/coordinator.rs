@@ -6,7 +6,6 @@ use crate::{
 };
 
 use anyhow::Result;
-use async_broadcast::{Receiver, Sender};
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
@@ -18,6 +17,7 @@ use timeboost_core::{
         NodeId, PublicKey,
     },
 };
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::{
     sync::oneshot::{self},
     time::sleep,
@@ -139,12 +139,12 @@ impl<C: Comm> Coordinator<C> {
                         continue;
                     }
                 },
-                tb_event = &mut self.tb_app_rx.recv() => match tb_event {
-                    Ok(event) => {
-                        self.on_application_event(event).await;
+                tb_event = self.tb_app_rx.recv() => match tb_event {
+                    Some(event) => {
+                        self.on_application_event(event).await
                     }
-                    Err(e) => {
-                        warn!("Failed to receive timeboost event; error = {e:#}");
+                    None => {
+                        warn!("Receiver disconnected while awaiting application layer messages.")
                     }
                 },
                 token = &mut self.shutdown_rx => {
@@ -220,7 +220,7 @@ impl<C: Comm> Coordinator<C> {
     }
 
     async fn application_broadcast(&mut self, event: SailfishStatusEvent) {
-        if let Err(e) = self.sf_app_tx.broadcast(event).await {
+        if let Err(e) = self.sf_app_tx.send(event).await {
             warn!(%e, "failed to send message to application layer");
         }
     }
