@@ -6,16 +6,13 @@ use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 
 use timeboost_core::types::{
-    certificate::Certificate,
-    committee::StaticCommittee,
-    envelope::{Envelope, Validated},
-    PublicKey, Signature,
+    certificate::Certificate, committee::StaticCommittee, signed::Signed, PublicKey, Signature,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {
     committee: StaticCommittee,
-    votes: BTreeMap<PublicKey, Envelope<D, Validated>>,
+    votes: BTreeMap<PublicKey, Signed<D>>,
     signers: (BitVec, Vec<Signature>),
     cert: Option<Certificate<D>>,
 }
@@ -48,7 +45,11 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.cert.as_ref()
     }
 
-    pub fn add(&mut self, vote: Envelope<D, Validated>) -> Result<Option<&Certificate<D>>, Error> {
+    pub fn set_certificate(&mut self, c: Certificate<D>) {
+        self.cert = Some(c)
+    }
+
+    pub fn add(&mut self, vote: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
         if self.votes.contains_key(vote.signing_key()) {
             return Ok(self.certificate());
         }

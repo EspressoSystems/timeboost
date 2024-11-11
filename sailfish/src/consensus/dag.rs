@@ -18,7 +18,7 @@ impl Dag {
 
     pub fn add(&mut self, v: Vertex) {
         debug_assert!(!self.contains(&v));
-        let r = v.round();
+        let r = *v.round().data();
         let s = v.source();
         let m = self.elements.entry(r).or_default();
         debug_assert!(m.len() < self.max_keys.get());
@@ -43,7 +43,7 @@ impl Dag {
 
     pub fn contains(&self, v: &Vertex) -> bool {
         self.elements
-            .get(&v.round())
+            .get(v.round().data())
             .map(|m| m.contains_key(v.source()))
             .unwrap_or(false)
     }
@@ -72,7 +72,7 @@ impl Dag {
         let mut current = vec![from];
         for nodes in self
             .elements
-            .range(RoundNumber::genesis()..from.round())
+            .range(..*from.round().data())
             .rev()
             .map(|e| e.1)
         {
@@ -97,6 +97,8 @@ impl Dag {
 mod tests {
     use std::num::NonZeroUsize;
 
+    use timeboost_core::types::certificate::self_certificate;
+    use timeboost_core::types::round_number::RoundNumber;
     use timeboost_core::types::{vertex::Vertex, Keypair};
 
     use crate::consensus::Dag;
@@ -105,31 +107,31 @@ mod tests {
     fn test_is_connected() {
         let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
 
-        let pk1 = *Keypair::random().public_key();
-        let pk2 = *Keypair::random().public_key();
-        let pk3 = *Keypair::random().public_key();
-        let pk4 = *Keypair::random().public_key();
-        let pk5 = *Keypair::random().public_key();
+        let kp1 = Keypair::random();
+        let kp2 = Keypair::random();
+        let kp3 = Keypair::random();
+        let kp4 = Keypair::random();
+        let kp5 = Keypair::random();
 
         // Layer 1
-        let v11 = Vertex::new(1, pk1);
-        let v12 = Vertex::new(1, pk2);
-        let v13 = Vertex::new(1, pk3);
-        let v14 = Vertex::new(1, pk4);
-        let v15 = Vertex::new(1, pk5);
+        let v11 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp1), &kp1);
+        let v12 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp2), &kp2);
+        let v13 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp3), &kp3);
+        let v14 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp4), &kp4);
+        let v15 = Vertex::new(1, self_certificate(RoundNumber::new(1), &kp5), &kp5);
 
         // Layer 2
-        let mut v21 = Vertex::new(2, pk1);
-        let mut v22 = Vertex::new(2, pk2);
-        let mut v23 = Vertex::new(2, pk3);
+        let mut v21 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp1), &kp1);
+        let mut v22 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp2), &kp3);
+        let mut v23 = Vertex::new(2, self_certificate(RoundNumber::new(2), &kp3), &kp3);
 
         // Layer 3
-        let mut v31 = Vertex::new(3, pk1);
-        let mut v32 = Vertex::new(3, pk2);
-        let mut v33 = Vertex::new(3, pk3);
+        let mut v31 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp1), &kp1);
+        let mut v32 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp2), &kp2);
+        let mut v33 = Vertex::new(3, self_certificate(RoundNumber::new(3), &kp3), &kp3);
 
         // Layer 4
-        let mut v41 = Vertex::new(4, pk1);
+        let mut v41 = Vertex::new(4, self_certificate(RoundNumber::new(4), &kp1), &kp1);
 
         v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
 

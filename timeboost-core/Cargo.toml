@@ -11,6 +11,7 @@ test = []
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+bitvec = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum-types = { workspace = true }

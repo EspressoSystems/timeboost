@@ -6,39 +6,55 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     certificate::Certificate,
-    message::{NoVote, Timeout},
+    message::{Evidence, NoVote},
     PublicKey,
 };
-use crate::types::{block::Block, round_number::RoundNumber};
+use crate::types::Keypair;
+use crate::types::{block::Block, round_number::RoundNumber, signed::Signed};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {
     source: PublicKey,
-    round: RoundNumber,
+    round: Signed<RoundNumber>,
     edges: BTreeSet<PublicKey>,
+    evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
-    timeout: Option<Certificate<Timeout>>,
     block: Block,
 }
 
 impl Vertex {
-    pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
+    pub fn new<N, E>(r: N, e: E, k: &Keypair) -> Self
+    where
+        N: Into<RoundNumber>,
+        E: Into<Evidence>,
+    {
+        let r = r.into();
+        let e = e.into();
+        debug_assert_eq!(e.round() + 1, r);
         Self {
-            source: s,
-            round: r.into(),
+            source: *k.public_key(),
+            round: Signed::new(r, k),
             edges: BTreeSet::new(),
+            evidence: e,
             no_vote: None,
-            timeout: None,
             block: Block::empty(),
         }
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        *self.round.data() == RoundNumber::genesis()
+            && *self.round.data() == self.evidence.round()
+            && self.edges.is_empty()
+            && self.no_vote.is_none()
+            && self.block.is_empty()
     }
 
     pub fn source(&self) -> &PublicKey {
         &self.source
     }
 
-    pub fn round(&self) -> RoundNumber {
-        self.round
+    pub fn round(&self) -> &Signed<RoundNumber> {
+        &self.round
     }
 
     pub fn num_edges(&self) -> usize {
@@ -53,8 +69,8 @@ impl Vertex {
         self.edges.contains(id)
     }
 
-    pub fn timeout_cert(&self) -> Option<&Certificate<Timeout>> {
-        self.timeout.as_ref()
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
     }
 
     pub fn no_vote_cert(&self) -> Option<&Certificate<NoVote>> {
@@ -87,11 +103,6 @@ impl Vertex {
         self.no_vote = Some(n);
         self
     }
-
-    pub fn set_timeout(&mut self, t: Certificate<Timeout>) -> &mut Self {
-        self.timeout = Some(t);
-        self
-    }
 }
 
 impl Display for Vertex {
@@ -99,7 +110,8 @@ impl Display for Vertex {
         write!(
             f,
             "Vertex {{ round := {}, source := {} }}",
-            self.round, self.source
+            self.round.data(),
+            self.source
         )
     }
 }
@@ -110,8 +122,8 @@ impl Committable for Vertex {
             .var_size_field("source", &self.source.to_bytes())
             .field("round", self.round.commit())
             .field("block", self.block.commit())
+            .field("evidence", self.evidence.commit())
             .optional("no_vote", &self.no_vote)
-            .optional("timeout", &self.timeout)
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()

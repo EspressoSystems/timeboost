@@ -1,12 +1,15 @@
 use crate::types::committee::StaticCommittee;
 use bincode::Options;
+use bitvec::bitvec;
 use committable::{Commitment, Committable};
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
+use hotshot_types::stake_table::StakeTableEntry;
 use hotshot_types::utils::bincode_opts;
 use serde::{Deserialize, Serialize};
 
-use super::{PublicKey, QuorumSignature};
+use super::{Keypair, PublicKey, QuorumSignature};
+use crate::types::signed::Signed;
 
 #[derive(Serialize, Deserialize, Eq, Hash, PartialEq, Debug, Clone)]
 pub struct Certificate<D: Committable> {
@@ -74,4 +77,20 @@ pub fn serialize_signature(signatures: &QuorumSignature) -> Vec<u8> {
     signatures_bytes.extend("aggregated signature".as_bytes());
     signatures_bytes.extend(sig_bytes.as_slice());
     signatures_bytes
+}
+
+pub fn self_certificate<D: Committable>(d: D, k: &Keypair) -> Certificate<D> {
+    let b = bitvec![0; 1];
+    let s = Signed::new(d, k);
+
+    let p = <PublicKey as SignatureKey>::public_parameter(
+        vec![StakeTableEntry {
+            stake_key: *k.public_key(),
+            stake_amount: U256::from(1),
+        }],
+        U256::from(1),
+    );
+
+    let q = <PublicKey as SignatureKey>::assemble(&p, &b, &[s.signature().clone()]);
+    Certificate::new(s.into_data(), q)
 }
