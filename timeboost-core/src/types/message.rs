@@ -132,7 +132,7 @@ pub struct TimeoutMessage {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NoVoteMessage {
     round: Signed<NoVote>,
-    evidence: Evidence,
+    evidence: Certificate<Timeout>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -208,7 +208,7 @@ impl NoVoteMessage {
         debug_assert_eq!(**e.data() + 1, r);
         Self {
             round: Signed::new(NoVote(r), k),
-            evidence: Evidence::Timeout(e),
+            evidence: e,
         }
     }
 
@@ -216,11 +216,11 @@ impl NoVoteMessage {
         &self.round
     }
 
-    pub fn evidence(&self) -> &Evidence {
+    pub fn certificate(&self) -> &Certificate<Timeout> {
         &self.evidence
     }
 
-    pub fn into_parts(self) -> (Signed<NoVote>, Evidence) {
+    pub fn into_parts(self) -> (Signed<NoVote>, Certificate<Timeout>) {
         (self.round, self.evidence)
     }
 }

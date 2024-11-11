@@ -347,7 +347,7 @@ impl Consensus {
             return actions;
         }
 
-        if !e.data().evidence().is_valid_quorum(&self.committee) {
+        if !e.data().certificate().is_valid_quorum(&self.committee) {
             warn!(
                 node   = %self.id,
                 round  = %self.round,
@@ -357,7 +357,7 @@ impl Consensus {
             return actions;
         }
 
-        if e.data().evidence().round() + 1 != **e.data().round().data() {
+        if **e.data().certificate().data() != **e.data().round().data() {
             warn!(
                 node   = %self.id,
                 round  = %self.round,
@@ -391,20 +391,7 @@ impl Consensus {
             return actions;
         }
 
-        let (no_vote, evidence) = e.into_data().into_parts();
-
-        let tc = match evidence {
-            Evidence::Timeout(c) => c,
-            Evidence::Regular(_) => {
-                warn!(
-                    node  = %self.id,
-                    round = %self.round,
-                    r     = %timeout_round,
-                    "received no vote without evidence for timeout"
-                );
-                return actions;
-            }
-        };
+        let (no_vote, tc) = e.into_data().into_parts();
 
         if !self.has_timeout_cert(**tc.data()) {
             self.timeouts
@@ -669,6 +656,7 @@ impl Consensus {
         tc: Certificate<Timeout>,
         nc: Certificate<NoVote>,
     ) -> Vec<Action> {
+        debug_assert_eq!(**tc.data(), **nc.data());
         let mut actions = Vec::new();
         self.round = round + 1;
         actions.push(Action::ResetTimer(self.round));
