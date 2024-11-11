@@ -736,6 +736,11 @@ impl Consensus {
 
         self.dag.add(v.clone());
 
+        if v.is_genesis() {
+            // A genesis vertex has no edges to prior rounds.
+            return Ok(Vec::new());
+        }
+
         #[cfg(feature = "metrics")]
         self.metrics.dag_depth.set(self.dag.depth());
 

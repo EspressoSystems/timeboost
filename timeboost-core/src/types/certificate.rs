@@ -80,7 +80,8 @@ pub fn serialize_signature(signatures: &QuorumSignature) -> Vec<u8> {
 }
 
 pub fn self_certificate<D: Committable>(d: D, k: &Keypair) -> Certificate<D> {
-    let b = bitvec![0; 1];
+    let mut b = bitvec![0; 1];
+    b.set(0, true);
     let s = Signed::new(d, k);
 
     let p = <PublicKey as SignatureKey>::public_parameter(
