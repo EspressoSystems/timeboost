@@ -1048,7 +1048,7 @@ impl Consensus {
         &self.timeouts
     }
 
-    pub fn key_pair(&self) -> &Keypair {
+    pub fn keypair(&self) -> &Keypair {
         &self.keypair
     }
 

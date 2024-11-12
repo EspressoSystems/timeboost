@@ -22,9 +22,9 @@ pub struct KeyManager {
 
 impl KeyManager {
     pub(crate) fn new(num_nodes: u64) -> Self {
-        let key_pairs = (0..num_nodes).map(Keypair::new).collect::<Vec<_>>();
+        let keypairs = (0..num_nodes).map(Keypair::new).collect::<Vec<_>>();
         Self {
-            keys: key_pairs
+            keys: keypairs
                 .iter()
                 .enumerate()
                 .map(|(id, kpair)| (id as u64, kpair.clone()))

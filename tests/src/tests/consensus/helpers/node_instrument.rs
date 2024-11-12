@@ -87,10 +87,10 @@ impl TestNodeInstrument {
         );
 
         let mut v = if let Some(tc) = timeout_cert {
-            Vertex::new(round, Evidence::Timeout(tc), self.node.key_pair())
+            Vertex::new(round, Evidence::Timeout(tc), self.node.keypair())
         } else {
             let evidence = Evidence::Regular(Certificate::new(round - 1, sig));
-            Vertex::new(round, evidence, self.node.key_pair())
+            Vertex::new(round, evidence, self.node.keypair())
         };
         v.add_edges(edges);
 
@@ -103,7 +103,7 @@ impl TestNodeInstrument {
         round: RoundNumber,
     ) -> Envelope<TimeoutMessage, Validated> {
         let e = manager.round_evidence(round - 1, self.committee());
-        let d = TimeoutMessage::new(round, e, self.node.key_pair());
+        let d = TimeoutMessage::new(round, e, self.node.keypair());
         self.node.sign(d.clone())
     }
 
@@ -123,7 +123,7 @@ impl TestNodeInstrument {
         round: RoundNumber,
         cert: Certificate<Timeout>,
     ) -> Envelope<NoVoteMessage, Validated> {
-        let d = NoVoteMessage::new(round, cert, self.node.key_pair());
+        let d = NoVoteMessage::new(round, cert, self.node.keypair());
         self.node.sign(d.clone())
     }
 
