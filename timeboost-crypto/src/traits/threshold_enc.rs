@@ -2,20 +2,24 @@ use rand::Rng;
 use thiserror::Error;
 
 pub trait ThresholdEncScheme {
+    type Committee;
     type Parameters;
     type PublicKey;
-    type SecretKey;
+    type KeyShare;
     type Randomness;
     type Plaintext;
     type Ciphertext;
     type DecShare;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, ThresholdEncError>;
+    fn setup<R: Rng>(
+        committee: Self::Committee,
+        rng: &mut R,
+    ) -> Result<Self::Parameters, ThresholdEncError>;
 
     fn keygen<R: Rng>(
-        params: &Self::Parameters,
+        pp: &Self::Parameters,
         rng: &mut R,
-    ) -> Result<(Self::PublicKey, Self::SecretKey), ThresholdEncError>;
+    ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
     fn encrypt(
         pp: &Self::Parameters,
@@ -26,7 +30,7 @@ pub trait ThresholdEncScheme {
 
     fn decrypt(
         pp: &Self::Parameters,
-        sk: &Self::SecretKey,
+        sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, ThresholdEncError>;
 
