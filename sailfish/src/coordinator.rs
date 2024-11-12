@@ -177,7 +177,7 @@ impl<C: Comm> Coordinator<C> {
     async fn on_action(&mut self, action: Action, timer: &mut BoxFuture<'static, RoundNumber>) {
         match action {
             Action::ResetTimer(r) => {
-                *timer = sleep(Duration::from_secs(4)).map(move |_| r).boxed();
+                *timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
 
                 // This is somewhat of a "if you know, you know" event as a reset timer
                 // implies that the protocol has moved to the next round.
