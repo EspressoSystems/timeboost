@@ -1,0 +1,9 @@
+[meta]
+NAME = "timeboost submit api"
+DESCRIPTION = "Submit transactions to Timeboost"
+FORMAT_VERSION = "0.1.0"
+
+[route.post_submit]
+PATH = ["/submit"]
+METHOD = "POST"
+DOC = "Submit transaction to Timeboost"
