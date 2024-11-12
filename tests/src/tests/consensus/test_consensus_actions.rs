@@ -22,7 +22,8 @@ async fn test_single_node_advance() {
     // Setup expectations
     let expected_round = RoundNumber::new(9);
     let edges = manager.edges_for_round(expected_round, &committee, false);
-    let vertex_proposal = node_handle.expected_vertex_proposal(expected_round, edges, None);
+    let vertex_proposal =
+        node_handle.expected_vertex_proposal(&manager, expected_round, edges, None);
     node_handle.insert_expected_actions(vec![
         Action::ResetTimer(expected_round),
         Action::SendProposal(vertex_proposal),
@@ -36,7 +37,7 @@ async fn test_single_node_advance() {
 
     // Craft messages
     round += 1;
-    let input_msgs = manager.create_vertex_msgs(round, vertices_for_round);
+    let input_msgs = manager.create_vertex_msgs(round, vertices_for_round, &committee);
 
     // Process
     for msg in input_msgs {
@@ -63,13 +64,13 @@ async fn test_single_node_timeout() {
 
     // Setup expectations
     let expected_round = RoundNumber::new(5);
-    let timeout = node_handle.expected_timeout(expected_round);
-    let signers = manager.signers(
+    let timeout = node_handle.expected_timeout(&manager, expected_round);
+    let send_cert = node_handle.expected_timeout_certificate(
         expected_round,
-        &committee,
+        &manager,
         committee.quorum_size().get() as usize,
+        &timeout,
     );
-    let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert),
@@ -83,7 +84,7 @@ async fn test_single_node_timeout() {
 
     // Craft messages
     round += 1;
-    let input_msgs = manager.create_timeout_msgs(round);
+    let input_msgs = manager.create_timeout_msgs(round, &committee);
 
     // Process timeouts
     for msg in input_msgs {
@@ -111,29 +112,34 @@ async fn test_single_node_timeout_cert() {
 
     // Setup expectations
     let expected_round = RoundNumber::new(4);
-    let timeout = node_handle.expected_timeout(expected_round);
-    let no_vote = node_handle.expected_no_vote(expected_round);
+    let timeout = node_handle.expected_timeout(&manager, expected_round);
 
     // Signers and cert for 2f + 1 nodes
-    let mut signers = manager.signers(
-        expected_round,
-        &committee,
-        committee.quorum_size().get() as usize,
-    );
     // The first cert is sent when we see 2f + 1 timeouts
     // We will still get other timeout votes causing cert to change
-    let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
+    let send_cert = node_handle.expected_timeout_certificate(
+        expected_round,
+        &manager,
+        committee.quorum_size().get() as usize,
+        &timeout,
+    );
 
     // Signers from all nodes and cert
-    signers = manager.signers(expected_round, &committee, committee.size().get());
     // Proposal will send with a certificate with all signers
-    let expected_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
+    let expected_cert = node_handle.expected_timeout_certificate(
+        expected_round,
+        &manager,
+        committee.size().get(),
+        &timeout,
+    );
     let vertex_proposal = node_handle.expected_vertex_proposal(
+        &manager,
         expected_round + 1,
         // Skip leader edge since we do below when craft vertex proposal messages
         manager.edges_for_round(expected_round, &committee, true),
-        Some(expected_cert),
+        Some(expected_cert.clone()),
     );
+    let no_vote = node_handle.expected_no_vote(expected_round, expected_cert);
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert.clone()),
@@ -151,13 +157,13 @@ async fn test_single_node_timeout_cert() {
     // Craft messages, skip leader vertex
     round += 1;
     let mut input_msgs: Vec<Message> = manager
-        .create_vertex_msgs(round, vertices_for_round)
+        .create_vertex_msgs(round, vertices_for_round, &committee)
         .iter()
         .filter(|m| {
             if let Message::Vertex(v) = m {
                 let d = v.data();
                 // Process non leader vertices
-                *d.source() != committee.leader(d.round())
+                *d.source() != committee.leader(*d.round().data())
             } else {
                 panic!("Expected vertex message in test");
             }
@@ -171,7 +177,7 @@ async fn test_single_node_timeout_cert() {
     }
 
     // Craft timeouts
-    input_msgs = manager.create_timeout_msgs(round);
+    input_msgs = manager.create_timeout_msgs(round, &committee);
 
     // Process timeouts
     for msg in input_msgs {

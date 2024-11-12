@@ -1048,6 +1048,10 @@ impl Consensus {
         &self.timeouts
     }
 
+    pub fn keypair(&self) -> &Keypair {
+        &self.keypair
+    }
+
     pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
     where
         D: committable::Committable,

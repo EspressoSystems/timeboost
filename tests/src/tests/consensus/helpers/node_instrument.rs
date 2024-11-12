@@ -8,11 +8,13 @@ use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
-    message::{Action, Message, NoVote, Timeout},
+    message::{Action, Evidence, Message, NoVoteMessage, Timeout, TimeoutMessage},
     round_number::RoundNumber,
     vertex::Vertex,
     PublicKey, Signature,
 };
+
+use super::key_manager::KeyManager;
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,
@@ -72,39 +74,57 @@ impl TestNodeInstrument {
 
     pub(crate) fn expected_vertex_proposal(
         &self,
+        manager: &KeyManager,
         round: RoundNumber,
         edges: Vec<PublicKey>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
-        let mut v = Vertex::new(round, *self.node.public_key());
+        let sig = self.quorum_signature(
+            round,
+            manager,
+            self.committee().quorum_size().get() as usize,
+            false,
+        );
+
+        let mut v = if let Some(tc) = timeout_cert {
+            Vertex::new(round, Evidence::Timeout(tc), self.node.keypair())
+        } else {
+            let evidence = Evidence::Regular(Certificate::new(round - 1, sig));
+            Vertex::new(round, evidence, self.node.keypair())
+        };
         v.add_edges(edges);
-        if let Some(tc) = timeout_cert {
-            v.set_timeout(tc);
-        }
+
         self.node.sign(v.clone())
     }
 
-    pub(crate) fn expected_timeout(&self, round: RoundNumber) -> Envelope<Timeout, Validated> {
-        let d = Timeout::new(round);
+    pub(crate) fn expected_timeout(
+        &self,
+        manager: &KeyManager,
+        round: RoundNumber,
+    ) -> Envelope<TimeoutMessage, Validated> {
+        let e = manager.round_evidence(round - 1, self.committee());
+        let d = TimeoutMessage::new(round, e, self.node.keypair());
         self.node.sign(d.clone())
     }
 
     pub(crate) fn expected_timeout_certificate(
         &self,
         round: RoundNumber,
-        signers: &(BitVec, Vec<Signature>),
+        manager: &KeyManager,
+        sig_count: usize,
+        e: &Envelope<TimeoutMessage, Validated>,
     ) -> Certificate<Timeout> {
-        let pp = <PublicKey as SignatureKey>::public_parameter(
-            self.node.committee().stake_table(),
-            U256::from(self.node.committee().quorum_size().get()),
-        );
-        let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
-        Certificate::new(Timeout::new(round), sig)
+        let sig = self.quorum_signature(round, manager, sig_count, true);
+        Certificate::new(e.data().round().data().clone(), sig)
     }
 
-    pub(crate) fn expected_no_vote(&self, round: RoundNumber) -> Envelope<NoVote, Validated> {
-        let nv = NoVote::new(round);
-        self.node.sign(nv)
+    pub(crate) fn expected_no_vote(
+        &self,
+        round: RoundNumber,
+        cert: Certificate<Timeout>,
+    ) -> Envelope<NoVoteMessage, Validated> {
+        let d = NoVoteMessage::new(round, cert, self.node.keypair());
+        self.node.sign(d.clone())
     }
 
     pub(crate) fn expected_actions_is_empty(&self) -> bool {
@@ -124,5 +144,24 @@ impl TestNodeInstrument {
         }
 
         assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
+    }
+
+    fn quorum_signature(
+        &self,
+        round: RoundNumber,
+        manager: &KeyManager,
+        sig_count: usize,
+        is_timeout: bool,
+    ) -> (Signature, BitVec) {
+        let signers = if !is_timeout {
+            manager.signers_for_round(round - 1, self.committee(), sig_count)
+        } else {
+            manager.signers_for_timeout(round, self.committee(), sig_count)
+        };
+        let pp = <PublicKey as SignatureKey>::public_parameter(
+            self.node.committee().stake_table(),
+            U256::from(self.node.committee().quorum_size().get()),
+        );
+        <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1)
     }
 }
