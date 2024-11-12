@@ -3,11 +3,13 @@ use clap::Parser;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
+use multiaddr::multiaddr;
 use sailfish::sailfish;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs, num::NonZeroUsize};
+use std::{collections::HashSet, fs};
 use timeboost_core::logging;
-use timeboost_core::types::{NodeId, PublicKey};
+use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use tokio::sync::mpsc::channel;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -28,13 +30,22 @@ async fn main() -> Result<()> {
     logging::init_logging();
     let cli = Cli::parse();
     let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
-    let network_size = NonZeroUsize::new(cfg.staked_nodes.len()).unwrap();
-    sailfish::run(
+    let keypair = Keypair::zero(cfg.id);
+    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cfg.port));
+
+    // Sailfish nodes running individually do not need to communicate with the
+    // application layer, so we make dummy streams.
+    let (sf_app_tx, _) = channel(1);
+    let (_, tb_app_rx) = channel(1);
+
+    sailfish::run_sailfish(
         cfg.id,
-        cfg.port,
-        network_size,
         cfg.to_connect_addrs,
         cfg.staked_nodes,
+        keypair,
+        bind_address,
+        sf_app_tx,
+        tb_app_rx,
     )
     .await
 }

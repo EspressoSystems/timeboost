@@ -6,8 +6,12 @@ description.workspace = true
 
 [dependencies]
 async-broadcast = { workspace = true }
+async-trait = { workspace = true }
+async-lock = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
+futures = { workspace = true }
+committable = { workspace = true }
 hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
 libp2p-networking = { workspace = true }
@@ -16,6 +20,12 @@ serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 tokio = { workspace = true }
 toml = { workspace = true }
+multiaddr = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tide-disco = "0.9.3"
+surf-disco = "0.9"
+vbs = { workspace = true }
 
 [[bin]]
 name = "timeboost"

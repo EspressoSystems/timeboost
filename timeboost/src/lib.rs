@@ -1,41 +1,109 @@
-use async_broadcast::{broadcast, Receiver, Sender};
-use libp2p_networking::reexport::Multiaddr;
-use sailfish::sailfish::Sailfish;
+use anyhow::Result;
+use api::endpoints::TimeboostApiState;
+use std::collections::HashSet;
+use tide_disco::Url;
+use tokio::{signal, sync::mpsc::channel};
+use tracing::{error, info, warn};
 
-use timeboost_core::types::{message::Action, Keypair, NodeId};
+use hotshot_types::PeerConfig;
+use multiaddr::{Multiaddr, PeerId};
+use sailfish::sailfish::run_sailfish;
+use timeboost_core::types::{
+    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    Keypair, NodeId, PublicKey,
+};
+use tokio::sync::mpsc::{Receiver, Sender};
 
-pub struct EventStream {
-    #[allow(unused)]
-    sender: Sender<Action>,
-
-    #[allow(unused)]
-    receiver: Receiver<Action>,
-}
-
-impl EventStream {
-    pub fn new(size: usize) -> Self {
-        let (sender, receiver) = broadcast(size);
-        Self { sender, receiver }
-    }
-}
+pub mod api;
+pub mod config;
+pub mod contracts;
 
 pub struct Timeboost {
     #[allow(unused)]
     id: NodeId,
 
     #[allow(unused)]
-    sailfish: Sailfish,
+    timeboost_port: u16,
 
-    #[allow(unused)]
-    event_stream: EventStream,
+    /// The receiver for events from the sailfish node.
+    app_rx: Receiver<SailfishStatusEvent>,
+
+    /// The sender for events to the sailfish node.
+    app_tx: Sender<TimeboostStatusEvent>,
 }
 
 impl Timeboost {
-    pub fn new(id: NodeId, kpair: Keypair, bind: Multiaddr) -> Self {
+    pub fn new(
+        id: NodeId,
+        port: u16,
+        app_rx: Receiver<SailfishStatusEvent>,
+        app_tx: Sender<TimeboostStatusEvent>,
+    ) -> Self {
         Self {
             id,
-            sailfish: Sailfish::new(id, kpair, bind).expect("Failed to create Sailfish instance"),
-            event_stream: EventStream::new(100),
+            timeboost_port: port,
+            app_rx,
+            app_tx,
         }
     }
+
+    pub async fn go(mut self) -> Result<()> {
+        tokio::spawn(async move {
+            let api = TimeboostApiState::new(self.app_tx.clone());
+            if let Err(e) = api
+                .run(Url::parse(&format!("http://0.0.0.0:{}", self.timeboost_port)).unwrap())
+                .await
+            {
+                error!("Failed to run timeboost api: {}", e);
+            }
+        });
+
+        tokio::select! {
+            event = self.app_rx.recv() => {
+                info!("Received event: {:?}", event);
+            }
+            _ = signal::ctrl_c() => {
+                warn!("Received termination signal, shutting down...");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub async fn run_timeboost(
+    id: NodeId,
+    port: u16,
+    bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+    staked_nodes: Vec<PeerConfig<PublicKey>>,
+    keypair: Keypair,
+    bind_address: Multiaddr,
+) -> Result<()> {
+    info!("Starting timeboost");
+
+    // The application layer will broadcast events to the timeboost node.
+    let (sf_app_tx, sf_app_rx) = channel(100);
+
+    let (tb_app_tx, tb_app_rx) = channel(100);
+
+    // First, initialize and run the sailfish node.
+    // TODO: Hand the event stream to the sailfish node.
+    tokio::spawn(async move {
+        run_sailfish(
+            id,
+            bootstrap_nodes,
+            staked_nodes,
+            keypair,
+            bind_address,
+            sf_app_tx,
+            tb_app_rx,
+        )
+        .await
+    });
+
+    // Then, initialize and run the timeboost node.
+    let timeboost = Timeboost::new(id, port, sf_app_rx, tb_app_tx);
+
+    info!("Timeboost is running.");
+    timeboost.go().await
 }

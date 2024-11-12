@@ -1,40 +1,44 @@
 use anyhow::Result;
-use std::{collections::HashSet, fs, num::NonZeroUsize};
+use multiaddr::multiaddr;
+use timeboost::{contracts::committee::CommitteeContract, run_timeboost};
+use timeboost_core::types::{Keypair, NodeId};
 
 use clap::Parser;
-use hotshot_types::PeerConfig;
-use libp2p_identity::PeerId;
-use libp2p_networking::reexport::Multiaddr;
-use sailfish::sailfish::run;
-use serde::{Deserialize, Serialize};
-use timeboost_core::types::{NodeId, PublicKey};
 
 #[derive(Parser, Debug)]
 struct Cli {
+    /// The ID of the node to build.
     #[clap(long)]
-    config_path: String,
-}
+    id: u16,
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Config {
-    to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
-    staked_nodes: Vec<PeerConfig<PublicKey>>,
-    id: NodeId,
+    /// The port of the node to build.
+    #[clap(long)]
     port: u16,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     timeboost_core::logging::init_logging();
+
+    // Make a new committee contract
+    let committee = CommitteeContract::new();
+
+    // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
-    let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
-    let network_size = NonZeroUsize::new(cfg.staked_nodes.len()).unwrap();
-    run(
-        cfg.id,
-        cfg.port,
-        network_size,
-        cfg.to_connect_addrs,
-        cfg.staked_nodes,
+
+    let id = NodeId::from(cli.id as u64);
+
+    let keypair = Keypair::zero(id);
+
+    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cli.port));
+
+    run_timeboost(
+        id,
+        cli.port,
+        committee.bootstrap_nodes().into_iter().collect(),
+        committee.staked_nodes(),
+        keypair,
+        bind_address,
     )
     .await
 }

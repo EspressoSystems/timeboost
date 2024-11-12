@@ -11,6 +11,7 @@ benchmark = []
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 async-channel = { workspace = true }
+async-broadcast = { workspace = true }
 async-lock = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 futures = { workspace = true }
