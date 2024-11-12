@@ -197,7 +197,7 @@ impl<C: Comm> Coordinator<C> {
             Action::SendProposal(e) => self.broadcast(Message::Vertex(e.cast())).await,
             Action::SendTimeout(e) => self.broadcast(Message::Timeout(e.cast())).await,
             Action::SendTimeoutCert(c) => {
-                let round = c.data().round();
+                let round = **c.data();
                 self.broadcast(Message::TimeoutCert(c)).await;
                 self.application_broadcast(SailfishStatusEvent {
                     round,
