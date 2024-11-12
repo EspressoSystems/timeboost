@@ -175,7 +175,7 @@ impl KeyManager {
             .keys
             .values()
             .map(|kpair| {
-                let e = self.round_evidence(round.into(), committee);
+                let e = self.round_evidence((round - 1).into(), committee);
                 let v = Vertex::new(round, e.clone(), kpair);
                 dag.add(v.clone());
                 *v.source()

@@ -205,7 +205,7 @@ impl NoVoteMessage {
         N: Into<RoundNumber>,
     {
         let r = r.into();
-        // debug_assert_eq!(**e.data() + 1, r);
+        debug_assert_eq!(**e.data(), r);
         Self {
             round: Signed::new(NoVote(r), k),
             evidence: e,
