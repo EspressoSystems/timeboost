@@ -1,5 +1,5 @@
 pub mod consensus;
-pub mod coordinator;
+pub mod coordinator_helpers;
 pub mod sailfish;
 
 // ensure we can treat a `usize` as an `u64` and vice versa:

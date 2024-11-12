@@ -1,7 +1,12 @@
-use crate::{consensus::Consensus, coordinator::Coordinator};
+use crate::{
+    consensus::Consensus,
+    coordinator_helpers::{coordinator::Coordinator, test_coordinator::TestCoordinator},
+};
 
 #[cfg(feature = "test")]
-use crate::coordinator::CoordinatorAuditEvent;
+use crate::coordinator_helpers::interceptor::NetworkMessageInterceptor;
+#[cfg(feature = "test")]
+use crate::coordinator_helpers::test_coordinator::CoordinatorAuditEvent;
 
 use anyhow::Result;
 use async_lock::RwLock;
@@ -163,7 +168,6 @@ impl Sailfish {
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -177,15 +181,42 @@ impl Sailfish {
 
         let consensus = Consensus::new(self.id, self.keypair, committee);
 
-        Coordinator::new(
+        Coordinator::new(self.id, comm, consensus, shutdown_rx, sf_app_tx, tb_app_rx)
+    }
+
+    #[cfg(feature = "test")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn init_test_coordinator<C>(
+        self,
+        comm: C,
+        staked_nodes: Vec<PeerConfig<PublicKey>>,
+        shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        sf_app_tx: Sender<SailfishStatusEvent>,
+        tb_app_rx: Receiver<TimeboostStatusEvent>,
+        event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+        interceptor: Arc<NetworkMessageInterceptor>,
+    ) -> TestCoordinator<C>
+    where
+        C: Comm + Send + 'static,
+    {
+        let committee = StaticCommittee::new(
+            staked_nodes
+                .iter()
+                .map(|node| node.stake_table_entry.stake_key)
+                .collect::<Vec<_>>(),
+        );
+
+        let consensus = Consensus::new(self.id, self.keypair, committee);
+
+        TestCoordinator::new(
             self.id,
             comm,
             consensus,
             shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "test")]
             event_log,
+            interceptor,
         )
     }
 
@@ -199,7 +230,7 @@ impl Sailfish {
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx)
                 .go(),
         );
 

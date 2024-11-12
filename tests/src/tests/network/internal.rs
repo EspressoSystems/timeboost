@@ -5,7 +5,10 @@ use crate::Group;
 use super::{TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
 use sailfish::{
-    coordinator::{Coordinator, CoordinatorAuditEvent},
+    coordinator_helpers::{
+        interceptor::NetworkMessageInterceptor,
+        test_coordinator::{CoordinatorAuditEvent, TestCoordinator},
+    },
     sailfish::ShutdownToken,
 };
 use timeboost_core::types::{
@@ -32,14 +35,19 @@ pub struct MemoryNetworkTest {
     outcomes: HashMap<usize, Vec<TestCondition>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
     tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    interceptor: NetworkMessageInterceptor,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = Coordinator<Conn<Vec<u8>>>;
+    type Node = TestCoordinator<Conn<Vec<u8>>>;
     type Network = Star<Vec<u8>>;
     type Shutdown = ShutdownToken;
 
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self {
         let (shutdown_txs, shutdown_rxs): (
             Vec<Sender<ShutdownToken>>,
             Vec<Receiver<ShutdownToken>>,
@@ -58,6 +66,7 @@ impl TestableNetwork for MemoryNetworkTest {
             event_logs,
             sf_app_rxs: HashMap::new(),
             tb_app_txs: HashMap::new(),
+            interceptor,
         }
     }
 
@@ -82,13 +91,14 @@ impl TestableNetwork for MemoryNetworkTest {
             self.tb_app_txs.insert(i, tb_app_tx);
 
             // Initialize the coordinator
-            let co = n.init(
+            let co = n.init_test_coordinator(
                 ch,
                 (*self.group.staked_nodes).clone(),
                 shutdown_rx,
                 sf_app_tx,
                 tb_app_rx,
                 Some(Arc::clone(&self.event_logs[&i])),
+                Arc::new(self.interceptor.clone()),
             );
 
             tracing::debug!("Started coordinator {}", i);

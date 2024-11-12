@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use sailfish::coordinator::CoordinatorAuditEvent;
+use sailfish::coordinator_helpers::{
+    interceptor::NetworkMessageInterceptor, test_coordinator::CoordinatorAuditEvent,
+};
 use timeboost_core::{logging, traits::comm::Comm};
 use tokio::{task::JoinSet, time::timeout};
 
@@ -55,7 +57,11 @@ pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send;
     type Shutdown: Send;
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self;
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
     async fn start(
         &mut self,
@@ -75,10 +81,11 @@ impl<N: TestableNetwork> NetworkTest<N> {
         group: Group,
         outcomes: HashMap<usize, Vec<TestCondition>>,
         duration: Option<Duration>,
+        interceptor: NetworkMessageInterceptor,
     ) -> Self {
         Self {
             duration: duration.unwrap_or(Duration::from_secs(4)),
-            network: N::new(group, outcomes),
+            network: N::new(group, outcomes, interceptor),
         }
     }
 
