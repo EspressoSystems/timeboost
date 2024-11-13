@@ -1,7 +1,9 @@
-use committable::{Commitment, Committable};
+use std::{fmt, hash::Hash, marker::PhantomData};
+
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
-use serde::{Deserialize, Serialize};
-use std::{hash::Hash, marker::PhantomData};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, PublicKey, Signature};
@@ -13,15 +15,16 @@ use super::Keypair;
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub enum Validated {}
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub struct Envelope<D: Committable, S> {
     data: D,
     commitment: Commitment<D>,
     signature: Signature,
     signing_key: PublicKey,
+    #[serde(skip)]
     _marker: PhantomData<fn(S)>,
 }
 
@@ -99,5 +102,151 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn into_data(self) -> D {
         self.data
+    }
+}
+
+impl<'de, T, S> Deserialize<'de> for Envelope<T, S>
+where
+    T: Committable + Deserialize<'de>,
+    S: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Data,
+            Commitment,
+            Signature,
+            SigningKey,
+        }
+
+        struct EnvelopeVisitor<T, S>(PhantomData<fn(T, S)>);
+
+        impl<'de, T, S> Visitor<'de> for EnvelopeVisitor<T, S>
+        where
+            T: Committable + Deserialize<'de>,
+            S: Deserialize<'de>,
+        {
+            type Value = Envelope<T, S>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct Envelope")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Envelope<T, S>, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let data = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let commitment = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let signature = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let signing_key = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                Ok(Envelope {
+                    data,
+                    commitment,
+                    signature,
+                    signing_key,
+                    _marker: PhantomData,
+                })
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Envelope<T, S>, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut data = None;
+                let mut commitment = None;
+                let mut signature = None;
+                let mut signing_key = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Data => {
+                            if data.is_some() {
+                                return Err(de::Error::duplicate_field("data"));
+                            }
+                            data = Some(map.next_value()?);
+                        }
+                        Field::Commitment => {
+                            if commitment.is_some() {
+                                return Err(de::Error::duplicate_field("commitment"));
+                            }
+                            commitment = Some(map.next_value()?);
+                        }
+                        Field::Signature => {
+                            if signature.is_some() {
+                                return Err(de::Error::duplicate_field("signature"));
+                            }
+                            signature = Some(map.next_value()?);
+                        }
+                        Field::SigningKey => {
+                            if signing_key.is_some() {
+                                return Err(de::Error::duplicate_field("signing_key"));
+                            }
+                            signing_key = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let data = data.ok_or_else(|| de::Error::missing_field("data"))?;
+                let commitment =
+                    commitment.ok_or_else(|| de::Error::missing_field("commitment"))?;
+                let signature = signature.ok_or_else(|| de::Error::missing_field("signature"))?;
+                let signing_key =
+                    signing_key.ok_or_else(|| de::Error::missing_field("signing_key"))?;
+                Ok(Envelope {
+                    data,
+                    commitment,
+                    signature,
+                    signing_key,
+                    _marker: PhantomData,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["data", "commitment", "signature", "signing_key"];
+        deserializer.deserialize_struct("Envelope", FIELDS, EnvelopeVisitor(PhantomData))
+    }
+}
+
+impl<D: Committable> Committable for Envelope<D, Validated> {
+    fn commit(&self) -> Commitment<Self> {
+        let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
+        RawCommitmentBuilder::new("Envelope")
+            .field("data", self.data.commit())
+            .field("commitment", self.commitment)
+            .var_size_field("signature", &sig)
+            .var_size_field("signing_key", &self.signing_key.to_bytes())
+            .finalize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Envelope, Unchecked};
+    use crate::types::committee::StaticCommittee;
+    use crate::types::round_number::RoundNumber;
+    use crate::types::Keypair;
+    use quickcheck::quickcheck;
+
+    quickcheck! {
+        fn serialize_deserialize_identity(r: u64) -> bool {
+            let key = Keypair::random();
+            let com = StaticCommittee::new(vec![*key.public_key()]);
+            let ev1 = Envelope::signed(RoundNumber::new(r), &key);
+            let vec = bincode::serialize(&ev1).unwrap();
+            let ev2: Envelope<RoundNumber, Unchecked> = bincode::deserialize(&vec).unwrap();
+            let ev2 = ev2.validated(&com).unwrap();
+            ev1 == ev2
+        }
     }
 }
