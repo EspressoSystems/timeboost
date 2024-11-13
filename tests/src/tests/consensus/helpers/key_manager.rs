@@ -51,7 +51,7 @@ impl KeyManager {
             .map(|kpair| {
                 let d = Timeout::new(round);
                 let e = Envelope::signed(d, kpair);
-                Message::Timeout(e.cast())
+                Message::Timeout(e)
             })
             .collect()
     }
@@ -73,7 +73,7 @@ impl KeyManager {
         let mut v = Vertex::new(round, *kpair.public_key());
         v.add_edges(edges);
         let e = Envelope::signed(v, kpair);
-        Message::Vertex(e.cast())
+        Message::Vertex(e)
     }
 
     pub(crate) fn create_timeout_msgs(&self, round: u64) -> Vec<Message> {
@@ -87,7 +87,7 @@ impl KeyManager {
         let kpair = self.keys.get(id).unwrap();
         let t = Timeout::new(RoundNumber::new(round));
         let e = Envelope::signed(t, kpair);
-        Message::Timeout(e.cast())
+        Message::Timeout(e)
     }
 
     pub(crate) fn edges_for_round(
@@ -149,6 +149,6 @@ impl KeyManager {
     ) -> Message {
         let d = Vertex::new(round, *kpair.public_key());
         let e = Envelope::signed(d, kpair);
-        Message::Vertex(e.cast())
+        Message::Vertex(e)
     }
 }

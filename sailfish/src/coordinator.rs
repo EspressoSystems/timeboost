@@ -193,8 +193,8 @@ impl<C: Comm> Coordinator<C> {
                 })
                 .await;
             }
-            Action::SendProposal(e) => self.broadcast(Message::Vertex(e.cast())).await,
-            Action::SendTimeout(e) => self.broadcast(Message::Timeout(e.cast())).await,
+            Action::SendProposal(e) => self.broadcast(Message::Vertex(e)).await,
+            Action::SendTimeout(e) => self.broadcast(Message::Timeout(e)).await,
             Action::SendTimeoutCert(c) => {
                 let round = c.data().round();
                 self.broadcast(Message::TimeoutCert(c)).await;
@@ -204,7 +204,7 @@ impl<C: Comm> Coordinator<C> {
                 })
                 .await;
             }
-            Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v.cast())).await,
+            Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v)).await,
         }
     }
 
