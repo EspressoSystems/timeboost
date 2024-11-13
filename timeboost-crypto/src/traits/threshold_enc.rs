@@ -36,6 +36,7 @@ pub trait ThresholdEncScheme {
 
     fn combine(
         pp: &Self::Parameters,
+        pub_key: &Self::PublicKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError>;
