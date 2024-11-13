@@ -63,6 +63,7 @@ impl FakeNetwork {
             .leader(round)
     }
 
+    #[allow(unused)]
     pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {
         let key = self.leader_for_round(round);
         self.nodes.get(&key).map(|n| n.node()).unwrap()
