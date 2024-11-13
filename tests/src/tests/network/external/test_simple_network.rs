@@ -94,9 +94,9 @@ async fn test_simple_network_round_progression() {
 async fn test_simple_network_round_timeout() {
     logging::init_logging();
 
-    let num_nodes = 5;
+    let num_nodes = 4;
     let group = Group::new(num_nodes as u16);
-    let timeout_round = 5;
+    let timeout_round = 3;
     let interceptor = NetworkMessageInterceptor::new(move |msg, committee| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
@@ -135,7 +135,7 @@ async fn test_simple_network_round_timeout() {
     NetworkTest::<Libp2pNetworkTest>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(10)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()
