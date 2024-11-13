@@ -11,6 +11,7 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
+        committee::StaticCommittee,
         event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
@@ -45,6 +46,9 @@ pub struct Coordinator<C> {
 
     #[cfg(feature = "test")]
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+
+    #[cfg(feature = "test")]
+    interceptor: Arc<NetworkMessageInterceptor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -64,6 +68,7 @@ impl std::fmt::Display for CoordinatorAuditEvent {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 impl<C: Comm> Coordinator<C> {
     pub fn new(
         id: NodeId,
@@ -73,6 +78,7 @@ impl<C: Comm> Coordinator<C> {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+        #[cfg(feature = "test")] interceptor: Arc<NetworkMessageInterceptor>,
     ) -> Self {
         Self {
             id,
@@ -83,6 +89,8 @@ impl<C: Comm> Coordinator<C> {
             tb_app_rx,
             #[cfg(feature = "test")]
             event_log,
+            #[cfg(feature = "test")]
+            interceptor,
         }
     }
 
@@ -163,6 +171,14 @@ impl<C: Comm> Coordinator<C> {
         self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
             .await;
 
+        #[cfg(feature = "test")]
+        let msg = self
+            .interceptor
+            .intercept_message(m.clone(), self.consensus().committee());
+        if msg.is_empty() {
+            return Ok(Vec::new());
+        }
+
         Ok(self.consensus.handle_message(m))
     }
 
@@ -222,6 +238,47 @@ impl<C: Comm> Coordinator<C> {
     async fn unicast(&mut self, to: PublicKey, msg: Message) {
         if let Err(err) = self.comm.send(to, msg).await {
             warn!(%err, %to, "failed to send message")
+        }
+    }
+}
+
+#[cfg(feature = "test")]
+pub type NetworkMessageModifier =
+    Arc<dyn Fn(&Message, &StaticCommittee) -> Vec<Message> + Send + Sync>;
+/// Intercept a message before a node processes it and apply transformations if any provided
+
+#[derive(Clone)]
+#[cfg(feature = "test")]
+pub struct NetworkMessageInterceptor {
+    msg_modifier: NetworkMessageModifier,
+}
+
+#[cfg(feature = "test")]
+impl NetworkMessageInterceptor {
+    pub fn new<F>(msg_modifier: F) -> Self
+    where
+        F: Fn(&Message, &StaticCommittee) -> Vec<Message> + Send + Sync + Clone + 'static,
+    {
+        Self {
+            msg_modifier: Arc::new(msg_modifier),
+        }
+    }
+
+    /// Handle the message with any defined logic in the test
+    pub(crate) fn intercept_message(
+        &self,
+        msg: Message,
+        committee: &StaticCommittee,
+    ) -> Vec<Message> {
+        (self.msg_modifier)(&msg, committee)
+    }
+}
+
+#[cfg(feature = "test")]
+impl Default for NetworkMessageInterceptor {
+    fn default() -> Self {
+        Self {
+            msg_modifier: Arc::new(|msg: &Message, _committee: &StaticCommittee| vec![msg.clone()]),
         }
     }
 }

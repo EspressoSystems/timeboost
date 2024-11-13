@@ -2,6 +2,8 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 
 #[cfg(feature = "test")]
 use crate::coordinator::CoordinatorAuditEvent;
+#[cfg(feature = "test")]
+use crate::coordinator::NetworkMessageInterceptor;
 
 use anyhow::Result;
 use async_lock::RwLock;
@@ -156,6 +158,7 @@ impl Sailfish {
         Ok(network)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn init<C>(
         self,
         comm: C,
@@ -164,6 +167,7 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+        #[cfg(feature = "test")] interceptor: Option<Arc<NetworkMessageInterceptor>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -186,6 +190,8 @@ impl Sailfish {
             tb_app_rx,
             #[cfg(feature = "test")]
             event_log,
+            #[cfg(feature = "test")]
+            interceptor.unwrap_or_default(),
         )
     }
 
@@ -199,8 +205,16 @@ impl Sailfish {
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
-                .go(),
+            self.init(
+                n,
+                staked_nodes,
+                shutdown_rx,
+                sf_app_tx,
+                tb_app_rx,
+                None,
+                None,
+            )
+            .go(),
         );
 
         let shutdown_timeout = Duration::from_secs(5);

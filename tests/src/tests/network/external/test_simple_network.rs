@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sailfish::coordinator::CoordinatorAuditEvent;
+use sailfish::coordinator::{CoordinatorAuditEvent, NetworkMessageInterceptor};
 use std::time::Duration;
 use timeboost_core::{
     logging,
@@ -42,9 +42,14 @@ async fn test_simple_network_genesis() {
         })
         .collect();
 
-    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes, None)
-        .run()
-        .await;
+    NetworkTest::<Libp2pNetworkTest>::new(
+        group,
+        node_outcomes,
+        None,
+        NetworkMessageInterceptor::default(),
+    )
+    .run()
+    .await;
 }
 
 #[tokio::test]
@@ -75,7 +80,58 @@ async fn test_simple_network_round_progression() {
         })
         .collect();
 
-    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes, Some(Duration::from_secs(15)))
-        .run()
-        .await;
+    NetworkTest::<Libp2pNetworkTest>::new(
+        group,
+        node_outcomes,
+        Some(Duration::from_secs(15)),
+        NetworkMessageInterceptor::default(),
+    )
+    .run()
+    .await;
+}
+
+#[tokio::test]
+async fn test_simple_network_round_timeout() {
+    logging::init_logging();
+
+    let num_nodes = 5;
+    let group = Group::new(num_nodes as u16);
+    let interceptor = NetworkMessageInterceptor::new(move |msg, committee| {
+        if let Message::Vertex(v) = msg {
+            let round = msg.round();
+            if *round == 4 && *v.signing_key() == committee.leader(round) {
+                return vec![];
+            }
+        }
+        vec![msg.clone()]
+    });
+    // Each node should see the initial vertex proposal from every other node.
+    let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
+        .map(|node_id| {
+            let conditions: Vec<TestCondition> = group
+                .fish
+                .iter()
+                .map(|_n| {
+                    TestCondition::new(format!("Vertex from {}", node_id), move |e| {
+                        if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
+                            if v.data().no_vote_cert().is_some() {
+                                return TestOutcome::Passed;
+                            }
+                        }
+                        TestOutcome::Waiting
+                    })
+                })
+                .collect();
+            (node_id as usize, conditions)
+        })
+        .collect();
+
+    NetworkTest::<Libp2pNetworkTest>::new(
+        group,
+        node_outcomes,
+        Some(Duration::from_secs(10)),
+        interceptor,
+    )
+    .run()
+    .await;
 }

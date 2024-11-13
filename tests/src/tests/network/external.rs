@@ -7,7 +7,7 @@ use hotshot::traits::{
 };
 use portpicker::pick_unused_port;
 use sailfish::{
-    coordinator::CoordinatorAuditEvent,
+    coordinator::{CoordinatorAuditEvent, NetworkMessageInterceptor},
     sailfish::{Sailfish, ShutdownToken},
 };
 use timeboost_core::types::{
@@ -36,6 +36,7 @@ pub struct Libp2pNetworkTest {
     outcomes: HashMap<usize, Vec<TestCondition>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
     tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    interceptor: NetworkMessageInterceptor,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
@@ -43,7 +44,11 @@ impl TestableNetwork for Libp2pNetworkTest {
     type Network = Libp2pNetwork<PublicKey>;
     type Shutdown = ();
 
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self {
         let (shutdown_txs, shutdown_rxs): (
             Vec<Sender<ShutdownToken>>,
             Vec<Receiver<ShutdownToken>>,
@@ -60,6 +65,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             outcomes,
             sf_app_rxs: HashMap::new(),
             tb_app_txs: HashMap::new(),
+            interceptor,
         }
     }
 
@@ -118,6 +124,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             self.sf_app_rxs.insert(i, sf_app_rx);
             self.tb_app_txs.insert(i, tb_app_tx);
 
+            let interceptor = Arc::new(self.interceptor.clone());
             handles.spawn(async move {
                 let co = node.init(
                     network,
@@ -126,6 +133,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     sf_app_tx,
                     tb_app_rx,
                     Some(Arc::clone(&log)),
+                    Some(interceptor),
                 );
 
                 co.go().await;
