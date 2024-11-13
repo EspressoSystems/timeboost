@@ -15,7 +15,7 @@ use super::Keypair;
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub enum Validated {}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]

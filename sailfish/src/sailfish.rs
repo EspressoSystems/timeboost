@@ -29,7 +29,7 @@ use libp2p_networking::{
 use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
-    traits::comm::Comm,
+    traits::comm::{Comm, Libp2p},
     types::{
         committee::StaticCommittee,
         event::{SailfishStatusEvent, TimeboostStatusEvent},
@@ -168,13 +168,7 @@ impl Sailfish {
     where
         C: Comm + Send + 'static,
     {
-        let committee = StaticCommittee::new(
-            staked_nodes
-                .iter()
-                .map(|node| node.stake_table_entry.stake_key)
-                .collect::<Vec<_>>(),
-        );
-
+        let committee = StaticCommittee::from(&*staked_nodes);
         let consensus = Consensus::new(self.id, self.keypair, committee);
 
         Coordinator::new(
@@ -198,9 +192,18 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
+        let libp2p = Libp2p::new(n, StaticCommittee::from(&*staked_nodes));
+
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
-                .go(),
+            self.init(
+                libp2p,
+                staked_nodes,
+                shutdown_rx,
+                sf_app_tx,
+                tb_app_rx,
+                None,
+            )
+            .go(),
         );
 
         let shutdown_timeout = Duration::from_secs(5);
