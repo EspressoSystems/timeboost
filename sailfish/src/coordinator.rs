@@ -11,6 +11,7 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
+        envelope::Validated,
         event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
@@ -51,7 +52,7 @@ pub struct Coordinator<C> {
 #[cfg(feature = "test")]
 pub enum CoordinatorAuditEvent {
     ActionTaken(Action),
-    MessageReceived(Message),
+    MessageReceived(Message<Validated>),
 }
 
 #[cfg(feature = "test")]
@@ -158,7 +159,7 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    async fn on_message(&mut self, m: Message) -> Result<Vec<Action>> {
+    async fn on_message(&mut self, m: Message<Validated>) -> Result<Vec<Action>> {
         #[cfg(feature = "test")]
         self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
             .await;
@@ -207,7 +208,7 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    async fn broadcast(&mut self, msg: Message) {
+    async fn broadcast(&mut self, msg: Message<Validated>) {
         if let Err(err) = self.comm.broadcast(msg).await {
             warn!(%err, "failed to broadcast message to network")
         }
@@ -219,7 +220,7 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    async fn unicast(&mut self, to: PublicKey, msg: Message) {
+    async fn unicast(&mut self, to: PublicKey, msg: Message<Validated>) {
         if let Err(err) = self.comm.send(to, msg).await {
             warn!(%err, %to, "failed to send message")
         }

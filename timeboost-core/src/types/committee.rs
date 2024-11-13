@@ -5,6 +5,7 @@ use std::{
 
 use ethereum_types::U256;
 use hotshot_types::stake_table::StakeTableEntry;
+use hotshot_types::PeerConfig;
 
 use crate::types::{round_number::RoundNumber, PublicKey};
 
@@ -59,5 +60,16 @@ impl StaticCommittee {
     pub fn threshold(&self) -> NonZeroU64 {
         let t = self.stake_table.len().div_ceil(3);
         NonZeroU64::new(t as u64).expect("ceil(n/3) with n > 0 never gives 0")
+    }
+}
+
+impl From<&[PeerConfig<PublicKey>]> for StaticCommittee {
+    fn from(value: &[PeerConfig<PublicKey>]) -> Self {
+        Self::new(
+            value
+                .iter()
+                .map(|cfg| cfg.stake_table_entry.stake_key)
+                .collect::<Vec<_>>(),
+        )
     }
 }
