@@ -1,13 +1,16 @@
 use std::collections::{BTreeMap, HashSet};
 use std::mem;
 use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
+use async_lock::RwLock;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
+    metrics::ConsensusMetrics,
     round_number::RoundNumber,
     transaction::TransactionsQueue,
     vertex::Vertex,
@@ -20,12 +23,6 @@ mod vote;
 
 pub use dag::Dag;
 pub use vote::VoteAccumulator;
-
-#[cfg(feature = "metrics")]
-mod metrics;
-
-#[cfg(feature = "metrics")]
-pub use metrics::ConsensusMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
@@ -67,15 +64,20 @@ pub struct Consensus {
     /// Transactions to include in vertex proposals.
     transactions: TransactionsQueue,
 
-    #[cfg(feature = "metrics")]
-    metrics: std::sync::Arc<ConsensusMetrics>,
+    /// The consensus metrics for this node.
+    metrics: Arc<ConsensusMetrics>,
 
-    #[cfg(feature = "metrics")]
-    timer: std::time::Instant,
+    /// The timer for recording metrics related to duration of consensus operations.
+    metrics_timer: std::time::Instant,
 }
 
 impl Consensus {
-    pub fn new(id: NodeId, keypair: Keypair, committee: StaticCommittee) -> Self {
+    pub fn new(
+        id: NodeId,
+        keypair: Keypair,
+        committee: StaticCommittee,
+        metrics: Arc<ConsensusMetrics>,
+    ) -> Self {
         Self {
             id,
             keypair,
@@ -89,10 +91,8 @@ impl Consensus {
             committee,
             leader_stack: Vec::new(),
             transactions: TransactionsQueue::new(),
-            #[cfg(feature = "metrics")]
-            metrics: std::sync::Arc::new(ConsensusMetrics::default()),
-            #[cfg(feature = "metrics")]
-            timer: std::time::Instant::now(),
+            metrics,
+            metrics_timer: std::time::Instant::now(),
         }
     }
 
@@ -114,11 +114,6 @@ impl Consensus {
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
         self.transactions = q
-    }
-
-    #[cfg(feature = "metrics")]
-    pub fn set_metrics<M>(&mut self, m: std::sync::Arc<ConsensusMetrics>) {
-        self.metrics = m
     }
 
     /// (Re-)start consensus.
@@ -466,8 +461,7 @@ impl Consensus {
             {
                 self.metrics
                     .round_duration
-                    .add_point(self.timer.elapsed().as_secs_f64());
-                self.timer = std::time::Instant::now();
+                    .add_point(self.metrics.elapsed());
                 self.metrics.round.set(*self.round as usize);
             }
             return actions;
@@ -496,14 +490,14 @@ impl Consensus {
             v.set_timeout(tc);
             actions.extend(self.add_and_broadcast_vertex(v));
             self.clear_timeout_aggregators(self.round);
-            #[cfg(feature = "metrics")]
-            {
-                self.metrics
-                    .round_duration
-                    .add_point(self.timer.elapsed().as_secs_f64());
-                self.timer = std::time::Instant::now();
-                self.metrics.round.set(*self.round as usize);
-            }
+
+            // Update the metrics
+            self.metrics
+                .round_duration
+                .add_point(self.metrics_timer.elapsed().as_secs_f64());
+            self.metrics_timer = std::time::Instant::now();
+            self.metrics.round.set(*self.round as usize);
+
             return actions;
         }
 

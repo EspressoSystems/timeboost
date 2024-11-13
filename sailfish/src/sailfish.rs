@@ -33,6 +33,7 @@ use timeboost_core::{
     types::{
         committee::StaticCommittee,
         event::{SailfishStatusEvent, TimeboostStatusEvent},
+        metrics::ConsensusMetrics,
         Keypair, NodeId, PublicKey,
     },
 };
@@ -163,6 +164,7 @@ impl Sailfish {
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
+        metrics: Arc<ConsensusMetrics>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
@@ -175,7 +177,7 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(self.id, self.keypair, committee);
+        let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
 
         Coordinator::new(
             self.id,
@@ -197,10 +199,19 @@ impl Sailfish {
         shutdown_tx: oneshot::Sender<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
+        metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
-                .go(),
+            self.init(
+                n,
+                staked_nodes,
+                shutdown_rx,
+                sf_app_tx,
+                tb_app_rx,
+                metrics,
+                None,
+            )
+            .go(),
         );
 
         let shutdown_timeout = Duration::from_secs(5);
@@ -255,6 +266,7 @@ pub async fn run_sailfish(
     bind_address: Multiaddr,
     sf_app_tx: Sender<SailfishStatusEvent>,
     tb_app_rx: Receiver<TimeboostStatusEvent>,
+    metrics: Arc<ConsensusMetrics>,
 ) -> Result<()> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
@@ -292,6 +304,7 @@ pub async fn run_sailfish(
         shutdown_tx,
         sf_app_tx,
         tb_app_rx,
+        metrics,
     )
     .await
 }

@@ -13,7 +13,11 @@ struct Cli {
 
     /// The port of the node to build.
     #[clap(long)]
-    port: u16,
+    timeboost_port: u16,
+
+    /// The port of the RPC API.
+    #[clap(long)]
+    timeboost_rpc_port: u16,
 }
 
 #[tokio::main]
@@ -30,11 +34,12 @@ async fn main() -> Result<()> {
 
     let keypair = Keypair::zero(id);
 
-    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cli.port));
+    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cli.timeboost_port));
 
     run_timeboost(
         id,
-        cli.port,
+        cli.timeboost_port,
+        cli.timeboost_rpc_port,
         committee.bootstrap_nodes().into_iter().collect(),
         committee.staked_nodes(),
         keypair,

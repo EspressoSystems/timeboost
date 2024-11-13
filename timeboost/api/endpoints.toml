@@ -7,3 +7,8 @@ FORMAT_VERSION = "0.1.0"
 PATH = ["/submit"]
 METHOD = "POST"
 DOC = "Submit transaction to Timeboost"
+
+[route.get_metrics]
+PATH = ["/metrics"]
+METHOD = "GET"
+DOC = "Get metrics from Timeboost"
