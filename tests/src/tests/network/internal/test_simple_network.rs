@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use sailfish::coordinator::CoordinatorAuditEvent;
+use std::time::Duration;
 use timeboost_core::{
     logging,
     types::{message::Message, round_number::RoundNumber},
@@ -42,6 +43,39 @@ async fn test_simple_network_genesis() {
         .collect();
 
     NetworkTest::<MemoryNetworkTest>::new(group, node_outcomes, None)
+        .run()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simple_network_round_progression() {
+    logging::init_logging();
+
+    let num_nodes = 5;
+    let group = Group::new(num_nodes as u16);
+    let rounds = 50;
+    // Each node should see the initial vertex proposal from every other node.
+    let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
+        .map(|node_id| {
+            let conditions: Vec<TestCondition> = group
+                .fish
+                .iter()
+                .map(|_n| {
+                    TestCondition::new(format!("Vertex from {}", node_id), move |e| {
+                        if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
+                            if v.data().round() == rounds.into() {
+                                return TestOutcome::Passed;
+                            }
+                        }
+                        TestOutcome::Waiting
+                    })
+                })
+                .collect();
+            (node_id as usize, conditions)
+        })
+        .collect();
+
+    NetworkTest::<MemoryNetworkTest>::new(group, node_outcomes, Some(Duration::from_secs(15)))
         .run()
         .await;
 }
