@@ -1,16 +1,13 @@
-use aes_gcm::aead::Aead;
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit};
+use aes_gcm::{AeadCore, Aes256Gcm, Key};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
     field_hashers::{DefaultFieldHasher, HashToField},
-    PrimeField, UniformRand,
+    One, PrimeField, UniformRand, Zero,
 };
-use ark_poly::{domain, Radix2EvaluationDomain};
-use ark_poly::{
-    polynomial::univariate::DensePolynomial, DenseUVPolynomial, EvaluationDomain,
-    GeneralEvaluationDomain, Polynomial,
-};
+use ark_poly::EvaluationDomain;
+use ark_poly::Radix2EvaluationDomain;
+use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use rand::rngs::OsRng;
 use rand::Rng;
 use sha2::Sha256;
@@ -45,9 +42,10 @@ pub struct KeyShare<C: CurveGroup> {
     share: C::ScalarField,
     index: u32,
 }
-
+#[derive(Debug)]
 pub struct Plaintext(Vec<u8>);
 
+#[derive(Debug)]
 pub struct Ciphertext<C: CurveGroup> {
     v: C::Affine,
     w_hat: C::Affine,
@@ -99,31 +97,28 @@ where
     ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = pp.committee.size;
         let degree = committee_size / THRESHOLD;
-        let poly = DensePolynomial::rand(degree, rng);
-        let domain = Radix2EvaluationDomain::new(committee_size);
+        let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
+        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size);
+
         if domain.is_none() {
             return Err(ThresholdEncError::Internal(anyhow!(
                 "Unable to create eval domain"
             )));
         }
-
-        let evals: Vec<_> = (0..=committee_size)
+        let secret = poly.evaluate(&C::ScalarField::zero());
+        let evals: Vec<_> = (0..committee_size)
             .into_iter()
             .map(|i| {
                 let x = domain.unwrap().element(i);
                 poly.evaluate(&x)
             })
             .collect();
-        let length = evals.len();
-        assert!(length == committee_size);
 
-        let alpha_0: C::ScalarField = evals[0];
-        let u_0 = pp.generator * alpha_0;
+        let u_0 = pp.generator * secret;
         let pub_key = PublicKey {
             pk: u_0.into(),
             pk_comb: evals
                 .iter()
-                .skip(1)
                 .map(|alpha| (pp.generator * alpha).into())
                 .collect(),
         };
@@ -131,7 +126,6 @@ where
         let key_shares = evals
             .into_iter()
             .enumerate()
-            .skip(1)
             .map(|(i, alpha)| KeyShare {
                 share: alpha,
                 index: i as u32,
@@ -150,14 +144,13 @@ where
         let v: C = pp.generator * beta.0;
         let _w: C = pub_key.pk * beta.0;
         let committee_id_bytes = pp.committee.id.to_le_bytes();
-
         // TODO: hash to key space $k = H_1(v,w)$
         let key: &[u8; 32] = &[42; 32]; // should be H_1(v,w)
         let k: &Key<Aes256Gcm> = key.into();
 
-        let cipher = Aes256Gcm::new(&k);
+        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let e = cipher.encrypt(&nonce, message.0.as_ref());
+        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref());
         if e.is_err() {
             return Err(ThresholdEncError::Internal(anyhow!(
                 "Unable to encrypt plaintext"
@@ -258,9 +251,9 @@ where
             let k: &Key<Aes256Gcm> = key.into();
 
             let data = ciphertext.e.clone();
-            let cipher = Aes256Gcm::new(&k);
+            let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
             let nonce: &[u8] = ciphertext.nonce.as_slice();
-            let plaintext = cipher.decrypt(nonce.into(), data.as_ref());
+            let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
             plaintext
                 .map(Plaintext)
                 .map_err(|_| ThresholdEncError::Internal(anyhow!("Decryption failed")))
@@ -270,39 +263,38 @@ where
 
 #[cfg(test)]
 mod test {
-    use ark_std::{test_rng, UniformRand};
-
-    use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
-
-    use rand::Rng;
 
     use crate::sg_encryption::{
         Committee, Plaintext, Randomness, ShoupGennaro, ThresholdEncScheme,
     };
+    use ark_bn254::G1Projective;
+    use ark_std::{test_rng, UniformRand};
+    use rand::Rng;
 
     #[test]
     fn test_shoup_gennaro_encryption() {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
         // setup and key generation
-        let parameters = ShoupGennaro::<JubJub>::setup(committee, rng).unwrap();
-        let (pk, key_shares) = ShoupGennaro::<JubJub>::keygen(&parameters, rng).unwrap();
-
+        let parameters = ShoupGennaro::<G1Projective>::setup(committee, rng).unwrap();
+        let (pk, key_shares) = ShoupGennaro::<G1Projective>::keygen(&parameters, rng).unwrap();
         let r = Randomness::rand(rng);
         let message = "important message".as_bytes().to_vec();
         let plaintext = Plaintext(message.clone());
-        let ciphertext = ShoupGennaro::<JubJub>::encrypt(&parameters, &pk, &plaintext, &r).unwrap();
+        let ciphertext =
+            ShoupGennaro::<G1Projective>::encrypt(&parameters, &pk, &plaintext, &r).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<JubJub>::decrypt(&parameters, s, &ciphertext))
+            .map(|s| ShoupGennaro::<G1Projective>::decrypt(&parameters, s, &ciphertext))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
+
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
         let check_message =
-            ShoupGennaro::<JubJub>::combine(&parameters, dec_shares_refs, &ciphertext).unwrap();
-
+            ShoupGennaro::<G1Projective>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
+                .unwrap();
         assert_eq!(message, check_message.0);
     }
 
