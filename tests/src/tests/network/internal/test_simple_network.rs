@@ -96,25 +96,31 @@ async fn test_simple_network_round_timeout() {
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
+    let timeout_round = 5;
     let interceptor = NetworkMessageInterceptor::new(move |msg, committee| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
-            if *round == 4 && *v.signing_key() == committee.leader(round) {
+            // If leader vertex do not process, but process every other so we have 2f + 1
+            if *round == timeout_round && *v.signing_key() == committee.leader(round) {
                 return vec![];
             }
         }
         vec![msg.clone()]
     });
-    // Each node should see the initial vertex proposal from every other node.
+
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
                 .fish
                 .iter()
-                .map(|_n| {
+                .map(move |_n| {
                     TestCondition::new(format!("Vertex from {}", node_id), move |e| {
                         if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            if v.data().no_vote_cert().is_some() {
+                            // Ensure vertex has timeout and no vote cert and from round r + 1
+                            if v.data().no_vote_cert().is_some()
+                                && v.data().timeout_cert().is_some()
+                                && *v.data().round() == timeout_round + 1
+                            {
                                 return TestOutcome::Passed;
                             }
                         }
