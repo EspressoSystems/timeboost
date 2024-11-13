@@ -208,23 +208,48 @@ where
 
     fn combine(
         pp: &Self::Parameters,
+        _pub_key: &Self::PublicKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        if dec_shares.len() < THRESHOLD + 1 {
+        let threshold = (pp.committee.size / THRESHOLD) + 1;
+
+        if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
         } else {
-            let domain: GeneralEvaluationDomain<C::ScalarField> =
-                GeneralEvaluationDomain::new(pp.committee.size).unwrap();
-            let tau: C::ScalarField = domain.element(0);
-            let lagrange_coeffs: Vec<C::ScalarField> =
-                domain.evaluate_all_lagrange_coefficients(tau);
+            let domain: Radix2EvaluationDomain<C::ScalarField> =
+                Radix2EvaluationDomain::new(pp.committee.size).unwrap();
 
-            let mut w = dec_shares[0].w.into();
-            for share in dec_shares.iter().skip(1) {
-                let i = share.index;
-                let w_i: C = share.w.into();
-                let l_i = lagrange_coeffs[i as usize];
+            let x = dec_shares
+                .iter()
+                .map(|share| domain.element(share.index as usize))
+                .collect::<Vec<_>>();
+
+            // Calculating lambdas
+            let mut nom = vec![C::ScalarField::zero(); threshold];
+            let mut denom = vec![C::ScalarField::zero(); threshold];
+            let mut l = vec![C::ScalarField::one(); threshold];
+            for i in 0..threshold {
+                let x_i = x[i];
+                nom[i] = C::ScalarField::one();
+                denom[i] = C::ScalarField::one();
+                for j in 0..threshold {
+                    if j == i {
+                        continue;
+                    } else {
+                        let x_j = x[j];
+                        nom[i] *= C::ScalarField::zero() - x_j;
+                        denom[i] *= x_i - x_j;
+                    }
+                }
+                l[i] = nom[i] / denom[i];
+            }
+
+            // Lagrange interpolation in the exponent
+            let mut w = dec_shares[0].w * l[0];
+            for d in 1..threshold {
+                let w_i = dec_shares[d].w;
+                let l_i = l[d];
                 w += (w_i * l_i).into();
             }
 
