@@ -1,7 +1,9 @@
+use std::{fmt, hash::Hash, marker::PhantomData};
+
 use committable::{Commitment, Committable};
 use hotshot::types::SignatureKey;
-use serde::{Deserialize, Serialize};
-use std::{hash::Hash, marker::PhantomData};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, PublicKey, Signature};
@@ -16,12 +18,13 @@ pub enum Unchecked {}
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Validated {}
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub struct Envelope<D: Committable, S> {
     data: D,
     commitment: Commitment<D>,
     signature: Signature,
     signing_key: PublicKey,
+    #[serde(skip)]
     _marker: PhantomData<fn(S)>,
 }
 
@@ -99,5 +102,118 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn into_data(self) -> D {
         self.data
+    }
+}
+
+impl<'de, T, S> Deserialize<'de> for Envelope<T, S>
+where
+    T: Committable + Deserialize<'de>,
+    S: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Data,
+            Commitment,
+            Signature,
+            SigningKey,
+        }
+
+        struct EnvelopeVisitor<T, S>(PhantomData<fn(T, S)>);
+
+        impl<'de, T, S> Visitor<'de> for EnvelopeVisitor<T, S>
+        where
+            T: Committable + Deserialize<'de>,
+            S: Deserialize<'de>,
+        {
+            type Value = Envelope<T, S>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct Envelope")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<Envelope<T, S>, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let data = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let commitment = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let signature = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let signing_key = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                Ok(Envelope {
+                    data,
+                    commitment,
+                    signature,
+                    signing_key,
+                    _marker: PhantomData,
+                })
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Envelope<T, S>, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut data = None;
+                let mut commitment = None;
+                let mut signature = None;
+                let mut signing_key = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Data => {
+                            if data.is_some() {
+                                return Err(de::Error::duplicate_field("data"));
+                            }
+                            data = Some(map.next_value()?);
+                        }
+                        Field::Commitment => {
+                            if commitment.is_some() {
+                                return Err(de::Error::duplicate_field("commitment"));
+                            }
+                            commitment = Some(map.next_value()?);
+                        }
+                        Field::Signature => {
+                            if signature.is_some() {
+                                return Err(de::Error::duplicate_field("signature"));
+                            }
+                            signature = Some(map.next_value()?);
+                        }
+                        Field::SigningKey => {
+                            if signing_key.is_some() {
+                                return Err(de::Error::duplicate_field("signing_key"));
+                            }
+                            signing_key = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let data = data.ok_or_else(|| de::Error::missing_field("data"))?;
+                let commitment =
+                    commitment.ok_or_else(|| de::Error::missing_field("commitment"))?;
+                let signature = signature.ok_or_else(|| de::Error::missing_field("signature"))?;
+                let signing_key =
+                    signing_key.ok_or_else(|| de::Error::missing_field("signing_key"))?;
+                Ok(Envelope {
+                    data,
+                    commitment,
+                    signature,
+                    signing_key,
+                    _marker: PhantomData,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["data", "commitment", "signature", "signing_key"];
+        deserializer.deserialize_struct("Envelope", FIELDS, EnvelopeVisitor(PhantomData))
     }
 }
