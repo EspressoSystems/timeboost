@@ -5,6 +5,7 @@ use hotshot::traits::{
     implementations::{derive_libp2p_multiaddr, Libp2pNetwork},
     NetworkNodeConfigBuilder,
 };
+use hotshot_types::traits::metrics::NoMetrics;
 use portpicker::pick_unused_port;
 use sailfish::{
     coordinator::CoordinatorAuditEvent,
@@ -12,6 +13,7 @@ use sailfish::{
 };
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
+    metrics::ConsensusMetrics,
     PublicKey,
 };
 use tokio::{
@@ -125,6 +127,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     shutdown_rx,
                     sf_app_tx,
                     tb_app_rx,
+                    Arc::new(ConsensusMetrics::new(NoMetrics)),
                     Some(Arc::clone(&log)),
                 );
 

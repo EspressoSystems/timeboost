@@ -4,12 +4,14 @@ use crate::Group;
 
 use super::{TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
+use hotshot_types::traits::metrics::NoMetrics;
 use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
     sailfish::ShutdownToken,
 };
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
+    metrics::ConsensusMetrics,
     test::net::{Conn, Star},
 };
 use tokio::{
@@ -88,6 +90,7 @@ impl TestableNetwork for MemoryNetworkTest {
                 shutdown_rx,
                 sf_app_tx,
                 tb_app_rx,
+                Arc::new(ConsensusMetrics::new(NoMetrics)),
                 Some(Arc::clone(&self.event_logs[&i])),
             );
 

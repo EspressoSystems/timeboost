@@ -157,6 +157,7 @@ impl Sailfish {
         Ok(network)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn init<C>(
         self,
         comm: C,
@@ -191,6 +192,7 @@ impl Sailfish {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn go(
         self,
         n: Libp2pNetwork<PublicKey>,
@@ -258,6 +260,7 @@ impl Sailfish {
 /// # Panics
 ///
 /// Panics if any configuration or initialization step fails.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_sailfish(
     id: NodeId,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,

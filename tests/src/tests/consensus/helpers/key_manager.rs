@@ -1,13 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use super::node_instrument::TestNodeInstrument;
 use bitvec::bitvec;
 use bitvec::vec::BitVec;
+use hotshot_types::traits::metrics::NoMetrics;
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::Envelope,
     message::{Message, Timeout},
+    metrics::ConsensusMetrics,
     round_number::RoundNumber,
     vertex::Vertex,
     Keypair, NodeId, PublicKey, Signature,
@@ -36,11 +38,17 @@ impl KeyManager {
                 .map(|kpair| *kpair.public_key())
                 .collect(),
         );
+        let metrics = Arc::new(ConsensusMetrics::new(NoMetrics));
         self.keys
             .iter()
             .map(|(id, kpair)| {
                 let node_id = NodeId::from(*id);
-                TestNodeInstrument::new(Consensus::new(node_id, kpair.clone(), committee.clone()))
+                TestNodeInstrument::new(Consensus::new(
+                    node_id,
+                    kpair.clone(),
+                    committee.clone(),
+                    metrics.clone(),
+                ))
             })
             .collect()
     }

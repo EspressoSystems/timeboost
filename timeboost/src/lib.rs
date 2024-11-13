@@ -5,12 +5,12 @@ use tide_disco::Url;
 use tokio::{signal, sync::mpsc::channel};
 use tracing::{error, info, warn};
 
-use hotshot_types::{traits::metrics::Metrics, PeerConfig};
+use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
 use sailfish::sailfish::run_sailfish;
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
-    metrics::ConsensusMetrics,
+    metrics::{prometheus::Prometheus, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -49,15 +49,15 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        tokio::spawn(async move {
-            let api = TimeboostApiState::new(self.app_tx.clone());
-            if let Err(e) = api
-                .run(Url::parse(&format!("http://0.0.0.0:{}", self.timeboost_port)).unwrap())
-                .await
-            {
-                error!("Failed to run timeboost api: {}", e);
-            }
-        });
+        // tokio::spawn(async move {
+        //     let api = TimeboostApiState::new(self.app_tx.clone());
+        //     if let Err(e) = api
+        //         .run(Url::parse(&format!("http://0.0.0.0:{}", self.timeboost_port)).unwrap())
+        //         .await
+        //     {
+        //         error!("Failed to run timeboost api: {}", e);
+        //     }
+        // });
 
         tokio::select! {
             event = self.app_rx.recv() => {
@@ -74,7 +74,7 @@ impl Timeboost {
 
 pub async fn run_timeboost(
     id: NodeId,
-    timeboost_port: u16,
+    _timeboost_port: u16,
     timeboost_rpc_port: u16,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
@@ -83,7 +83,7 @@ pub async fn run_timeboost(
 ) -> Result<()> {
     info!("Starting timeboost");
 
-    let metrics = Arc::new(ConsensusMetrics::new(Metrics));
+    let metrics = Arc::new(ConsensusMetrics::new(Prometheus::default()));
 
     // The application layer will broadcast events to the timeboost node.
     let (sf_app_tx, sf_app_rx) = channel(100);
@@ -106,17 +106,8 @@ pub async fn run_timeboost(
         .await
     });
 
-    // Spawn the RPC api.
-    let api_tx = tb_app_tx.clone();
-    tokio::spawn(async move {
-        let api = TimeboostApiState::new(api_tx);
-        api.run(Url::parse(&format!("http://0.0.0.0:{}", timeboost_rpc_port)).unwrap())
-            .await
-            .unwrap();
-    });
-
     // Then, initialize and run the timeboost node.
-    let timeboost = Timeboost::new(id, timeboost_port, sf_app_rx, tb_app_tx);
+    let timeboost = Timeboost::new(id, timeboost_rpc_port, sf_app_rx, tb_app_tx);
 
     info!("Timeboost is running.");
     timeboost.go().await

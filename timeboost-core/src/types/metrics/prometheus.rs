@@ -110,27 +110,27 @@ impl Metrics for Prometheus {
     }
 
     /////////////// We don't care about the rest of these
-    fn create_text(&self, name: String) {
+    fn create_text(&self, _name: String) {
         todo!()
     }
 
-    fn counter_family(&self, name: String, labels: Vec<String>) -> Box<dyn CounterFamily> {
+    fn counter_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn CounterFamily> {
         todo!()
     }
 
-    fn gauge_family(&self, name: String, labels: Vec<String>) -> Box<dyn GaugeFamily> {
+    fn gauge_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn GaugeFamily> {
         todo!()
     }
 
-    fn histogram_family(&self, name: String, labels: Vec<String>) -> Box<dyn HistogramFamily> {
+    fn histogram_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn HistogramFamily> {
         todo!()
     }
 
-    fn text_family(&self, name: String, labels: Vec<String>) -> Box<dyn TextFamily> {
+    fn text_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn TextFamily> {
         todo!()
     }
 
-    fn subgroup(&self, subgroup_name: String) -> Box<dyn Metrics> {
+    fn subgroup(&self, _subgroup_name: String) -> Box<dyn Metrics> {
         todo!()
     }
 }

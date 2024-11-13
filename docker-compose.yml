@@ -3,33 +3,101 @@ version: "3.8"
 services:
   node0:
     image: timeboost:latest
-    command: ["/app/timeboost", "--id", "0"]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "0",
+        "--timeboost-port",
+        "8000",
+        "--timeboost-rpc-port",
+        "8800",
+      ]
     networks:
       - timeboost
+    ports:
+      - "8000:8000"
+      - "8800:8800"
 
   node1:
     image: timeboost:latest
-    command: ["/app/timeboost", "--id", "1"]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "1",
+        "--timeboost-port",
+        "8001",
+        "--timeboost-rpc-port",
+        "8801",
+      ]
     networks:
       - timeboost
+    environment:
+      - RUST_LOG=debug
+    ports:
+      - "8001:8001"
+      - "8801:8801"
 
   node2:
     image: timeboost:latest
-    command: ["/app/timeboost", "--id", "2"]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "2",
+        "--timeboost-port",
+        "8002",
+        "--timeboost-rpc-port",
+        "8802",
+      ]
     networks:
       - timeboost
+    environment:
+      - RUST_LOG=debug
+    ports:
+      - "8002:8002"
+      - "8802:8802"
 
   node3:
     image: timeboost:latest
-    command: ["/app/timeboost", "--id", "3"]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "3",
+        "--timeboost-port",
+        "8003",
+        "--timeboost-rpc-port",
+        "8803",
+      ]
     networks:
       - timeboost
+    environment:
+      - RUST_LOG=debug
+    ports:
+      - "8003:8003"
+      - "8803:8803"
 
   node4:
     image: timeboost:latest
-    command: ["/app/timeboost", "--id", "4"]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "4",
+        "--timeboost-port",
+        "8004",
+        "--timeboost-rpc-port",
+        "8804",
+      ]
     networks:
       - timeboost
+    environment:
+      - RUST_LOG=debug
+    ports:
+      - "8004:8004"
+      - "8804:8804"
 
 networks:
   timeboost:

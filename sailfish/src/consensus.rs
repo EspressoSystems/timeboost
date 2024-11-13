@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 use std::mem;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use async_lock::RwLock;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,

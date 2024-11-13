@@ -1,13 +1,16 @@
 use anyhow::Result;
 use clap::Parser;
+use hotshot_types::traits::metrics::NoMetrics;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
 use multiaddr::multiaddr;
 use sailfish::sailfish;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
+use timeboost_core::types::metrics::ConsensusMetrics;
 use timeboost_core::types::{Keypair, NodeId, PublicKey};
 use tokio::sync::mpsc::channel;
 
@@ -37,6 +40,7 @@ async fn main() -> Result<()> {
     // application layer, so we make dummy streams.
     let (sf_app_tx, _) = channel(1);
     let (_, tb_app_rx) = channel(1);
+    let metrics = Arc::new(ConsensusMetrics::new(NoMetrics));
 
     sailfish::run_sailfish(
         cfg.id,
@@ -46,6 +50,7 @@ async fn main() -> Result<()> {
         bind_address,
         sf_app_tx,
         tb_app_rx,
+        metrics,
     )
     .await
 }
