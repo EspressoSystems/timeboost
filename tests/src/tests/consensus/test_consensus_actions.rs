@@ -189,8 +189,6 @@ async fn test_single_node_timeout_cert() {
     // Handle certificate msg (send no vote, advance round, reset timer, propose for r + 1)
     node_handle.handle_message_and_verify_actions(Message::TimeoutCert(send_cert));
 
-    // Ensure we went through all expected actions
-    node_handle.assert_timeout_accumulator(expected_round, 0);
     assert!(
         node_handle.expected_actions_is_empty(),
         "Test is done but there are still remaining actions."

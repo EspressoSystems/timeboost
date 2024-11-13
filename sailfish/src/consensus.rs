@@ -62,7 +62,7 @@ pub struct Consensus {
     timeouts: BTreeMap<RoundNumber, VoteAccumulator<Timeout>>,
 
     /// The set of no votes that we've received so far.
-    no_votes: VoteAccumulator<NoVote>,
+    no_votes: BTreeMap<RoundNumber, VoteAccumulator<NoVote>>,
 
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex>,
@@ -89,7 +89,7 @@ impl Consensus {
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
-            no_votes: VoteAccumulator::new(committee.clone()),
+            no_votes: BTreeMap::new(),
             committee,
             leader_stack: Vec::new(),
             transactions: TransactionsQueue::new(),
@@ -393,14 +393,19 @@ impl Consensus {
 
         let (no_vote, tc) = e.into_data().into_parts();
 
-        if !self.has_timeout_cert(**tc.data()) {
+        if !self.has_timeout_cert(timeout_round) {
             self.timeouts
-                .entry(**tc.data())
+                .entry(timeout_round)
                 .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
                 .set_certificate(tc.clone())
         }
 
-        match self.no_votes.add(no_vote) {
+        let accum = self
+            .no_votes
+            .entry(timeout_round)
+            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+
+        match accum.add(no_vote) {
             // Not enough votes yet.
             Ok(None) =>
             {
@@ -414,13 +419,18 @@ impl Consensus {
                 let nc = nc.clone();
                 actions.extend(self.advance_leader_with_no_vote_certificate(timeout_round, tc, nc));
             }
-            Err(e) => warn!(
-                node  = %self.id,
-                round = %self.round,
-                r     = %timeout_round,
-                err   = %e,
-                "could not add no vote certificate to vote accumulator"
-            ),
+            Err(e) => {
+                warn!(
+                    node  = %self.id,
+                    round = %self.round,
+                    r     = %timeout_round,
+                    err   = %e,
+                    "could not add no-vote to vote accumulator"
+                );
+                if accum.is_empty() {
+                    self.rounds.remove(&timeout_round);
+                }
+            }
         }
 
         actions
@@ -641,7 +651,12 @@ impl Consensus {
 
         // As leader of the next round we need to wait for > 2f no-votes of the current round
         // since we have no leader vertex.
-        let Some(nc) = self.no_votes.certificate().cloned() else {
+        let Some(nc) = self
+            .no_votes
+            .get(&round)
+            .and_then(|a| a.certificate())
+            .cloned()
+        else {
             return actions;
         };
 
@@ -858,11 +873,17 @@ impl Consensus {
         }
     }
 
-    /// Remove timeout and round vote aggregators up to the given round.
+    /// Remove timeout and round vote aggregators up to the given round - 1.
+    ///
+    /// We need to keep evidence of the preceding round.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn clear_aggregators(&mut self, to: RoundNumber) {
-        self.rounds = self.rounds.split_off(&to);
-        self.timeouts = self.timeouts.split_off(&to);
+        if to < 1.into() {
+            return;
+        }
+        self.rounds = self.rounds.split_off(&(to - 1));
+        self.timeouts = self.timeouts.split_off(&(to - 1));
+        self.no_votes = self.no_votes.split_off(&(to - 1));
         #[cfg(feature = "metrics")]
         self.metrics.timeout_buffer.set(self.timeouts.len())
     }
@@ -1040,7 +1061,7 @@ impl Consensus {
         &self.committee
     }
 
-    pub fn no_vote_accumulator(&self) -> &VoteAccumulator<NoVote> {
+    pub fn no_vote_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<NoVote>> {
         &self.no_votes
     }
 
