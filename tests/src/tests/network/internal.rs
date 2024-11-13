@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::Group;
+use crate::{
+    tests::network::{TEST_APP_LAYER_CHANNEL_DEPTH, TEST_APP_LAYER_TIMEOUT},
+    Group,
+};
 
 use super::{TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
@@ -18,6 +21,7 @@ use tokio::{
         oneshot::{self, Receiver, Sender},
     },
     task::JoinSet,
+    time::timeout,
 };
 
 pub mod test_simple_network;
@@ -75,8 +79,8 @@ impl TestableNetwork for MemoryNetworkTest {
             // Join each node to the network
             let ch = net.join(*n.public_key());
 
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
+            let (sf_app_tx, sf_app_rx) = mpsc::channel(TEST_APP_LAYER_CHANNEL_DEPTH);
+            let (tb_app_tx, tb_app_rx) = mpsc::channel(TEST_APP_LAYER_CHANNEL_DEPTH);
 
             self.sf_app_rxs.insert(i, sf_app_rx);
             self.tb_app_txs.insert(i, tb_app_tx);
@@ -116,16 +120,36 @@ impl TestableNetwork for MemoryNetworkTest {
         co_handles
     }
 
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
+    async fn evaluate(&mut self) -> HashMap<usize, TestOutcome> {
         let mut statuses =
             HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
         for (node_id, conditions) in self.outcomes.iter() {
             tracing::info!("Evaluating node {}", node_id);
-            let log = self.event_logs.get(node_id).unwrap().read().await;
-            let eval_result: Vec<TestOutcome> =
-                conditions.iter().map(|c| c.evaluate(&log)).collect();
+            let logs = self
+                .event_logs
+                .get(node_id)
+                .expect("No event logs for node");
+            let logs = logs.read().await;
 
-            // TODO: Add the application layer statuses to the evaluation criteria.
+            // We need to collect the application layer messages. This allows us to
+            // assert that timeboost *would have* received a particular message.
+            let app_rx = self
+                .sf_app_rxs
+                .get_mut(node_id)
+                .expect("No app rx for node");
+            let mut app_msgs = Vec::new();
+            // Recv with timeout, otherwise recv will hang once there are no messages as the channel's
+            // sender is only dropped at the end of the test.
+            let _ = timeout(TEST_APP_LAYER_TIMEOUT, async {
+                while let Some(msg) = app_rx.recv().await {
+                    app_msgs.push(msg);
+                }
+            });
+
+            let eval_result: Vec<TestOutcome> = conditions
+                .iter()
+                .map(|c| c.evaluate(&logs, &app_msgs))
+                .collect();
 
             // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
             // set it to Passed.

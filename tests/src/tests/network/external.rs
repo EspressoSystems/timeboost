@@ -134,7 +134,7 @@ impl TestableNetwork for Libp2pNetworkTest {
         handles
     }
 
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
+    async fn evaluate(&mut self) -> HashMap<usize, TestOutcome> {
         let mut statuses =
             HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
         for (node_id, conditions) in self.outcomes.iter() {

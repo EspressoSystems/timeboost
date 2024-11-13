@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, fmt::Debug, time::Duration};
 
 use sailfish::coordinator::CoordinatorAuditEvent;
-use timeboost_core::{logging, traits::comm::Comm};
+use timeboost_core::{logging, traits::comm::Comm, types::event::SailfishStatusEvent};
 use tokio::{task::JoinSet, time::timeout};
 
 use crate::Group;
@@ -10,15 +9,45 @@ use crate::Group;
 pub mod external;
 pub mod internal;
 
+const TEST_APP_LAYER_CHANNEL_DEPTH: usize = 10_000;
+const TEST_APP_LAYER_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
     Passed,
     Waiting,
 }
 
+struct EventEvaluator<T: Debug> {
+    eval: Box<dyn Fn(&T) -> TestOutcome>,
+}
+
+impl<T: Debug> Default for EventEvaluator<T> {
+    fn default() -> Self {
+        Self::new(|e| {
+            panic!(
+                "No defined evaluator, but received an event which must be evaluated: {:?}",
+                e
+            )
+        })
+    }
+}
+
+impl<T: Debug> EventEvaluator<T> {
+    pub fn new<F>(eval: F) -> Self
+    where
+        F: for<'a> Fn(&'a T) -> TestOutcome + 'static,
+    {
+        Self {
+            eval: Box::new(eval),
+        }
+    }
+}
+
 pub struct TestCondition {
     identifier: String,
-    eval: Box<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome>,
+    event_eval: EventEvaluator<CoordinatorAuditEvent>,
+    app_eval: EventEvaluator<SailfishStatusEvent>,
 }
 
 impl std::fmt::Display for TestCondition {
@@ -28,19 +57,32 @@ impl std::fmt::Display for TestCondition {
 }
 
 impl TestCondition {
-    pub fn new<F>(identifier: String, eval: F) -> Self
-    where
-        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + 'static,
-    {
+    pub fn new(
+        identifier: String,
+        event_eval: EventEvaluator<CoordinatorAuditEvent>,
+        app_eval: EventEvaluator<SailfishStatusEvent>,
+    ) -> Self {
         Self {
             identifier,
-            eval: Box::new(eval),
+            event_eval,
+            app_eval,
         }
     }
 
-    pub fn evaluate(&self, logs: &[CoordinatorAuditEvent]) -> TestOutcome {
+    pub fn evaluate(
+        &self,
+        logs: &[CoordinatorAuditEvent],
+        app_msgs: &[SailfishStatusEvent],
+    ) -> TestOutcome {
         for e in logs.iter() {
-            let result = (self.eval)(e);
+            let result = (self.event_eval)(e);
+            if result != TestOutcome::Waiting {
+                return result;
+            }
+        }
+
+        for e in app_msgs.iter() {
+            let result = (self.event_eval)(e);
             if result != TestOutcome::Waiting {
                 return result;
             }
@@ -61,7 +103,7 @@ pub trait TestableNetwork {
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
     ) -> JoinSet<Self::Shutdown>;
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome>;
+    async fn evaluate(&mut self) -> HashMap<usize, TestOutcome>;
     async fn shutdown(self, handles: JoinSet<Self::Shutdown>);
 }
 
