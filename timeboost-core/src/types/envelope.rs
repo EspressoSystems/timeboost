@@ -1,6 +1,6 @@
 use std::{fmt, hash::Hash, marker::PhantomData};
 
-use committable::{Commitment, Committable};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -202,5 +202,17 @@ where
 
         const FIELDS: &[&str] = &["data", "commitment", "signature", "signing_key"];
         deserializer.deserialize_struct("Envelope", FIELDS, EnvelopeVisitor(PhantomData))
+    }
+}
+
+impl<D: Committable> Committable for Envelope<D, Validated> {
+    fn commit(&self) -> Commitment<Self> {
+        let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
+        RawCommitmentBuilder::new("Envelope")
+            .field("data", self.data.commit())
+            .field("commitment", self.commitment)
+            .var_size_field("signature", &sig)
+            .var_size_field("signing_key", &self.signing_key.to_bytes())
+            .finalize()
     }
 }

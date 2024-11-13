@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::types::vertex::Vertex;
-use committable::{Commitment, Committable};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -149,7 +149,7 @@ impl<S> fmt::Display for Message<S> {
 
 impl Committable for Timeout {
     fn commit(&self) -> Commitment<Self> {
-        committable::RawCommitmentBuilder::new("Timeout")
+        RawCommitmentBuilder::new("Timeout")
             .field("round", self.round.commit())
             .finalize()
     }
@@ -157,8 +157,20 @@ impl Committable for Timeout {
 
 impl Committable for NoVote {
     fn commit(&self) -> Commitment<Self> {
-        committable::RawCommitmentBuilder::new("NoVote")
+        RawCommitmentBuilder::new("NoVote")
             .field("round", self.round.commit())
             .finalize()
+    }
+}
+
+impl Committable for Message<Validated> {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("Message");
+        match self {
+            Self::Vertex(e) => builder.field("vertex", e.commit()).finalize(),
+            Self::Timeout(e) => builder.field("timeout", e.commit()).finalize(),
+            Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
+            Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
+        }
     }
 }
