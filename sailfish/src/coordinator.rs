@@ -120,7 +120,7 @@ impl<C: Comm> Coordinator<C> {
                     }
                 },
                 msg = self.comm.receive() => match msg {
-                    Ok(msg) => match self.on_message(&msg).await {
+                    Ok(msg) => match self.on_message(msg).await {
                         Ok(actions) => {
                             for a in actions {
                                 #[cfg(feature = "test")]
@@ -158,9 +158,7 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    async fn on_message(&mut self, m: &[u8]) -> Result<Vec<Action>> {
-        let m: Message = bincode::deserialize(m)?;
-
+    async fn on_message(&mut self, m: Message) -> Result<Vec<Action>> {
         #[cfg(feature = "test")]
         self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
             .await;
@@ -210,15 +208,8 @@ impl<C: Comm> Coordinator<C> {
     }
 
     async fn broadcast(&mut self, msg: Message) {
-        match bincode::serialize(&msg) {
-            Ok(bytes) => {
-                if let Err(err) = self.comm.broadcast(bytes).await {
-                    warn!(%err, "failed to broadcast message to network")
-                }
-            }
-            Err(err) => {
-                warn!(%err, "failed to serialize message")
-            }
+        if let Err(err) = self.comm.broadcast(msg).await {
+            warn!(%err, "failed to broadcast message to network")
         }
     }
 
@@ -229,15 +220,8 @@ impl<C: Comm> Coordinator<C> {
     }
 
     async fn unicast(&mut self, to: PublicKey, msg: Message) {
-        match bincode::serialize(&msg) {
-            Ok(bytes) => {
-                if let Err(err) = self.comm.send(to, bytes).await {
-                    warn!(%err, %to, "failed to send message")
-                }
-            }
-            Err(err) => {
-                warn!(%err, %to, "failed to serialize message")
-            }
+        if let Err(err) = self.comm.send(to, msg).await {
+            warn!(%err, %to, "failed to send message")
         }
     }
 }
