@@ -41,19 +41,6 @@ impl<D: Committable> Envelope<D, Validated> {
             _marker: PhantomData,
         }
     }
-
-    /// A validated envelope can be cast to envelopes of other types.
-    ///
-    /// E.g. Validated -> Unchecked
-    pub fn cast<S>(self) -> Envelope<D, S> {
-        Envelope {
-            data: self.data,
-            commitment: self.commitment,
-            signature: self.signature,
-            signing_key: self.signing_key,
-            _marker: PhantomData,
-        }
-    }
 }
 
 impl<D: Committable, S> Envelope<D, S> {

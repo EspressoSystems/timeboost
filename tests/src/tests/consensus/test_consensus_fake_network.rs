@@ -204,8 +204,7 @@ async fn test_invalid_timeout_certificate() {
                 for i in 0..num_nodes {
                     let fake_node_id = i + invalid_node_id;
                     let new_keys = Keypair::new(fake_node_id);
-                    timeout =
-                        Some(Envelope::signed(Timeout::new(e.data().round()), &new_keys).cast());
+                    timeout = Some(Envelope::signed(Timeout::new(e.data().round()), &new_keys));
                     signers.0.set(i as usize, true);
                     signers.1.push(timeout.clone().unwrap().signature().clone());
                 }
