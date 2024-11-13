@@ -94,7 +94,7 @@ async fn test_simple_network_round_progression() {
 async fn test_simple_network_round_timeout() {
     logging::init_logging();
 
-    let num_nodes = 4;
+    let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
     let timeout_round = 3;
     let interceptor = NetworkMessageInterceptor::new(move |msg, committee| {
