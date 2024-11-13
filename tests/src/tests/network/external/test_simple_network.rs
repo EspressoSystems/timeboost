@@ -54,7 +54,7 @@ async fn test_simple_network_round_progression() {
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
     let rounds = 50;
-    // Each node should see the initial vertex proposal from every other node.
+    // Each node should see all vertex proposals up to `rounds`
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
