@@ -43,18 +43,18 @@ pub struct Coordinator<C> {
     /// The timeboost receiver application event stream.
     tb_app_rx: Receiver<TimeboostStatusEvent>,
 
-    #[cfg(feature = "test")]
+    #[cfg(feature = "timeboost-testing")]
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg(feature = "test")]
+#[cfg(feature = "timeboost-testing")]
 pub enum CoordinatorAuditEvent {
     ActionTaken(Action),
     MessageReceived(Message),
 }
 
-#[cfg(feature = "test")]
+#[cfg(feature = "timeboost-testing")]
 impl std::fmt::Display for CoordinatorAuditEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -72,7 +72,9 @@ impl<C: Comm> Coordinator<C> {
         shutdown_rx: async_channel::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
+        #[cfg(feature = "timeboost-testing")] event_log: Option<
+            Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
+        >,
     ) -> Self {
         Self {
             id,
@@ -81,7 +83,7 @@ impl<C: Comm> Coordinator<C> {
             shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "test")]
+            #[cfg(feature = "timeboost-testing")]
             event_log,
         }
     }
@@ -90,14 +92,16 @@ impl<C: Comm> Coordinator<C> {
         self.id
     }
 
-    #[cfg(feature = "test")]
+    #[cfg(feature = "timeboost-testing")]
     pub fn consensus(&self) -> &Consensus {
         &self.consensus
     }
 
-    #[cfg(feature = "test")]
+    #[cfg(feature = "timeboost-testing")]
     pub async fn append_test_event(&mut self, event: CoordinatorAuditEvent) {
-        self.event_log.as_ref().unwrap().write().await.push(event);
+        if let Some(log) = self.event_log.as_ref() {
+            log.write().await.push(event);
+        }
     }
 
     pub async fn go(mut self) -> ShutdownToken {
@@ -113,9 +117,11 @@ impl<C: Comm> Coordinator<C> {
             tokio::select! { biased;
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
-                        #[cfg(feature = "test")]
-                        self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                            .await;
+                        #[cfg(feature = "timeboost-testing")]
+                        {
+                            self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                                .await;
+                        }
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -123,9 +129,11 @@ impl<C: Comm> Coordinator<C> {
                     Ok(msg) => match self.on_message(&msg).await {
                         Ok(actions) => {
                             for a in actions {
-                                #[cfg(feature = "test")]
-                                self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                                #[cfg(feature = "timeboost-testing")]
+                                {
+                                    self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
                                     .await;
+                                }
 
                                 self.on_action(a, &mut timer).await
                             }
@@ -135,7 +143,7 @@ impl<C: Comm> Coordinator<C> {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to deserialize network message; error = {e:#}");
+                        warn!(%e, "error deserializing network message");
                         continue;
                     }
                 },
@@ -161,10 +169,9 @@ impl<C: Comm> Coordinator<C> {
     async fn on_message(&mut self, m: &[u8]) -> Result<Vec<Action>> {
         let m: Message = bincode::deserialize(m)?;
 
-        #[cfg(feature = "test")]
+        #[cfg(feature = "timeboost-testing")]
         self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
             .await;
-
         Ok(self.consensus.handle_message(m))
     }
 

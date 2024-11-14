@@ -14,7 +14,8 @@ services:
         "8800",
       ]
     networks:
-      - timeboost
+      timeboost:
+        ipv4_address: 172.20.0.2
     environment:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8000
@@ -36,7 +37,8 @@ services:
         "8801",
       ]
     networks:
-      - timeboost
+      timeboost:
+        ipv4_address: 172.20.0.3
     environment:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8001
@@ -58,7 +60,8 @@ services:
         "8802",
       ]
     networks:
-      - timeboost
+      timeboost:
+        ipv4_address: 172.20.0.4
     environment:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8002
@@ -80,7 +83,8 @@ services:
         "8803",
       ]
     networks:
-      - timeboost
+      timeboost:
+        ipv4_address: 172.20.0.5
     environment:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8003
@@ -102,7 +106,8 @@ services:
         "8804",
       ]
     networks:
-      - timeboost
+      timeboost:
+        ipv4_address: 172.20.0.6
     environment:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8004
@@ -113,4 +118,8 @@ services:
 
 networks:
   timeboost:
-    name: timeboost
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16

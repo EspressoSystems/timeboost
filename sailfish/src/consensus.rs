@@ -222,7 +222,6 @@ impl Consensus {
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
                 self.buffer.insert(vertex);
-                #[cfg(feature = "metrics")]
                 self.metrics.vertex_buffer.set(self.buffer.len())
             }
             Ok(a) => {
@@ -242,7 +241,6 @@ impl Consensus {
                 debug_assert!(self.buffer.is_empty());
                 self.buffer = retained;
 
-                #[cfg(feature = "metrics")]
                 self.metrics.vertex_buffer.set(self.buffer.len());
 
                 // Check if we can advance to the next round.
@@ -293,11 +291,7 @@ impl Consensus {
 
         match self.no_votes.add(e) {
             // Not enough votes yet.
-            Ok(None) =>
-            {
-                #[cfg(feature = "metrics")]
-                self.metrics.no_votes.set(self.no_votes.votes())
-            }
+            Ok(None) => self.metrics.no_votes.set(self.no_votes.votes()),
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
                 // We need to reset round timer and broadcast vertex with timeout certificate and
@@ -308,7 +302,6 @@ impl Consensus {
                     .and_then(|t| t.certificate())
                     .cloned()
                 else {
-                    #[cfg(feature = "metrics")]
                     self.metrics.no_votes.set(self.no_votes.votes());
                     warn!(
                         node  = %self.id,
@@ -394,7 +387,6 @@ impl Consensus {
             }
         }
 
-        #[cfg(feature = "metrics")]
         self.metrics.timeout_buffer.set(self.timeouts.len());
 
         actions
@@ -456,13 +448,11 @@ impl Consensus {
             let v = self.create_new_vertex(self.round);
             actions.extend(self.add_and_broadcast_vertex(v.0));
             self.clear_timeout_aggregators(self.round);
-            #[cfg(feature = "metrics")]
-            {
-                self.metrics
-                    .round_duration
-                    .add_point(self.metrics.elapsed());
-                self.metrics.round.set(*self.round as usize);
-            }
+            self.metrics
+                .round_duration
+                .add_point(self.metrics_timer.elapsed().as_secs_f64());
+            self.metrics_timer = std::time::Instant::now();
+            self.metrics.round.set(*self.round as usize);
             return actions;
         }
 
@@ -526,15 +516,12 @@ impl Consensus {
         actions.extend(self.add_and_broadcast_vertex(v));
         self.clear_timeout_aggregators(self.round);
         self.no_votes.clear();
-        #[cfg(feature = "metrics")]
-        {
-            self.metrics
-                .round_duration
-                .add_point(self.timer.elapsed().as_secs_f64());
-            self.timer = std::time::Instant::now();
-            self.metrics.no_votes.set(0);
-            self.metrics.round.set(*self.round as usize);
-        }
+        self.metrics
+            .round_duration
+            .add_point(self.metrics_timer.elapsed().as_secs_f64());
+        self.metrics_timer = std::time::Instant::now();
+        self.metrics.no_votes.set(0);
+        self.metrics.round.set(*self.round as usize);
         actions
     }
 
@@ -546,7 +533,6 @@ impl Consensus {
     )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.dag.add(v.clone());
-        #[cfg(feature = "metrics")]
         self.metrics.dag_depth.set(self.dag.depth());
         let mut actions = Vec::new();
         let e = Envelope::signed(v, &self.keypair);
@@ -599,7 +585,6 @@ impl Consensus {
 
         self.dag.add(v.clone());
 
-        #[cfg(feature = "metrics")]
         self.metrics.dag_depth.set(self.dag.depth());
 
         if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
@@ -661,7 +646,6 @@ impl Consensus {
         }
         self.committed_round = v.round();
         trace!(commit = %self.committed_round, "committed round");
-        #[cfg(feature = "metrics")]
         self.metrics
             .committed_round
             .set(*self.committed_round as usize);
@@ -708,19 +692,15 @@ impl Consensus {
         self.delivered.retain(|v| v.round() >= r);
         self.buffer.retain(|v| v.round() >= r);
 
-        #[cfg(feature = "metrics")]
-        {
-            self.metrics.dag_depth.set(self.dag.depth());
-            self.metrics.vertex_buffer.set(self.buffer.len());
-            self.metrics.delivered.set(self.delivered.len());
-        }
+        self.metrics.dag_depth.set(self.dag.depth());
+        self.metrics.vertex_buffer.set(self.buffer.len());
+        self.metrics.delivered.set(self.delivered.len());
     }
 
     /// Remove timeout vote aggregators up to the given round.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn clear_timeout_aggregators(&mut self, to: RoundNumber) {
         self.timeouts = self.timeouts.split_off(&to);
-        #[cfg(feature = "metrics")]
         self.metrics.timeout_buffer.set(self.timeouts.len())
     }
 
@@ -841,7 +821,7 @@ impl Consensus {
     }
 }
 
-#[cfg(feature = "test")]
+#[cfg(feature = "timeboost-testing")]
 impl Consensus {
     pub fn dag(&self) -> &Dag {
         &self.dag

@@ -24,7 +24,7 @@ impl CommitteeContract {
     /// in the fake committee. Each node's ID will be known ahead of time.
     pub fn new() -> Self {
         // Read from the config file 'example_config.toml' and get the setup from there.
-        let config = Config::new(Path::new("docker_config.toml")).unwrap();
+        let config = toml::from_str::<Config>(include_str!("../../../docker_config.toml")).unwrap();
 
         // Make a new committee contract with the given setup.
         Self {

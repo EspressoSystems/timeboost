@@ -7,17 +7,17 @@ export RUSTDOCFLAGS := '-D warnings --cfg async_executor_impl="tokio" --cfg asyn
 export RUSTFLAGS := original_rustflags + ' --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
 export CARGO_TARGET_DIR := original_target_dir + '/tokio'
 
-build:
-  cargo build
+build *ARGS:
+  cargo build {{ARGS}}
 
-build_release:
-  cargo build --release --workspace --all-targets
+build_release *ARGS:
+  cargo build --release --workspace --all-targets {{ARGS}}
 
 test *ARGS:
   cargo nextest run --no-capture {{ARGS}}
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --no-capture  {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --no-capture {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}

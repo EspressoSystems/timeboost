@@ -13,7 +13,7 @@ pub mod time;
 pub mod transaction;
 pub mod vertex;
 
-#[cfg(feature = "test")]
+#[cfg(feature = "timeboost-testing")]
 pub mod test;
 
 use core::fmt;
@@ -73,7 +73,7 @@ impl Keypair {
         Self { private, public }
     }
 
-    #[cfg(feature = "test")]
+    #[cfg(feature = "timeboost-testing")]
     pub fn zero<N: Into<u64>>(index: N) -> Self {
         let (p, s) = PublicKey::generated_from_seed_indexed(Self::ZERO_SEED, index.into());
         Self {
