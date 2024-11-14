@@ -11,18 +11,21 @@ pub trait ThresholdEncScheme {
     type Ciphertext;
     type DecShare;
 
-    fn setup(committee: Self::Committee) -> Result<Self::Parameters, ThresholdEncError>;
+    fn setup<R: Rng>(
+        rng: &mut R,
+        committee: Self::Committee,
+    ) -> Result<Self::Parameters, ThresholdEncError>;
 
     fn keygen<R: Rng>(
-        pp: &Self::Parameters,
         rng: &mut R,
+        pp: &Self::Parameters,
     ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
-    fn encrypt(
+    fn encrypt<R: Rng>(
+        rng: &mut R,
         pp: &Self::Parameters,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
-        r: &Self::Randomness,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
 
     fn decrypt(

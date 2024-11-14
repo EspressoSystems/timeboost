@@ -1,4 +1,4 @@
-use aes_gcm::{AeadCore, Aes256Gcm, Key};
+use aes_gcm::{AeadCore, Aes256Gcm};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
@@ -8,16 +8,18 @@ use ark_ff::{
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
-use rand::rngs::OsRng;
-use rand::Rng;
-use sha2::{Digest, Sha256};
+use ark_std::rand::Rng;
+use sha2::{digest::generic_array::GenericArray, Digest, Sha256};
+use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
-use std::{
-    hash::Hash,
-    io::{BufWriter, Write},
-};
 
-use crate::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
+use crate::{
+    cp_proof::{CPParameters, ChaumPedersen, DleqTuple, Proof},
+    traits::{
+        dleq_proof::DleqProofScheme,
+        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+    },
+};
 
 /// Corruption ratio.
 /// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
@@ -49,18 +51,17 @@ pub struct KeyShare<C: CurveGroup> {
 #[derive(Debug)]
 pub struct Plaintext(Vec<u8>);
 
-#[derive(Debug)]
 pub struct Ciphertext<C: CurveGroup> {
     v: C::Affine,
     w_hat: C::Affine,
     e: Vec<u8>,
     nonce: Vec<u8>,
-    //pi: DLEQProof<C>,
+    pi: Proof<C>,
 }
 pub struct DecShare<C: CurveGroup> {
     w: C::Affine,
     index: u32,
-    // phi: DLEQProof<C>,
+    phi: Proof<C>,
 }
 pub struct Randomness<C: CurveGroup>(C::ScalarField);
 
@@ -71,8 +72,9 @@ impl<C: CurveGroup> UniformRand for Randomness<C> {
     }
 }
 
-impl<C: CurveGroup> ThresholdEncScheme for ShoupGennaro<C>
+impl<C> ThresholdEncScheme for ShoupGennaro<C>
 where
+    C: CurveGroup,
     C::ScalarField: PrimeField,
 {
     type Committee = Committee;
@@ -84,7 +86,7 @@ where
     type Ciphertext = Ciphertext<C>;
     type DecShare = DecShare<C>;
 
-    fn setup(committee: Committee) -> Result<Self::Parameters, ThresholdEncError> {
+    fn setup<R: Rng>(rng: R, committee: Committee) -> Result<Self::Parameters, ThresholdEncError> {
         let generator = C::generator().into();
         Ok(Parameters {
             generator,
@@ -93,8 +95,8 @@ where
     }
 
     fn keygen<R: Rng>(
-        pp: &Self::Parameters,
         rng: &mut R,
+        pp: &Self::Parameters,
     ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = pp.committee.size as usize;
         let degree = committee_size / CORR_RATIO;
@@ -134,31 +136,23 @@ where
         Ok((pub_key, key_shares))
     }
 
-    fn encrypt(
+    fn encrypt<R: Rng>(
+        rng: &mut R,
         pp: &Self::Parameters,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
-        beta: &Self::Randomness,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
-        let v: C = pp.generator * beta.0;
-        let w: C = pub_key.pk * beta.0;
-        let mut hasher = Sha256::new();
-        let mut buffer = [0u8; 1000];
-        let mut writer = BufWriter::new(buffer.as_mut());
-        v.serialize_compressed(&mut writer)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-        w.serialize_compressed(&mut writer)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-        writer
-            .flush()
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
-        drop(writer);
-        hasher.update(buffer);
-        let key = hasher.finalize();
-        let k: &Key<Aes256Gcm> = &key.into();
+        let beta = C::rand(rng);
+        let v: C = pp.generator * beta;
+        let w: C = pub_key.pk * beta;
 
-        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        // hash to symmetric key `k`
+        let key = hash_to_key(v, w).unwrap();
+        let k = GenericArray::from_slice(&key);
+
+        // AES encrypt using `k`, `nonce` and `message`
+        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
+        let nonce = Aes256Gcm::generate_nonce(&mut rng);
         let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref());
         if e.is_err() {
             return Err(ThresholdEncError::Internal(anyhow!(
@@ -166,45 +160,53 @@ where
             )));
         }
         let e = e.unwrap();
-        let committee_id_bytes = pp.committee.id.to_le_bytes();
+        let u_hat = hash_to_curve(v, e.clone(), pp)?;
 
-        let mut buffer = Vec::new();
-        let mut writer = BufWriter::new(&mut buffer);
-        v.serialize_compressed(&mut writer)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-        let _ = writer.write(&e);
-        drop(writer);
-        let hasher =
-            <DefaultFieldHasher<Sha256> as HashToField<C::ScalarField>>::new(&committee_id_bytes);
-        let scalar_from_hash: C::ScalarField = hasher.hash_to_field(&buffer, 1)[0];
-        let u_hat = pp.generator * scalar_from_hash;
         let w_hat = u_hat * beta.0;
 
-        // TODO: pi = DLEQ_PROOF(g, u_hat, v, w_hat)
+        // Produce DLEQ proof for CCA security
+        let cp_params = CPParameters {
+            generator: pp.generator.into(),
+        };
+        let tuple = DleqTuple::new(pp.generator.into(), v, pub_key.pk.into(), w);
+        let pi = ChaumPedersen::<C>::prove::<R>(cp_params, tuple, beta.0)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
 
         Ok(Ciphertext {
             v: v.into(),
             w_hat: w_hat.into(),
             nonce: nonce.to_vec(),
             e,
+            pi,
         })
     }
 
     fn decrypt(
-        _pp: &Self::Parameters,
+        pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, ThresholdEncError> {
         let alpha = sk.share;
-        let (v, _e, _w_hat) = (ciphertext.v, ciphertext.e.clone(), ciphertext.w_hat);
-        // TODO: Verify pi
+        let (v, e, w_hat, pi) = (
+            ciphertext.v,
+            ciphertext.e.clone(),
+            ciphertext.w_hat,
+            ciphertext.pi,
+        );
 
         let w = v * alpha;
-        // TODO: phi = DLEQ_PROOF(g, u, v, w)
+        let u_i = pp.generator * alpha;
+        let tuple = DleqTuple::new(pp.generator.into(), u_i, v, w);
+        let cp_params = CPParameters {
+            generator: pp.generator.into(),
+        };
+        let phi = ChaumPedersen::<C>::prove(cp_params, tuple, alpha)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
 
         Ok(DecShare {
             w: w.into(),
             index: sk.index,
+            phi,
         })
     }
 
@@ -260,24 +262,16 @@ where
             w += (w_i * l_i).into();
         }
 
-        let nonce: &[u8] = ciphertext.nonce.as_slice();
-        let mut hasher = Sha256::new();
-        let mut buffer = [0u8; 1000];
-        let mut writer = BufWriter::new(buffer.as_mut());
-        let v = ciphertext.v.into();
-        v.serialize_compressed(&mut writer)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-        w.serialize_compressed(&mut writer)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-        writer
-            .flush()
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
-        drop(writer);
-        hasher.update(buffer);
-        let key = hasher.finalize();
-        let k: &Key<Aes256Gcm> = &key.into();
+        // parse ciphertext
+        let (v, nonce, data) = (
+            ciphertext.v.into(),
+            ciphertext.nonce.as_slice(),
+            ciphertext.e.clone(),
+        );
 
-        let data = ciphertext.e.clone();
+        // hash to symmetric key `k`
+        let key = hash_to_key(v, w).unwrap();
+        let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
         plaintext
@@ -286,15 +280,49 @@ where
     }
 }
 
+// TODO: Replace with actual hash to curve
+// (see. https://datatracker.ietf.org/doc/rfc9380/)
+fn hash_to_curve<C: CurveGroup>(
+    v: C,
+    e: Vec<u8>,
+    pp: &Parameters<C>,
+) -> Result<C, ThresholdEncError> {
+    let mut buffer = Vec::new();
+    let mut writer = BufWriter::new(&mut buffer);
+    v.serialize_compressed(&mut writer)
+        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+    let _ = writer.write(&e);
+    drop(writer);
+    let hasher = <DefaultFieldHasher<Sha256> as HashToField<C::ScalarField>>::new(&[0u8]);
+    let scalar_from_hash: C::ScalarField = hasher.hash_to_field(&buffer, 1)[0];
+    let u_hat = pp.generator * scalar_from_hash;
+    Ok(u_hat)
+}
+
+fn hash_to_key<C: CurveGroup>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
+    let mut hasher = Sha256::new();
+    let mut buffer = Vec::new();
+    let mut writer = BufWriter::new(&mut buffer);
+    v.serialize_compressed(&mut writer)
+        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+    w.serialize_compressed(&mut writer)
+        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+    writer
+        .flush()
+        .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
+    drop(writer);
+    hasher.update(buffer);
+    let key = hasher.finalize();
+    Ok(key.to_vec())
+}
+
 #[cfg(test)]
 mod test {
-
     use crate::sg_encryption::{
         Committee, Plaintext, Randomness, ShoupGennaro, ThresholdEncScheme,
     };
     use ark_bn254::G1Projective;
     use ark_std::{test_rng, UniformRand};
-    use rand::Rng;
 
     #[test]
     fn test_shoup_gennaro_encryption() {
@@ -321,14 +349,5 @@ mod test {
             ShoupGennaro::<G1Projective>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
                 .unwrap();
         assert_eq!(message, check_message.0);
-    }
-
-    impl UniformRand for Plaintext {
-        #[inline]
-        fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-            let mut bytes = vec![0u8; 32]; // Adjust size as needed
-            rng.fill_bytes(&mut bytes);
-            Plaintext(bytes)
-        }
     }
 }
