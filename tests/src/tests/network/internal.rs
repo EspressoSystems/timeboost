@@ -11,6 +11,7 @@ use sailfish::{
 };
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
+    message::Message,
     metrics::ConsensusMetrics,
     test::net::{Conn, Star},
 };
@@ -37,8 +38,8 @@ pub struct MemoryNetworkTest {
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = Coordinator<Conn<Vec<u8>>>;
-    type Network = Star<Vec<u8>>;
+    type Node = Coordinator<Conn<Message>>;
+    type Network = Star<Message>;
     type Shutdown = ShutdownToken;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
