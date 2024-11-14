@@ -1,65 +1,53 @@
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
-
 use async_lock::RwLock;
+use futures::future::BoxFuture;
+use futures::FutureExt;
 use hotshot::traits::{
     implementations::{derive_libp2p_multiaddr, Libp2pNetwork},
     NetworkNodeConfigBuilder,
 };
 use portpicker::pick_unused_port;
-use sailfish::{
-    coordinator::CoordinatorAuditEvent,
-    sailfish::{Sailfish, ShutdownToken},
-};
+use sailfish::sailfish::Sailfish;
+use std::future::pending;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
+    round_number::RoundNumber,
     PublicKey,
 };
-use tokio::{
-    sync::{
-        mpsc,
-        oneshot::{self, Receiver, Sender},
-    },
-    task::JoinSet,
-};
+use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::Group;
 
-use super::{TestCondition, TestOutcome, TestableNetwork};
+use super::{CoordinatorAuditEvent, TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
 pub struct Libp2pNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
     tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2pNetwork<PublicKey>;
-    type Shutdown = ();
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
-        let (shutdown_txs, shutdown_rxs): (
-            Vec<Sender<ShutdownToken>>,
-            Vec<Receiver<ShutdownToken>>,
-        ) = (0..group.fish.len()).map(|_| oneshot::channel()).unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
 
         Self {
             group,
-            shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
-            shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             event_logs,
             outcomes,
             sf_app_rxs: HashMap::new(),
             tb_app_txs: HashMap::new(),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -98,7 +86,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown> {
+    ) -> JoinSet<()> {
         let mut handles = JoinSet::new();
         let (nodes, networks) = nodes_and_networks;
 
@@ -110,25 +98,25 @@ impl TestableNetwork for Libp2pNetworkTest {
 
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let log = Arc::clone(self.event_logs.get(&i).unwrap());
-            let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
+            let mut log = Arc::clone(self.event_logs.get(&i).unwrap());
             let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
             let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
 
             self.sf_app_rxs.insert(i, sf_app_rx);
             self.tb_app_txs.insert(i, tb_app_tx);
 
+            let shutdown = Arc::clone(&self.shutdown_flag);
             handles.spawn(async move {
-                let co = node.init(
-                    network,
-                    (*staked_nodes).clone(),
-                    shutdown_rx,
-                    sf_app_tx,
-                    tb_app_rx,
-                    Some(Arc::clone(&log)),
-                );
+                let co = &mut node.init(network, (*staked_nodes).clone(), sf_app_tx, tb_app_rx);
 
-                co.go().await;
+                let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
+                co.start(&mut timer).await;
+                loop {
+                    Self::go(co, &mut log, &mut timer).await;
+                    if shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
             });
         }
         handles
@@ -162,9 +150,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     }
 
     async fn shutdown(self, handles: JoinSet<()>) {
-        for send in self.shutdown_txs.into_values() {
-            let _ = send.send(ShutdownToken::new());
-        }
+        self.shutdown_flag.store(true, Ordering::Relaxed);
         handles.join_all().await;
     }
 }

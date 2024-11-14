@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::{io, iter};
 
 use crate::traits::comm::Comm;
@@ -7,7 +9,6 @@ use crate::types::PublicKey;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot::Receiver;
 use tracing::warn;
 
 /// Network with star topology.
@@ -112,10 +113,9 @@ impl<T: Clone> Star<T> {
         iter::from_fn(|| self.inbound.try_recv().ok())
     }
 
-    pub async fn run(mut self, mut shutdown_rx: Receiver<()>) {
+    pub async fn run(mut self, shutdown: Arc<AtomicBool>) {
         loop {
             tokio::select! { biased;
-                _ = &mut shutdown_rx => return,
                 Some(event) = self.inbound.recv() => {
                     match event {
                         Event::Unicast { dest, data, .. } => {
@@ -131,6 +131,9 @@ impl<T: Clone> Star<T> {
                         }
                     }
                 }
+            }
+            if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
             }
         }
     }

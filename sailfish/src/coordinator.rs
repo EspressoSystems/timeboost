@@ -1,12 +1,8 @@
-use std::{future::pending, sync::Arc, time::Duration};
+use std::{future::pending, time::Duration};
 
-use crate::{
-    consensus::{Consensus, Dag},
-    sailfish::ShutdownToken,
-};
+use crate::consensus::{Consensus, Dag};
 
 use anyhow::Result;
-use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
@@ -18,10 +14,7 @@ use timeboost_core::{
     },
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::{
-    sync::oneshot::{self},
-    time::sleep,
-};
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 pub struct Coordinator<C> {
@@ -29,39 +22,16 @@ pub struct Coordinator<C> {
     id: NodeId,
 
     /// The communication channel for this coordinator.
-    comm: C,
+    pub comm: C,
 
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
-
-    /// The shutdown signal for this coordinator.
-    shutdown_rx: oneshot::Receiver<ShutdownToken>,
 
     /// The sailfish sender application event stream.
     sf_app_tx: Sender<SailfishStatusEvent>,
 
     /// The timeboost receiver application event stream.
     tb_app_rx: Receiver<TimeboostStatusEvent>,
-
-    #[cfg(feature = "test")]
-    event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg(feature = "test")]
-pub enum CoordinatorAuditEvent {
-    ActionTaken(Action),
-    MessageReceived(Message),
-}
-
-#[cfg(feature = "test")]
-impl std::fmt::Display for CoordinatorAuditEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
-            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
-        }
-    }
 }
 
 impl<C: Comm> Coordinator<C> {
@@ -69,20 +39,15 @@ impl<C: Comm> Coordinator<C> {
         id: NodeId,
         comm: C,
         cons: Consensus,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Self {
         Self {
             id,
             comm,
             consensus: cons,
-            shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
         }
     }
 
@@ -95,12 +60,7 @@ impl<C: Comm> Coordinator<C> {
         &self.consensus
     }
 
-    #[cfg(feature = "test")]
-    pub async fn append_test_event(&mut self, event: CoordinatorAuditEvent) {
-        self.event_log.as_ref().unwrap().write().await.push(event);
-    }
-
-    pub async fn go(mut self) -> ShutdownToken {
+    pub async fn go(mut self) {
         let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
@@ -113,9 +73,6 @@ impl<C: Comm> Coordinator<C> {
             tokio::select! { biased;
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
-                        #[cfg(feature = "test")]
-                        self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                            .await;
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -123,10 +80,6 @@ impl<C: Comm> Coordinator<C> {
                     Ok(msg) => match self.on_message(msg).await {
                         Ok(actions) => {
                             for a in actions {
-                                #[cfg(feature = "test")]
-                                self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                                    .await;
-
                                 self.on_action(a, &mut timer).await
                             }
                         }
@@ -150,19 +103,43 @@ impl<C: Comm> Coordinator<C> {
                         panic!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
-                token = &mut self.shutdown_rx => {
-                    tracing::info!("Node {} received shutdown signal; exiting", self.id);
-                    return token.expect("The shutdown sender was dropped before the receiver could receive the token");
-                }
             }
         }
     }
 
-    async fn on_message(&mut self, m: Message) -> Result<Vec<Action>> {
-        #[cfg(feature = "test")]
-        self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
-            .await;
+    pub async fn start(&mut self, timer: &mut BoxFuture<'static, RoundNumber>) -> Vec<Action> {
+        tracing::info!(id = %self.id, "Starting coordinator");
+        let mut actions = Vec::new();
+        // TODO: Restart behavior
+        for action in self.consensus.go(Dag::new(self.consensus.committee_size())) {
+            self.on_action(action.clone(), timer).await;
+            actions.push(action);
+        }
+        actions
+    }
 
+    pub async fn go2(
+        &mut self,
+        msg: Message,
+        timer: &mut BoxFuture<'static, RoundNumber>,
+    ) -> Vec<Action> {
+        tracing::info!(id = %self.id, "Starting coordinator");
+        let mut actions = Vec::new();
+        match self.on_message(msg).await {
+            Ok(res) => {
+                actions.extend(res.clone());
+                for a in res {
+                    self.on_action(a, timer).await
+                }
+            }
+            Err(err) => {
+                warn!(%err, "error processing incoming message");
+            }
+        }
+        actions
+    }
+
+    async fn on_message(&mut self, m: Message) -> Result<Vec<Action>> {
         Ok(self.consensus.handle_message(m))
     }
 

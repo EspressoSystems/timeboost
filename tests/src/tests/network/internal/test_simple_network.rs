@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use sailfish::coordinator::CoordinatorAuditEvent;
 use std::time::Duration;
 use timeboost_core::{
     logging,
@@ -8,7 +7,9 @@ use timeboost_core::{
 };
 
 use crate::{
-    tests::network::{internal::MemoryNetworkTest, NetworkTest, TestCondition, TestOutcome},
+    tests::network::{
+        internal::MemoryNetworkTest, CoordinatorAuditEvent, NetworkTest, TestCondition, TestOutcome,
+    },
     Group,
 };
 

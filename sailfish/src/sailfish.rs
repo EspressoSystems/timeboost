@@ -1,8 +1,5 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-#[cfg(feature = "test")]
-use crate::coordinator::CoordinatorAuditEvent;
-
 use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::{
@@ -37,10 +34,7 @@ use timeboost_core::{
     },
 };
 use tokio::signal;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    oneshot,
-};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -54,30 +48,6 @@ pub struct Sailfish {
 
     /// The Libp2p multiaddr of the sailfish node.
     bind_address: Multiaddr,
-}
-
-pub struct ShutdownToken(());
-
-impl ShutdownToken {
-    /// This constructor is intentionally private to ensure that only the
-    /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
-    #[cfg(not(feature = "test"))]
-    fn new() -> Self {
-        Self(())
-    }
-
-    /// This constructor is public for testing purposes so the shutdown token
-    /// can be created within tests.
-    #[cfg(feature = "test")]
-    pub fn new() -> Self {
-        Self(())
-    }
-}
-
-impl Default for ShutdownToken {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Sailfish {
@@ -160,10 +130,8 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -177,31 +145,18 @@ impl Sailfish {
 
         let consensus = Consensus::new(self.id, self.keypair, committee);
 
-        Coordinator::new(
-            self.id,
-            comm,
-            consensus,
-            shutdown_rx,
-            sf_app_tx,
-            tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
-        )
+        Coordinator::new(self.id, comm, consensus, sf_app_tx, tb_app_rx)
     }
 
     pub async fn go(
         self,
         n: Libp2pNetwork<PublicKey>,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
-        shutdown_tx: oneshot::Sender<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
-        let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
-                .go(),
-        );
+        let mut coordinator_handle =
+            tokio::spawn(self.init(n, staked_nodes, sf_app_tx, tb_app_rx).go());
 
         let shutdown_timeout = Duration::from_secs(5);
 
@@ -212,8 +167,6 @@ impl Sailfish {
             }
             _ = signal::ctrl_c() => {
                 tracing::info!("Received termination signal, initiating graceful shutdown...");
-                shutdown_tx.send(ShutdownToken::new())
-                    .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
 
                 // Wait for coordinator to shutdown gracefully or timeout
                 match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
@@ -283,15 +236,5 @@ pub async fn run_sailfish(
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-    s.go(
-        n,
-        staked_nodes,
-        shutdown_rx,
-        shutdown_tx,
-        sf_app_tx,
-        tb_app_rx,
-    )
-    .await
+    s.go(n, staked_nodes, sf_app_tx, tb_app_rx).await
 }

@@ -1,7 +1,11 @@
-use std::collections::HashMap;
+use async_lock::RwLock;
+use futures::future::BoxFuture;
+use sailfish::coordinator::Coordinator;
 use std::time::Duration;
-
-use sailfish::coordinator::CoordinatorAuditEvent;
+use std::{collections::HashMap, sync::Arc};
+use timeboost_core::types::message::{Action, Message};
+use timeboost_core::types::round_number::RoundNumber;
+use timeboost_core::types::test::net::Conn;
 use timeboost_core::{logging, traits::comm::Comm};
 use tokio::{task::JoinSet, time::timeout};
 
@@ -9,6 +13,21 @@ use crate::Group;
 
 pub mod external;
 pub mod internal;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum CoordinatorAuditEvent {
+    ActionTaken(Action),
+    MessageReceived(Message),
+}
+
+impl std::fmt::Display for CoordinatorAuditEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
+            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
@@ -54,15 +73,60 @@ impl TestCondition {
 pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send;
-    type Shutdown: Send;
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown>;
+    ) -> JoinSet<()>;
     async fn evaluate(&self) -> HashMap<usize, TestOutcome>;
-    async fn shutdown(self, handles: JoinSet<Self::Shutdown>);
+    async fn shutdown(self, handles: JoinSet<()>);
+
+    async fn append_test_event(
+        log: &mut Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
+        event: CoordinatorAuditEvent,
+    ) {
+        log.as_ref().write().await.push(event);
+    }
+
+    async fn go(
+        co: &mut Coordinator<Self::Network>,
+        log: &mut Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
+        timer: &mut BoxFuture<'static, RoundNumber>,
+    ) {
+        match co.comm.receive().await {
+            Ok(m) => {
+                Self::append_test_event(log, CoordinatorAuditEvent::MessageReceived(m.clone()))
+                    .await;
+                for a in co.go2(m, timer).await {
+                    Self::append_test_event(log, CoordinatorAuditEvent::ActionTaken(a.clone()))
+                        .await;
+                }
+            }
+            Err(err) => {
+                tracing::warn!(%err, "error processing incoming message");
+            }
+        }
+    }
+    async fn go2(
+        co: &mut Coordinator<Conn<Message>>,
+        log: &mut Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
+        timer: &mut BoxFuture<'static, RoundNumber>,
+    ) {
+        match co.comm.receive().await {
+            Ok(m) => {
+                Self::append_test_event(log, CoordinatorAuditEvent::MessageReceived(m.clone()))
+                    .await;
+                for a in co.go2(m, timer).await {
+                    Self::append_test_event(log, CoordinatorAuditEvent::ActionTaken(a.clone()))
+                        .await;
+                }
+            }
+            Err(err) => {
+                tracing::warn!(%err, "error processing incoming message");
+            }
+        }
+    }
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
@@ -103,6 +167,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
             }
         })
         .await;
+        tracing::error!("result done");
 
         // Always shutdown the network.
         self.network.shutdown(handles).await;

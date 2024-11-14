@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use sailfish::coordinator::CoordinatorAuditEvent;
 use std::time::Duration;
 use timeboost_core::{
     logging,
@@ -8,7 +7,9 @@ use timeboost_core::{
 };
 
 use crate::{
-    tests::network::{external::Libp2pNetworkTest, NetworkTest, TestCondition, TestOutcome},
+    tests::network::{
+        external::Libp2pNetworkTest, CoordinatorAuditEvent, NetworkTest, TestCondition, TestOutcome,
+    },
     Group,
 };
 
@@ -31,6 +32,7 @@ async fn test_simple_network_genesis() {
                             if v.data().round() == RoundNumber::genesis() + 1
                                 && node_public_key == *v.data().source()
                             {
+                                tracing::error!("found");
                                 return TestOutcome::Passed;
                             }
                         }

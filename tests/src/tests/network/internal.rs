@@ -1,64 +1,53 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use crate::Group;
 
-use super::{TestCondition, TestOutcome, TestableNetwork};
+use super::{CoordinatorAuditEvent, TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
-use sailfish::{
-    coordinator::{Coordinator, CoordinatorAuditEvent},
-    sailfish::ShutdownToken,
-};
+use futures::future::BoxFuture;
+use futures::FutureExt;
+use sailfish::coordinator::Coordinator;
+use std::future::pending;
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     message::Message,
+    round_number::RoundNumber,
     test::net::{Conn, Star},
 };
-use tokio::{
-    sync::{
-        mpsc,
-        oneshot::{self, Receiver, Sender},
-    },
-    task::JoinSet,
-};
+use tokio::{sync::mpsc, task::JoinSet};
 
 pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
-    network_shutdown_tx: Sender<()>,
-    network_shutdown_rx: Option<Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
     tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
     type Node = Coordinator<Conn<Message>>;
     type Network = Star<Message>;
-    type Shutdown = ShutdownToken;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
-        let (shutdown_txs, shutdown_rxs): (
-            Vec<Sender<ShutdownToken>>,
-            Vec<Receiver<ShutdownToken>>,
-        ) = (0..group.fish.len()).map(|_| oneshot::channel()).unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
-        let (network_shutdown_tx, network_shutdown_rx) = oneshot::channel();
         Self {
             group,
-            shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
-            shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
-            network_shutdown_tx,
-            network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
             event_logs,
             sf_app_rxs: HashMap::new(),
             tb_app_txs: HashMap::new(),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -68,11 +57,6 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut net = Star::new();
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
-            let shutdown_rx = self
-                .shutdown_rxs
-                .remove(&i)
-                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
-
             // Join each node to the network
             let ch = net.join(*n.public_key());
 
@@ -83,14 +67,7 @@ impl TestableNetwork for MemoryNetworkTest {
             self.tb_app_txs.insert(i, tb_app_tx);
 
             // Initialize the coordinator
-            let co = n.init(
-                ch,
-                (*self.group.staked_nodes).clone(),
-                shutdown_rx,
-                sf_app_tx,
-                tb_app_rx,
-                Some(Arc::clone(&self.event_logs[&i])),
-            );
+            let co = n.init(ch, (*self.group.staked_nodes).clone(), sf_app_tx, tb_app_rx);
 
             tracing::debug!("Started coordinator {}", i);
             coordinators.push(co);
@@ -102,17 +79,30 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown> {
+    ) -> JoinSet<()> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for co in coordinators {
-            co_handles.spawn(co.go());
+
+        for (i, mut co) in coordinators.into_iter().enumerate() {
+            let shutdown = Arc::clone(&self.shutdown_flag);
+            let mut log = Arc::clone(self.event_logs.get(&i).unwrap());
+            co_handles.spawn(async move {
+                let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
+                co.start(&mut timer).await;
+                loop {
+                    Self::go2(&mut co, &mut log, &mut timer).await;
+                    if shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+                tracing::error!("shutdown");
+            });
         }
 
         let net = nets.pop().expect("memory network to be present");
-        let shutdown_rx = std::mem::take(&mut self.network_shutdown_rx);
-        tokio::spawn(async move { net.run(shutdown_rx.unwrap()).await });
+        let shutdown = Arc::clone(&self.shutdown_flag);
+        tokio::spawn(async move { net.run(shutdown).await });
 
         co_handles
     }
@@ -144,16 +134,10 @@ impl TestableNetwork for MemoryNetworkTest {
         statuses
     }
 
-    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
-        // Shutdown all the coordinators
-        for send in self.shutdown_txs.into_values() {
-            let _ = send.send(ShutdownToken::new());
-        }
+    async fn shutdown(self, handles: JoinSet<()>) {
+        self.shutdown_flag.store(true, Ordering::Relaxed);
 
         // Wait for all the coordinators to shutdown
         handles.join_all().await;
-
-        // Now shutdown the network
-        let _ = self.network_shutdown_tx.send(());
     }
 }
