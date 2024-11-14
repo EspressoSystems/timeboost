@@ -10,22 +10,26 @@ use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use rand::rngs::OsRng;
 use rand::Rng;
-use sha2::Sha256;
-use std::io::{BufWriter, Write};
+use sha2::{Digest, Sha256};
 use std::marker::PhantomData;
+use std::{
+    hash::Hash,
+    io::{BufWriter, Write},
+};
 
 use crate::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 
-/// tolerate $t<n/3$ and $t+1$ dec shares to recover the plaintext
-const THRESHOLD: usize = 3;
+/// Corruption ratio.
+/// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
+const CORR_RATIO: usize = 3;
 
 pub struct ShoupGennaro<C: CurveGroup> {
     _group: PhantomData<C>,
 }
 
 pub struct Committee {
-    pub size: usize,
-    pub id: usize,
+    pub size: u32,
+    pub id: u32,
 }
 
 pub struct Parameters<C: CurveGroup> {
@@ -80,11 +84,8 @@ where
     type Ciphertext = Ciphertext<C>;
     type DecShare = DecShare<C>;
 
-    fn setup<R: Rng>(
-        committee: Committee,
-        rng: &mut R,
-    ) -> Result<Self::Parameters, ThresholdEncError> {
-        let generator = C::rand(rng).into();
+    fn setup(committee: Committee) -> Result<Self::Parameters, ThresholdEncError> {
+        let generator = C::generator().into();
         Ok(Parameters {
             generator,
             committee,
@@ -95,8 +96,9 @@ where
         pp: &Self::Parameters,
         rng: &mut R,
     ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = pp.committee.size;
-        let degree = committee_size / THRESHOLD;
+        let committee_size = pp.committee.size as usize;
+        let degree = committee_size / CORR_RATIO;
+        let gen = pp.generator;
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
         let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size);
 
@@ -105,7 +107,7 @@ where
                 "Unable to create eval domain"
             )));
         }
-        let secret = poly.evaluate(&C::ScalarField::zero());
+        let alpha = poly.evaluate(&C::ScalarField::zero());
         let evals: Vec<_> = (0..committee_size)
             .into_iter()
             .map(|i| {
@@ -114,13 +116,10 @@ where
             })
             .collect();
 
-        let u_0 = pp.generator * secret;
+        let u_0 = gen * alpha;
         let pub_key = PublicKey {
             pk: u_0.into(),
-            pk_comb: evals
-                .iter()
-                .map(|alpha| (pp.generator * alpha).into())
-                .collect(),
+            pk_comb: evals.iter().map(|alpha| (gen * alpha).into()).collect(),
         };
 
         let key_shares = evals
@@ -142,11 +141,21 @@ where
         beta: &Self::Randomness,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
         let v: C = pp.generator * beta.0;
-        let _w: C = pub_key.pk * beta.0;
-        let committee_id_bytes = pp.committee.id.to_le_bytes();
-        // TODO: hash to key space $k = H_1(v,w)$
-        let key: &[u8; 32] = &[42; 32]; // should be H_1(v,w)
-        let k: &Key<Aes256Gcm> = key.into();
+        let w: C = pub_key.pk * beta.0;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 1000];
+        let mut writer = BufWriter::new(buffer.as_mut());
+        v.serialize_compressed(&mut writer)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+        w.serialize_compressed(&mut writer)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+        writer
+            .flush()
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
+        drop(writer);
+        hasher.update(buffer);
+        let key = hasher.finalize();
+        let k: &Key<Aes256Gcm> = &key.into();
 
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
@@ -157,8 +166,8 @@ where
             )));
         }
         let e = e.unwrap();
+        let committee_id_bytes = pp.committee.id.to_le_bytes();
 
-        // TODO: hash to curve $\hat{u}=H_2(v,e)$
         let mut buffer = Vec::new();
         let mut writer = BufWriter::new(&mut buffer);
         v.serialize_compressed(&mut writer)
@@ -205,59 +214,75 @@ where
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let threshold = (pp.committee.size / THRESHOLD) + 1;
+        let committee_size: usize = pp.committee.size as usize;
+        let threshold = (committee_size / CORR_RATIO + 1) as usize;
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
-        } else {
-            let domain: Radix2EvaluationDomain<C::ScalarField> =
-                Radix2EvaluationDomain::new(pp.committee.size).unwrap();
-
-            let x = dec_shares
-                .iter()
-                .map(|share| domain.element(share.index as usize))
-                .collect::<Vec<_>>();
-
-            // Calculating lambdas
-            let mut nom = vec![C::ScalarField::zero(); threshold];
-            let mut denom = vec![C::ScalarField::zero(); threshold];
-            let mut l = vec![C::ScalarField::one(); threshold];
-            for i in 0..threshold {
-                let x_i = x[i];
-                nom[i] = C::ScalarField::one();
-                denom[i] = C::ScalarField::one();
-                for j in 0..threshold {
-                    if j == i {
-                        continue;
-                    } else {
-                        let x_j = x[j];
-                        nom[i] *= C::ScalarField::zero() - x_j;
-                        denom[i] *= x_i - x_j;
-                    }
-                }
-                l[i] = nom[i] / denom[i];
-            }
-
-            // Lagrange interpolation in the exponent
-            let mut w = dec_shares[0].w * l[0];
-            for d in 1..threshold {
-                let w_i = dec_shares[d].w;
-                let l_i = l[d];
-                w += (w_i * l_i).into();
-            }
-
-            // TODO: hash to key space $k = H_1(v,w)$
-            let key: &[u8; 32] = &[42; 32]; // should be H_1(v,w)
-            let k: &Key<Aes256Gcm> = key.into();
-
-            let data = ciphertext.e.clone();
-            let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
-            let nonce: &[u8] = ciphertext.nonce.as_slice();
-            let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
-            plaintext
-                .map(Plaintext)
-                .map_err(|_| ThresholdEncError::Internal(anyhow!("Decryption failed")))
         }
+        let domain: Radix2EvaluationDomain<C::ScalarField> =
+            Radix2EvaluationDomain::new(committee_size).ok_or_else(|| {
+                ThresholdEncError::Internal(anyhow!(
+                    "Unable to create eval domain for size {:?}",
+                    committee_size
+                ))
+            })?;
+
+        // Colllect eval points for decryption shares
+        let x = dec_shares
+            .iter()
+            .map(|share| domain.element(share.index as usize))
+            .collect::<Vec<_>>();
+
+        // Calculating lambdas
+        let mut nom = vec![C::ScalarField::one(); threshold];
+        let mut denom = vec![C::ScalarField::one(); threshold];
+        let mut l = vec![C::ScalarField::zero(); threshold];
+        for i in 0..threshold {
+            let x_i = x[i];
+            for j in 0..threshold {
+                if j == i {
+                    continue;
+                } else {
+                    let x_j = x[j];
+                    nom[i] *= C::ScalarField::zero() - x_j;
+                    denom[i] *= x_i - x_j;
+                }
+            }
+            l[i] = nom[i] / denom[i];
+        }
+
+        // Lagrange interpolation in the exponent
+        let mut w = dec_shares[0].w * l[0];
+        for d in 1..threshold {
+            let w_i = dec_shares[d].w;
+            let l_i = l[d];
+            w += (w_i * l_i).into();
+        }
+
+        let nonce: &[u8] = ciphertext.nonce.as_slice();
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 1000];
+        let mut writer = BufWriter::new(buffer.as_mut());
+        let v = ciphertext.v.into();
+        v.serialize_compressed(&mut writer)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+        w.serialize_compressed(&mut writer)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+        writer
+            .flush()
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
+        drop(writer);
+        hasher.update(buffer);
+        let key = hasher.finalize();
+        let k: &Key<Aes256Gcm> = &key.into();
+
+        let data = ciphertext.e.clone();
+        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
+        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
+        plaintext
+            .map(Plaintext)
+            .map_err(|_| ThresholdEncError::Internal(anyhow!("Decryption failed")))
     }
 }
 
@@ -276,7 +301,7 @@ mod test {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
         // setup and key generation
-        let parameters = ShoupGennaro::<G1Projective>::setup(committee, rng).unwrap();
+        let parameters = ShoupGennaro::<G1Projective>::setup(committee).unwrap();
         let (pk, key_shares) = ShoupGennaro::<G1Projective>::keygen(&parameters, rng).unwrap();
         let r = Randomness::rand(rng);
         let message = "important message".as_bytes().to_vec();

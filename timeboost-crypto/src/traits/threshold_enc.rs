@@ -11,10 +11,7 @@ pub trait ThresholdEncScheme {
     type Ciphertext;
     type DecShare;
 
-    fn setup<R: Rng>(
-        committee: Self::Committee,
-        rng: &mut R,
-    ) -> Result<Self::Parameters, ThresholdEncError>;
+    fn setup(committee: Self::Committee) -> Result<Self::Parameters, ThresholdEncError>;
 
     fn keygen<R: Rng>(
         pp: &Self::Parameters,
@@ -45,7 +42,7 @@ pub trait ThresholdEncScheme {
 /// The error type for `ThresholdEncScheme` methods.
 #[derive(Error, Debug)]
 pub enum ThresholdEncError {
-    #[error("Invalid argument {0:?})")]
+    #[error("Invalid argument: {0}")]
     Argument(String),
     #[error("Not enough decryption shares")]
     NotEnoughShares,
