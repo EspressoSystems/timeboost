@@ -24,34 +24,38 @@ type Receiver = mpsc::Receiver<(Option<PublicKey>, Message<Validated>)>;
 
 pub struct Worker {
     keypair: Keypair,
-    net: Libp2pNetwork<PublicKey>,
+    libp2p: Libp2pNetwork<PublicKey>,
     tx: Sender,
     rx: Receiver,
     round: RoundNumber,
     committee: StaticCommittee,
-    all: HashMap<Digest, MultiStatus>,
-    one: HashMap<Digest, UniStatus>,
+    all: HashMap<Digest, MulticastTracker>,
+    one: HashMap<Digest, UnicastTracker>,
 }
 
 /// Track the status of a multicast message.
-struct MultiStatus {
-    /// When did we send the message or received one (or their votes).
+struct MulticastTracker {
     start: Instant,
-    /// The message we sent or received.
     message: Option<Message<Validated>>,
-    /// The votes we received for this message.
     votes: VoteAccumulator<Digest>,
-    /// Did we vote ourselves for the message?
     voted: bool,
-    /// Have we already delivered the message?
-    delivered: bool,
+    status: Status,
 }
 
-struct UniStatus {
+struct UnicastTracker {
     start: Instant,
     message: Message<Validated>,
     success: bool,
-    delivered: bool,
+    status: Status
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Status {
+    SentMsg,
+    ReceivedMsg,
+    RequestedMsg,
+    ReceivedVote,
+    Delivered
 }
 
 impl Worker {
@@ -64,7 +68,7 @@ impl Worker {
     ) -> Self {
         Self {
             keypair: kp,
-            net: nt,
+            libp2p: nt,
             tx,
             rx,
             round: RoundNumber::genesis(),
@@ -78,14 +82,17 @@ impl Worker {
         // TODO: Go repeatedly over status and retry old messages.
         loop {
             tokio::select! {
-                val = self.net.recv_message() => match val {
-                    Ok(bytes) => self.on_inbound(bytes).await.unwrap(),
-                    Err(err) => {
-                        warn!(%err, "error receiving message from libp2p")
+                val = self.libp2p.recv_message() => {
+                    match val {
+                        Ok(bytes) => self.on_inbound(bytes).await.unwrap(),
+                        Err(err) => warn!(%err, "error receiving message from libp2p")
                     }
                 },
                 Some((to, msg)) = self.rx.recv() => {
-                    self.on_outbound(to, msg).await.unwrap()
+                    match self.on_outbound(to, msg).await {
+                        Ok(()) => {}
+                        Err(err) => warn!(%err, "error sending messages")
+                    }
                 },
                 else => {
                     // `Rbc` never closes the sending half of `Worker::rx` and its
@@ -104,27 +111,27 @@ impl Worker {
         self.round = max(self.round, msg.round());
 
         if let Some(to) = to {
-            let status = UniStatus {
+            let status = UnicastTracker {
                 start: Instant::now(),
                 message: msg,
                 success: false,
-                delivered: false,
+                status: Status::SentMsg
             };
+            self.libp2p.direct_message(bytes, to).await?;
             self.one.insert(Digest::new(&status.message), status);
-            self.net.direct_message(bytes, to).await?
         } else {
             let digest = Digest::new(&msg);
-            let status = MultiStatus {
+            let status = MulticastTracker {
                 start: Instant::now(),
                 message: Some(msg),
                 votes: VoteAccumulator::new(self.committee.clone()),
                 voted: true,
-                delivered: false,
+                status: Status::SentMsg
             };
-            self.all.insert(digest, status);
-            self.net
+            self.libp2p
                 .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
-                .await?
+                .await?;
+            self.all.insert(digest, status);
         }
 
         Ok(())
@@ -134,7 +141,7 @@ impl Worker {
         let proto = bincode::deserialize(&bytes)?;
         match proto {
             RbcMsg::Propose(msg) => self.on_propose(msg.into_owned()).await?,
-            RbcMsg::Vote(env) => self.on_vote(env)?,
+            RbcMsg::Vote(env) => self.on_vote(env).await?,
             RbcMsg::Get(env) => self.on_get(env)?,
             RbcMsg::Cert(crt) => self.on_cert(crt).await?,
         }
@@ -142,7 +149,7 @@ impl Worker {
     }
 
     async fn on_propose(&mut self, msg: Message<Unchecked>) -> Result<()> {
-        if msg.round() + 2 < self.round {
+        if msg.round() < self.round.saturating_sub(1).into() {
             debug!(round = %self.round, r = %msg.round(), "ignoring old proposal");
             return Ok(());
         }
@@ -155,50 +162,84 @@ impl Worker {
 
         // Let's first see if we asked for this data:
 
-        if let Some(status) = self.one.get_mut(&digest) {
-            if status.delivered {
+        if let Some(tracker) = self.one.get_mut(&digest) {
+            if tracker.status == Status::Delivered {
                 return Ok(());
             }
-            status.delivered = true;
-            self.tx.send(status.message.clone()).await.unwrap();
+            tracker.status = Status::Delivered;
+            self.tx.send(tracker.message.clone()).await.unwrap();
             return Ok(());
         }
 
         // Otherwise it is a broadcast message:
 
-        let status = self.all.entry(digest).or_insert_with(|| MultiStatus {
+        let tracker = self.all.entry(digest).or_insert_with(|| MulticastTracker {
             start: Instant::now(),
             message: Some(msg),
             votes: VoteAccumulator::new(self.committee.clone()),
             voted: false,
-            delivered: false,
+            status: Status::ReceivedMsg,
         });
 
-        if !status.voted {
+        if !tracker.voted {
             let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
             let bytes = bincode::serialize(&vote)?;
-            self.net
+            self.libp2p
                 .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
                 .await?;
-            status.voted = true
+            tracker.voted = true
         }
 
         Ok(())
     }
 
-    fn on_vote(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
+    async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
         };
 
         let digest = *env.data();
+        let source = *env.signing_key();
 
-        if digest.round() + 2 < self.round {
+        if digest.round() < self.round.saturating_sub(1).into() {
             debug!(round = %self.round, r = %digest.round(), "ignoring old vote");
             return Ok(());
         }
 
-        todo!()
+        let tracker = self.all.entry(digest).or_insert_with(|| {
+            MulticastTracker {
+                start: Instant::now(),
+                message: None,
+                votes: VoteAccumulator::new(self.committee.clone()),
+                voted: false,
+                status: Status::ReceivedVote
+            }
+        });
+
+        match tracker.votes.add(env) {
+            Ok(None) => {}
+            Ok(Some(cert)) => {
+                if let Some(msg) = &tracker.message {
+                    let m = RbcMsg::Cert(Envelope::signed(cert.clone(), &self.keypair));
+                    let b = bincode::serialize(&m)?;
+                    self.libp2p
+                        .broadcast_message(b, Topic::Global, BroadcastDelay::None)
+                        .await?;
+                    self.tx.send(msg.clone()).await.unwrap();
+                    tracker.status = Status::Delivered
+                } else {
+                    let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
+                    let b = bincode::serialize(&m)?;
+                    self.libp2p.direct_message(b, source).await?;
+                    tracker.status = Status::RequestedMsg;
+                }
+            }
+            Err(err) => {
+                self.all.remove(&digest);
+            }
+        }
+
+        Ok(())
     }
 
     async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
@@ -211,29 +252,44 @@ impl Worker {
         }
 
         let digest = *env.data().data();
+        let source = *env.signing_key();
 
-        if digest.round() + 2 < self.round {
+        if digest.round() < self.round.saturating_sub(1).into() {
             debug!(round = %self.round, r = %digest.round(), "ignoring old certificate");
             return Ok(());
         }
 
-        //let status = self.all.entry(digest).or_insert_with(|| {
-        //});
-        //
-        //if status.delivered {
-        //    return Ok(())
-        //}
-        //
-        //status.success.set_certificate(cert);
-        //
-        //if let Some(msg) = &status.message {
-        //    self.tx.send(msg.clone()).await.unwrap();
-        //    status.delivered = true;
-        //} else {
-        //    let msg = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
-        //    let bytes = bincode::serialize(&msg)?;
-        //}
-        //
+        let tracker = self.all.entry(digest).or_insert_with(|| {
+            MulticastTracker {
+                start: Instant::now(),
+                message: None,
+                votes: VoteAccumulator::new(self.committee.clone()),
+                voted: false,
+                status: Status::ReceivedVote
+            }
+        });
+
+        if tracker.status == Status::Delivered {
+            return Ok(())
+        }
+
+        tracker.votes.set_certificate(env.data().clone());
+
+        if let Some(msg) = &tracker.message {
+            let m = RbcMsg::Cert(Envelope::signed(env.into_data(), &self.keypair));
+            let b = bincode::serialize(&m)?;
+            self.libp2p
+                .broadcast_message(b, Topic::Global, BroadcastDelay::None)
+                .await?;
+            self.tx.send(msg.clone()).await.unwrap();
+            tracker.status = Status::Delivered
+        } else {
+            let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
+            let b = bincode::serialize(&m)?;
+            self.libp2p.direct_message(b, source).await?;
+            tracker.status = Status::RequestedMsg;
+        }
+
         Ok(())
     }
 
