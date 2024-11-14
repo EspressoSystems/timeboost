@@ -32,5 +32,8 @@ USER timeboostuser
 # Set the log level to debug
 ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug}
 
+EXPOSE ${TIMEBOOST_PORT}
+EXPOSE ${TIMEBOOST_RPC_PORT}
+
 # Run the timeboost binary
 CMD ["timeboost"]

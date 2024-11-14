@@ -26,8 +26,8 @@ use libp2p_networking::{
     },
     reexport::Multiaddr,
 };
-use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{process::Termination, time::Duration};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
@@ -42,7 +42,7 @@ use tokio::sync::{
     mpsc::{Receiver, Sender},
     oneshot,
 };
-use tracing::{info, instrument};
+use tracing::{info, instrument, trace};
 
 pub struct Sailfish {
     /// The ID of the sailfish node.
@@ -58,6 +58,12 @@ pub struct Sailfish {
 }
 
 pub struct ShutdownToken(());
+
+impl Termination for ShutdownToken {
+    fn report(self) -> std::process::ExitCode {
+        std::process::ExitCode::SUCCESS
+    }
+}
 
 impl ShutdownToken {
     /// This constructor is intentionally private to ensure that only the
@@ -162,7 +168,7 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        shutdown_rx: async_channel::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
@@ -197,8 +203,8 @@ impl Sailfish {
         self,
         n: Libp2pNetwork<PublicKey>,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
-        shutdown_tx: oneshot::Sender<ShutdownToken>,
+        shutdown_rx: async_channel::Receiver<ShutdownToken>,
+        shutdown_tx: async_channel::Sender<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
@@ -225,8 +231,7 @@ impl Sailfish {
             }
             _ = signal::ctrl_c() => {
                 tracing::info!("Received termination signal, initiating graceful shutdown...");
-                shutdown_tx.send(ShutdownToken::new())
-                    .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+                shutdown_tx.send(ShutdownToken::new()).await.unwrap();
 
                 // Wait for coordinator to shutdown gracefully or timeout
                 match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
@@ -270,6 +275,8 @@ pub async fn run_sailfish(
     sf_app_tx: Sender<SailfishStatusEvent>,
     tb_app_rx: Receiver<TimeboostStatusEvent>,
     metrics: Arc<ConsensusMetrics>,
+    shutdown_tx: async_channel::Sender<ShutdownToken>,
+    shutdown_rx: async_channel::Receiver<ShutdownToken>,
 ) -> Result<()> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
@@ -298,7 +305,7 @@ pub async fn run_sailfish(
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    // let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     s.go(
         n,

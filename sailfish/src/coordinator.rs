@@ -35,7 +35,7 @@ pub struct Coordinator<C> {
     consensus: Consensus,
 
     /// The shutdown signal for this coordinator.
-    shutdown_rx: oneshot::Receiver<ShutdownToken>,
+    shutdown_rx: async_channel::Receiver<ShutdownToken>,
 
     /// The sailfish sender application event stream.
     sf_app_tx: Sender<SailfishStatusEvent>,
@@ -69,7 +69,7 @@ impl<C: Comm> Coordinator<C> {
         id: NodeId,
         comm: C,
         cons: Consensus,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
+        shutdown_rx: async_channel::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -150,7 +150,7 @@ impl<C: Comm> Coordinator<C> {
                         panic!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
-                token = &mut self.shutdown_rx => {
+                token = self.shutdown_rx.recv() => {
                     tracing::info!("Node {} received shutdown signal; exiting", self.id);
                     return token.expect("The shutdown sender was dropped before the receiver could receive the token");
                 }

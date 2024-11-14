@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use hotshot::traits::implementations::derive_libp2p_multiaddr;
 use hotshot_types::traits::metrics::NoMetrics;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
@@ -34,12 +35,13 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
     let keypair = Keypair::zero(cfg.id);
-    let bind_address = multiaddr!(Ip4([0, 0, 0, 0]), Tcp(cfg.port));
+    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cfg.port)).unwrap();
 
     // Sailfish nodes running individually do not need to communicate with the
     // application layer, so we make dummy streams.
     let (sf_app_tx, _) = channel(1);
     let (_, tb_app_rx) = channel(1);
+    let (shutdown_tx, shutdown_rx) = async_channel::bounded(1);
     let metrics = Arc::new(ConsensusMetrics::new(NoMetrics));
 
     sailfish::run_sailfish(
@@ -51,6 +53,8 @@ async fn main() -> Result<()> {
         sf_app_tx,
         tb_app_rx,
         metrics,
+        shutdown_tx,
+        shutdown_rx,
     )
     .await
 }

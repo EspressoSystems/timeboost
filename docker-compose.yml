@@ -15,6 +15,10 @@ services:
       ]
     networks:
       - timeboost
+    environment:
+      - RUST_LOG=timeboost=debug,sailfish=debug
+      - TIMEBOOST_PORT=8000
+      - TIMEBOOST_RPC_PORT=8800
     ports:
       - "8000:8000"
       - "8800:8800"
@@ -34,7 +38,9 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=timeboost=debug,sailfish=debug
+      - TIMEBOOST_PORT=8001
+      - TIMEBOOST_RPC_PORT=8801
     ports:
       - "8001:8001"
       - "8801:8801"
@@ -54,7 +60,9 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=timeboost=debug,sailfish=debug
+      - TIMEBOOST_PORT=8002
+      - TIMEBOOST_RPC_PORT=8802
     ports:
       - "8002:8002"
       - "8802:8802"
@@ -74,7 +82,9 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=timeboost=debug,sailfish=debug
+      - TIMEBOOST_PORT=8003
+      - TIMEBOOST_RPC_PORT=8803
     ports:
       - "8003:8003"
       - "8803:8803"
@@ -94,7 +104,9 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=timeboost=debug,sailfish=debug
+      - TIMEBOOST_PORT=8004
+      - TIMEBOOST_RPC_PORT=8804
     ports:
       - "8004:8004"
       - "8804:8804"

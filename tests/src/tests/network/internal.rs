@@ -26,8 +26,8 @@ pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, Receiver<ShutdownToken>>,
+    shutdown_txs: HashMap<usize, async_channel::Sender<ShutdownToken>>,
+    shutdown_rxs: HashMap<usize, async_channel::Receiver<ShutdownToken>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -43,9 +43,11 @@ impl TestableNetwork for MemoryNetworkTest {
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (
-            Vec<Sender<ShutdownToken>>,
-            Vec<Receiver<ShutdownToken>>,
-        ) = (0..group.fish.len()).map(|_| oneshot::channel()).unzip();
+            Vec<async_channel::Sender<ShutdownToken>>,
+            Vec<async_channel::Receiver<ShutdownToken>>,
+        ) = (0..group.fish.len())
+            .map(|_| async_channel::bounded(1))
+            .unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );

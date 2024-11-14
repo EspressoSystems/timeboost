@@ -1,23 +1,23 @@
 bootstrap_nodes = [
     [
         "12D3KooWDtGECieXrqKoVxfDhU7afYnS6toj1GqWXuEDfcaGPDxa",
-        "/ip4/0.0.0.0/udp/8000/quic-v1",
+        "/ip4/node0/udp/8000/quic-v1",
     ],
     [
         "12D3KooWR9caJf3eqwyB3rZQX7DFUYTjM1jvXZJJxYbwhkAnPf4w",
-        "/ip4/0.0.0.0/udp/8001/quic-v1",
+        "/ip4/node1/udp/8001/quic-v1",
     ],
     [
         "12D3KooWGbEJ2VsfX8KdUZgVaLYFndAxmtdScC91EritK57FbE2N",
-        "/ip4/0.0.0.0/udp/8002/quic-v1",
+        "/ip4/node2/udp/8002/quic-v1",
     ],
     [
         "12D3KooWFLKhKr61FhtdcMNR2wV4XHnceJQRFo6KKwQvwvRCRvy6",
-        "/ip4/0.0.0.0/udp/8003/quic-v1",
+        "/ip4/node3/udp/8003/quic-v1",
     ],
     [
         "12D3KooWCzRqAGWkUib7EqHgaWsJsGvKnujXSLsm4xf8u36nJKhH",
-        "/ip4/0.0.0.0/udp/8004/quic-v1",
+        "/ip4/node4/udp/8004/quic-v1",
     ],
 ]
 

@@ -8,6 +8,7 @@ description.workspace = true
 async-broadcast = { workspace = true }
 async-trait = { workspace = true }
 async-lock = { workspace = true }
+async-channel = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
