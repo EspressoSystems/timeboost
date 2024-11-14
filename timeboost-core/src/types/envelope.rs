@@ -11,11 +11,11 @@ use crate::types::{committee::StaticCommittee, PublicKey, Signature};
 use super::Keypair;
 
 /// Marker type to denote envelopes whose signature has not been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize)]
 pub enum Validated {}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
@@ -205,7 +205,7 @@ where
     }
 }
 
-impl<D: Committable> Committable for Envelope<D, Validated> {
+impl<D: Committable, S> Committable for Envelope<D, S> {
     fn commit(&self) -> Commitment<Self> {
         let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
         RawCommitmentBuilder::new("Envelope")
