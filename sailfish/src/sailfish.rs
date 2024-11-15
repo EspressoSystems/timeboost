@@ -1,8 +1,5 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-#[cfg(feature = "test")]
-use crate::coordinator::CoordinatorAuditEvent;
-
 use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::{
@@ -163,7 +160,6 @@ impl Sailfish {
         shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -184,8 +180,6 @@ impl Sailfish {
             shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
         )
     }
 
@@ -199,7 +193,7 @@ impl Sailfish {
         tb_app_rx: Receiver<TimeboostStatusEvent>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx)
                 .go(),
         );
 
