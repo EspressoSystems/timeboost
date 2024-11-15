@@ -23,9 +23,9 @@ pub struct CPParameters<C: CurveGroup, H: Digest> {
 impl<C: CurveGroup, H: Digest> Clone for CPParameters<C, H> {
     fn clone(&self) -> Self {
         Self {
-            _hash: self._hash.clone(),
-            generator: self.generator.clone(),
-            salt: self.salt.clone(),
+            _hash: PhantomData,
+            generator: self.generator,
+            salt: self.salt,
         }
     }
 }
@@ -77,10 +77,10 @@ impl<C: CurveGroup, H: Digest> DleqProofScheme for ChaumPedersen<C, H> {
     fn setup<R: rand::Rng>(rng: &mut R) -> Result<Self::Parameters, DleqProofError> {
         let mut salt = [0u8; 32];
         rng.fill_bytes(&mut salt);
-        let generator = C::rand(rng).into();
+        let generator: C = C::rand(rng);
         Ok(CPParameters {
             _hash: PhantomData,
-            generator: generator.into(),
+            generator,
             salt,
         })
     }

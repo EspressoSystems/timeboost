@@ -112,7 +112,6 @@ where
         }
         let alpha = poly.evaluate(&C::ScalarField::zero());
         let evals: Vec<_> = (0..committee_size)
-            .into_iter()
             .map(|i| {
                 let x = domain.unwrap().element(i);
                 poly.evaluate(&x)
@@ -217,7 +216,7 @@ where
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = pp.committee.size as usize;
-        let threshold = (committee_size / CORR_RATIO + 1) as usize;
+        let threshold = committee_size / CORR_RATIO + 1;
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
@@ -259,6 +258,7 @@ where
         let mut nom = vec![C::ScalarField::one(); threshold];
         let mut denom = vec![C::ScalarField::one(); threshold];
         let mut l = vec![C::ScalarField::zero(); threshold];
+        #[allow(clippy::needless_range_loop)]
         for i in 0..threshold {
             let x_i = x[i];
             for j in 0..threshold {
@@ -284,7 +284,7 @@ where
         // Hash to symmetric key `k`
         let key = hash_to_key(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
-        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
+        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
         plaintext
             .map(Plaintext)
