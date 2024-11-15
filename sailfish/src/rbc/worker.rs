@@ -29,32 +29,25 @@ pub struct Worker {
     rx: Receiver,
     round: RoundNumber,
     committee: StaticCommittee,
-    all: HashMap<Digest, MulticastTracker>,
-    one: HashMap<Digest, UnicastTracker>,
+    buffer: HashMap<Digest, Tracker>,
 }
 
-/// Track the status of a multicast message.
-struct MulticastTracker {
+struct Tracker {
     start: Instant,
     message: Option<Message<Validated>>,
     votes: VoteAccumulator<Digest>,
-    voted: bool,
     status: Status,
-}
-
-struct UnicastTracker {
-    start: Instant,
-    message: Message<Validated>,
-    success: bool,
-    status: Status
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Status {
+    Init,
     SentMsg,
     ReceivedMsg,
+    SentVote,
     RequestedMsg,
-    ReceivedVote,
+    ReceivedVotes,
+    ReachedQuorum,
     Delivered
 }
 
@@ -73,8 +66,7 @@ impl Worker {
             rx,
             round: RoundNumber::genesis(),
             committee: sc,
-            all: HashMap::new(),
-            one: HashMap::new(),
+            buffer: HashMap::new(),
         }
     }
 
@@ -107,32 +99,29 @@ impl Worker {
     async fn on_outbound(&mut self, to: Option<PublicKey>, msg: Message<Validated>) -> Result<()> {
         let proto = RbcMsg::Propose(Cow::Borrowed(&msg));
         let bytes = bincode::serialize(&proto)?;
+        let digest = Digest::new(&msg);
 
         self.round = max(self.round, msg.round());
 
+        let tracker = Tracker {
+            start: Instant::now(),
+            message: Some(msg),
+            votes: VoteAccumulator::new(self.committee.clone()),
+            status: Status::Init
+        };
+
+        self.buffer.insert(digest, tracker);
+
         if let Some(to) = to {
-            let status = UnicastTracker {
-                start: Instant::now(),
-                message: msg,
-                success: false,
-                status: Status::SentMsg
-            };
             self.libp2p.direct_message(bytes, to).await?;
-            self.one.insert(Digest::new(&status.message), status);
         } else {
-            let digest = Digest::new(&msg);
-            let status = MulticastTracker {
-                start: Instant::now(),
-                message: Some(msg),
-                votes: VoteAccumulator::new(self.committee.clone()),
-                voted: true,
-                status: Status::SentMsg
-            };
-            self.libp2p
-                .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
-                .await?;
-            self.all.insert(digest, status);
+            self.libp2p.broadcast_message(bytes, Topic::Global, BroadcastDelay::None).await?;
         }
+
+        self.buffer
+            .get_mut(&digest)
+            .expect("tracker was just created")
+            .status = Status::SentMsg;
 
         Ok(())
     }
@@ -160,34 +149,52 @@ impl Worker {
 
         let digest = Digest::new(&msg);
 
-        // Let's first see if we asked for this data:
-
-        if let Some(tracker) = self.one.get_mut(&digest) {
-            if tracker.status == Status::Delivered {
-                return Ok(());
-            }
-            tracker.status = Status::Delivered;
-            self.tx.send(tracker.message.clone()).await.unwrap();
-            return Ok(());
-        }
-
-        // Otherwise it is a broadcast message:
-
-        let tracker = self.all.entry(digest).or_insert_with(|| MulticastTracker {
+        let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
             start: Instant::now(),
-            message: Some(msg),
+            message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
-            voted: false,
-            status: Status::ReceivedMsg,
+            status: Status::Init,
         });
 
-        if !tracker.voted {
-            let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
-            let bytes = bincode::serialize(&vote)?;
-            self.libp2p
-                .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
-                .await?;
-            tracker.voted = true
+        match tracker.status {
+            Status::Init => {
+                tracker.message = Some(msg);
+                tracker.status = Status::ReceivedMsg;
+                let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                let bytes = bincode::serialize(&vote)?;
+                self.libp2p
+                    .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
+                    .await?;
+                tracker.status = Status::SentVote
+            }
+            Status::ReceivedMsg => {
+                debug_assert!(tracker.message.is_some());
+                let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                let bytes = bincode::serialize(&vote)?;
+                self.libp2p
+                    .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
+                    .await?;
+                tracker.status = Status::SentVote
+            }
+            Status::SentVote => {}
+            Status::ReceivedVotes => {
+                if tracker.message.is_none() {
+                    tracker.message = Some(msg);
+                    let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                    let bytes = bincode::serialize(&vote)?;
+                    self.libp2p
+                        .broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
+                        .await?;
+                }
+            }
+            Status::Delivered => return Ok(()),
+            Status::RequestedMsg => {
+                tracker.message = Some(msg.clone());
+                self.tx.send(msg).await.unwrap();
+                tracker.status = Status::Delivered
+            }
+            Status::ReachedQuorum => {}
+            Status::SentMsg => unreachable!()
         }
 
         Ok(())
@@ -206,19 +213,21 @@ impl Worker {
             return Ok(());
         }
 
-        let tracker = self.all.entry(digest).or_insert_with(|| {
-            MulticastTracker {
+        let tracker = self.buffer.entry(digest).or_insert_with(|| {
+            Tracker {
                 start: Instant::now(),
                 message: None,
                 votes: VoteAccumulator::new(self.committee.clone()),
-                voted: false,
-                status: Status::ReceivedVote
+                status: Status::ReceivedVotes
             }
         });
 
         match tracker.votes.add(env) {
-            Ok(None) => {}
+            Ok(None) => {
+                tracker.status = Status::ReceivedVotes
+            }
             Ok(Some(cert)) => {
+                tracker.status = Status::ReachedQuorum;
                 if let Some(msg) = &tracker.message {
                     let m = RbcMsg::Cert(Envelope::signed(cert.clone(), &self.keypair));
                     let b = bincode::serialize(&m)?;
@@ -235,7 +244,9 @@ impl Worker {
                 }
             }
             Err(err) => {
-                self.all.remove(&digest);
+                if tracker.votes.is_empty() && tracker.message.is_none() {
+                    self.buffer.remove(&digest);
+                }
             }
         }
 
@@ -259,13 +270,12 @@ impl Worker {
             return Ok(());
         }
 
-        let tracker = self.all.entry(digest).or_insert_with(|| {
-            MulticastTracker {
+        let tracker = self.buffer.entry(digest).or_insert_with(|| {
+            Tracker {
                 start: Instant::now(),
                 message: None,
                 votes: VoteAccumulator::new(self.committee.clone()),
-                voted: false,
-                status: Status::ReceivedVote
+                status: Status::ReceivedVotes
             }
         });
 
@@ -274,6 +284,7 @@ impl Worker {
         }
 
         tracker.votes.set_certificate(env.data().clone());
+        tracker.status = Status::ReachedQuorum;
 
         if let Some(msg) = &tracker.message {
             let m = RbcMsg::Cert(Envelope::signed(env.into_data(), &self.keypair));
