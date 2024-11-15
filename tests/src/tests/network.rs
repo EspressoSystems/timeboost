@@ -157,17 +157,29 @@ impl<N: TestableNetwork> NetworkTest<N> {
             }
         }
 
+        let timeout = handles.is_empty();
+
         // Always shutdown the network.
         results.extend(self.network.shutdown(handles, &results).await);
 
         // Now handle the test result
-        for (id, result) in results {
-            assert_eq!(
-                result.outcome(),
-                TestOutcome::Passed,
-                "Node id: {} failed. Test is waiting",
-                id
-            );
+        if timeout {
+            for (node_id, result) in results {
+                if result.outcome() != TestOutcome::Passed {
+                    tracing::error!(
+                        "Node {} had missing status: {:?}",
+                        node_id,
+                        result.outcome()
+                    );
+                }
+            }
+            panic!("Test timed out after {:?}", self.duration);
         }
+
+        assert!(
+            results.values().all(|s| s.outcome() == TestOutcome::Passed),
+            "Not all nodes passed. Final statuses: {:?}",
+            results.values()
+        );
     }
 }

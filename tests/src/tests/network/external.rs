@@ -152,7 +152,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r)) // Use item.id() as key
+            .map(|r| (r.id(), r))
             .collect()
     }
 }

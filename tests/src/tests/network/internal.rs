@@ -153,7 +153,7 @@ impl TestableNetwork for MemoryNetworkTest {
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r)) // Use item.id() as key
+            .map(|r| (r.id(), r))
             .collect();
 
         // Now shutdown the network

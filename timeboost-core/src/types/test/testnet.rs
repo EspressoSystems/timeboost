@@ -74,6 +74,6 @@ impl<C: Comm + Send> Comm for TestNet<C> {
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        Ok(())
+        self.comm.shutdown().await
     }
 }

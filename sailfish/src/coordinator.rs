@@ -10,11 +10,10 @@ use timeboost_core::{
         block::Block,
         message::{Action, Message},
         round_number::RoundNumber,
-        NodeId, PublicKey,
+        NodeId,
     },
 };
 use tokio::time::sleep;
-use tracing::warn;
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -26,8 +25,10 @@ pub struct Coordinator<C> {
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
 
+    /// Timer for when to timeout rounds
     timer: BoxFuture<'static, RoundNumber>,
 
+    /// Consensus (re)-start
     init: bool,
 }
 
@@ -70,16 +71,16 @@ impl<C: Comm> Coordinator<C> {
             }
             Action::Deliver(b, _, _) => return Ok(Some(b)),
             Action::SendProposal(e) => {
-                self.broadcast(Message::Vertex(e.cast())).await;
+                self.comm.broadcast(Message::Vertex(e.cast())).await?;
             }
             Action::SendTimeout(e) => {
-                self.broadcast(Message::Timeout(e.cast())).await;
+                self.comm.broadcast(Message::Timeout(e.cast())).await?;
             }
             Action::SendTimeoutCert(c) => {
-                self.broadcast(Message::TimeoutCert(c)).await;
+                self.comm.broadcast(Message::TimeoutCert(c)).await?;
             }
             Action::SendNoVote(to, v) => {
-                self.unicast(to, Message::NoVote(v.cast())).await;
+                self.comm.send(to, Message::NoVote(v.cast())).await?;
             }
         }
         Ok(None)
@@ -87,17 +88,5 @@ impl<C: Comm> Coordinator<C> {
 
     pub async fn shutdown(&mut self) -> Result<(), C::Err> {
         self.comm.shutdown().await
-    }
-
-    async fn broadcast(&mut self, msg: Message) {
-        if let Err(err) = self.comm.broadcast(msg).await {
-            warn!(%err, "failed to broadcast message to network")
-        }
-    }
-
-    async fn unicast(&mut self, to: PublicKey, msg: Message) {
-        if let Err(err) = self.comm.send(to, msg).await {
-            warn!(%err, %to, "failed to send message")
-        }
     }
 }
