@@ -188,7 +188,7 @@ impl<C: Comm> Coordinator<C> {
                 // implies that the protocol has moved to the next round.
                 self.application_broadcast(SailfishStatusEvent {
                     round: r,
-                    event: SailfishEventType::Timeout { round: r },
+                    event: SailfishEventType::RoundFinished { round: r },
                 })
                 .await;
             }
