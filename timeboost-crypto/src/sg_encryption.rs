@@ -10,7 +10,10 @@ use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use ark_std::rand::Rng;
 use rand::rngs::OsRng;
-use sha2::{digest::generic_array::GenericArray, Digest, Sha256};
+use sha2::{
+    digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
+    Digest,
+};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
@@ -26,7 +29,7 @@ use crate::{
 /// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
 const CORR_RATIO: usize = 3;
 
-pub struct ShoupGennaro<C: CurveGroup, H: Digest> {
+pub struct ShoupGennaro<C: CurveGroup, H: Digest + Default + DynDigest + Clone> {
     _group: PhantomData<C>,
     _hash: PhantomData<H>,
 }
@@ -69,7 +72,7 @@ pub struct DecShare<C: CurveGroup> {
 
 impl<C, H> ThresholdEncScheme for ShoupGennaro<C, H>
 where
-    H: Digest,
+    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
@@ -147,7 +150,7 @@ where
         let w = pub_key.pk * beta;
 
         // hash to symmetric key `k`
-        let key = hash_to_key(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
 
         // AES encrypt using `k`, `nonce` and `message`
@@ -160,7 +163,7 @@ where
             )));
         }
         let e = e.unwrap();
-        let u_hat = hash_to_curve(v, e.clone(), pp)?;
+        let u_hat = hash_to_curve::<C, H>(v, e.clone(), pp)?;
 
         let w_hat = u_hat * beta;
 
@@ -282,7 +285,7 @@ where
         }
 
         // Hash to symmetric key `k`
-        let key = hash_to_key(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
@@ -294,25 +297,25 @@ where
 
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C: CurveGroup, H: Digest>(
-    v: C,
-    e: Vec<u8>,
-    pp: &Parameters<C, H>,
-) -> Result<C, ThresholdEncError> {
+fn hash_to_curve<C, H>(v: C, e: Vec<u8>, pp: &Parameters<C, H>) -> Result<C, ThresholdEncError>
+where
+    C: CurveGroup,
+    H: Digest + Default + Clone + FixedOutputReset + 'static,
+{
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
     let _ = writer.write(&e);
     writer.flush()?;
     drop(writer);
-    let hasher = <DefaultFieldHasher<Sha256> as HashToField<C::ScalarField>>::new(&[0u8]);
+    let hasher = <DefaultFieldHasher<H> as HashToField<C::ScalarField>>::new(&[0u8]);
     let scalar_from_hash: C::ScalarField = hasher.hash_to_field(&buffer, 1)[0];
     let u_hat = pp.generator * scalar_from_hash;
     Ok(u_hat)
 }
 
-fn hash_to_key<C: CurveGroup>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
-    let mut hasher = Sha256::new();
+fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
+    let mut hasher = H::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
