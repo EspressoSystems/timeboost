@@ -1,3 +1,4 @@
+use ark_serialize::SerializationError;
 use rand::Rng;
 use thiserror::Error;
 
@@ -51,4 +52,8 @@ pub enum ThresholdEncError {
     NotEnoughShares,
     #[error("Internal Error: {0}")]
     Internal(anyhow::Error),
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    SerializationError(#[from] SerializationError),
 }

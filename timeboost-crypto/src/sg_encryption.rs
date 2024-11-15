@@ -248,6 +248,7 @@ where
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| DleqProofError::ProofNotValid);
+
         // Colllect eval points for decryption shares
         let x = dec_shares
             .iter()
@@ -300,9 +301,9 @@ fn hash_to_curve<C: CurveGroup, H: Digest>(
 ) -> Result<C, ThresholdEncError> {
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer)
-        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
+    v.serialize_compressed(&mut writer)?;
     let _ = writer.write(&e);
+    writer.flush()?;
     drop(writer);
     let hasher = <DefaultFieldHasher<Sha256> as HashToField<C::ScalarField>>::new(&[0u8]);
     let scalar_from_hash: C::ScalarField = hasher.hash_to_field(&buffer, 1)[0];
@@ -314,13 +315,9 @@ fn hash_to_key<C: CurveGroup>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> 
     let mut hasher = Sha256::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer)
-        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-    w.serialize_compressed(&mut writer)
-        .map_err(|_| ThresholdEncError::Internal(anyhow!("Serialization failed")))?;
-    writer
-        .flush()
-        .map_err(|_| ThresholdEncError::Internal(anyhow!("Flush failed")))?;
+    v.serialize_compressed(&mut writer)?;
+    w.serialize_compressed(&mut writer)?;
+    writer.flush()?;
     drop(writer);
     hasher.update(buffer);
     let key = hasher.finalize();
