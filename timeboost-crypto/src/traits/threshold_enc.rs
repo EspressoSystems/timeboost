@@ -6,7 +6,6 @@ pub trait ThresholdEncScheme {
     type Parameters;
     type PublicKey;
     type KeyShare;
-    type Randomness;
     type Plaintext;
     type Ciphertext;
     type DecShare;
@@ -28,7 +27,8 @@ pub trait ThresholdEncScheme {
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
 
-    fn decrypt(
+    fn decrypt<R: Rng>(
+        rng: &mut R,
         pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,

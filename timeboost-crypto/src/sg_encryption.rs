@@ -9,6 +9,7 @@ use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use ark_std::rand::Rng;
+use rand::rngs::OsRng;
 use sha2::{digest::generic_array::GenericArray, Digest, Sha256};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
@@ -16,7 +17,7 @@ use std::marker::PhantomData;
 use crate::{
     cp_proof::{CPParameters, ChaumPedersen, DleqTuple, Proof},
     traits::{
-        dleq_proof::DleqProofScheme,
+        dleq_proof::{DleqProofError, DleqProofScheme},
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
 };
@@ -25,23 +26,25 @@ use crate::{
 /// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
 const CORR_RATIO: usize = 3;
 
-pub struct ShoupGennaro<C: CurveGroup> {
+pub struct ShoupGennaro<C: CurveGroup, H: Digest> {
     _group: PhantomData<C>,
+    _hash: PhantomData<H>,
 }
 
 pub struct Committee {
-    pub size: u32,
     pub id: u32,
+    pub size: u32,
 }
 
-pub struct Parameters<C: CurveGroup> {
+pub struct Parameters<C: CurveGroup, H: Digest> {
     pub committee: Committee,
-    pub generator: C::Affine,
+    pub generator: C,
+    pub cp_params: CPParameters<C, H>,
 }
 
 pub struct PublicKey<C: CurveGroup> {
-    pub pk: C::Affine,
-    pub pk_comb: Vec<C::Affine>,
+    pub pk: C,
+    pub pk_comb: Vec<C>,
 }
 #[derive(Clone)]
 pub struct KeyShare<C: CurveGroup> {
@@ -52,45 +55,43 @@ pub struct KeyShare<C: CurveGroup> {
 pub struct Plaintext(Vec<u8>);
 
 pub struct Ciphertext<C: CurveGroup> {
-    v: C::Affine,
-    w_hat: C::Affine,
+    v: C,
+    w_hat: C,
     e: Vec<u8>,
     nonce: Vec<u8>,
     pi: Proof<C>,
 }
 pub struct DecShare<C: CurveGroup> {
-    w: C::Affine,
+    w: C,
     index: u32,
     phi: Proof<C>,
 }
-pub struct Randomness<C: CurveGroup>(C::ScalarField);
 
-impl<C: CurveGroup> UniformRand for Randomness<C> {
-    #[inline]
-    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        Randomness(C::ScalarField::rand(rng))
-    }
-}
-
-impl<C> ThresholdEncScheme for ShoupGennaro<C>
+impl<C, H> ThresholdEncScheme for ShoupGennaro<C, H>
 where
+    H: Digest,
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
     type Committee = Committee;
-    type Parameters = Parameters<C>;
+    type Parameters = Parameters<C, H>;
     type PublicKey = PublicKey<C>;
     type KeyShare = KeyShare<C>;
-    type Randomness = Randomness<C>;
     type Plaintext = Plaintext;
     type Ciphertext = Ciphertext<C>;
     type DecShare = DecShare<C>;
 
-    fn setup<R: Rng>(rng: R, committee: Committee) -> Result<Self::Parameters, ThresholdEncError> {
-        let generator = C::generator().into();
+    fn setup<R: Rng>(
+        rng: &mut R,
+        committee: Committee,
+    ) -> Result<Self::Parameters, ThresholdEncError> {
+        let generator: C = C::rand(rng);
+        let mut salt = [0; 32];
+        rng.fill_bytes(&mut salt);
         Ok(Parameters {
             generator,
             committee,
+            cp_params: CPParameters::new(generator, salt),
         })
     }
 
@@ -120,8 +121,8 @@ where
 
         let u_0 = gen * alpha;
         let pub_key = PublicKey {
-            pk: u_0.into(),
-            pk_comb: evals.iter().map(|alpha| (gen * alpha).into()).collect(),
+            pk: u_0,
+            pk_comb: evals.iter().map(|alpha| gen * alpha).collect(),
         };
 
         let key_shares = evals
@@ -142,9 +143,9 @@ where
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
-        let beta = C::rand(rng);
-        let v: C = pp.generator * beta;
-        let w: C = pub_key.pk * beta;
+        let beta = C::ScalarField::rand(rng);
+        let v = pp.generator * beta;
+        let w = pub_key.pk * beta;
 
         // hash to symmetric key `k`
         let key = hash_to_key(v, w).unwrap();
@@ -152,7 +153,7 @@ where
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let nonce = Aes256Gcm::generate_nonce(&mut rng);
+        let nonce = Aes256Gcm::generate_nonce(OsRng);
         let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref());
         if e.is_err() {
             return Err(ThresholdEncError::Internal(anyhow!(
@@ -162,26 +163,24 @@ where
         let e = e.unwrap();
         let u_hat = hash_to_curve(v, e.clone(), pp)?;
 
-        let w_hat = u_hat * beta.0;
+        let w_hat = u_hat * beta;
 
         // Produce DLEQ proof for CCA security
-        let cp_params = CPParameters {
-            generator: pp.generator.into(),
-        };
-        let tuple = DleqTuple::new(pp.generator.into(), v, pub_key.pk.into(), w);
-        let pi = ChaumPedersen::<C>::prove::<R>(cp_params, tuple, beta.0)
+        let tuple = DleqTuple::new(pp.generator, v, pub_key.pk, w);
+        let pi = ChaumPedersen::<C, H>::prove(rng, &pp.cp_params, &tuple, &beta)
             .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
 
         Ok(Ciphertext {
-            v: v.into(),
-            w_hat: w_hat.into(),
+            v,
+            w_hat,
             nonce: nonce.to_vec(),
             e,
             pi,
         })
     }
 
-    fn decrypt(
+    fn decrypt<R: Rng>(
+        rng: &mut R,
         pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
@@ -191,20 +190,21 @@ where
             ciphertext.v,
             ciphertext.e.clone(),
             ciphertext.w_hat,
-            ciphertext.pi,
+            ciphertext.pi.clone(),
         );
+        let u_hat = hash_to_curve(v, e, pp).unwrap();
+        let tuple = DleqTuple::new(pp.generator, u_hat, v, w_hat);
+        let _ = ChaumPedersen::verify(&pp.cp_params, &tuple, &pi)
+            .map_err(|_| DleqProofError::ProofNotValid);
 
         let w = v * alpha;
         let u_i = pp.generator * alpha;
-        let tuple = DleqTuple::new(pp.generator.into(), u_i, v, w);
-        let cp_params = CPParameters {
-            generator: pp.generator.into(),
-        };
-        let phi = ChaumPedersen::<C>::prove(cp_params, tuple, alpha)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
+        let tuple = DleqTuple::new(pp.generator, u_i, v, w);
+        let phi = ChaumPedersen::<C, H>::prove(rng, &pp.cp_params, &tuple, &alpha)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Proof generation failed {:?}", e)))?;
 
         Ok(DecShare {
-            w: w.into(),
+            w,
             index: sk.index,
             phi,
         })
@@ -212,7 +212,7 @@ where
 
     fn combine(
         pp: &Self::Parameters,
-        _pub_key: &Self::PublicKey,
+        pub_key: &Self::PublicKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
@@ -230,6 +230,24 @@ where
                 ))
             })?;
 
+        let (v, nonce, data) = (
+            ciphertext.v,
+            ciphertext.nonce.as_slice(),
+            ciphertext.e.clone(),
+        );
+        let pk_comb = pub_key.pk_comb.clone();
+
+        // Verify DLEQ proofs
+        let _ = dec_shares
+            .iter()
+            .map(|share| {
+                let (w, phi) = (share.w, share.phi.clone());
+                let u = pk_comb[share.index as usize];
+                let tuple = DleqTuple::new(pp.generator, u, v, w);
+                ChaumPedersen::verify(&pp.cp_params, &tuple, &phi)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| DleqProofError::ProofNotValid);
         // Colllect eval points for decryption shares
         let x = dec_shares
             .iter()
@@ -262,30 +280,23 @@ where
             w += (w_i * l_i).into();
         }
 
-        // parse ciphertext
-        let (v, nonce, data) = (
-            ciphertext.v.into(),
-            ciphertext.nonce.as_slice(),
-            ciphertext.e.clone(),
-        );
-
-        // hash to symmetric key `k`
+        // Hash to symmetric key `k`
         let key = hash_to_key(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(&k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
         plaintext
             .map(Plaintext)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Decryption failed")))
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Decryption failed: {:?}", e)))
     }
 }
 
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C: CurveGroup>(
+fn hash_to_curve<C: CurveGroup, H: Digest>(
     v: C,
     e: Vec<u8>,
-    pp: &Parameters<C>,
+    pp: &Parameters<C, H>,
 ) -> Result<C, ThresholdEncError> {
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
@@ -318,36 +329,47 @@ fn hash_to_key<C: CurveGroup>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> 
 
 #[cfg(test)]
 mod test {
-    use crate::sg_encryption::{
-        Committee, Plaintext, Randomness, ShoupGennaro, ThresholdEncScheme,
+    use crate::{
+        sg_encryption::{Committee, Plaintext, ShoupGennaro},
+        traits::threshold_enc::ThresholdEncScheme,
     };
     use ark_bn254::G1Projective;
-    use ark_std::{test_rng, UniformRand};
+
+    use ark_std::test_rng;
+    use sha2::Sha256;
 
     #[test]
     fn test_shoup_gennaro_encryption() {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
-        // setup and key generation
-        let parameters = ShoupGennaro::<G1Projective>::setup(committee).unwrap();
-        let (pk, key_shares) = ShoupGennaro::<G1Projective>::keygen(&parameters, rng).unwrap();
-        let r = Randomness::rand(rng);
+
+        // setup schemes
+        let parameters = ShoupGennaro::<G1Projective, Sha256>::setup(rng, committee).unwrap();
+        let (pk, key_shares) =
+            ShoupGennaro::<G1Projective, Sha256>::keygen(rng, &parameters).unwrap();
         let message = "important message".as_bytes().to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G1Projective>::encrypt(&parameters, &pk, &plaintext, &r).unwrap();
+            ShoupGennaro::<G1Projective, Sha256>::encrypt(rng, &parameters, &pk, &plaintext)
+                .unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G1Projective>::decrypt(&parameters, s, &ciphertext))
+            .map(|s| {
+                ShoupGennaro::<G1Projective, Sha256>::decrypt(rng, &parameters, s, &ciphertext)
+            })
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let check_message =
-            ShoupGennaro::<G1Projective>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
-                .unwrap();
+        let check_message = ShoupGennaro::<G1Projective, Sha256>::combine(
+            &parameters,
+            &pk,
+            dec_shares_refs,
+            &ciphertext,
+        )
+        .unwrap();
         assert_eq!(message, check_message.0);
     }
 }
