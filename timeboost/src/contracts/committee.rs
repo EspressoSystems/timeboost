@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;

@@ -5,7 +5,6 @@ use hotshot_types::traits::metrics::NoMetrics;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use libp2p_networking::reexport::Multiaddr;
-use multiaddr::multiaddr;
 use sailfish::sailfish;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

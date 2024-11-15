@@ -38,11 +38,8 @@ use timeboost_core::{
     },
 };
 use tokio::signal;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    oneshot,
-};
-use tracing::{info, instrument, trace};
+use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::{info, instrument};
 
 pub struct Sailfish {
     /// The ID of the sailfish node.

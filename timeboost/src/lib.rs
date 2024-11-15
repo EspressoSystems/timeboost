@@ -3,10 +3,7 @@ use api::endpoints::TimeboostApiState;
 use async_channel::bounded;
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
-use tokio::{
-    signal,
-    sync::{mpsc::channel, oneshot},
-};
+use tokio::sync::mpsc::channel;
 use tracing::{error, info, warn};
 
 use hotshot_types::PeerConfig;

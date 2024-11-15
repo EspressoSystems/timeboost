@@ -152,7 +152,7 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
         // Shutdown all the coordinators
         for send in self.shutdown_txs.into_values() {
-            let _ = send.send(ShutdownToken::new());
+            let _ = send.send(ShutdownToken::new()).await;
         }
 
         // Wait for all the coordinators to shutdown

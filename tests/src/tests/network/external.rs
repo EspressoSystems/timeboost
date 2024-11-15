@@ -16,13 +16,7 @@ use timeboost_core::types::{
     metrics::ConsensusMetrics,
     PublicKey,
 };
-use tokio::{
-    sync::{
-        mpsc,
-        oneshot::{self, Receiver, Sender},
-    },
-    task::JoinSet,
-};
+use tokio::{sync::mpsc, task::JoinSet};
 
 use crate::Group;
 
@@ -168,7 +162,7 @@ impl TestableNetwork for Libp2pNetworkTest {
 
     async fn shutdown(self, handles: JoinSet<()>) {
         for send in self.shutdown_txs.into_values() {
-            let _ = send.send(ShutdownToken::new());
+            let _ = send.send(ShutdownToken::new()).await;
         }
         handles.join_all().await;
     }

@@ -18,10 +18,7 @@ use timeboost_core::{
     },
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::{
-    sync::oneshot::{self},
-    time::sleep,
-};
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 pub struct Coordinator<C> {
