@@ -39,5 +39,5 @@ fix:
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
-run_integration:
+run_integration: build_docker
   docker compose up --abort-on-container-exit
