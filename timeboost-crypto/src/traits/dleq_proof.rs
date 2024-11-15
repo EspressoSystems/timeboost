@@ -11,12 +11,16 @@ pub trait DleqProofScheme {
 
     fn prove<R: Rng>(
         rng: &mut R,
-        pp: Self::Parameters,
-        tuple: Self::DleqTuple,
-        x: Self::Scalar,
+        pp: &Self::Parameters,
+        tuple: &Self::DleqTuple,
+        x: &Self::Scalar,
     ) -> Result<Self::Proof, DleqProofError>;
 
-    fn verify(pp: Self::Parameters, proof: Self::Proof) -> Result<(), DleqProofError>;
+    fn verify(
+        pp: &Self::Parameters,
+        tuple: &Self::DleqTuple,
+        proof: &Self::Proof,
+    ) -> Result<(), DleqProofError>;
 }
 
 /// The error type for `DleqProofScheme` methods.
@@ -24,6 +28,8 @@ pub trait DleqProofScheme {
 pub enum DleqProofError {
     #[error("Invalid argument: {0}")]
     Argument(String),
+    #[error("Invalid proof")]
+    ProofNotValid,
     #[error("Internal Error: {0}")]
     Internal(anyhow::Error),
 }
