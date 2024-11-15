@@ -75,7 +75,7 @@ fn define_api<ApiVer: StaticVersionType + 'static>(
     })?;
 
     api.at("get_metrics", |_req, _state| {
-        async move { Ok("fuckoff") }.boxed()
+        async move { Ok("Metrics") }.boxed()
     })?;
 
     Ok(api)
