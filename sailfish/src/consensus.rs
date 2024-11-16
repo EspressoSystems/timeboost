@@ -238,7 +238,11 @@ impl Consensus {
                 // the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
-                for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
+                for w in buffer.into_iter() {
+                    if w.round() > vertex.round() {
+                        retained.insert(w);
+                        continue;
+                    }
                     if let Ok(b) = self.try_to_add_to_dag(&w) {
                         actions.extend(b)
                     } else {
