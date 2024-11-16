@@ -24,7 +24,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-prometheus = "0.13"
+prometheus = { workspace = true }
+tide-disco = { workspace = true }
 itertools = "0.12.1"
 
 

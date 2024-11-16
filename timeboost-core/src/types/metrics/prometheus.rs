@@ -6,6 +6,7 @@ use std::{
 use hotshot_types::traits::metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
+use prometheus::{Encoder, TextEncoder};
 
 #[derive(Clone, Debug)]
 pub struct TimeboostCounter(prometheus::Counter);
@@ -63,6 +64,24 @@ impl TimeboostGauge {
     }
 }
 
+#[derive(Debug)]
+pub struct PrometheusError(anyhow::Error);
+impl std::fmt::Display for PrometheusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl std::error::Error for PrometheusError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
+}
+impl From<prometheus::Error> for PrometheusError {
+    fn from(source: prometheus::Error) -> Self {
+        Self(anyhow::anyhow!(source))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Prometheus {
     registry: prometheus::Registry,
@@ -75,6 +94,22 @@ impl Prometheus {
     fn metric_opts(&self, name: String, unit_label: Option<String>) -> prometheus::Opts {
         let help = unit_label.unwrap_or_else(|| name.clone());
         prometheus::Opts::new(name, help)
+    }
+}
+impl tide_disco::metrics::Metrics for Prometheus {
+    type Error = PrometheusError;
+
+    fn export(&self) -> Result<String, Self::Error> {
+        let encoder = TextEncoder::new();
+        let metric_families = self.registry.gather();
+        let mut buffer = vec![];
+        encoder.encode(&metric_families, &mut buffer)?;
+        String::from_utf8(buffer).map_err(|err| {
+            PrometheusError(anyhow::anyhow!(
+                "could not convert Prometheus output to UTF-8: {}",
+                err
+            ))
+        })
     }
 }
 

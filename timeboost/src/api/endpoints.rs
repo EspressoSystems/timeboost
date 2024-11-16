@@ -5,6 +5,7 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
+use prometheus::Registry;
 use tide_disco::{error::ServerError, Api, App, StatusCode, Url};
 use timeboost_core::types::{
     event::{TimeboostEventType, TimeboostStatusEvent},
@@ -72,10 +73,6 @@ fn define_api<ApiVer: StaticVersionType + 'static>(
             Ok(hash)
         }
         .boxed()
-    })?;
-
-    api.at("get_metrics", |_req, _state| {
-        async move { Ok("Metrics") }.boxed()
     })?;
 
     Ok(api)

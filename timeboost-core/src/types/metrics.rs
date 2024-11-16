@@ -1,5 +1,7 @@
 pub mod prometheus;
 
+use std::fmt::format;
+
 use hotshot_types::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
