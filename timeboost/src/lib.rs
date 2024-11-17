@@ -69,7 +69,7 @@ impl Timeboost {
             tokio::select! {
                 event = self.app_rx.recv() => {
                     match event {
-                        Some(event) => info!("Received event: {:?}", event),
+                        Some(_event) => {} // info!("Received event: {:?}", event),
                         None => {
                             warn!("Timeboost channel closed; shutting down.");
                             break Err(anyhow::anyhow!("Timeboost channel closed; shutting down."));

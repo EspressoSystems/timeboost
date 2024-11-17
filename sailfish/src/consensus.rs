@@ -70,6 +70,8 @@ pub struct Consensus {
     metrics_timer: std::time::Instant,
 }
 
+const COMMITTED_ALLOWED: u64 = 2;
+
 impl Consensus {
     pub fn new(
         id: NodeId,
@@ -179,8 +181,16 @@ impl Consensus {
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round);
         debug_assert!(self.leader_vertex(r).is_none());
-        let e = Envelope::signed(Timeout::new(r), &self.keypair);
-        vec![Action::SendTimeout(e)]
+        let _e = Envelope::signed(Timeout::new(r), &self.keypair);
+        let b: Vec<_> = self.buffer.iter().map(|c| c.round()).collect();
+        tracing::error!(
+            "timeout: id: {}, is_leader: {}, r: {}, b: {:?}",
+            self.id,
+            *self.public_key() == self.committee.leader(r),
+            r,
+            b
+        );
+        vec![] //Action::SendTimeout(e)
     }
 
     /// Handle a vertex proposal of some node.
@@ -221,6 +231,84 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
+                let buffer = mem::take(&mut self.buffer);
+                let mut retained = HashSet::new();
+                for w in buffer.into_iter() {
+                    if w.round() > vertex.round() {
+                        retained.insert(w);
+                        continue;
+                    }
+                    if let Ok(b) = self.try_to_add_to_dag(&w) {
+                        tracing::error!(
+                            "added: vr: {}, wr: {}, self: {}, id: {}",
+                            vertex.round(),
+                            w.round(),
+                            self.round,
+                            self.id
+                        );
+                        actions.extend(b);
+                        if w.round() < self.round {
+                            tracing::error!(
+                                "less: vr: {}, wr: {}, self: {}, id: {}",
+                                vertex.round(),
+                                w.round(),
+                                self.round,
+                                self.id
+                            );
+                            if self.dag.vertex_count(w.round())
+                                < self.committee.quorum_size().get() as usize
+                            {
+                                tracing::error!(
+                                    "not enough: vr: {}, wr: {}, self: {}, id: {}",
+                                    vertex.round(),
+                                    w.round(),
+                                    self.round,
+                                    self.id
+                                );
+                                continue;
+                            }
+                            if self.leader_vertex(w.round()).is_some() {
+                                tracing::error!(
+                                    "catchup vertex: vr: {}, wr: {}, self: {}, id: {}",
+                                    vertex.round(),
+                                    w.round(),
+                                    self.round,
+                                    self.id
+                                );
+                                let r = w.round() + 1;
+                                let v = self.create_new_vertex(r);
+                                actions.extend(self.add_and_broadcast_vertex(v.0));
+                                continue;
+                            }
+                        } else {
+                            tracing::error!(
+                                "try advancing from 1: vr: {}, wr: {}, self: {}, id: {}",
+                                vertex.round(),
+                                w.round(),
+                                self.round,
+                                self.id
+                            );
+                            if self.dag.vertex_count(w.round())
+                                < self.committee.quorum_size().get() as usize
+                            {
+                                tracing::error!(
+                                    "not enough 1: vr: {}, wr: {}, self: {}, id: {}",
+                                    vertex.round(),
+                                    w.round(),
+                                    self.round,
+                                    self.id
+                                );
+                                continue;
+                            }
+
+                            actions.extend(self.advance_from_round(w.round()));
+                        }
+                    } else {
+                        retained.insert(w);
+                    }
+                }
+                debug_assert!(self.buffer.is_empty());
+                self.buffer = retained;
                 self.buffer.insert(vertex);
                 self.metrics.vertex_buffer.set(self.buffer.len())
             }
@@ -231,7 +319,11 @@ impl Consensus {
                 // the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
-                for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
+                for w in buffer.into_iter() {
+                    if w.round() > vertex.round() {
+                        retained.insert(w);
+                        continue;
+                    }
                     if let Ok(b) = self.try_to_add_to_dag(&w) {
                         actions.extend(b)
                     } else {
@@ -244,13 +336,18 @@ impl Consensus {
                 self.metrics.vertex_buffer.set(self.buffer.len());
 
                 // Check if we can advance to the next round.
-
                 if vertex.round() < self.round {
                     return actions;
                 }
 
-                if (self.dag.vertex_count(vertex.round()) as u64)
-                    < self.committee.quorum_size().get()
+                if self.dag.vertex_count(vertex.round())
+                    < self.committee.quorum_size().get() as usize
+                {
+                    return actions;
+                }
+
+                if *vertex.round() == 1
+                    && self.dag.vertex_count(vertex.round()) != self.committee.size().get()
                 {
                     return actions;
                 }
@@ -352,6 +449,8 @@ impl Consensus {
             .entry(round)
             .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
 
+        let votes = accum.votes();
+
         if let Err(e) = accum.add(e) {
             warn!(
                 node  = %self.id,
@@ -369,13 +468,13 @@ impl Consensus {
         }
 
         // Have we received more than f timeouts?
-        if accum.votes() as u64 == self.committee.threshold().get() + 1 {
+        if votes != accum.votes() && accum.votes() as u64 == self.committee.threshold().get() + 1 {
             let e = Envelope::signed(Timeout::new(round), &self.keypair);
             actions.push(Action::SendTimeout(e))
         }
 
         // Have we received 2f + 1 timeouts?
-        if accum.votes() as u64 == self.committee.quorum_size().get() {
+        if votes != accum.votes() && accum.votes() as u64 == self.committee.quorum_size().get() {
             if let Some(cert) = accum.certificate() {
                 actions.push(Action::SendTimeoutCert(cert.clone()))
             } else {
@@ -443,6 +542,12 @@ impl Consensus {
 
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
+            tracing::error!(
+                "success advance_from_round: r: {}, id: {}, leader: {}",
+                round,
+                self.id,
+                *self.public_key() == self.committee.leader(round)
+            );
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);
@@ -463,6 +568,7 @@ impl Consensus {
             .and_then(|t| t.certificate())
             .cloned()
         else {
+            tracing::error!("no advance: id: {}, r: {}", self.id, round);
             return actions;
         };
 
@@ -532,7 +638,7 @@ impl Consensus {
         vround = %v.round())
     )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
-        self.dag.add(v.clone());
+        // self.dag.add(v.clone());
         self.metrics.dag_depth.set(self.dag.depth());
         let mut actions = Vec::new();
         let e = Envelope::signed(v, &self.keypair);
@@ -574,12 +680,12 @@ impl Consensus {
             .edges()
             .all(|w| self.dag.vertex(v.round() - 1, w).is_some())
         {
-            debug!(
-                node   = %self.id,
-                round  = %self.round,
-                vround = %v.round(),
-                "not all edges are resolved in dag"
-            );
+            // debug!(
+            //     node   = %self.id,
+            //     round  = %self.round,
+            //     vround = %v.round(),
+            //     "not all edges are resolved in dag"
+            // );
             return Err(());
         }
 
@@ -628,6 +734,11 @@ impl Consensus {
         vround = %v.round())
     )]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
+        if v.round() <= self.committed_round {
+            // tracing::error!("here: vr: {}, cr: {}, id: {}", v.round(), self.committed_round, self.id);
+            return Vec::new();
+        }
+
         self.leader_stack.push(v.clone());
         for r in (*self.committed_round + 1..*v.round()).rev() {
             let Some(l) = self.leader_vertex(RoundNumber::new(r)).cloned() else {
@@ -683,11 +794,11 @@ impl Consensus {
     /// Cleanup the DAG and other collections.
     #[instrument(level = "trace", skip(self), fields(node = %self.id, round = %self.round))]
     fn gc(&mut self, committed: RoundNumber) {
-        if committed < 2.into() {
+        if committed < COMMITTED_ALLOWED.into() {
             return;
         }
 
-        let r = committed - 2;
+        let r = committed - COMMITTED_ALLOWED;
         self.dag.remove(r);
         self.delivered.retain(|v| v.round() >= r);
         self.buffer.retain(|v| v.round() >= r);
@@ -727,7 +838,9 @@ impl Consensus {
             return false;
         }
 
-        if self.committed_round > 2.into() && v.round() < self.committed_round - 2 {
+        if self.committed_round > COMMITTED_ALLOWED.into()
+            && v.round() < self.committed_round - COMMITTED_ALLOWED
+        {
             debug!(
                 node   = %self.id,
                 round  = %self.round,
