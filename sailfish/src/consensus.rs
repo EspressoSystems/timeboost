@@ -234,7 +234,7 @@ impl Consensus {
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
                 for w in buffer.into_iter() {
-                    if w.round() > vertex.round() {
+                    if w.round() >= vertex.round() {
                         retained.insert(w);
                         continue;
                     }
@@ -342,12 +342,6 @@ impl Consensus {
 
                 if self.dag.vertex_count(vertex.round())
                     < self.committee.quorum_size().get() as usize
-                {
-                    return actions;
-                }
-
-                if *vertex.round() == 1
-                    && self.dag.vertex_count(vertex.round()) != self.committee.size().get()
                 {
                     return actions;
                 }

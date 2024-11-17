@@ -104,8 +104,6 @@ impl<C: Comm> Coordinator<C> {
     pub async fn go(mut self) -> ShutdownToken {
         let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
-        tracing::info!(id = %self.id, "ready, sleeping");
-        sleep(Duration::from_secs(10)).await;
         tracing::info!(id = %self.id, "Starting coordinator");
         // TODO: Restart behavior
         for action in self.consensus.go(Dag::new(self.consensus.committee_size())) {
