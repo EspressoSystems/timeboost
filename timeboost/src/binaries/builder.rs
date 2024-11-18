@@ -89,6 +89,7 @@ async fn main() -> Result<ShutdownToken> {
         id,
         cli.port,
         cli.rpc_port,
+        cli.metrics_port,
         committee.bootstrap_nodes().into_iter().collect(),
         committee.staked_nodes(),
         keypair,

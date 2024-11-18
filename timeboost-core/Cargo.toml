@@ -28,7 +28,7 @@ tracing-subscriber = { workspace = true }
 prometheus = { workspace = true }
 tide-disco = { workspace = true }
 itertools = "0.12.1"
-
+timeboost-networking = { path = "../timeboost-networking" }
 
 [dev-dependencies]
 quickcheck = "1"

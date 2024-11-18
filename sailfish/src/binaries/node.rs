@@ -4,7 +4,7 @@ use hotshot::traits::implementations::derive_libp2p_multiaddr;
 use hotshot_types::traits::metrics::NoMetrics;
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
-use libp2p_networking::reexport::Multiaddr;
+use multiaddr::Multiaddr;
 use sailfish::sailfish;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     let (sf_app_tx, _) = channel(1);
     let (_, tb_app_rx) = channel(1);
     let (shutdown_tx, shutdown_rx) = async_channel::bounded(1);
-    let metrics = Arc::new(ConsensusMetrics::new(NoMetrics));
+    let metrics = Arc::new(ConsensusMetrics::new(&NoMetrics));
 
     sailfish::run_sailfish(
         cfg.id,

@@ -5,27 +5,13 @@ use crate::coordinator::CoordinatorAuditEvent;
 
 use anyhow::Result;
 use async_lock::RwLock;
-use hotshot::{
-    traits::{
-        implementations::{
-            derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork,
-        },
-        NetworkNodeConfigBuilder,
-    },
-    types::SignatureKey,
-};
+use hotshot::types::SignatureKey;
 use hotshot_types::{
     network::{Libp2pConfig, NetworkConfig},
     PeerConfig,
 };
 use libp2p_identity::PeerId;
-use libp2p_networking::{
-    network::{
-        behaviours::dht::record::{Namespace, RecordKey, RecordValue},
-        NetworkNodeConfig,
-    },
-    reexport::Multiaddr,
-};
+use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use std::{process::Termination, time::Duration};
 use timeboost_core::{
@@ -36,6 +22,11 @@ use timeboost_core::{
         metrics::ConsensusMetrics,
         Keypair, NodeId, PublicKey,
     },
+};
+use timeboost_networking::network::{
+    behaviours::dht::record::{Namespace, RecordKey, RecordValue},
+    client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
+    NetworkNodeConfig, NetworkNodeConfigBuilder,
 };
 use tokio::signal;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -303,8 +294,6 @@ pub async fn run_sailfish(
     let n = s
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
-
-    // let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     s.go(
         n,

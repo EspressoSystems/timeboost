@@ -1,5 +1,11 @@
 [workspace]
-members = ["tests", "sailfish", "timeboost", "timeboost-core"]
+members = [
+    "tests",
+    "sailfish",
+    "timeboost",
+    "timeboost-core",
+    "timeboost-networking",
+]
 resolver = "2"
 
 [workspace.package]
@@ -50,7 +56,6 @@ jf-signature = { version = "0.1.0", git = "https://github.com/EspressoSystems/je
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79", default-features = false }
 multiaddr = "0.18.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"

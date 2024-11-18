@@ -1,15 +1,14 @@
 use std::{borrow::Cow, sync::Arc};
 
-use async_lock::RwLock;
 use futures::FutureExt;
 use tide_disco::{error::ServerError, App};
-use timeboost_core::types::metrics::prometheus::Prometheus;
+use timeboost_core::types::metrics::prometheus::PrometheusMetrics;
 use toml::toml;
 use vbs::version::StaticVersionType;
 
 pub async fn serve_metrics_api<ApiVer: StaticVersionType + 'static>(
     port: u16,
-    metrics: Arc<RwLock<Prometheus>>,
+    metrics: Arc<PrometheusMetrics>,
 ) {
     let api = toml! {
         [route.metrics]

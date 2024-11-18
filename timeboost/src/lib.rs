@@ -5,13 +5,14 @@ use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
 use tracing::{error, info, instrument, warn};
+use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
 use sailfish::sailfish::{run_sailfish, ShutdownToken};
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
-    metrics::{prometheus::Prometheus, ConsensusMetrics},
+    metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -25,6 +26,7 @@ pub struct Timeboost {
     id: NodeId,
 
     /// The port to bind timeboost to.
+    #[allow(dead_code)]
     port: u16,
 
     /// The port to bind the RPC server to.
@@ -41,6 +43,10 @@ pub struct Timeboost {
 
     /// The receiver for the shutdown signal.
     shutdown_rx: async_channel::Receiver<ShutdownToken>,
+
+    /// The metrics for the timeboost node.
+    #[allow(dead_code)]
+    metrics: Arc<ConsensusMetrics>,
 }
 
 impl Timeboost {
@@ -52,6 +58,7 @@ impl Timeboost {
         app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
         shutdown_rx: async_channel::Receiver<ShutdownToken>,
+        metrics: Arc<ConsensusMetrics>,
     ) -> Self {
         Self {
             id,
@@ -61,11 +68,12 @@ impl Timeboost {
             app_rx,
             app_tx,
             shutdown_rx,
+            metrics,
         }
     }
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self) -> Result<ShutdownToken> {
+    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<ShutdownToken> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
@@ -76,7 +84,9 @@ impl Timeboost {
             }
         });
 
-        tokio::spawn(async move { serve_metrics_api(self.metrics_port, metrics).await });
+        tokio::spawn(async move {
+            serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
+        });
 
         loop {
             tokio::select! {
@@ -110,7 +120,8 @@ pub async fn run_timeboost(
 ) -> Result<ShutdownToken> {
     info!("Starting timeboost");
 
-    let metrics = Arc::new(ConsensusMetrics::new(Prometheus::default()));
+    let prom = Arc::new(PrometheusMetrics::default());
+    let metrics = Arc::new(ConsensusMetrics::new(prom.as_ref()));
 
     // The application layer will broadcast events to the timeboost node.
     let (sf_app_tx, sf_app_rx) = channel(100);
@@ -122,6 +133,7 @@ pub async fn run_timeboost(
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
     let sf_shutdown_rx = shutdown_rx.clone();
+    let metrics_clone = metrics.clone();
     tokio::spawn(async move {
         run_sailfish(
             id,
@@ -131,7 +143,7 @@ pub async fn run_timeboost(
             bind_address,
             sf_app_tx,
             tb_app_rx,
-            metrics,
+            metrics_clone,
             shutdown_tx,
             sf_shutdown_rx,
         )
@@ -147,8 +159,9 @@ pub async fn run_timeboost(
         sf_app_rx,
         tb_app_tx,
         shutdown_rx,
+        metrics,
     );
 
     info!("Timeboost is running.");
-    timeboost.go().await
+    timeboost.go(prom).await
 }

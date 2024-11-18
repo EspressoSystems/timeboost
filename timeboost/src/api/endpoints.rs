@@ -5,7 +5,6 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
-use prometheus::Registry;
 use tide_disco::{error::ServerError, Api, App, StatusCode, Url};
 use timeboost_core::types::{
     event::{TimeboostEventType, TimeboostStatusEvent},

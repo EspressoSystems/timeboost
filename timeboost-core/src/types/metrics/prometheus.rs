@@ -86,20 +86,20 @@ impl From<prometheus::Error> for PrometheusError {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Prometheus {
+pub struct PrometheusMetrics {
     registry: prometheus::Registry,
     historgrams: Arc<RwLock<HashMap<String, TimeboostHistogram>>>,
     gauges: Arc<RwLock<HashMap<String, TimeboostGauge>>>,
     counters: Arc<RwLock<HashMap<String, TimeboostCounter>>>,
 }
 
-impl Prometheus {
+impl PrometheusMetrics {
     fn metric_opts(&self, name: String, unit_label: Option<String>) -> prometheus::Opts {
         let help = unit_label.unwrap_or_else(|| name.clone());
         prometheus::Opts::new(name, help)
     }
 }
-impl tide_disco::metrics::Metrics for Prometheus {
+impl tide_disco::metrics::Metrics for PrometheusMetrics {
     type Error = PrometheusError;
 
     fn export(&self) -> Result<String, Self::Error> {
@@ -117,7 +117,7 @@ impl tide_disco::metrics::Metrics for Prometheus {
 }
 
 #[async_trait]
-impl ReadState for Prometheus {
+impl ReadState for PrometheusMetrics {
     /// The type of state which this type allows a caller to read.
     type State = Self;
 
@@ -129,7 +129,7 @@ impl ReadState for Prometheus {
     }
 }
 
-impl Metrics for Prometheus {
+impl Metrics for PrometheusMetrics {
     fn create_counter(&self, name: String, unit_label: Option<String>) -> Box<dyn Counter> {
         let opts = self.metric_opts(name.clone(), unit_label);
         let counter = TimeboostCounter::new(&self.registry, opts);

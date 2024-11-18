@@ -1,11 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use async_lock::RwLock;
-use hotshot::traits::{
-    implementations::{derive_libp2p_multiaddr, Libp2pNetwork},
-    NetworkNodeConfigBuilder,
-};
-use hotshot_types::traits::metrics::NoMetrics;
 use portpicker::pick_unused_port;
 use sailfish::{
     coordinator::CoordinatorAuditEvent,
@@ -16,7 +11,17 @@ use timeboost_core::types::{
     metrics::ConsensusMetrics,
     PublicKey,
 };
-use tokio::{sync::mpsc, task::JoinSet};
+use timeboost_networking::network::{
+    client::{derive_libp2p_multiaddr, Libp2pNetwork},
+    NetworkNodeConfigBuilder,
+};
+use tokio::{
+    sync::{
+        mpsc,
+        oneshot::{self, Receiver, Sender},
+    },
+    task::JoinSet,
+};
 
 use crate::Group;
 
