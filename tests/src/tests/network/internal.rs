@@ -93,7 +93,7 @@ impl TestableNetwork for MemoryNetworkTest {
                 shutdown_rx,
                 sf_app_tx,
                 tb_app_rx,
-                Arc::new(ConsensusMetrics::new(NoMetrics)),
+                Arc::new(ConsensusMetrics::new(&NoMetrics)),
                 Some(Arc::clone(&self.event_logs[&i])),
             );
 

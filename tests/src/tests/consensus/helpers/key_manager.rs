@@ -38,7 +38,7 @@ impl KeyManager {
                 .map(|kpair| *kpair.public_key())
                 .collect(),
         );
-        let metrics = Arc::new(ConsensusMetrics::new(NoMetrics));
+        let metrics = Arc::new(ConsensusMetrics::new(&NoMetrics));
         self.keys
             .iter()
             .map(|(id, kpair)| {
