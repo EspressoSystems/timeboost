@@ -13,6 +13,9 @@ mod node;
 /// Alternative Libp2p transport implementations
 pub mod transport;
 
+/// The client side of the network
+pub mod client;
+
 use std::{collections::HashSet, fmt::Debug};
 
 use futures::channel::oneshot::Sender;

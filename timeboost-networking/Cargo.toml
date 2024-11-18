@@ -9,6 +9,7 @@ anyhow = { workspace = true }
 async-lock = { workspace = true }
 blake3 = { workspace = true }
 bincode = { workspace = true }
+bimap = "0.6"
 custom_debug = "0.5"
 derive_builder = "0.20"
 delegate = "0.13"

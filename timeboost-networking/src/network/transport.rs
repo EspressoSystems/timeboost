@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Result as AnyhowResult};
-use async_compatibility_layer::art::async_timeout;
 use futures::{future::poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{
@@ -157,7 +156,7 @@ impl<T: Transport, S: SignatureKey, C: StreamMuxer + Unpin> StakeTableAuthentica
             let mut stream = original_future.await?;
 
             // Time out the authentication block
-            async_timeout(AUTH_HANDSHAKE_TIMEOUT, async {
+            tokio::time::timeout(AUTH_HANDSHAKE_TIMEOUT, async {
                 // Open a substream for the handshake.
                 // The handshake order depends on whether the connection is incoming or outgoing.
                 let mut substream = if outgoing {

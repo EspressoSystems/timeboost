@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use futures::{channel::mpsc, select, FutureExt, SinkExt, StreamExt};
+use futures::{channel::mpsc, SinkExt, StreamExt};
 use hotshot_types::{
     constants::KAD_DEFAULT_REPUB_INTERVAL_SEC, traits::signature_key::SignatureKey,
 };
@@ -45,7 +45,7 @@ use libp2p::{
 use libp2p_identity::PeerId;
 use rand::{prelude::SliceRandom, thread_rng};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 pub use self::{
     config::{
@@ -76,6 +76,17 @@ pub const ESTABLISHED_LIMIT: NonZeroU32 =
     unsafe { NonZeroU32::new_unchecked(ESTABLISHED_LIMIT_UNWR) };
 /// Number of connections to a single peer before logging an error
 pub const ESTABLISHED_LIMIT_UNWR: u32 = 10;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UnboundedRecvError;
+
+impl std::fmt::Display for UnboundedRecvError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, stringify!(UnboundedRecvError))
+    }
+}
+
+impl std::error::Error for UnboundedRecvError {}
 
 /// Network definition
 #[derive(custom_debug::Debug)]
@@ -368,11 +379,11 @@ impl<K: SignatureKey + 'static> NetworkNode<K> {
     #[instrument(skip(self))]
     async fn handle_client_requests(
         &mut self,
-        msg: Option<ClientRequest>,
+        msg: Result<ClientRequest, UnboundedRecvError>,
     ) -> Result<bool, NetworkError> {
         let behaviour = self.swarm.behaviour_mut();
         match msg {
-            Some(msg) => {
+            Ok(msg) => {
                 match msg {
                     ClientRequest::BeginBootstrap => {
                         debug!("Beginning Libp2p bootstrap");
@@ -482,8 +493,8 @@ impl<K: SignatureKey + 'static> NetworkNode<K> {
                     }
                 }
             }
-            None => {
-                error!("Error receiving msg in main behavior loop");
+            Err(e) => {
+                error!("Error receiving msg in main behaviour loop: {:?}", e);
             }
         }
         Ok(false)
@@ -720,33 +731,27 @@ impl<K: SignatureKey + 'static> NetworkNode<K> {
         self.dht_handler.set_bootstrap_sender(bootstrap_tx.clone());
 
         DHTBootstrapTask::run(bootstrap_rx, s_input.clone());
-        tokio::spawn(
-            async move {
-                let mut fuse = s_output.recv().boxed().fuse();
-                loop {
-                    select! {
-                        event = self.swarm.next() => {
-                            debug!("peerid {:?}\t\thandling maybe event {:?}", self.peer_id, event);
-                            if let Some(event) = event {
-                                debug!("peerid {:?}\t\thandling event {:?}", self.peer_id, event);
-                                self.handle_swarm_events(event, &r_input).await?;
-                            }
-                        },
-                        msg = fuse => {
-                            debug!("peerid {:?}\t\thandling msg {:?}", self.peer_id, msg);
-                            let shutdown = self.handle_client_requests(msg).await?;
-                            if shutdown {
-                                let _ = bootstrap_tx.send(InputEvent::ShutdownBootstrap).await;
-                                break
-                            }
-                            fuse = s_output.recv().boxed().fuse();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    event = self.swarm.next() => {
+                        if let Some(event) = event {
+                            debug!(%self.peer_id, "handling event {:?}", event);
+                            self.handle_swarm_events(event, &r_input).await?;
+                        }
+                    }
+                    msg = s_output.recv() => {
+                        debug!(%self.peer_id, "handling msg {:?}", msg);
+                        let shutdown = self.handle_client_requests(msg.ok_or(UnboundedRecvError)).await?;
+                        if shutdown {
+                            let _ = bootstrap_tx.send(InputEvent::ShutdownBootstrap).await;
+                            break
                         }
                     }
                 }
-                Ok::<(), NetworkError>(())
             }
-            .instrument(info_span!("Libp2p NetworkBehaviour Handler")),
-        );
+            Ok::<(), NetworkError>(())
+        });
         Ok((s_input, r_output))
     }
 
