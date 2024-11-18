@@ -115,9 +115,7 @@ impl DMBehaviour {
             }
         }
     }
-}
 
-impl DMBehaviour {
     /// Add a direct request for a given peer
     pub fn add_direct_request(&mut self, mut req: DMRequest, request_id: OutboundRequestId) {
         if req.retry_count == 0 {
