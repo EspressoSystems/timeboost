@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
-use libp2p_networking::reexport::Multiaddr;
+use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::PublicKey;
 

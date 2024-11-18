@@ -2,7 +2,7 @@ use std::path::Path;
 
 use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
-use libp2p_networking::reexport::Multiaddr;
+use multiaddr::Multiaddr;
 use timeboost_core::types::PublicKey;
 
 use crate::config::Config;

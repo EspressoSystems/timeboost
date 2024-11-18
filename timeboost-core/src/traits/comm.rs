@@ -1,12 +1,11 @@
 use std::error::Error;
 
-use async_trait::async_trait;
-use hotshot::traits::{implementations::Libp2pNetwork, NetworkError};
-use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
-
 use crate::types::message::Message;
 use crate::types::PublicKey;
-
+use async_trait::async_trait;
+use hotshot::traits::NetworkError;
+use hotshot_types::traits::network::Topic;
+use timeboost_networking::network::client::Libp2pNetwork;
 #[async_trait]
 pub trait Comm {
     type Err: Error + Send + Sync + 'static;
@@ -43,8 +42,7 @@ impl Comm for Libp2pNetwork<PublicKey> {
         let bytes =
             bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
-        self.broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
-            .await
+        self.broadcast_message(bytes, Topic::Global).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message) -> Result<(), Self::Err> {
