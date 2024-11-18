@@ -238,7 +238,11 @@ impl Consensus {
                 // the DAG too:
                 let buffer = mem::take(&mut self.buffer);
                 let mut retained = HashSet::new();
-                for w in buffer.into_iter().filter(|w| w.round() <= vertex.round()) {
+                for w in buffer.into_iter() {
+                    if w.round() > vertex.round() {
+                        retained.insert(w);
+                        continue;
+                    }
                     if let Ok(b) = self.try_to_add_to_dag(&w) {
                         actions.extend(b)
                     } else {
@@ -365,6 +369,8 @@ impl Consensus {
             .entry(round)
             .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
 
+        let votes = accum.votes();
+
         if let Err(e) = accum.add(e) {
             warn!(
                 node  = %self.id,
@@ -382,13 +388,13 @@ impl Consensus {
         }
 
         // Have we received more than f timeouts?
-        if accum.votes() as u64 == self.committee.threshold().get() + 1 {
+        if votes != accum.votes() && accum.votes() as u64 == self.committee.threshold().get() + 1 {
             let e = Envelope::signed(Timeout::new(round), &self.keypair);
             actions.push(Action::SendTimeout(e))
         }
 
         // Have we received 2f + 1 timeouts?
-        if accum.votes() as u64 == self.committee.quorum_size().get() {
+        if votes != accum.votes() && accum.votes() as u64 == self.committee.quorum_size().get() {
             if let Some(cert) = accum.certificate() {
                 actions.push(Action::SendTimeoutCert(cert.clone()))
             } else {
