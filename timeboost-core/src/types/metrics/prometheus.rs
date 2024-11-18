@@ -125,7 +125,7 @@ impl ReadState for PrometheusMetrics {
         &self,
         op: impl Send + for<'a> FnOnce(&'a Self::State) -> BoxFuture<'a, T> + 'async_trait,
     ) -> T {
-        op(&self).await
+        op(self).await
     }
 }
 

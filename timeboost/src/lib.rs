@@ -50,6 +50,7 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: NodeId,
         port: u16,
@@ -108,6 +109,7 @@ impl Timeboost {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_timeboost(
     id: NodeId,
     port: u16,
