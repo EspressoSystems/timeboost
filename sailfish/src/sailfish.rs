@@ -12,13 +12,6 @@ use hotshot_types::{
 };
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
-// use libp2p_networking::{
-//     network::{
-//         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
-//         NetworkNodeConfig,
-//     },
-//     reexport::Multiaddr,
-// };
 use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
