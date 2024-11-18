@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+timeboost-networking = { path = "../timeboost-networking" }
 
 [dev-dependencies]
 quickcheck = "1"

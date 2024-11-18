@@ -35,17 +35,14 @@ use crate::{
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
-use futures::future::join_all;
 use hotshot_types::{
     boxed_sync,
     constants::LOOK_AHEAD,
     data::ViewNumber,
     network::NetworkConfig,
     traits::{
-        election::Membership,
         metrics::{Counter, Gauge, Metrics, NoMetrics},
         network::{NetworkError, Topic},
-        node_implementation::{ConsensusTime, NodeType},
         signature_key::SignatureKey,
     },
     BoxSyncFuture,
@@ -374,7 +371,6 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     /// # Panics
     ///
     /// This will panic if there are less than 5 bootstrap nodes
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         metrics: Libp2pMetricsValue,
         config: NetworkNodeConfig<K>,
@@ -518,49 +514,6 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
         });
     }
 
-    /// Handle events
-    async fn handle_recvd_events(
-        &self,
-        msg: NetworkEvent,
-        sender: &UnboundedSender<Vec<u8>>,
-    ) -> Result<(), NetworkError> {
-        match msg {
-            GossipMsg(msg) => {
-                sender.send(msg).map_err(|err| {
-                    NetworkError::ChannelSendError(format!("failed to send gossip message: {err}"))
-                })?;
-            }
-            DirectRequest(msg, _pid, chan) => {
-                sender.send(msg).map_err(|err| {
-                    NetworkError::ChannelSendError(format!(
-                        "failed to send direct request message: {err}"
-                    ))
-                })?;
-                if self
-                    .handle
-                    .direct_response(
-                        chan,
-                        &bincode::serialize(&Empty { byte: 0u8 }).map_err(|e| {
-                            NetworkError::FailedToSerialize(format!(
-                                "failed to serialize acknowledgement: {e}"
-                            ))
-                        })?,
-                    )
-                    .await
-                    .is_err()
-                {
-                    error!("failed to ack!");
-                };
-            }
-            DirectResponse(_msg, _) => {}
-            NetworkEvent::IsBootstrapped => {
-                error!("handle_recvd_events received `NetworkEvent::IsBootstrapped`, which should be impossible.");
-            }
-            NetworkEvent::ConnectedPeersUpdate(_) => {}
-        }
-        Ok::<(), NetworkError>(())
-    }
-
     /// task to propagate messages to handlers
     /// terminates on shut down of network
     fn handle_event_generator(
@@ -643,7 +596,7 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     }
 
     #[instrument(name = "Libp2pNetwork::shut_down", skip_all)]
-    fn shut_down<'a, 'b>(&'a self) -> BoxSyncFuture<'b, ()>
+    pub fn shut_down<'a, 'b>(&'a self) -> BoxSyncFuture<'b, ()>
     where
         'a: 'b,
         Self: 'b,
@@ -657,7 +610,11 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     }
 
     #[instrument(name = "Libp2pNetwork::broadcast_message", skip_all)]
-    async fn broadcast_message(&self, message: Vec<u8>, topic: Topic) -> Result<(), NetworkError> {
+    pub async fn broadcast_message(
+        &self,
+        message: Vec<u8>,
+        topic: Topic,
+    ) -> Result<(), NetworkError> {
         // If we're not ready, return an error
         if !self.is_ready() {
             self.metrics.num_failed_messages.add(1);
@@ -682,40 +639,8 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
         Ok(())
     }
 
-    #[instrument(name = "Libp2pNetwork::da_broadcast_message", skip_all)]
-    async fn da_broadcast_message(
-        &self,
-        message: Vec<u8>,
-        recipients: Vec<K>,
-    ) -> Result<(), NetworkError> {
-        // If we're not ready, return an error
-        if !self.is_ready() {
-            self.metrics.num_failed_messages.add(1);
-            return Err(NetworkError::NotReadyYet);
-        };
-
-        let future_results = recipients
-            .into_iter()
-            .map(|r| self.direct_message(message.clone(), r));
-        let results = join_all(future_results).await;
-
-        let errors: Vec<_> = results
-            .into_iter()
-            .filter_map(|r| match r {
-                Err(err) => Some(err),
-                _ => None,
-            })
-            .collect();
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(NetworkError::Multiple(errors))
-        }
-    }
-
     #[instrument(name = "Libp2pNetwork::direct_message", skip_all)]
-    async fn direct_message(&self, message: Vec<u8>, recipient: K) -> Result<(), NetworkError> {
+    pub async fn direct_message(&self, message: Vec<u8>, recipient: K) -> Result<(), NetworkError> {
         // If we're not ready, return an error
         if !self.is_ready() {
             self.metrics.num_failed_messages.add(1);
@@ -759,14 +684,14 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     /// # Errors
     /// If there is a network-related failure.
     #[instrument(name = "Libp2pNetwork::recv_message", skip_all)]
-    async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {
+    pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {
         let result = self.receiver.recv().await.ok_or(NetworkError::ShutDown)?;
 
         Ok(result)
     }
 
     #[instrument(name = "Libp2pNetwork::queue_node_lookup", skip_all)]
-    fn queue_node_lookup(
+    pub fn queue_node_lookup(
         &self,
         view_number: ViewNumber,
         pk: K,
@@ -774,38 +699,30 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
         self.node_lookup_send.try_send(Some((view_number, pk)))
     }
 
-    /// The libp2p view update is a special operation intrinsic to its internal behavior.
-    ///
-    /// Libp2p needs to do a lookup because a libp2p address is not releated to
-    /// hotshot keys. So in libp2p we store a mapping of HotShot key to libp2p address
-    /// in a distributed hash table.
-    ///
-    /// This means to directly message someone on libp2p we need to lookup in the hash
-    /// table what their libp2p address is, using their HotShot public key as the key.
-    ///
-    /// So the logic with libp2p is to prefetch upcomming leaders libp2p address to
-    /// save time when we later need to direct message the leader our vote. Hence the
-    /// use of the future view and leader to queue the lookups.
-    async fn update_view<'a, TYPES>(&'a self, view: u64, epoch: u64, membership: &TYPES::Membership)
-    where
-        TYPES: NodeType<SignatureKey = K> + 'a,
-    {
-        let future_view = <TYPES as NodeType>::View::new(view) + LOOK_AHEAD;
-        let epoch = <TYPES as NodeType>::Epoch::new(epoch);
-        let future_leader = match membership.leader(future_view, epoch) {
-            Ok(l) => l,
-            Err(e) => {
-                return tracing::info!(
-                    "Failed to calculate leader for view {:?}: {e}",
-                    future_view
-                );
-            }
-        };
+    // pub async fn update_view<'a, TYPES>(
+    //     &'a self,
+    //     view: u64,
+    //     epoch: u64,
+    //     membership: &TYPES::Membership,
+    // ) where
+    //     TYPES: NodeType<SignatureKey = K> + 'a,
+    // {
+    //     let future_view = <TYPES as NodeType>::View::new(view) + LOOK_AHEAD;
+    //     let epoch = <TYPES as NodeType>::Epoch::new(epoch);
+    //     let future_leader = match membership.leader(future_view, epoch) {
+    //         Ok(l) => l,
+    //         Err(e) => {
+    //             return tracing::info!(
+    //                 "Failed to calculate leader for view {:?}: {e}",
+    //                 future_view
+    //             );
+    //         }
+    //     };
 
-        let _ = self
-            .queue_node_lookup(ViewNumber::new(*future_view), future_leader)
-            .map_err(|err| tracing::warn!("failed to process node lookup request: {err}"));
-    }
+    //     let _ = self
+    //         .queue_node_lookup(ViewNumber::new(*future_view), future_leader)
+    //         .map_err(|err| tracing::warn!("failed to process node lookup request: {err}"));
+    // }
 }
 
 #[cfg(test)]

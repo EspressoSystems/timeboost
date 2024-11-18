@@ -24,6 +24,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
 digest = { workspace = true }
 either = { workspace = true }
 ethereum-types = { workspace = true }
