@@ -17,11 +17,15 @@ struct Cli {
 
     /// The port of the node to build.
     #[clap(long)]
-    timeboost_port: u16,
+    port: u16,
 
     /// The port of the RPC API.
     #[clap(long)]
-    timeboost_rpc_port: u16,
+    rpc_port: u16,
+
+    /// The port of the metrics server.
+    #[clap(long)]
+    metrics_port: u16,
 }
 
 pub fn derive_libp2p_multiaddr(addr: &String) -> anyhow::Result<Multiaddr> {
@@ -79,12 +83,12 @@ async fn main() -> Result<ShutdownToken> {
 
     let keypair = Keypair::zero(id);
 
-    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.timeboost_port)).unwrap();
+    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
 
     run_timeboost(
         id,
-        cli.timeboost_port,
-        cli.timeboost_rpc_port,
+        cli.port,
+        cli.rpc_port,
         committee.bootstrap_nodes().into_iter().collect(),
         committee.staked_nodes(),
         keypair,

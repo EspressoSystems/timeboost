@@ -3,10 +3,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use async_trait::async_trait;
+use futures_core::future::BoxFuture;
 use hotshot_types::traits::metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
 use prometheus::{Encoder, TextEncoder};
+use tide_disco::method::ReadState;
 
 #[derive(Clone, Debug)]
 pub struct TimeboostCounter(prometheus::Counter);
@@ -110,6 +113,19 @@ impl tide_disco::metrics::Metrics for Prometheus {
                 err
             ))
         })
+    }
+}
+
+#[async_trait]
+impl ReadState for Prometheus {
+    /// The type of state which this type allows a caller to read.
+    type State = Self;
+
+    async fn read<T>(
+        &self,
+        op: impl Send + for<'a> FnOnce(&'a Self::State) -> BoxFuture<'a, T> + 'async_trait,
+    ) -> T {
+        op(&self).await
     }
 }
 

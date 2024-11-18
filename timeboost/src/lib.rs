@@ -1,10 +1,10 @@
 use anyhow::Result;
-use api::endpoints::TimeboostApiState;
+use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use async_channel::bounded;
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
@@ -21,11 +21,17 @@ pub mod config;
 pub mod contracts;
 
 pub struct Timeboost {
-    #[allow(unused)]
+    /// The ID of the node.
     id: NodeId,
 
-    #[allow(unused)]
-    timeboost_port: u16,
+    /// The port to bind timeboost to.
+    port: u16,
+
+    /// The port to bind the RPC server to.
+    rpc_port: u16,
+
+    /// The port to bind the metrics API server to.
+    metrics_port: u16,
 
     /// The receiver for events from the sailfish node.
     app_rx: Receiver<SailfishStatusEvent>,
@@ -41,29 +47,36 @@ impl Timeboost {
     pub fn new(
         id: NodeId,
         port: u16,
+        rpc_port: u16,
+        metrics_port: u16,
         app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
         shutdown_rx: async_channel::Receiver<ShutdownToken>,
     ) -> Self {
         Self {
             id,
-            timeboost_port: port,
+            port,
+            rpc_port,
+            metrics_port,
             app_rx,
             app_tx,
             shutdown_rx,
         }
     }
 
+    #[instrument(level = "info", skip_all, fields(node = %self.id))]
     pub async fn go(mut self) -> Result<ShutdownToken> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
-                .run(Url::parse(&format!("http://0.0.0.0:{}", self.timeboost_port)).unwrap())
+                .run(Url::parse(&format!("http://0.0.0.0:{}", self.rpc_port)).unwrap())
                 .await
             {
                 error!("Failed to run timeboost api: {}", e);
             }
         });
+
+        tokio::spawn(async move { serve_metrics_api(self.metrics_port, metrics).await });
 
         loop {
             tokio::select! {
@@ -87,8 +100,9 @@ impl Timeboost {
 
 pub async fn run_timeboost(
     id: NodeId,
-    _timeboost_port: u16,
-    timeboost_rpc_port: u16,
+    port: u16,
+    rpc_port: u16,
+    metrics_port: u16,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
@@ -125,7 +139,15 @@ pub async fn run_timeboost(
     });
 
     // Then, initialize and run the timeboost node.
-    let timeboost = Timeboost::new(id, timeboost_rpc_port, sf_app_rx, tb_app_tx, shutdown_rx);
+    let timeboost = Timeboost::new(
+        id,
+        port,
+        rpc_port,
+        metrics_port,
+        sf_app_rx,
+        tb_app_tx,
+        shutdown_rx,
+    );
 
     info!("Timeboost is running.");
     timeboost.go().await

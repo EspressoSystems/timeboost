@@ -8,10 +8,12 @@ services:
         "/app/timeboost",
         "--id",
         "0",
-        "--timeboost-port",
+        "--port",
         "8000",
-        "--timeboost-rpc-port",
+        "--rpc-port",
         "8800",
+        "--metrics-port",
+        "9000",
       ]
     networks:
       timeboost:
@@ -20,10 +22,11 @@ services:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8000
       - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8000:8000"
       - "8800:8800"
-
+      - "9000:9000"
   node1:
     image: timeboost:latest
     command:
@@ -31,10 +34,12 @@ services:
         "/app/timeboost",
         "--id",
         "1",
-        "--timeboost-port",
+        "--port",
         "8001",
-        "--timeboost-rpc-port",
+        "--rpc-port",
         "8801",
+        "--metrics-port",
+        "9001",
       ]
     networks:
       timeboost:
@@ -43,10 +48,11 @@ services:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8001
       - TIMEBOOST_RPC_PORT=8801
+      - TIMEBOOST_METRICS_PORT=9001
     ports:
       - "8001:8001"
       - "8801:8801"
-
+      - "9001:9001"
   node2:
     image: timeboost:latest
     command:
@@ -54,10 +60,12 @@ services:
         "/app/timeboost",
         "--id",
         "2",
-        "--timeboost-port",
+        "--port",
         "8002",
-        "--timeboost-rpc-port",
+        "--rpc-port",
         "8802",
+        "--metrics-port",
+        "9002",
       ]
     networks:
       timeboost:
@@ -66,10 +74,11 @@ services:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8002
       - TIMEBOOST_RPC_PORT=8802
+      - TIMEBOOST_METRICS_PORT=9002
     ports:
       - "8002:8002"
       - "8802:8802"
-
+      - "9002:9002"
   node3:
     image: timeboost:latest
     command:
@@ -77,10 +86,12 @@ services:
         "/app/timeboost",
         "--id",
         "3",
-        "--timeboost-port",
+        "--port",
         "8003",
-        "--timeboost-rpc-port",
+        "--rpc-port",
         "8803",
+        "--metrics-port",
+        "9003",
       ]
     networks:
       timeboost:
@@ -89,9 +100,11 @@ services:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8003
       - TIMEBOOST_RPC_PORT=8803
+      - TIMEBOOST_METRICS_PORT=9003
     ports:
       - "8003:8003"
       - "8803:8803"
+      - "9003:9003"
 
   node4:
     image: timeboost:latest
@@ -100,10 +113,12 @@ services:
         "/app/timeboost",
         "--id",
         "4",
-        "--timeboost-port",
+        "--port",
         "8004",
-        "--timeboost-rpc-port",
+        "--rpc-port",
         "8804",
+        "--metrics-port",
+        "9004",
       ]
     networks:
       timeboost:
@@ -112,9 +127,11 @@ services:
       - RUST_LOG=timeboost=debug,sailfish=debug
       - TIMEBOOST_PORT=8004
       - TIMEBOOST_RPC_PORT=8804
+      - TIMEBOOST_METRICS_PORT=9004
     ports:
       - "8004:8004"
       - "8804:8804"
+      - "9004:9004"
 
 networks:
   timeboost:

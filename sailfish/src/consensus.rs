@@ -344,7 +344,7 @@ impl Consensus {
                 r     = %round,
                 "ignoring old timeout"
             );
-            return actions;
+            // return actions;
         }
 
         let accum = self
