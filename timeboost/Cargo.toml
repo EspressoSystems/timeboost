@@ -14,7 +14,6 @@ futures = { workspace = true }
 committable = { workspace = true }
 hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
-libp2p-networking = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }

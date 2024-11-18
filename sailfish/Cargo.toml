@@ -38,7 +38,6 @@ jf-signature = { workspace = true }
 jf-utils = { workspace = true }
 jf-vid = { workspace = true }
 libp2p-identity = { workspace = true }
-libp2p-networking = { workspace = true }
 multiaddr = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
