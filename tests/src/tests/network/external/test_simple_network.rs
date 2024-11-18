@@ -12,7 +12,7 @@ use crate::{
     Group,
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_genesis() {
     logging::init_logging();
 
@@ -47,7 +47,7 @@ async fn test_simple_network_genesis() {
         .await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_round_progression() {
     logging::init_logging();
 
