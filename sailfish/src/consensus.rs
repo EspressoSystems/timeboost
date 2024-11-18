@@ -239,70 +239,24 @@ impl Consensus {
                         continue;
                     }
                     if let Ok(b) = self.try_to_add_to_dag(&w) {
+                        actions.extend(b);
+                        if w.round() < self.round {
+                            continue;
+                        }
                         tracing::error!(
-                            "added: vr: {}, wr: {}, self: {}, id: {}",
+                            "try advancing from: vr: {}, wr: {}, self: {}, id: {}",
                             vertex.round(),
                             w.round(),
                             self.round,
                             self.id
                         );
-                        actions.extend(b);
-                        if w.round() < self.round {
-                            tracing::error!(
-                                "less: vr: {}, wr: {}, self: {}, id: {}",
-                                vertex.round(),
-                                w.round(),
-                                self.round,
-                                self.id
-                            );
-                            if self.dag.vertex_count(w.round())
-                                < self.committee.quorum_size().get() as usize
-                            {
-                                tracing::error!(
-                                    "not enough: vr: {}, wr: {}, self: {}, id: {}",
-                                    vertex.round(),
-                                    w.round(),
-                                    self.round,
-                                    self.id
-                                );
-                                continue;
-                            }
-                            if self.leader_vertex(w.round()).is_some() {
-                                tracing::error!(
-                                    "catchup vertex: vr: {}, wr: {}, self: {}, id: {}",
-                                    vertex.round(),
-                                    w.round(),
-                                    self.round,
-                                    self.id
-                                );
-                                let r = w.round() + 1;
-                                let v = self.create_new_vertex(r);
-                                actions.extend(self.add_and_broadcast_vertex(v.0));
-                                continue;
-                            }
-                        } else {
-                            tracing::error!(
-                                "try advancing from 1: vr: {}, wr: {}, self: {}, id: {}",
-                                vertex.round(),
-                                w.round(),
-                                self.round,
-                                self.id
-                            );
-                            if self.dag.vertex_count(w.round())
-                                < self.committee.quorum_size().get() as usize
-                            {
-                                tracing::error!(
-                                    "not enough 1: vr: {}, wr: {}, self: {}, id: {}",
-                                    vertex.round(),
-                                    w.round(),
-                                    self.round,
-                                    self.id
-                                );
-                                continue;
-                            }
-
-                            actions.extend(self.advance_from_round(w.round()));
+                        if self.dag.vertex_count(w.round())
+                            < self.committee.quorum_size().get() as usize
+                        {
+                            continue;
                         }
+
+                        actions.extend(self.advance_from_round(w.round()));
                     } else {
                         retained.insert(w);
                     }
@@ -536,12 +490,14 @@ impl Consensus {
 
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
-            tracing::error!(
-                "success advance_from_round: r: {}, id: {}, leader: {}",
-                round,
-                self.id,
-                *self.public_key() == self.committee.leader(round)
-            );
+            if *round % 500 == 0 {
+                tracing::error!(
+                    "success advance_from_round: r: {}, id: {}, leader: {}",
+                    round,
+                    self.id,
+                    *self.public_key() == self.committee.leader(round)
+                );
+            }
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);
@@ -562,7 +518,9 @@ impl Consensus {
             .and_then(|t| t.certificate())
             .cloned()
         else {
-            tracing::error!("no advance: id: {}, r: {}", self.id, round);
+            if *round % 500 == 0 {
+                tracing::error!("no advance: id: {}, r: {}", self.id, round);
+            }
             return actions;
         };
 
