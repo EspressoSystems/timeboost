@@ -136,6 +136,18 @@ async fn test_timeout_round_and_no_vote() {
             panic!("Expected a vertex message, but got none or a different type.");
         }
     }
+
+    let mut i = 0;
+    let current_round = network.current_round();
+    while i < 50 {
+        network.process();
+        i += 1;
+    }
+
+    // verify progress can be made after timeout
+    for node_instrument in network.nodes.values() {
+        assert_eq!(node_instrument.node().round(), current_round + i);
+    }
 }
 
 #[tokio::test]
