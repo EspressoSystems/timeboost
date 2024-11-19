@@ -31,6 +31,35 @@ struct Cli {
     /// The base to use for the committee config.
     #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
     base: CommitteeBase,
+
+    #[cfg(feature = "until")]
+    #[clap(long)]
+    until: u64,
+}
+
+#[cfg(feature = "until")]
+async fn run_until(until: u64, shutdown_tx: watch::Sender<()>) {
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    loop {
+        if let Ok(resp) = reqwest::get("http://localhost:9000/status/metrics").await {
+            if let Ok(text) = resp.text().await {
+                let committed_round = text
+                    .lines()
+                    .find(|line| line.starts_with("committed_round"))
+                    .and_then(|line| line.split(' ').nth(1))
+                    .and_then(|num| num.parse::<u64>().ok())
+                    .unwrap_or(0);
+
+                if committed_round >= until {
+                    tracing::info!("watchdog completed, returning");
+                    shutdown_tx.send(()).expect(
+                        "the shutdown sender was dropped before the receiver could receive the token",
+                    );
+                    return;
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -50,6 +79,10 @@ async fn main() -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
+
+    #[cfg(feature = "until")]
+    tokio::spawn(run_until(cli.until, shutdown_tx.clone()));
+
     tokio::select! {
         _ = run_timeboost(
             id,
@@ -67,7 +100,7 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            return Ok(());
+            Ok(())
         }
     }
 }
