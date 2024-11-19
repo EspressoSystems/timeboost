@@ -55,8 +55,8 @@ pub struct Consensus {
     /// The set of vertices that we've received so far.
     buffer: HashSet<Vertex>,
 
-    /// The set of vertices that we've delivered so far.
-    delivered: HashSet<Vertex>,
+    /// The set of values we have delivered so far.
+    delivered: HashSet<(RoundNumber, PublicKey)>,
 
     /// The set of timeouts that we've received so far per round.
     timeouts: BTreeMap<RoundNumber, VoteAccumulator<Timeout>>,
@@ -102,6 +102,10 @@ impl Consensus {
 
     pub fn id(&self) -> NodeId {
         self.id
+    }
+
+    pub fn label(&self) -> Label {
+        self.label
     }
 
     pub fn public_key(&self) -> &PublicKey {
@@ -700,14 +704,14 @@ impl Consensus {
                 .vertex_range(RoundNumber::genesis() + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
-                if self.delivered.contains(to_deliver) {
+                let r = to_deliver.round();
+                let s = *to_deliver.source();
+                if self.delivered.contains(&(r, s)) {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                let r = to_deliver.round();
-                let s = *to_deliver.source();
                 actions.push(Action::Deliver(b, r, s));
-                self.delivered.insert(to_deliver.clone());
+                self.delivered.insert((r, s));
             }
         }
         self.gc(self.committed_round);
@@ -723,7 +727,7 @@ impl Consensus {
 
         let r = committed - 2;
         self.dag.remove(r);
-        self.delivered.retain(|v| v.round() >= r);
+        self.delivered.retain(|(x, _)| *x >= r);
         self.buffer.retain(|v| v.round() >= r);
 
         #[cfg(feature = "metrics")]
@@ -869,7 +873,7 @@ impl Consensus {
         &self.buffer
     }
 
-    pub fn delivered(&self) -> &HashSet<Vertex> {
+    pub fn delivered(&self) -> &HashSet<(RoundNumber, PublicKey)> {
         &self.delivered
     }
 
