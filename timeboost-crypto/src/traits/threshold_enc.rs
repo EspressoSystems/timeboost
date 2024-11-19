@@ -28,8 +28,7 @@ pub trait ThresholdEncScheme {
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
 
-    fn decrypt<R: Rng>(
-        rng: &mut R,
+    fn decrypt(
         pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,

@@ -13,6 +13,7 @@ ark-std = { workspace = true }
 ark-poly = { workspace = true }
 ark-ff = { workspace = true }
 anyhow = { workspace = true }
+nimue = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }

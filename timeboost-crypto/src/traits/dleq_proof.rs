@@ -9,16 +9,15 @@ pub trait DleqProofScheme {
 
     fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, DleqProofError>;
 
-    fn prove<R: Rng>(
-        rng: &mut R,
+    fn prove(
         pp: &Self::Parameters,
-        tuple: &Self::DleqTuple,
+        tuple: Self::DleqTuple,
         x: &Self::Scalar,
     ) -> Result<Self::Proof, DleqProofError>;
 
     fn verify(
         pp: &Self::Parameters,
-        tuple: &Self::DleqTuple,
+        tuple: Self::DleqTuple,
         proof: &Self::Proof,
     ) -> Result<(), DleqProofError>;
 }

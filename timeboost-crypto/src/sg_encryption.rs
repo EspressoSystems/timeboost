@@ -9,6 +9,7 @@ use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use ark_std::rand::Rng;
+use nimue::DuplexHash;
 use rand::rngs::OsRng;
 use sha2::{
     digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
@@ -20,7 +21,7 @@ use std::marker::PhantomData;
 use crate::{
     cp_proof::{CPParameters, ChaumPedersen, DleqTuple, Proof},
     traits::{
-        dleq_proof::{DleqProofError, DleqProofScheme},
+        dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
 };
@@ -29,9 +30,15 @@ use crate::{
 /// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
 const CORR_RATIO: usize = 3;
 
-pub struct ShoupGennaro<C: CurveGroup, H: Digest + Default + DynDigest + Clone> {
+pub struct ShoupGennaro<C, H, D>
+where
+    C: CurveGroup,
+    H: Digest + Default + DynDigest + Clone,
+    D: DuplexHash,
+{
     _group: PhantomData<C>,
     _hash: PhantomData<H>,
+    _duplex: PhantomData<D>,
 }
 
 pub struct Committee {
@@ -39,10 +46,11 @@ pub struct Committee {
     pub size: u32,
 }
 
-pub struct Parameters<C: CurveGroup, H: Digest> {
+pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
+    _hash: PhantomData<H>,
     pub committee: Committee,
     pub generator: C,
-    pub cp_params: CPParameters<C, H>,
+    pub cp_params: CPParameters<C, D>,
 }
 
 pub struct PublicKey<C: CurveGroup> {
@@ -62,22 +70,23 @@ pub struct Ciphertext<C: CurveGroup> {
     w_hat: C,
     e: Vec<u8>,
     nonce: Vec<u8>,
-    pi: Proof<C>,
+    pi: Proof,
 }
 pub struct DecShare<C: CurveGroup> {
     w: C,
     index: u32,
-    phi: Proof<C>,
+    phi: Proof,
 }
 
-impl<C, H> ThresholdEncScheme for ShoupGennaro<C, H>
+impl<C, H, D> ThresholdEncScheme for ShoupGennaro<C, H, D>
 where
     H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    D: DuplexHash,
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
     type Committee = Committee;
-    type Parameters = Parameters<C, H>;
+    type Parameters = Parameters<C, H, D>;
     type PublicKey = PublicKey<C>;
     type KeyShare = KeyShare<C>;
     type Plaintext = Plaintext;
@@ -89,12 +98,11 @@ where
         committee: Committee,
     ) -> Result<Self::Parameters, ThresholdEncError> {
         let generator: C = C::rand(rng);
-        let mut salt = [0; 32];
-        rng.fill_bytes(&mut salt);
         Ok(Parameters {
+            _hash: PhantomData::<H>,
             generator,
             committee,
-            cp_params: CPParameters::new(generator, salt),
+            cp_params: CPParameters::new(generator),
         })
     }
 
@@ -163,13 +171,13 @@ where
             )));
         }
         let e = e.unwrap();
-        let u_hat = hash_to_curve::<C, H>(v, e.clone(), pp)?;
+        let u_hat = hash_to_curve::<C, H, D>(v, e.clone(), pp)?;
 
         let w_hat = u_hat * beta;
 
         // Produce DLEQ proof for CCA security
-        let tuple = DleqTuple::new(pp.generator, v, pub_key.pk, w);
-        let pi = ChaumPedersen::<C, H>::prove(rng, &pp.cp_params, &tuple, &beta)
+        let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
+        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta)
             .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
 
         Ok(Ciphertext {
@@ -181,8 +189,7 @@ where
         })
     }
 
-    fn decrypt<R: Rng>(
-        rng: &mut R,
+    fn decrypt(
         pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
@@ -195,14 +202,14 @@ where
             ciphertext.pi.clone(),
         );
         let u_hat = hash_to_curve(v, e, pp).unwrap();
-        let tuple = DleqTuple::new(pp.generator, u_hat, v, w_hat);
-        let _ = ChaumPedersen::verify(&pp.cp_params, &tuple, &pi)
-            .map_err(|_| DleqProofError::ProofNotValid);
+        let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
+        ChaumPedersen::verify(&pp.cp_params, tuple, &pi)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
 
         let w = v * alpha;
         let u_i = pp.generator * alpha;
         let tuple = DleqTuple::new(pp.generator, u_i, v, w);
-        let phi = ChaumPedersen::<C, H>::prove(rng, &pp.cp_params, &tuple, &alpha)
+        let phi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &alpha)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Proof generation failed {:?}", e)))?;
 
         Ok(DecShare {
@@ -240,16 +247,16 @@ where
         let pk_comb = pub_key.pk_comb.clone();
 
         // Verify DLEQ proofs
-        let _ = dec_shares
+        dec_shares
             .iter()
             .map(|share| {
                 let (w, phi) = (share.w, share.phi.clone());
                 let u = pk_comb[share.index as usize];
                 let tuple = DleqTuple::new(pp.generator, u, v, w);
-                ChaumPedersen::verify(&pp.cp_params, &tuple, &phi)
+                ChaumPedersen::verify(&pp.cp_params, tuple, &phi)
             })
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| DleqProofError::ProofNotValid);
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
 
         // Colllect eval points for decryption shares
         let x = dec_shares
@@ -297,10 +304,15 @@ where
 
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C, H>(v: C, e: Vec<u8>, pp: &Parameters<C, H>) -> Result<C, ThresholdEncError>
+fn hash_to_curve<C, H, D>(
+    v: C,
+    e: Vec<u8>,
+    pp: &Parameters<C, H, D>,
+) -> Result<C, ThresholdEncError>
 where
     C: CurveGroup,
     H: Digest + Default + Clone + FixedOutputReset + 'static,
+    D: DuplexHash,
 {
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
@@ -336,40 +348,36 @@ mod test {
     use ark_bn254::G1Projective;
 
     use ark_std::test_rng;
+    use nimue::hash::legacy::DigestBridge;
     use sha2::Sha256;
 
     #[test]
     fn test_shoup_gennaro_encryption() {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
+        type G = G1Projective;
+        type H = Sha256;
+        type D = DigestBridge<H>;
 
+        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes
-        let parameters = ShoupGennaro::<G1Projective, Sha256>::setup(rng, committee).unwrap();
-        let (pk, key_shares) =
-            ShoupGennaro::<G1Projective, Sha256>::keygen(rng, &parameters).unwrap();
+        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
         let message = "important message".as_bytes().to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G1Projective, Sha256>::encrypt(rng, &parameters, &pk, &plaintext)
-                .unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| {
-                ShoupGennaro::<G1Projective, Sha256>::decrypt(rng, &parameters, s, &ciphertext)
-            })
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let check_message = ShoupGennaro::<G1Projective, Sha256>::combine(
-            &parameters,
-            &pk,
-            dec_shares_refs,
-            &ciphertext,
-        )
-        .unwrap();
+        let check_message =
+            ShoupGennaro::<G, H, D>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
+                .unwrap();
         assert_eq!(message, check_message.0);
     }
 }

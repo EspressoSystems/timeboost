@@ -61,6 +61,7 @@ jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyf
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 multiaddr = "0.18.2"
+nimue = { version = "0.1.0", features = ["ark"] }
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.13"
