@@ -4,7 +4,6 @@ use crate::Group;
 
 use super::{TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
-use hotshot_types::traits::metrics::NoMetrics;
 use sailfish::{
     coordinator::{Coordinator, CoordinatorAuditEvent},
     sailfish::ShutdownToken,

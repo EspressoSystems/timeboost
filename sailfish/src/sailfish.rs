@@ -160,9 +160,7 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
-        #[cfg(feature = "test")] event_log: Option<
-            Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
-        >,
+        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,

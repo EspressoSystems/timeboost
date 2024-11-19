@@ -1,7 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use async_lock::RwLock;
-use hotshot_types::traits::metrics::NoMetrics;
 use portpicker::pick_unused_port;
 use sailfish::{
     coordinator::CoordinatorAuditEvent,

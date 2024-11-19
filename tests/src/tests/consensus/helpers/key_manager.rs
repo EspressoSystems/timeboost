@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 use super::node_instrument::TestNodeInstrument;
 use bitvec::bitvec;
 use bitvec::vec::BitVec;
-use hotshot_types::traits::metrics::NoMetrics;
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::{
     committee::StaticCommittee,
