@@ -65,6 +65,7 @@ impl Comm for Libp2pNetwork<PublicKey> {
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        Ok(self.shut_down().await)
+        self.shut_down().await;
+        Ok(())
     }
 }
