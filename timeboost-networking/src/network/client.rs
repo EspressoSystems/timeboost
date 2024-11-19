@@ -595,8 +595,8 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
         });
     }
 
-    #[instrument(name = "Libp2pNetwork::shutdown", skip_all)]
-    pub fn shutdown<'a, 'b>(&'a self) -> BoxSyncFuture<'b, ()>
+    #[instrument(name = "Libp2pNetwork::shut_down", skip_all)]
+    pub fn shut_down<'a, 'b>(&'a self) -> BoxSyncFuture<'b, ()>
     where
         'a: 'b,
         Self: 'b,
