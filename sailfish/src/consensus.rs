@@ -221,7 +221,6 @@ impl Consensus {
 
         if self.dag.contains(&vertex) {
             debug!(
-                node   = %self.label,
                 round  = %self.round,
                 ours   = %(self.public_key() == vertex.source()),
                 vround = %vertex.round(),
@@ -234,52 +233,64 @@ impl Consensus {
             return actions;
         }
 
+        let buffer = mem::take(&mut self.buffer);
+        let mut retained = HashSet::new();
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
-                self.buffer.insert(vertex);
-                #[cfg(feature = "metrics")]
-                self.metrics.vertex_buffer.set(self.buffer.len())
-            }
-            Ok(a) => {
-                actions.extend(a);
-
-                // Since we managed to add another vertex, try to add all buffered vertices to
-                // the DAG too:
-                let buffer = mem::take(&mut self.buffer);
-                let mut retained = HashSet::new();
-                for w in buffer.into_iter() {
-                    if w.round() > vertex.round() {
+                for w in buffer {
+                    if w.round() >= vertex.round() {
                         retained.insert(w);
                         continue;
                     }
-                    if let Ok(b) = self.try_to_add_to_dag(&w) {
-                        actions.extend(b)
+                    if let Ok(a) = self.try_to_add_to_dag(&w) {
+                        actions.extend(a);
+                        if w.round() < self.round {
+                            continue;
+                        }
+                        if self.dag.vertex_count(w.round())
+                            < self.committee.quorum_size().get() as usize
+                        {
+                            continue;
+                        }
+                        actions.extend(self.advance_from_round(w.round()));
                     } else {
                         retained.insert(w);
                     }
                 }
                 debug_assert!(self.buffer.is_empty());
                 self.buffer = retained;
-
+                self.buffer.insert(vertex);
                 #[cfg(feature = "metrics")]
                 self.metrics.vertex_buffer.set(self.buffer.len());
-
-                // Check if we can advance to the next round.
-
+            }
+            Ok(a) => {
+                actions.extend(a);
+                for w in buffer {
+                    if w.round() > vertex.round() {
+                        retained.insert(w);
+                        continue;
+                    }
+                    if let Ok(a) = self.try_to_add_to_dag(&w) {
+                        actions.extend(a);
+                    } else {
+                        retained.insert(w);
+                    }
+                }
+                debug_assert!(self.buffer.is_empty());
+                self.buffer = retained;
+                #[cfg(feature = "metrics")]
+                self.metrics.vertex_buffer.set(self.buffer.len());
                 if vertex.round() < self.round {
                     return actions;
                 }
-
-                if (self.dag.vertex_count(vertex.round()) as u64)
-                    < self.committee.quorum_size().get()
+                if self.dag.vertex_count(vertex.round())
+                    < self.committee.quorum_size().get() as usize
                 {
                     return actions;
                 }
-
                 actions.extend(self.advance_from_round(vertex.round()));
             }
         }
-
         actions
     }
 
@@ -567,7 +578,6 @@ impl Consensus {
         vround = %v.round())
     )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
-        self.dag.add(v.clone());
         #[cfg(feature = "metrics")]
         self.metrics.dag_depth.set(self.dag.depth());
         let mut actions = Vec::new();
