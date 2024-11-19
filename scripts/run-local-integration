@@ -2,7 +2,7 @@
 
 set -euox pipefail
 
-if [ "${1:-}" = "release" ]; then
+if [ "${1:-debug}" = "release" ]; then
     just build_release
 else
     just build
@@ -12,7 +12,7 @@ for i in {0..4}; do
     echo "Starting node $i"
 
     RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=warn \
-    ./target/release/timeboost \
+    ./target/${1:-debug}/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
