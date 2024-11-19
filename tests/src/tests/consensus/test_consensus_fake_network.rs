@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
@@ -135,6 +135,18 @@ async fn test_timeout_round_and_no_vote() {
         } else {
             panic!("Expected a vertex message, but got none or a different type.");
         }
+    }
+
+    let mut i = 0;
+    let current_round = network.current_round();
+    while i < 50 {
+        network.process();
+        i += 1;
+    }
+
+    // verify progress can be made after timeout
+    for node_instrument in network.nodes.values() {
+        assert_eq!(node_instrument.node().round(), current_round + i);
     }
 }
 
@@ -291,7 +303,9 @@ fn basic_liveness() {
                 for a in aa {
                     let na = match a {
                         Action::Deliver(_, r, s) => {
-                            delivered.entry(*id).or_default().push((*r, *s));
+                            if n.id() == *id {
+                                delivered.entry(*id).or_default().push((*r, *s));
+                            }
                             continue;
                         }
                         Action::SendProposal(e) => n.handle_vertex(e.clone()),
@@ -331,4 +345,9 @@ fn basic_liveness() {
         assert!(!a.is_empty());
         assert_eq!(a, b)
     }
+
+    // Integrity: a node should never deliver duplicate (round, key) values:
+    let a = delivered.values().next().unwrap();
+    let b = HashSet::<&(RoundNumber, PublicKey)>::from_iter(a);
+    assert_eq!(a.len(), b.len());
 }

@@ -94,3 +94,27 @@ impl Keypair {
         &self.public
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct Label(u64);
+
+impl Label {
+    pub fn new<H: std::hash::Hash>(x: H) -> Self {
+        use std::hash::Hasher;
+        let mut h = std::hash::DefaultHasher::new();
+        x.hash(&mut h);
+        Self(h.finish())
+    }
+}
+
+impl fmt::Debug for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "L{:X}", self.0)
+    }
+}
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
+}

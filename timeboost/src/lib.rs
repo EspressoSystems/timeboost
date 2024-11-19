@@ -1,6 +1,5 @@
 use anyhow::Result;
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use async_channel::bounded;
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
@@ -15,7 +14,10 @@ use timeboost_core::types::{
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
+};
 
 pub mod api;
 pub mod config;
@@ -42,7 +44,7 @@ pub struct Timeboost {
     app_tx: Sender<TimeboostStatusEvent>,
 
     /// The receiver for the shutdown signal.
-    shutdown_rx: async_channel::Receiver<ShutdownToken>,
+    shutdown_rx: watch::Receiver<ShutdownToken>,
 
     /// The metrics for the timeboost node.
     #[allow(dead_code)]
@@ -58,7 +60,7 @@ impl Timeboost {
         metrics_port: u16,
         app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
-        shutdown_rx: async_channel::Receiver<ShutdownToken>,
+        shutdown_rx: watch::Receiver<ShutdownToken>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Self {
         Self {
@@ -100,9 +102,10 @@ impl Timeboost {
                         }
                     }
                 }
-                token = self.shutdown_rx.recv() => {
+                result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
-                    return token.map_err(|_| anyhow::anyhow!("Failed to receive shutdown signal"));
+                    result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                    return Ok(self.shutdown_rx.borrow().clone());
                 }
             }
         }
@@ -119,6 +122,7 @@ pub async fn run_timeboost(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
+    shutdown_rx: watch::Receiver<ShutdownToken>,
 ) -> Result<ShutdownToken> {
     info!("Starting timeboost");
 
@@ -130,12 +134,10 @@ pub async fn run_timeboost(
 
     let (tb_app_tx, tb_app_rx) = channel(100);
 
-    let (shutdown_tx, shutdown_rx) = bounded(1);
-
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
-    let sf_shutdown_rx = shutdown_rx.clone();
     let metrics_clone = metrics.clone();
+    let shutdown_rx_clone = shutdown_rx.clone();
     tokio::spawn(async move {
         run_sailfish(
             id,
@@ -146,8 +148,7 @@ pub async fn run_timeboost(
             sf_app_tx,
             tb_app_rx,
             metrics_clone,
-            shutdown_tx,
-            sf_shutdown_rx,
+            shutdown_rx_clone,
         )
         .await
     });

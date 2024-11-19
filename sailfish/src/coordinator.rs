@@ -17,7 +17,10 @@ use timeboost_core::{
         NodeId, PublicKey,
     },
 };
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
+};
 use tokio::time::sleep;
 use tracing::{info, warn};
 
@@ -30,9 +33,6 @@ pub struct Coordinator<C> {
 
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
-
-    /// The shutdown signal for this coordinator.
-    shutdown_rx: async_channel::Receiver<ShutdownToken>,
 
     /// The sailfish sender application event stream.
     sf_app_tx: Sender<SailfishStatusEvent>,
@@ -66,7 +66,6 @@ impl<C: Comm> Coordinator<C> {
         id: NodeId,
         comm: C,
         cons: Consensus,
-        shutdown_rx: async_channel::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -75,7 +74,6 @@ impl<C: Comm> Coordinator<C> {
             id,
             comm,
             consensus: cons,
-            shutdown_rx,
             sf_app_tx,
             tb_app_rx,
             #[cfg(feature = "test")]
@@ -99,10 +97,11 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub async fn go(mut self) -> ShutdownToken {
+    pub async fn go(mut self, mut shutdown_rx: watch::Receiver<ShutdownToken>) -> ShutdownToken {
         let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
+
         // TODO: Restart behavior
         for action in self.consensus.go(Dag::new(self.consensus.committee_size())) {
             self.on_action(action, &mut timer).await;
@@ -147,15 +146,18 @@ impl<C: Comm> Coordinator<C> {
                         self.on_application_event(event).await
                     }
                     None => {
-                        warn!("Receiver disconnected while awaiting application layer messages.");
-
                         // If we get here, it's a big deal.
                         panic!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
-                token = self.shutdown_rx.recv() => {
+                shutdown_result = shutdown_rx.changed() => {
                     tracing::info!("Node {} received shutdown signal; exiting", self.id);
-                    return token.expect("The shutdown sender was dropped before the receiver could receive the token");
+
+                    // Unwrap the potential error with receiving the shutdown token.
+                    shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+
+                    // Return the shutdown token.
+                    return shutdown_rx.borrow().clone()
                 }
             }
         }

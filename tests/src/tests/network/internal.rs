@@ -18,6 +18,7 @@ use tokio::{
     sync::{
         mpsc,
         oneshot::{self, Receiver, Sender},
+        watch,
     },
     task::JoinSet,
 };
@@ -26,8 +27,8 @@ pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, async_channel::Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, async_channel::Receiver<ShutdownToken>>,
+    shutdown_txs: HashMap<usize, watch::Sender<ShutdownToken>>,
+    shutdown_rxs: HashMap<usize, watch::Receiver<ShutdownToken>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -43,10 +44,10 @@ impl TestableNetwork for MemoryNetworkTest {
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (
-            Vec<async_channel::Sender<ShutdownToken>>,
-            Vec<async_channel::Receiver<ShutdownToken>>,
+            Vec<watch::Sender<ShutdownToken>>,
+            Vec<watch::Receiver<ShutdownToken>>,
         ) = (0..group.fish.len())
-            .map(|_| async_channel::bounded(1))
+            .map(|_| watch::channel(ShutdownToken::new()))
             .unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
@@ -71,11 +72,6 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut net = Star::new();
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
-            let shutdown_rx = self
-                .shutdown_rxs
-                .remove(&i)
-                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
-
             // Join each node to the network
             let ch = net.join(*n.public_key());
 
@@ -89,7 +85,6 @@ impl TestableNetwork for MemoryNetworkTest {
             let co = n.init(
                 ch,
                 (*self.group.staked_nodes).clone(),
-                shutdown_rx,
                 sf_app_tx,
                 tb_app_rx,
                 Arc::new(ConsensusMetrics::default()),
@@ -110,8 +105,13 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for co in coordinators {
-            co_handles.spawn(co.go());
+        for (i, co) in coordinators.into_iter().enumerate() {
+            let shutdown_rx = self
+                .shutdown_rxs
+                .remove(&i)
+                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
+
+            co_handles.spawn(co.go(shutdown_rx));
         }
 
         let net = nets.pop().expect("memory network to be present");
@@ -151,7 +151,9 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
         // Shutdown all the coordinators
         for send in self.shutdown_txs.into_values() {
-            let _ = send.send(ShutdownToken::new()).await;
+            send.send(ShutdownToken::new()).expect(
+                "The shutdown sender was dropped before the receiver could receive the token",
+            );
         }
 
         // Wait for all the coordinators to shutdown

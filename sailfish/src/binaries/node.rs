@@ -1,3 +1,4 @@
+use ::sailfish::sailfish::ShutdownToken;
 use anyhow::Result;
 use clap::Parser;
 use hotshot::traits::implementations::derive_libp2p_multiaddr;
@@ -11,7 +12,10 @@ use std::{collections::HashSet, fs};
 use timeboost_core::logging;
 use timeboost_core::types::metrics::ConsensusMetrics;
 use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use tokio::signal;
 use tokio::sync::mpsc::channel;
+use tokio::sync::watch;
+use tracing::warn;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -39,20 +43,27 @@ async fn main() -> Result<()> {
     // application layer, so we make dummy streams.
     let (sf_app_tx, _) = channel(1);
     let (_, tb_app_rx) = channel(1);
-    let (shutdown_tx, shutdown_rx) = async_channel::bounded(1);
     let metrics = Arc::new(ConsensusMetrics::default());
+    let (shutdown_tx, shutdown_rx) = watch::channel(ShutdownToken::new());
 
-    sailfish::run_sailfish(
-        cfg.id,
-        cfg.to_connect_addrs,
-        cfg.staked_nodes,
-        keypair,
-        bind_address,
-        sf_app_tx,
-        tb_app_rx,
-        metrics,
-        shutdown_tx,
-        shutdown_rx,
-    )
-    .await
+    tokio::select! {
+        _ = sailfish::run_sailfish(
+            cfg.id,
+            cfg.to_connect_addrs,
+            cfg.staked_nodes,
+            keypair,
+            bind_address,
+            sf_app_tx,
+            tb_app_rx,
+            metrics,
+            shutdown_rx,
+        ) => {
+            panic!("The shutdown sender was dropped before the receiver could receive the token");
+        }
+        _ = signal::ctrl_c() => {
+            warn!("received ctrl-c; shutting down");
+            shutdown_tx.send(ShutdownToken::new()).expect("The shutdown sender was dropped before the receiver could receive the token");
+            return Ok(());
+        }
+    }
 }
