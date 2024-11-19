@@ -54,6 +54,7 @@ impl Termination for ShutdownToken {
     }
 }
 
+#[allow(clippy::new_without_default)]
 impl ShutdownToken {
     /// This constructor is intentionally private to ensure that only the
     /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
@@ -67,12 +68,6 @@ impl ShutdownToken {
     #[cfg(feature = "test")]
     pub fn new() -> Self {
         Self(())
-    }
-}
-
-impl Default for ShutdownToken {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
