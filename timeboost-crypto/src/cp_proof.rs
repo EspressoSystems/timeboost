@@ -159,12 +159,16 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
 
 #[cfg(test)]
 mod tests {
+
     use ark_bn254::G1Projective;
-    use ark_ec::{bn::BnConfig, short_weierstrass::Projective, Group};
-    use ark_std::test_rng;
+    use ark_ec::{bn::BnConfig, short_weierstrass::Projective, PrimeGroup};
+    use ark_std::{test_rng, UniformRand};
     use nimue::hash::Keccak;
 
-    use super::*;
+    use crate::{
+        cp_proof::{ChaumPedersen, DleqTuple},
+        traits::dleq_proof::DleqProofScheme,
+    };
 
     #[test]
     fn test_chaum_pedersen_proof() {
@@ -176,9 +180,8 @@ mod tests {
         let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
 
         // Generate random scalar x
-        let x = <Projective<<ark_bn254::Config as BnConfig>::G1Config> as Group>::ScalarField::rand(
-            &mut rng,
-        );
+        let x =
+            <<Projective<<ark_bn254::Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(&mut rng);
 
         // Generate tuple (g, g_hat, h, h_hat)
         let g = params.generator;

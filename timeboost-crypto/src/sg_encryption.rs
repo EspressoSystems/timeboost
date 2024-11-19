@@ -321,7 +321,7 @@ where
     writer.flush()?;
     drop(writer);
     let hasher = <DefaultFieldHasher<H> as HashToField<C::ScalarField>>::new(&[0u8]);
-    let scalar_from_hash: C::ScalarField = hasher.hash_to_field(&buffer, 1)[0];
+    let scalar_from_hash: C::ScalarField = hasher.hash_to_field::<1>(&buffer)[0];
     let u_hat = pp.generator * scalar_from_hash;
     Ok(u_hat)
 }

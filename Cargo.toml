@@ -22,13 +22,13 @@ opt-level = 3
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
 anyhow = "1.0.89"
-ark-bn254 = "0.4"
-ark-ed-on-bn254 = "0.4"
-ark-ff = "0.4"
-ark-poly = "0.4"
-ark-ec = "0.4"
-ark-serialize = "0.4"
-ark-std = { version = "0.4", default-features = false }
+ark-bn254 = "0.5"
+ark-ec = "0.5"
+ark-ed-on-bn254 = "0.5"
+ark-ff = "0.5"
+ark-poly = "0.5"
+ark-serialize = "0.5"
+ark-std = { version = "0.5", default-features = false }
 async-broadcast = "0.7"
 async-channel = "2"
 async-lock = "3.3"
@@ -61,7 +61,7 @@ jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyf
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 multiaddr = "0.18.2"
-nimue = { version = "0.1.0", features = ["ark"] }
+nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.13"
