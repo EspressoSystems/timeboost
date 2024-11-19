@@ -1,4 +1,3 @@
-use ::sailfish::sailfish::ShutdownToken;
 use anyhow::Result;
 use clap::Parser;
 use hotshot::traits::implementations::derive_libp2p_multiaddr;
@@ -44,7 +43,7 @@ async fn main() -> Result<()> {
     let (sf_app_tx, _) = channel(1);
     let (_, tb_app_rx) = channel(1);
     let metrics = Arc::new(ConsensusMetrics::default());
-    let (shutdown_tx, shutdown_rx) = watch::channel(ShutdownToken::new());
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     tokio::select! {
         _ = sailfish::run_sailfish(
@@ -62,7 +61,7 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
-            shutdown_tx.send(ShutdownToken::new()).expect("The shutdown sender was dropped before the receiver could receive the token");
+            shutdown_tx.send(()).expect("The shutdown sender was dropped before the receiver could receive the token");
             return Ok(());
         }
     }

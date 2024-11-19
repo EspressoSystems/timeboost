@@ -1,11 +1,8 @@
 use std::{future::pending, sync::Arc, time::Duration};
 
-use crate::{
-    consensus::{Consensus, Dag},
-    sailfish::ShutdownToken,
-};
+use crate::consensus::{Consensus, Dag};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
@@ -97,7 +94,7 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub async fn go(mut self, mut shutdown_rx: watch::Receiver<ShutdownToken>) -> ShutdownToken {
+    pub async fn go(mut self, mut shutdown_rx: watch::Receiver<()>) -> Result<()> {
         let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
@@ -147,17 +144,20 @@ impl<C: Comm> Coordinator<C> {
                     }
                     None => {
                         // If we get here, it's a big deal.
-                        panic!("Receiver disconnected while awaiting application layer messages.");
+                        bail!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
                 shutdown_result = shutdown_rx.changed() => {
                     tracing::info!("Node {} received shutdown signal; exiting", self.id);
 
+                    // Shut down the network
+                    self.comm.shutdown().await.expect("Failed to shut down network");
+
                     // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
 
                     // Return the shutdown token.
-                    return shutdown_rx.borrow().clone()
+                    return Ok(());
                 }
             }
         }

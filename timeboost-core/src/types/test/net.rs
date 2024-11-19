@@ -167,6 +167,10 @@ impl Comm for Star<Message> {
     async fn receive(&mut self) -> Result<Message, Self::Err> {
         Ok(self.recv().await.data().clone())
     }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 impl<T: Clone> Default for Star<T> {
@@ -205,5 +209,9 @@ impl Comm for Conn<Message> {
             .recv()
             .await
             .ok_or_else(|| io::ErrorKind::ConnectionAborted.into())
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        Ok(())
     }
 }

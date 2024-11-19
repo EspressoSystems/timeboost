@@ -1,11 +1,9 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
+use anyhow::{anyhow, Result};
 use async_lock::RwLock;
 use portpicker::pick_unused_port;
-use sailfish::{
-    coordinator::CoordinatorAuditEvent,
-    sailfish::{Sailfish, ShutdownToken},
-};
+use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     metrics::ConsensusMetrics,
@@ -28,8 +26,8 @@ pub mod test_simple_network;
 
 pub struct Libp2pNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, watch::Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, watch::Receiver<ShutdownToken>>,
+    shutdown_txs: HashMap<usize, watch::Sender<()>>,
+    shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
@@ -39,15 +37,11 @@ pub struct Libp2pNetworkTest {
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2pNetwork<PublicKey>;
-    type Shutdown = ();
+    type Shutdown = Result<()>;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
-        let (shutdown_txs, shutdown_rxs): (
-            Vec<watch::Sender<ShutdownToken>>,
-            Vec<watch::Receiver<ShutdownToken>>,
-        ) = (0..group.fish.len())
-            .map(|_| watch::channel(ShutdownToken::new()))
-            .unzip();
+        let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
+            (0..group.fish.len()).map(|_| watch::channel(())).unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
@@ -128,7 +122,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     Some(Arc::clone(&log)),
                 );
 
-                co.go(shutdown_rx).await;
+                co.go(shutdown_rx).await.map_err(|e| anyhow!(e))
             });
         }
         handles
@@ -161,9 +155,9 @@ impl TestableNetwork for Libp2pNetworkTest {
         statuses
     }
 
-    async fn shutdown(self, handles: JoinSet<()>) {
+    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
         for send in self.shutdown_txs.into_values() {
-            send.send(ShutdownToken::new()).expect(
+            send.send(()).expect(
                 "The shutdown sender was dropped before the receiver could receive the token",
             );
         }
