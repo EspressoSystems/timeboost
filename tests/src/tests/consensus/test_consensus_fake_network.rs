@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
@@ -291,7 +291,9 @@ fn basic_liveness() {
                 for a in aa {
                     let na = match a {
                         Action::Deliver(_, r, s) => {
-                            delivered.entry(*id).or_default().push((*r, *s));
+                            if n.id() == *id {
+                                delivered.entry(*id).or_default().push((*r, *s));
+                            }
                             continue;
                         }
                         Action::SendProposal(e) => n.handle_vertex(e.clone()),
@@ -331,4 +333,9 @@ fn basic_liveness() {
         assert!(!a.is_empty());
         assert_eq!(a, b)
     }
+
+    // Integrity: a node should never deliver duplicate (round, key) values:
+    let a = delivered.values().next().unwrap();
+    let b = HashSet::<&(RoundNumber, PublicKey)>::from_iter(a);
+    assert_eq!(a.len(), b.len());
 }
