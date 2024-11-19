@@ -3,7 +3,10 @@ use std::net::{IpAddr, ToSocketAddrs};
 use anyhow::{anyhow, Context, Result};
 use multiaddr::Multiaddr;
 use sailfish::sailfish::ShutdownToken;
-use timeboost::{contracts::committee::CommitteeContract, run_timeboost};
+use timeboost::{
+    contracts::committee::{CommitteeBase, CommitteeContract},
+    run_timeboost,
+};
 use timeboost_core::types::{Keypair, NodeId};
 
 use clap::Parser;
@@ -26,6 +29,10 @@ struct Cli {
     /// The port of the metrics server.
     #[clap(long)]
     metrics_port: u16,
+
+    /// The base to use for the committee config.
+    #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
+    base: CommitteeBase,
 }
 
 pub fn derive_libp2p_multiaddr(addr: &String) -> anyhow::Result<Multiaddr> {
@@ -73,11 +80,11 @@ pub fn derive_libp2p_multiaddr(addr: &String) -> anyhow::Result<Multiaddr> {
 async fn main() -> Result<ShutdownToken> {
     timeboost_core::logging::init_logging();
 
-    // Make a new committee contract
-    let committee = CommitteeContract::new();
-
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
+
+    // Make a new committee contract instance to read the committee config from.
+    let committee = CommitteeContract::new(cli.base);
 
     let id = NodeId::from(cli.id as u64);
 

@@ -123,7 +123,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     shutdown_rx,
                     sf_app_tx,
                     tb_app_rx,
-                    Arc::new(ConsensusMetrics::new(&NoMetrics)),
+                    Arc::new(ConsensusMetrics::default()),
                     Some(Arc::clone(&log)),
                 );
 

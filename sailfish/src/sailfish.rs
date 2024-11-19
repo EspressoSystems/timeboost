@@ -1,6 +1,6 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-#[cfg(feature = "timeboost-testing")]
+#[cfg(feature = "test")]
 use crate::coordinator::CoordinatorAuditEvent;
 
 use anyhow::Result;
@@ -56,14 +56,14 @@ impl Termination for ShutdownToken {
 impl ShutdownToken {
     /// This constructor is intentionally private to ensure that only the
     /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
-    #[cfg(not(feature = "timeboost-testing"))]
+    #[cfg(not(feature = "test"))]
     fn new() -> Self {
         Self(())
     }
 
     /// This constructor is public for testing purposes so the shutdown token
     /// can be created within tests.
-    #[cfg(feature = "timeboost-testing")]
+    #[cfg(feature = "test")]
     pub fn new() -> Self {
         Self(())
     }
@@ -105,7 +105,7 @@ impl Sailfish {
         &self.bind_address
     }
 
-    #[cfg(feature = "timeboost-testing")]
+    #[cfg(feature = "test")]
     pub fn derive_libp2p_keypair(&self) -> Result<libp2p_identity::Keypair> {
         derive_libp2p_keypair::<PublicKey>(self.keypair.private_key())
     }
@@ -160,7 +160,7 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
-        #[cfg(feature = "timeboost-testing")] event_log: Option<
+        #[cfg(feature = "test")] event_log: Option<
             Arc<RwLock<Vec<CoordinatorAuditEvent>>>,
         >,
     ) -> Coordinator<C>
@@ -183,7 +183,7 @@ impl Sailfish {
             shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "timeboost-testing")]
+            #[cfg(feature = "test")]
             event_log,
         )
     }

@@ -1,13 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use futures_core::future::BoxFuture;
+use futures::future::BoxFuture;
 use hotshot_types::traits::metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
+use parking_lot::RwLock;
 use prometheus::{Encoder, TextEncoder};
 use tide_disco::method::ReadState;
 
@@ -133,20 +131,14 @@ impl Metrics for PrometheusMetrics {
     fn create_counter(&self, name: String, unit_label: Option<String>) -> Box<dyn Counter> {
         let opts = self.metric_opts(name.clone(), unit_label);
         let counter = TimeboostCounter::new(&self.registry, opts);
-        self.counters
-            .write()
-            .unwrap()
-            .insert(name.clone(), counter.clone());
+        self.counters.write().insert(name.clone(), counter.clone());
         Box::new(counter)
     }
 
     fn create_gauge(&self, name: String, unit_label: Option<String>) -> Box<dyn Gauge> {
         let opts = self.metric_opts(name.clone(), unit_label);
         let gauge = TimeboostGauge::new(&self.registry, opts);
-        self.gauges
-            .write()
-            .unwrap()
-            .insert(name.clone(), gauge.clone());
+        self.gauges.write().insert(name.clone(), gauge.clone());
         Box::new(gauge)
     }
 
@@ -155,7 +147,6 @@ impl Metrics for PrometheusMetrics {
         let histogram = TimeboostHistogram::new(&self.registry, opts);
         self.historgrams
             .write()
-            .unwrap()
             .insert(name.clone(), histogram.clone());
         Box::new(histogram)
     }

@@ -2,7 +2,7 @@ pub mod prometheus;
 
 use hotshot_types::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct ConsensusMetrics {
     pub committed_round: Box<dyn Gauge>,

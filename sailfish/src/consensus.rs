@@ -827,7 +827,7 @@ impl Consensus {
     }
 }
 
-#[cfg(feature = "timeboost-testing")]
+#[cfg(feature = "test")]
 impl Consensus {
     pub fn dag(&self) -> &Dag {
         &self.dag

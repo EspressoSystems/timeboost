@@ -21,7 +21,7 @@ hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 portpicker = { workspace = true }
-sailfish = { path = "../sailfish", features = ["timeboost-testing"] }
+sailfish = { path = "../sailfish", features = ["test"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ethereum-types = { workspace = true }

@@ -30,7 +30,7 @@ RUN chown -R timeboostuser:appgroup /app && chmod +x /app/timeboost
 USER timeboostuser
 
 # Set the log level to debug
-ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug}
+ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug,timeboost-networking=error}
 
 EXPOSE ${TIMEBOOST_PORT}
 EXPOSE ${TIMEBOOST_RPC_PORT}

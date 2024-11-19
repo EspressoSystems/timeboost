@@ -5,8 +5,7 @@ edition.workspace = true
 description.workspace = true
 
 [features]
-default = []
-timeboost-testing = []
+test = []
 
 [dependencies]
 anyhow = { workspace = true }
@@ -15,7 +14,7 @@ bincode = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum-types = { workspace = true }
-futures-core = { workspace = true }
+futures = { workspace = true }
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }
 parking_lot = { workspace = true }
