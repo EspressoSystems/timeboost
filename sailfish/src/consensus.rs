@@ -238,7 +238,7 @@ impl Consensus {
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
                 for w in buffer {
-                    if w.round() >= vertex.round() {
+                    if w.round() > vertex.round() {
                         retained.insert(w);
                         continue;
                     }
