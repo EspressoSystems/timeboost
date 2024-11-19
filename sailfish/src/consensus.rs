@@ -270,8 +270,8 @@ impl Consensus {
                         retained.insert(w);
                         continue;
                     }
-                    if let Ok(a) = self.try_to_add_to_dag(&w) {
-                        actions.extend(a);
+                    if let Ok(b) = self.try_to_add_to_dag(&w) {
+                        actions.extend(b);
                     } else {
                         retained.insert(w);
                     }
