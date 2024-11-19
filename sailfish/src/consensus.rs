@@ -242,7 +242,7 @@ impl Consensus {
                         if w.round() < self.round {
                             continue;
                         }
-                        if (self.dag.vertex_count(vertex.round()) as u64)
+                        if (self.dag.vertex_count(w.round()) as u64)
                             < self.committee.quorum_size().get()
                         {
                             continue;
