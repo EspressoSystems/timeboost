@@ -8,6 +8,7 @@ description.workspace = true
 async-broadcast = { workspace = true }
 async-trait = { workspace = true }
 async-lock = { workspace = true }
+async-channel = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
@@ -17,13 +18,15 @@ libp2p-identity = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
 tokio = { workspace = true }
 toml = { workspace = true }
 multiaddr = { workspace = true }
 tracing = { workspace = true }
+prometheus = { workspace = true }
 tracing-subscriber = { workspace = true }
-tide-disco = "0.9.3"
-surf-disco = "0.9"
+tide-disco = { workspace = true }
+surf-disco = { workspace = true }
 vbs = { workspace = true }
 
 [[bin]]

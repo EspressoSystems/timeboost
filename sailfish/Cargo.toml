@@ -5,7 +5,6 @@ edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [features]
-metrics = []
 test = ['timeboost-core/test']
 
 [dependencies]
@@ -17,6 +16,7 @@ ark-serialize = { workspace = true }
 ark-std = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
+async-channel = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 blake3 = { workspace = true }

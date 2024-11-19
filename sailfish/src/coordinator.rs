@@ -17,11 +17,11 @@ use timeboost_core::{
         NodeId, PublicKey,
     },
 };
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::{
-    sync::oneshot::{self},
-    time::sleep,
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
 };
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 pub struct Coordinator<C> {
@@ -33,9 +33,6 @@ pub struct Coordinator<C> {
 
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
-
-    /// The shutdown signal for this coordinator.
-    shutdown_rx: oneshot::Receiver<ShutdownToken>,
 
     /// The sailfish sender application event stream.
     sf_app_tx: Sender<SailfishStatusEvent>,
@@ -69,7 +66,6 @@ impl<C: Comm> Coordinator<C> {
         id: NodeId,
         comm: C,
         cons: Consensus,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -78,7 +74,6 @@ impl<C: Comm> Coordinator<C> {
             id,
             comm,
             consensus: cons,
-            shutdown_rx,
             sf_app_tx,
             tb_app_rx,
             #[cfg(feature = "test")]
@@ -97,13 +92,16 @@ impl<C: Comm> Coordinator<C> {
 
     #[cfg(feature = "test")]
     pub async fn append_test_event(&mut self, event: CoordinatorAuditEvent) {
-        self.event_log.as_ref().unwrap().write().await.push(event);
+        if let Some(log) = self.event_log.as_ref() {
+            log.write().await.push(event);
+        }
     }
 
-    pub async fn go(mut self) -> ShutdownToken {
+    pub async fn go(mut self, mut shutdown_rx: watch::Receiver<ShutdownToken>) -> ShutdownToken {
         let mut timer: BoxFuture<'static, RoundNumber> = pending().boxed();
 
         tracing::info!(id = %self.id, "Starting coordinator");
+
         // TODO: Restart behavior
         for action in self.consensus.go(Dag::new(self.consensus.committee_size())) {
             self.on_action(action, &mut timer).await;
@@ -114,8 +112,10 @@ impl<C: Comm> Coordinator<C> {
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
                         #[cfg(feature = "test")]
-                        self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                            .await;
+                        {
+                            self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                                .await;
+                        }
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -124,8 +124,10 @@ impl<C: Comm> Coordinator<C> {
                         Ok(actions) => {
                             for a in actions {
                                 #[cfg(feature = "test")]
-                                self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
+                                {
+                                    self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
                                     .await;
+                                }
 
                                 self.on_action(a, &mut timer).await
                             }
@@ -135,7 +137,7 @@ impl<C: Comm> Coordinator<C> {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to deserialize network message; error = {e:#}");
+                        warn!(%e, "error deserializing network message");
                         continue;
                     }
                 },
@@ -144,15 +146,18 @@ impl<C: Comm> Coordinator<C> {
                         self.on_application_event(event).await
                     }
                     None => {
-                        warn!("Receiver disconnected while awaiting application layer messages.");
-
                         // If we get here, it's a big deal.
                         panic!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
-                token = &mut self.shutdown_rx => {
+                shutdown_result = shutdown_rx.changed() => {
                     tracing::info!("Node {} received shutdown signal; exiting", self.id);
-                    return token.expect("The shutdown sender was dropped before the receiver could receive the token");
+
+                    // Unwrap the potential error with receiving the shutdown token.
+                    shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+
+                    // Return the shutdown token.
+                    return shutdown_rx.borrow().clone()
                 }
             }
         }
@@ -162,7 +167,6 @@ impl<C: Comm> Coordinator<C> {
         #[cfg(feature = "test")]
         self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
             .await;
-
         Ok(self.consensus.handle_message(m))
     }
 
@@ -181,7 +185,7 @@ impl<C: Comm> Coordinator<C> {
                 // implies that the protocol has moved to the next round.
                 self.application_broadcast(SailfishStatusEvent {
                     round: r,
-                    event: SailfishEventType::Timeout { round: r },
+                    event: SailfishEventType::RoundFinished { round: r },
                 })
                 .await;
             }

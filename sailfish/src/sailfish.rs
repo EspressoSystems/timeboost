@@ -12,13 +12,14 @@ use hotshot_types::{
 };
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
-use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{process::Termination, time::Duration};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
         committee::StaticCommittee,
         event::{SailfishStatusEvent, TimeboostStatusEvent},
+        metrics::ConsensusMetrics,
         Keypair, NodeId, PublicKey,
     },
 };
@@ -27,11 +28,8 @@ use timeboost_networking::network::{
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
 };
-use tokio::signal;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    oneshot,
-};
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -47,8 +45,16 @@ pub struct Sailfish {
     bind_address: Multiaddr,
 }
 
+#[derive(Clone, Debug)]
 pub struct ShutdownToken(());
 
+impl Termination for ShutdownToken {
+    fn report(self) -> std::process::ExitCode {
+        std::process::ExitCode::SUCCESS
+    }
+}
+
+#[allow(clippy::new_without_default)]
 impl ShutdownToken {
     /// This constructor is intentionally private to ensure that only the
     /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
@@ -62,12 +68,6 @@ impl ShutdownToken {
     #[cfg(feature = "test")]
     pub fn new() -> Self {
         Self(())
-    }
-}
-
-impl Default for ShutdownToken {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -147,13 +147,14 @@ impl Sailfish {
         Ok(network)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn init<C>(
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
+        metrics: Arc<ConsensusMetrics>,
         #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
@@ -166,13 +167,12 @@ impl Sailfish {
                 .collect::<Vec<_>>(),
         );
 
-        let consensus = Consensus::new(self.id, self.keypair, committee);
+        let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
 
         Coordinator::new(
             self.id,
             comm,
             consensus,
-            shutdown_rx,
             sf_app_tx,
             tb_app_rx,
             #[cfg(feature = "test")]
@@ -180,18 +180,19 @@ impl Sailfish {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn go(
         self,
         n: Libp2pNetwork<PublicKey>,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        shutdown_rx: oneshot::Receiver<ShutdownToken>,
-        shutdown_tx: oneshot::Sender<ShutdownToken>,
+        mut shutdown_rx: watch::Receiver<ShutdownToken>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
+        metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
-                .go(),
+            self.init(n, staked_nodes, sf_app_tx, tb_app_rx, metrics, None)
+                .go(shutdown_rx.clone()),
         );
 
         let shutdown_timeout = Duration::from_secs(5);
@@ -201,11 +202,8 @@ impl Sailfish {
                 tracing::info!("Coordinator task completed");
                 coordinator_result?;
             }
-            _ = signal::ctrl_c() => {
+            _ = shutdown_rx.changed() => {
                 tracing::info!("Received termination signal, initiating graceful shutdown...");
-                shutdown_tx.send(ShutdownToken::new())
-                    .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
-
                 // Wait for coordinator to shutdown gracefully or timeout
                 match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
                     Ok(coordinator_result) => {
@@ -238,6 +236,7 @@ impl Sailfish {
 /// # Panics
 ///
 /// Panics if any configuration or initialization step fails.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_sailfish(
     id: NodeId,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
@@ -246,6 +245,8 @@ pub async fn run_sailfish(
     bind_address: Multiaddr,
     sf_app_tx: Sender<SailfishStatusEvent>,
     tb_app_rx: Receiver<TimeboostStatusEvent>,
+    metrics: Arc<ConsensusMetrics>,
+    shutdown_rx: watch::Receiver<ShutdownToken>,
 ) -> Result<()> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
@@ -274,15 +275,6 @@ pub async fn run_sailfish(
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
         .await?;
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-    s.go(
-        n,
-        staked_nodes,
-        shutdown_rx,
-        shutdown_tx,
-        sf_app_tx,
-        tb_app_rx,
-    )
-    .await
+    s.go(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, metrics)
+        .await
 }
