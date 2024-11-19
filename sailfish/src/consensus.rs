@@ -237,6 +237,7 @@ impl Consensus {
         let mut retained = HashSet::new();
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
+                // XXX: The following is not spec compliant (cf. https://github.com/EspressoSystems/timeboost/issues/100)
                 for w in buffer {
                     if w.round() > vertex.round() {
                         retained.insert(w);
@@ -259,6 +260,7 @@ impl Consensus {
                 }
                 debug_assert!(self.buffer.is_empty());
                 self.buffer = retained;
+                // XXX: End of spec deviation (cf. https://github.com/EspressoSystems/timeboost/issues/100)
                 self.buffer.insert(vertex);
                 #[cfg(feature = "metrics")]
                 self.metrics.vertex_buffer.set(self.buffer.len());
