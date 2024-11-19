@@ -1,11 +1,9 @@
 set export
 
-original_target_dir := env_var_or_default('CARGO_TARGET_DIR', 'target')
 original_rustflags := env_var_or_default('RUSTFLAGS', '')
 
 export RUSTDOCFLAGS := '-D warnings --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
 export RUSTFLAGS := original_rustflags + ' --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
-export CARGO_TARGET_DIR := original_target_dir + '/tokio'
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -41,3 +39,6 @@ build_docker:
 
 run_integration: build_docker
   docker compose up --abort-on-container-exit
+
+run_integration_local *ARGS:
+  ./scripts/run-local-integration {{ARGS}}

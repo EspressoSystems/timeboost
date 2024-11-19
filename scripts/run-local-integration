@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -euox pipefail
+
+if [ "${1:-}" = "release" ]; then
+    just build_release
+else
+    just build
+fi
+
+for i in {0..4}; do
+    echo "Starting node $i"
+
+    RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=warn \
+    ./target/release/timeboost \
+        --id $i \
+        --port $((8000 + i)) \
+        --rpc-port $((8800 + i)) \
+        --metrics-port $((9000 + i)) \
+        --base local &
+done
+
+wait
+

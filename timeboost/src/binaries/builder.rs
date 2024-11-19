@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use sailfish::sailfish::ShutdownToken;
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
     run_timeboost,
@@ -48,7 +47,7 @@ async fn main() -> Result<()> {
 
     let keypair = Keypair::zero(id);
 
-    let (shutdown_tx, shutdown_rx) = watch::channel(ShutdownToken::new());
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
     tokio::select! {
@@ -67,7 +66,7 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
-            shutdown_tx.send(ShutdownToken::new()).expect("The shutdown sender was dropped before the receiver could receive the token");
+            shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
             return Ok(());
         }
     }

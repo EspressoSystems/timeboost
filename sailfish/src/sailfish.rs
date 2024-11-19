@@ -3,7 +3,7 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 #[cfg(feature = "test")]
 use crate::coordinator::CoordinatorAuditEvent;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_lock::RwLock;
 use hotshot::types::SignatureKey;
 use hotshot_types::{
@@ -12,8 +12,8 @@ use hotshot_types::{
 };
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
+use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
-use std::{process::Termination, time::Duration};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
@@ -43,32 +43,6 @@ pub struct Sailfish {
 
     /// The Libp2p multiaddr of the sailfish node.
     bind_address: Multiaddr,
-}
-
-#[derive(Clone, Debug)]
-pub struct ShutdownToken(());
-
-impl Termination for ShutdownToken {
-    fn report(self) -> std::process::ExitCode {
-        std::process::ExitCode::SUCCESS
-    }
-}
-
-#[allow(clippy::new_without_default)]
-impl ShutdownToken {
-    /// This constructor is intentionally private to ensure that only the
-    /// code which *creates* the `Coordinator` can create a `ShutdownToken`.
-    #[cfg(not(feature = "test"))]
-    fn new() -> Self {
-        Self(())
-    }
-
-    /// This constructor is public for testing purposes so the shutdown token
-    /// can be created within tests.
-    #[cfg(feature = "test")]
-    pub fn new() -> Self {
-        Self(())
-    }
 }
 
 impl Sailfish {
@@ -185,7 +159,7 @@ impl Sailfish {
         self,
         n: Libp2pNetwork<PublicKey>,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        mut shutdown_rx: watch::Receiver<ShutdownToken>,
+        mut shutdown_rx: watch::Receiver<()>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
@@ -198,21 +172,20 @@ impl Sailfish {
         let shutdown_timeout = Duration::from_secs(5);
 
         tokio::select! {
-            coordinator_result = &mut coordinator_handle => {
-                tracing::info!("Coordinator task completed");
-                coordinator_result?;
+            _ = &mut coordinator_handle => {
+                bail!("coordinator task shutdown unexpectedly");
             }
             _ = shutdown_rx.changed() => {
-                tracing::info!("Received termination signal, initiating graceful shutdown...");
+                tracing::info!("received termination signal, initiating graceful shutdown");
+
                 // Wait for coordinator to shutdown gracefully or timeout
                 match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
-                    Ok(coordinator_result) => {
-                        tracing::info!("Coordinator shutdown gracefully");
-                        coordinator_result?;
+                    Ok(_) => {
+                        tracing::info!("coordinator exited successfully");
                     }
                     Err(_) => {
-                        tracing::warn!("Coordinator did not shutdown within grace period, forcing abort");
                         coordinator_handle.abort();
+                        bail!("coordinator did not shutdown within grace period, forcing abort");
                     }
                 }
             }
@@ -246,10 +219,10 @@ pub async fn run_sailfish(
     sf_app_tx: Sender<SailfishStatusEvent>,
     tb_app_rx: Receiver<TimeboostStatusEvent>,
     metrics: Arc<ConsensusMetrics>,
-    shutdown_rx: watch::Receiver<ShutdownToken>,
+    shutdown_rx: watch::Receiver<()>,
 ) -> Result<()> {
     let network_size =
-        NonZeroUsize::new(staked_nodes.len()).expect("Network size must be positive");
+        NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
 
     let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(keypair.private_key())?;
 

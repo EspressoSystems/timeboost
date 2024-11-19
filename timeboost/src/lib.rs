@@ -8,7 +8,7 @@ use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
-use sailfish::sailfish::{run_sailfish, ShutdownToken};
+use sailfish::sailfish::run_sailfish;
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
@@ -44,7 +44,7 @@ pub struct Timeboost {
     app_tx: Sender<TimeboostStatusEvent>,
 
     /// The receiver for the shutdown signal.
-    shutdown_rx: watch::Receiver<ShutdownToken>,
+    shutdown_rx: watch::Receiver<()>,
 
     /// The metrics for the timeboost node.
     #[allow(dead_code)]
@@ -60,7 +60,7 @@ impl Timeboost {
         metrics_port: u16,
         app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
-        shutdown_rx: watch::Receiver<ShutdownToken>,
+        shutdown_rx: watch::Receiver<()>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Self {
         Self {
@@ -76,7 +76,7 @@ impl Timeboost {
     }
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<ShutdownToken> {
+    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
@@ -105,7 +105,7 @@ impl Timeboost {
                 result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
                     result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    return Ok(self.shutdown_rx.borrow().clone());
+                    return Ok(());
                 }
             }
         }
@@ -122,8 +122,8 @@ pub async fn run_timeboost(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
-    shutdown_rx: watch::Receiver<ShutdownToken>,
-) -> Result<ShutdownToken> {
+    shutdown_rx: watch::Receiver<()>,
+) -> Result<()> {
     info!("Starting timeboost");
 
     let prom = Arc::new(PrometheusMetrics::default());

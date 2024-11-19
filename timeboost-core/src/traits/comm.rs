@@ -15,6 +15,8 @@ pub trait Comm {
     async fn send(&mut self, to: PublicKey, msg: Message) -> Result<(), Self::Err>;
 
     async fn receive(&mut self) -> Result<Message, Self::Err>;
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err>;
 }
 
 #[async_trait]
@@ -31,6 +33,10 @@ impl<T: Comm + Send> Comm for Box<T> {
 
     async fn receive(&mut self) -> Result<Message, Self::Err> {
         (**self).receive().await
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        (**self).shutdown().await
     }
 }
 
@@ -56,5 +62,10 @@ impl Comm for Libp2pNetwork<PublicKey> {
         let bytes = self.recv_message().await?;
 
         bincode::deserialize(&bytes).map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        self.shut_down().await;
+        Ok(())
     }
 }

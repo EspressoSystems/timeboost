@@ -1,13 +1,11 @@
+use anyhow::Result;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::Group;
 
 use super::{TestCondition, TestOutcome, TestableNetwork};
 use async_lock::RwLock;
-use sailfish::{
-    coordinator::{Coordinator, CoordinatorAuditEvent},
-    sailfish::ShutdownToken,
-};
+use sailfish::coordinator::{Coordinator, CoordinatorAuditEvent};
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     message::Message,
@@ -27,8 +25,8 @@ pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, watch::Sender<ShutdownToken>>,
-    shutdown_rxs: HashMap<usize, watch::Receiver<ShutdownToken>>,
+    shutdown_txs: HashMap<usize, watch::Sender<()>>,
+    shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
     event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -40,15 +38,11 @@ pub struct MemoryNetworkTest {
 impl TestableNetwork for MemoryNetworkTest {
     type Node = Coordinator<Conn<Message>>;
     type Network = Star<Message>;
-    type Shutdown = ShutdownToken;
+    type Shutdown = Result<()>;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
-        let (shutdown_txs, shutdown_rxs): (
-            Vec<watch::Sender<ShutdownToken>>,
-            Vec<watch::Receiver<ShutdownToken>>,
-        ) = (0..group.fish.len())
-            .map(|_| watch::channel(ShutdownToken::new()))
-            .unzip();
+        let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
+            (0..group.fish.len()).map(|_| watch::channel(())).unzip();
         let event_logs = HashMap::from_iter(
             (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
         );
@@ -151,7 +145,7 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
         // Shutdown all the coordinators
         for send in self.shutdown_txs.into_values() {
-            send.send(ShutdownToken::new()).expect(
+            send.send(()).expect(
                 "The shutdown sender was dropped before the receiver could receive the token",
             );
         }
