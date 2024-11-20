@@ -93,7 +93,7 @@ impl Persistence for PgPersistence {
     }
 
     async fn save_consensus_state(&self, state: &ConsensusState) -> Result<()> {
-        let mut conn = self.pool.acquire().await?;
+        let mut tx = self.pool.begin().await?;
         let timeouts = TimeoutsRow::from_consensus_state(state)?;
         let delivered = DeliveredRow::from_consensus_state(state)?;
         let state_partial = ConsensusStatePartialRow::from_consensus_state(state)?;
@@ -104,7 +104,7 @@ impl Persistence for PgPersistence {
             )
             .bind(row.round)
             .bind(row.votes)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await?;
         }
 
@@ -114,7 +114,7 @@ impl Persistence for PgPersistence {
             )
             .bind(row.round)
             .bind(row.public_key)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await?;
         }
 
@@ -128,13 +128,31 @@ impl Persistence for PgPersistence {
             .bind(state_partial.no_votes)
             .bind(state_partial.leader_stack)
             .bind(state_partial.transactions)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await?;
-
+        tx.commit().await?;
         Ok(())
     }
 
-    async fn gc(&self, _round: RoundNumber) -> Result<()> {
+    async fn gc(&self, round: RoundNumber) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM dag WHERE round < $1")
+            .bind(round.i64())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM timeouts WHERE round < $1")
+            .bind(round.i64())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM delivered WHERE round < $1")
+            .bind(round.i64())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM consensus_state WHERE round < $1")
+            .bind(round.i64())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
