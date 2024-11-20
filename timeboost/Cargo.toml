@@ -27,6 +27,7 @@ prometheus = { workspace = true }
 tracing-subscriber = { workspace = true }
 tide-disco = { workspace = true }
 surf-disco = { workspace = true }
+sqlx = { workspace = true }
 vbs = { workspace = true }
 
 [[bin]]

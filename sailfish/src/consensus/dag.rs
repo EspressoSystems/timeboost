@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
 use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dag {
     elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
     max_keys: NonZeroUsize,
