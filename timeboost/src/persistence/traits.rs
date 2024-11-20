@@ -16,10 +16,12 @@ pub trait Persistence: Sized + Send + Sync + 'static {
     async fn gc(&self, round: RoundNumber) -> Result<()>;
 }
 
+#[allow(dead_code)]
 pub struct Storage<P: Persistence> {
     persistence: P,
 }
 
+#[allow(dead_code)]
 impl<P: Persistence> Storage<P> {
     pub async fn new(uri: String) -> Result<Self> {
         let persistence = P::new(uri).await?;
