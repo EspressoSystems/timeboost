@@ -8,9 +8,21 @@ use timeboost_core::types::{
 #[async_trait]
 #[allow(dead_code)]
 pub trait Persistence: Sized + Send + Sync + 'static {
+    async fn new(uri: String) -> Result<Self>;
     async fn load_dag(&self, committee: &StaticCommittee) -> Result<Dag>;
     async fn save_vertex(&self, vertex: &Vertex) -> Result<()>;
     async fn load_consensus_state(&self, committee: &StaticCommittee) -> Result<ConsensusState>;
     async fn save_consensus_state(&self, state: &ConsensusState) -> Result<()>;
     async fn gc(&self, round: RoundNumber) -> Result<()>;
+}
+
+pub struct Storage<P: Persistence> {
+    persistence: P,
+}
+
+impl<P: Persistence> Storage<P> {
+    pub async fn new(uri: String) -> Result<Self> {
+        let persistence = P::new(uri).await?;
+        Ok(Self { persistence })
+    }
 }

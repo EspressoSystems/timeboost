@@ -11,6 +11,10 @@ pub struct NoStorage;
 
 #[async_trait]
 impl Persistence for NoStorage {
+    async fn new(_uri: String) -> Result<Self> {
+        Ok(Self)
+    }
+
     async fn load_dag(&self, committee: &StaticCommittee) -> Result<Dag> {
         Ok(Dag::new(committee.size()))
     }

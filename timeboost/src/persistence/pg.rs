@@ -16,16 +16,13 @@ pub struct PgPersistence {
     pool: PgPool,
 }
 
-impl PgPersistence {
-    #[allow(dead_code)]
-    pub async fn new(uri: String) -> Result<Self> {
+#[async_trait]
+impl Persistence for PgPersistence {
+    async fn new(uri: String) -> Result<Self> {
         let pool = PgPool::connect(&uri).await?;
         Ok(Self { pool })
     }
-}
 
-#[async_trait]
-impl Persistence for PgPersistence {
     async fn load_dag(&self, committee: &StaticCommittee) -> Result<Dag> {
         let rows: Vec<DagRow> = sqlx::query_as("SELECT round, public_key, vertex FROM dag")
             .fetch_all(&self.pool)
