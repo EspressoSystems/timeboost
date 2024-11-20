@@ -5,7 +5,11 @@ edition.workspace = true
 description.workspace = true
 
 [features]
+<<<<<<< HEAD
 until = ["reqwest"]
+=======
+until = []
+>>>>>>> 842020eaeada025dbaf6dc3b4021fb976089dff2
 
 [dependencies]
 async-broadcast = { workspace = true }
@@ -23,6 +27,7 @@ sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }
+reqwest = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 multiaddr = { workspace = true }

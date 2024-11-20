@@ -17,7 +17,8 @@ for i in {0..4}; do
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --metrics-port $((9000 + i)) \
-        --base local &
+        --base local \
+        --until 1000 &
 done
 
 wait
