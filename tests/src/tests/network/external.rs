@@ -1,12 +1,13 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_lock::RwLock;
 use portpicker::pick_unused_port;
 use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     metrics::ConsensusMetrics,
+    test::testnet::TestNet,
     PublicKey,
 };
 use timeboost_networking::network::{
@@ -105,7 +106,7 @@ impl TestableNetwork for Libp2pNetworkTest {
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let log = Arc::clone(self.event_logs.get(&i).unwrap());
-            let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
+            let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
             let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
             let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
 
@@ -113,8 +114,10 @@ impl TestableNetwork for Libp2pNetworkTest {
             self.tb_app_txs.insert(i, tb_app_tx);
 
             handles.spawn(async move {
-                let co = node.init(
-                    network,
+                let net = TestNet::new(network);
+                let messages = net.messages();
+                let mut coordinator = node.init(
+                    net,
                     (*staked_nodes).clone(),
                     sf_app_tx,
                     tb_app_rx,
@@ -122,7 +125,34 @@ impl TestableNetwork for Libp2pNetworkTest {
                     Some(Arc::clone(&log)),
                 );
 
-                co.go(shutdown_rx).await.map_err(|e| anyhow!(e))
+                loop {
+                    let i = 0;
+                    // tokio::select! {
+                    // res = coordinator.next() => {
+                    //     match res {
+                    //         Ok(actions) => {
+                    //             let inbox = messages.drain_inbox();
+                    //     // test(inbox, actions) ok?
+
+                    //     for a in &actions {
+                    //         let _ = coordinator.execute(a.clone()).await;
+                    //     }
+
+                    //     let _outbox = messages.drain_outbox();
+                    //         }
+                    //         Err(e) => {}
+                    //     }
+                    // }
+                    // shutdown_result = shutdown_rx.changed() => {
+                    //     // Unwrap the potential error with receiving the shutdown token.
+                    //     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                    //     // Return the shutdown token.
+                    //     break;
+                    // }
+                    //}
+                }
+                Ok(())
+                // co.go(shutdown_rx).await.map_err(|e| anyhow!(e))
             });
         }
         handles

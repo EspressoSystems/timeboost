@@ -8,6 +8,7 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
+        block::Block,
         event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
@@ -36,6 +37,10 @@ pub struct Coordinator<C> {
 
     /// The timeboost receiver application event stream.
     tb_app_rx: Receiver<TimeboostStatusEvent>,
+
+    timer: BoxFuture<'static, RoundNumber>,
+
+    init: bool,
 
     #[cfg(feature = "test")]
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
@@ -73,6 +78,8 @@ impl<C: Comm> Coordinator<C> {
             consensus: cons,
             sf_app_tx,
             tb_app_rx,
+            timer: pending().boxed(),
+            init: false,
             #[cfg(feature = "test")]
             event_log,
         }
@@ -209,6 +216,40 @@ impl<C: Comm> Coordinator<C> {
             }
             Action::SendNoVote(to, v) => self.unicast(to, Message::NoVote(v.cast())).await,
         }
+    }
+
+    pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
+        if !self.init {
+            self.init = true;
+            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())));
+        }
+
+        tokio::select! { biased;
+            vnr = &mut self.timer => Ok(self.consensus.timeout(vnr)),
+            msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
+        }
+    }
+
+    pub async fn execute(&mut self, action: Action) -> Result<Option<Block>, C::Err> {
+        match action {
+            Action::ResetTimer(r) => {
+                self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
+            }
+            Action::Deliver(b, _, _) => return Ok(Some(b)),
+            Action::SendProposal(e) => {
+                self.comm.broadcast(Message::Vertex(e.cast())).await?;
+            }
+            Action::SendTimeout(e) => {
+                self.comm.broadcast(Message::Timeout(e.cast())).await?;
+            }
+            Action::SendTimeoutCert(c) => {
+                self.comm.broadcast(Message::TimeoutCert(c)).await?;
+            }
+            Action::SendNoVote(to, v) => {
+                self.comm.send(to, Message::NoVote(v.cast())).await?;
+            }
+        }
+        Ok(None)
     }
 
     async fn broadcast(&mut self, msg: Message) {
