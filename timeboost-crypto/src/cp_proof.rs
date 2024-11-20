@@ -169,37 +169,33 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
 
 #[cfg(test)]
 mod tests {
-
-    use ark_bn254::{Config, G1Projective};
+    use ark_bn254::G1Projective;
     use ark_ec::{bn::BnConfig, short_weierstrass::Projective, PrimeGroup};
     use ark_std::{test_rng, UniformRand};
-    use nimue::hash::Keccak;
+    use nimue::{
+        hash::Keccak,
+        plugins::ark::{FieldChallenges, FieldWriter, GroupPublic, GroupWriter},
+        Merlin,
+    };
+    use rand::Rng;
 
     use crate::{
-        cp_proof::{ChaumPedersen, DleqTuple},
+        cp_proof::{ChaumPedersen, DleqTuple, Proof},
         traits::dleq_proof::DleqProofScheme,
     };
+
+    use super::CPParameters;
+
+    type G = G1Projective;
+    type D = Keccak;
+    type S = <Projective<<ark_bn254::Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField;
 
     #[test]
     fn proof_correctness() {
         let mut rng = test_rng();
 
-        type G = G1Projective;
-        type D = Keccak;
-        // Setup parameters
-        let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
-
-        // Generate random scalar x
-        let x = <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(
-            &mut rng,
-        );
-
-        // Generate tuple (g, g_hat, h, h_hat)
-        let g = params.generator;
-        let g_hat = g * x;
-        let h = G1Projective::rand(&mut rng);
-        let h_hat = h * x;
-        let tuple = DleqTuple::new(g, g_hat, h, h_hat);
+        // Setup
+        let (params, x, tuple) = setup(&mut rng);
 
         // Create proof
         let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
@@ -213,26 +209,96 @@ mod tests {
     fn generate_proof_invalid_tuple() {
         let mut rng = test_rng();
 
-        type G = G1Projective;
-        type D = Keccak;
+        // Setup
+        let (params, x, tuple) = setup(&mut rng);
+        let DleqTuple(g, g_hat, h, _) = tuple;
+        let y = S::from(2);
+
+        // Generate invalid tuple (g, g_hat, h, h_hat)
+        let tuple = DleqTuple::new(g, g_hat, h, h * y);
+
+        // Verify proof
+        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x);
+        assert!(
+            proof.is_err(),
+            "Proof generation should fail with invalid tuple"
+        );
+    }
+
+    #[test]
+    fn verify_proof_for_invalid_tuple() {
+        let mut rng = test_rng();
+
+        let (params, x, tuple) = setup(&mut rng);
+        let DleqTuple(g, g_hat, h, _) = tuple;
+
+        // Create proof
+        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
+
+        let y = S::rand(&mut rng);
+        let tuple_invalid = DleqTuple::new(g, g_hat, h, h * y);
+        assert!(!tuple_invalid.verify_tuple(x));
+        assert!(!tuple_invalid.verify_tuple(y));
+
+        // Verify proof
+        let result = ChaumPedersen::<G, D>::verify(&params, tuple_invalid, &proof);
+        assert!(
+            result.is_err(),
+            "Proof verification should fail with invalid tuple"
+        );
+    }
+
+    #[test]
+    fn verify_invalid_proof_for_tuple() {
+        let mut rng = test_rng();
+
+        let (params, x, tuple) = setup(&mut rng);
+        let DleqTuple(g, g_hat, h, h_hat) = tuple;
+
+        // Create valid proof
+        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
+
+        // Create invalid transcript
+        let mut mordred: Merlin<D> = params.io_pattern.to_merlin();
+        mordred.public_points(&[g, g_hat, h, h_hat]).unwrap();
+        mordred.ratchet().unwrap();
+
+        let k = S::rand(mordred.rng());
+        let a = g * k;
+        let a_hat = h; // does not commit to `k`
+        mordred.add_points(&[a, a_hat]).unwrap();
+
+        let [e]: [S; 1] = mordred.challenge_scalars().unwrap();
+
+        let z = k + e * x;
+        mordred.add_scalars(&[z]).unwrap();
+
+        let mordred_proof = Proof {
+            transcript: mordred.transcript().to_vec(),
+            ..proof
+        };
+
+        // Verify proof
+        let result = ChaumPedersen::<G, D>::verify(&params, tuple, &mordred_proof);
+        assert!(
+            result.is_err(),
+            "Proof verification should fail with invalid transcript"
+        );
+    }
+
+    fn setup<R: Rng>(mut rng: R) -> (CPParameters<G, D>, S, DleqTuple<G>) {
         // Setup parameters
         let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
 
         // Generate random scalar x
-        let x = <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(
-            &mut rng,
-        );
-        let two =
-            <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::from(2);
+        let x = S::rand(&mut rng);
 
-        // Generate invalid tuple (g, g_hat, h, h_hat)
+        // Generate tuple (g, g_hat, h, h_hat)
         let g = params.generator;
         let g_hat = g * x;
         let h = G1Projective::rand(&mut rng);
-        let h_hat = h * two;
+        let h_hat = h * x;
         let tuple = DleqTuple::new(g, g_hat, h, h_hat);
-
-        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x);
-        assert!(proof.is_err(), "Proof generation with invalid tuple");
+        (params, x, tuple)
     }
 }
