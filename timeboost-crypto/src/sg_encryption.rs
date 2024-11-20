@@ -121,7 +121,7 @@ where
                 "Unable to create eval domain"
             )));
         }
-        let alpha = poly.evaluate(&C::ScalarField::zero());
+        let alpha_0 = poly.evaluate(&C::ScalarField::zero());
         let evals: Vec<_> = (0..committee_size)
             .map(|i| {
                 let x = domain.unwrap().element(i);
@@ -129,7 +129,7 @@ where
             })
             .collect();
 
-        let u_0 = gen * alpha;
+        let u_0 = gen * alpha_0;
         let pub_key = PublicKey {
             pk: u_0,
             pk_comb: evals.iter().map(|alpha| gen * alpha).collect(),
@@ -177,8 +177,9 @@ where
 
         // Produce DLEQ proof for CCA security
         let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
-        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta)
-            .map_err(|_| ThresholdEncError::Internal(anyhow!("Proof generation failed")))?;
+        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta).map_err(|_| {
+            ThresholdEncError::Internal(anyhow!("Encrypt: Proof generation failed"))
+        })?;
 
         Ok(Ciphertext {
             v,
@@ -209,8 +210,9 @@ where
         let w = v * alpha;
         let u_i = pp.generator * alpha;
         let tuple = DleqTuple::new(pp.generator, u_i, v, w);
-        let phi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &alpha)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Proof generation failed {:?}", e)))?;
+        let phi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &alpha).map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Decrypt: Proof generation failed {:?}", e))
+        })?;
 
         Ok(DecShare {
             w,
@@ -247,16 +249,21 @@ where
         let pk_comb = pub_key.pk_comb.clone();
 
         // Verify DLEQ proofs
-        dec_shares
+        let valid_shares: Vec<_> = dec_shares
             .iter()
-            .map(|share| {
+            .filter_map(|share| {
                 let (w, phi) = (share.w, share.phi.clone());
                 let u = pk_comb[share.index as usize];
                 let tuple = DleqTuple::new(pp.generator, u, v, w);
                 ChaumPedersen::verify(&pp.cp_params, tuple, &phi)
+                    .ok()
+                    .map(|_| *share)
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
+            .collect();
+
+        if valid_shares.len() < threshold {
+            return Err(ThresholdEncError::NotEnoughShares);
+        }
 
         // Colllect eval points for decryption shares
         let x = dec_shares
