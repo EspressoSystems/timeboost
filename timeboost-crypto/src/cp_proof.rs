@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_std::UniformRand;
 use nimue::{
@@ -61,6 +62,10 @@ impl<C: CurveGroup> DleqTuple<C> {
     pub fn new(g: C, g_hat: C, h: C, h_hat: C) -> Self {
         DleqTuple(g, g_hat, h, h_hat)
     }
+
+    pub fn verify_tuple(&self, x: C::ScalarField) -> bool {
+        self.0 * x == self.1 && self.2 * x == self.3
+    }
 }
 
 #[derive(Clone)]
@@ -112,8 +117,13 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
         tuple: Self::DleqTuple,
         x: &Self::Scalar,
     ) -> Result<Self::Proof, DleqProofError> {
-        let mut merlin = pp.io_pattern.to_merlin();
+        if !tuple.verify_tuple(*x) {
+            return Err(DleqProofError::Internal(anyhow!(
+                "unable to generate proof for invalid tuple"
+            )));
+        }
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
+        let mut merlin = pp.io_pattern.to_merlin();
         merlin.public_points(&[g, g_hat, h, h_hat]).unwrap();
         merlin.ratchet().unwrap();
 
@@ -160,7 +170,7 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
 #[cfg(test)]
 mod tests {
 
-    use ark_bn254::G1Projective;
+    use ark_bn254::{Config, G1Projective};
     use ark_ec::{bn::BnConfig, short_weierstrass::Projective, PrimeGroup};
     use ark_std::{test_rng, UniformRand};
     use nimue::hash::Keccak;
@@ -171,7 +181,7 @@ mod tests {
     };
 
     #[test]
-    fn test_chaum_pedersen_proof() {
+    fn proof_correctness() {
         let mut rng = test_rng();
 
         type G = G1Projective;
@@ -180,8 +190,9 @@ mod tests {
         let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
 
         // Generate random scalar x
-        let x =
-            <<Projective<<ark_bn254::Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(&mut rng);
+        let x = <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(
+            &mut rng,
+        );
 
         // Generate tuple (g, g_hat, h, h_hat)
         let g = params.generator;
@@ -196,5 +207,32 @@ mod tests {
         // Verify proof
         let result = ChaumPedersen::<G, D>::verify(&params, tuple, &proof);
         assert!(result.is_ok(), "Proof verification failed");
+    }
+
+    #[test]
+    fn generate_proof_invalid_tuple() {
+        let mut rng = test_rng();
+
+        type G = G1Projective;
+        type D = Keccak;
+        // Setup parameters
+        let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
+
+        // Generate random scalar x
+        let x = <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::rand(
+            &mut rng,
+        );
+        let two =
+            <<Projective<<Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField>::from(2);
+
+        // Generate invalid tuple (g, g_hat, h, h_hat)
+        let g = params.generator;
+        let g_hat = g * x;
+        let h = G1Projective::rand(&mut rng);
+        let h_hat = h * two;
+        let tuple = DleqTuple::new(g, g_hat, h, h_hat);
+
+        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x);
+        assert!(proof.is_err(), "Proof generation with invalid tuple");
     }
 }
