@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[features]
+until = ["reqwest"]
+
 [dependencies]
 async-broadcast = { workspace = true }
 async-trait = { workspace = true }
@@ -15,6 +18,7 @@ futures = { workspace = true }
 committable = { workspace = true }
 hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
+reqwest = { version = "0.12", optional = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }

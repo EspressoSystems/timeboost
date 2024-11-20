@@ -2,24 +2,20 @@
 
 set -euox pipefail
 
-if [ "${1:-debug}" = "release" ]; then
-    just build_release
-else
-    just build
-fi
+just build_release --features until
 
 for i in {0..4}; do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=warn \
-    ./target/${1:-debug}/timeboost \
+    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    ./target/release/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --metrics-port $((9000 + i)) \
         --base local \
-        --until 1000 &
+        --until 500 \
+        --watchdog-timeout 30 &
 done
 
 wait
-

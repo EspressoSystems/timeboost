@@ -42,3 +42,6 @@ run_integration: build_docker
 
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
+
+run_demo:
+  ./scripts/run-demo
