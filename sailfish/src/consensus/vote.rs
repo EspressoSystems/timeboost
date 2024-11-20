@@ -48,6 +48,10 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.cert.as_ref()
     }
 
+    pub fn set_certificate(&mut self, c: Certificate<D>) {
+        self.cert = Some(c)
+    }
+
     pub fn add(&mut self, vote: Envelope<D, Validated>) -> Result<Option<&Certificate<D>>, Error> {
         if self.votes.contains_key(vote.signing_key()) {
             return Ok(self.certificate());

@@ -227,39 +227,18 @@ impl Consensus {
             return actions;
         }
 
-        let buffer = mem::take(&mut self.buffer);
-        let mut retained = HashSet::new();
+        self.dag.dbg_dag();
+        print!(">>>: "); vertex.dbg_edges();
+
         match self.try_to_add_to_dag(&vertex) {
             Err(()) => {
-                // XXX: The following is not spec compliant (cf. https://github.com/EspressoSystems/timeboost/issues/100)
-                for w in buffer {
-                    if w.round() > vertex.round() {
-                        retained.insert(w);
-                        continue;
-                    }
-                    if let Ok(a) = self.try_to_add_to_dag(&w) {
-                        actions.extend(a);
-                        if w.round() < self.round {
-                            continue;
-                        }
-                        if (self.dag.vertex_count(w.round()) as u64)
-                            < self.committee.quorum_size().get()
-                        {
-                            continue;
-                        }
-                        actions.extend(self.advance_from_round(w.round()));
-                    } else {
-                        retained.insert(w);
-                    }
-                }
-                debug_assert!(self.buffer.is_empty());
-                self.buffer = retained;
-                // XXX: End of spec deviation (cf. https://github.com/EspressoSystems/timeboost/issues/100)
                 self.buffer.insert(vertex);
                 self.metrics.vertex_buffer.set(self.buffer.len());
             }
             Ok(a) => {
                 actions.extend(a);
+                let buffer = mem::take(&mut self.buffer);
+                let mut retained = HashSet::new();
                 for w in buffer {
                     if w.round() > vertex.round() {
                         retained.insert(w);
@@ -357,7 +336,12 @@ impl Consensus {
     /// Once we have collected more than f timeouts we start broadcasting our own timeout.
     /// Eventually, if we receive more than 2f timeouts we form a timeout certificate and
     /// broadcast that too.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.label,
+        round  = %self.round,
+        source = %Label::new(e.signing_key()),
+        tround = %e.data().round())
+    )]
     pub fn handle_timeout(&mut self, e: Envelope<Timeout, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -425,7 +409,11 @@ impl Consensus {
     /// If we also have more than 2f vertex proposals (i.e. we are just missing the
     /// leader vertex), we can move to the next round and include the certificate in
     /// our next vertex proposal.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.label,
+        round  = %self.round,
+        tround = %cert.data().round())
+    )]
     pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -451,8 +439,23 @@ impl Consensus {
             return actions;
         }
 
+        if round >= self.round {
+            self.timeouts
+                .entry(round)
+                .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
+                .set_certificate(cert);
+        }
+
         if self.dag.vertex_count(round) as u64 >= self.committee.quorum_size().get() {
             actions.extend(self.advance_from_round(round));
+        } else {
+            debug!(
+                node   = %self.label,
+                round  = %self.round,
+                tround = %round,
+                "no enough vertices in dag"
+            );
+            self.dag.dbg_dag()
         }
 
         actions
@@ -560,6 +563,7 @@ impl Consensus {
         vround = %v.round())
     )]
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
+        self.dag.add(v.clone());
         self.metrics.dag_depth.set(self.dag.depth());
         let mut actions = Vec::new();
         let e = Envelope::signed(v, &self.keypair);
@@ -614,7 +618,7 @@ impl Consensus {
 
         self.metrics.dag_depth.set(self.dag.depth());
 
-        if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
+        if v.round() > self.committed_round && self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
                 debug!(
@@ -671,11 +675,23 @@ impl Consensus {
                 v = l
             }
         }
+        if v.round() < self.committed_round {
+            warn! {
+                node      = %self.label,
+                round     = %self.round,
+                committed = %self.committed_round,
+                vround    = %v.round(),
+                "vertex round < committed round"
+            }
+            self.dag.dbg_dag();
+            print!("!!! "); v.dbg_edges();
+        }
         self.committed_round = v.round();
         trace!(commit = %self.committed_round, "committed round");
         self.metrics
             .committed_round
             .set(*self.committed_round as usize);
+        self.dag.dbg_dag();
         self.order_vertices()
     }
 
@@ -754,16 +770,16 @@ impl Consensus {
             return false;
         }
 
-        if self.committed_round > 2.into() && v.round() < self.committed_round - 2 {
-            debug!(
-                node   = %self.label,
-                round  = %self.round,
-                vround = %v.round(),
-                source = %Label::new(v.source()),
-                "vertex round is too old"
-            );
-            return false;
-        }
+        //if self.committed_round > 2.into() && v.round() < self.committed_round - 2 {
+        //    debug!(
+        //        node   = %self.label,
+        //        round  = %self.round,
+        //        vround = %v.round(),
+        //        source = %Label::new(v.source()),
+        //        "vertex round is too old"
+        //    );
+        //    return false;
+        //}
 
         if v.has_edge(&self.committee.leader(v.round() - 1)) {
             return true;
