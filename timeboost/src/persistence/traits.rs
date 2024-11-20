@@ -25,4 +25,15 @@ impl<P: Persistence> Storage<P> {
         let persistence = P::new(uri).await?;
         Ok(Self { persistence })
     }
+
+    pub async fn gc(&self, round: RoundNumber) -> Result<()> {
+        self.persistence.gc(round).await
+    }
+
+    pub async fn load_consensus_state(
+        &self,
+        committee: &StaticCommittee,
+    ) -> Result<ConsensusState> {
+        self.persistence.load_consensus_state(committee).await
+    }
 }

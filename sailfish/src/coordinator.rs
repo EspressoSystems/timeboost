@@ -11,7 +11,7 @@ use timeboost_core::{
         event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
-        NodeId, PublicKey,
+        Keypair, NodeId, PublicKey,
     },
 };
 use tokio::sync::{
@@ -27,6 +27,9 @@ pub struct Coordinator<C> {
 
     /// The communication channel for this coordinator.
     comm: C,
+
+    /// The keypair of this coordinator.
+    keypair: Keypair,
 
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
@@ -61,6 +64,7 @@ impl std::fmt::Display for CoordinatorAuditEvent {
 impl<C: Comm> Coordinator<C> {
     pub fn new(
         id: NodeId,
+        keypair: Keypair,
         comm: C,
         cons: Consensus,
         sf_app_tx: Sender<SailfishStatusEvent>,
@@ -69,6 +73,7 @@ impl<C: Comm> Coordinator<C> {
     ) -> Self {
         Self {
             id,
+            keypair,
             comm,
             consensus: cons,
             sf_app_tx,

@@ -27,7 +27,7 @@ pub use vote::VoteAccumulator;
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ConsensusState {
     /// The DAG of vertices
     pub dag: Dag,
@@ -102,8 +102,8 @@ impl Consensus {
         keypair: Keypair,
         committee: StaticCommittee,
         metrics: Arc<ConsensusMetrics>,
+        state: ConsensusState,
     ) -> Self {
-        let state = ConsensusState::new(&committee);
         Self {
             id,
             label: Label::new(keypair.public_key()),

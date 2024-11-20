@@ -113,7 +113,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             self.tb_app_txs.insert(i, tb_app_tx);
 
             handles.spawn(async move {
-                let co = node.init(
+                let co = node.into_coordinator(
                     network,
                     (*staked_nodes).clone(),
                     sf_app_tx,

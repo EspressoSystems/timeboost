@@ -23,6 +23,8 @@ blake3 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
+custom_debug = { workspace = true }
+derive_builder = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }
 digest = { workspace = true }

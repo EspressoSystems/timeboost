@@ -63,27 +63,29 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
         // This is intentionally *not* a member of the struct due to `run` consuming
         // the instance.
-        let mut net = Star::new();
+        // let mut net = Star::new();
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             // Join each node to the network
-            let ch = net.join(*n.public_key());
+            // let ch = net.join(*n.public_key());
 
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
+            // let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
+            // let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
 
-            self.sf_app_rxs.insert(i, sf_app_rx);
-            self.tb_app_txs.insert(i, tb_app_tx);
+            // self.sf_app_rxs.insert(i, sf_app_rx);
+            // self.tb_app_txs.insert(i, tb_app_tx);
+
+            // Build the rest of the sailfish config.
 
             // Initialize the coordinator
-            let co = n.init(
-                ch,
-                (*self.group.staked_nodes).clone(),
-                sf_app_tx,
-                tb_app_rx,
-                Arc::new(ConsensusMetrics::default()),
-                Some(Arc::clone(&self.event_logs[&i])),
-            );
+            // let co = n.into_coordinator(
+            //     ch,
+            //     (*self.group.staked_nodes).clone(),
+            //     sf_app_tx,
+            //     tb_app_rx,
+            //     Arc::new(ConsensusMetrics::default()),
+            //     Some(Arc::clone(&self.event_logs[&i])),
+            // );
 
             tracing::debug!("Started coordinator {}", i);
             coordinators.push(co);

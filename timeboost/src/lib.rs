@@ -1,5 +1,10 @@
 use anyhow::Result;
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use persistence::{
+    no_storage::NoPersistence,
+    pg::PgPersistence,
+    traits::{Persistence, Storage},
+};
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
@@ -8,9 +13,10 @@ use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
-use sailfish::sailfish::run_sailfish;
+use sailfish::{consensus::ConsensusState, sailfish::run_sailfish};
 use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    committee::StaticCommittee,
+    event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
@@ -77,7 +83,11 @@ impl Timeboost {
     }
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<()> {
+    pub async fn go<P: Persistence>(
+        mut self,
+        prom: Arc<PrometheusMetrics>,
+        storage: Storage<P>,
+    ) -> Result<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
@@ -96,7 +106,21 @@ impl Timeboost {
             tokio::select! {
                 event = self.app_rx.recv() => {
                     match event {
-                        Some(event) => info!("Received event: {:?}", event),
+                        Some(event) => match event.event {
+                            SailfishEventType::Error { error } => {
+
+                            },
+                            SailfishEventType::RoundFinished { round } => {
+
+                            },
+                            SailfishEventType::Timeout { round } => {
+
+                            },
+                            SailfishEventType::Committed { round } => {
+                                // Commits also trigger a GC.
+                                storage.gc(round).await?;
+                            },
+                        },
                         None => {
                             warn!("Timeboost channel closed; shutting down.");
                             break Err(anyhow::anyhow!("Timeboost channel closed; shutting down."));
@@ -124,6 +148,7 @@ pub async fn run_timeboost(
     keypair: Keypair,
     bind_address: Multiaddr,
     shutdown_rx: watch::Receiver<()>,
+    database_uri: String,
 ) -> Result<()> {
     info!("Starting timeboost");
 
@@ -134,6 +159,25 @@ pub async fn run_timeboost(
     let (sf_app_tx, sf_app_rx) = channel(100);
 
     let (tb_app_tx, tb_app_rx) = channel(100);
+
+    #[cfg(not(feature = "nostorage"))]
+    let storage = Storage::<PgPersistence>::new(database_uri).await?;
+
+    #[cfg(feature = "nostorage")]
+    let storage = Storage::<NoPersistence>::new(database_uri).await?;
+
+    let committee = StaticCommittee::new(
+        staked_nodes
+            .iter()
+            .map(|node| node.stake_table_entry.stake_key)
+            .collect::<Vec<_>>(),
+    );
+
+    // If the state is not found or fails to load, initialize a new one.
+    let state = storage
+        .load_consensus_state(&committee)
+        .await
+        .unwrap_or_else(|_| ConsensusState::new(&committee));
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
@@ -150,6 +194,7 @@ pub async fn run_timeboost(
             tb_app_rx,
             metrics_clone,
             shutdown_rx_clone,
+            state,
         )
         .await
     });
@@ -167,5 +212,5 @@ pub async fn run_timeboost(
     );
 
     info!("Timeboost is running.");
-    timeboost.go(prom).await
+    timeboost.go(prom, storage).await
 }
