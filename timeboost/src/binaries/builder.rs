@@ -7,6 +7,7 @@ use timeboost_core::types::{Keypair, NodeId};
 
 use clap::Parser;
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
+use tokio::time::sleep;
 use tokio::{signal, sync::watch};
 use tracing::warn;
 
@@ -31,6 +32,64 @@ struct Cli {
     /// The base to use for the committee config.
     #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
     base: CommitteeBase,
+
+    /// The until value to use for the committee config.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 1000)]
+    until: u64,
+
+    /// The watchdog timeout.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 30)]
+    watchdog_timeout: u64,
+}
+
+#[cfg(feature = "until")]
+async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Sender<()>) {
+    use futures::FutureExt;
+
+    sleep(std::time::Duration::from_secs(1)).await;
+
+    let mut timer = sleep(std::time::Duration::from_secs(timeout))
+        .fuse()
+        .boxed();
+
+    // Deliberately run this on a timeout to avoid a runaway testing scenario.
+    loop {
+        tokio::select! {
+            _ = &mut timer => {
+                tracing::error!("watchdog timed out, shutting down");
+                shutdown_tx.send(()).expect(
+                    "the shutdown sender was dropped before the receiver could receive the token",
+                );
+                return;
+            }
+            resp = reqwest::get(format!("http://localhost:{}/status/metrics", port)) => {
+                if let Ok(resp) = resp {
+                    if let Ok(text) = resp.text().await {
+                        let committed_round = text
+                            .lines()
+                            .find(|line| line.starts_with("committed_round"))
+                            .and_then(|line| line.split(' ').nth(1))
+                            .and_then(|num| num.parse::<u64>().ok())
+                            .unwrap_or(0);
+
+                        if committed_round > 0 && committed_round % 10 == 0 {
+                            tracing::info!("committed_round: {}", committed_round);
+                        }
+
+                        if committed_round >= until {
+                            tracing::info!("watchdog completed successfully");
+                            shutdown_tx.send(()).expect(
+                                    "the shutdown sender was dropped before the receiver could receive the token",
+                                );
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -50,6 +109,15 @@ async fn main() -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
+
+    #[cfg(feature = "until")]
+    tokio::spawn(run_until(
+        cli.metrics_port,
+        cli.until,
+        cli.watchdog_timeout,
+        shutdown_tx.clone(),
+    ));
+
     tokio::select! {
         _ = run_timeboost(
             id,
@@ -67,7 +135,7 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            return Ok(());
+            Ok(())
         }
     }
 }
