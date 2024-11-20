@@ -1,9 +1,12 @@
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use anyhow::Result;
-use async_lock::RwLock;
 use portpicker::pick_unused_port;
-use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
+use sailfish::sailfish::Sailfish;
 use timeboost_core::types::{
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     metrics::ConsensusMetrics,
@@ -19,9 +22,9 @@ use tokio::{
     task::JoinSet,
 };
 
-use crate::Group;
+use crate::{tests::network::CoordinatorAuditEvent, Group};
 
-use super::{TestCondition, TestOutcome, TestableNetwork};
+use super::{HandleResult, TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
@@ -29,8 +32,7 @@ pub struct Libp2pNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
-    event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
+    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
     sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
     tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
 }
@@ -38,20 +40,15 @@ pub struct Libp2pNetworkTest {
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2pNetwork<PublicKey>;
-    type Shutdown = Result<()>;
 
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
             (0..group.fish.len()).map(|_| watch::channel(())).unzip();
-        let event_logs = HashMap::from_iter(
-            (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
-        );
 
         Self {
             group,
             shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
-            event_logs,
             outcomes,
             sf_app_rxs: HashMap::new(),
             tb_app_txs: HashMap::new(),
@@ -93,7 +90,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown> {
+    ) -> JoinSet<Result<HandleResult, ()>> {
         let mut handles = JoinSet::new();
         let (nodes, networks) = nodes_and_networks;
 
@@ -105,7 +102,7 @@ impl TestableNetwork for Libp2pNetworkTest {
 
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let log = Arc::clone(self.event_logs.get(&i).unwrap());
+            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
             let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
             let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
             let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
@@ -115,82 +112,65 @@ impl TestableNetwork for Libp2pNetworkTest {
 
             handles.spawn(async move {
                 let net = TestNet::new(network);
-                let messages = net.messages();
+                let msgs = net.messages();
                 let mut coordinator = node.init(
                     net,
                     (*staked_nodes).clone(),
                     sf_app_tx,
                     tb_app_rx,
                     Arc::new(ConsensusMetrics::default()),
-                    Some(Arc::clone(&log)),
                 );
 
+                let mut result = HandleResult::new(i);
+                let mut recv_msgs = Vec::new();
                 loop {
-                    let i = 0;
-                    // tokio::select! {
-                    // res = coordinator.next() => {
-                    //     match res {
-                    //         Ok(actions) => {
-                    //             let inbox = messages.drain_inbox();
-                    //     // test(inbox, actions) ok?
-
-                    //     for a in &actions {
-                    //         let _ = coordinator.execute(a.clone()).await;
-                    //     }
-
-                    //     let _outbox = messages.drain_outbox();
-                    //         }
-                    //         Err(e) => {}
-                    //     }
-                    // }
-                    // shutdown_result = shutdown_rx.changed() => {
-                    //     // Unwrap the potential error with receiving the shutdown token.
-                    //     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    //     // Return the shutdown token.
-                    //     break;
-                    // }
-                    //}
+                    tokio::select! {
+                        res = coordinator.next() => {
+                            match res {
+                                Ok(actions) => {
+                                    recv_msgs.extend(
+                                        msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
+                                    );
+                                    if conditions.iter().all(|c| c.evaluate(&recv_msgs) == TestOutcome::Passed) {
+                                        result.set_outcome(TestOutcome::Passed);
+                                        break;
+                                    }
+                                    for a in &actions {
+                                        let _ = coordinator.execute(a.clone()).await;
+                                    }
+                                    let _outbox = msgs.drain_outbox();
+                                }
+                                Err(_e) => {}
+                            }
+                        }
+                        shutdown_result = shutdown_rx.changed() => {
+                            // Unwrap the potential error with receiving the shutdown token.
+                            shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                            break;
+                        }
+                    }
                 }
-                Ok(())
-                // co.go(shutdown_rx).await.map_err(|e| anyhow!(e))
+                Ok(result)
             });
         }
         handles
     }
 
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
-        let mut statuses =
-            HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
-        for (node_id, conditions) in self.outcomes.iter() {
-            tracing::info!("Evaluating node {}", node_id);
-            let log = self.event_logs.get(node_id).unwrap().read().await;
-            let eval_result: Vec<TestOutcome> =
-                conditions.iter().map(|c| c.evaluate(&log)).collect();
-
-            // TODO: Add the application layer statuses to the evaluation criteria.
-
-            // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
-            // set it to Passed.
-            let status = eval_result.iter().fold(TestOutcome::Passed, |acc, x| {
-                if *x == TestOutcome::Waiting {
-                    *x
-                } else {
-                    acc
-                }
-            });
-
-            *statuses.get_mut(node_id).expect("Node ID not found") = status;
+    async fn shutdown(
+        self,
+        handles: JoinSet<Result<HandleResult, ()>>,
+        completed: HashSet<usize>,
+    ) -> Vec<Result<HandleResult, ()>> {
+        if handles.is_empty() {
+            return Vec::new();
         }
-
-        statuses
-    }
-
-    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
-        for send in self.shutdown_txs.into_values() {
-            send.send(()).expect(
-                "The shutdown sender was dropped before the receiver could receive the token",
-            );
+        for (id, send) in self.shutdown_txs.iter() {
+            if !completed.contains(id) {
+                send.send(()).expect(
+                    "The shutdown sender was dropped before the receiver could receive the token",
+                );
+            }
         }
-        handles.join_all().await;
+        handles.join_all().await
     }
 }

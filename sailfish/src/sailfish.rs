@@ -1,8 +1,5 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-#[cfg(feature = "test")]
-use crate::coordinator::CoordinatorAuditEvent;
-
 use anyhow::{bail, Result};
 use async_lock::RwLock;
 use hotshot::types::SignatureKey;
@@ -129,7 +126,6 @@ impl Sailfish {
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -143,15 +139,7 @@ impl Sailfish {
 
         let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
 
-        Coordinator::new(
-            self.id,
-            comm,
-            consensus,
-            sf_app_tx,
-            tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
-        )
+        Coordinator::new(self.id, comm, consensus, sf_app_tx, tb_app_rx)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -165,7 +153,7 @@ impl Sailfish {
         metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, sf_app_tx, tb_app_rx, metrics, None)
+            self.init(n, staked_nodes, sf_app_tx, tb_app_rx, metrics)
                 .go(shutdown_rx.clone()),
         );
 

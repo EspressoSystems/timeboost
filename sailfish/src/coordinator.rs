@@ -1,9 +1,8 @@
-use std::{future::pending, sync::Arc, time::Duration};
+use std::{future::pending, time::Duration};
 
 use crate::consensus::{Consensus, Dag};
 
 use anyhow::{bail, Result};
-use async_lock::RwLock;
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
@@ -41,26 +40,6 @@ pub struct Coordinator<C> {
     timer: BoxFuture<'static, RoundNumber>,
 
     init: bool,
-
-    #[cfg(feature = "test")]
-    event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg(feature = "test")]
-pub enum CoordinatorAuditEvent {
-    ActionTaken(Action),
-    MessageReceived(Message),
-}
-
-#[cfg(feature = "test")]
-impl std::fmt::Display for CoordinatorAuditEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
-            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
-        }
-    }
 }
 
 impl<C: Comm> Coordinator<C> {
@@ -70,7 +49,6 @@ impl<C: Comm> Coordinator<C> {
         cons: Consensus,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Self {
         Self {
             id,
@@ -80,8 +58,6 @@ impl<C: Comm> Coordinator<C> {
             tb_app_rx,
             timer: pending().boxed(),
             init: false,
-            #[cfg(feature = "test")]
-            event_log,
         }
     }
 
@@ -92,13 +68,6 @@ impl<C: Comm> Coordinator<C> {
     #[cfg(feature = "test")]
     pub fn consensus(&self) -> &Consensus {
         &self.consensus
-    }
-
-    #[cfg(feature = "test")]
-    pub async fn append_test_event(&mut self, event: CoordinatorAuditEvent) {
-        if let Some(log) = self.event_log.as_ref() {
-            log.write().await.push(event);
-        }
     }
 
     pub async fn go(mut self, mut shutdown_rx: watch::Receiver<()>) -> Result<()> {
@@ -115,11 +84,6 @@ impl<C: Comm> Coordinator<C> {
             tokio::select! { biased;
                 vnr = &mut timer => {
                     for a in self.consensus.timeout(vnr) {
-                        #[cfg(feature = "test")]
-                        {
-                            self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                                .await;
-                        }
                         self.on_action(a, &mut timer).await
                     }
                 },
@@ -127,12 +91,6 @@ impl<C: Comm> Coordinator<C> {
                     Ok(msg) => match self.on_message(msg).await {
                         Ok(actions) => {
                             for a in actions {
-                                #[cfg(feature = "test")]
-                                {
-                                    self.append_test_event(CoordinatorAuditEvent::ActionTaken(a.clone()))
-                                    .await;
-                                }
-
                                 self.on_action(a, &mut timer).await
                             }
                         }
@@ -171,9 +129,6 @@ impl<C: Comm> Coordinator<C> {
     }
 
     async fn on_message(&mut self, m: Message) -> Result<Vec<Action>> {
-        #[cfg(feature = "test")]
-        self.append_test_event(CoordinatorAuditEvent::MessageReceived(m.clone()))
-            .await;
         Ok(self.consensus.handle_message(m))
     }
 
