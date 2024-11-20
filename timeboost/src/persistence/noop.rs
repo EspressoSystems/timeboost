@@ -7,10 +7,10 @@ use timeboost_core::types::{
 
 use super::traits::Persistence;
 
-pub struct NoPersistence;
+pub struct NoOpPersistence;
 
 #[async_trait]
-impl Persistence for NoPersistence {
+impl Persistence for NoOpPersistence {
     async fn new(_uri: String) -> Result<Self> {
         Ok(Self)
     }
