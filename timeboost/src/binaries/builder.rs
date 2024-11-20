@@ -7,7 +7,6 @@ use timeboost_core::types::{Keypair, NodeId};
 
 use clap::Parser;
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use tokio::time::sleep;
 use tokio::{signal, sync::watch};
 use tracing::warn;
 
@@ -47,6 +46,7 @@ struct Cli {
 #[cfg(feature = "until")]
 async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Sender<()>) {
     use futures::FutureExt;
+    use tokio::time::sleep;
 
     sleep(std::time::Duration::from_secs(1)).await;
 

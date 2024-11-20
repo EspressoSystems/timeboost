@@ -48,7 +48,6 @@ ethereum-types = { version = "0.14", default-features = false, features = [
 futures = { version = "0.3", default-features = false }
 hotshot = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
 hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
-reqwest = { version = "0.12" }
 jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-pcs = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
