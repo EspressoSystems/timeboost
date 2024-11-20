@@ -26,6 +26,13 @@ pub type PrivateKey = BLSPrivKey;
 pub type Signature = <PublicKey as SignatureKey>::PureAssembledSignatureType;
 pub type QuorumSignature = <PublicKey as SignatureKey>::QcType;
 
+// impl<'r> FromRow<'r, Row> for PublicKey {
+//     fn from_row(row: &'r Row) -> Result<Self, sqlx::Error> {
+//         let bytes: Vec<u8> = row.try_get("public_key")?;
+//         Ok(PublicKey::from_bytes(&bytes).unwrap())
+//     }
+// }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NodeId(u64);

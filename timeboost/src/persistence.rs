@@ -1,3 +1,3 @@
 pub mod pg;
-pub mod sqlite;
+pub mod row_types;
 pub mod traits;

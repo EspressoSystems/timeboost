@@ -1,9 +1,7 @@
 use std::mem;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::types::seqno::SeqNo;
@@ -60,9 +58,9 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionsQueue {
-    txns: Arc<Mutex<Vec<Transaction>>>,
+    txns: Vec<Transaction>,
 }
 
 impl Default for TransactionsQueue {
@@ -73,32 +71,30 @@ impl Default for TransactionsQueue {
 
 impl TransactionsQueue {
     pub fn new() -> Self {
-        Self {
-            txns: Arc::new(Mutex::new(Vec::new())),
-        }
+        Self { txns: Vec::new() }
     }
 
     pub fn transactions(&self) -> Vec<Transaction> {
-        self.txns.lock().iter().cloned().collect()
+        self.txns.clone()
     }
 
-    pub fn add(&self, t: Transaction) {
-        self.txns.lock().push(t)
+    pub fn add(&mut self, t: Transaction) {
+        self.txns.push(t);
     }
 
-    pub fn append(&self, mut txns: Vec<Transaction>) {
-        self.txns.lock().append(&mut txns)
+    pub fn append(&mut self, mut txns: Vec<Transaction>) {
+        self.txns.append(&mut txns);
     }
 
-    pub fn take(&self) -> Vec<Transaction> {
-        mem::take(&mut *self.txns.lock())
+    pub fn take(&mut self) -> Vec<Transaction> {
+        mem::take(&mut self.txns)
     }
 
-    pub fn remove_if<F>(&self, pred: F)
+    pub fn remove_if<F>(&mut self, pred: F)
     where
         F: Fn(&Transaction) -> bool,
     {
-        self.txns.lock().retain(|t| !pred(t));
+        self.txns.retain(|t| !pred(t));
     }
 }
 

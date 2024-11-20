@@ -3,6 +3,7 @@ use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
@@ -26,6 +27,7 @@ pub use vote::VoteAccumulator;
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
 
+#[derive(Serialize, Deserialize)]
 pub struct ConsensusState {
     /// The DAG of vertices
     pub dag: Dag,

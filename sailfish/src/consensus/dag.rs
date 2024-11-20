@@ -1,8 +1,9 @@
 use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
+use serde::{Deserialize, Serialize};
 use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dag {
     elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
     max_keys: NonZeroUsize,
@@ -96,6 +97,23 @@ impl Dag {
             }
             println!("}}")
         }
+    }
+
+    pub fn to_entries(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
+        self.elements
+            .iter()
+            .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))
+    }
+
+    pub fn from_entries<I>(entries: I, max_keys: NonZeroUsize) -> Self
+    where
+        I: IntoIterator<Item = (RoundNumber, PublicKey, Vertex)>,
+    {
+        let mut dag = Self::new(max_keys);
+        for (_, _, vertex) in entries {
+            dag.add(vertex);
+        }
+        dag
     }
 }
 
