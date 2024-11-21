@@ -12,7 +12,6 @@ use crate::{
 use super::{HandleResult, TestCondition, TestableNetwork};
 use sailfish::coordinator::Coordinator;
 use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
     message::Message,
     metrics::ConsensusMetrics,
     test::{
@@ -22,7 +21,6 @@ use timeboost_core::types::{
 };
 use tokio::{
     sync::{
-        mpsc,
         oneshot::{self, Receiver, Sender},
         watch,
     },
@@ -38,8 +36,6 @@ pub struct MemoryNetworkTest {
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
     outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
-    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
-    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
@@ -57,8 +53,6 @@ impl TestableNetwork for MemoryNetworkTest {
             network_shutdown_tx,
             network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
-            sf_app_rxs: HashMap::new(),
-            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -72,18 +66,10 @@ impl TestableNetwork for MemoryNetworkTest {
             let conn = TestNet::new(net.join(*n.public_key()));
             let messages = conn.messages();
 
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
-
-            self.sf_app_rxs.insert(i, sf_app_rx);
-            self.tb_app_txs.insert(i, tb_app_tx);
-
             // Initialize the coordinator
             let co = n.init(
                 conn,
                 (*self.group.staked_nodes).clone(),
-                sf_app_tx,
-                tb_app_rx,
                 Arc::new(ConsensusMetrics::default()),
             );
 

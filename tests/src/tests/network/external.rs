@@ -7,20 +7,12 @@ use std::{
 use anyhow::Result;
 use portpicker::pick_unused_port;
 use sailfish::sailfish::Sailfish;
-use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
-    metrics::ConsensusMetrics,
-    test::testnet::TestNet,
-    PublicKey,
-};
+use timeboost_core::types::{metrics::ConsensusMetrics, test::testnet::TestNet, PublicKey};
 use timeboost_networking::network::{
     client::{derive_libp2p_multiaddr, Libp2pNetwork},
     NetworkNodeConfigBuilder,
 };
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinSet,
-};
+use tokio::{sync::watch, task::JoinSet};
 
 use crate::{tests::network::CoordinatorAuditEvent, Group};
 
@@ -33,8 +25,6 @@ pub struct Libp2pNetworkTest {
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
-    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
-    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
@@ -50,8 +40,6 @@ impl TestableNetwork for Libp2pNetworkTest {
             shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             outcomes,
-            sf_app_rxs: HashMap::new(),
-            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -104,11 +92,6 @@ impl TestableNetwork for Libp2pNetworkTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
             let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
-
-            self.sf_app_rxs.insert(i, sf_app_rx);
-            self.tb_app_txs.insert(i, tb_app_tx);
 
             handles.spawn(async move {
                 let net = TestNet::new(network);
@@ -116,8 +99,6 @@ impl TestableNetwork for Libp2pNetworkTest {
                 let mut coordinator = node.init(
                     net,
                     (*staked_nodes).clone(),
-                    sf_app_tx,
-                    tb_app_rx,
                     Arc::new(ConsensusMetrics::default()),
                 );
 
