@@ -146,8 +146,6 @@ impl Sailfish {
             shutdown_rx,
             sf_app_tx,
             tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
         )
     }
 
@@ -161,7 +159,7 @@ impl Sailfish {
         metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx)
                 .go(),
         );
 
