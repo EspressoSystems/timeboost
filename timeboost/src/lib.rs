@@ -1,23 +1,21 @@
 use anyhow::Result;
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
+use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::mpsc::channel;
 use tracing::{error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
-use sailfish::sailfish::run_sailfish;
 use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    event::TimeboostStatusEvent,
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    watch,
-};
+use tokio::sync::{mpsc::Sender, watch};
 
 pub mod api;
 pub mod config;
@@ -37,9 +35,6 @@ pub struct Timeboost {
     /// The port to bind the metrics API server to.
     metrics_port: u16,
 
-    /// The receiver for events from the sailfish node.
-    app_rx: Receiver<SailfishStatusEvent>,
-
     /// The sender for events to the sailfish node.
     app_tx: Sender<TimeboostStatusEvent>,
 
@@ -58,7 +53,6 @@ impl Timeboost {
         port: u16,
         rpc_port: u16,
         metrics_port: u16,
-        app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
         metrics: Arc<ConsensusMetrics>,
@@ -68,7 +62,6 @@ impl Timeboost {
             port,
             rpc_port,
             metrics_port,
-            app_rx,
             app_tx,
             shutdown_rx,
             metrics,
@@ -76,7 +69,11 @@ impl Timeboost {
     }
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<()> {
+    pub async fn go(
+        mut self,
+        prom: Arc<PrometheusMetrics>,
+        coordinator: &mut Coordinator<Libp2pNetwork<PublicKey>>,
+    ) -> Result<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
@@ -93,17 +90,22 @@ impl Timeboost {
 
         loop {
             tokio::select! {
-                event = self.app_rx.recv() => {
-                    match event {
-                        Some(event) => info!("Received event: {:?}", event),
-                        None => {
-                            warn!("Timeboost channel closed; shutting down.");
-                            break Err(anyhow::anyhow!("Timeboost channel closed; shutting down."));
-                        }
+                r = coordinator.next() => {
+                    match r {
+                        Ok(actions) => {
+                            for a in actions {
+                                // TODO: handle response from sailfish, and send sailfish event
+                                let _res = coordinator.execute(a).await;
+                            }
+                        },
+                        Err(e) => {
+                            tracing::error!("Error receiving message: {}", e);
+                        },
                     }
                 }
                 result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
+                    coordinator.shutdown().await.expect("Shutdown coordinator");
                     result.expect("The shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());
                 }
@@ -129,29 +131,20 @@ pub async fn run_timeboost(
     let prom = Arc::new(PrometheusMetrics::default());
     let metrics = Arc::new(ConsensusMetrics::new(prom.as_ref()));
 
-    // The application layer will broadcast events to the timeboost node.
-    let (sf_app_tx, sf_app_rx) = channel(100);
-
-    let (tb_app_tx, tb_app_rx) = channel(100);
+    let (tb_app_tx, _tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
     let metrics_clone = metrics.clone();
-    let shutdown_rx_clone = shutdown_rx.clone();
-    tokio::spawn(async move {
-        run_sailfish(
-            id,
-            bootstrap_nodes,
-            staked_nodes,
-            keypair,
-            bind_address,
-            sf_app_tx,
-            tb_app_rx,
-            metrics_clone,
-            shutdown_rx_clone,
-        )
-        .await
-    });
+    let coordinator = &mut sailfish_coordinator(
+        id,
+        bootstrap_nodes,
+        staked_nodes,
+        keypair,
+        bind_address,
+        metrics_clone,
+    )
+    .await;
 
     // Then, initialize and run the timeboost node.
     let timeboost = Timeboost::new(
@@ -159,12 +152,11 @@ pub async fn run_timeboost(
         port,
         rpc_port,
         metrics_port,
-        sf_app_rx,
         tb_app_tx,
         shutdown_rx,
         metrics,
     );
 
     info!("Timeboost is running.");
-    timeboost.go(prom).await
+    timeboost.go(prom, coordinator).await
 }

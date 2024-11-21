@@ -8,16 +8,12 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{
         block::Block,
-        event::{SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
         NodeId,
     },
 };
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    watch,
-};
+use tokio::time::sleep;
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -31,25 +27,22 @@ pub struct Coordinator<C> {
 
     timer: BoxFuture<'static, RoundNumber>,
 
-    init: bool
+    init: bool,
 }
 
 impl<C: Comm> Coordinator<C> {
-    pub fn new(
-        id: NodeId,
-        comm: C,
-        cons: Consensus,
-        _shutdown_rx: oneshot::Receiver<ShutdownToken>,
-        _sf_app_tx: Sender<SailfishStatusEvent>,
-        _tb_app_rx: Receiver<TimeboostStatusEvent>,
-    ) -> Self {
+    pub fn new(id: NodeId, comm: C, cons: Consensus) -> Self {
         Self {
             id,
             comm,
             consensus: cons,
             timer: pending().boxed(),
-            init: false
+            init: false,
         }
+    }
+
+    pub fn id(&self) -> NodeId {
+        self.id
     }
 
     #[cfg(feature = "test")]
@@ -60,7 +53,7 @@ impl<C: Comm> Coordinator<C> {
     pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
         if !self.init {
             self.init = true;
-            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())))
+            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())));
         }
 
         tokio::select! { biased;
@@ -69,14 +62,12 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub async fn exec(&mut self, action: Action) -> Result<Option<Block>, C::Err> {
+    pub async fn execute(&mut self, action: Action) -> Result<Option<Block>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
             }
-            Action::Deliver(b, _, _) => {
-                return Ok(Some(b))
-            }
+            Action::Deliver(b, _, _) => return Ok(Some(b)),
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e.cast())).await?;
             }
@@ -91,5 +82,9 @@ impl<C: Comm> Coordinator<C> {
             }
         }
         Ok(None)
+    }
+
+    pub async fn shutdown(&mut self) -> Result<(), C::Err> {
+        self.comm.shutdown().await
     }
 }
