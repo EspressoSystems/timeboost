@@ -342,7 +342,12 @@ impl Consensus {
     /// Once we have collected more than f timeouts we start broadcasting our own timeout.
     /// Eventually, if we receive more than 2f timeouts we form a timeout certificate and
     /// broadcast that too.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.label,
+        round  = %self.round,
+        source = %Label::new(e.signing_key()),
+        tround = %e.data().round())
+    )]
     pub fn handle_timeout(&mut self, e: Envelope<Timeout, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -410,7 +415,11 @@ impl Consensus {
     /// If we also have more than 2f vertex proposals (i.e. we are just missing the
     /// leader vertex), we can move to the next round and include the certificate in
     /// our next vertex proposal.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node   = %self.label,
+        round  = %self.round,
+        tround = %cert.data().round())
+    )]
     pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -599,6 +608,17 @@ impl Consensus {
 
         self.metrics.dag_depth.set(self.dag.depth());
 
+        if v.round() <= self.committed_round {
+            debug!(
+                node      = %self.label,
+                round     = %self.round,
+                committed = %self.committed_round,
+                vround    = %v.round(),
+                "leader has already been committed"
+            );
+            return Ok(Vec::new());
+        }
+
         if self.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
@@ -640,6 +660,7 @@ impl Consensus {
         vround = %v.round())
     )]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
+        debug_assert!(v.round() >= self.committed_round);
         self.leader_stack.push(v.clone());
         for r in (*self.committed_round + 1..*v.round()).rev() {
             let Some(l) = self.leader_vertex(RoundNumber::new(r)).cloned() else {
