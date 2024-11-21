@@ -123,7 +123,7 @@ where
                 "Unable to create eval domain"
             )));
         }
-        let alpha_0 = poly.evaluate(&C::ScalarField::zero());
+        let alpha_0 = poly[0];
         let evals: Vec<_> = (0..committee_size)
             .map(|i| {
                 let x = domain.unwrap().element(i);
