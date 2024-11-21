@@ -1,6 +1,6 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_lock::RwLock;
 use hotshot::types::SignatureKey;
 use hotshot_types::{
@@ -125,7 +125,7 @@ impl Sailfish {
         staked_nodes: Vec<PeerConfig<PublicKey>>,
         sf_app_tx: Sender<SailfishStatusEvent>,
         tb_app_rx: Receiver<TimeboostStatusEvent>,
-        metrics: Arc<ConsensusMetrics>,
+        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -139,10 +139,18 @@ impl Sailfish {
 
         let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
 
-        Coordinator::new(self.id, comm, consensus, sf_app_tx, tb_app_rx)
+        Coordinator::new(
+            self.id,
+            comm,
+            consensus,
+            shutdown_rx,
+            sf_app_tx,
+            tb_app_rx,
+            #[cfg(feature = "test")]
+            event_log,
+        )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn go(
         self,
         n: Libp2pNetwork<PublicKey>,
@@ -153,7 +161,7 @@ impl Sailfish {
         metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
         let mut coordinator_handle = tokio::spawn(
-            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx)
+            self.init(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, None)
                 .go(),
         );
 
