@@ -347,27 +347,30 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
 #[cfg(test)]
 mod test {
     use crate::{
-        sg_encryption::{Committee, Plaintext, ShoupGennaro},
+        cp_proof::Proof,
+        sg_encryption::{Committee, DecShare, Plaintext, ShoupGennaro},
         traits::threshold_enc::ThresholdEncScheme,
     };
     use ark_bn254::G1Projective;
 
     use ark_std::test_rng;
     use nimue::hash::legacy::DigestBridge;
+    use rand::seq::SliceRandom;
     use sha2::Sha256;
 
+    type G = G1Projective;
+    type H = Sha256;
+    type D = DigestBridge<H>;
+
     #[test]
-    fn test_shoup_gennaro_encryption() {
+    fn test_correctness() {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
-        type G = G1Projective;
-        type H = Sha256;
-        type D = DigestBridge<H>;
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes
         let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
-        let message = "important message".as_bytes().to_vec();
+        let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
             ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
@@ -383,6 +386,113 @@ mod test {
         let check_message =
             ShoupGennaro::<G, H, D>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
                 .unwrap();
-        assert_eq!(message, check_message.0);
+        assert_eq!(
+            message, check_message.0,
+            "encrypted message:{:?} should be the same as the output of combine: {:?}",
+            message, check_message.0
+        );
+    }
+
+    #[test]
+    fn test_not_enough_shares() {
+        let rng = &mut test_rng();
+        let committee = Committee { size: 10, id: 0 };
+
+        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
+        // setup schemes
+        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let message = b"The quick brown fox jumps over the lazy dog".to_vec();
+        let plaintext = Plaintext(message.clone());
+        let ciphertext =
+            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+
+        let threshold = (committee.size / 3) as usize;
+        let dec_shares: Vec<_> = key_shares
+            .iter()
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+            .filter_map(|res| res.ok())
+            .take(threshold) // not enough shares to combine
+            .collect::<Vec<_>>();
+
+        let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
+
+        let result =
+            ShoupGennaro::<G, H, D>::combine(&parameters, &pk, dec_shares_refs, &ciphertext);
+        assert!(
+            result.is_err(),
+            "Should fail to combine; insufficient amount of shares"
+        );
+    }
+
+    #[test]
+    fn test_combine_invalid_shares() {
+        let rng = &mut test_rng();
+        let committee = Committee { size: 10, id: 0 };
+
+        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
+        // setup schemes
+        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let message = b"The quick brown fox jumps over the lazy dog".to_vec();
+        let plaintext = Plaintext(message.clone());
+        let ciphertext =
+            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+
+        let mut dec_shares: Vec<_> = key_shares
+            .iter()
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+            .filter_map(|res| res.ok())
+            .collect::<Vec<_>>();
+
+        // 1. Change the order of the shares received by combiner
+        dec_shares.shuffle(rng);
+
+        let check_message = ShoupGennaro::<G, H, D>::combine(
+            &parameters,
+            &pk,
+            dec_shares.iter().collect(),
+            &ciphertext,
+        )
+        .unwrap();
+        assert_eq!(
+            message, check_message.0,
+            "Combine should be indifferent to the order of incoming shares"
+        );
+
+        // 2. Invalidate n - t shares
+        let committee_size = committee.size as usize;
+        let threshold = committee_size / 3;
+        let first_correct_share = dec_shares[0].clone();
+        // modify n - t shares
+        for i in 0..(committee_size - threshold) {
+            let mut share: DecShare<_> = dec_shares[i].clone();
+            share.phi = Proof {
+                transcript: vec![],
+                _meta_data: vec![],
+            };
+            dec_shares[i] = share;
+        }
+        let result = ShoupGennaro::<G, H, D>::combine(
+            &parameters,
+            &pk,
+            dec_shares.iter().collect(),
+            &ciphertext,
+        );
+        assert!(
+            result.is_err(),
+            "Should fail due to not enough valid shares"
+        );
+        // 3. Reattach the first correct share to the combining set
+        // to obtain exactly t+1 correct shares (enough to combine)
+        dec_shares[0] = first_correct_share;
+        let result = ShoupGennaro::<G, H, D>::combine(
+            &parameters,
+            &pk,
+            dec_shares.iter().collect(),
+            &ciphertext,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed; we have exactly t+1 valid shares"
+        );
     }
 }
