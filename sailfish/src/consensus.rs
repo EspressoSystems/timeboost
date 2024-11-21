@@ -170,6 +170,8 @@ impl Consensus {
     /// results in a timeout message being broadcasted to all nodes.
     #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.round))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
+        debug_assert_eq!(r, self.round);
+        debug_assert!(self.leader_vertex(r).is_none());
         let e = Envelope::signed(Timeout::new(r), &self.keypair);
         vec![Action::SendTimeout(e)]
     }

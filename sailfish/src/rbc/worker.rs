@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::cmp::max;
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::time::Instant;
 
 use hotshot::traits::{implementations::Libp2pNetwork, NetworkError};
@@ -15,12 +14,12 @@ use timeboost_core::types::{Keypair, PublicKey};
 use tokio::sync::mpsc;
 use tracing::{debug, error, warn};
 
-use super::{Digest, RbcMsg};
+use super::{Command, Digest, RbcMsg};
 use crate::consensus::VoteAccumulator;
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender = mpsc::Sender<Message<Validated>>;
-type Receiver = mpsc::Receiver<(Option<PublicKey>, Message<Validated>)>;
+type Receiver = mpsc::Receiver<Command>;
 
 pub struct Worker {
     keypair: Keypair,
@@ -70,7 +69,7 @@ impl Worker {
         }
     }
 
-    pub async fn go(mut self) -> Infallible {
+    pub async fn go(mut self) {
         // TODO: Go repeatedly over status and retry old messages.
         loop {
             tokio::select! {
@@ -80,17 +79,23 @@ impl Worker {
                         Err(err) => warn!(%err, "error receiving message from libp2p")
                     }
                 },
-                Some((to, msg)) = self.rx.recv() => {
-                    match self.on_outbound(to, msg).await {
+                cmd = self.rx.recv() => match cmd {
+                    Some(Command::Broadcast(msg)) => match self.on_outbound(None, msg).await {
                         Ok(()) => {}
-                        Err(err) => warn!(%err, "error sending messages")
+                        Err(err) => warn!(%err, "error broadcasting message")
                     }
-                },
-                else => {
-                    // `Rbc` never closes the sending half of `Worker::rx` and its
-                    // `Drop` impl stops the worker task, so `tokio::select!` will
-                    // never fail to match a branch.
-                    unreachable!("A `Worker` does not outlive the `Rbc` it belongs to.")
+                    Some(Command::Send(to, msg)) => match self.on_outbound(Some(to), msg).await {
+                        Ok(()) => {}
+                        Err(err) => warn!(%err, "error sending message")
+                    }
+                    Some(Command::Shutdown(reply)) => {
+                        self.libp2p.shut_down().await;
+                        let _ = reply.send(());
+                        return
+                    }
+                    None => {
+                        return
+                    }
                 }
             }
         }
@@ -323,4 +328,7 @@ pub enum RbcError {
 
     #[error("invalid signature")]
     InvalidSignature,
+
+    #[error("comm has shut down")]
+    Shutdown
 }

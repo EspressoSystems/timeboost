@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::convert::Infallible;
 
 use async_trait::async_trait;
 use hotshot::traits::implementations::Libp2pNetwork;
@@ -10,7 +9,7 @@ use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::{Envelope, Validated};
 use timeboost_core::types::message::Message;
 use timeboost_core::types::{Keypair, PublicKey};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 mod digest;
@@ -27,11 +26,18 @@ enum RbcMsg<'a, Status: Clone> {
     Get(Envelope<Digest, Status>),
 }
 
+enum Command {
+    Send(PublicKey, Message<Validated>),
+    Broadcast(Message<Validated>),
+    Shutdown(oneshot::Sender<()>)
+}
+
 #[derive(Debug)]
 pub struct Rbc {
     rx: mpsc::Receiver<Message<Validated>>,
-    tx: mpsc::Sender<(Option<PublicKey>, Message<Validated>)>,
-    jh: JoinHandle<Infallible>,
+    tx: mpsc::Sender<Command>,
+    jh: JoinHandle<()>,
+    closed: bool
 }
 
 impl Drop for Rbc {
@@ -49,6 +55,7 @@ impl Rbc {
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
+            closed: false
         }
     }
 }
@@ -58,16 +65,35 @@ impl Comm for Rbc {
     type Err = RbcError;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        self.tx.send((None, msg)).await.unwrap();
+        if self.closed {
+            return Err(RbcError::Shutdown)
+        }
+        self.tx.send(Command::Broadcast(msg)).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        self.tx.send((Some(to), msg)).await.unwrap();
+        if self.closed {
+            return Err(RbcError::Shutdown)
+        }
+        self.tx.send(Command::Send(to, msg)).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         Ok(self.rx.recv().await.unwrap())
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        if self.closed {
+            return Ok(())
+        }
+        self.closed = true;
+        let (tx, rx) = oneshot::channel();
+        if self.tx.send(Command::Shutdown(tx)).await.is_ok() {
+            let _ = rx.await;
+        }
+        self.rx.close();
+        Ok(())
     }
 }
