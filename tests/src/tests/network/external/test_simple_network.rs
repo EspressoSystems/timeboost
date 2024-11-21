@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[tokio::test]
-async fn test_simple_network_genesis3() {
+async fn test_simple_network_genesis() {
     logging::init_logging();
 
     let num_nodes = 5;

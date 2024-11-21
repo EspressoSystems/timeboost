@@ -1,10 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    sync::Arc,
-};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use anyhow::Result;
 use portpicker::pick_unused_port;
 use sailfish::sailfish::Sailfish;
 use timeboost_core::types::{metrics::ConsensusMetrics, test::testnet::TestNet, PublicKey};
@@ -78,7 +73,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Result<HandleResult, ()>> {
+    ) -> JoinSet<HandleResult> {
         let mut handles = JoinSet::new();
         let (nodes, networks) = nodes_and_networks;
 
@@ -131,7 +126,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                         }
                     }
                 }
-                Ok(result)
+                result
             });
         }
         handles
@@ -139,19 +134,25 @@ impl TestableNetwork for Libp2pNetworkTest {
 
     async fn shutdown(
         self,
-        handles: JoinSet<Result<HandleResult, ()>>,
-        completed: HashSet<usize>,
-    ) -> Vec<Result<HandleResult, ()>> {
+        handles: JoinSet<HandleResult>,
+        completed: &HashMap<usize, HandleResult>,
+    ) -> HashMap<usize, HandleResult> {
         if handles.is_empty() {
-            return Vec::new();
+            return HashMap::new();
         }
         for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains(id) {
+            if !completed.contains_key(id) {
                 send.send(()).expect(
                     "The shutdown sender was dropped before the receiver could receive the token",
                 );
             }
         }
-        handles.join_all().await
+        // Wait for all the coordinators to shutdown
+        handles
+            .join_all()
+            .await
+            .into_iter()
+            .map(|r| (r.id(), r)) // Use item.id() as key
+            .collect()
     }
 }

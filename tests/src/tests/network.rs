@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
@@ -104,12 +103,12 @@ pub trait TestableNetwork {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Result<HandleResult, ()>>;
+    ) -> JoinSet<HandleResult>;
     async fn shutdown(
         self,
-        handles: JoinSet<Result<HandleResult, ()>>,
-        completed: HashSet<usize>,
-    ) -> Vec<Result<HandleResult, ()>>;
+        handles: JoinSet<HandleResult>,
+        completed: &HashMap<usize, HandleResult>,
+    ) -> HashMap<usize, HandleResult>;
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
@@ -134,8 +133,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
 
         let nodes_and_networks = self.network.init().await;
         let mut handles = self.network.start(nodes_and_networks).await;
-        let mut completed_ids = HashSet::new();
-        let mut results = Vec::new();
+        let mut results = HashMap::new();
         loop {
             tokio::select! {
                 next = handles.join_next() => {
@@ -143,10 +141,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                         Some(result) => {
                             match result {
                                 Ok(handle_res) => {
-                                    results.push(handle_res);
-                                    if let Ok(r) = handle_res {
-                                        completed_ids.insert(r.id());
-                                    }
+                                    results.insert(handle_res.id(), handle_res);
                                 },
                                 Err(err) => {
                                     panic!("Join Err: {}", err);
@@ -163,16 +158,16 @@ impl<N: TestableNetwork> NetworkTest<N> {
         }
 
         // Always shutdown the network.
-        results.extend(self.network.shutdown(handles, completed_ids).await);
+        results.extend(self.network.shutdown(handles, &results).await);
 
         // Now handle the test result
-        for result in results {
-            match result {
-                Ok(hr) => {
-                    assert!(hr.outcome() == TestOutcome::Passed);
-                }
-                Err(_) => todo!(),
-            }
+        for (id, result) in results {
+            assert_eq!(
+                result.outcome(),
+                TestOutcome::Passed,
+                "Node id: {} failed. Test is waiting",
+                id
+            );
         }
     }
 }

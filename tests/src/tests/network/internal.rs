@@ -1,8 +1,4 @@
-use anyhow::Result;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     tests::network::{CoordinatorAuditEvent, TestOutcome},
@@ -84,7 +80,7 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Result<HandleResult, ()>> {
+    ) -> JoinSet<HandleResult> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
@@ -124,7 +120,7 @@ impl TestableNetwork for MemoryNetworkTest {
                         }
                     }
                 }
-                Ok(result)
+                result
         }
     );
         }
@@ -138,14 +134,14 @@ impl TestableNetwork for MemoryNetworkTest {
 
     async fn shutdown(
         self,
-        handles: JoinSet<Result<HandleResult, ()>>,
-        completed: HashSet<usize>,
-    ) -> Vec<Result<HandleResult, ()>> {
+        handles: JoinSet<HandleResult>,
+        completed: &HashMap<usize, HandleResult>,
+    ) -> HashMap<usize, HandleResult> {
         if handles.is_empty() {
-            return Vec::new();
+            return HashMap::new();
         }
         for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains(id) {
+            if !completed.contains_key(id) {
                 send.send(()).expect(
                     "The shutdown sender was dropped before the receiver could receive the token",
                 );
@@ -153,7 +149,12 @@ impl TestableNetwork for MemoryNetworkTest {
         }
 
         // Wait for all the coordinators to shutdown
-        let res = handles.join_all().await;
+        let res: HashMap<usize, HandleResult> = handles
+            .join_all()
+            .await
+            .into_iter()
+            .map(|r| (r.id(), r)) // Use item.id() as key
+            .collect();
 
         // Now shutdown the network
         let _ = self.network_shutdown_tx.send(());
