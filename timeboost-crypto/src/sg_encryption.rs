@@ -463,14 +463,14 @@ mod test {
         let threshold = committee_size / 3;
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
-        for i in 0..(committee_size - threshold) {
+        (0..(committee_size - threshold)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
             share.phi = Proof {
                 transcript: vec![],
                 _meta_data: vec![],
             };
             dec_shares[i] = share;
-        }
+        });
         let result = ShoupGennaro::<G, H, D>::combine(
             &parameters,
             &pk,
