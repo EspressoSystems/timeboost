@@ -69,7 +69,7 @@ impl From<&[PeerConfig<PublicKey>]> for StaticCommittee {
             value
                 .iter()
                 .map(|cfg| cfg.stake_table_entry.stake_key)
-                .collect::<Vec<_>>(),
+                .collect(),
         )
     }
 }
