@@ -70,12 +70,7 @@ impl Dag {
     /// Is there a connection between two vertices?
     pub fn is_connected(&self, from: &Vertex, to: &Vertex) -> bool {
         let mut current = vec![from];
-        for nodes in self
-            .elements
-            .range(RoundNumber::genesis()..from.round())
-            .rev()
-            .map(|e| e.1)
-        {
+        for nodes in self.elements.range(..from.round()).rev().map(|e| e.1) {
             current = nodes
                 .iter()
                 .filter_map(|(_, v)| current.iter().any(|x| x.has_edge(v.source())).then_some(v))
@@ -90,6 +85,17 @@ impl Dag {
             }
         }
         false
+    }
+
+    pub fn dbg_dag(&self) {
+        for (r, e) in &self.elements {
+            println!("{r} -> {{");
+            for v in e.values() {
+                print!("  ");
+                v.dbg_edges();
+            }
+            println!("}}")
+        }
     }
 }
 

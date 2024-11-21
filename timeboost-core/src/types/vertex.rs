@@ -9,6 +9,7 @@ use super::{
     message::{NoVote, Timeout},
     PublicKey,
 };
+use crate::types::Label;
 use crate::types::{block::Block, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -91,6 +92,14 @@ impl Vertex {
     pub fn set_timeout(&mut self, t: Certificate<Timeout>) -> &mut Self {
         self.timeout = Some(t);
         self
+    }
+
+    pub fn dbg_edges(&self) {
+        println! { "{} -> {} -> {:?}",
+            Label::new(self.source()),
+            self.round(),
+            self.edges().map(Label::new).collect::<Vec<_>>()
+        }
     }
 }
 
