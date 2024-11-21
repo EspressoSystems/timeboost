@@ -1,3 +1,5 @@
+pub mod prometheus;
+
 use hotshot_types::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
@@ -15,12 +17,12 @@ pub struct ConsensusMetrics {
 
 impl Default for ConsensusMetrics {
     fn default() -> Self {
-        Self::new(NoMetrics)
+        Self::new(&NoMetrics)
     }
 }
 
 impl ConsensusMetrics {
-    pub fn new<M: Metrics>(m: M) -> Self {
+    pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
             committed_round: m.create_gauge("committed_round".to_string(), None),
             dag_depth: m.create_gauge("dag_depth".to_string(), None),

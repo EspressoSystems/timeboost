@@ -5,7 +5,6 @@ edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [features]
-metrics = []
 test = ['timeboost-core/test']
 
 [dependencies]
@@ -17,6 +16,7 @@ ark-serialize = { workspace = true }
 ark-std = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
+async-channel = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 blake3 = { workspace = true }
@@ -24,6 +24,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
 digest = { workspace = true }
 either = { workspace = true }
 ethereum-types = { workspace = true }
@@ -37,7 +38,6 @@ jf-signature = { workspace = true }
 jf-utils = { workspace = true }
 jf-vid = { workspace = true }
 libp2p-identity = { workspace = true }
-libp2p-networking = { workspace = true }
 multiaddr = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
