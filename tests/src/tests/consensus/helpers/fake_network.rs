@@ -136,9 +136,9 @@ impl FakeNetwork {
                 info!(%node, %r, %src, "deliver");
                 return;
             }
-            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e.cast())),
-            Action::SendProposal(e) => (None, Message::Vertex(e.cast())),
-            Action::SendTimeout(e) => (None, Message::Timeout(e.cast())),
+            Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),
+            Action::SendProposal(e) => (None, Message::Vertex(e)),
+            Action::SendTimeout(e) => (None, Message::Timeout(e)),
             Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
         };
         msgs.push(msg)

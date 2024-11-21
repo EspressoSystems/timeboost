@@ -155,26 +155,11 @@ impl Consensus {
         timeouts  = %self.timeouts.len(),
         dag       = %self.dag.depth())
     )]
-    pub fn handle_message(&mut self, m: Message) -> Vec<Action> {
+    pub fn handle_message(&mut self, m: Message<Validated>) -> Vec<Action> {
         match m {
-            Message::Vertex(e) => {
-                let Some(e) = e.validated(&self.committee) else {
-                    return Vec::new();
-                };
-                self.handle_vertex(e)
-            }
-            Message::NoVote(e) => {
-                let Some(e) = e.validated(&self.committee) else {
-                    return Vec::new();
-                };
-                self.handle_no_vote(e)
-            }
-            Message::Timeout(e) => {
-                let Some(e) = e.validated(&self.committee) else {
-                    return Vec::new();
-                };
-                self.handle_timeout(e)
-            }
+            Message::Vertex(e) => self.handle_vertex(e),
+            Message::NoVote(e) => self.handle_no_vote(e),
+            Message::Timeout(e) => self.handle_timeout(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
         }
     }

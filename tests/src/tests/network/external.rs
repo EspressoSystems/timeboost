@@ -4,15 +4,13 @@ use anyhow::{anyhow, Result};
 use async_lock::RwLock;
 use portpicker::pick_unused_port;
 use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
+use timeboost_core::traits::comm::Libp2p;
 use timeboost_core::types::{
+    committee::StaticCommittee,
     event::{SailfishStatusEvent, TimeboostStatusEvent},
     metrics::ConsensusMetrics,
-    PublicKey,
 };
-use timeboost_networking::network::{
-    client::{derive_libp2p_multiaddr, Libp2pNetwork},
-    NetworkNodeConfigBuilder,
-};
+use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinSet,
@@ -36,7 +34,7 @@ pub struct Libp2pNetworkTest {
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
-    type Network = Libp2pNetwork<PublicKey>;
+    type Network = Libp2p;
     type Shutdown = Result<()>;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
@@ -78,12 +76,13 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .republication_interval(None)
                 .build()
                 .expect("Failed to build network node config");
+            let committee = StaticCommittee::from(&**self.group.staked_nodes);
             handles.spawn(async move {
                 let net = node
                     .setup_libp2p(config, bootstrap_nodes, &staked_nodes)
                     .await
                     .expect("Failed to start network");
-                (node, net)
+                (node, Libp2p::new(net, committee))
             });
         }
         handles.join_all().await.into_iter().collect()
