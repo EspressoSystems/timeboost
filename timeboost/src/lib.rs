@@ -3,17 +3,19 @@ use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
-use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::mpsc::channel;
 use tracing::{error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
-use timeboost_core::types::{
-    event::TimeboostStatusEvent,
-    metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
-    Keypair, NodeId, PublicKey,
+use timeboost_core::{
+    traits::comm::Libp2p,
+    types::{
+        event::TimeboostStatusEvent,
+        metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
+        Keypair, NodeId, PublicKey,
+    },
 };
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -80,7 +82,7 @@ impl Timeboost {
     pub async fn go(
         mut self,
         prom: Arc<PrometheusMetrics>,
-        coordinator: &mut Coordinator<Libp2pNetwork<PublicKey>>,
+        coordinator: &mut Coordinator<Libp2p>,
     ) -> Result<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());

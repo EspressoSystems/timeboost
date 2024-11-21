@@ -98,6 +98,7 @@ impl TestableNetwork for MemoryNetworkTest {
                 match co.start().await {
                     Ok(actions) => {
                         for a in actions {
+                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                             let _ = co.execute(a).await;
                         }
                     }

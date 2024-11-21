@@ -2,11 +2,10 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use portpicker::pick_unused_port;
 use sailfish::sailfish::Sailfish;
-use timeboost_core::types::{metrics::ConsensusMetrics, test::testnet::TestNet, PublicKey};
-use timeboost_networking::network::{
-    client::{derive_libp2p_multiaddr, Libp2pNetwork},
-    NetworkNodeConfigBuilder,
-};
+use timeboost_core::traits::comm::Libp2p;
+use timeboost_core::types::test::testnet::TestNet;
+use timeboost_core::types::{committee::StaticCommittee, metrics::ConsensusMetrics};
+use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{sync::watch, task::JoinSet};
 
 use crate::{tests::network::CoordinatorAuditEvent, Group};
@@ -24,7 +23,7 @@ pub struct Libp2pNetworkTest {
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
-    type Network = Libp2pNetwork<PublicKey>;
+    type Network = Libp2p;
 
     fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -59,12 +58,13 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .republication_interval(None)
                 .build()
                 .expect("Failed to build network node config");
+            let committee = StaticCommittee::from(&**self.group.staked_nodes);
             handles.spawn(async move {
                 let net = node
                     .setup_libp2p(config, bootstrap_nodes, &staked_nodes)
                     .await
                     .expect("Failed to start network");
-                (node, net)
+                (node, Libp2p::new(net, committee))
             });
         }
         handles.join_all().await.into_iter().collect()
@@ -103,6 +103,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                 match coordinator.start().await {
                     Ok(actions) => {
                         for a in actions {
+                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                             let _ = coordinator.execute(a).await;
                         }
                     }

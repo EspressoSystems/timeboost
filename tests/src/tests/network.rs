@@ -150,11 +150,11 @@ impl<N: TestableNetwork> NetworkTest<N> {
                                 },
                             }
                         },
-                        None => break true, // we are done
+                        None => break false, // we are done
                     }
                 }
                 _ = sleep(self.duration) => {
-                    break false;
+                    break true;
                 }
             }
         };

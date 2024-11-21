@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::types::vertex::Vertex;
-use committable::{Commitment, Committable};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -10,30 +10,42 @@ use super::{
     PublicKey,
 };
 use crate::types::block::Block;
+use crate::types::committee::StaticCommittee;
 use crate::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub enum Message {
+pub enum Message<Status = Validated> {
     /// A vertex proposal from a node.
-    Vertex(Envelope<Vertex, Unchecked>),
+    Vertex(Envelope<Vertex, Status>),
 
     /// A timeout message from a node.
-    Timeout(Envelope<Timeout, Unchecked>),
+    Timeout(Envelope<Timeout, Status>),
 
     /// A no-vote to a round leader from a node.
-    NoVote(Envelope<NoVote, Unchecked>),
+    NoVote(Envelope<NoVote, Status>),
 
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
 }
 
-impl Message {
+impl<S> Message<S> {
     pub fn round(&self) -> RoundNumber {
         match self {
             Message::Vertex(v) => v.data().round(),
             Message::Timeout(t) => t.data().round(),
             Message::NoVote(nv) => nv.data().round(),
             Message::TimeoutCert(c) => c.data().round(),
+        }
+    }
+}
+
+impl Message<Unchecked> {
+    pub fn validated(self, c: &StaticCommittee) -> Option<Message<Validated>> {
+        match self {
+            Self::Vertex(e) => e.validated(c).map(Message::Vertex),
+            Self::Timeout(e) => e.validated(c).map(Message::Timeout),
+            Self::NoVote(e) => e.validated(c).map(Message::NoVote),
+            Self::TimeoutCert(c) => Some(Message::TimeoutCert(c)),
         }
     }
 }
@@ -108,11 +120,13 @@ impl NoVote {
     }
 }
 
-impl Message {
+impl Message<Unchecked> {
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         bincode::deserialize(bytes).ok()
     }
+}
 
+impl<S: Serialize> Message<S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
         bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
     }
@@ -122,7 +136,7 @@ impl Message {
     }
 }
 
-impl fmt::Display for Message {
+impl<S> fmt::Display for Message<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Vertex(e) => write!(f, "Vertex({})", e.data().round()),
@@ -135,7 +149,7 @@ impl fmt::Display for Message {
 
 impl Committable for Timeout {
     fn commit(&self) -> Commitment<Self> {
-        committable::RawCommitmentBuilder::new("Timeout")
+        RawCommitmentBuilder::new("Timeout")
             .field("round", self.round.commit())
             .finalize()
     }
@@ -143,8 +157,20 @@ impl Committable for Timeout {
 
 impl Committable for NoVote {
     fn commit(&self) -> Commitment<Self> {
-        committable::RawCommitmentBuilder::new("NoVote")
+        RawCommitmentBuilder::new("NoVote")
             .field("round", self.round.commit())
             .finalize()
+    }
+}
+
+impl<S> Committable for Message<S> {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("Message");
+        match self {
+            Self::Vertex(e) => builder.field("vertex", e.commit()).finalize(),
+            Self::Timeout(e) => builder.field("timeout", e.commit()).finalize(),
+            Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
+            Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
+        }
     }
 }

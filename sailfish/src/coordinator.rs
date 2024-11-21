@@ -81,10 +81,10 @@ impl<C: Comm> Coordinator<C> {
                 }));
             }
             Action::SendProposal(e) => {
-                self.comm.broadcast(Message::Vertex(e.cast())).await?;
+                self.comm.broadcast(Message::Vertex(e)).await?;
             }
             Action::SendTimeout(e) => {
-                self.comm.broadcast(Message::Timeout(e.cast())).await?;
+                self.comm.broadcast(Message::Timeout(e)).await?;
             }
             Action::SendTimeoutCert(c) => {
                 let round = c.data().round();
@@ -95,7 +95,7 @@ impl<C: Comm> Coordinator<C> {
                 }));
             }
             Action::SendNoVote(to, v) => {
-                self.comm.send(to, Message::NoVote(v.cast())).await?;
+                self.comm.send(to, Message::NoVote(v)).await?;
             }
         }
         Ok(None)
