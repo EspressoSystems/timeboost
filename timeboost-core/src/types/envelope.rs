@@ -5,7 +5,7 @@ use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::types::{committee::StaticCommittee, PublicKey, Signature};
+use crate::types::{committee::StaticCommittee, Label, PublicKey, Signature};
 
 use super::Keypair;
 
@@ -88,6 +88,10 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn signing_key(&self) -> &PublicKey {
         &self.signing_key
+    }
+
+    pub fn signer_label(&self) -> Label {
+        Label::new(self.signing_key())
     }
 
     pub fn commitment(&self) -> Commitment<D> {

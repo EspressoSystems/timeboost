@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use hotshot::traits::NetworkError;
 use hotshot_types::traits::network::Topic;
 use timeboost_networking::network::client::Libp2pNetwork;
+
 #[async_trait]
 pub trait Comm {
     type Err: Error + Send + Sync + 'static;

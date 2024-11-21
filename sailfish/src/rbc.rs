@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
-use hotshot::traits::implementations::Libp2pNetwork;
 use serde::{Deserialize, Serialize};
 use timeboost_core::traits::comm::Comm;
 use timeboost_core::types::certificate::Certificate;
@@ -9,6 +8,7 @@ use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::{Envelope, Validated};
 use timeboost_core::types::message::Message;
 use timeboost_core::types::{Keypair, PublicKey};
+use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -18,6 +18,7 @@ mod worker;
 use digest::Digest;
 use worker::{RbcError, Worker};
 
+/// The message type exchanged during RBC.
 #[derive(Debug, Serialize, Deserialize)]
 enum RbcMsg<'a, Status: Clone> {
     Propose(Cow<'a, Message<Status>>),
@@ -26,9 +27,15 @@ enum RbcMsg<'a, Status: Clone> {
     Get(Envelope<Digest, Status>),
 }
 
+/// Worker command
 enum Command {
+    /// Send message to party identified by the given public key.
     Send(PublicKey, Message<Validated>),
+    /// Do a best-effort broadcast of the given message.
     Broadcast(Message<Validated>),
+    /// Do a byzantine reliable broadcast of the given message.
+    RbcBroadcast(Message<Validated>, oneshot::Sender<Result<(), RbcError>>),
+    /// End operation.
     Shutdown(oneshot::Sender<()>)
 }
 
@@ -68,7 +75,13 @@ impl Comm for Rbc {
         if self.closed {
             return Err(RbcError::Shutdown)
         }
-        self.tx.send(Command::Broadcast(msg)).await.map_err(|_| RbcError::Shutdown)?;
+        if matches!(msg, Message::Vertex(_)) {
+            let (tx, rx) = oneshot::channel();
+            self.tx.send(Command::RbcBroadcast(msg, tx)).await.map_err(|_| RbcError::Shutdown)?;
+            return rx.await.map_err(|_| RbcError::Shutdown)?
+        } else {
+            self.tx.send(Command::Broadcast(msg)).await.map_err(|_| RbcError::Shutdown)?;
+        }
         Ok(())
     }
 

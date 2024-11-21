@@ -158,7 +158,7 @@ impl Sailfish {
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
-        let libp2p = Libp2p::new(n, StaticCommittee::from(&*staked_nodes));
+        let libp2p = Rbc::new(n, StaticCommittee::from(&*staked_nodes));
 
         let mut coordinator_handle = tokio::spawn(
             self.init(libp2p, staked_nodes, sf_app_tx, tb_app_rx, metrics, None)
