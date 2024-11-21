@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 
 use crate::traits::comm::Comm;
-use crate::types::PublicKey;
 use crate::types::message::Message;
+use crate::types::PublicKey;
 
 #[derive(Debug, Clone)]
 pub struct MsgQueues {
     ibox: Arc<SegQueue<Message>>,
-    obox: Arc<SegQueue<(Option<PublicKey>, Message)>>
+    obox: Arc<SegQueue<(Option<PublicKey>, Message)>>,
 }
 
 impl MsgQueues {
@@ -34,7 +34,7 @@ impl MsgQueues {
 #[derive(Debug)]
 pub struct TestNet<C> {
     comm: C,
-    msgs: MsgQueues
+    msgs: MsgQueues,
 }
 
 impl<C: Comm> TestNet<C> {
@@ -44,14 +44,13 @@ impl<C: Comm> TestNet<C> {
             msgs: MsgQueues {
                 ibox: Arc::new(SegQueue::new()),
                 obox: Arc::new(SegQueue::new()),
-            }
+            },
         }
     }
 
     pub fn messages(&self) -> MsgQueues {
         self.msgs.clone()
     }
-
 }
 
 #[async_trait]
@@ -73,5 +72,8 @@ impl<C: Comm + Send> Comm for TestNet<C> {
         self.msgs.ibox.push(msg.clone());
         Ok(msg)
     }
-}
 
+    async fn shutdown(&mut self) -> Result<(), C::Err> {
+        self.comm.shutdown().await
+    }
+}

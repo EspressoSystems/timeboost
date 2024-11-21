@@ -1,9 +1,6 @@
 use std::{future::pending, time::Duration};
 
-use crate::{
-    consensus::{Consensus, Dag},
-    sailfish::ShutdownToken,
-};
+use crate::consensus::{Consensus, Dag};
 
 use anyhow::Result;
 use futures::{future::BoxFuture, FutureExt};
@@ -17,10 +14,9 @@ use timeboost_core::{
         NodeId,
     },
 };
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::{
-    sync::oneshot::{self},
-    time::sleep,
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
 };
 
 pub struct Coordinator<C> {
@@ -36,23 +32,6 @@ pub struct Coordinator<C> {
     timer: BoxFuture<'static, RoundNumber>,
 
     init: bool
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg(feature = "test")]
-pub enum CoordinatorAuditEvent {
-    ActionTaken(Action),
-    MessageReceived(Message),
-}
-
-#[cfg(feature = "test")]
-impl std::fmt::Display for CoordinatorAuditEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
-            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
-        }
-    }
 }
 
 impl<C: Comm> Coordinator<C> {
@@ -73,73 +52,10 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub fn id(&self) -> NodeId {
-        self.id
-    }
-
     #[cfg(feature = "test")]
     pub fn consensus(&self) -> &Consensus {
         &self.consensus
     }
-
-    #[cfg(feature = "test")]
-    pub async fn append_test_event(&mut self, _event: CoordinatorAuditEvent) {
-    }
-
-    //async fn test_example(c: C) {
-    //    use timeboost_core::types::test::testnet::TestNet;
-    //
-    //    let mut net = TestNet::new(c);
-    //    let messages = net.messages();
-    //
-    //    let mut coord: Coordinator<C>; // TODO: Coordinator::new(..., net, ...);
-    //
-    //    loop {
-    //        match coord.next().await {
-    //            Ok(actions) => {
-    //                let _inbox = messages.drain_inbox();
-    //
-    //                // test(inbox, actions) ok?
-    //
-    //                for a in &actions {
-    //                    let _ = coord.exec(a.clone()).await; // optional: handle delivered blocks
-    //                }
-    //
-    //                let _outbox = messages.drain_outbox();
-    //
-    //                // test(actions, outbox) ok?
-    //            }
-    //            Err(_err) => {
-    //                todo!()
-    //            }
-    //        }
-    //    }
-    //}
-
-    //async fn prod_example<T: Comm + Send + 'static>(_: T) {
-    //    let mut coord: Coordinator<T>; // TODO: Coordinator::new(..., net, ...);
-    //
-    //    let handle = tokio::spawn(async move {
-    //        loop {
-    //            match coord.next().await {
-    //                Ok(actions) => {
-    //                    for a in actions {
-    //                        match coord.exec(a).await {
-    //                            Ok(Some(_block)) => todo!(),
-    //                            Ok(None) => {}
-    //                            Err(_err) => {
-    //                                todo!()
-    //                            }
-    //                        }
-    //                    }
-    //                }
-    //                Err(_err) => {
-    //                    todo!()
-    //                }
-    //            }
-    //        }
-    //    });
-    //}
 
     pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
         if !self.init {
@@ -175,9 +91,5 @@ impl<C: Comm> Coordinator<C> {
             }
         }
         Ok(None)
-    }
-
-    pub async fn go(self) -> ShutdownToken {
-        todo!("remove this method")
     }
 }

@@ -1,5 +1,11 @@
 [workspace]
-members = ["tests", "sailfish", "timeboost", "timeboost-core"]
+members = [
+    "tests",
+    "sailfish",
+    "timeboost",
+    "timeboost-core",
+    "timeboost-networking",
+]
 resolver = "2"
 
 [workspace.package]
@@ -21,7 +27,7 @@ ark-serialize = "0.4"
 ark-std = { version = "0.4", default-features = false }
 async-broadcast = "0.7"
 async-channel = "2"
-async-lock = "2"
+async-lock = "3.3"
 async-trait = "0.1"
 bincode = "1"
 bitvec = { version = "1", default-features = false, features = [
@@ -50,10 +56,10 @@ jf-signature = { version = "0.1.0", git = "https://github.com/EspressoSystems/je
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
-libp2p-networking = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79", default-features = false }
 multiaddr = "0.18.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
+prometheus = "0.13"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 serde = { version = "1", features = ["derive"] }
@@ -74,3 +80,5 @@ tracing = "0.1"
 tracing-subscriber = "0.3.18"
 typenum = "1.17.0"
 vbs = "0.1"
+tide-disco = "0.9.3"
+surf-disco = "0.9"

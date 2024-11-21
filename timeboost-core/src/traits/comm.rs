@@ -1,12 +1,11 @@
 use std::error::Error;
 
-use async_trait::async_trait;
-use hotshot::traits::{implementations::Libp2pNetwork, NetworkError};
-use hotshot_types::traits::network::{BroadcastDelay, ConnectedNetwork, Topic};
-
 use crate::types::message::Message;
 use crate::types::PublicKey;
-
+use async_trait::async_trait;
+use hotshot::traits::NetworkError;
+use hotshot_types::traits::network::Topic;
+use timeboost_networking::network::client::Libp2pNetwork;
 #[async_trait]
 pub trait Comm {
     type Err: Error + Send + Sync + 'static;
@@ -16,6 +15,8 @@ pub trait Comm {
     async fn send(&mut self, to: PublicKey, msg: Message) -> Result<(), Self::Err>;
 
     async fn receive(&mut self) -> Result<Message, Self::Err>;
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err>;
 }
 
 #[async_trait]
@@ -33,6 +34,10 @@ impl<T: Comm + Send> Comm for Box<T> {
     async fn receive(&mut self) -> Result<Message, Self::Err> {
         (**self).receive().await
     }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        (**self).shutdown().await
+    }
 }
 
 #[async_trait]
@@ -43,8 +48,7 @@ impl Comm for Libp2pNetwork<PublicKey> {
         let bytes =
             bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
-        self.broadcast_message(bytes, Topic::Global, BroadcastDelay::None)
-            .await
+        self.broadcast_message(bytes, Topic::Global).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message) -> Result<(), Self::Err> {
@@ -58,5 +62,10 @@ impl Comm for Libp2pNetwork<PublicKey> {
         let bytes = self.recv_message().await?;
 
         bincode::deserialize(&bytes).map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        self.shut_down().await;
+        Ok(())
     }
 }
