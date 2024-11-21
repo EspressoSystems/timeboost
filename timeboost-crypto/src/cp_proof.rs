@@ -70,8 +70,8 @@ impl<C: CurveGroup> DleqTuple<C> {
 
 #[derive(Clone)]
 pub struct Proof {
-    transcript: Vec<u8>,
-    _meta_data: Vec<u8>,
+    pub(crate) transcript: Vec<u8>,
+    pub(crate) _meta_data: Vec<u8>,
 }
 
 trait ChaumPedersenIOPattern<C: CurveGroup> {
@@ -124,18 +124,18 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
         }
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
         let mut merlin = pp.io_pattern.to_merlin();
-        merlin.public_points(&[g, g_hat, h, h_hat]).unwrap();
-        merlin.ratchet().unwrap();
+        merlin.public_points(&[g, g_hat, h, h_hat])?;
+        merlin.ratchet()?;
 
         let k: C::ScalarField = C::ScalarField::rand(merlin.rng());
         let a = g * k;
         let a_hat = h * k;
-        merlin.add_points(&[a, a_hat]).unwrap();
+        merlin.add_points(&[a, a_hat])?;
 
-        let [e]: [C::ScalarField; 1] = merlin.challenge_scalars().unwrap();
+        let [e]: [C::ScalarField; 1] = merlin.challenge_scalars()?;
 
         let z: C::ScalarField = k + e * x;
-        merlin.add_scalars(&[z]).unwrap();
+        merlin.add_scalars(&[z])?;
         Ok(Proof {
             transcript: merlin.transcript().to_vec(),
             _meta_data: vec![],
@@ -153,12 +153,12 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
     {
         let mut arthur = pp.io_pattern.to_arthur(&proof.transcript);
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
-        arthur.public_points(&[g, g_hat, h, h_hat]).unwrap();
-        arthur.ratchet().unwrap();
+        arthur.public_points(&[g, g_hat, h, h_hat])?;
+        arthur.ratchet()?;
 
-        let [a, a_hat] = arthur.next_points().unwrap();
-        let [e] = arthur.challenge_scalars().unwrap();
-        let [z] = arthur.next_scalars().unwrap();
+        let [a, a_hat] = arthur.next_points()?;
+        let [e] = arthur.challenge_scalars()?;
+        let [z] = arthur.next_scalars()?;
         if g * z == a + g_hat * e && h * z == a_hat + h_hat * e {
             Ok(())
         } else {

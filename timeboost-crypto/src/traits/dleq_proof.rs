@@ -1,3 +1,4 @@
+use nimue::{IOPatternError, ProofError};
 use rand::Rng;
 use thiserror::Error;
 
@@ -31,4 +32,8 @@ pub enum DleqProofError {
     ProofNotValid,
     #[error("Internal Error: {0}")]
     Internal(anyhow::Error),
+    #[error(transparent)]
+    ProofError(#[from] ProofError),
+    #[error(transparent)]
+    IOPatternError(#[from] IOPatternError),
 }

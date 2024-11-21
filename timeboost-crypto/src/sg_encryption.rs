@@ -41,6 +41,7 @@ where
     _duplex: PhantomData<D>,
 }
 
+#[derive(Clone)]
 pub struct Committee {
     pub id: u32,
     pub size: u32,
@@ -72,6 +73,7 @@ pub struct Ciphertext<C: CurveGroup> {
     nonce: Vec<u8>,
     pi: Proof,
 }
+#[derive(Clone)]
 pub struct DecShare<C: CurveGroup> {
     w: C,
     index: u32,
@@ -164,21 +166,17 @@ where
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let nonce = Aes256Gcm::generate_nonce(OsRng);
-        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref());
-        if e.is_err() {
-            return Err(ThresholdEncError::Internal(anyhow!(
-                "Unable to encrypt plaintext"
-            )));
-        }
-        let e = e.unwrap();
+        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref()).map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
+        })?;
         let u_hat = hash_to_curve::<C, H, D>(v, e.clone(), pp)?;
 
         let w_hat = u_hat * beta;
 
         // Produce DLEQ proof for CCA security
         let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
-        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta).map_err(|_| {
-            ThresholdEncError::Internal(anyhow!("Encrypt: Proof generation failed"))
+        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta).map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Encrypt: Proof generation failed: {:?}", e))
         })?;
 
         Ok(Ciphertext {
