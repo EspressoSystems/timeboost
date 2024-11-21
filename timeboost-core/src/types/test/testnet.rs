@@ -13,6 +13,7 @@ pub struct MsgQueues {
     obox: Arc<SegQueue<(Option<PublicKey>, Message)>>,
 }
 
+/// Go through the messages inbound and outbound that we received / sent
 impl MsgQueues {
     pub fn drain_inbox(&self) -> Vec<Message> {
         let mut v = Vec::new();
@@ -31,6 +32,9 @@ impl MsgQueues {
     }
 }
 
+/// Create a test net over `Comm` trait so we are able to save messages as they come in
+/// This helps us with networking tests and we can then interact and write tests in a way
+/// Where we do not have to modify anything inside of `Coordinator` itself
 #[derive(Debug)]
 pub struct TestNet<C> {
     comm: C,

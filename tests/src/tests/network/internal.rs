@@ -77,6 +77,9 @@ impl TestableNetwork for MemoryNetworkTest {
         (coordinators, vec![net])
     }
 
+    /// Return the result of the task handle
+    /// This contains node id as well as the outcome of the test
+    /// Validation logic in test will then collect this information and assert
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
@@ -114,7 +117,9 @@ impl TestableNetwork for MemoryNetworkTest {
                                     events.extend(
                                         msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                     );
+                                    // Evaluate if we have seen the specified condtions of the test
                                     if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                        // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                                         result.set_outcome(TestOutcome::Passed);
                                         co.shutdown().await.expect("Network to be shutdown");
                                         break;
@@ -147,11 +152,15 @@ impl TestableNetwork for MemoryNetworkTest {
         co_handles
     }
 
+    /// Shutdown any task handles that are running
+    /// This will then be evaluated as failures in the test validation logic
     async fn shutdown(
         self,
         handles: JoinSet<HandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome> {
+        // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
+        // Otherwise they were completed and dont need the shutdown signal
         for (id, send) in self.shutdown_txs.iter() {
             if !completed.contains_key(id) {
                 send.send(()).expect(
