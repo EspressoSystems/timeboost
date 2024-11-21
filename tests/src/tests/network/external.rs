@@ -109,6 +109,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                                     );
                                     if conditions.iter().all(|c| c.evaluate(&recv_msgs) == TestOutcome::Passed) {
                                         result.set_outcome(TestOutcome::Passed);
+                                        coordinator.shutdown().await.expect("Network to be shutdown");
                                         break;
                                     }
                                     for a in &actions {
@@ -121,6 +122,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                         }
                         shutdown_result = shutdown_rx.changed() => {
                             // Unwrap the potential error with receiving the shutdown token.
+                            coordinator.shutdown().await.expect("Network to be shutdown");
                             shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
                             break;
                         }

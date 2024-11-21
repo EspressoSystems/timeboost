@@ -104,6 +104,7 @@ impl TestableNetwork for MemoryNetworkTest {
                                     );
                                     if conditions.iter().all(|c| c.evaluate(&recv_msgs) == TestOutcome::Passed) {
                                         result.set_outcome(TestOutcome::Passed);
+                                        co.shutdown().await.expect("Network to be shutdown");
                                         break;
                                     }
                                     for a in &actions {
@@ -115,14 +116,15 @@ impl TestableNetwork for MemoryNetworkTest {
                         }
                         shutdown_result = shutdown_rx.changed() => {
                             // Unwrap the potential error with receiving the shutdown token.
+                            co.shutdown().await.expect("Network to be shutdown");
                             shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
                             break;
                         }
                     }
                 }
                 result
-        }
-    );
+            }
+        );
         }
 
         let net = nets.pop().expect("memory network to be present");
