@@ -36,7 +36,7 @@ enum Command {
     /// Do a byzantine reliable broadcast of the given message.
     RbcBroadcast(Message<Validated>, oneshot::Sender<Result<(), RbcError>>),
     /// End operation.
-    Shutdown(oneshot::Sender<()>)
+    Shutdown(oneshot::Sender<()>),
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ pub struct Rbc {
     rx: mpsc::Receiver<Message<Validated>>,
     tx: mpsc::Sender<Command>,
     jh: JoinHandle<()>,
-    closed: bool
+    closed: bool,
 }
 
 impl Drop for Rbc {
@@ -62,7 +62,7 @@ impl Rbc {
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
-            closed: false
+            closed: false,
         }
     }
 }
@@ -73,23 +73,32 @@ impl Comm for Rbc {
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
         if self.closed {
-            return Err(RbcError::Shutdown)
+            return Err(RbcError::Shutdown);
         }
         if matches!(msg, Message::Vertex(_)) {
             let (tx, rx) = oneshot::channel();
-            self.tx.send(Command::RbcBroadcast(msg, tx)).await.map_err(|_| RbcError::Shutdown)?;
-            return rx.await.map_err(|_| RbcError::Shutdown)?
+            self.tx
+                .send(Command::RbcBroadcast(msg, tx))
+                .await
+                .map_err(|_| RbcError::Shutdown)?;
+            return rx.await.map_err(|_| RbcError::Shutdown)?;
         } else {
-            self.tx.send(Command::Broadcast(msg)).await.map_err(|_| RbcError::Shutdown)?;
+            self.tx
+                .send(Command::Broadcast(msg))
+                .await
+                .map_err(|_| RbcError::Shutdown)?;
         }
         Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
         if self.closed {
-            return Err(RbcError::Shutdown)
+            return Err(RbcError::Shutdown);
         }
-        self.tx.send(Command::Send(to, msg)).await.map_err(|_| RbcError::Shutdown)?;
+        self.tx
+            .send(Command::Send(to, msg))
+            .await
+            .map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
@@ -99,7 +108,7 @@ impl Comm for Rbc {
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
         if self.closed {
-            return Ok(())
+            return Ok(());
         }
         self.closed = true;
         let (tx, rx) = oneshot::channel();

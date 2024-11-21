@@ -3,8 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use anyhow::{anyhow, Result};
 use async_lock::RwLock;
 use portpicker::pick_unused_port;
-use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
-use timeboost_core::traits::comm::Libp2p;
+use sailfish::{coordinator::CoordinatorAuditEvent, rbc::Rbc, sailfish::Sailfish};
 use timeboost_core::types::{
     committee::StaticCommittee,
     event::{SailfishStatusEvent, TimeboostStatusEvent},
@@ -34,7 +33,7 @@ pub struct Libp2pNetworkTest {
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
-    type Network = Libp2p;
+    type Network = Rbc;
     type Shutdown = Result<()>;
 
     fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
@@ -59,7 +58,7 @@ impl TestableNetwork for Libp2pNetworkTest {
         let replication_factor = NonZeroUsize::new((2 * self.group.fish.len()).div_ceil(3))
             .expect("ceil(2n/3) with n > 0 never gives 0");
         let mut handles = JoinSet::new();
-        for node in std::mem::take(&mut self.group.fish).into_iter() {
+        for (i, node) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let bootstrap_nodes = Arc::clone(&self.group.bootstrap_nodes);
             let port = pick_unused_port().expect("Failed to pick an unused port");
@@ -77,12 +76,13 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .build()
                 .expect("Failed to build network node config");
             let committee = StaticCommittee::from(&**self.group.staked_nodes);
+            let keypair = self.group.keypairs[i].clone();
             handles.spawn(async move {
                 let net = node
                     .setup_libp2p(config, bootstrap_nodes, &staked_nodes)
                     .await
                     .expect("Failed to start network");
-                (node, Libp2p::new(net, committee))
+                (node, Rbc::new(net, keypair, committee))
             });
         }
         handles.join_all().await.into_iter().collect()

@@ -14,7 +14,7 @@ use timeboost_core::types::round_number::RoundNumber;
 use timeboost_core::types::{Keypair, Label, PublicKey};
 use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::mpsc;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, instrument, warn};
 
 use super::{Command, Digest, RbcMsg};
 use crate::consensus::VoteAccumulator;
@@ -35,6 +35,7 @@ pub struct Worker {
 }
 
 struct Tracker {
+    #[allow(unused)]
     start: Instant,
     message: Option<Message<Validated>>,
     votes: VoteAccumulator<Digest>,
@@ -59,7 +60,7 @@ enum Status {
     /// A quorum of votes has been reached.
     ReachedQuorum,
     /// The message has been RBC delivered.
-    Delivered
+    Delivered,
 }
 
 impl fmt::Display for Status {
@@ -149,7 +150,7 @@ impl Worker {
     }
 
     /// Best effort broadcast.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_broadcast(&mut self, msg: Message<Validated>) -> Result<()> {
         let bytes = bincode::serialize(&msg)?;
         self.libp2p.broadcast_message(bytes, Topic::Global).await?;
@@ -157,7 +158,7 @@ impl Worker {
     }
 
     /// 1:1 communication.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<()> {
         let bytes = bincode::serialize(&msg)?;
         self.libp2p.direct_message(bytes, to).await?;
@@ -165,7 +166,7 @@ impl Worker {
     }
 
     /// Start RBC broadcast.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_outbound(&mut self, msg: Message<Validated>) -> Result<()> {
         let proto = RbcMsg::Propose(Cow::Borrowed(&msg));
         let bytes = bincode::serialize(&proto)?;
@@ -177,7 +178,7 @@ impl Worker {
             start: Instant::now(),
             message: Some(msg),
             votes: VoteAccumulator::new(self.committee.clone()),
-            status: Status::Init
+            status: Status::Init,
         };
 
         self.buffer.insert(digest, tracker);
@@ -205,7 +206,7 @@ impl Worker {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip(self), fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_propose(&mut self, msg: Message<Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
@@ -257,7 +258,11 @@ impl Worker {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, from = %env.signer_label()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node  = %self.label,
+        from  = %env.signer_label(),
+        round = %env.data().round())
+    )]
     async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
@@ -266,44 +271,42 @@ impl Worker {
         let digest = *env.data();
         let source = *env.signing_key();
 
-        let tracker = self.buffer.entry(digest).or_insert_with(|| {
-            Tracker {
-                start: Instant::now(),
-                message: None,
-                votes: VoteAccumulator::new(self.committee.clone()),
-                status: Status::ReceivedVotes
-            }
+        let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
+            start: Instant::now(),
+            message: None,
+            votes: VoteAccumulator::new(self.committee.clone()),
+            status: Status::ReceivedVotes,
         });
 
         match tracker.status {
-            Status::Init | Status::ReceivedMsg | Status::SentMsg | Status::ReceivedVotes | Status::SentVote => {
-                match tracker.votes.add(env) {
-                    Ok(None) => {
-                        tracker.status = Status::ReceivedVotes
-                    }
-                    Ok(Some(cert)) => {
-                        tracker.status = Status::ReachedQuorum;
-                        if let Some(msg) = &tracker.message {
-                            let m = RbcMsg::Cert(Envelope::signed(cert.clone(), &self.keypair));
-                            let b = bincode::serialize(&m)?;
-                            self.libp2p.broadcast_message(b, Topic::Global).await?;
-                            self.tx.send(msg.clone()).await.unwrap();
-                            tracker.status = Status::Delivered
-                        } else {
-                            let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
-                            let b = bincode::serialize(&m)?;
-                            self.libp2p.direct_message(b, source).await?;
-                            tracker.status = Status::RequestedMsg;
-                        }
-                    }
-                    Err(err) => {
-                        warn!(%err, "failed to add vote");
-                        if tracker.votes.is_empty() && tracker.message.is_none() {
-                            self.buffer.remove(&digest);
-                        }
+            Status::Init
+            | Status::ReceivedMsg
+            | Status::SentMsg
+            | Status::ReceivedVotes
+            | Status::SentVote => match tracker.votes.add(env) {
+                Ok(None) => tracker.status = Status::ReceivedVotes,
+                Ok(Some(cert)) => {
+                    tracker.status = Status::ReachedQuorum;
+                    if let Some(msg) = &tracker.message {
+                        let m = RbcMsg::Cert(Envelope::signed(cert.clone(), &self.keypair));
+                        let b = bincode::serialize(&m)?;
+                        self.libp2p.broadcast_message(b, Topic::Global).await?;
+                        self.tx.send(msg.clone()).await.unwrap();
+                        tracker.status = Status::Delivered
+                    } else {
+                        let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
+                        let b = bincode::serialize(&m)?;
+                        self.libp2p.direct_message(b, source).await?;
+                        tracker.status = Status::RequestedMsg;
                     }
                 }
-            }
+                Err(err) => {
+                    warn!(%err, "failed to add vote");
+                    if tracker.votes.is_empty() && tracker.message.is_none() {
+                        self.buffer.remove(&digest);
+                    }
+                }
+            },
             Status::RequestedMsg | Status::Delivered | Status::ReachedQuorum => {
                 debug!(node = %self.label, status = %tracker.status, "ignoring vote")
             }
@@ -312,7 +315,11 @@ impl Worker {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, from = %env.signer_label()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node  = %self.label,
+        from  = %env.signer_label(),
+        round = %env.data().data().round())
+    )]
     async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
@@ -325,17 +332,19 @@ impl Worker {
         let digest = *env.data().data();
         let source = *env.signing_key();
 
-        let tracker = self.buffer.entry(digest).or_insert_with(|| {
-            Tracker {
-                start: Instant::now(),
-                message: None,
-                votes: VoteAccumulator::new(self.committee.clone()),
-                status: Status::Init
-            }
+        let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
+            start: Instant::now(),
+            message: None,
+            votes: VoteAccumulator::new(self.committee.clone()),
+            status: Status::Init,
         });
 
         match tracker.status {
-            Status::Init | Status::ReceivedMsg | Status::SentMsg | Status::ReceivedVotes | Status::SentVote => {
+            Status::Init
+            | Status::ReceivedMsg
+            | Status::SentMsg
+            | Status::ReceivedVotes
+            | Status::SentVote => {
                 tracker.votes.set_certificate(env.data().clone());
                 tracker.status = Status::ReachedQuorum;
 
@@ -360,7 +369,11 @@ impl Worker {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, from = %env.signer_label()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node  = %self.label,
+        from  = %env.signer_label(),
+        round = %env.data().round())
+    )]
     async fn on_get(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
@@ -372,7 +385,7 @@ impl Worker {
                 from = %env.signer_label(),
                 "ignoring get request for data we do not have"
             );
-            return Ok(())
+            return Ok(());
         };
 
         match tracker.status {
@@ -380,12 +393,11 @@ impl Worker {
                 debug!(node = %self.label, status = %tracker.status, "ignoring get request")
             }
             Status::ReceivedMsg
-                | Status::SentMsg
-                | Status::ReceivedVotes
-                | Status::SentVote
-                | Status::Delivered
-                | Status::ReachedQuorum =>
-            {
+            | Status::SentMsg
+            | Status::ReceivedVotes
+            | Status::SentVote
+            | Status::Delivered
+            | Status::ReachedQuorum => {
                 let msg = tracker.message.clone().unwrap();
                 self.on_send(*env.signing_key(), msg).await.unwrap()
             }
@@ -408,5 +420,5 @@ pub enum RbcError {
     InvalidSignature,
 
     #[error("rbc has shut down")]
-    Shutdown
+    Shutdown,
 }

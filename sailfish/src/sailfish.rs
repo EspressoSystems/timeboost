@@ -1,3 +1,4 @@
+use crate::rbc::Rbc;
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
 #[cfg(feature = "test")]
@@ -15,7 +16,7 @@ use multiaddr::Multiaddr;
 use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
-    traits::comm::{Comm, Libp2p},
+    traits::comm::Comm,
     types::{
         committee::StaticCommittee,
         event::{SailfishStatusEvent, TimeboostStatusEvent},
@@ -158,7 +159,11 @@ impl Sailfish {
         tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Result<()> {
-        let libp2p = Rbc::new(n, StaticCommittee::from(&*staked_nodes));
+        let libp2p = Rbc::new(
+            n,
+            self.keypair.clone(),
+            StaticCommittee::from(&*staked_nodes),
+        );
 
         let mut coordinator_handle = tokio::spawn(
             self.init(libp2p, staked_nodes, sf_app_tx, tb_app_rx, metrics, None)

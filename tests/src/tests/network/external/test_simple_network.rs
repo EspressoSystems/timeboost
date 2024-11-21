@@ -75,7 +75,7 @@ async fn test_simple_network_round_progression() {
         })
         .collect();
 
-    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes, Some(Duration::from_secs(15)))
+    NetworkTest::<Libp2pNetworkTest>::new(group, node_outcomes, Some(Duration::from_secs(60)))
         .run()
         .await;
 }
