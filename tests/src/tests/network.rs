@@ -13,7 +13,6 @@ pub mod internal;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CoordinatorAuditEvent {
-    #[allow(unused)]
     ActionTaken(Action),
     MessageReceived(Message),
 }
@@ -30,7 +29,7 @@ impl std::fmt::Display for CoordinatorAuditEvent {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
     Passed,
-    Waiting,
+    Failed,
 }
 
 pub struct TestCondition {
@@ -58,16 +57,19 @@ impl TestCondition {
     pub fn evaluate(&self, logs: &[CoordinatorAuditEvent]) -> TestOutcome {
         for e in logs.iter() {
             let result = (self.eval)(e);
-            if result != TestOutcome::Waiting {
+            if result != TestOutcome::Failed {
                 return result;
             }
         }
 
         // We have yet to see the event that we're looking for.
-        TestOutcome::Waiting
+        TestOutcome::Failed
     }
 }
 
+/// When we start a test we create a Task Handle for each node
+/// This runs the coordinator logic over the `Comm` implementation
+/// This will be the result that a task returns for a given node
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct HandleResult {
     id: usize,
@@ -78,7 +80,7 @@ impl HandleResult {
     pub fn new(id: usize) -> Self {
         Self {
             id,
-            outcome: TestOutcome::Waiting,
+            outcome: TestOutcome::Failed,
         }
     }
 
@@ -107,8 +109,8 @@ pub trait TestableNetwork {
     async fn shutdown(
         self,
         handles: JoinSet<HandleResult>,
-        completed: &HashMap<usize, HandleResult>,
-    ) -> HashMap<usize, HandleResult>;
+        completed: &HashMap<usize, TestOutcome>,
+    ) -> HashMap<usize, TestOutcome>;
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
@@ -134,50 +136,46 @@ impl<N: TestableNetwork> NetworkTest<N> {
         let nodes_and_networks = self.network.init().await;
         let mut handles = self.network.start(nodes_and_networks).await;
         let mut results = HashMap::new();
-        loop {
+        let timeout = loop {
             tokio::select! {
                 next = handles.join_next() => {
                     match next {
                         Some(result) => {
                             match result {
                                 Ok(handle_res) => {
-                                    results.insert(handle_res.id(), handle_res);
+                                    results.insert(handle_res.id(), handle_res.outcome());
                                 },
                                 Err(err) => {
                                     panic!("Join Err: {}", err);
                                 },
                             }
                         },
-                        None => break, // we are done
+                        None => break true, // we are done
                     }
                 }
                 _ = sleep(self.duration) => {
-                    break;
+                    break false;
                 }
             }
-        }
-
-        let timeout = !handles.is_empty();
-
-        // Always shutdown the network.
-        results.extend(self.network.shutdown(handles, &results).await);
+        };
 
         // Now handle the test result
         if timeout {
+            // Shutdown the network for the nodes that did not already complete (hence the timeout)
+            // This means that the test will fail
+            results.extend(self.network.shutdown(handles, &results).await);
             for (node_id, result) in results {
-                if result.outcome() != TestOutcome::Passed {
-                    tracing::error!(
-                        "Node {} had missing status: {:?}",
-                        node_id,
-                        result.outcome()
-                    );
+                if result != TestOutcome::Passed {
+                    tracing::error!("Node {} had missing status: {:?}", node_id, result);
                 }
             }
             panic!("Test timed out after {:?}", self.duration);
         }
 
         assert!(
-            results.values().all(|s| s.outcome() == TestOutcome::Passed),
+            results
+                .values()
+                .all(|result| *result == TestOutcome::Passed),
             "Not all nodes passed. Final statuses: {:?}",
             results.values()
         );

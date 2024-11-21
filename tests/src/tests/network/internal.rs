@@ -93,22 +93,34 @@ impl TestableNetwork for MemoryNetworkTest {
 
             co_handles.spawn(async move {
                 let mut result = HandleResult::new(i);
-                let mut recv_msgs = Vec::new();
+                let mut events = Vec::new();
+
+                match co.start().await {
+                    Ok(actions) => {
+                        for a in actions {
+                            let _ = co.execute(a).await;
+                        }
+                    }
+                    Err(e) => {
+                        panic!("Failed to start coordinator: {}", e);
+                    }
+                }
                 loop {
                     tokio::select! {
                         res = co.next() => {
                             match res {
                                 Ok(actions) => {
-                                    recv_msgs.extend(
+                                    events.extend(
                                         msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                     );
-                                    if conditions.iter().all(|c| c.evaluate(&recv_msgs) == TestOutcome::Passed) {
+                                    if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
                                         result.set_outcome(TestOutcome::Passed);
                                         co.shutdown().await.expect("Network to be shutdown");
                                         break;
                                     }
-                                    for a in &actions {
-                                        let _ = co.execute(a.clone()).await;
+                                    for a in actions {
+                                        events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                        let _ = co.execute(a).await;
                                     }
                                 }
                                 Err(_e) => {}
@@ -137,11 +149,8 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(
         self,
         handles: JoinSet<HandleResult>,
-        completed: &HashMap<usize, HandleResult>,
-    ) -> HashMap<usize, HandleResult> {
-        if handles.is_empty() {
-            return HashMap::new();
-        }
+        completed: &HashMap<usize, TestOutcome>,
+    ) -> HashMap<usize, TestOutcome> {
         for (id, send) in self.shutdown_txs.iter() {
             if !completed.contains_key(id) {
                 send.send(()).expect(
@@ -151,11 +160,11 @@ impl TestableNetwork for MemoryNetworkTest {
         }
 
         // Wait for all the coordinators to shutdown
-        let res: HashMap<usize, HandleResult> = handles
+        let res: HashMap<usize, TestOutcome> = handles
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r))
+            .map(|r| (r.id(), r.outcome()))
             .collect();
 
         // Now shutdown the network

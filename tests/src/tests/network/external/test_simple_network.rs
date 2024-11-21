@@ -35,7 +35,7 @@ async fn test_simple_network_genesis() {
                                     return TestOutcome::Passed;
                                 }
                             }
-                            TestOutcome::Waiting
+                            TestOutcome::Failed
                         })
                     })
                     .collect(),
@@ -70,7 +70,7 @@ async fn test_simple_network_round_progression() {
                                     return TestOutcome::Passed;
                                 }
                             }
-                            TestOutcome::Waiting
+                            TestOutcome::Failed
                         })
                     })
                     .collect(),

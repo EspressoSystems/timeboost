@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
 use std::{collections::HashSet, sync::Arc};
@@ -15,7 +15,10 @@ use timeboost_core::types::{
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
-use tokio::sync::{mpsc::Sender, watch};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    watch,
+};
 
 pub mod api;
 pub mod config;
@@ -38,6 +41,9 @@ pub struct Timeboost {
     /// The sender for events to the sailfish node.
     app_tx: Sender<TimeboostStatusEvent>,
 
+    /// The sender for events to the sailfish node.
+    app_rx: Receiver<TimeboostStatusEvent>,
+
     /// The receiver for the shutdown signal.
     shutdown_rx: watch::Receiver<()>,
 
@@ -54,6 +60,7 @@ impl Timeboost {
         rpc_port: u16,
         metrics_port: u16,
         app_tx: Sender<TimeboostStatusEvent>,
+        app_rx: Receiver<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Self {
@@ -63,6 +70,7 @@ impl Timeboost {
             rpc_port,
             metrics_port,
             app_tx,
+            app_rx,
             shutdown_rx,
             metrics,
         }
@@ -88,14 +96,27 @@ impl Timeboost {
             serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
         });
 
+        match coordinator.start().await {
+            Ok(actions) => {
+                for a in actions {
+                    let _ = coordinator.execute(a).await;
+                }
+            }
+            Err(e) => {
+                bail!("Failed to start coordinator: {}", e);
+            }
+        }
         loop {
             tokio::select! {
-                r = coordinator.next() => {
-                    match r {
+                result = coordinator.next() => {
+                    match result {
                         Ok(actions) => {
                             for a in actions {
-                                // TODO: handle response from sailfish, and send sailfish event
-                                let _res = coordinator.execute(a).await;
+                                let event = coordinator.execute(a).await;
+                                if let Ok(Some(e)) = event {
+                                    info!("Received event: {:?}", e)
+                                }
+
                             }
                         },
                         Err(e) => {
@@ -103,6 +124,15 @@ impl Timeboost {
                         },
                     }
                 }
+                tb_event = self.app_rx.recv() => match tb_event {
+                    Some(event) => {
+                        coordinator.handle_tb_event(event).await?;
+                    }
+                    None => {
+                        // If we get here, it's a big deal.
+                        bail!("Receiver disconnected while awaiting application layer messages.");
+                    }
+                },
                 result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
                     coordinator.shutdown().await.expect("Shutdown coordinator");
@@ -131,7 +161,7 @@ pub async fn run_timeboost(
     let prom = Arc::new(PrometheusMetrics::default());
     let metrics = Arc::new(ConsensusMetrics::new(prom.as_ref()));
 
-    let (tb_app_tx, _tb_app_rx) = channel(100);
+    let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
@@ -153,6 +183,7 @@ pub async fn run_timeboost(
         rpc_port,
         metrics_port,
         tb_app_tx,
+        tb_app_rx,
         shutdown_rx,
         metrics,
     );

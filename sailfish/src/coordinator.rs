@@ -7,13 +7,14 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
-        block::Block,
+        event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
         NodeId,
     },
 };
 use tokio::time::sleep;
+use tracing::info;
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -26,8 +27,6 @@ pub struct Coordinator<C> {
     consensus: Consensus,
 
     timer: BoxFuture<'static, RoundNumber>,
-
-    init: bool,
 }
 
 impl<C: Comm> Coordinator<C> {
@@ -37,7 +36,6 @@ impl<C: Comm> Coordinator<C> {
             comm,
             consensus: cons,
             timer: pending().boxed(),
-            init: false,
         }
     }
 
@@ -50,24 +48,38 @@ impl<C: Comm> Coordinator<C> {
         &self.consensus
     }
 
-    pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
-        if !self.init {
-            self.init = true;
-            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())));
-        }
+    pub async fn start(&mut self) -> Result<Vec<Action>, C::Err> {
+        Ok(self.consensus.go(Dag::new(self.consensus.committee_size())))
+    }
 
+    pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
         tokio::select! { biased;
             vnr = &mut self.timer => Ok(self.consensus.timeout(vnr)),
             msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
         }
     }
 
-    pub async fn execute(&mut self, action: Action) -> Result<Option<Block>, C::Err> {
+    pub async fn handle_tb_event(&mut self, event: TimeboostStatusEvent) -> Result<(), C::Err> {
+        // TODO
+        info!(%event, "received timeboost event");
+        Ok(())
+    }
+
+    pub async fn execute(&mut self, action: Action) -> Result<Option<SailfishStatusEvent>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
+                return Ok(Some(SailfishStatusEvent {
+                    round: r,
+                    event: SailfishEventType::RoundFinished { round: r },
+                }));
             }
-            Action::Deliver(b, _, _) => return Ok(Some(b)),
+            Action::Deliver(_b, r, _) => {
+                return Ok(Some(SailfishStatusEvent {
+                    round: r,
+                    event: SailfishEventType::Committed { round: r },
+                }));
+            }
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e.cast())).await?;
             }
@@ -75,7 +87,12 @@ impl<C: Comm> Coordinator<C> {
                 self.comm.broadcast(Message::Timeout(e.cast())).await?;
             }
             Action::SendTimeoutCert(c) => {
+                let round = c.data().round();
                 self.comm.broadcast(Message::TimeoutCert(c)).await?;
+                return Ok(Some(SailfishStatusEvent {
+                    round,
+                    event: SailfishEventType::Timeout { round },
+                }));
             }
             Action::SendNoVote(to, v) => {
                 self.comm.send(to, Message::NoVote(v.cast())).await?;

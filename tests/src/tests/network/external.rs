@@ -98,22 +98,34 @@ impl TestableNetwork for Libp2pNetworkTest {
                 );
 
                 let mut result = HandleResult::new(i);
-                let mut recv_msgs = Vec::new();
+                let mut events = Vec::new();
+
+                match coordinator.start().await {
+                    Ok(actions) => {
+                        for a in actions {
+                            let _ = coordinator.execute(a).await;
+                        }
+                    }
+                    Err(e) => {
+                        panic!("Failed to start coordinator: {}", e);
+                    }
+                }
                 loop {
                     tokio::select! {
                         res = coordinator.next() => {
                             match res {
                                 Ok(actions) => {
-                                    recv_msgs.extend(
+                                    events.extend(
                                         msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                     );
-                                    if conditions.iter().all(|c| c.evaluate(&recv_msgs) == TestOutcome::Passed) {
+                                    if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
                                         result.set_outcome(TestOutcome::Passed);
                                         coordinator.shutdown().await.expect("Network to be shutdown");
                                         break;
                                     }
-                                    for a in &actions {
-                                        let _ = coordinator.execute(a.clone()).await;
+                                    for a in actions {
+                                        events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                        let _ = coordinator.execute(a).await;
                                     }
                                     let _outbox = msgs.drain_outbox();
                                 }
@@ -137,11 +149,8 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn shutdown(
         self,
         handles: JoinSet<HandleResult>,
-        completed: &HashMap<usize, HandleResult>,
-    ) -> HashMap<usize, HandleResult> {
-        if handles.is_empty() {
-            return HashMap::new();
-        }
+        completed: &HashMap<usize, TestOutcome>,
+    ) -> HashMap<usize, TestOutcome> {
         for (id, send) in self.shutdown_txs.iter() {
             if !completed.contains_key(id) {
                 send.send(()).expect(
@@ -154,7 +163,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r))
+            .map(|r| (r.id(), r.outcome()))
             .collect()
     }
 }
