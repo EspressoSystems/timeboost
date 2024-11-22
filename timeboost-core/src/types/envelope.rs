@@ -14,7 +14,7 @@ use super::Keypair;
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize)]
 pub enum Validated {}
 
 /// An envelope contains data, its signed commitment hash and the signing key.
@@ -23,9 +23,11 @@ pub enum Validated {}
 /// signature has been checked at least once. By construction it is impossible to
 /// create a validated envelope without either creating or verifying the signature.
 ///
+///```compile_fail
 /// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
 ///
 /// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
 pub struct Envelope<D: Committable, S> {

@@ -5,7 +5,6 @@ use committable::Committable;
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
 
-use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
@@ -13,7 +12,7 @@ use timeboost_core::types::{
     PublicKey, Signature,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {
     committee: StaticCommittee,
     votes: BTreeMap<PublicKey, Envelope<D, Validated>>,

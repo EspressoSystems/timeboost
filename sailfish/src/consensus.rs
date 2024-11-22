@@ -596,6 +596,12 @@ impl Consensus {
             .edges()
             .all(|w| self.state.dag.vertex(v.round() - 1, w).is_some())
         {
+            debug!(
+               node   = %self.label,
+               round  = %self.round(),
+                vround = %v.round(),
+                "not all edges are resolved in dag"
+            );
             return Err(());
         }
 
@@ -603,6 +609,13 @@ impl Consensus {
         self.metrics.dag_depth.set(self.state.dag.depth());
 
         if v.round() <= self.state.committed_round {
+            debug!(
+                node      = %self.label,
+                round     = %self.round(),
+                committed = %self.state.committed_round,
+                vround    = %v.round(),
+                "leader has already been committed"
+            );
             return Ok(Vec::new());
         }
 
