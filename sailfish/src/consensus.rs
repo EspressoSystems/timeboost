@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashSet};
-use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -15,7 +14,7 @@ use timeboost_core::types::{
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 mod dag;
 mod vote;
@@ -196,80 +195,50 @@ impl Consensus {
             return actions;
         }
 
-        let vertex = e.into_data();
+        let v = e.into_data();
 
-        if self.dag.contains(&vertex) {
+        if self.dag.contains(&v) {
             debug!(
                 round  = %self.round,
-                ours   = %(self.public_key() == vertex.source()),
-                vround = %vertex.round(),
+                ours   = %(self.public_key() == v.source()),
+                vround = %v.round(),
                 "vertex already in dag"
             );
             return actions;
         }
 
-        if !self.is_valid(&vertex) {
+        if !self.is_valid(&v) {
             return actions;
         }
 
-        let buffer = mem::take(&mut self.buffer);
-        let mut retained = HashSet::new();
-        match self.try_to_add_to_dag(&vertex) {
+        let quorum = self.committee().quorum_size().get() as usize;
+
+        match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                // XXX: The following is not spec compliant (cf. https://github.com/EspressoSystems/timeboost/issues/100)
-                for w in buffer {
-                    if w.round() > vertex.round() {
-                        retained.insert(w);
-                        continue;
-                    }
-                    if let Ok(a) = self.try_to_add_to_dag(&w) {
-                        actions.extend(a);
-                        if w.round() < self.round {
-                            continue;
-                        }
-                        if (self.dag.vertex_count(w.round()) as u64)
-                            < self.committee.quorum_size().get()
-                        {
-                            continue;
-                        }
-                        actions.extend(self.advance_from_round(w.round()));
-                    } else {
-                        retained.insert(w);
-                    }
-                }
-                debug_assert!(self.buffer.is_empty());
-                self.buffer = retained;
-                // XXX: End of spec deviation (cf. https://github.com/EspressoSystems/timeboost/issues/100)
-                self.buffer.insert(vertex);
+                self.buffer.insert(v);
                 self.metrics.vertex_buffer.set(self.buffer.len());
             }
             Ok(a) => {
                 actions.extend(a);
-                for w in buffer {
-                    if w.round() > vertex.round() {
-                        retained.insert(w);
-                        continue;
-                    }
-                    if let Ok(b) = self.try_to_add_to_dag(&w) {
-                        actions.extend(b);
+                if v.round() >= self.round && self.dag.vertex_count(v.round()) >= quorum {
+                    actions.extend(self.advance_from_round(v.round()));
+                }
+                let mut buffer: Vec<Vertex> = self.buffer.drain().collect();
+                buffer.sort_unstable_by_key(|v| v.round());
+                for v in buffer {
+                    if let Ok(a) = self.try_to_add_to_dag(&v) {
+                        actions.extend(a);
+                        if v.round() >= self.round && self.dag.vertex_count(v.round()) >= quorum {
+                            actions.extend(self.advance_from_round(v.round()));
+                        }
                     } else {
-                        retained.insert(w);
+                        self.buffer.insert(v);
                     }
                 }
-                debug_assert!(self.buffer.is_empty());
-                self.buffer = retained;
                 self.metrics.vertex_buffer.set(self.buffer.len());
-                if vertex.round() < self.round {
-                    return actions;
-                }
-                if (self.dag.vertex_count(vertex.round()) as u64)
-                    < self.committee.quorum_size().get()
-                {
-                    return actions;
-                }
-                actions.extend(self.advance_from_round(vertex.round()));
             }
         }
+
         actions
     }
 
@@ -705,6 +674,7 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
+                info!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
