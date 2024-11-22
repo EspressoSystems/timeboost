@@ -1,8 +1,11 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromRow,
+)]
 pub struct RoundNumber(u64);
 
 impl RoundNumber {
@@ -12,6 +15,11 @@ impl RoundNumber {
 
     pub fn u64(&self) -> u64 {
         self.0
+    }
+
+    /// Convert to a `i64` for postgres.
+    pub fn i64(&self) -> i64 {
+        self.0 as i64
     }
 
     pub fn genesis() -> Self {
@@ -34,6 +42,18 @@ impl From<RoundNumber> for ViewNumber {
 impl From<u64> for RoundNumber {
     fn from(val: u64) -> Self {
         Self(val)
+    }
+}
+
+impl From<i64> for RoundNumber {
+    fn from(val: i64) -> Self {
+        Self(val as u64)
+    }
+}
+
+impl From<i32> for RoundNumber {
+    fn from(val: i32) -> Self {
+        Self(val as u64)
     }
 }
 

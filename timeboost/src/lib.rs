@@ -25,6 +25,7 @@ use tokio::sync::{
 pub mod api;
 pub mod config;
 pub mod contracts;
+mod persistence;
 
 pub struct Timeboost {
     /// The ID of the node.

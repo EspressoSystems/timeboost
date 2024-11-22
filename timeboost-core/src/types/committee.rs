@@ -6,11 +6,12 @@ use std::{
 use ethereum_types::U256;
 use hotshot_types::stake_table::StakeTableEntry;
 use hotshot_types::PeerConfig;
+use serde::{Deserialize, Serialize};
 
 use crate::types::{round_number::RoundNumber, PublicKey};
 
 /// The static committee is just a list of public keys whose stake is equivalent across all nodes.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct StaticCommittee {
     stake_table: Arc<Vec<PublicKey>>,
 }

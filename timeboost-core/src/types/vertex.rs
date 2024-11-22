@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 
 use super::{
     certificate::Certificate,
@@ -12,7 +13,7 @@ use super::{
 use crate::types::Label;
 use crate::types::{block::Block, round_number::RoundNumber};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, FromRow)]
 pub struct Vertex {
     source: PublicKey,
     round: RoundNumber,
