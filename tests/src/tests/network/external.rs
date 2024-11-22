@@ -1,24 +1,16 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use anyhow::{anyhow, Result};
-use async_lock::RwLock;
 use portpicker::pick_unused_port;
-use sailfish::{coordinator::CoordinatorAuditEvent, sailfish::Sailfish};
+use sailfish::sailfish::Sailfish;
 use timeboost_core::traits::comm::Libp2p;
-use timeboost_core::types::{
-    committee::StaticCommittee,
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
-    metrics::ConsensusMetrics,
-};
+use timeboost_core::types::test::testnet::TestNet;
+use timeboost_core::types::{committee::StaticCommittee, metrics::ConsensusMetrics};
 use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinSet,
-};
+use tokio::{sync::watch, task::JoinSet};
 
-use crate::Group;
+use crate::{tests::network::CoordinatorAuditEvent, Group};
 
-use super::{TestCondition, TestOutcome, TestableNetwork};
+use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
@@ -26,32 +18,22 @@ pub struct Libp2pNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
-    event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
-    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
-    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2p;
-    type Shutdown = Result<()>;
 
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
             (0..group.fish.len()).map(|_| watch::channel(())).unzip();
-        let event_logs = HashMap::from_iter(
-            (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
-        );
 
         Self {
             group,
             shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
-            event_logs,
             outcomes,
-            sf_app_rxs: HashMap::new(),
-            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -88,10 +70,13 @@ impl TestableNetwork for Libp2pNetworkTest {
         handles.join_all().await.into_iter().collect()
     }
 
+    /// Return the result of the task handle
+    /// This contains node id as well as the outcome of the test
+    /// Validation logic in test will then collect this information and assert
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown> {
+    ) -> JoinSet<TaskHandleResult> {
         let mut handles = JoinSet::new();
         let (nodes, networks) = nodes_and_networks;
 
@@ -103,63 +88,86 @@ impl TestableNetwork for Libp2pNetworkTest {
 
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let log = Arc::clone(self.event_logs.get(&i).unwrap());
-            let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
-
-            self.sf_app_rxs.insert(i, sf_app_rx);
-            self.tb_app_txs.insert(i, tb_app_tx);
+            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
+            let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
 
             handles.spawn(async move {
-                let co = node.init(
-                    network,
+                let net = TestNet::new(network);
+                let msgs = net.messages();
+                let mut coordinator = node.init(
+                    net,
                     (*staked_nodes).clone(),
-                    sf_app_tx,
-                    tb_app_rx,
                     Arc::new(ConsensusMetrics::default()),
-                    Some(Arc::clone(&log)),
                 );
 
-                co.go(shutdown_rx).await.map_err(|e| anyhow!(e))
+                let mut events = Vec::new();
+                match coordinator.start().await {
+                    Ok(actions) => {
+                        for a in actions {
+                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                            let _ = coordinator.execute(a).await;
+                        }
+                    }
+                    Err(e) => {
+                        panic!("Failed to start coordinator: {}", e);
+                    }
+                }
+                loop {
+                    tokio::select! {
+                        res = coordinator.next() => match res {
+                            Ok(actions) => {
+                                events.extend(
+                                    msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
+                                );
+                                // Evaluate if we have seen the specified conditions of the test
+                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                                    coordinator.shutdown().await.expect("Network to be shutdown");
+                                    break TaskHandleResult::new(i ,TestOutcome::Passed);
+                                }
+                                for a in actions {
+                                    events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                    let _ = coordinator.execute(a).await;
+                                }
+                                let _outbox = msgs.drain_outbox();
+                            }
+                            Err(_e) => {}
+                        },
+                        shutdown_result = shutdown_rx.changed() => {
+                            // Unwrap the potential error with receiving the shutdown token.
+                            coordinator.shutdown().await.expect("Network to be shutdown");
+                            shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                            break TaskHandleResult::new(i ,TestOutcome::Failed);
+                        }
+                    }
+                }
             });
         }
         handles
     }
 
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
-        let mut statuses =
-            HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
-        for (node_id, conditions) in self.outcomes.iter() {
-            tracing::info!("Evaluating node {}", node_id);
-            let log = self.event_logs.get(node_id).unwrap().read().await;
-            let eval_result: Vec<TestOutcome> =
-                conditions.iter().map(|c| c.evaluate(&log)).collect();
-
-            // TODO: Add the application layer statuses to the evaluation criteria.
-
-            // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
-            // set it to Passed.
-            let status = eval_result.iter().fold(TestOutcome::Passed, |acc, x| {
-                if *x == TestOutcome::Waiting {
-                    *x
-                } else {
-                    acc
-                }
-            });
-
-            *statuses.get_mut(node_id).expect("Node ID not found") = status;
+    /// Shutdown any spawned tasks that are running
+    /// This will then be evaluated as failures in the test validation logic
+    async fn shutdown(
+        self,
+        handles: JoinSet<TaskHandleResult>,
+        completed: &HashMap<usize, TestOutcome>,
+    ) -> HashMap<usize, TestOutcome> {
+        // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
+        // Otherwise they were completed and dont need the shutdown signal
+        for (id, send) in self.shutdown_txs.iter() {
+            if !completed.contains_key(id) {
+                send.send(()).expect(
+                    "The shutdown sender was dropped before the receiver could receive the token",
+                );
+            }
         }
-
-        statuses
-    }
-
-    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
-        for send in self.shutdown_txs.into_values() {
-            send.send(()).expect(
-                "The shutdown sender was dropped before the receiver could receive the token",
-            );
-        }
-        handles.join_all().await;
+        // Wait for all the coordinators to shutdown
+        handles
+            .join_all()
+            .await
+            .into_iter()
+            .map(|r| (r.id(), r.outcome()))
+            .collect()
     }
 }
