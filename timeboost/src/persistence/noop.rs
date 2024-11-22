@@ -27,7 +27,7 @@ impl Persistence for NoOpPersistence {
     {
         L::into_model(vec![])
     }
-    async fn gc(&self, _round: RoundNumber) -> Result<()> {
+    async fn gc(&self, _tables: &[&str], _round: RoundNumber) -> Result<()> {
         Ok(())
     }
 }
