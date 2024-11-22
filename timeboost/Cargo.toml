@@ -6,6 +6,11 @@ description.workspace = true
 
 [features]
 until = ["reqwest"]
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
+noop = []
+default = ["noop"]
+
 
 [dependencies]
 async-broadcast = { workspace = true }

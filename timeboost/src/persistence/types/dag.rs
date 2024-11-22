@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use timeboost_core::types::{round_number::RoundNumber, vertex::Vertex, PublicKey};
 
-use crate::persistence::traits::{Loadable, PgQuery, Savable};
+use crate::persistence::traits::{Loadable, Query, Savable};
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct DagRow {
@@ -39,12 +39,18 @@ impl Savable for DagRow {
         &["round", "public_key", "vertex", "max_keys"]
     }
 
-    fn bind_values(self, query: PgQuery<'_>) -> PgQuery<'_> {
+    fn bind_values(self, query: Query<'_>) -> Query<'_> {
+        #[cfg(not(feature = "noop"))]
+        {
+            query
+                .bind(self.round)
+                .bind(self.public_key)
+                .bind(self.vertex)
+                .bind(self.max_keys)
+        }
+
+        #[cfg(feature = "noop")]
         query
-            .bind(self.round)
-            .bind(self.public_key)
-            .bind(self.vertex)
-            .bind(self.max_keys)
     }
 }
 

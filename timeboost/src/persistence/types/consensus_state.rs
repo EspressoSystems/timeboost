@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use timeboost_core::types::round_number::RoundNumber;
 
-use crate::persistence::traits::{Loadable, PgQuery, Savable};
+use crate::persistence::traits::{Loadable, Query, Savable};
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct ConsensusStateRow {
@@ -37,11 +37,17 @@ impl Savable for ConsensusStateRow {
         &["round", "committed_round", "transactions"]
     }
 
-    fn bind_values(self, query: PgQuery<'_>) -> PgQuery<'_> {
+    fn bind_values(self, query: Query<'_>) -> Query<'_> {
+        #[cfg(not(feature = "noop"))]
+        {
+            query
+                .bind(self.round)
+                .bind(self.committed_round)
+                .bind(self.transactions)
+        }
+
+        #[cfg(feature = "noop")]
         query
-            .bind(self.round)
-            .bind(self.committed_round)
-            .bind(self.transactions)
     }
 
     fn from_model(model: Self::Model) -> Result<Vec<Self>>

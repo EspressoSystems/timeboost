@@ -1,21 +1,21 @@
-#![cfg(feature = "postgres")]
+#![cfg(feature = "sqlite")]
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use timeboost_core::types::round_number::RoundNumber;
 
 use super::traits::{Loadable, Persistence, Savable};
 
-pub struct PgPersistence {
-    pool: PgPool,
+pub struct SqlitePersistence {
+    pool: SqlitePool,
 }
 
 #[async_trait]
-impl Persistence for PgPersistence {
+impl Persistence for SqlitePersistence {
     async fn new(uri: String) -> Result<Self> {
-        let pool = PgPool::connect(&uri).await?;
+        let pool = SqlitePool::connect(&uri).await?;
         Ok(Self { pool })
     }
 
