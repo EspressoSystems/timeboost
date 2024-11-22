@@ -110,26 +110,24 @@ impl TestableNetwork for MemoryNetworkTest {
                 }
                 loop {
                     tokio::select! {
-                        res = co.next() => {
-                            match res {
-                                Ok(actions) => {
-                                    events.extend(
-                                        msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
-                                    );
-                                    // Evaluate if we have seen the specified conditions of the test
-                                    if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
-                                        // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                        co.shutdown().await.expect("Network to be shutdown");
-                                        break TaskHandleResult::new(i, TestOutcome::Passed);
-                                    }
-                                    for a in actions {
-                                        events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
-                                        let _ = co.execute(a).await;
-                                    }
+                        res = co.next() => match res {
+                            Ok(actions) => {
+                                events.extend(
+                                    msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
+                                );
+                                // Evaluate if we have seen the specified conditions of the test
+                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                                    co.shutdown().await.expect("Network to be shutdown");
+                                    break TaskHandleResult::new(i, TestOutcome::Passed);
                                 }
-                                Err(_e) => {}
+                                for a in actions {
+                                    events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                    let _ = co.execute(a).await;
+                                }
                             }
-                        }
+                            Err(_e) => {}
+                        },
                         shutdown_result = shutdown_rx.changed() => {
                             // Unwrap the potential error with receiving the shutdown token.
                             co.shutdown().await.expect("Network to be shutdown");

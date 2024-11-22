@@ -110,22 +110,19 @@ impl Timeboost {
         }
         loop {
             tokio::select! {
-                result = coordinator.next() => {
-                    match result {
-                        Ok(actions) => {
-                            for a in actions {
-                                let event = coordinator.execute(a).await;
-                                if let Ok(Some(e)) = event {
-                                    info!("Received event: {:?}", e)
-                                }
-
+                result = coordinator.next() => match result {
+                    Ok(actions) => {
+                        for a in actions {
+                            let event = coordinator.execute(a).await;
+                            if let Ok(Some(e)) = event {
+                                info!("Received event: {:?}", e)
                             }
-                        },
-                        Err(e) => {
-                            tracing::error!("Error receiving message: {}", e);
-                        },
-                    }
-                }
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Error receiving message: {}", e);
+                    },
+                },
                 tb_event = self.app_rx.recv() => match tb_event {
                     Some(event) => {
                         coordinator.handle_tb_event(event).await?;

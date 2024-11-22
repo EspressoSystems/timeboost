@@ -49,18 +49,16 @@ async fn main() -> Result<()> {
     )
     .await;
     tokio::select! {
-        r = coordinator.next() => {
-            match r {
-                Ok(actions) => {
-                    for a in actions {
-                        let _res = coordinator.execute(a).await;
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("Error: {}", e);
-                },
-            }
-        }
+        r = coordinator.next() =>  match r {
+            Ok(actions) => {
+                for a in actions {
+                    let _res = coordinator.execute(a).await;
+                }
+            },
+            Err(e) => {
+                tracing::error!("Error: {}", e);
+            },
+        },
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             coordinator.shutdown().await.expect("Coordinator comm shutdown");
