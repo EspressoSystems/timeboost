@@ -43,7 +43,7 @@ pub struct Timeboost {
     /// The sender for events to the sailfish node.
     app_tx: Sender<TimeboostStatusEvent>,
 
-    /// The sender for events to the sailfish node.
+    /// The receiver for events to the sailfish node.
     app_rx: Receiver<TimeboostStatusEvent>,
 
     /// The receiver for the shutdown signal.

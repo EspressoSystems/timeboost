@@ -71,17 +71,14 @@ impl TestCondition {
 /// This runs the coordinator logic over the `Comm` implementation
 /// This will be the result that a task returns for a given node
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct HandleResult {
+pub struct TaskHandleResult {
     id: usize,
     outcome: TestOutcome,
 }
 
-impl HandleResult {
-    pub fn new(id: usize) -> Self {
-        Self {
-            id,
-            outcome: TestOutcome::Failed,
-        }
+impl TaskHandleResult {
+    pub fn new(id: usize, outcome: TestOutcome) -> Self {
+        Self { id, outcome }
     }
 
     pub fn id(&self) -> usize {
@@ -90,10 +87,6 @@ impl HandleResult {
 
     pub fn outcome(&self) -> TestOutcome {
         self.outcome
-    }
-
-    pub fn set_outcome(&mut self, outcome: TestOutcome) {
-        self.outcome = outcome;
     }
 }
 
@@ -105,10 +98,10 @@ pub trait TestableNetwork {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<HandleResult>;
+    ) -> JoinSet<TaskHandleResult>;
     async fn shutdown(
         self,
-        handles: JoinSet<HandleResult>,
+        handles: JoinSet<TaskHandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome>;
 }

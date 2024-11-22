@@ -5,7 +5,7 @@ use crate::{
     Group,
 };
 
-use super::{HandleResult, TestCondition, TestableNetwork};
+use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use sailfish::coordinator::Coordinator;
 use timeboost_core::types::{
     message::Message,
@@ -83,7 +83,7 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<HandleResult> {
+    ) -> JoinSet<TaskHandleResult> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
@@ -95,7 +95,6 @@ impl TestableNetwork for MemoryNetworkTest {
             let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
 
             co_handles.spawn(async move {
-                let mut result = HandleResult::new(i);
                 let mut events = Vec::new();
 
                 match co.start().await {
@@ -117,12 +116,11 @@ impl TestableNetwork for MemoryNetworkTest {
                                     events.extend(
                                         msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                     );
-                                    // Evaluate if we have seen the specified condtions of the test
+                                    // Evaluate if we have seen the specified conditions of the test
                                     if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
                                         // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                        result.set_outcome(TestOutcome::Passed);
                                         co.shutdown().await.expect("Network to be shutdown");
-                                        break;
+                                        break TaskHandleResult::new(i, TestOutcome::Passed);
                                     }
                                     for a in actions {
                                         events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
@@ -136,13 +134,11 @@ impl TestableNetwork for MemoryNetworkTest {
                             // Unwrap the potential error with receiving the shutdown token.
                             co.shutdown().await.expect("Network to be shutdown");
                             shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                            break;
+                            break TaskHandleResult::new(i, TestOutcome::Failed);
                         }
                     }
                 }
-                result
-            }
-        );
+            });
         }
 
         let net = nets.pop().expect("memory network to be present");
@@ -152,11 +148,11 @@ impl TestableNetwork for MemoryNetworkTest {
         co_handles
     }
 
-    /// Shutdown any task handles that are running
+    /// Shutdown any spawned tasks that are running
     /// This will then be evaluated as failures in the test validation logic
     async fn shutdown(
         self,
-        handles: JoinSet<HandleResult>,
+        handles: JoinSet<TaskHandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome> {
         // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles

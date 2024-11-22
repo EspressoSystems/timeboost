@@ -10,7 +10,7 @@ use tokio::{sync::watch, task::JoinSet};
 
 use crate::{tests::network::CoordinatorAuditEvent, Group};
 
-use super::{HandleResult, TestCondition, TestOutcome, TestableNetwork};
+use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 
 pub mod test_simple_network;
 
@@ -76,7 +76,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<HandleResult> {
+    ) -> JoinSet<TaskHandleResult> {
         let mut handles = JoinSet::new();
         let (nodes, networks) = nodes_and_networks;
 
@@ -100,9 +100,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     Arc::new(ConsensusMetrics::default()),
                 );
 
-                let mut result = HandleResult::new(i);
                 let mut events = Vec::new();
-
                 match coordinator.start().await {
                     Ok(actions) => {
                         for a in actions {
@@ -122,12 +120,11 @@ impl TestableNetwork for Libp2pNetworkTest {
                                     events.extend(
                                         msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                     );
-                                    // Evaluate if we have seen the specified condtions of the test
+                                    // Evaluate if we have seen the specified conditions of the test
                                     if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
                                         // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                        result.set_outcome(TestOutcome::Passed);
                                         coordinator.shutdown().await.expect("Network to be shutdown");
-                                        break;
+                                        break TaskHandleResult::new(i ,TestOutcome::Passed);
                                     }
                                     for a in actions {
                                         events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
@@ -142,21 +139,20 @@ impl TestableNetwork for Libp2pNetworkTest {
                             // Unwrap the potential error with receiving the shutdown token.
                             coordinator.shutdown().await.expect("Network to be shutdown");
                             shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                            break;
+                            break TaskHandleResult::new(i ,TestOutcome::Failed);
                         }
                     }
                 }
-                result
             });
         }
         handles
     }
 
-    /// Shutdown any task handles that are running
+    /// Shutdown any spawned tasks that are running
     /// This will then be evaluated as failures in the test validation logic
     async fn shutdown(
         self,
-        handles: JoinSet<HandleResult>,
+        handles: JoinSet<TaskHandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome> {
         // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
