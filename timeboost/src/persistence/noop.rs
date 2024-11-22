@@ -1,11 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use sailfish::consensus::{ConsensusState, Dag};
-use timeboost_core::types::{
-    committee::StaticCommittee, round_number::RoundNumber, vertex::Vertex,
-};
+use serde::Serialize;
+use timeboost_core::types::round_number::RoundNumber;
 
-use super::traits::Persistence;
+use super::traits::{Loadable, Persistence, Savable};
 
 pub struct NoOpPersistence;
 
@@ -14,18 +12,18 @@ impl Persistence for NoOpPersistence {
     async fn new(_uri: String) -> Result<Self> {
         Ok(Self)
     }
-
-    async fn load_dag(&self, committee: &StaticCommittee) -> Result<Dag> {
-        Ok(Dag::new(committee.size()))
-    }
-    async fn save_vertex(&self, _vertex: &Vertex) -> Result<()> {
+    async fn save_table<M, T>(&self, _model: M, _saver: T) -> Result<()>
+    where
+        M: Serialize + Send + Sync,
+        T: Savable<Model = M>,
+    {
         Ok(())
     }
-    async fn load_consensus_state(&self, committee: &StaticCommittee) -> Result<ConsensusState> {
-        Ok(ConsensusState::new(committee))
-    }
-    async fn save_consensus_state(&self, _state: &ConsensusState) -> Result<()> {
-        Ok(())
+    async fn load_table<L>(&self) -> Result<L::Model>
+    where
+        L: Loadable,
+    {
+        L::into_model(vec![])
     }
     async fn gc(&self, _round: RoundNumber) -> Result<()> {
         Ok(())

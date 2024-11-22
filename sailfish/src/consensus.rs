@@ -3,6 +3,7 @@ use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
@@ -26,18 +27,19 @@ pub use vote::VoteAccumulator;
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
 
+#[derive(Serialize, Deserialize)]
 pub struct ConsensusState {
     /// The current round number.
-    round: RoundNumber,
+    pub round: RoundNumber,
 
     /// The last committed round number.
-    committed_round: RoundNumber,
+    pub committed_round: RoundNumber,
 
     /// Transactions to include in vertex proposals.
-    transactions: TransactionsQueue,
+    pub transactions: TransactionsQueue,
 
     /// The DAG of vertices.
-    dag: Dag,
+    pub dag: Dag,
 }
 
 impl ConsensusState {
@@ -54,15 +56,19 @@ impl ConsensusState {
         &mut self.dag
     }
 
-    pub fn round(&mut self) -> RoundNumber {
+    pub fn round(&self) -> RoundNumber {
         self.round
     }
 
-    pub fn committed_round(&mut self) -> RoundNumber {
+    pub fn committed_round(&self) -> RoundNumber {
         self.committed_round
     }
 
-    pub fn transactions(&mut self) -> &mut TransactionsQueue {
+    pub fn transactions(&self) -> &TransactionsQueue {
+        &self.transactions
+    }
+
+    pub fn transactions_mut(&mut self) -> &mut TransactionsQueue {
         &mut self.transactions
     }
 }
@@ -728,7 +734,7 @@ impl Consensus {
     /// Cleanup the DAG and other collections.
     #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.state.round))]
     fn gc(&mut self, committed: RoundNumber) {
-        if committed < 2.into() {
+        if *committed < 2 {
             return;
         }
 
@@ -772,7 +778,7 @@ impl Consensus {
             return false;
         }
 
-        if self.state.committed_round > 2.into() && v.round() < self.state.committed_round - 2 {
+        if *self.state.committed_round > 2 && v.round() < self.state.committed_round - 2 {
             debug!(
                 node   = %self.label,
                 round  = %self.state.round,

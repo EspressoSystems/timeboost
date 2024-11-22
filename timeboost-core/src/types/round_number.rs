@@ -45,6 +45,18 @@ impl From<u64> for RoundNumber {
     }
 }
 
+impl From<i64> for RoundNumber {
+    fn from(val: i64) -> Self {
+        Self(val as u64)
+    }
+}
+
+impl From<i32> for RoundNumber {
+    fn from(val: i32) -> Self {
+        Self(val as u64)
+    }
+}
+
 impl From<RoundNumber> for u64 {
     fn from(val: RoundNumber) -> Self {
         val.0

@@ -99,6 +99,10 @@ impl Dag {
         }
     }
 
+    pub fn max_keys(&self) -> NonZeroUsize {
+        self.max_keys
+    }
+
     pub fn to_entries(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
         self.elements
             .iter()
