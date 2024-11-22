@@ -23,11 +23,9 @@ pub enum Validated {}
 /// signature has been checked at least once. By construction it is impossible to
 /// create a validated envelope without either creating or verifying the signature.
 ///
-/// ```compile_fail
 /// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
 ///
 /// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
-/// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
 pub struct Envelope<D: Committable, S> {

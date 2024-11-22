@@ -14,14 +14,14 @@ impl Persistence for NoOpPersistence {
     async fn new(_uri: String) -> Result<Self> {
         Ok(Self)
     }
-    async fn save_table<M, T>(&self, _model: M, _saver: T) -> Result<()>
+    async fn save<M, T>(&self, _model: M, _saver: T) -> Result<()>
     where
         M: Serialize + Send + Sync,
         T: Savable<Model = M>,
     {
         Ok(())
     }
-    async fn load_table<L>(&self) -> Result<L::Model>
+    async fn load<L>(&self) -> Result<L::Model>
     where
         L: Loadable,
     {

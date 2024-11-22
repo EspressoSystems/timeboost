@@ -32,11 +32,11 @@ pub(crate) type Row = sqlx::any::AnyRow;
 #[allow(dead_code)]
 pub trait Persistence: Sized + Send + Sync + 'static {
     async fn new(uri: String) -> Result<Self>;
-    async fn save_table<M, T>(&self, model: M, saver: T) -> Result<()>
+    async fn save<M, T>(&self, model: M, saver: T) -> Result<()>
     where
         M: Serialize + Send + Sync,
         T: Savable<Model = M>;
-    async fn load_table<L>(&self) -> Result<L::Model>
+    async fn load<L>(&self) -> Result<L::Model>
     where
         L: Loadable;
     async fn gc(&self, tables: &[&str], round: RoundNumber) -> Result<()>;
@@ -78,8 +78,8 @@ impl<P: Persistence> Storage<P> {
     }
 
     pub async fn load_consensus_state(&self) -> Result<ConsensusState> {
-        let consensus_state = self.persistence.load_table::<ConsensusStateRow>().await?;
-        let dag = self.persistence.load_table::<DagRow>().await?;
+        let consensus_state = self.persistence.load::<ConsensusStateRow>().await?;
+        let dag = self.persistence.load::<DagRow>().await?;
         Ok(ConsensusState {
             round: consensus_state.round,
             committed_round: consensus_state.committed_round,

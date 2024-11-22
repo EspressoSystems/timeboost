@@ -19,7 +19,7 @@ impl Persistence for SqlitePersistence {
         Ok(Self { pool })
     }
 
-    async fn save_table<M, S>(&self, model: M, saver: S) -> Result<()>
+    async fn save<M, S>(&self, model: M, saver: S) -> Result<()>
     where
         M: Serialize + Send + Sync,
         S: Savable<Model = M> + Send + Sync,
@@ -45,7 +45,7 @@ impl Persistence for SqlitePersistence {
         Ok(())
     }
 
-    async fn load_table<L>(&self) -> Result<L::Model>
+    async fn load<L>(&self) -> Result<L::Model>
     where
         L: Loadable,
     {
