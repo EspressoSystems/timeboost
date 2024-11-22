@@ -5,6 +5,7 @@ use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use multiaddr::{multiaddr, Multiaddr};
 use sailfish::sailfish::Sailfish;
+use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::{Keypair, PublicKey};
 
 #[cfg(test)]
@@ -17,12 +18,14 @@ pub struct Group {
     pub fish: Vec<Sailfish>,
     pub bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
     pub staked_nodes: Arc<Vec<PeerConfig<PublicKey>>>,
+    pub committee: StaticCommittee,
 }
 
 impl Group {
     pub fn new(size: u16) -> Self {
         let mut nodes = vec![];
         let mut vcgfs = vec![];
+        let mut pubks = vec![];
 
         for i in 0..size {
             let cfg = ValidatorConfig::generated_from_seed_indexed(
@@ -32,6 +35,7 @@ impl Group {
                 false,
             );
             let kpr = Keypair::zero(i as u64);
+            pubks.push(*kpr.public_key());
             let sailfish =
                 Sailfish::new(i as u64, kpr, multiaddr!(Ip4([0, 0, 0, 0]), Tcp(8000 + i))).unwrap();
             nodes.push(sailfish);
@@ -53,6 +57,7 @@ impl Group {
             fish: nodes,
             bootstrap_nodes,
             staked_nodes,
+            committee: StaticCommittee::new(pubks),
         }
     }
 }

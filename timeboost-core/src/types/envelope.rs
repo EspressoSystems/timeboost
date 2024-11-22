@@ -1,7 +1,8 @@
-use committable::{Commitment, Committable};
+use std::{hash::Hash, marker::PhantomData};
+
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
-use std::{hash::Hash, marker::PhantomData};
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, PublicKey, Signature};
@@ -9,19 +10,32 @@ use crate::types::{committee::StaticCommittee, PublicKey, Signature};
 use super::Keypair;
 
 /// Marker type to denote envelopes whose signature has not been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Validated {}
 
+/// An envelope contains data, its signed commitment hash and the signing key.
+///
+/// Envelopes are either unchecked or validated. If validated it means that their
+/// signature has been checked at least once. By construction it is impossible to
+/// create a validated envelope without either creating or verifying the signature.
+///
+/// ```compile_fail
+/// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
+///
+/// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
 pub struct Envelope<D: Committable, S> {
     data: D,
     commitment: Commitment<D>,
     signature: Signature,
     signing_key: PublicKey,
+    #[serde(skip)]
     _marker: PhantomData<fn(S)>,
 }
 
@@ -35,19 +49,6 @@ impl<D: Committable> Envelope<D, Validated> {
             commitment: c,
             signature: s,
             signing_key: *keypair.public_key(),
-            _marker: PhantomData,
-        }
-    }
-
-    /// A validated envelope can be cast to envelopes of other types.
-    ///
-    /// E.g. Validated -> Unchecked
-    pub fn cast<S>(self) -> Envelope<D, S> {
-        Envelope {
-            data: self.data,
-            commitment: self.commitment,
-            signature: self.signature,
-            signing_key: self.signing_key,
             _marker: PhantomData,
         }
     }
@@ -99,5 +100,17 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn into_data(self) -> D {
         self.data
+    }
+}
+
+impl<D: Committable, S> Committable for Envelope<D, S> {
+    fn commit(&self) -> Commitment<Self> {
+        let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
+        RawCommitmentBuilder::new("Envelope")
+            .field("data", self.data.commit())
+            .field("commitment", self.commitment)
+            .var_size_field("signature", &sig)
+            .var_size_field("signing_key", &self.signing_key.to_bytes())
+            .finalize()
     }
 }
