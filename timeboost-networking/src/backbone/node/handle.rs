@@ -12,7 +12,7 @@ use libp2p_identity::PeerId;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, info, instrument};
 
-use crate::network::{
+use crate::backbone::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
     gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
 };

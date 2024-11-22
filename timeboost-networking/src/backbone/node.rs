@@ -62,7 +62,7 @@ use super::{
     gen_transport, BoxedTransport, ClientRequest, NetworkDef, NetworkError, NetworkEvent,
     NetworkEventInternal,
 };
-use crate::network::behaviours::{
+use crate::backbone::behaviours::{
     dht::{DHTBehaviour, DHTProgress, KadPutQuery, NUM_REPLICATED_TO_TRUST},
     direct_message::{DMBehaviour, DMRequest},
     exponential_backoff::ExponentialBackoff,

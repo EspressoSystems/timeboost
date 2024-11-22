@@ -1,10 +1,13 @@
 use anyhow::Result;
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use persistence::{
-    no_storage::NoPersistence,
-    pg::PgPersistence,
-    traits::{Persistence, Storage},
-};
+
+#[cfg(feature = "nostorage")]
+use persistence::noop::NoOpPersistence;
+
+#[cfg(not(feature = "nostorage"))]
+use persistence::pg::PgPersistence;
+
+use persistence::traits::{Persistence, Storage};
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
@@ -30,7 +33,7 @@ pub mod config;
 pub mod contracts;
 mod persistence;
 
-pub struct Timeboost {
+pub struct TimeboostConfig {
     /// The ID of the node.
     id: NodeId,
 
@@ -58,30 +61,7 @@ pub struct Timeboost {
     metrics: Arc<ConsensusMetrics>,
 }
 
-impl Timeboost {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: NodeId,
-        port: u16,
-        rpc_port: u16,
-        metrics_port: u16,
-        app_rx: Receiver<SailfishStatusEvent>,
-        app_tx: Sender<TimeboostStatusEvent>,
-        shutdown_rx: watch::Receiver<()>,
-        metrics: Arc<ConsensusMetrics>,
-    ) -> Self {
-        Self {
-            id,
-            port,
-            rpc_port,
-            metrics_port,
-            app_rx,
-            app_tx,
-            shutdown_rx,
-            metrics,
-        }
-    }
-
+impl TimeboostConfig {
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
     pub async fn go<P: Persistence>(
         mut self,
@@ -164,7 +144,7 @@ pub async fn run_timeboost(
     let storage = Storage::<PgPersistence>::new(database_uri).await?;
 
     #[cfg(feature = "nostorage")]
-    let storage = Storage::<NoPersistence>::new(database_uri).await?;
+    let storage = Storage::<NoOpPersistence>::new(database_uri).await?;
 
     let committee = StaticCommittee::new(
         staked_nodes
@@ -200,16 +180,16 @@ pub async fn run_timeboost(
     });
 
     // Then, initialize and run the timeboost node.
-    let timeboost = Timeboost::new(
+    let timeboost = TimeboostConfig {
         id,
         port,
         rpc_port,
         metrics_port,
-        sf_app_rx,
-        tb_app_tx,
+        app_rx: sf_app_rx,
+        app_tx: tb_app_tx,
         shutdown_rx,
         metrics,
-    );
+    };
 
     info!("Timeboost is running.");
     timeboost.go(prom, storage).await

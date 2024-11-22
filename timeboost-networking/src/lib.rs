@@ -6,8 +6,11 @@
 
 //! Library for p2p communication
 
-/// Network logic
-pub mod network;
+/// The backbone network logic
+pub mod backbone;
+
+/// The application layer network logic
+pub mod application;
 
 /// symbols needed to implement a networking instance over libp2p-netorking
 pub mod reexport {

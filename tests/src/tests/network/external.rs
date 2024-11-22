@@ -9,7 +9,7 @@ use timeboost_core::types::{
     metrics::ConsensusMetrics,
     PublicKey,
 };
-use timeboost_networking::network::{
+use timeboost_networking::backbone::{
     client::{derive_libp2p_multiaddr, Libp2pNetwork},
     NetworkNodeConfigBuilder,
 };

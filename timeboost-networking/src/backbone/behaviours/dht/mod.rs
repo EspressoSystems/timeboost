@@ -48,7 +48,7 @@ lazy_static! {
 }
 
 use super::exponential_backoff::ExponentialBackoff;
-use crate::network::{ClientRequest, NetworkEvent};
+use crate::backbone::{ClientRequest, NetworkEvent};
 
 /// Behaviour wrapping libp2p's kademlia
 /// included:

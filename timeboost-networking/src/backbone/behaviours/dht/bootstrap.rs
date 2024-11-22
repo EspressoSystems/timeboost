@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures::{channel::mpsc, StreamExt};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::network::ClientRequest;
+use crate::backbone::ClientRequest;
 
 /// Internal bootstrap events
 pub enum InputEvent {

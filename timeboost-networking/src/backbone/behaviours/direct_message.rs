@@ -12,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, warn};
 
 use super::exponential_backoff::ExponentialBackoff;
-use crate::network::{ClientRequest, NetworkEvent};
+use crate::backbone::{ClientRequest, NetworkEvent};
 
 /// Request to direct message a peert
 #[derive(Debug)]

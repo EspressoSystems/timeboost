@@ -20,9 +20,9 @@ use std::{
     time::Duration,
 };
 
-pub use crate::network::GossipConfig;
+pub use crate::backbone::GossipConfig;
 use crate::{
-    network::{
+    backbone::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         spawn_network_node,
         transport::construct_auth_message,

@@ -16,7 +16,7 @@ use timeboost_core::types::{
     test::net::{Conn, Star},
     Keypair, NodeId, PublicKey,
 };
-use timeboost_networking::network::client::derive_libp2p_peer_id;
+use timeboost_networking::backbone::client::derive_libp2p_peer_id;
 use tokio::sync::mpsc;
 
 #[cfg(test)]

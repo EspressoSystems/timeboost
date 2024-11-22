@@ -26,7 +26,7 @@ use timeboost_core::{
         Keypair, NodeId, PublicKey,
     },
 };
-use timeboost_networking::network::{
+use timeboost_networking::backbone::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
@@ -101,8 +101,6 @@ pub async fn make_libp2p_network(
     Ok(network)
 }
 
-#[derive(derive_builder::Builder, custom_debug::Debug)]
-#[builder(pattern = "owned")]
 pub struct SailfishConfig<C: Comm + Send + 'static> {
     /// The ID of the sailfish node.
     id: NodeId,
@@ -133,8 +131,8 @@ pub struct SailfishConfig<C: Comm + Send + 'static> {
     event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
 }
 
-impl<C: Comm + Send + 'static> SailfishConfig<C> {
-    pub fn build(self) -> Result<Coordinator<C>> {
+impl<C: Comm + Send + 'static> Into<Coordinator<C>> for SailfishConfig<C> {
+    fn into(self) -> Coordinator<C> {
         let consensus = Consensus::new(
             self.id,
             self.keypair.clone(),
@@ -142,8 +140,7 @@ impl<C: Comm + Send + 'static> SailfishConfig<C> {
             self.metrics,
             self.state,
         );
-
-        Ok(Coordinator::new(
+        Coordinator::new(
             self.id,
             self.keypair,
             self.net,
@@ -152,19 +149,7 @@ impl<C: Comm + Send + 'static> SailfishConfig<C> {
             self.app_rx,
             #[cfg(feature = "test")]
             self.event_log,
-        ))
-        // Ok(
-        //     Sailfish::new(self.id, self.keypair, self.bind_address)?.into_coordinator(
-        //         self.net,
-        //         self.app_tx,
-        //         self.app_rx,
-        //         self.metrics,
-        //         self.state,
-        //         self.committee,
-        //         #[cfg(feature = "test")]
-        //         None,
-        //     ),
-        // )
+        )
     }
 }
 
@@ -353,33 +338,6 @@ pub async fn run_sailfish(
     shutdown_rx: watch::Receiver<()>,
     state: ConsensusState,
 ) -> Result<()> {
-    // let network_size =
-    //     NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
-
-    // let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(keypair.private_key())?;
-
-    // let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
-    //     .expect("ceil(2n/3) with n > 0 never gives 0");
-
-    // let network_config = NetworkNodeConfigBuilder::default()
-    //     .keypair(libp2p_keypair)
-    //     .replication_factor(replication_factor)
-    //     .bind_address(Some(bind_address.clone()))
-    //     .to_connect_addrs(bootstrap_nodes.clone())
-    //     .republication_interval(None)
-    //     .build()?;
-
-    // let bootstrap_nodes = Arc::new(RwLock::new(
-    //     bootstrap_nodes
-    //         .into_iter()
-    //         .collect::<Vec<(PeerId, Multiaddr)>>(),
-    // ));
-
-    // let s = Sailfish::new(id, keypair, bind_address)?;
-    // let n = s
-    //     .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
-    //     .await?;
-
     let net = make_libp2p_network(
         id,
         &staked_nodes,
@@ -394,17 +352,20 @@ pub async fn run_sailfish(
             .map(|node| node.stake_table_entry.stake_key)
             .collect::<Vec<_>>(),
     );
-    let co = SailfishConfigBuilder::default()
-        .id(id)
-        .keypair(keypair)
-        .app_tx(sf_app_tx)
-        .app_rx(tb_app_rx)
-        .metrics(metrics)
-        .net(net)
-        .state(state)
-        .committee(committee)
-        .build()?
-        .build()?;
+    let sailfish = SailfishConfig {
+        id,
+        keypair,
+        app_tx: sf_app_tx,
+        app_rx: tb_app_rx,
+        metrics,
+        net,
+        state,
+        committee,
+        #[cfg(feature = "test")]
+        event_log: None,
+    };
+
+    let co: Coordinator<_> = sailfish.into();
 
     co.go(shutdown_rx).await
 }

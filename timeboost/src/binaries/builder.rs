@@ -6,7 +6,7 @@ use timeboost::{
 use timeboost_core::types::{Keypair, NodeId};
 
 use clap::Parser;
-use timeboost_networking::network::client::derive_libp2p_multiaddr;
+use timeboost_networking::backbone::client::derive_libp2p_multiaddr;
 use tokio::{signal, sync::watch};
 use tracing::warn;
 
