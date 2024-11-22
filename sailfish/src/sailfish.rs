@@ -1,9 +1,6 @@
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
-#[cfg(feature = "test")]
-use crate::coordinator::CoordinatorAuditEvent;
-
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_lock::RwLock;
 use hotshot::types::SignatureKey;
 use hotshot_types::{
@@ -12,24 +9,16 @@ use hotshot_types::{
 };
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
-use std::time::Duration;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::{Comm, Libp2p},
-    types::{
-        committee::StaticCommittee,
-        event::{SailfishStatusEvent, TimeboostStatusEvent},
-        metrics::ConsensusMetrics,
-        Keypair, NodeId, PublicKey,
-    },
+    types::{committee::StaticCommittee, metrics::ConsensusMetrics, Keypair, NodeId, PublicKey},
 };
 use timeboost_networking::network::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
 };
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::watch;
 use tracing::{info, instrument};
 
 pub struct Sailfish {
@@ -126,10 +115,7 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        sf_app_tx: Sender<SailfishStatusEvent>,
-        tb_app_rx: Receiver<TimeboostStatusEvent>,
         metrics: Arc<ConsensusMetrics>,
-        #[cfg(feature = "test")] event_log: Option<Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -137,61 +123,11 @@ impl Sailfish {
         let committee = StaticCommittee::from(&*staked_nodes);
         let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
 
-        Coordinator::new(
-            self.id,
-            comm,
-            consensus,
-            sf_app_tx,
-            tb_app_rx,
-            #[cfg(feature = "test")]
-            event_log,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn go(
-        self,
-        n: Libp2pNetwork<PublicKey>,
-        staked_nodes: Vec<PeerConfig<PublicKey>>,
-        mut shutdown_rx: watch::Receiver<()>,
-        sf_app_tx: Sender<SailfishStatusEvent>,
-        tb_app_rx: Receiver<TimeboostStatusEvent>,
-        metrics: Arc<ConsensusMetrics>,
-    ) -> Result<()> {
-        let libp2p = Libp2p::new(n, StaticCommittee::from(&*staked_nodes));
-
-        let mut coordinator_handle = tokio::spawn(
-            self.init(libp2p, staked_nodes, sf_app_tx, tb_app_rx, metrics, None)
-                .go(shutdown_rx.clone()),
-        );
-
-        let shutdown_timeout = Duration::from_secs(5);
-
-        tokio::select! {
-            _ = &mut coordinator_handle => {
-                bail!("coordinator task shutdown unexpectedly");
-            }
-            _ = shutdown_rx.changed() => {
-                tracing::info!("received termination signal, initiating graceful shutdown");
-
-                // Wait for coordinator to shutdown gracefully or timeout
-                match tokio::time::timeout(shutdown_timeout, &mut coordinator_handle).await {
-                    Ok(_) => {
-                        tracing::info!("coordinator exited successfully");
-                    }
-                    Err(_) => {
-                        coordinator_handle.abort();
-                        bail!("coordinator did not shutdown within grace period, forcing abort");
-                    }
-                }
-            }
-        }
-
-        Ok(())
+        Coordinator::new(self.id, comm, consensus)
     }
 }
 
-/// Initializes and runs a Sailfish node.
+/// Initializes and returns sailfish coordinator
 ///
 /// # Arguments
 ///
@@ -206,32 +142,30 @@ impl Sailfish {
 ///
 /// Panics if any configuration or initialization step fails.
 #[allow(clippy::too_many_arguments)]
-pub async fn run_sailfish(
+pub async fn sailfish_coordinator(
     id: NodeId,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
-    sf_app_tx: Sender<SailfishStatusEvent>,
-    tb_app_rx: Receiver<TimeboostStatusEvent>,
     metrics: Arc<ConsensusMetrics>,
-    shutdown_rx: watch::Receiver<()>,
-) -> Result<()> {
+) -> Coordinator<Libp2p> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
 
-    let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(keypair.private_key())?;
+    let libp2p_keypair =
+        derive_libp2p_keypair::<PublicKey>(keypair.private_key()).expect("Keypair to derive");
 
     let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
         .expect("ceil(2n/3) with n > 0 never gives 0");
-
     let network_config = NetworkNodeConfigBuilder::default()
         .keypair(libp2p_keypair)
         .replication_factor(replication_factor)
         .bind_address(Some(bind_address.clone()))
         .to_connect_addrs(bootstrap_nodes.clone())
         .republication_interval(None)
-        .build()?;
+        .build()
+        .expect("Network config to be built");
 
     let bootstrap_nodes = Arc::new(RwLock::new(
         bootstrap_nodes
@@ -239,11 +173,13 @@ pub async fn run_sailfish(
             .collect::<Vec<(PeerId, Multiaddr)>>(),
     ));
 
-    let s = Sailfish::new(id, keypair, bind_address)?;
+    let s = Sailfish::new(id, keypair, bind_address).expect("setup failed");
     let n = s
         .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
-        .await?;
-
-    s.go(n, staked_nodes, shutdown_rx, sf_app_tx, tb_app_rx, metrics)
         .await
+        .expect("Libp2p network setup");
+
+    let libp2p = Libp2p::new(n, StaticCommittee::from(&*staked_nodes));
+
+    s.init(libp2p, staked_nodes, metrics)
 }
