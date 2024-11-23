@@ -5,8 +5,10 @@ use crate::types::envelope::{Unchecked, Validated};
 use crate::types::message::Message;
 use crate::types::PublicKey;
 use async_trait::async_trait;
+use bincode::Options;
 use hotshot::traits::NetworkError;
 use hotshot_types::traits::network::Topic;
+use timeboost_networking::bincode_opts;
 use timeboost_networking::network::client::Libp2pNetwork;
 #[async_trait]
 pub trait Comm {
@@ -59,22 +61,25 @@ impl Comm for Libp2p {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes =
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
+        let bytes = bincode_opts()
+            .serialize(&msg)
+            .map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
         self.net.broadcast_message(bytes, Topic::Global).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes =
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
+        let bytes = bincode_opts()
+            .serialize(&msg)
+            .map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
         self.net.direct_message(bytes, to).await
     }
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         let bytes = self.net.recv_message().await?;
-        let msg: Message<Unchecked> = bincode::deserialize(&bytes)
+        let msg: Message<Unchecked> = bincode_opts()
+            .deserialize(&bytes)
             .map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))?;
         let Some(msg) = msg.validated(&self.committee) else {
             return Err(NetworkError::FailedToDeserialize(

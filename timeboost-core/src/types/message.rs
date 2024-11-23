@@ -1,8 +1,10 @@
 use core::fmt;
 
 use crate::types::vertex::Vertex;
+use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+use timeboost_networking::bincode_opts;
 
 use super::{
     certificate::Certificate,
@@ -122,17 +124,21 @@ impl NoVote {
 
 impl Message<Unchecked> {
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        bincode::deserialize(bytes).ok()
+        bincode_opts().deserialize(bytes).ok()
     }
 }
 
 impl<S: Serialize> Message<S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
+        bincode_opts()
+            .serialize_into(buf, self)
+            .expect("serializing a `Message` never fails")
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("serializing a `Message` never fails")
+        bincode_opts()
+            .serialize(self)
+            .expect("serializing a `Message` never fails")
     }
 }
 

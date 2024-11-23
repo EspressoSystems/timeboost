@@ -1,8 +1,11 @@
 use anyhow::{bail, Context, Result};
+use bincode::Options;
 use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::kad::Record;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+
+use crate::bincode_opts;
 
 /// A (signed or unsigned) record value to be stored (serialized) in the DHT.
 /// This is a wrapper around a value that includes a possible signature.
@@ -176,7 +179,8 @@ impl<K: SignatureKey + 'static> TryFrom<Record> for RecordValue<K> {
 
     fn try_from(record: Record) -> Result<Self> {
         // Deserialize the record value
-        let record: RecordValue<K> = bincode::deserialize(&record.value)
+        let record: RecordValue<K> = bincode_opts()
+            .deserialize(&record.value)
             .with_context(|| "Failed to deserialize record value")?;
 
         // Return the record

@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Result as AnyhowResult};
+use bincode::Options;
 use futures::{future::poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{
@@ -19,6 +20,8 @@ use libp2p::{
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+
+use crate::bincode_opts;
 
 /// The maximum size of an authentication message. This is used to prevent
 /// DoS attacks by sending large messages.
@@ -108,7 +111,8 @@ impl<T: Transport, S: SignatureKey, C: StreamMuxer + Unpin> StakeTableAuthentica
             let message = read_length_delimited(stream, MAX_AUTH_MESSAGE_SIZE).await?;
 
             // Deserialize the authentication message
-            let auth_message: AuthMessage<S> = bincode::deserialize(&message)
+            let auth_message: AuthMessage<S> = bincode_opts()
+                .deserialize(&message)
                 .with_context(|| "Failed to deserialize auth message")?;
 
             // Verify the signature on the public keys
@@ -282,7 +286,9 @@ pub fn construct_auth_message<S: SignatureKey + 'static>(
     };
 
     // Serialize the auth message
-    bincode::serialize(&auth_message).with_context(|| "Failed to serialize auth message")
+    bincode_opts()
+        .serialize(&auth_message)
+        .with_context(|| "Failed to serialize auth message")
 }
 
 impl<T: Transport, S: SignatureKey + 'static, C: StreamMuxer + Unpin> Transport
@@ -565,7 +571,7 @@ mod test {
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
+            &bincode_opts().deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_ok());
     }
@@ -579,17 +585,17 @@ mod test {
 
         // Deserialize the authentication message
         let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode::deserialize(&auth_message).unwrap();
+            bincode_opts().deserialize(&auth_message).unwrap();
 
         // Change the public key
         auth_message.public_key_bytes[0] ^= 0x01;
 
         // Serialize the message again
-        let auth_message = bincode::serialize(&auth_message).unwrap();
+        let auth_message = bincode_opts().serialize(&auth_message).unwrap();
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
+            &bincode_opts().deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_err());
     }
@@ -603,17 +609,17 @@ mod test {
 
         // Deserialize the authentication message
         let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode::deserialize(&auth_message).unwrap();
+            bincode_opts().deserialize(&auth_message).unwrap();
 
         // Change the peer ID
         auth_message.peer_id_bytes[0] ^= 0x01;
 
         // Serialize the message again
-        let auth_message = bincode::serialize(&auth_message).unwrap();
+        let auth_message = bincode_opts().serialize(&auth_message).unwrap();
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
+            &bincode_opts().deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_err());
     }

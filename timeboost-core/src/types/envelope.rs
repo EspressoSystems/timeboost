@@ -1,8 +1,10 @@
 use std::{hash::Hash, marker::PhantomData};
 
+use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
+use timeboost_networking::bincode_opts;
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, PublicKey, Signature};
@@ -26,7 +28,7 @@ pub enum Validated {}
 ///```compile_fail
 /// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
 ///
-/// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
+/// let _: Envelope<Timeout, Validated> = bincode_opts().deserialize(&[]).unwrap();
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
@@ -105,7 +107,9 @@ impl<D: Committable, S> Envelope<D, S> {
 
 impl<D: Committable, S> Committable for Envelope<D, S> {
     fn commit(&self) -> Commitment<Self> {
-        let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
+        let sig = bincode_opts()
+            .serialize(&self.signature)
+            .expect("serializing signature never fails");
         RawCommitmentBuilder::new("Envelope")
             .field("data", self.data.commit())
             .field("commitment", self.commitment)

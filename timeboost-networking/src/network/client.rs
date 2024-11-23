@@ -22,6 +22,7 @@ use std::{
 
 pub use crate::network::GossipConfig;
 use crate::{
+    bincode_opts,
     network::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         spawn_network_node,
@@ -35,6 +36,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
+use bincode::Options;
 use hotshot_types::{
     boxed_sync,
     constants::LOOK_AHEAD,
@@ -170,7 +172,7 @@ pub fn derive_libp2p_keypair<K: SignatureKey>(
     private_key: &K::PrivateKey,
 ) -> anyhow::Result<Keypair> {
     // Derive a secondary key from our primary private key
-    let derived_key = blake3::derive_key("libp2p key", &(bincode::serialize(&private_key)?));
+    let derived_key = blake3::derive_key("libp2p key", &(bincode_opts().serialize(&private_key)?));
     let derived_key = SecretKey::try_from_bytes(derived_key)?;
 
     // Create an `ed25519` keypair from the derived key
@@ -557,7 +559,7 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
                                                 if let Err(e) = sender.send(msg) {
                                                     debug!(%e, "failed to send direct request message");
                                                 }
-                                                let Ok(serialized) = bincode::serialize(&Empty { byte: 0u8 }) else {
+                                                let Ok(serialized) = bincode_opts().serialize(&Empty { byte: 0u8 }) else {
                                                     error!("failed to serialize acknowledgement");
                                                     continue;
                                                 };

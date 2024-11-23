@@ -90,6 +90,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use bincode::Options;
     use hotshot_types::signature_key::BLSPubKey;
     use libp2p::{
         kad::{store::MemoryStore, Record},
@@ -97,7 +98,7 @@ mod test {
     };
 
     use super::*;
-    use crate::network::behaviours::dht::record::Namespace;
+    use crate::{bincode_opts, network::behaviours::dht::record::Namespace};
 
     /// Test that a valid record is stored
     #[test]
@@ -120,8 +121,9 @@ mod test {
             ValidatedStore::new(MemoryStore::new(PeerId::random()));
 
         // Serialize the record value
-        let record_value_bytes =
-            bincode::serialize(&record_value).expect("Failed to serialize record value");
+        let record_value_bytes = bincode_opts()
+            .serialize(&record_value)
+            .expect("Failed to serialize record value");
 
         // Create and store the record
         let record = Record::new(record_key.to_bytes(), record_value_bytes);
@@ -130,8 +132,9 @@ mod test {
         // Check that the record is stored
         let libp2p_record_key = libp2p::kad::RecordKey::new(&record_key.to_bytes());
         let stored_record = store.get(&libp2p_record_key).expect("Failed to get record");
-        let stored_record_value: RecordValue<BLSPubKey> =
-            bincode::deserialize(&stored_record.value).expect("Failed to deserialize record value");
+        let stored_record_value: RecordValue<BLSPubKey> = bincode_opts()
+            .deserialize(&stored_record.value)
+            .expect("Failed to deserialize record value");
 
         // Make sure the stored record is the same as the original record
         assert_eq!(
@@ -157,8 +160,9 @@ mod test {
             ValidatedStore::new(MemoryStore::new(PeerId::random()));
 
         // Serialize the record value
-        let record_value_bytes =
-            bincode::serialize(&record_value).expect("Failed to serialize record value");
+        let record_value_bytes = bincode_opts()
+            .serialize(&record_value)
+            .expect("Failed to serialize record value");
 
         // Make sure we are unable to store the record
         let record = Record::new(record_key.to_bytes(), record_value_bytes);
