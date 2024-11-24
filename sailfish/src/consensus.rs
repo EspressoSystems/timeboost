@@ -583,12 +583,18 @@ impl Consensus {
     /// a no-vote certificate) is required.
     #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.round()))]
     fn create_new_vertex(&mut self, r: RoundNumber) -> NewVertex {
-        let prev: Vec<Vertex> = self.state.read().dag.vertices(r - 1).cloned().collect();
-
         let mut new = Vertex::new(r, *self.public_key());
-        new.set_block(Block::new().with_transactions(self.state.write().transactions.take()));
-        // new.add_edges(prev.into_iter().map(Vertex::source).cloned());
-        new.add_edges(prev.into_iter().map(|v| v.source().clone()));
+
+        {
+            let state_reader = self.state.read();
+            let prev = state_reader.dag.vertices(r - 1);
+            new.add_edges(prev.map(Vertex::source).cloned());
+        }
+
+        {
+            let mut state_writer = self.state.write();
+            new.set_block(Block::new().with_transactions(state_writer.transactions.take()));
+        }
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() as u64 >= self.committee.quorum_size().get());
