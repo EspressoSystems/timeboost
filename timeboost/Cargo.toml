@@ -29,6 +29,7 @@ sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }
+timeboost-util = { path = "../timeboost-util" }
 tokio = { workspace = true }
 toml = { workspace = true }
 multiaddr = { workspace = true }

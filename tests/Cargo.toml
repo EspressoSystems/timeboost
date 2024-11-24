@@ -15,6 +15,7 @@ async-broadcast = { workspace = true }
 async-lock = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }
+timeboost-util = { path = "../timeboost-util" }
 futures = { workspace = true }
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }

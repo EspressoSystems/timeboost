@@ -37,3 +37,4 @@ hotshot-types = { workspace = true }
 rand = { workspace = true }
 pin-project = "1"
 tokio = { workspace = true }
+timeboost-util = { path = "../timeboost-util" }

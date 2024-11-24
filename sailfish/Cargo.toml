@@ -53,6 +53,7 @@ typenum = { workspace = true }
 url = "2.5.2"
 vbs = "0.1.6"
 async-broadcast = { workspace = true }
+timeboost-util = { path = "../timeboost-util" }
 
 [[bin]]
 name = "sailfish"
