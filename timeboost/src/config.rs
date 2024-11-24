@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{fs, path::Path};
-use timeboost_util::types::peer_config::PeerConfig;
+use timeboost_util::types::PeerConfig;
 
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;

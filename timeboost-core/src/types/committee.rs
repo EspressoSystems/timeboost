@@ -6,7 +6,7 @@ use std::{
 use ethereum_types::U256;
 use hotshot_types::stake_table::StakeTableEntry;
 use serde::{Deserialize, Serialize};
-use timeboost_util::types::peer_config::PeerConfig;
+use timeboost_util::types::PeerConfig;
 
 use crate::types::{round_number::RoundNumber, PublicKey};
 

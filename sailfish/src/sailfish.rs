@@ -17,7 +17,7 @@ use timeboost_networking::network::{
 };
 use timeboost_util::types::{
     config::{Libp2pConfig, NetworkConfig},
-    peer_config::PeerConfig,
+    PeerConfig,
 };
 use tracing::{info, instrument};
 

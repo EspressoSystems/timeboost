@@ -7,7 +7,7 @@ description.workspace = true
 [dependencies]
 bincode = { workspace = true }
 clap = { workspace = true }
-derivative = { workspace = true }
+derive_more = { workspace = true, features = ["debug"] }
 displaydoc = { workspace = true }
 hotshot-types = { workspace = true }
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
@@ -31,3 +31,4 @@ surf-disco = { workspace = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }

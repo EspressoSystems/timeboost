@@ -14,12 +14,12 @@ use std::{
     time::{Duration, Instant},
 };
 use tide_disco::Url;
+use timeboost_util::types::PeerConfig;
 use tokio::{sync::mpsc::channel, time::sleep};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
-use timeboost_util::types::peer_config::PeerConfig;
 
 use multiaddr::{Multiaddr, PeerId};
 use timeboost_core::{

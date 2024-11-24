@@ -9,7 +9,7 @@ use std::{collections::HashSet, fs};
 use timeboost_core::logging;
 use timeboost_core::types::{Keypair, NodeId, PublicKey};
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use timeboost_util::types::peer_config::PeerConfig;
+use timeboost_util::types::PeerConfig;
 use tokio::signal;
 use tracing::warn;
 
