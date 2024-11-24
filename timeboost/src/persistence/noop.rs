@@ -7,6 +7,9 @@ use timeboost_core::types::round_number::RoundNumber;
 
 use super::traits::{Loadable, Persistence, Savable};
 
+pub type Query<'q> = ();
+pub type Row = sqlx::any::AnyRow;
+
 pub struct NoOpPersistence;
 
 #[async_trait]

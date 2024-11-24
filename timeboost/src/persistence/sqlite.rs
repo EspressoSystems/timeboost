@@ -8,6 +8,10 @@ use timeboost_core::types::round_number::RoundNumber;
 
 use super::traits::{Loadable, Persistence, Savable};
 
+pub type Query<'q> =
+    sqlx::query::Query<'q, sqlx::sqlite::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
+pub type Row = sqlx::sqlite::SqliteRow;
+
 pub struct SqlitePersistence {
     pool: SqlitePool,
 }
