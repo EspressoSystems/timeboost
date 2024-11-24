@@ -35,6 +35,7 @@ impl TestNodeInstrument {
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
         for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
+                tracing::debug!("action {}, expected: {}", a, expected);
                 assert_eq!(a, expected, "Expected action should match actual action")
             } else {
                 panic!("Action was processed but expected actions was empty");

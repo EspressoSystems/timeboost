@@ -645,11 +645,14 @@ impl Consensus {
             return Vec::new();
         }
 
-        let actions = if self.state.inner.read().dag.vertex_count(v.round()) as u64
+        let vertex_round = v.round();
+        self.state.inner.write().dag.add(v);
+
+        let actions = if self.state.inner.read().dag.vertex_count(vertex_round) as u64
             >= self.committee.quorum_size().get()
         {
             // We have enough vertices => try to commit the leader vertex:
-            match self.leader_vertex(v.round() - 1) {
+            match self.leader_vertex(vertex_round - 1) {
                 Some(l) => {
                     // If enough edges to the leader of the previous round exist we can commit the
                     // leader vertex.
@@ -658,7 +661,7 @@ impl Consensus {
                         .inner
                         .read()
                         .dag
-                        .vertices(v.round())
+                        .vertices(vertex_round)
                         .filter(|v| v.has_edge(l.source()))
                         .count() as u64;
 
@@ -672,7 +675,7 @@ impl Consensus {
                     debug!(
                         node   = %self.label,
                         round  = %self.round_number(),
-                        vround = %v.round(),
+                        vround = %vertex_round,
                         "no leader vertex in vround - 1 => can not commit"
                     );
                     Vec::new()
@@ -682,9 +685,6 @@ impl Consensus {
             Vec::new()
         };
 
-        {
-            self.state.inner.write().dag.add(v);
-        }
         actions
     }
 
