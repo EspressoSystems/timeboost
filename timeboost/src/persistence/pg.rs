@@ -8,6 +8,9 @@ use timeboost_core::types::round_number::RoundNumber;
 
 use super::traits::{Loadable, Persistence, Savable};
 
+pub type Query<'q> = sqlx::query::Query<'q, sqlx::postgres::Postgres, sqlx::postgres::PgArguments>;
+pub type Row = sqlx::postgres::PgRow;
+
 pub struct PgPersistence {
     pool: PgPool,
 }

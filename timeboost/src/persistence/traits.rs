@@ -6,27 +6,16 @@ use sailfish::consensus::ConsensusState;
 use serde::Serialize;
 use timeboost_core::types::round_number::RoundNumber;
 
+#[cfg(feature = "postgres")]
+pub use super::pg::{Query, Row};
+
+#[cfg(feature = "sqlite")]
+pub use super::sqlite::{Query, Row};
+
+#[cfg(feature = "noop")]
+pub use super::noop::{Query, Row};
+
 use super::types::{consensus_state::ConsensusStateRow, dag::DagRow};
-
-#[cfg(feature = "postgres")]
-pub(crate) type Query<'q> =
-    sqlx::query::Query<'q, sqlx::postgres::Postgres, sqlx::postgres::PgArguments>;
-
-#[cfg(feature = "sqlite")]
-pub(crate) type Query<'q> =
-    sqlx::query::Query<'q, sqlx::sqlite::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
-
-#[cfg(feature = "noop")]
-pub(crate) type Query<'q> = ();
-
-#[cfg(feature = "postgres")]
-pub(crate) type Row = sqlx::postgres::PgRow;
-
-#[cfg(feature = "sqlite")]
-pub(crate) type Row = sqlx::sqlite::SqliteRow;
-
-#[cfg(feature = "noop")]
-pub(crate) type Row = sqlx::any::AnyRow;
 
 #[async_trait]
 #[allow(dead_code)]
@@ -79,13 +68,13 @@ impl<P: Persistence> Storage<P> {
 
     pub async fn load_consensus_state(&self) -> Result<ConsensusState> {
         let consensus_state = self.persistence.load::<ConsensusStateRow>().await?;
+
+        // Load the DAG
         let dag = self.persistence.load::<DagRow>().await?;
-        Ok(ConsensusState {
-            round: consensus_state.round,
-            committed_round: consensus_state.committed_round,
-            transactions: consensus_state.transactions,
-            dag,
-        })
+
+        // Update it in the consensus state
+        consensus_state.inner.write().dag = dag;
+        Ok(consensus_state)
     }
 }
 

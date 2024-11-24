@@ -25,6 +25,7 @@ pub struct Sailfish {
     /// The ID of the sailfish node.
     id: NodeId,
 
+    /// The keypair of the sailfish node.
     keypair: Keypair,
 
     /// The Libp2p PeerId of the sailfish node.

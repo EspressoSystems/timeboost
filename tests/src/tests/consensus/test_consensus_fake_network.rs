@@ -35,7 +35,7 @@ async fn test_multi_round_consensus() {
     }
 
     for node_instrument in network.nodes.values() {
-        assert_eq!(node_instrument.node().round(), round);
+        assert_eq!(node_instrument.node().round_number(), round);
     }
 }
 
@@ -146,7 +146,7 @@ async fn test_timeout_round_and_no_vote() {
 
     // verify progress can be made after timeout
     for node_instrument in network.nodes.values() {
-        assert_eq!(node_instrument.node().round(), current_round + i);
+        assert_eq!(node_instrument.node().round_number(), current_round + i);
     }
 }
 
@@ -189,7 +189,7 @@ async fn test_invalid_vertex_signatures() {
 
     // verify no progress was made
     for node_instrument in network.nodes.values() {
-        assert_eq!(node_instrument.node().round(), invalid_msg_at_round);
+        assert_eq!(node_instrument.node().round_number(), invalid_msg_at_round);
     }
 }
 
@@ -271,7 +271,7 @@ async fn test_invalid_timeout_certificate() {
 
     // verify progress was made
     for node_instrument in network.nodes.values() {
-        assert_eq!(*node_instrument.node().round(), rounds + 1);
+        assert_eq!(*node_instrument.node().round_number(), rounds + 1);
     }
 }
 

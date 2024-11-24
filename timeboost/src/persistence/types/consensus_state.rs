@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
-use sailfish::consensus::{ConsensusState, Dag};
+use parking_lot::RwLock;
+use sailfish::consensus::{ConsensusState, ConsensusStateInner, Dag};
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, sync::Arc};
 use timeboost_core::types::round_number::RoundNumber;
 
 use crate::persistence::traits::{Loadable, Query, Savable};
@@ -17,17 +18,17 @@ impl ConsensusStateRow {
     /// Convert a `ConsensusState` into a `ConsensusStateRaw`. We deliberately ignore
     /// the DAG as it is stored via the Vertex Post method instead of dumping the entire
     /// reference into the table.
-    pub fn from_consensus_state(state: &ConsensusState) -> Result<Self> {
+    pub fn from_consensus_state(state: &ConsensusStateInner) -> Result<Self> {
         Ok(Self {
-            round: state.round().i64(),
-            committed_round: state.committed_round().i64(),
-            transactions: bincode::serialize(&state.transactions())?,
+            round: state.round.i64(),
+            committed_round: state.committed_round.i64(),
+            transactions: bincode::serialize(&state.transactions)?,
         })
     }
 }
 
 impl Savable for ConsensusStateRow {
-    type Model = ConsensusState;
+    type Model = ConsensusStateInner;
 
     fn table_name() -> &'static str {
         "consensus_state"
@@ -73,10 +74,12 @@ impl Loadable for ConsensusStateRow {
         let dag = Dag::new(NonZeroUsize::new(1).context("invalid committee size")?);
 
         Ok(ConsensusState {
-            round: RoundNumber::from(state.round),
-            committed_round: RoundNumber::from(state.committed_round),
-            transactions,
-            dag,
+            inner: Arc::new(RwLock::new(ConsensusStateInner {
+                round: RoundNumber::from(state.round),
+                committed_round: RoundNumber::from(state.committed_round),
+                transactions,
+                dag,
+            })),
         })
     }
 }

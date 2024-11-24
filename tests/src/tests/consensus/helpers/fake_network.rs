@@ -48,7 +48,7 @@ impl FakeNetwork {
     pub(crate) fn current_round(&self) -> RoundNumber {
         self.nodes
             .values()
-            .map(|node_instrument| node_instrument.node().round())
+            .map(|node_instrument| node_instrument.node().round_number())
             .max()
             .unwrap()
     }
