@@ -2,14 +2,14 @@ use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
 use hotshot::traits::implementations::derive_libp2p_multiaddr;
-use hotshot_types::PeerConfig;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
-use timeboost_core::types::{metrics::SailfishMetrics, Keypair, NodeId, PublicKey};
+use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use timeboost_util::types::peer_config::PeerConfig;
 use tokio::signal;
 use tracing::warn;
 

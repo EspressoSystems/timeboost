@@ -7,7 +7,7 @@
 use std::{collections::HashSet, fmt::Debug, marker::PhantomData, time::Duration};
 
 use bincode::Options;
-use hotshot_types::traits::{network::NetworkError, signature_key::SignatureKey};
+use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use libp2p_identity::PeerId;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
@@ -19,6 +19,7 @@ use crate::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
     },
+    NetworkError,
 };
 
 /// A handle containing:

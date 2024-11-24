@@ -3,8 +3,8 @@ use bincode::Options;
 use committable::{Commitment, Committable};
 use ethereum_types::U256;
 use hotshot::types::SignatureKey;
-use hotshot_types::utils::bincode_opts;
 use serde::{Deserialize, Serialize};
+use timeboost_util::bincode_opts;
 
 use super::{PublicKey, QuorumSignature};
 

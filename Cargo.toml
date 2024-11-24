@@ -46,7 +46,9 @@ chrono = { version = "0.4", default-features = false, features = ["now"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
 crossbeam-queue = "0.3.11"
+derivative = "2.2.0"
 digest = "0.10"
+displaydoc = { version = "0.2.5", default-features = false }
 either = "1.13.0"
 ethereum-types = { version = "0.14", default-features = false, features = [
     "serialize",
@@ -70,6 +72,7 @@ rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0" }
+serde-inline-default = { version = "0.2.2" }
 sqlx = { version = "0.8", features = [
     "bit-vec",
     "runtime-tokio",

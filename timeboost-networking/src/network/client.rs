@@ -32,6 +32,7 @@ use crate::{
         DEFAULT_REPLICATION_FACTOR,
     },
     reexport::Multiaddr,
+    NetworkError, Topic,
 };
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
@@ -39,12 +40,9 @@ use bimap::BiHashMap;
 use bincode::Options;
 use hotshot_types::{
     boxed_sync,
-    constants::LOOK_AHEAD,
     data::ViewNumber,
-    network::NetworkConfig,
     traits::{
         metrics::{Counter, Gauge, Metrics, NoMetrics},
-        network::{NetworkError, Topic},
         signature_key::SignatureKey,
     },
     BoxSyncFuture,
@@ -55,6 +53,7 @@ use libp2p_identity::{
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
+use timeboost_util::types::{config::NetworkConfig, constants::LOOK_AHEAD};
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,
     Sender as BoundedSender, UnboundedReceiver, UnboundedSender,

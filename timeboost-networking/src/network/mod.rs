@@ -19,7 +19,7 @@ pub mod client;
 use std::{collections::HashSet, fmt::Debug};
 
 use futures::channel::oneshot::Sender;
-use hotshot_types::traits::{network::NetworkError, signature_key::SignatureKey};
+use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::dns::tokio::Transport as DnsTransport;
 use libp2p::{
     build_multiaddr,
@@ -35,6 +35,8 @@ use libp2p_identity::PeerId;
 use quic::tokio::Transport as QuicTransport;
 use tracing::instrument;
 use transport::StakeTableAuthentication;
+
+use crate::NetworkError;
 
 pub use self::{
     def::NetworkDef,

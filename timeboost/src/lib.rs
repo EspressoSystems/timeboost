@@ -19,7 +19,8 @@ use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
-use hotshot_types::PeerConfig;
+use timeboost_util::types::peer_config::PeerConfig;
+
 use multiaddr::{Multiaddr, PeerId};
 use timeboost_core::{
     traits::comm::Libp2p,

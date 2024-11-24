@@ -6,10 +6,8 @@ use crate::types::message::Message;
 use crate::types::PublicKey;
 use async_trait::async_trait;
 use bincode::Options;
-use hotshot::traits::NetworkError;
-use hotshot_types::traits::network::Topic;
-use timeboost_networking::bincode_opts;
 use timeboost_networking::network::client::Libp2pNetwork;
+use timeboost_networking::{bincode_opts, NetworkError, Topic};
 #[async_trait]
 pub trait Comm {
     type Err: Error + Send + Sync + 'static;

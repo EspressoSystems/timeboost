@@ -20,9 +20,7 @@ use std::{
 };
 
 use futures::{channel::mpsc, SinkExt, StreamExt};
-use hotshot_types::{
-    constants::KAD_DEFAULT_REPUB_INTERVAL_SEC, traits::signature_key::SignatureKey,
-};
+use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{
     autonat,
     core::transport::ListenerId,
@@ -44,6 +42,7 @@ use libp2p::{
 };
 use libp2p_identity::PeerId;
 use rand::{prelude::SliceRandom, thread_rng};
+use timeboost_util::types::constants::KAD_DEFAULT_REPUB_INTERVAL_SEC;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, instrument, warn};
 
