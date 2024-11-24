@@ -1,24 +1,14 @@
-use hotshot_types::PeerConfig;
+use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
-use timeboost_core::types::PublicKey;
-
-use crate::config::Config;
+use timeboost_core::types::{Keypair, PublicKey};
+use timeboost_networking::network::client::{derive_libp2p_multiaddr, derive_libp2p_peer_id};
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommitteeBase {
     Docker,
     Local,
-}
-
-impl CommitteeBase {
-    pub fn into_config(self) -> String {
-        match self {
-            Self::Local => include_str!("../../../local_config.toml").to_string(),
-            Self::Docker => include_str!("../../../docker_config.toml").to_string(),
-        }
-    }
 }
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
@@ -35,16 +25,47 @@ impl Default for CommitteeContract {
 }
 
 impl CommitteeContract {
-    /// This will change, right now we pre-seed the contract with a fixed number of nodes
-    /// in the fake committee. Each node's ID will be known ahead of time.
+    /// Create a new committee contract with 5 nodes. This is a placeholder method for what will
+    /// eventually be read from an actual smart contract.
     pub fn new(base: CommitteeBase) -> Self {
-        // Read from the config file 'example_config.toml' and get the setup from there.
-        let config = toml::from_str::<Config>(&base.into_config()).unwrap();
+        Self::new_n(base, 5)
+    }
 
-        // Make a new committee contract with the given setup.
+    /// Create a new committee contract with `n` nodes. This is a placeholder method for what will
+    /// eventually be read from an actual smart contract.
+    pub fn new_n(base: CommitteeBase, n: u16) -> Self {
+        let mut bootstrap_nodes = vec![];
+        let mut staked_nodes = vec![];
+
+        for i in 0..n {
+            let cfg = ValidatorConfig::<PublicKey>::generated_from_seed_indexed(
+                Keypair::ZERO_SEED,
+                i as u64,
+                1,
+                false,
+            );
+            let kpr = Keypair::zero(i as u64);
+            let peer_id = derive_libp2p_peer_id::<PublicKey>(kpr.private_key()).unwrap();
+            let bind_addr = match base {
+                CommitteeBase::Local => {
+                    derive_libp2p_multiaddr(&format!("127.0.0.1:{}", 8000 + i)).unwrap()
+                }
+                // Docker uses the docker network IP address for config, but we bind according to
+                // the usual semantics of 127.* or 0.* for localhost.
+                // Here, incrementing the port is not explicitly necessary, but since docker-compose
+                // runs locally, we do it to be consistent.
+                CommitteeBase::Docker => {
+                    derive_libp2p_multiaddr(&format!("172.20.0.{}:{}", 2 + i, 8000 + i)).unwrap()
+                }
+            };
+
+            bootstrap_nodes.push((peer_id, bind_addr));
+            staked_nodes.push(cfg.public_config());
+        }
+
         Self {
-            bootstrap_nodes: config.bootstrap_nodes,
-            staked_nodes: config.staked_nodes,
+            bootstrap_nodes,
+            staked_nodes,
         }
     }
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
     run_timeboost,
@@ -130,7 +130,14 @@ async fn main() -> Result<()> {
             bind_address,
             shutdown_rx,
         ) => {
-            bail!("timeboost shutdown unexpectedly");
+            #[cfg(not(feature = "until"))]
+            anyhow::bail!("timeboost shutdown unexpectedly");
+
+            #[cfg(feature = "until")]
+            {
+                tracing::info!("watchdog completed");
+                Ok(())
+            }
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
