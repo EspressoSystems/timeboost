@@ -259,36 +259,35 @@ impl Consensus {
 
         let quorum = self.committee().quorum_size().get() as usize;
 
-        match self.try_to_add_to_dag(&v) {
-            Err(()) => {
-                self.buffer.insert(v);
-                self.metrics.vertex_buffer.set(self.buffer.len());
+        if self.can_add_to_dag(&v) {
+            let vertex_round = v.round();
+            let a = self.add_to_dag(v);
+            actions.extend(a);
+            if vertex_round >= self.round()
+                && self.state.read().dag.vertex_count(vertex_round) >= quorum
+            {
+                actions.extend(self.advance_from_round(vertex_round));
             }
-            Ok(a) => {
-                actions.extend(a);
-                if v.round() >= self.round()
-                    && self.state.read().dag.vertex_count(v.round()) >= quorum
-                {
-                    actions.extend(self.advance_from_round(v.round()));
-                }
-                let mut buffer: Vec<Vertex> = self.buffer.drain().collect();
-                buffer.sort_unstable_by_key(|v| v.round());
-                for v in buffer {
-                    if let Ok(a) = self.try_to_add_to_dag(&v) {
-                        actions.extend(a);
-                        if v.round() >= self.round()
-                            && self.state.read().dag.vertex_count(v.round()) >= quorum
-                        {
-                            actions.extend(self.advance_from_round(v.round()));
-                        }
-                    } else {
-                        self.buffer.insert(v);
+            let mut buffer: Vec<Vertex> = self.buffer.drain().collect();
+            buffer.sort_unstable_by_key(|v| v.round());
+            for v in buffer {
+                let vertex_round = v.round();
+                if self.can_add_to_dag(&v) {
+                    let vertex_count = self.state.read().dag.vertex_count(vertex_round);
+                    let a = self.add_to_dag(v);
+                    actions.extend(a);
+                    if vertex_round >= self.round() && vertex_count >= quorum {
+                        actions.extend(self.advance_from_round(vertex_round));
                     }
+                } else {
+                    self.buffer.insert(v);
                 }
-                self.metrics.vertex_buffer.set(self.buffer.len());
             }
+        } else {
+            self.buffer.insert(v);
         }
 
+        self.metrics.vertex_buffer.set(self.buffer.len());
         actions
     }
 
@@ -596,6 +595,11 @@ impl Consensus {
         NewVertex(new)
     }
 
+    fn can_add_to_dag(&self, v: &Vertex) -> bool {
+        v.edges()
+            .all(|w| self.state.read().dag.vertex(v.round() - 1, w).is_some())
+    }
+
     /// Try to add a vertex to the DAG.
     ///
     /// If all edges of the vertex point to other vertices in the DAG we add the
@@ -606,21 +610,7 @@ impl Consensus {
         round  = %self.round(),
         vround = %v.round())
     )]
-    fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
-        if !v
-            .edges()
-            .all(|w| self.state.read().dag.vertex(v.round() - 1, w).is_some())
-        {
-            debug!(
-               node   = %self.label,
-               round  = %self.round(),
-                vround = %v.round(),
-                "not all edges are resolved in dag"
-            );
-            return Err(());
-        }
-
-        self.state.write().dag.add(v.clone());
+    fn add_to_dag(&mut self, v: Vertex) -> Vec<Action> {
         self.metrics.dag_depth.set(self.state.read().dag.depth());
 
         if v.round() <= self.committed_round() {
@@ -631,38 +621,49 @@ impl Consensus {
                 vround    = %v.round(),
                 "leader has already been committed"
             );
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
-        if self.state.read().dag.vertex_count(v.round()) as u64
+        let vertex_round = v.round();
+        self.state.write().dag.add(v);
+
+        let actions = if self.state.read().dag.vertex_count(vertex_round) as u64
             >= self.committee.quorum_size().get()
         {
             // We have enough vertices => try to commit the leader vertex:
-            let Some(l) = self.leader_vertex(v.round() - 1) else {
-                debug!(
-                    node   = %self.label,
-                    round  = %self.round(),
-                    vround = %v.round(),
-                    "no leader vertex in vround - 1 => can not commit"
-                );
-                return Ok(Vec::new());
-            };
-            // If enough edges to the leader of the previous round exist we can commit the
-            // leader vertex.
-            if self
-                .state
-                .read()
-                .dag
-                .vertices(v.round())
-                .filter(|v| v.has_edge(l.source()))
-                .count() as u64
-                >= self.committee.quorum_size().get()
-            {
-                return Ok(self.commit_leader(l));
-            }
-        }
+            match self.leader_vertex(vertex_round - 1) {
+                Some(l) => {
+                    // If enough edges to the leader of the previous round exist we can commit the
+                    // leader vertex.
+                    let edge_count = self
+                        .state
+                        .read()
+                        .dag
+                        .vertices(vertex_round)
+                        .filter(|v| v.has_edge(l.source()))
+                        .count() as u64;
 
-        Ok(Vec::new())
+                    if edge_count >= self.committee.quorum_size().get() {
+                        self.commit_leader(l)
+                    } else {
+                        Vec::new()
+                    }
+                }
+                None => {
+                    debug!(
+                        node   = %self.label,
+                        round  = %self.round(),
+                        vround = %vertex_round,
+                        "no leader vertex in vround - 1 => can not commit"
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        actions
     }
 
     /// Commit a leader vertex.
