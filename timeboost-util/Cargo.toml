@@ -5,19 +5,10 @@ edition.workspace = true
 description.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
-async-lock = { workspace = true }
-blake3 = { workspace = true }
 bincode = { workspace = true }
-bimap = "0.6"
 clap = { workspace = true }
-custom_debug = "0.5"
 derivative = { workspace = true }
-derive_builder = "0.20"
-delegate = "0.13"
 displaydoc = { workspace = true }
-futures = { workspace = true }
-lazy_static = "1"
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
     "autonat",
@@ -32,17 +23,11 @@ libp2p = { package = "libp2p", version = "0.53", default-features = false, featu
     "serde",
     "tokio",
 ] }
-libp2p-swarm-derive = "0.34"
-libp2p-identity = { workspace = true }
 serde = { workspace = true }
 serde-inline-default = { workspace = true }
 tracing = { workspace = true }
-hotshot = { workspace = true }
 hotshot-types = { workspace = true }
-rand = { workspace = true }
-pin-project = "1"
 serde_json = { workspace = true }
 surf-disco = { workspace = true }
 tide-disco = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bitvec::vec::BitVec;
 use ethereum_types::U256;
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,

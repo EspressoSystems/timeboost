@@ -2,7 +2,7 @@ use crate::types::committee::StaticCommittee;
 use bincode::Options;
 use committable::{Commitment, Committable};
 use ethereum_types::U256;
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
 use timeboost_util::bincode_opts;
 

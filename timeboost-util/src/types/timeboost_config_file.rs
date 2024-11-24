@@ -6,7 +6,7 @@
 
 use std::{num::NonZeroUsize, time::Duration, vec};
 
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use surf_disco::Url;
 
 use super::{

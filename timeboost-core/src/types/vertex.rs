@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 

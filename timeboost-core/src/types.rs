@@ -18,7 +18,8 @@ pub mod test;
 
 use core::fmt;
 
-use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
+use hotshot_types::signature_key::{BLSPrivKey, BLSPubKey};
+use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
 
 pub type PublicKey = BLSPubKey;

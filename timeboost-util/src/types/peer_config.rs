@@ -3,7 +3,7 @@ use std::{num::NonZeroUsize, time::Duration};
 use bincode::Options;
 use derivative::Derivative;
 use displaydoc::Display;
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use tide_disco::Url;
 use tracing::error;
 

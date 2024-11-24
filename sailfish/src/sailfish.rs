@@ -2,7 +2,7 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
 use async_lock::RwLock;
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};

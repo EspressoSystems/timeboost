@@ -2,7 +2,7 @@ use std::{hash::Hash, marker::PhantomData};
 
 use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot::types::SignatureKey;
+use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
 use timeboost_networking::bincode_opts;
 use tracing::warn;
