@@ -59,36 +59,6 @@ impl ConsensusState {
         }
     }
 
-    // pub fn dag_depth(&self) -> usize {
-    //     self.inner.read().dag.depth()
-    // }
-
-    // pub fn add_vertex_to_dag(&self, v: Vertex) {
-    //     self.inner.write().dag.add(v);
-    // }
-
-    // pub fn dag_contains(&self, v: &Vertex) -> bool {
-    //     self.inner.read().dag.contains(v)
-    // }
-
-    // pub fn dag_vertex_count(&self, round: RoundNumber) -> usize {
-    //     self.inner.read().dag.vertex_count(round)
-    // }
-
-    // pub fn dag_vertices(&self, round: RoundNumber) -> Vec<Vertex> {
-    //     let guard = self.inner.read();
-    //     guard.dag.vertices(round).cloned().collect()
-    // }
-
-    // pub fn dag_vertex(&self, round: RoundNumber, source: &PublicKey) -> Option<Vertex> {
-    //     let guard = self.inner.read();
-    //     guard.dag.vertex(round, source).cloned()
-    // }
-
-    // pub fn set_dag(&self, dag: Dag) {
-    //     self.inner.write().dag = dag;
-    // }
-
     pub fn round(&self) -> RoundNumber {
         self.inner.read().round
     }
