@@ -67,14 +67,17 @@ impl<P: Persistence> Storage<P> {
     }
 
     pub async fn load_consensus_state(&self) -> Result<ConsensusState> {
-        let mut consensus_state = self.persistence.load::<ConsensusStateRow>().await?;
+        let consensus_state = self.persistence.load::<ConsensusStateRow>().await?;
 
         // Load the DAG
         let dag = self.persistence.load::<DagRow>().await?;
 
-        // Update it in the consensus state
-        consensus_state.dag = dag;
-        Ok(consensus_state)
+        Ok(ConsensusState {
+            round: consensus_state.round,
+            committed_round: consensus_state.committed_round,
+            transactions: consensus_state.transactions,
+            dag,
+        })
     }
 }
 
