@@ -180,7 +180,6 @@ impl Consensus {
         let mut state_writer = self.state.inner.write();
 
         state_writer.dag = d;
-        self.state.set_round(r);
 
         if r == RoundNumber::genesis() {
             for p in self.committee.committee() {
@@ -189,6 +188,7 @@ impl Consensus {
         }
         drop(state_writer);
 
+        self.state.set_round(r);
         self.advance_from_round(r)
     }
 
@@ -278,9 +278,9 @@ impl Consensus {
             for v in buffer.into_iter() {
                 let vertex_round = v.round();
                 if self.can_add_to_dag(&v) {
+                    let vertex_count = self.state.inner.read().dag.vertex_count(vertex_round);
                     let a = self.add_to_dag(v);
                     actions.extend(a);
-                    let vertex_count = self.state.inner.read().dag.vertex_count(vertex_round);
                     if vertex_round >= self.round_number() && vertex_count >= quorum {
                         actions.extend(self.advance_from_round(vertex_round));
                     }
@@ -512,7 +512,6 @@ impl Consensus {
         else {
             return actions;
         };
-
         // We inform the leader of the next round that we did not vote in the previous round.
         let env = Envelope::signed(NoVote::new(round), &self.keypair);
         let leader = self.committee.leader(round + 1);
@@ -533,7 +532,6 @@ impl Consensus {
             self.metrics.round.set(*self.state.round() as usize);
             return actions;
         }
-
         // As leader of the next round we need to wait for > 2f no-votes of the current round
         // since we have no leader vertex.
         let Some(nc) = self.no_votes.certificate().cloned() else {
@@ -647,8 +645,7 @@ impl Consensus {
             return Vec::new();
         }
 
-        let state_reader = self.state.inner.read();
-        let actions = if state_reader.dag.vertex_count(v.round()) as u64
+        let actions = if self.state.inner.read().dag.vertex_count(v.round()) as u64
             >= self.committee.quorum_size().get()
         {
             // We have enough vertices => try to commit the leader vertex:
@@ -656,12 +653,14 @@ impl Consensus {
                 Some(l) => {
                     // If enough edges to the leader of the previous round exist we can commit the
                     // leader vertex.
-                    let edge_count = state_reader
+                    let edge_count = self
+                        .state
+                        .inner
+                        .read()
                         .dag
                         .vertices(v.round())
                         .filter(|v| v.has_edge(l.source()))
                         .count() as u64;
-                    drop(state_reader);
 
                     if edge_count >= self.committee.quorum_size().get() {
                         self.commit_leader(l)
@@ -899,8 +898,9 @@ impl Consensus {
     }
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<Vertex> {
-        let state_reader = self.state.inner.read();
-        state_reader
+        self.state
+            .inner
+            .read()
             .dag
             .vertex(r, &self.committee.leader(r))
             .cloned()
