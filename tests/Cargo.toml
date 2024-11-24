@@ -9,14 +9,15 @@ benchmark = []
 
 [dependencies]
 async-lock = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking" }
-timeboost-util = { path = "../timeboost-util" }
+bitvec = { workspace = true }
+ethereum-types = { workspace = true }
+hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 portpicker = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
+timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
+timeboost-util = { path = "../timeboost-util" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-ethereum-types = { workspace = true }
-bitvec = { workspace = true }

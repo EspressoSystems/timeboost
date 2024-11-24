@@ -9,6 +9,7 @@ bincode = { workspace = true }
 clap = { workspace = true }
 derivative = { workspace = true }
 displaydoc = { workspace = true }
+hotshot-types = { workspace = true }
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
     "autonat",
@@ -25,9 +26,8 @@ libp2p = { package = "libp2p", version = "0.53", default-features = false, featu
 ] }
 serde = { workspace = true }
 serde-inline-default = { workspace = true }
-tracing = { workspace = true }
-hotshot-types = { workspace = true }
 serde_json = { workspace = true }
 surf-disco = { workspace = true }
-tide-disco = { workspace = true }
 thiserror = { workspace = true }
+tide-disco = { workspace = true }
+tracing = { workspace = true }

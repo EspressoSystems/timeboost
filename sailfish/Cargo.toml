@@ -13,8 +13,6 @@ async-lock = { workspace = true }
 bitvec = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking" }
 ethereum-types = { workspace = true }
 futures = { workspace = true }
 hotshot-types = { workspace = true }
@@ -22,10 +20,12 @@ libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
+timeboost-util = { path = "../timeboost-util" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-timeboost-util = { path = "../timeboost-util" }
 
 [[bin]]
 name = "sailfish"
