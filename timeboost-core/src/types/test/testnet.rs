@@ -68,15 +68,14 @@ impl<C: Comm> TestNet<C> {
     }
 }
 
-/// Wrap Comm Err into test net error
-/// Can help us mock network errors or drops by using the Interceptor
+/// Wrap Comm Err into `TestNetError``
 #[derive(Debug)]
 pub enum TestNetError<C: Comm> {
     RecvError(C::Err),
     SendError(C::Err),
     BroadcastError(C::Err),
     ShutdownError(C::Err),
-    InterceptError,
+    InterceptError(&'static str),
 }
 
 impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
@@ -86,7 +85,7 @@ impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
             TestNetError::SendError(err) => write!(f, "Send Error: {}", err),
             TestNetError::BroadcastError(err) => write!(f, "Broadcast Error: {}", err),
             TestNetError::ShutdownError(err) => write!(f, "Shutdown Error: {}", err),
-            TestNetError::InterceptError => write!(f, "Intercept Error"),
+            TestNetError::InterceptError(err) => write!(f, "Intercept Error: {}", err),
         }
     }
 }
@@ -123,8 +122,11 @@ where
                     self.msgs.ibox.push(m.clone());
                     return Ok(m);
                 }
-                Err(_) => {
-                    return Err(TestNetError::InterceptError);
+                Err(e) => {
+                    // These are intentential errors written in the test
+                    // To help mock different scenarios
+                    // Eg a network error while receiving leader vertex to test timing out scenarios
+                    return Err(TestNetError::InterceptError(e));
                 }
             },
             Err(e) => {

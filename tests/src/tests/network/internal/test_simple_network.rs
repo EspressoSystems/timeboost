@@ -95,7 +95,7 @@ async fn test_simple_network_round_progression() {
     .await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_round_timeout() {
     logging::init_logging();
 
