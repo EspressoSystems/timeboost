@@ -110,7 +110,7 @@ impl Timeboost {
             }
         }
         loop {
-            tokio::select! {
+            tokio::select! { biased;
                 result = coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
