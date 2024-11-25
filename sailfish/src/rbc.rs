@@ -20,16 +20,22 @@ use worker::{RbcError, Worker};
 
 /// The message type exchanged during RBC.
 #[derive(Debug, Serialize, Deserialize)]
-enum RbcMsg<'a, Status: Clone> {
+enum Protocol<'a, Status: Clone> {
+    /// A message that is sent and received on a best-effort basis.
+    Bypass(Cow<'a, Message<Status>>),
+    /// An RBC proposal.
     Propose(Cow<'a, Message<Status>>),
+    /// A vote for an RBC proposal.
     Vote(Envelope<Digest, Status>),
+    /// A quorum certificate for an RBC proposal.
     Cert(Envelope<Certificate<Digest>, Status>),
+    /// A direct request to retrieve a message, identified by the given digest.
     Get(Envelope<Digest, Status>),
 }
 
 /// Worker command
 enum Command {
-    /// Send message to party identified by the given public key.
+    /// Send message to a party identified by the given public key.
     Send(PublicKey, Message<Validated>),
     /// Do a best-effort broadcast of the given message.
     Broadcast(Message<Validated>),

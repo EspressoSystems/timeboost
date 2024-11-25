@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt;
-use std::time::Instant;
 
 use hotshot::traits::NetworkError;
 use hotshot_types::traits::network::Topic;
@@ -16,12 +15,15 @@ use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::mpsc;
 use tracing::{debug, error, instrument, warn};
 
-use super::{Command, Digest, RbcMsg};
+use super::{Command, Digest, Protocol};
 use crate::consensus::VoteAccumulator;
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender = mpsc::Sender<Message<Validated>>;
 type Receiver = mpsc::Receiver<Command>;
+
+/// The number of old rounds for which to keep data in our buffer.
+const BUFFER_HISTORY_LEN: u64 = 8;
 
 pub struct Worker {
     keypair: Keypair,
@@ -35,8 +37,6 @@ pub struct Worker {
 }
 
 struct Tracker {
-    #[allow(unused)]
-    start: Instant,
     message: Option<Message<Validated>>,
     votes: VoteAccumulator<Digest>,
     status: Status,
@@ -99,7 +99,6 @@ impl Worker {
     }
 
     pub async fn go(mut self) {
-        // TODO: Go repeatedly over status and retry old messages.
         loop {
             tokio::select! {
                 val = self.libp2p.recv_message() => {
@@ -118,6 +117,11 @@ impl Worker {
                             Ok(()) => {
                                 let _ = tx.send(Ok(()));
                             }
+                            Err(RbcError::Shutdown) => {
+                                warn!("unexpected shutdown detected");
+                                self.libp2p.shut_down().await;
+                                return
+                            }
                             Err(err) => {
                                 warn!(%err, "error rbc broadcasting message");
                                 let _ = tx.send(Err(err));
@@ -125,13 +129,13 @@ impl Worker {
                         }
                     }
                     Some(Command::Send(to, msg)) => {
-                        match self.on_send(to, msg).await {
+                        match self.on_send(to, &msg).await {
                             Ok(()) => {}
                             Err(err) => warn!(%err, "error sending message")
                         }
                     }
                     Some(Command::Broadcast(msg)) => {
-                        match self.on_broadcast(msg).await {
+                        match self.on_broadcast(&msg).await {
                             Ok(()) => {}
                             Err(err) => warn!(%err, "error broadcasting message")
                         }
@@ -151,31 +155,33 @@ impl Worker {
 
     /// Best effort broadcast.
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
-    async fn on_broadcast(&mut self, msg: Message<Validated>) -> Result<()> {
-        let bytes = bincode::serialize(&msg)?;
+    async fn on_broadcast(&mut self, msg: &Message<Validated>) -> Result<()> {
+        let proto = Protocol::Bypass(Cow::Borrowed(msg));
+        let bytes = bincode::serialize(&proto)?;
         self.libp2p.broadcast_message(bytes, Topic::Global).await?;
         Ok(())
     }
 
     /// 1:1 communication.
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
-    async fn on_send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<()> {
-        let bytes = bincode::serialize(&msg)?;
-        self.libp2p.direct_message(bytes, to).await?;
-        Ok(())
+    async fn on_send(&mut self, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
+        send(&self.libp2p, to, msg).await
     }
 
     /// Start RBC broadcast.
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_outbound(&mut self, msg: Message<Validated>) -> Result<()> {
-        let proto = RbcMsg::Propose(Cow::Borrowed(&msg));
+        let proto = Protocol::Propose(Cow::Borrowed(&msg));
         let bytes = bincode::serialize(&proto)?;
         let digest = Digest::new(&msg);
 
         self.round = max(self.round, msg.round());
 
+        // Remove buffer entries that are too old to be relevant.
+        self.buffer
+            .retain(|k, _| *k.round() + BUFFER_HISTORY_LEN >= *self.round);
+
         let tracker = Tracker {
-            start: Instant::now(),
             message: Some(msg),
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
@@ -198,11 +204,21 @@ impl Worker {
     #[instrument(level = "trace", skip_all, fields(node = %self.label))]
     async fn on_inbound(&mut self, bytes: Vec<u8>) -> Result<()> {
         match bincode::deserialize(&bytes)? {
-            RbcMsg::Propose(msg) => self.on_propose(msg.into_owned()).await?,
-            RbcMsg::Vote(env) => self.on_vote(env).await?,
-            RbcMsg::Get(env) => self.on_get(env).await?,
-            RbcMsg::Cert(crt) => self.on_cert(crt).await?,
+            Protocol::Bypass(msg) => self.on_bypass(msg.into_owned()).await?,
+            Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
+            Protocol::Vote(env) => self.on_vote(env).await?,
+            Protocol::Get(env) => self.on_get(env).await?,
+            Protocol::Cert(crt) => self.on_cert(crt).await?,
         }
+        Ok(())
+    }
+
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    async fn on_bypass(&mut self, msg: Message<Unchecked>) -> Result<()> {
+        let Some(msg) = msg.validated(&self.committee) else {
+            return Err(RbcError::InvalidSignature);
+        };
+        self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
     }
 
@@ -215,7 +231,6 @@ impl Worker {
         let digest = Digest::new(&msg);
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
@@ -225,14 +240,15 @@ impl Worker {
             Status::Init => {
                 tracker.message = Some(msg);
                 tracker.status = Status::ReceivedMsg;
-                let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                 let bytes = bincode::serialize(&vote)?;
                 self.libp2p.broadcast_message(bytes, Topic::Global).await?;
                 tracker.status = Status::SentVote
             }
             Status::ReceivedMsg | Status::SentMsg => {
                 debug_assert!(tracker.message.is_some());
-                let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                tracker.status = Status::ReceivedMsg;
+                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                 let bytes = bincode::serialize(&vote)?;
                 self.libp2p.broadcast_message(bytes, Topic::Global).await?;
                 tracker.status = Status::SentVote
@@ -240,14 +256,14 @@ impl Worker {
             Status::ReceivedVotes => {
                 if tracker.message.is_none() {
                     tracker.message = Some(msg);
-                    let vote = RbcMsg::Vote(Envelope::signed(digest, &self.keypair));
+                    let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                     let bytes = bincode::serialize(&vote)?;
                     self.libp2p.broadcast_message(bytes, Topic::Global).await?;
                 }
             }
             Status::RequestedMsg => {
                 tracker.message = Some(msg.clone());
-                self.tx.send(msg).await.unwrap();
+                self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered
             }
             Status::Delivered | Status::SentVote | Status::ReachedQuorum => {
@@ -272,7 +288,6 @@ impl Worker {
         let source = *env.signing_key();
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::ReceivedVotes,
@@ -288,13 +303,16 @@ impl Worker {
                 Ok(Some(cert)) => {
                     tracker.status = Status::ReachedQuorum;
                     if let Some(msg) = &tracker.message {
-                        let m = RbcMsg::Cert(Envelope::signed(cert.clone(), &self.keypair));
+                        let m = Protocol::Cert(Envelope::signed(cert.clone(), &self.keypair));
                         let b = bincode::serialize(&m)?;
                         self.libp2p.broadcast_message(b, Topic::Global).await?;
-                        self.tx.send(msg.clone()).await.unwrap();
+                        self.tx
+                            .send(msg.clone())
+                            .await
+                            .map_err(|_| RbcError::Shutdown)?;
                         tracker.status = Status::Delivered
                     } else {
-                        let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
+                        let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                         let b = bincode::serialize(&m)?;
                         self.libp2p.direct_message(b, source).await?;
                         tracker.status = Status::RequestedMsg;
@@ -333,7 +351,6 @@ impl Worker {
         let source = *env.signing_key();
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
@@ -349,13 +366,16 @@ impl Worker {
                 tracker.status = Status::ReachedQuorum;
 
                 if let Some(msg) = &tracker.message {
-                    let m = RbcMsg::Cert(Envelope::signed(env.into_data(), &self.keypair));
+                    let m = Protocol::Cert(Envelope::signed(env.into_data(), &self.keypair));
                     let b = bincode::serialize(&m)?;
                     self.libp2p.broadcast_message(b, Topic::Global).await?;
-                    self.tx.send(msg.clone()).await.unwrap();
+                    self.tx
+                        .send(msg.clone())
+                        .await
+                        .map_err(|_| RbcError::Shutdown)?;
                     tracker.status = Status::Delivered
                 } else {
-                    let m = RbcMsg::Get(Envelope::signed(digest, &self.keypair));
+                    let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                     let b = bincode::serialize(&m)?;
                     self.libp2p.direct_message(b, source).await?;
                     tracker.status = Status::RequestedMsg;
@@ -392,19 +412,34 @@ impl Worker {
             Status::Init | Status::RequestedMsg => {
                 debug!(node = %self.label, status = %tracker.status, "ignoring get request")
             }
-            Status::ReceivedMsg
-            | Status::SentMsg
-            | Status::ReceivedVotes
-            | Status::SentVote
-            | Status::Delivered
-            | Status::ReachedQuorum => {
-                let msg = tracker.message.clone().unwrap();
-                self.on_send(*env.signing_key(), msg).await.unwrap()
+            Status::SentVote | Status::ReceivedVotes | Status::ReachedQuorum => {
+                if let Some(msg) = &tracker.message {
+                    send(&self.libp2p, *env.signing_key(), msg).await?;
+                }
+            }
+            Status::ReceivedMsg | Status::SentMsg | Status::Delivered => {
+                let msg = tracker
+                    .message
+                    .as_ref()
+                    .expect("message is present in these status");
+                send(&self.libp2p, *env.signing_key(), msg).await?;
             }
         }
 
         Ok(())
     }
+}
+
+/// Factored out of `Worker` to help with borrowing.
+async fn send(
+    net: &Libp2pNetwork<PublicKey>,
+    to: PublicKey,
+    msg: &Message<Validated>,
+) -> Result<()> {
+    let proto = Protocol::Bypass(Cow::Borrowed(msg));
+    let bytes = bincode::serialize(&proto)?;
+    net.direct_message(bytes, to).await?;
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
