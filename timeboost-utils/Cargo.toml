@@ -11,20 +11,8 @@ committable = { workspace = true }
 derive_more = { workspace = true, features = ["debug"] }
 displaydoc = { workspace = true }
 dyn-clone = { workspace = true }
-libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
-    "macros",
-    "autonat",
-    "cbor",
-    "dns",
-    "gossipsub",
-    "identify",
-    "kad",
-    "quic",
-    "request-response",
-    "secp256k1",
-    "serde",
-    "tokio",
-] }
+libp2p-identity = { workspace = true }
+multiaddr = { workspace = true }
 serde = { workspace = true }
 serde-inline-default = { workspace = true }
 serde_json = { workspace = true }
