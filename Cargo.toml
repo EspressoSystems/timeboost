@@ -86,6 +86,7 @@ tokio = { version = "1", default-features = false, features = [
     "sync",
     "time",
     "tracing",
+    "signal",
 ] }
 toml = "0.8.19"
 tracing = "0.1"
