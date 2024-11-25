@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Result as AnyhowResult};
-use bincode::Options;
 use futures::{future::poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use libp2p::{
     core::{muxing::StreamMuxerExt, transport::TransportEvent, StreamMuxer},
@@ -20,8 +19,6 @@ use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
-
-use crate::bincode_opts;
 
 /// The maximum size of an authentication message. This is used to prevent
 /// DoS attacks by sending large messages.
@@ -111,8 +108,7 @@ impl<T: Transport, S: SignatureKey, C: StreamMuxer + Unpin> StakeTableAuthentica
             let message = read_length_delimited(stream, MAX_AUTH_MESSAGE_SIZE).await?;
 
             // Deserialize the authentication message
-            let auth_message: AuthMessage<S> = bincode_opts()
-                .deserialize(&message)
+            let auth_message: AuthMessage<S> = bincode::deserialize(&message)
                 .with_context(|| "Failed to deserialize auth message")?;
 
             // Verify the signature on the public keys
@@ -286,9 +282,7 @@ pub fn construct_auth_message<S: SignatureKey + 'static>(
     };
 
     // Serialize the auth message
-    bincode_opts()
-        .serialize(&auth_message)
-        .with_context(|| "Failed to serialize auth message")
+    bincode::serialize(&auth_message).with_context(|| "Failed to serialize auth message")
 }
 
 impl<T: Transport, S: SignatureKey + 'static, C: StreamMuxer + Unpin> Transport

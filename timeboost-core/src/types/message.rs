@@ -1,10 +1,8 @@
 use core::fmt;
 
 use crate::types::vertex::Vertex;
-use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use timeboost_networking::bincode_opts;
 use timeboost_util::types::round_number::RoundNumber;
 
 use super::{
@@ -130,15 +128,11 @@ impl Message<Unchecked> {
 
 impl<S: Serialize> Message<S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        bincode_opts()
-            .serialize_into(buf, self)
-            .expect("serializing a `Message` never fails")
+        bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        bincode_opts()
-            .serialize(self)
-            .expect("serializing a `Message` never fails")
+        bincode::serialize(self).expect("serializing a `Message` never fails")
     }
 }
 

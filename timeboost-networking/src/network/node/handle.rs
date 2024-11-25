@@ -6,7 +6,6 @@
 
 use std::{collections::HashSet, fmt::Debug, marker::PhantomData, time::Duration};
 
-use bincode::Options;
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use libp2p_identity::PeerId;
 use timeboost_crypto::traits::signature_key::SignatureKey;
@@ -14,7 +13,6 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, info, instrument};
 
 use crate::{
-    bincode_opts,
     network::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
@@ -225,8 +223,7 @@ impl<K: SignatureKey + 'static> NetworkNodeHandle<K> {
         let key = key.to_bytes();
 
         // Serialize the record
-        let value = bincode_opts()
-            .serialize(&value)
+        let value = bincode::serialize(&value)
             .map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
         let (s, r) = futures::channel::oneshot::channel();
@@ -266,8 +263,7 @@ impl<K: SignatureKey + 'static> NetworkNodeHandle<K> {
         let result = r.await.map_err(|_| NetworkError::RequestCancelled)?;
 
         // Deserialize the record's value
-        let record: RecordValue<K> = bincode_opts()
-            .deserialize(&result)
+        let record: RecordValue<K> = bincode::deserialize(&result)
             .map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))?;
 
         Ok(record.value().to_vec())

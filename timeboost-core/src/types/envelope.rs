@@ -1,10 +1,8 @@
 use std::{hash::Hash, marker::PhantomData};
 
-use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::traits::signature_key::SignatureKey;
-use timeboost_networking::bincode_opts;
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, PublicKey, Signature};
@@ -107,9 +105,7 @@ impl<D: Committable, S> Envelope<D, S> {
 
 impl<D: Committable, S> Committable for Envelope<D, S> {
     fn commit(&self) -> Commitment<Self> {
-        let sig = bincode_opts()
-            .serialize(&self.signature)
-            .expect("serializing signature never fails");
+        let sig = bincode::serialize(&self.signature).expect("serializing signature never fails");
         RawCommitmentBuilder::new("Envelope")
             .field("data", self.data.commit())
             .field("commitment", self.commitment)
