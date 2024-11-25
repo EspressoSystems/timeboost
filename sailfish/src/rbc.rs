@@ -2,13 +2,12 @@ use std::borrow::Cow;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use timeboost_core::traits::comm::Comm;
+use timeboost_core::traits::comm::{Comm, RawComm};
 use timeboost_core::types::certificate::Certificate;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::{Envelope, Validated};
 use timeboost_core::types::message::Message;
 use timeboost_core::types::{Keypair, PublicKey};
-use timeboost_networking::network::client::Libp2pNetwork;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -82,7 +81,7 @@ impl Drop for Rbc {
 }
 
 impl Rbc {
-    pub fn new(n: Libp2pNetwork<PublicKey>, k: Keypair, c: StaticCommittee) -> Self {
+    pub fn new<C: RawComm + Send + 'static>(n: C, k: Keypair, c: StaticCommittee) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.size().get());
         let worker = Worker::new(ibound_tx, obound_rx, k, n, c);
