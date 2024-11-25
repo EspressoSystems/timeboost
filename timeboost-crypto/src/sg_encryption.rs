@@ -467,10 +467,7 @@ mod test {
         // modify n - t shares
         (0..(committee_size - threshold)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
-            share.phi = Proof {
-                transcript: vec![],
-                _meta_data: vec![],
-            };
+            share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
         let result = ShoupGennaro::<G, H, D>::combine(

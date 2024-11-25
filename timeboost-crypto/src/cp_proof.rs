@@ -77,7 +77,6 @@ impl<C: CurveGroup> DleqTuple<C> {
 #[derive(Clone)]
 pub struct Proof {
     pub(crate) transcript: Vec<u8>,
-    pub(crate) _meta_data: Vec<u8>,
 }
 
 /// SAFE IO Pattern for the Chaum-Pedersen sigma protocol
@@ -146,7 +145,6 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
         merlin.add_scalars(&[z])?;
         Ok(Proof {
             transcript: merlin.transcript().to_vec(),
-            _meta_data: vec![],
         })
     }
 
