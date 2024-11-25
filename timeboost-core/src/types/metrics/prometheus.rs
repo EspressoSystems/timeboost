@@ -5,7 +5,7 @@ use futures::future::BoxFuture;
 use parking_lot::RwLock;
 use prometheus::{Encoder, TextEncoder};
 use tide_disco::method::ReadState;
-use timeboost_util::traits::metrics::{
+use timeboost_utils::traits::metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
 

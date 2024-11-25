@@ -6,7 +6,7 @@ use std::{
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::stake_table::StakeTableEntry;
-use timeboost_util::types::{round_number::RoundNumber, PeerConfig};
+use timeboost_utils::types::{round_number::RoundNumber, PeerConfig};
 
 use crate::types::PublicKey;
 

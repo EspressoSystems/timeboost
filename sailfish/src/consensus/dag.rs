@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{vertex::Vertex, PublicKey};
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dag {

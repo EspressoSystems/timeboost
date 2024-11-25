@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::types::{error::SailfishError, transaction::Transaction};
 

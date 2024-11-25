@@ -7,7 +7,7 @@ use timeboost_core::types::{
     message::{Action, Message},
     NodeId, PublicKey,
 };
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 use tracing::info;
 
 use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};

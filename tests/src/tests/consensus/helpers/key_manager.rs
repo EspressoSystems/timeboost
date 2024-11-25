@@ -12,7 +12,7 @@ use timeboost_core::types::{
     vertex::Vertex,
     Keypair, NodeId, PublicKey, Signature,
 };
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 
 pub struct KeyManager {
     keys: HashMap<u64, Keypair>,

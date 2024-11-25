@@ -15,7 +15,7 @@ use timeboost_networking::network::{
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
 };
-use timeboost_util::types::{
+use timeboost_utils::types::{
     config::{Libp2pConfig, NetworkConfig},
     PeerConfig,
 };

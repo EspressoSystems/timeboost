@@ -1,5 +1,5 @@
 [package]
-name = "timeboost-util"
+name = "timeboost-utils"
 version.workspace = true
 edition.workspace = true
 description.workspace = true

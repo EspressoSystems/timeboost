@@ -12,7 +12,7 @@ use timeboost_core::types::{
     PublicKey, Signature,
 };
 use timeboost_crypto::traits::signature_key::SignatureKey;
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,

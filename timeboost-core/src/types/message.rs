@@ -3,7 +3,7 @@ use core::fmt;
 use crate::types::vertex::Vertex;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 
 use super::{
     certificate::Certificate,

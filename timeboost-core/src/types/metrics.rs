@@ -4,7 +4,7 @@ pub mod timeboost;
 
 pub use sailfish::SailfishMetrics;
 pub use timeboost::TimeboostMetrics;
-use timeboost_util::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
+use timeboost_utils::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]

@@ -27,7 +27,7 @@ surf-disco = { workspace = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-networking = { path = "../timeboost-networking" }
-timeboost-util = { path = "../timeboost-util" }
+timeboost-utils = { path = "../timeboost-utils" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 tokio = { workspace = true }
 tracing = { workspace = true }

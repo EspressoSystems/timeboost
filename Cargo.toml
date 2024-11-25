@@ -6,7 +6,7 @@ members = [
     "timeboost-core",
     "timeboost-crypto",
     "timeboost-networking",
-    "timeboost-util",
+    "timeboost-utils",
 ]
 resolver = "2"
 

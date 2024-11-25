@@ -13,7 +13,7 @@ use timeboost_core::{
         NodeId,
     },
 };
-use timeboost_util::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 use tokio::time::sleep;
 
 pub struct Coordinator<C> {

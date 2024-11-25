@@ -18,6 +18,6 @@ sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
-timeboost-util = { path = "../timeboost-util" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

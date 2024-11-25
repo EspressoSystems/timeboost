@@ -43,7 +43,7 @@ use libp2p_identity::{
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
 use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
-use timeboost_util::{
+use timeboost_utils::{
     traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
     types::{
         boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber,
