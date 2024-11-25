@@ -7,10 +7,10 @@
 use std::{fs, ops::Range, path::Path, time::Duration, vec};
 
 use clap::ValueEnum;
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{Multiaddr, PeerId};
 use serde_inline_default::serde_inline_default;
 use thiserror::Error;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::error;
 
 use super::{

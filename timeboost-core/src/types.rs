@@ -18,9 +18,11 @@ pub mod test;
 
 use core::fmt;
 
-use hotshot_types::signature_key::{BLSPrivKey, BLSPubKey};
-use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::{
+    signature_key::{BLSPrivKey, BLSPubKey},
+    traits::signature_key::SignatureKey,
+};
 
 pub type PublicKey = BLSPubKey;
 pub type PrivateKey = BLSPrivKey;

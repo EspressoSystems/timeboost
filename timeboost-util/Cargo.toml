@@ -9,7 +9,6 @@ bincode = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true, features = ["debug"] }
 displaydoc = { workspace = true }
-hotshot-types = { workspace = true }
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
     "autonat",
@@ -30,5 +29,6 @@ serde_json = { workspace = true }
 surf-disco = { workspace = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
 tracing = { workspace = true }
 url = { workspace = true }

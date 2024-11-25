@@ -48,21 +48,19 @@ derive_more = { version = "1.0" }
 digest = "0.10"
 displaydoc = { version = "0.2.5", default-features = false }
 either = "1.13.0"
-ethereum-types = { version = "0.14", default-features = false, features = [
-    "serialize",
-] }
 futures = { version = "0.3", default-features = false }
+jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf-signature-v0.2.0", features = [
+    "bls",
+] }
 hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
-jf-crhf = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
-jf-pcs = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
-jf-rescue = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
-jf-signature = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
-jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 multiaddr = "0.18.2"
 nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"
+primitive-types = { version = "0.13.1", default-features = false, features = [
+    "serde",
+] }
 portpicker = "0.1.1"
 prometheus = "0.13"
 rand = { version = "0.8", features = ["small_rng"] }

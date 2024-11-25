@@ -6,9 +6,9 @@
 
 use std::{collections::HashSet, num::NonZeroUsize, time::Duration};
 
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{identity::Keypair, Multiaddr};
 use libp2p_identity::PeerId;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::MAX_GOSSIP_MSG_SIZE;
 

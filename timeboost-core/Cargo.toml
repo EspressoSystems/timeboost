@@ -15,7 +15,7 @@ bytes = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
-ethereum-types = { workspace = true }
+primitive-types = { workspace = true }
 futures = { workspace = true }
 hotshot-types = { workspace = true }
 parking_lot = { workspace = true }
@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-util = { path = "../timeboost-util" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

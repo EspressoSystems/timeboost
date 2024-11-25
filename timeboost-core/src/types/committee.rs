@@ -3,9 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use ethereum_types::U256;
-use hotshot_types::stake_table::StakeTableEntry;
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::stake_table::StakeTableEntry;
 use timeboost_util::types::PeerConfig;
 
 use crate::types::{round_number::RoundNumber, PublicKey};

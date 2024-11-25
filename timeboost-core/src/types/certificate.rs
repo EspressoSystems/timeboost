@@ -1,9 +1,9 @@
 use crate::types::committee::StaticCommittee;
 use bincode::Options;
 use committable::{Commitment, Committable};
-use ethereum_types::U256;
-use hotshot_types::traits::signature_key::SignatureKey;
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_util::bincode_opts;
 
 use super::{PublicKey, QuorumSignature};

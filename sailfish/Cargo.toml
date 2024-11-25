@@ -13,14 +13,14 @@ async-lock = { workspace = true }
 bitvec = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-ethereum-types = { workspace = true }
+primitive-types = { workspace = true }
 futures = { workspace = true }
-hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-util = { path = "../timeboost-util" }
 tokio = { workspace = true }

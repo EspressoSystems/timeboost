@@ -39,13 +39,8 @@ use async_lock::RwLock;
 use bimap::BiHashMap;
 use bincode::Options;
 use hotshot_types::{
-    boxed_sync,
     data::ViewNumber,
-    traits::{
-        metrics::{Counter, Gauge, Metrics, NoMetrics},
-        signature_key::SignatureKey,
-    },
-    BoxSyncFuture,
+    traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
 };
 use libp2p_identity::{
     ed25519::{self, SecretKey},
@@ -53,7 +48,10 @@ use libp2p_identity::{
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
-use timeboost_util::types::{config::NetworkConfig, constants::LOOK_AHEAD};
+use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
+use timeboost_util::types::{
+    boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, BoxSyncFuture,
+};
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,
     Sender as BoundedSender, UnboundedReceiver, UnboundedSender,
@@ -171,7 +169,7 @@ pub fn derive_libp2p_keypair<K: SignatureKey>(
     private_key: &K::PrivateKey,
 ) -> anyhow::Result<Keypair> {
     // Derive a secondary key from our primary private key
-    let derived_key = blake3::derive_key("libp2p key", &(bincode_opts().serialize(&private_key)?));
+    let derived_key = blake3::derive_key("libp2p key", &private_key.to_bytes());
     let derived_key = SecretKey::try_from_bytes(derived_key)?;
 
     // Create an `ed25519` keypair from the derived key

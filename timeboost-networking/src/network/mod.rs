@@ -19,7 +19,6 @@ pub mod client;
 use std::{collections::HashSet, fmt::Debug};
 
 use futures::channel::oneshot::Sender;
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::dns::tokio::Transport as DnsTransport;
 use libp2p::{
     build_multiaddr,
@@ -33,6 +32,7 @@ use libp2p::{
 };
 use libp2p_identity::PeerId;
 use quic::tokio::Transport as QuicTransport;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::instrument;
 use transport::StakeTableAuthentication;
 

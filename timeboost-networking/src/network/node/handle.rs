@@ -7,9 +7,9 @@
 use std::{collections::HashSet, fmt::Debug, marker::PhantomData, time::Duration};
 
 use bincode::Options;
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use libp2p_identity::PeerId;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, info, instrument};
 

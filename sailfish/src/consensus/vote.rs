@@ -2,15 +2,15 @@ use std::collections::BTreeMap;
 
 use bitvec::{bitvec, vec::BitVec};
 use committable::Committable;
-use ethereum_types::U256;
+use primitive_types::U256;
 
-use hotshot_types::traits::signature_key::SignatureKey;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     PublicKey, Signature,
 };
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VoteAccumulator<D: Committable> {

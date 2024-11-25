@@ -37,5 +37,6 @@ rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-util = { path = "../timeboost-util" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -18,7 +18,6 @@ use futures::{
     channel::{mpsc, oneshot::Sender},
     SinkExt,
 };
-use hotshot_types::traits::signature_key::SignatureKey;
 use lazy_static::lazy_static;
 use libp2p::kad::{
     /* handler::KademliaHandlerIn, */ store::MemoryStore, BootstrapOk, GetClosestPeersOk,
@@ -29,7 +28,8 @@ use libp2p::kad::{
 };
 use libp2p_identity::PeerId;
 use store::ValidatedStore;
-use tokio::sync::mpsc::UnboundedSender;
+use timeboost_crypto::traits::signature_key::SignatureKey;
+use tokio::{spawn, sync::mpsc::UnboundedSender, time::sleep};
 use tracing::{debug, error, warn};
 
 /// Additional DHT record functionality
@@ -222,8 +222,8 @@ impl<K: SignatureKey + 'static> DHTBehaviour<K> {
             retry_count: query.retry_count,
         };
         let backoff = query.backoff.next_timeout(false);
-        tokio::spawn(async move {
-            tokio::time::sleep(backoff).await;
+        spawn(async move {
+            sleep(backoff).await;
             let _ = tx.send(req);
         });
     }
@@ -238,8 +238,8 @@ impl<K: SignatureKey + 'static> DHTBehaviour<K> {
             value: query.value,
             notify: query.notify,
         };
-        tokio::spawn(async move {
-            tokio::time::sleep(query.backoff.next_timeout(false)).await;
+        spawn(async move {
+            sleep(query.backoff.next_timeout(false)).await;
             let _ = tx.send(req);
         });
     }
@@ -397,7 +397,7 @@ impl<K: SignatureKey + 'static> DHTBehaviour<K> {
     /// Send that the bootsrap suceeded
     fn finish_bootstrap(&mut self) {
         if let Some(mut tx) = self.bootstrap_tx.clone() {
-            tokio::spawn(async move { tx.send(bootstrap::InputEvent::BootstrapFinished).await });
+            spawn(async move { tx.send(bootstrap::InputEvent::BootstrapFinished).await });
         }
     }
     #[allow(clippy::too_many_lines)]

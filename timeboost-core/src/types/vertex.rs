@@ -1,9 +1,9 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot_types::traits::signature_key::SignatureKey;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::{
     certificate::Certificate,

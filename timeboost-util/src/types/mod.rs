@@ -9,7 +9,7 @@ use std::{fmt::Debug, future::Future, num::NonZeroUsize, pin::Pin, time::Duratio
 
 use bincode::Options;
 use displaydoc::Display;
-use hotshot_types::traits::signature_key::SignatureKey;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::error;
 use url::Url;
 

@@ -6,7 +6,7 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use hotshot_types::traits::signature_key::SignatureKey;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use url::Url;
 
 use super::{
