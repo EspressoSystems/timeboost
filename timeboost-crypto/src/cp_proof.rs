@@ -261,9 +261,6 @@ mod tests {
         let (params, x, tuple) = setup(&mut rng);
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
 
-        // Create valid proof
-        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
-
         // Create invalid transcript
         let mut mordred: Merlin<D> = params.io_pattern.to_merlin();
         mordred.public_points(&[g, g_hat, h, h_hat]).unwrap();
@@ -281,7 +278,6 @@ mod tests {
 
         let mordred_proof = Proof {
             transcript: mordred.transcript().to_vec(),
-            ..proof
         };
 
         // Verify proof
