@@ -5,13 +5,14 @@ members = [
     "timeboost",
     "timeboost-core",
     "timeboost-networking",
+    "timeboost-crypto",
 ]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "Sailfish is a DAG-based BFT consensus protocol."
+description = "Low-latency decentralized sequencer with optional encrypted mempool"
 
 [profile.test]
 codegen-units = 16
@@ -19,12 +20,15 @@ incremental = false
 opt-level = 3
 
 [workspace.dependencies]
+aes-gcm = { version = "0.10.3" }
 anyhow = "1.0.89"
-ark-bn254 = "0.4"
-ark-ed-on-bn254 = "0.4"
-ark-ff = "0.4"
-ark-serialize = "0.4"
-ark-std = { version = "0.4", default-features = false }
+ark-bn254 = "0.5"
+ark-ec = "0.5"
+ark-ed-on-bn254 = "0.5"
+ark-ff = "0.5"
+ark-poly = "0.5"
+ark-serialize = "0.5"
+ark-std = { version = "0.5", default-features = false }
 async-broadcast = "0.7"
 async-channel = "2"
 async-lock = "3.3"
@@ -40,6 +44,7 @@ bytes = { version = "1.8.0", features = ["serde"] }
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
+crossbeam-queue = "0.3.11"
 digest = "0.10"
 either = "1.13.0"
 ethereum-types = { version = "0.14", default-features = false, features = [
@@ -56,6 +61,7 @@ jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyf
 jf-vid = { version = "0.1.0", git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 multiaddr = "0.18.2"
+nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.13"
@@ -63,6 +69,13 @@ rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0" }
+sqlx = { version = "0.8", features = [
+    "bit-vec",
+    "runtime-tokio",
+    "sqlite",
+    "tls-native-tls",
+] }
+sha2 = { version = "0.10", default-features = false }
 tagged-base64 = "0.4"
 thiserror = "1.0"
 tokio = { version = "1", default-features = false, features = [

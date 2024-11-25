@@ -112,7 +112,8 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
-        let accumulator = self.node.timeout_accumulators().get(&expected_round);
+        let timeout_accumulators = self.node.timeout_accumulators();
+        let accumulator = timeout_accumulators.get(&expected_round);
 
         if let Some(accumulator) = accumulator {
             assert_eq!(

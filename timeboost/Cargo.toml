@@ -6,6 +6,11 @@ description.workspace = true
 
 [features]
 until = ["reqwest"]
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
+noop = []
+default = ["noop"]
+
 
 [dependencies]
 async-broadcast = { workspace = true }
@@ -13,6 +18,7 @@ async-trait = { workspace = true }
 async-lock = { workspace = true }
 async-channel = { workspace = true }
 anyhow = { workspace = true }
+bincode = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 committable = { workspace = true }
@@ -31,6 +37,7 @@ prometheus = { workspace = true }
 tracing-subscriber = { workspace = true }
 tide-disco = { workspace = true }
 surf-disco = { workspace = true }
+sqlx = { workspace = true }
 vbs = { workspace = true }
 
 [[bin]]

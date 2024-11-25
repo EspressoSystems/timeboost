@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use sailfish::{coordinator::Coordinator, rbc::Rbc, sailfish::sailfish_coordinator};
 use std::{collections::HashSet, sync::Arc};
 use tide_disco::Url;
 use tokio::sync::mpsc::channel;
@@ -8,9 +9,8 @@ use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
 use multiaddr::{Multiaddr, PeerId};
-use sailfish::sailfish::run_sailfish;
 use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
+    event::TimeboostStatusEvent,
     metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
     Keypair, NodeId, PublicKey,
 };
@@ -22,6 +22,7 @@ use tokio::sync::{
 pub mod api;
 pub mod config;
 pub mod contracts;
+mod persistence;
 
 pub struct Timeboost {
     /// The ID of the node.
@@ -37,11 +38,11 @@ pub struct Timeboost {
     /// The port to bind the metrics API server to.
     metrics_port: u16,
 
-    /// The receiver for events from the sailfish node.
-    app_rx: Receiver<SailfishStatusEvent>,
-
     /// The sender for events to the sailfish node.
     app_tx: Sender<TimeboostStatusEvent>,
+
+    /// The receiver for events to the sailfish node.
+    app_rx: Receiver<TimeboostStatusEvent>,
 
     /// The receiver for the shutdown signal.
     shutdown_rx: watch::Receiver<()>,
@@ -58,8 +59,8 @@ impl Timeboost {
         port: u16,
         rpc_port: u16,
         metrics_port: u16,
-        app_rx: Receiver<SailfishStatusEvent>,
         app_tx: Sender<TimeboostStatusEvent>,
+        app_rx: Receiver<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
         metrics: Arc<ConsensusMetrics>,
     ) -> Self {
@@ -68,15 +69,19 @@ impl Timeboost {
             port,
             rpc_port,
             metrics_port,
-            app_rx,
             app_tx,
+            app_rx,
             shutdown_rx,
             metrics,
         }
     }
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self, prom: Arc<PrometheusMetrics>) -> Result<()> {
+    pub async fn go(
+        mut self,
+        prom: Arc<PrometheusMetrics>,
+        coordinator: &mut Coordinator<Rbc>,
+    ) -> Result<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(self.app_tx.clone());
             if let Err(e) = api
@@ -91,19 +96,43 @@ impl Timeboost {
             serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
         });
 
-        loop {
-            tokio::select! {
-                event = self.app_rx.recv() => {
-                    match event {
-                        Some(event) => info!("Received event: {:?}", event),
-                        None => {
-                            warn!("Timeboost channel closed; shutting down.");
-                            break Err(anyhow::anyhow!("Timeboost channel closed; shutting down."));
-                        }
-                    }
+        match coordinator.start().await {
+            Ok(actions) => {
+                for a in actions {
+                    let _ = coordinator.execute(a).await;
                 }
+            }
+            Err(e) => {
+                bail!("Failed to start coordinator: {}", e);
+            }
+        }
+        loop {
+            tokio::select! { biased;
+                result = coordinator.next() => match result {
+                    Ok(actions) => {
+                        for a in actions {
+                            let event = coordinator.execute(a).await;
+                            if let Ok(Some(e)) = event {
+                                info!("Received event: {:?}", e)
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Error receiving message: {}", e);
+                    },
+                },
+                tb_event = self.app_rx.recv() => match tb_event {
+                    Some(event) => {
+                        coordinator.handle_tb_event(event).await?;
+                    }
+                    None => {
+                        // If we get here, it's a big deal.
+                        bail!("Receiver disconnected while awaiting application layer messages.");
+                    }
+                },
                 result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
+                    coordinator.shutdown().await.expect("Shutdown coordinator");
                     result.expect("The shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());
                 }
@@ -129,29 +158,20 @@ pub async fn run_timeboost(
     let prom = Arc::new(PrometheusMetrics::default());
     let metrics = Arc::new(ConsensusMetrics::new(prom.as_ref()));
 
-    // The application layer will broadcast events to the timeboost node.
-    let (sf_app_tx, sf_app_rx) = channel(100);
-
     let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
     let metrics_clone = metrics.clone();
-    let shutdown_rx_clone = shutdown_rx.clone();
-    tokio::spawn(async move {
-        run_sailfish(
-            id,
-            bootstrap_nodes,
-            staked_nodes,
-            keypair,
-            bind_address,
-            sf_app_tx,
-            tb_app_rx,
-            metrics_clone,
-            shutdown_rx_clone,
-        )
-        .await
-    });
+    let coordinator = &mut sailfish_coordinator(
+        id,
+        bootstrap_nodes,
+        staked_nodes,
+        keypair,
+        bind_address,
+        metrics_clone,
+    )
+    .await;
 
     // Then, initialize and run the timeboost node.
     let timeboost = Timeboost::new(
@@ -159,12 +179,12 @@ pub async fn run_timeboost(
         port,
         rpc_port,
         metrics_port,
-        sf_app_rx,
         tb_app_tx,
+        tb_app_rx,
         shutdown_rx,
         metrics,
     );
 
     info!("Timeboost is running.");
-    timeboost.go(prom).await
+    timeboost.go(prom, coordinator).await
 }

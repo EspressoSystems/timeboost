@@ -1,20 +1,22 @@
-use anyhow::Result;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::Group;
+use crate::{
+    tests::network::{CoordinatorAuditEvent, TestOutcome},
+    Group,
+};
 
-use super::{TestCondition, TestOutcome, TestableNetwork};
-use async_lock::RwLock;
-use sailfish::coordinator::{Coordinator, CoordinatorAuditEvent};
+use super::{TaskHandleResult, TestCondition, TestableNetwork};
+use sailfish::coordinator::Coordinator;
 use timeboost_core::types::{
-    event::{SailfishStatusEvent, TimeboostStatusEvent},
     message::Message,
     metrics::ConsensusMetrics,
-    test::net::{Conn, Star},
+    test::{
+        net::{Conn, Star},
+        testnet::{MsgQueues, TestNet},
+    },
 };
 use tokio::{
     sync::{
-        mpsc,
         oneshot::{self, Receiver, Sender},
         watch,
     },
@@ -29,23 +31,16 @@ pub struct MemoryNetworkTest {
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
-    event_logs: HashMap<usize, Arc<RwLock<Vec<CoordinatorAuditEvent>>>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
-    sf_app_rxs: HashMap<usize, mpsc::Receiver<SailfishStatusEvent>>,
-    tb_app_txs: HashMap<usize, mpsc::Sender<TimeboostStatusEvent>>,
+    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = Coordinator<Conn<Message>>;
+    type Node = (Coordinator<TestNet<Conn<Message>>>, MsgQueues);
     type Network = Star<Message>;
-    type Shutdown = Result<()>;
 
-    fn new(group: Group, outcomes: HashMap<usize, Vec<TestCondition>>) -> Self {
+    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
             (0..group.fish.len()).map(|_| watch::channel(())).unzip();
-        let event_logs = HashMap::from_iter(
-            (0..group.fish.len()).map(|i| (i, Arc::new(RwLock::new(Vec::new())))),
-        );
         let (network_shutdown_tx, network_shutdown_rx) = oneshot::channel();
         Self {
             group,
@@ -54,9 +49,6 @@ impl TestableNetwork for MemoryNetworkTest {
             network_shutdown_tx,
             network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
-            event_logs,
-            sf_app_rxs: HashMap::new(),
-            tb_app_txs: HashMap::new(),
         }
     }
 
@@ -67,45 +59,84 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             // Join each node to the network
-            let ch = net.join(*n.public_key());
-
-            let (sf_app_tx, sf_app_rx) = mpsc::channel(10000);
-            let (tb_app_tx, tb_app_rx) = mpsc::channel(10000);
-
-            self.sf_app_rxs.insert(i, sf_app_rx);
-            self.tb_app_txs.insert(i, tb_app_tx);
+            let conn = TestNet::new(net.join(*n.public_key()));
+            let messages = conn.messages();
 
             // Initialize the coordinator
             let co = n.init(
-                ch,
+                conn,
                 (*self.group.staked_nodes).clone(),
-                sf_app_tx,
-                tb_app_rx,
                 Arc::new(ConsensusMetrics::default()),
-                Some(Arc::clone(&self.event_logs[&i])),
             );
 
             tracing::debug!("Started coordinator {}", i);
-            coordinators.push(co);
+            let c = (co, messages);
+            coordinators.push(c);
         }
 
         (coordinators, vec![net])
     }
 
+    /// Return the result of the task handle
+    /// This contains node id as well as the outcome of the test
+    /// Validation logic in test will then collect this information and assert
     async fn start(
         &mut self,
         nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<Self::Shutdown> {
+    ) -> JoinSet<TaskHandleResult> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for (i, co) in coordinators.into_iter().enumerate() {
-            let shutdown_rx = self
+        for (i, (mut co, msgs)) in coordinators.into_iter().enumerate() {
+            let mut shutdown_rx = self
                 .shutdown_rxs
                 .remove(&i)
                 .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
+            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
 
-            co_handles.spawn(co.go(shutdown_rx));
+            co_handles.spawn(async move {
+                let mut events = Vec::new();
+
+                match co.start().await {
+                    Ok(actions) => {
+                        for a in actions {
+                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                            let _ = co.execute(a).await;
+                        }
+                    }
+                    Err(e) => {
+                        panic!("Failed to start coordinator: {}", e);
+                    }
+                }
+                loop {
+                    tokio::select! {
+                        res = co.next() => match res {
+                            Ok(actions) => {
+                                events.extend(
+                                    msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
+                                );
+                                // Evaluate if we have seen the specified conditions of the test
+                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                                    co.shutdown().await.expect("Network to be shutdown");
+                                    break TaskHandleResult::new(i, TestOutcome::Passed);
+                                }
+                                for a in actions {
+                                    events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                                    let _ = co.execute(a).await;
+                                }
+                            }
+                            Err(_e) => {}
+                        },
+                        shutdown_result = shutdown_rx.changed() => {
+                            // Unwrap the potential error with receiving the shutdown token.
+                            co.shutdown().await.expect("Network to be shutdown");
+                            shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                            break TaskHandleResult::new(i, TestOutcome::Failed);
+                        }
+                    }
+                }
+            });
         }
 
         let net = nets.pop().expect("memory network to be present");
@@ -115,45 +146,33 @@ impl TestableNetwork for MemoryNetworkTest {
         co_handles
     }
 
-    async fn evaluate(&self) -> HashMap<usize, TestOutcome> {
-        let mut statuses =
-            HashMap::from_iter(self.outcomes.keys().map(|k| (*k, TestOutcome::Waiting)));
-        for (node_id, conditions) in self.outcomes.iter() {
-            tracing::info!("Evaluating node {}", node_id);
-            let log = self.event_logs.get(node_id).unwrap().read().await;
-            let eval_result: Vec<TestOutcome> =
-                conditions.iter().map(|c| c.evaluate(&log)).collect();
-
-            // TODO: Add the application layer statuses to the evaluation criteria.
-
-            // If any of the conditions are Waiting or Failed, then set the status to that, otherwise
-            // set it to Passed.
-            let status = eval_result.iter().fold(TestOutcome::Passed, |acc, x| {
-                if *x == TestOutcome::Waiting {
-                    *x
-                } else {
-                    acc
-                }
-            });
-
-            *statuses.get_mut(node_id).expect("Node ID not found") = status;
-        }
-
-        statuses
-    }
-
-    async fn shutdown(self, handles: JoinSet<Self::Shutdown>) {
-        // Shutdown all the coordinators
-        for send in self.shutdown_txs.into_values() {
-            send.send(()).expect(
-                "The shutdown sender was dropped before the receiver could receive the token",
-            );
+    /// Shutdown any spawned tasks that are running
+    /// This will then be evaluated as failures in the test validation logic
+    async fn shutdown(
+        self,
+        handles: JoinSet<TaskHandleResult>,
+        completed: &HashMap<usize, TestOutcome>,
+    ) -> HashMap<usize, TestOutcome> {
+        // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
+        // Otherwise they were completed and dont need the shutdown signal
+        for (id, send) in self.shutdown_txs.iter() {
+            if !completed.contains_key(id) {
+                send.send(()).expect(
+                    "The shutdown sender was dropped before the receiver could receive the token",
+                );
+            }
         }
 
         // Wait for all the coordinators to shutdown
-        handles.join_all().await;
+        let res: HashMap<usize, TestOutcome> = handles
+            .join_all()
+            .await
+            .into_iter()
+            .map(|r| (r.id(), r.outcome()))
+            .collect();
 
         // Now shutdown the network
         let _ = self.network_shutdown_tx.send(());
+        res
     }
 }
