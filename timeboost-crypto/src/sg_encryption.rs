@@ -30,6 +30,8 @@ use crate::{
 /// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
 const CORR_RATIO: usize = 3;
 
+/// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
+/// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
 pub struct ShoupGennaro<C, H, D>
 where
     C: CurveGroup,

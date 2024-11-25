@@ -12,6 +12,11 @@ use std::marker::PhantomData;
 
 use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
 
+/// Chaum-Pedersen proof of discrete log equality.
+///
+/// Given a tuple (g, g_hat, h, h_hat) prove that DLOG_{g}(g_hat) == DLOG_{h}(h_hat).
+///
+/// Protocol description (Section 5 in [Sigma.pdf](https://www.cs.au.dk/~ivan/Sigma.pdf)) with additional background on sigma protocols.
 pub struct ChaumPedersen<C, D>
 where
     C: CurveGroup,
@@ -53,8 +58,9 @@ impl<C: CurveGroup, D: DuplexHash> CPParameters<C, D> {
     }
 }
 
-// Tuple (g, g_hat, h, h_hat)
-// Subject to proving: DLOG_{g}(g_hat) == DLOG_{h}(h_hat)
+/// Tuple (g, g_hat, h, h_hat)
+///
+/// subject to proving: DLOG_{g}(g_hat) == DLOG_{h}(h_hat)
 #[derive(Clone)]
 pub struct DleqTuple<C: CurveGroup>(C, C, C, C);
 
@@ -74,6 +80,8 @@ pub struct Proof {
     pub(crate) _meta_data: Vec<u8>,
 }
 
+/// SAFE IO Pattern for the Chaum-Pedersen sigma protocol
+/// (see Algorithm 6 in <https://eprint.iacr.org/2023/522.pdf>)
 trait ChaumPedersenIOPattern<C: CurveGroup> {
     fn new_cp_proof(domsep: &str) -> Self;
     fn add_cp_statement(self) -> Self;
