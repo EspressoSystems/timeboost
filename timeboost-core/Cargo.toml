@@ -15,6 +15,7 @@ bytes = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
+dyn-clone = { workspace = true }
 primitive-types = { workspace = true }
 futures = { workspace = true }
 hotshot-types = { workspace = true }

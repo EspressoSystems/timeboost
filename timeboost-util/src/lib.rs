@@ -12,6 +12,7 @@ use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::error;
 use url::Url;
 
+pub mod traits;
 pub mod types;
 
 /// Pinned future that is Send and Sync

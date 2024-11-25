@@ -36,10 +36,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
-use hotshot_types::{
-    data::ViewNumber,
-    traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
-};
+use hotshot_types::data::ViewNumber;
 use libp2p_identity::{
     ed25519::{self, SecretKey},
     Keypair, PeerId,
@@ -47,8 +44,9 @@ use libp2p_identity::{
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
 use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
-use timeboost_util::types::{
-    boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, BoxSyncFuture,
+use timeboost_util::{
+    traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
+    types::{boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, BoxSyncFuture},
 };
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,

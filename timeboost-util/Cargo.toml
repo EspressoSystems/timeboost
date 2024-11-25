@@ -9,6 +9,7 @@ bincode = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true, features = ["debug"] }
 displaydoc = { workspace = true }
+dyn-clone = { workspace = true }
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
     "autonat",

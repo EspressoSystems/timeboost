@@ -47,6 +47,7 @@ derivative = "2.2.0"
 derive_more = { version = "1.0" }
 digest = "0.10"
 displaydoc = { version = "0.2.5", default-features = false }
+dyn-clone = "1.0.17"
 either = "1.13.0"
 futures = { version = "0.3", default-features = false }
 jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf-signature-v0.2.0", features = [
