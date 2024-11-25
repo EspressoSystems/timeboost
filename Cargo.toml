@@ -53,7 +53,6 @@ futures = { version = "0.3", default-features = false }
 jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf-signature-v0.2.0", features = [
     "bls",
 ] }
-hotshot-types = { git = "https://github.com/espressosystems/hotshot.git", tag = "0.5.79" }
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
 libp2p-identity = { version = "0.2.9", features = ["ed25519"] }
 multiaddr = "0.18.2"

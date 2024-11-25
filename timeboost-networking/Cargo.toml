@@ -14,7 +14,6 @@ custom_debug = "0.5"
 delegate = "0.13"
 derive_builder = "0.20"
 futures = { workspace = true }
-hotshot-types = { workspace = true }
 lazy_static = "1"
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
