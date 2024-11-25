@@ -1,10 +1,11 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, future::pending, sync::Arc, time::Duration};
 use tide_disco::Url;
-use tokio::sync::mpsc::channel;
-use tracing::{error, info, instrument, warn};
+use tokio::{sync::mpsc::channel, time::sleep};
+use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use hotshot_types::PeerConfig;
@@ -12,7 +13,8 @@ use multiaddr::{Multiaddr, PeerId};
 use timeboost_core::{
     traits::comm::Libp2p,
     types::{
-        event::TimeboostStatusEvent,
+        block::Block,
+        event::{SailfishEventType, TimeboostStatusEvent},
         metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
         Keypair, NodeId, PublicKey,
     },
@@ -24,8 +26,32 @@ use tokio::sync::{
 
 pub mod api;
 pub mod config;
+pub mod consensus;
 pub mod contracts;
 mod persistence;
+
+/// The Timeboost mempool.
+pub struct Mempool {
+    /// The set of blocks in the mempool.
+    blocks: Vec<Block>,
+}
+
+impl Mempool {
+    // TODO: Restart behavio.
+    pub fn new() -> Self {
+        Self { blocks: Vec::new() }
+    }
+
+    pub fn insert(&mut self, block: Block) {
+        self.blocks.push(block);
+    }
+}
+
+impl Default for Mempool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct Timeboost {
     /// The ID of the node.
@@ -49,6 +75,12 @@ pub struct Timeboost {
 
     /// The receiver for the shutdown signal.
     shutdown_rx: watch::Receiver<()>,
+
+    /// The timeboost clock
+    clock: BoxFuture<'static, u64>,
+
+    /// The mempool for the timeboost node.
+    mempool: Mempool,
 
     /// The metrics for the timeboost node.
     #[allow(dead_code)]
@@ -76,6 +108,8 @@ impl Timeboost {
             app_rx,
             shutdown_rx,
             metrics,
+            mempool: Mempool::new(),
+            clock: pending().boxed(),
         }
     }
 
@@ -99,6 +133,13 @@ impl Timeboost {
             serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
         });
 
+        // Initialize the clock.
+        self.clock = sleep(Duration::from_secs(60))
+            .map(move |_| 1)
+            .fuse()
+            .boxed();
+
+        // Kickstart the network.
         match coordinator.start().await {
             Ok(actions) => {
                 for a in actions {
@@ -109,14 +150,31 @@ impl Timeboost {
                 bail!("Failed to start coordinator: {}", e);
             }
         }
+
         loop {
             tokio::select! { biased;
+                epoch = &mut self.clock => {
+                    self.clock = sleep(Duration::from_secs(epoch)).map(move |_| epoch + 1).fuse().boxed();
+                }
                 result = coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
                             let event = coordinator.execute(a).await;
                             if let Ok(Some(e)) = event {
-                                info!("Received event: {:?}", e)
+                                match e.event {
+                                    SailfishEventType::Error { error } => {
+                                        error!(%error, "sailfish encountered an error");
+                                    },
+                                    SailfishEventType::RoundFinished { round: _ } => {
+                                        debug!("round finished");
+                                    },
+                                    SailfishEventType::Timeout { round: _ } => {
+                                        debug!("timeout");
+                                    },
+                                    SailfishEventType::Committed { round: _, block } => {
+                                        self.mempool.insert(block);
+                                    },
+                                }
                             }
                         }
                     },

@@ -32,6 +32,14 @@ impl Block {
         self.payload.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.payload.len()
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+    }
+
     pub fn with_transactions(mut self, ts: Vec<Transaction>) -> Self {
         self.payload = ts;
         self

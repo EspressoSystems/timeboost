@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{error::SailfishError, round_number::RoundNumber, transaction::Transaction};
 
+use super::block::Block;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SailfishEventType {
     /// Consensus has encountered an error.
@@ -14,7 +16,7 @@ pub enum SailfishEventType {
     Timeout { round: RoundNumber },
 
     /// Consensus has committed a round.
-    Committed { round: RoundNumber },
+    Committed { round: RoundNumber, block: Block },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +31,15 @@ impl std::fmt::Display for SailfishStatusEvent {
             SailfishEventType::Error { error } => write!(f, "Error({})", error),
             SailfishEventType::RoundFinished { round } => write!(f, "RoundFinished({})", round),
             SailfishEventType::Timeout { round } => write!(f, "Timeout({})", round),
-            SailfishEventType::Committed { round } => write!(f, "Committed({})", round),
+            SailfishEventType::Committed { round, block } => {
+                write!(
+                    f,
+                    "Committed({}, {}, {}kb)",
+                    round,
+                    block.len(),
+                    block.size_bytes() / 1024
+                )
+            }
         }
     }
 }

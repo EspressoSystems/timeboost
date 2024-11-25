@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
@@ -151,6 +152,10 @@ impl Consensus {
 
     pub fn committee_size(&self) -> NonZeroUsize {
         self.committee.size()
+    }
+
+    pub fn enqueue_transaction(&mut self, t: Transaction) {
+        self.state.transactions.add(t);
     }
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
