@@ -29,9 +29,7 @@ serde = { workspace = true }
 serde-inline-default = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
-surf-disco = { workspace = true }
 thiserror = { workspace = true }
-tide-disco = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 tracing = { workspace = true }
 url = { workspace = true }

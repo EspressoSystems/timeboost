@@ -13,10 +13,10 @@ async-lock = { workspace = true }
 bitvec = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-primitive-types = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
+primitive-types = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }

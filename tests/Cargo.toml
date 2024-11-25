@@ -10,10 +10,10 @@ benchmark = []
 [dependencies]
 async-lock = { workspace = true }
 bitvec = { workspace = true }
-primitive-types = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 portpicker = { workspace = true }
+primitive-types = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-crypto = { path = "../timeboost-crypto" }
