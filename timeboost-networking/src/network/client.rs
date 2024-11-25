@@ -22,7 +22,6 @@ use std::{
 
 pub use crate::network::GossipConfig;
 use crate::{
-    bincode_opts,
     network::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         spawn_network_node,
@@ -37,7 +36,6 @@ use crate::{
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
-use bincode::Options;
 use hotshot_types::{
     data::ViewNumber,
     traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
@@ -556,7 +554,7 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
                                                 if let Err(e) = sender.send(msg) {
                                                     debug!(%e, "failed to send direct request message");
                                                 }
-                                                let Ok(serialized) = bincode_opts().serialize(&Empty { byte: 0u8 }) else {
+                                                let Ok(serialized) = bincode::serialize(&Empty { byte: 0u8 }) else {
                                                     error!("failed to serialize acknowledgement");
                                                     continue;
                                                 };

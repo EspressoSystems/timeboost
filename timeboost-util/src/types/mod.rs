@@ -7,17 +7,14 @@
 //! Types and Traits for the `HotShot` consensus module
 use std::{fmt::Debug, future::Future, num::NonZeroUsize, pin::Pin, time::Duration};
 
-use bincode::Options;
 use displaydoc::Display;
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::error;
 use url::Url;
 
-use crate::bincode_opts;
-
 pub mod config;
 pub mod constants;
-pub mod timeboost_config_file;
+pub mod hotshot_config_file;
 
 /// Pinned future that is Send and Sync
 pub type BoxSyncFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;
@@ -93,7 +90,7 @@ pub struct PeerConfig<KEY: SignatureKey> {
 impl<KEY: SignatureKey> PeerConfig<KEY> {
     /// Serialize a peer's config to bytes
     pub fn to_bytes(config: &Self) -> Vec<u8> {
-        let x = bincode_opts().serialize(config);
+        let x = bincode::serialize(config);
         match x {
             Ok(x) => x,
             Err(e) => {
@@ -107,7 +104,7 @@ impl<KEY: SignatureKey> PeerConfig<KEY> {
     /// # Errors
     /// Will return `None` if deserialization fails
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let x: Result<PeerConfig<KEY>, _> = bincode_opts().deserialize(bytes);
+        let x: Result<PeerConfig<KEY>, _> = bincode::deserialize(bytes);
         match x {
             Ok(pub_key) => Some(pub_key),
             Err(e) => {

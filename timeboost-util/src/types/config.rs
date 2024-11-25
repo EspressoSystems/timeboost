@@ -18,7 +18,7 @@ use super::{
         ORCHESTRATOR_DEFAULT_NUM_ROUNDS, ORCHESTRATOR_DEFAULT_TRANSACTIONS_PER_ROUND,
         ORCHESTRATOR_DEFAULT_TRANSACTION_SIZE, REQUEST_DATA_DELAY,
     },
-    timeboost_config_file::HotShotConfigFile,
+    hotshot_config_file::HotShotConfigFile,
     HotShotConfig, ValidatorConfig,
 };
 

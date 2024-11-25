@@ -572,7 +572,7 @@ mod test {
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode_opts().deserialize(&auth_message).unwrap(),
+            &bincode::deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_ok());
     }
@@ -586,17 +586,17 @@ mod test {
 
         // Deserialize the authentication message
         let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode_opts().deserialize(&auth_message).unwrap();
+            bincode::deserialize(&auth_message).unwrap();
 
         // Change the public key
         auth_message.public_key_bytes[0] ^= 0x01;
 
         // Serialize the message again
-        let auth_message = bincode_opts().serialize(&auth_message).unwrap();
+        let auth_message = bincode::serialize(&auth_message).unwrap();
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode_opts().deserialize(&auth_message).unwrap(),
+            &bincode::deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_err());
     }
@@ -610,17 +610,17 @@ mod test {
 
         // Deserialize the authentication message
         let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode_opts().deserialize(&auth_message).unwrap();
+            bincode::deserialize(&auth_message).unwrap();
 
         // Change the peer ID
         auth_message.peer_id_bytes[0] ^= 0x01;
 
         // Serialize the message again
-        let auth_message = bincode_opts().serialize(&auth_message).unwrap();
+        let auth_message = bincode::serialize(&auth_message).unwrap();
 
         // Verify the authentication message
         let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode_opts().deserialize(&auth_message).unwrap(),
+            &bincode::deserialize(&auth_message).unwrap(),
         );
         assert!(public_key.is_err());
     }

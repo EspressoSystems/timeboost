@@ -124,7 +124,7 @@ impl NoVote {
 
 impl Message<Unchecked> {
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        bincode_opts().deserialize(bytes).ok()
+        bincode::deserialize(bytes).ok()
     }
 }
 

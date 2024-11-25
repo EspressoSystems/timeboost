@@ -28,7 +28,7 @@ pub enum Validated {}
 ///```compile_fail
 /// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
 ///
-/// let _: Envelope<Timeout, Validated> = bincode_opts().deserialize(&[]).unwrap();
+/// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
