@@ -291,11 +291,11 @@ where
         }
 
         // Lagrange interpolation in the exponent
-        let mut w = dec_shares[0].w * l[0];
-        for d in 1..threshold {
+        let mut w = C::zero();
+        for d in 0..threshold {
             let w_i = dec_shares[d].w;
             let l_i = l[d];
-            w += (w_i * l_i).into();
+            w += w_i * l_i;
         }
 
         // Hash to symmetric key `k`
