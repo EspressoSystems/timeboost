@@ -1,14 +1,14 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
+use crate::{tests::network::CoordinatorAuditEvent, Group};
 use portpicker::pick_unused_port;
 use sailfish::sailfish::Sailfish;
 use timeboost_core::traits::comm::Libp2p;
+use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_core::types::{committee::StaticCommittee, metrics::ConsensusMetrics};
 use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{sync::watch, task::JoinSet};
-
-use crate::{tests::network::CoordinatorAuditEvent, Group};
 
 use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 
@@ -19,13 +19,18 @@ pub struct Libp2pNetworkTest {
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+    interceptor: NetworkMessageInterceptor,
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2p;
 
-    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
             (0..group.fish.len()).map(|_| watch::channel(())).unzip();
 
@@ -34,6 +39,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
             shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             outcomes,
+            interceptor,
         }
     }
 
@@ -89,10 +95,12 @@ impl TestableNetwork for Libp2pNetworkTest {
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
+            let interceptor = self.interceptor.clone();
             let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
+            let committee = StaticCommittee::from(&*(*staked_nodes).clone());
 
             handles.spawn(async move {
-                let net = TestNet::new(network);
+                let net = TestNet::new(network, interceptor, committee);
                 let msgs = net.messages();
                 let mut coordinator = node.init(
                     net,
@@ -119,17 +127,18 @@ impl TestableNetwork for Libp2pNetworkTest {
                                 events.extend(
                                     msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
                                 );
-                                // Evaluate if we have seen the specified conditions of the test
-                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
-                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                    coordinator.shutdown().await.expect("Network to be shutdown");
-                                    break TaskHandleResult::new(i ,TestOutcome::Passed);
-                                }
                                 for a in actions {
                                     events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                                     let _ = coordinator.execute(a).await;
                                 }
-                                let _outbox = msgs.drain_outbox();
+                                // Evaluate if we have seen the specified conditions of the test
+                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                                    // Allow us some time to send out any messages
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    coordinator.shutdown().await.expect("Network to be shutdown");
+                                    break TaskHandleResult::new(i ,TestOutcome::Passed);
+                                }
                             }
                             Err(_e) => {}
                         },

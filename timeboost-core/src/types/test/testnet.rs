@@ -3,9 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 
-use crate::traits::comm::Comm;
+use crate::types::envelope::Validated;
 use crate::types::message::Message;
 use crate::types::PublicKey;
+use crate::{traits::comm::Comm, types::committee::StaticCommittee};
+
+use super::message_interceptor::NetworkMessageInterceptor;
 
 #[derive(Debug, Clone)]
 pub struct MsgQueues {
@@ -39,16 +42,24 @@ impl MsgQueues {
 pub struct TestNet<C> {
     comm: C,
     msgs: MsgQueues,
+    interceptor: NetworkMessageInterceptor,
+    committee: StaticCommittee,
 }
 
 impl<C: Comm> TestNet<C> {
-    pub fn new(comm: C) -> Self {
+    pub fn new(
+        comm: C,
+        interceptor: NetworkMessageInterceptor,
+        committee: StaticCommittee,
+    ) -> Self {
         Self {
             comm,
             msgs: MsgQueues {
                 ibox: Arc::new(SegQueue::new()),
                 obox: Arc::new(SegQueue::new()),
             },
+            interceptor,
+            committee,
         }
     }
 
@@ -57,27 +68,75 @@ impl<C: Comm> TestNet<C> {
     }
 }
 
+/// Wrap Comm Err into test net error
+/// Can help us mock network errors or drops by using the Interceptor
+#[derive(Debug)]
+pub enum TestNetError<C: Comm> {
+    RecvError(C::Err),
+    SendError(C::Err),
+    BroadcastError(C::Err),
+    ShutdownError(C::Err),
+    InterceptError,
+}
+
+impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TestNetError::RecvError(err) => write!(f, "Receive Error: {}", err),
+            TestNetError::SendError(err) => write!(f, "Send Error: {}", err),
+            TestNetError::BroadcastError(err) => write!(f, "Broadcast Error: {}", err),
+            TestNetError::ShutdownError(err) => write!(f, "Shutdown Error: {}", err),
+            TestNetError::InterceptError => write!(f, "Intercept Error"),
+        }
+    }
+}
+
+impl<C: Comm + std::fmt::Debug + Send> std::error::Error for TestNetError<C> {}
+
 #[async_trait]
-impl<C: Comm + Send> Comm for TestNet<C> {
-    type Err = C::Err;
+impl<C> Comm for TestNet<C>
+where
+    C: Comm + Send + std::fmt::Debug + 'static,
+{
+    type Err = TestNetError<C>;
 
-    async fn broadcast(&mut self, msg: Message) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));
-        self.comm.broadcast(msg).await
+        if let Err(e) = self.comm.broadcast(msg).await {
+            return Err(TestNetError::BroadcastError(e));
+        }
+        Ok(())
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((Some(to), msg.clone()));
-        self.comm.send(to, msg).await
+        if let Err(e) = self.comm.send(to, msg).await {
+            return Err(TestNetError::SendError(e));
+        }
+        Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message, Self::Err> {
-        let msg = self.comm.receive().await?;
-        self.msgs.ibox.push(msg.clone());
-        Ok(msg)
+    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+        match self.comm.receive().await {
+            Ok(msg) => match self.interceptor.intercept_message(msg, &self.committee) {
+                Ok(m) => {
+                    self.msgs.ibox.push(m.clone());
+                    return Ok(m);
+                }
+                Err(_) => {
+                    return Err(TestNetError::InterceptError);
+                }
+            },
+            Err(e) => {
+                return Err(TestNetError::RecvError(e));
+            }
+        }
     }
 
-    async fn shutdown(&mut self) -> Result<(), C::Err> {
-        self.comm.shutdown().await
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        if let Err(e) = self.comm.shutdown().await {
+            return Err(TestNetError::ShutdownError(e));
+        }
+        Ok(())
     }
 }

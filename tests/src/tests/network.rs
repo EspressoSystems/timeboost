@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use timeboost_core::types::message::{Action, Message};
+use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::{logging, traits::comm::Comm};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
@@ -93,7 +94,11 @@ impl TaskHandleResult {
 pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send;
-    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self;
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
     async fn start(
         &mut self,
@@ -116,10 +121,11 @@ impl<N: TestableNetwork> NetworkTest<N> {
         group: Group,
         outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
         duration: Option<Duration>,
+        interceptor: NetworkMessageInterceptor,
     ) -> Self {
         Self {
             duration: duration.unwrap_or(Duration::from_secs(4)),
-            network: N::new(group, outcomes),
+            network: N::new(group, outcomes, interceptor),
         }
     }
 
