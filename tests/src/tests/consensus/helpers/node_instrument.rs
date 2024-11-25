@@ -8,11 +8,11 @@ use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    round_number::RoundNumber,
     vertex::Vertex,
     PublicKey, Signature,
 };
 use timeboost_crypto::traits::signature_key::SignatureKey;
+use timeboost_util::types::round_number::RoundNumber;
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,

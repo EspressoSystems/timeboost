@@ -15,6 +15,7 @@ use url::Url;
 pub mod config;
 pub mod constants;
 pub mod hotshot_config_file;
+pub mod round_number;
 
 /// Pinned future that is Send and Sync
 pub type BoxSyncFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;

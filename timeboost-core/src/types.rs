@@ -7,7 +7,6 @@ pub mod error;
 pub mod event;
 pub mod message;
 pub mod metrics;
-pub mod round_number;
 pub mod seqno;
 pub mod time;
 pub mod transaction;

@@ -1,10 +1,8 @@
 use timeboost_core::{
     logging,
-    types::{
-        message::{Action, Message},
-        round_number::RoundNumber,
-    },
+    types::message::{Action, Message},
 };
+use timeboost_util::types::round_number::RoundNumber;
 
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 

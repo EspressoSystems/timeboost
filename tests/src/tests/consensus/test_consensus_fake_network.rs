@@ -3,9 +3,10 @@ use std::collections::{HashMap, HashSet};
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
 use timeboost_core::types::envelope::Envelope;
+use timeboost_core::types::message::Message;
 use timeboost_core::types::message::{Action, Timeout};
-use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use timeboost_core::types::{Keypair, NodeId, PublicKey, Signature};
+use timeboost_util::types::round_number::RoundNumber;
 
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
 use crate::tests::consensus::helpers::{

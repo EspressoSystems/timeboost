@@ -1,10 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use std::time::Duration;
-use timeboost_core::{
-    logging,
-    types::{message::Message, round_number::RoundNumber},
-};
+use timeboost_core::{logging, types::message::Message};
+use timeboost_util::types::round_number::RoundNumber;
 
 use crate::tests::network::CoordinatorAuditEvent;
 use crate::{

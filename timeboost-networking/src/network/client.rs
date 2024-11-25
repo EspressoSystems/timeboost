@@ -36,7 +36,6 @@ use crate::{
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
-use hotshot_types::data::ViewNumber;
 use libp2p_identity::{
     ed25519::{self, SecretKey},
     Keypair, PeerId,
@@ -46,7 +45,10 @@ use serde::Serialize;
 use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
 use timeboost_util::{
     traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
-    types::{boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, BoxSyncFuture},
+    types::{
+        boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber,
+        BoxSyncFuture,
+    },
 };
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,
@@ -134,7 +136,7 @@ pub struct Libp2pNetwork<K: SignatureKey + 'static> {
     /// Sender for broadcast messages
     sender: UnboundedSender<Vec<u8>>,
     /// Sender for node lookup (relevant view number, key of node) (None for shutdown)
-    node_lookup_send: BoundedSender<Option<(ViewNumber, K)>>,
+    node_lookup_send: BoundedSender<Option<(RoundNumber, K)>>,
     /// this is really cheating to enable local tests
     /// hashset of (bootstrap_addr, peer_id)
     bootstrap_addrs: PeerInfoVec,
@@ -428,7 +430,7 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
 
     /// Spawns task for looking up nodes pre-emptively
     #[allow(clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    fn spawn_node_lookup(&self, mut node_lookup_recv: BoundedReceiver<Option<(ViewNumber, K)>>) {
+    fn spawn_node_lookup(&self, mut node_lookup_recv: BoundedReceiver<Option<(RoundNumber, K)>>) {
         let handle = Arc::clone(&self.handle);
         let dht_timeout = self.dht_timeout;
         let latest_seen_view = Arc::clone(&self.latest_seen_view);
@@ -688,9 +690,9 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     #[instrument(name = "Libp2pNetwork::queue_node_lookup", skip_all)]
     pub fn queue_node_lookup(
         &self,
-        view_number: ViewNumber,
+        view_number: RoundNumber,
         pk: K,
-    ) -> Result<(), TrySendError<Option<(ViewNumber, K)>>> {
+    ) -> Result<(), TrySendError<Option<(RoundNumber, K)>>> {
         self.node_lookup_send.try_send(Some((view_number, pk)))
     }
 }

@@ -6,9 +6,9 @@ use std::{
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::stake_table::StakeTableEntry;
-use timeboost_util::types::PeerConfig;
+use timeboost_util::types::{round_number::RoundNumber, PeerConfig};
 
-use crate::types::{round_number::RoundNumber, PublicKey};
+use crate::types::PublicKey;
 
 /// The static committee is just a list of public keys whose stake is equivalent across all nodes.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]

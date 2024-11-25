@@ -9,11 +9,11 @@ use timeboost_core::{
     types::{
         event::{SailfishEventType, SailfishStatusEvent},
         message::{Action, Message},
-        round_number::RoundNumber,
         transaction::Transaction,
         NodeId,
     },
 };
+use timeboost_util::types::round_number::RoundNumber;
 use tokio::time::sleep;
 
 pub struct Coordinator<C> {

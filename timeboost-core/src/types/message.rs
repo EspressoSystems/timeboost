@@ -5,6 +5,7 @@ use bincode::Options;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_networking::bincode_opts;
+use timeboost_util::types::round_number::RoundNumber;
 
 use super::{
     certificate::Certificate,
@@ -13,7 +14,6 @@ use super::{
 };
 use crate::types::block::Block;
 use crate::types::committee::StaticCommittee;
-use crate::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<Status = Validated> {
