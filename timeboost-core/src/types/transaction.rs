@@ -21,16 +21,31 @@ impl Nonce {
     pub fn seqno(&self) -> SeqNo {
         self.seqno
     }
+
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of::<Nonce>()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Address([u8; 32]); // TODO: Address format
+impl Address {
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of::<Address>()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TransactionData {
     nonce: Nonce,
     to: Address,
     data: Bytes,
+}
+
+impl TransactionData {
+    pub fn size_bytes(&self) -> usize {
+        self.nonce.size_bytes() + self.to.size_bytes() + self.data.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -54,6 +69,13 @@ impl Transaction {
         match self {
             Self::Priority { nonce, .. } => nonce,
             Self::Regular { txn } => &txn.nonce,
+        }
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        match self {
+            Self::Priority { txns, .. } => txns.iter().map(|t| t.size_bytes()).sum(),
+            Self::Regular { txn } => txn.size_bytes(),
         }
     }
 }

@@ -37,7 +37,7 @@ impl Block {
     }
 
     pub fn size_bytes(&self) -> usize {
-        std::mem::size_of_val(self)
+        self.header.size_bytes() + self.payload.iter().map(|t| t.size_bytes()).sum::<usize>()
     }
 
     pub fn with_transactions(mut self, ts: Vec<Transaction>) -> Self {
