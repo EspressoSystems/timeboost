@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
-use timeboost_core::types::metrics::ConsensusMetrics;
-use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use timeboost_core::types::{metrics::SailfishMetrics, Keypair, NodeId, PublicKey};
 use tokio::signal;
 use tracing::warn;
 
@@ -38,7 +37,7 @@ async fn main() -> Result<()> {
 
     // Sailfish nodes running individually do not need to communicate with the
     // application layer, so we make dummy streams.
-    let metrics = Arc::new(ConsensusMetrics::default());
+    let metrics = Arc::new(SailfishMetrics::default());
     let mut coordinator = sailfish_coordinator(
         cfg.id,
         cfg.to_connect_addrs,

@@ -10,7 +10,7 @@ use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    metrics::ConsensusMetrics,
+    metrics::SailfishMetrics,
     round_number::RoundNumber,
     transaction::TransactionsQueue,
     vertex::Vertex,
@@ -105,7 +105,7 @@ pub struct Consensus {
     leader_stack: Vec<Vertex>,
 
     /// The consensus metrics for this node.
-    metrics: Arc<ConsensusMetrics>,
+    metrics: Arc<SailfishMetrics>,
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
@@ -116,7 +116,7 @@ impl Consensus {
         id: NodeId,
         keypair: Keypair,
         committee: StaticCommittee,
-        metrics: Arc<ConsensusMetrics>,
+        metrics: Arc<SailfishMetrics>,
     ) -> Self {
         Self {
             id,

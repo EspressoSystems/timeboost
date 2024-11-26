@@ -1,10 +1,23 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use consensus::{
+    block_builder::NoOpBlockBuilder, decryption::NoOpDecryptionPhase,
+    inclusion::NoOpInclusionPhase, ordering::NoOpOrderingPhase, protocol::Consensus,
+};
 use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
-use std::{collections::HashSet, future::pending, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    future::pending,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tide_disco::Url;
-use tokio::{sync::mpsc::channel, time::sleep};
+use tokio::{
+    sync::{mpsc::channel, RwLock},
+    task::JoinHandle,
+    time::sleep,
+};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
@@ -15,7 +28,7 @@ use timeboost_core::{
     types::{
         block::Block,
         event::{SailfishEventType, TimeboostStatusEvent},
-        metrics::{prometheus::PrometheusMetrics, ConsensusMetrics},
+        metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
         Keypair, NodeId, PublicKey,
     },
 };
@@ -30,20 +43,43 @@ pub mod consensus;
 pub mod contracts;
 mod persistence;
 
+/// The duration of an epoch in seconds.
+const EPOCH_TIME_SECS: u64 = 60;
+
+/// The time between consensus intervals in ms.
+const CONSENSUS_INTERVAL_MS: u64 = 250;
+
 /// The Timeboost mempool.
 pub struct Mempool {
     /// The set of blocks in the mempool.
-    blocks: Vec<Block>,
+    blocks: VecDeque<Block>,
 }
 
 impl Mempool {
-    // TODO: Restart behavio.
+    // TODO: Restart behavior.
     pub fn new() -> Self {
-        Self { blocks: Vec::new() }
+        Self {
+            blocks: VecDeque::new(),
+        }
     }
 
     pub fn insert(&mut self, block: Block) {
-        self.blocks.push(block);
+        self.blocks.push_back(block);
+    }
+
+    /// Drains blocks from the mempool until the total size reaches `limit_bytes`.
+    pub fn drain_to_limit(&mut self, limit_bytes: usize) -> Vec<Block> {
+        let mut total_size = 0;
+        self.blocks
+            .drain(..)
+            .take_while(|block| {
+                let should_take = total_size + block.size_bytes() <= limit_bytes;
+                if should_take {
+                    total_size += block.size_bytes();
+                }
+                should_take
+            })
+            .collect()
     }
 }
 
@@ -77,14 +113,35 @@ pub struct Timeboost {
     shutdown_rx: watch::Receiver<()>,
 
     /// The timeboost clock
-    clock: BoxFuture<'static, u64>,
+    epoch_clock: BoxFuture<'static, u64>,
+
+    /// The time the clock started.
+    epoch_clock_start_time: Instant,
+
+    /// The consensus interval clock.
+    consensus_interval_clock: BoxFuture<'static, u64>,
+
+    /// The current epoch.
+    epoch: u64,
 
     /// The mempool for the timeboost node.
-    mempool: Mempool,
+    mempool: Arc<RwLock<Mempool>>,
+
+    /// The consensus protocol.
+    consensus: Arc<
+        Consensus<NoOpInclusionPhase, NoOpDecryptionPhase, NoOpOrderingPhase, NoOpBlockBuilder>,
+    >,
+
+    /// The consensus protocl handles
+    cx_handles: HashMap<u64, JoinHandle<()>>,
+
+    /// The metrics for the sailfish node.
+    #[allow(dead_code)]
+    sf_metrics: Arc<SailfishMetrics>,
 
     /// The metrics for the timeboost node.
     #[allow(dead_code)]
-    metrics: Arc<ConsensusMetrics>,
+    tb_metrics: Arc<TimeboostMetrics>,
 }
 
 impl Timeboost {
@@ -97,8 +154,10 @@ impl Timeboost {
         app_tx: Sender<TimeboostStatusEvent>,
         app_rx: Receiver<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
-        metrics: Arc<ConsensusMetrics>,
+        sf_metrics: Arc<SailfishMetrics>,
+        tb_metrics: Arc<TimeboostMetrics>,
     ) -> Self {
+        let mempool = Arc::new(RwLock::new(Mempool::new()));
         Self {
             id,
             port,
@@ -107,9 +166,21 @@ impl Timeboost {
             app_tx,
             app_rx,
             shutdown_rx,
-            metrics,
-            mempool: Mempool::new(),
-            clock: pending().boxed(),
+            sf_metrics,
+            tb_metrics: tb_metrics.clone(),
+            mempool: mempool.clone(),
+            epoch_clock: pending().boxed(),
+            epoch_clock_start_time: Instant::now(),
+            epoch: 0,
+            consensus_interval_clock: pending().boxed(),
+            consensus: Arc::new(Consensus::new(
+                Arc::new(NoOpInclusionPhase),
+                Arc::new(NoOpDecryptionPhase),
+                Arc::new(NoOpOrderingPhase),
+                Arc::new(NoOpBlockBuilder),
+                tb_metrics,
+            )),
+            cx_handles: HashMap::new(),
         }
     }
 
@@ -134,8 +205,14 @@ impl Timeboost {
         });
 
         // Initialize the clock.
-        self.clock = sleep(Duration::from_secs(60))
-            .map(move |_| 1)
+        self.epoch_clock = sleep(Duration::from_secs(EPOCH_TIME_SECS))
+            .map(move |_| 0)
+            .fuse()
+            .boxed();
+
+        // The consensus interval clock.
+        self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
+            .map(move |_| 0)
             .fuse()
             .boxed();
 
@@ -153,8 +230,37 @@ impl Timeboost {
 
         loop {
             tokio::select! { biased;
-                epoch = &mut self.clock => {
-                    self.clock = sleep(Duration::from_secs(epoch)).map(move |_| epoch + 1).fuse().boxed();
+                round = &mut self.consensus_interval_clock => {
+                    self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
+                        .map(move |_| round + 1)
+                        .fuse()
+                        .boxed();
+                    let mempool_snapshot = {
+                        let mut mempool = self.mempool.write().await;
+                        mempool.drain_to_limit(1024 * 1024)
+                    };
+
+                    // Make a new handle for the consensus protocol run.
+                    let cx = self.consensus.clone();
+                    let cx_handle = tokio::spawn(async move {
+                        let _ = cx.start(self.epoch, mempool_snapshot).await;
+                    });
+
+                    // Sanity check.
+                    debug_assert!(!self.cx_handles.contains_key(&round));
+
+                    self.cx_handles.insert(round, cx_handle);
+                }
+                _ = &mut self.epoch_clock => {
+                    self.epoch_clock = sleep(Duration::from_secs(EPOCH_TIME_SECS))
+                        .map(move |_| {
+                            let elapsed = Instant::now().duration_since(self.epoch_clock_start_time);
+                            let epoch = elapsed.as_secs() / EPOCH_TIME_SECS;
+                            self.epoch = epoch;
+                            epoch
+                        })
+                        .fuse()
+                        .boxed();
                 }
                 result = coordinator.next() => match result {
                     Ok(actions) => {
@@ -172,7 +278,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.insert(block);
+                                        self.mempool.write().await.insert(block);
                                     },
                                 }
                             }
@@ -194,6 +300,14 @@ impl Timeboost {
                 result = self.shutdown_rx.changed() => {
                     warn!("Received shutdown signal; shutting down.");
                     coordinator.shutdown().await.expect("Shutdown coordinator");
+
+                    // Timeout waiting for all the handles to shut down
+                    let _ = tokio::time::timeout(Duration::from_secs(4), async move {
+                        while let Some(handle) = self.cx_handles.values().next() {
+                            handle.abort();
+                        }
+                    }).await;
+
                     result.expect("The shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());
                 }
@@ -217,13 +331,13 @@ pub async fn run_timeboost(
     info!("Starting timeboost");
 
     let prom = Arc::new(PrometheusMetrics::default());
-    let metrics = Arc::new(ConsensusMetrics::new(prom.as_ref()));
-
+    let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
+    let tb_metrics = Arc::new(TimeboostMetrics::new(prom.as_ref()));
     let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
     // TODO: Hand the event stream to the sailfish node.
-    let metrics_clone = metrics.clone();
+    let metrics_clone = sf_metrics.clone();
     let coordinator = &mut sailfish_coordinator(
         id,
         bootstrap_nodes,
@@ -243,7 +357,8 @@ pub async fn run_timeboost(
         tb_app_tx,
         tb_app_rx,
         shutdown_rx,
-        metrics,
+        sf_metrics,
+        tb_metrics,
     );
 
     info!("Timeboost is running.");

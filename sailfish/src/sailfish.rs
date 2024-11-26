@@ -12,7 +12,7 @@ use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::{Comm, Libp2p},
-    types::{committee::StaticCommittee, metrics::ConsensusMetrics, Keypair, NodeId, PublicKey},
+    types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
 };
 use timeboost_networking::network::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
@@ -115,7 +115,7 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        metrics: Arc<ConsensusMetrics>,
+        metrics: Arc<SailfishMetrics>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -148,7 +148,7 @@ pub async fn sailfish_coordinator(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
-    metrics: Arc<ConsensusMetrics>,
+    metrics: Arc<SailfishMetrics>,
 ) -> Coordinator<Libp2p> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
