@@ -48,6 +48,9 @@ impl std::fmt::Display for SailfishStatusEvent {
 pub enum TimeboostEventType {
     /// New transactions that have been received from the network.
     Transactions { transactions: Vec<Transaction> },
+
+    /// A block has been built.
+    BlockBuilt { block: Block },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +63,14 @@ impl std::fmt::Display for TimeboostStatusEvent {
         match &self.event {
             TimeboostEventType::Transactions { transactions } => {
                 write!(f, "Transactions({})", transactions.len())
+            }
+            TimeboostEventType::BlockBuilt { block } => {
+                write!(
+                    f,
+                    "BlockBuilt({}, {}kb)",
+                    block.len(),
+                    block.size_bytes() / 1024
+                )
             }
         }
     }

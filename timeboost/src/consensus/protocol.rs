@@ -2,36 +2,36 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use timeboost_core::types::{block::Block, metrics::TimeboostMetrics};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::consensus::traits::*;
 
 pub struct Consensus<I, D, O, B>
 where
-    I: InclusionPhase + Send + Sync + 'static,
-    D: DecryptionPhase + Send + Sync + 'static,
-    O: OrderingPhase + Send + Sync + 'static,
-    B: BlockBuilder + Send + Sync + 'static,
+    I: InclusionPhase + 'static,
+    D: DecryptionPhase + 'static,
+    O: OrderingPhase + 'static,
+    B: BlockBuilder + 'static,
 {
-    inclusion_phase: Arc<I>,
-    decryption_phase: Arc<D>,
-    ordering_phase: Arc<O>,
-    block_builder: Arc<B>,
+    inclusion_phase: I,
+    decryption_phase: D,
+    ordering_phase: O,
+    block_builder: B,
     metrics: Arc<TimeboostMetrics>,
 }
 
 impl<I, D, O, B> Consensus<I, D, O, B>
 where
-    I: InclusionPhase + Send + Sync + 'static,
-    D: DecryptionPhase + Send + Sync + 'static,
-    O: OrderingPhase + Send + Sync + 'static,
-    B: BlockBuilder + Send + Sync + 'static,
+    I: InclusionPhase + 'static,
+    D: DecryptionPhase + 'static,
+    O: OrderingPhase + 'static,
+    B: BlockBuilder + 'static,
 {
     pub fn new(
-        inclusion_phase: Arc<I>,
-        decryption_phase: Arc<D>,
-        ordering_phase: Arc<O>,
-        block_builder: Arc<B>,
+        inclusion_phase: I,
+        decryption_phase: D,
+        ordering_phase: O,
+        block_builder: B,
         metrics: Arc<TimeboostMetrics>,
     ) -> Self {
         Self {
@@ -43,40 +43,39 @@ where
         }
     }
 
-    pub async fn start(&self, epochno: u64, mempool_snapshot: Vec<Block>) -> Result<Block> {
+    pub fn build(&self, epochno: u64, round: u64, mempool_snapshot: Vec<Block>) -> Result<Block> {
         // Phase 1: Inclusion
         let Ok(inclusion_list) = self
             .inclusion_phase
             .produce_inclusion_list(mempool_snapshot)
         else {
             self.metrics.failed_epochs.add(1);
-            error!(%epochno, "failed to produce inclusion list");
+            error!(%epochno, %round, "failed to produce inclusion list");
             bail!("failed to produce inclusion list")
         };
 
         // Phase 2: Decryption
         let Ok(decrypted_transactions) = self.decryption_phase.decrypt(inclusion_list) else {
             self.metrics.failed_epochs.add(1);
-            error!(%epochno, "failed to decrypt transactions");
+            error!(%epochno, %round, "failed to decrypt transactions");
             bail!("failed to decrypt transactions")
         };
 
         // Phase 3: Ordering
         let Ok(ordered_transactions) = self.ordering_phase.order(decrypted_transactions) else {
             self.metrics.failed_epochs.add(1);
-            error!(%epochno, "failed to order transactions");
+            error!(%epochno, %round, "failed to order transactions");
             bail!("failed to order transactions")
         };
 
         // Phase 4: Block Building
         let Ok(block) = self.block_builder.build(ordered_transactions) else {
             self.metrics.failed_epochs.add(1);
-            error!(%epochno, "failed to build block");
+            error!(%epochno, %round, "failed to build block");
             bail!("failed to build block")
         };
 
-        // Timeboost protocol delay
-        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        info!(%epochno, %round, "built block");
 
         Ok(block)
     }

@@ -16,7 +16,7 @@ use timeboost_core::types::{
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;
 mod vote;
@@ -712,7 +712,7 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
+                debug!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }

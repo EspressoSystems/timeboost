@@ -7,9 +7,10 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
-        event::{SailfishEventType, SailfishStatusEvent, TimeboostEventType, TimeboostStatusEvent},
+        event::{SailfishEventType, SailfishStatusEvent},
         message::{Action, Message},
         round_number::RoundNumber,
+        transaction::Transaction,
         NodeId,
     },
 };
@@ -58,15 +59,10 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub async fn handle_tb_event(&mut self, event: TimeboostStatusEvent) -> Result<(), C::Err> {
-        match event.event {
-            TimeboostEventType::Transactions { transactions } => {
-                for t in transactions {
-                    self.consensus.enqueue_transaction(t);
-                }
-            }
+    pub fn handle_transactions(&mut self, transactions: Vec<Transaction>) {
+        for t in transactions {
+            self.consensus.enqueue_transaction(t);
         }
-        Ok(())
     }
 
     pub async fn execute(&mut self, action: Action) -> Result<Option<SailfishStatusEvent>, C::Err> {
