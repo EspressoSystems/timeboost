@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 mod digest;
+mod peer;
 mod worker;
 
 use digest::Digest;
