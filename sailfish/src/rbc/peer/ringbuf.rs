@@ -1,62 +1,103 @@
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use crossbeam_queue::ArrayQueue;
+use parking_lot::RwLock;
 use tokio::sync::Notify;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Version(u64);
 
 #[derive(Debug)]
 pub struct Producer<T>(Arc<Ringbuf<T>>);
 
 impl<T> Producer<T> {
     pub fn push(&mut self, x: T) {
-        self.0.buf.force_push(x);
+        let mut xs = self.0.buf.write();
+        if xs.buf.len() == self.0.cap {
+            xs.buf.pop_front();
+        }
+        let Version(v) = xs.ctr;
+        xs.buf.push_back((Version(v + 1), x));
+        xs.ctr = Version(v + 1);
         self.0.sig.notify_waiters()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Consumer<T>(Arc<Ringbuf<T>>);
 
 impl<T> Consumer<T> {
-    pub async fn next(&mut self) -> T {
+    pub async fn pop(&self) -> (Version, T) {
         let future = self.0.sig.notified();
-        if let Some(x) = self.0.buf.pop() {
-            return x
+        {
+            if let Some(val) = self.0.buf.write().buf.pop_front() {
+                return val;
+            }
         }
         future.await;
-        self.0.buf.pop().expect("item available after notification")
+        self.0
+            .buf
+            .write()
+            .buf
+            .pop_front()
+            .expect("item available after notification")
     }
 
-    pub fn pop(&mut self) -> Option<T> {
-        self.0.buf.pop()
+    pub fn drop_head_if(&self, v1: Version) {
+        let mut xs = self.0.buf.write();
+        if xs.buf.front().map(|(v2, _)| v1 == *v2).unwrap_or(false) {
+            xs.buf.pop_front();
+        }
     }
 
-    pub fn len(&self) -> usize {
-        self.0.buf.len()
+    pub fn head_version(&self) -> Option<Version> {
+        self.0.buf.read().buf.front().map(|(v, _)| *v)
     }
+}
 
-    pub fn is_empty(&self) -> bool {
-        self.0.buf.is_empty()
-    }
-
-    pub fn is_full(&self) -> bool {
-        self.0.buf.is_full()
+impl<T: Clone> Consumer<T> {
+    pub async fn peek(&self) -> (Version, T) {
+        let future = self.0.sig.notified();
+        {
+            if let Some(val) = self.0.buf.read().buf.front().cloned() {
+                return val;
+            }
+        }
+        future.await;
+        self.0
+            .buf
+            .read()
+            .buf
+            .front()
+            .cloned()
+            .expect("item available after notification")
     }
 }
 
 #[derive(Debug)]
 struct Ringbuf<T> {
-    buf: ArrayQueue<T>,
-    sig: Notify
+    cap: usize,
+    buf: RwLock<Buf<T>>,
+    sig: Notify,
+}
+
+#[derive(Debug)]
+struct Buf<T> {
+    ctr: Version,
+    buf: VecDeque<(Version, T)>,
 }
 
 pub fn ringbuf<T>(cap: NonZeroUsize) -> (Producer<T>, Consumer<T>) {
     let r = Arc::new(Ringbuf {
-        buf: ArrayQueue::new(cap.get()),
-        sig: Notify::new()
+        cap: cap.get(),
+        buf: RwLock::new(Buf {
+            ctr: Version(0),
+            buf: VecDeque::with_capacity(cap.get()),
+        }),
+        sig: Notify::new(),
     });
     let p = Producer(r.clone());
     let c = Consumer(r);
     (p, c)
 }
-

@@ -11,12 +11,12 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::SinkExt;
 use timeboost_core::types::envelope::Validated;
-use tokio::{select, spawn};
-use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::Notify;
 use tokio::time::{sleep, timeout};
+use tokio::{select, spawn};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use tracing::{debug, error, warn};
@@ -31,8 +31,6 @@ pub type Producer = ringbuf::Producer<Bytes>;
 type Reader = FramedRead<OwnedReadHalf, LengthDelimitedCodec>;
 type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 
-const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
-
 #[derive(Debug)]
 pub struct Peer {
     addr: SocketAddr,
@@ -43,7 +41,11 @@ pub struct Peer {
 impl Peer {
     pub fn new(addr: SocketAddr, cap: NonZeroUsize, tx: mpsc::Sender<Bytes>) -> (Producer, Self) {
         let (p, c) = ringbuf::ringbuf(cap);
-        let this = Self { addr, obox: c, ibox: tx };
+        let this = Self {
+            addr,
+            obox: c,
+            ibox: tx,
+        };
         (p, this)
     }
 
@@ -56,43 +58,32 @@ impl Peer {
         };
 
         let mut reader_task = spawn(inbound(self.addr, reader, self.ibox.clone()));
+        let mut writer_task = spawn(outbound(self.addr, writer, self.obox.clone()));
 
         loop {
             select! {
-                item = &mut reader_task => {
+                _ = &mut reader_task => {
+                    writer_task.abort();
                     (reader, writer) = self.connect().await;
-                    reader_task = spawn(inbound(self.addr, reader, self.ibox.clone()))
+                    reader_task = spawn(inbound(self.addr, reader, self.ibox.clone()));
+                    writer_task = spawn(outbound(self.addr, writer, self.obox.clone()));
                 },
-                item = self.obox.next() => {
-                    loop {
-                        match timeout(WRITE_TIMEOUT, writer.send(item.clone())).await {
-                            Ok(Ok(())) => break,
-                            Ok(Err(err)) => {
-                                warn!(addr = %self.addr, %err, "write error");
-                                reader_task.abort();
-                                (reader, writer) = self.connect().await;
-                                reader_task = spawn(inbound(self.addr, reader, self.ibox.clone()));
-                                break
-                            }
-                            Err(_) => {
-                                debug!(addr = %self.addr, "write timeout");
-                                if self.obox.is_full() {
-                                    break
-                                }
-                            }
-                        }
-                    }
+                _ = &mut writer_task => {
+                    reader_task.abort();
+                    (reader, writer) = self.connect().await;
+                    reader_task = spawn(inbound(self.addr, reader, self.ibox.clone()));
+                    writer_task = spawn(outbound(self.addr, writer, self.obox.clone()));
                 }
             }
         }
     }
 
     async fn connect(&mut self) -> (Reader, Writer) {
-        for d in [1, 1, 1, 1, 3, 5, 6, 7, 10, 15].into_iter().chain(repeat(30)) {
+        for d in [1, 1, 1, 3, 5, 10, 15].into_iter().chain(repeat(30)) {
             debug!(addr = %self.addr, "connecting ...");
             if let Ok(sock) = TcpStream::connect(self.addr).await {
                 debug!(addr = %self.addr, "connection established");
-                return codec(sock)
+                return codec(sock);
             }
             sleep(Duration::from_secs(d)).await
         }
@@ -113,18 +104,36 @@ async fn inbound(addr: SocketAddr, mut r: Reader, ibox: mpsc::Sender<Bytes>) {
         match r.try_next().await {
             Ok(Some(x)) => {
                 if ibox.send(x.into()).await.is_err() {
-                    break
+                    break;
                 }
             }
             Ok(None) => {
                 warn!(%addr, "connection lost");
-                break
+                break;
             }
             Err(err) => {
                 warn!(%addr, %err, "read error");
-                break
+                break;
             }
         }
     }
 }
 
+async fn outbound(addr: SocketAddr, mut w: Writer, obox: Consumer) {
+    loop {
+        let (v, item) = obox.peek().await;
+        for d in [1, 1, 1, 3, 5, 10, 15].into_iter().chain(repeat(30)) {
+            if let Err(err) = w.send(item.clone()).await {
+                debug!(%addr, %err, "write error");
+                if obox.head_version() != Some(v) {
+                    debug!(%addr, "moving on to next item");
+                    break;
+                }
+                sleep(Duration::from_secs(d)).await
+            } else {
+                obox.drop_head_if(v);
+                break;
+            }
+        }
+    }
+}

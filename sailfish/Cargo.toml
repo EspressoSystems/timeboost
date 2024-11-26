@@ -25,7 +25,6 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-crossbeam-queue = { workspace = true }
 digest = { workspace = true }
 either = { workspace = true }
 ethereum-types = { workspace = true }
@@ -40,6 +39,7 @@ jf-utils = { workspace = true }
 jf-vid = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true }
