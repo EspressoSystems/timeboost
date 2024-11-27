@@ -38,6 +38,14 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
         self.votes.len()
     }
 
+    pub fn voters(&self) -> impl Iterator<Item = &PublicKey> {
+        self.committee
+            .committee()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, k)| self.signers.0.get(i).is_some().then_some(k))
+    }
+
     pub fn clear(&mut self) {
         self.votes.clear();
         self.signers = (bitvec![0; self.committee.size().get()], Vec::new());

@@ -45,11 +45,16 @@ enum Command {
     Shutdown(oneshot::Sender<()>),
 }
 
+/// Rbc implement `Comm` and provides and reliable broadcast implementation.
 #[derive(Debug)]
 pub struct Rbc {
+    // Inbound, RBC-delivered messages.
     rx: mpsc::Receiver<Message<Validated>>,
+    // Directives to the RBC worker.
     tx: mpsc::Sender<Command>,
+    // The worker task handle.
     jh: JoinHandle<()>,
+    // Have we shutdown?
     closed: bool,
 }
 
@@ -81,6 +86,9 @@ impl Comm for Rbc {
         if self.closed {
             return Err(RbcError::Shutdown);
         }
+
+        // Only vertex proposals require RBC properties. If this message is one
+        // we hand it to the worker and wait for its acknowlegement before returning.
         if matches!(msg, Message::Vertex(_)) {
             let (tx, rx) = oneshot::channel();
             self.tx
@@ -88,12 +96,14 @@ impl Comm for Rbc {
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
             return rx.await.map_err(|_| RbcError::Shutdown)?;
-        } else {
-            self.tx
-                .send(Command::Broadcast(msg))
-                .await
-                .map_err(|_| RbcError::Shutdown)?;
         }
+
+        // Anything else is on a best-effort basis.
+        self.tx
+            .send(Command::Broadcast(msg))
+            .await
+            .map_err(|_| RbcError::Shutdown)?;
+
         Ok(())
     }
 
