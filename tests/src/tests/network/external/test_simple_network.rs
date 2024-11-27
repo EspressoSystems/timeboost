@@ -29,8 +29,9 @@ async fn test_simple_network_genesis() {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |e| {
                         if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            let gen = v.data().round() == RoundNumber::genesis() + 1;
-                            if gen && node_public_key == *v.data().source() {
+                            if v.data().round() == RoundNumber::genesis() + 1
+                                && node_public_key == *v.data().source()
+                            {
                                 return TestOutcome::Passed;
                             }
                         }
@@ -45,7 +46,7 @@ async fn test_simple_network_genesis() {
     NetworkTest::<Libp2pNetworkTest>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(15)),
+        None,
         NetworkMessageInterceptor::default(),
     )
     .run()

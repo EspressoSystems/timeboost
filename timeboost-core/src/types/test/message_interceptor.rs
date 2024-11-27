@@ -44,11 +44,6 @@ impl Default for NetworkMessageInterceptor {
 
 impl std::fmt::Debug for NetworkMessageInterceptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Debug the closure by displaying the `msg_modifier` as a pointer or identifier
-        write!(
-            f,
-            "NetworkMessageInterceptor {{ msg_modifier: {:?} }}",
-            Arc::as_ptr(&self.msg_modifier)
-        )
+        write!(f, "NetworkMessageInterceptor",)
     }
 }
