@@ -45,7 +45,24 @@ enum Command {
     Shutdown(oneshot::Sender<()>),
 }
 
-/// Rbc implement `Comm` and provides and reliable broadcast implementation.
+/// Rbc implements `Comm` and provides a reliable broadcast implementation.
+///
+/// We support message delivery with different properties: best-effort delivery
+/// to all or one party, and byzantine reliable broadcast. The latter is used to
+/// deliver vertex proposals. The algorithm is based on Abraham et al. [[1]]:
+///
+/// 1. Propose: When broadcasting a message we send a proposal to all parties.
+/// 2. Vote: When receiving a first proposal from a broadcaster, we send
+///    a vote for the proposal to all parties.
+/// 3. Commit: When receiving 𝑛 − 𝑓 votes for a proposal, we send the
+///    resulting certificate to all parties and deliver the message to the
+///    application.
+///
+/// Voting uses the commit digest of the proposal, not the proposal message itself,
+/// in order to minimise the amount of data to send.
+///
+/// [1]: Good-case Latency of Byzantine Broadcast: A Complete Categorization
+///      (arXiv:2102.07240v3)
 #[derive(Debug)]
 pub struct Rbc {
     // Inbound, RBC-delivered messages.
