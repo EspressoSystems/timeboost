@@ -41,7 +41,7 @@ pub struct Worker {
     tx: Sender,
     /// Our channel to receive messages from the application layer.
     rx: Receiver,
-    /// The mighest round number of the application (used for pruning).
+    /// The highest round number of the application (used for pruning).
     round: RoundNumber,
     /// The set of voters.
     committee: StaticCommittee,
@@ -87,7 +87,8 @@ enum Status {
     ReceivedVotes,
     /// A quorum of votes has been reached.
     ///
-    /// The public key denotes the sender of the certificate.
+    /// The public key denotes the sender of the last vote that made us
+    /// reach the quorum. This is potentially used when retrying.
     ReachedQuorum(PublicKey),
     /// The message has been RBC delivered (terminal state).
     Delivered,
@@ -135,8 +136,9 @@ impl Worker {
 
     /// The main event loop of this worker.
     ///
-    /// We either receive messages from the application to send or from the network.
-    /// Periodically we also revisit our message buffer and try to make progress.
+    /// We either receive messages from the application to send or from the network
+    /// to deliver. Periodically we also revisit our message buffer and try to make
+    /// progress.
     pub async fn go(mut self) {
         loop {
             tokio::select! { biased;
@@ -223,7 +225,7 @@ impl Worker {
         let digest = Digest::new(&msg);
 
         // We track the max. round number to know when it is safe to remove
-        // olf messages from our buffer.
+        // old messages from our buffer.
         self.round = max(self.round, msg.round());
 
         // Remove buffer entries that are too old to be relevant.
@@ -252,6 +254,7 @@ impl Worker {
         Ok(())
     }
 
+    /// We received a message from the network.
     #[instrument(level = "trace", skip_all, fields(node = %self.label))]
     async fn on_inbound(&mut self, bytes: Vec<u8>) -> Result<()> {
         match bincode::deserialize(&bytes)? {
@@ -302,7 +305,7 @@ impl Worker {
                 tracker.status = Status::SentVote
             }
             // We received a duplicate or a reflection of our own outbound message.
-            // In any case we did not manage to cast out vote yet, so we try again.
+            // In any case we did not manage to cast our vote yet, so we try again.
             Status::ReceivedMsg | Status::SentMsg => {
                 debug_assert!(tracker.message.is_some());
                 let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
@@ -321,8 +324,8 @@ impl Worker {
                     tracker.status = Status::SentVote
                 }
             }
-            // We had previously reached quorum but were missing the message which
-            // now arrived (after we requested it). We can finally deliver it to
+            // We had previously reached a quorum of votes but were missing the message
+            // which now arrived (after we requested it). We can finally deliver it to
             // the application.
             Status::RequestedMsg(_) => {
                 tracker.message = Some(msg.clone());
@@ -399,7 +402,7 @@ impl Worker {
                 }
             },
             // We have previously reached the quorum of votes but did not manage to request
-            // the still missing message. Use this additional vote to try again.
+            // the still missing message. We use this additional vote to try again.
             Status::ReachedQuorum(source) if tracker.message.is_none() => {
                 let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                 let b = bincode::serialize(&m)?;
@@ -529,7 +532,7 @@ impl Worker {
         Ok(())
     }
 
-    /// Go over message status and retry incomplete items.
+    /// Periodically we go over message status and retry incomplete items.
     #[instrument(level = "trace", skip_all, fields(node = %self.label))]
     async fn retry(&mut self, now: Instant) -> Result<()> {
         for (digest, tracker) in &mut self.buffer {
