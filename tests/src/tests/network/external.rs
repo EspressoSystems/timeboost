@@ -18,7 +18,7 @@ pub struct Libp2pNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
-    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+    outcomes: HashMap<usize, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
 }
 
@@ -28,7 +28,7 @@ impl TestableNetwork for Libp2pNetworkTest {
 
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -94,25 +94,22 @@ impl TestableNetwork for Libp2pNetworkTest {
 
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
+            let committee = StaticCommittee::from(&*(*staked_nodes).clone());
             let interceptor = self.interceptor.clone();
             let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
-            let committee = StaticCommittee::from(&*(*staked_nodes).clone());
+            let mut conditions = self.outcomes.get(&i).unwrap().clone();
 
             handles.spawn(async move {
                 let net = TestNet::new(network, interceptor, committee);
                 let msgs = net.messages();
-                let mut coordinator = node.init(
+                let coordinator = &mut node.init(
                     net,
                     (*staked_nodes).clone(),
                     Arc::new(ConsensusMetrics::default()),
                 );
-
-                let mut events = Vec::new();
                 match coordinator.start().await {
                     Ok(actions) => {
                         for a in actions {
-                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                             let _ = coordinator.execute(a).await;
                         }
                     }
@@ -121,6 +118,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     }
                 }
                 loop {
+                    let mut events = Vec::new();
                     tokio::select! {
                         res = coordinator.next() => match res {
                             Ok(actions) => {
@@ -132,7 +130,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                                     let _ = coordinator.execute(a).await;
                                 }
                                 // Evaluate if we have seen the specified conditions of the test
-                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                if Self::evaluate(&mut conditions, &events) {
                                     // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                                     // Allow us some time to send out any messages
                                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;

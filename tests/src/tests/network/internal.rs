@@ -33,7 +33,7 @@ pub struct MemoryNetworkTest {
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
-    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+    outcomes: HashMap<usize, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
 }
 
@@ -43,7 +43,7 @@ impl TestableNetwork for MemoryNetworkTest {
 
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -105,15 +105,12 @@ impl TestableNetwork for MemoryNetworkTest {
                 .shutdown_rxs
                 .remove(&i)
                 .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
-            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
+            let mut conditions = self.outcomes.get(&i).unwrap().clone();
 
             co_handles.spawn(async move {
-                let mut events = Vec::new();
-
                 match co.start().await {
                     Ok(actions) => {
                         for a in actions {
-                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
                             let _ = co.execute(a).await;
                         }
                     }
@@ -122,6 +119,7 @@ impl TestableNetwork for MemoryNetworkTest {
                     }
                 }
                 loop {
+                    let mut events = Vec::new();
                     tokio::select! {
                         res = co.next() => match res {
                             Ok(actions) => {
@@ -133,7 +131,7 @@ impl TestableNetwork for MemoryNetworkTest {
                                     let _ = co.execute(a).await;
                                 }
                                 // Evaluate if we have seen the specified conditions of the test
-                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
+                                if Self::evaluate(&mut conditions, &events) {
                                     // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                                     // Allow us some time to send out any messages
                                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;

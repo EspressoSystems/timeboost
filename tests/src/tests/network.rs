@@ -1,5 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, sync::Arc};
 
 use timeboost_core::types::message::{Action, Message};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
@@ -33,9 +34,11 @@ pub enum TestOutcome {
     Failed,
 }
 
+#[derive(Clone)]
 pub struct TestCondition {
     identifier: String,
-    eval: Box<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome + Send + Sync>,
+    outcome: TestOutcome,
+    eval: Arc<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome + Send + Sync>,
 }
 
 impl std::fmt::Display for TestCondition {
@@ -47,24 +50,28 @@ impl std::fmt::Display for TestCondition {
 impl TestCondition {
     pub fn new<F>(identifier: String, eval: F) -> Self
     where
-        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + Send + Sync + 'static,
+        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + Send + Sync + Clone + 'static,
     {
         Self {
             identifier,
-            eval: Box::new(eval),
+            outcome: TestOutcome::Failed,
+            eval: Arc::new(eval),
         }
     }
 
-    pub fn evaluate(&self, logs: &[CoordinatorAuditEvent]) -> TestOutcome {
-        for e in logs.iter() {
-            let result = (self.eval)(e);
-            if result != TestOutcome::Failed {
-                return result;
+    pub fn evaluate(&mut self, events: &[CoordinatorAuditEvent]) -> TestOutcome {
+        // Only try to evaluate if the test condition has not yet passed
+        if self.outcome == TestOutcome::Failed {
+            for e in events.iter() {
+                let result = (self.eval)(e);
+                if result == TestOutcome::Passed {
+                    // We are done with this test condition
+                    self.outcome = result;
+                    break;
+                }
             }
         }
-
-        // We have yet to see the event that we're looking for.
-        TestOutcome::Failed
+        self.outcome
     }
 }
 
@@ -96,7 +103,7 @@ pub trait TestableNetwork {
     type Network: Comm + Send;
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
@@ -109,6 +116,16 @@ pub trait TestableNetwork {
         handles: JoinSet<TaskHandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome>;
+
+    fn evaluate(conditions: &mut Vec<TestCondition>, events: &[CoordinatorAuditEvent]) -> bool {
+        let mut all_passed = true;
+        for c in conditions.iter_mut() {
+            if c.evaluate(events) == TestOutcome::Failed {
+                all_passed = false;
+            }
+        }
+        all_passed
+    }
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
@@ -119,7 +136,7 @@ pub struct NetworkTest<N: TestableNetwork> {
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
         group: Group,
-        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
         duration: Option<Duration>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {

@@ -68,7 +68,7 @@ impl<C: Comm> TestNet<C> {
     }
 }
 
-/// Wrap Comm Err into `TestNetError``
+/// Wrap Comm Err into `TestNetError`
 #[derive(Debug)]
 pub enum TestNetError<C: Comm> {
     RecvError(C::Err),
@@ -123,9 +123,6 @@ where
                     return Ok(m);
                 }
                 Err(e) => {
-                    // These are intentential errors written in the test
-                    // To help mock different scenarios
-                    // Eg a network error while receiving leader vertex to test timing out scenarios
                     return Err(TestNetError::InterceptError(e));
                 }
             },
