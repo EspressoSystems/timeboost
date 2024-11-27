@@ -43,7 +43,9 @@ impl<D: Committable + Eq + Clone> VoteAccumulator<D> {
             .committee()
             .iter()
             .enumerate()
-            .filter_map(|(i, k)| self.signers.0.get(i).is_some().then_some(k))
+            .filter_map(|(i, k)| {
+                matches!(self.signers.0.get(i).as_deref(), Some(&true)).then_some(k)
+            })
     }
 
     pub fn clear(&mut self) {
