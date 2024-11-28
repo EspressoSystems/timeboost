@@ -92,15 +92,16 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for (i, (mut coordinator, msgs)) in coordinators.into_iter().enumerate() {
+        for (id, (mut coordinator, msgs)) in coordinators.into_iter().enumerate() {
             let shutdown_rx = self
                 .shutdown_rxs
-                .remove(&i)
-                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
-            let mut conditions = self.outcomes.get(&i).unwrap().clone();
+                .remove(&id)
+                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", id));
+            let mut conditions = self.outcomes.get(&id).unwrap().clone();
 
             co_handles.spawn(async move {
-                Self::run_coordinator(&mut coordinator, msgs, shutdown_rx, &mut conditions, i).await
+                Self::run_coordinator(&mut coordinator, &mut conditions, msgs, shutdown_rx, id)
+                    .await
             });
         }
 

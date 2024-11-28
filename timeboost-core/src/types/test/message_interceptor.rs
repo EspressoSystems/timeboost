@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::types::message::Message;
 
-pub type NetworkMessageModifier =
-    Arc<dyn Fn(&Message) -> Result<Message, &'static str> + Send + Sync>;
+type NetworkMessageModifier = Arc<dyn Fn(&Message) -> Result<Message, &'static str> + Send + Sync>;
 /// Intercept a message before a node processes it and apply transformations if any provided
 #[derive(Clone)]
 pub struct NetworkMessageInterceptor {

@@ -93,11 +93,11 @@ impl TestableNetwork for Libp2pNetworkTest {
             "Nodes and networks vectors must be the same length"
         );
 
-        for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
+        for (id, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let interceptor = self.interceptor.clone();
-            let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
-            let mut conditions = self.outcomes.get(&i).unwrap().clone();
+            let shutdown_rx = self.shutdown_rxs.remove(&id).unwrap();
+            let mut conditions = self.outcomes.get(&id).unwrap().clone();
 
             handles.spawn(async move {
                 let net = TestNet::new(network, interceptor);
@@ -108,7 +108,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     Arc::new(ConsensusMetrics::default()),
                 );
 
-                Self::run_coordinator(coordinator, msgs, shutdown_rx, &mut conditions, i).await
+                Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await
             });
         }
         handles

@@ -15,21 +15,7 @@ use crate::Group;
 
 pub mod external;
 pub mod internal;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CoordinatorAuditEvent {
-    ActionTaken(Action),
-    MessageReceived(Message),
-}
-
-impl std::fmt::Display for CoordinatorAuditEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
-            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
-        }
-    }
-}
+pub mod network_tests;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
@@ -37,11 +23,12 @@ pub enum TestOutcome {
     Failed,
 }
 
+type TestConditionFn = Arc<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
 #[derive(Clone)]
 pub struct TestCondition {
     identifier: String,
     outcome: TestOutcome,
-    eval: Arc<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome + Send + Sync>,
+    eval: TestConditionFn,
 }
 
 impl std::fmt::Display for TestCondition {
@@ -53,7 +40,11 @@ impl std::fmt::Display for TestCondition {
 impl TestCondition {
     pub fn new<F>(identifier: String, eval: F) -> Self
     where
-        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + Send + Sync + Clone + 'static,
+        F: for<'a, 'b> Fn(Option<&'a Message>, Option<&'b Action>) -> TestOutcome
+            + Send
+            + Sync
+            + Clone
+            + 'static,
     {
         Self {
             identifier,
@@ -62,15 +53,24 @@ impl TestCondition {
         }
     }
 
-    pub fn evaluate(&mut self, events: &[CoordinatorAuditEvent]) -> TestOutcome {
+    pub fn evaluate(&mut self, msgs: &[Message], actions: &[Action]) -> TestOutcome {
         // Only try to evaluate if the test condition has not yet passed
         if self.outcome == TestOutcome::Failed {
-            for e in events.iter() {
-                let result = (self.eval)(e);
+            for m in msgs.iter() {
+                let result = (self.eval)(Some(m), None);
                 if result == TestOutcome::Passed {
                     // We are done with this test condition
                     self.outcome = result;
-                    break;
+                    return result;
+                }
+            }
+
+            for a in actions.iter() {
+                let result = (self.eval)(None, Some(a));
+                if result == TestOutcome::Passed {
+                    // We are done with this test condition
+                    self.outcome = result;
+                    return result;
                 }
             }
         }
@@ -124,9 +124,9 @@ pub trait TestableNetwork {
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
         coordinator: &mut Coordinator<Self::Testnet>,
+        conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
         mut shutdown_rx: Receiver<()>,
-        conditions: &mut Vec<TestCondition>,
         node_id: usize,
     ) -> TaskHandleResult {
         match coordinator.start().await {
@@ -140,47 +140,38 @@ pub trait TestableNetwork {
             }
         }
         loop {
-            let mut events = Vec::new();
             tokio::select! {
                 res = coordinator.next() => match res {
                     Ok(actions) => {
-                        events.extend(
-                            msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
-                        );
-                        for a in actions {
-                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
-                            let _ = coordinator.execute(a).await;
+                        for a in &actions {
+                            let _ = coordinator.execute(a.clone()).await;
                         }
                         // Evaluate if we have seen the specified conditions of the test
-                        if Self::evaluate(conditions, &events) {
+                        // Go through every test condition and evaluate
+                        // Do not terminate loop early to ensure we evaluate all
+                        let mut all_passed = true;
+                        let msgs = msgs.drain_inbox();
+                        for c in conditions.iter_mut() {
+                            if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
+                                all_passed = false;
+                            }
+                        }
+                        if all_passed {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
-                            break TaskHandleResult::new(node_id ,TestOutcome::Passed);
+                            break TaskHandleResult::new(node_id, TestOutcome::Passed);
                         }
                     }
                     Err(_e) => {}
                 },
                 shutdown_result = shutdown_rx.changed() => {
-                    // Unwrap the potential error with receiving the shutdown token.
                     coordinator.shutdown().await.expect("Network to be shutdown");
+                    // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    break TaskHandleResult::new(node_id ,TestOutcome::Failed);
+                    break TaskHandleResult::new(node_id, TestOutcome::Failed);
                 }
             }
         }
-    }
-
-    /// Default method for evaluating the test conditions in test
-    fn evaluate(conditions: &mut Vec<TestCondition>, events: &[CoordinatorAuditEvent]) -> bool {
-        // Go through every test condition and evaluate
-        // Do not terminate loop early to ensure we evaluate all
-        let mut all_passed = true;
-        for c in conditions.iter_mut() {
-            if c.evaluate(events) == TestOutcome::Failed {
-                all_passed = false;
-            }
-        }
-        all_passed
     }
 }
 

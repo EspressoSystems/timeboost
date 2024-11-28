@@ -110,7 +110,6 @@ impl Sailfish {
         Ok(network)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn init<C>(
         self,
         comm: C,
@@ -132,16 +131,15 @@ impl Sailfish {
 /// # Arguments
 ///
 /// * `id` - Node identifier.
-/// * `port` - Listen port.
-/// * `network_size` - Size of the network.
-/// * `to_connect_addrs` - Addresses to connect to at initialization.
+/// * `bootstrap_nodes` - Libp2p bootstrap nodes.
 /// * `staked_nodes` - Configurations of staked nodes.
-/// * `validator_config` - The validator config for the sailfish node.
+/// * `keypair` - Libp2p keypair.
+/// * `bind_address` - Addresses to bind to.
+/// * `metrics` - Sailfish metrics
 ///
 /// # Panics
 ///
 /// Panics if any configuration or initialization step fails.
-#[allow(clippy::too_many_arguments)]
 pub async fn sailfish_coordinator(
     id: NodeId,
     bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
