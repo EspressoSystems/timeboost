@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use sailfish::coordinator::Coordinator;
 use timeboost_core::types::message::{Action, Message};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
+use timeboost_core::types::test::testnet::MsgQueues;
 use timeboost_core::{logging, traits::comm::Comm};
+use tokio::sync::watch::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
@@ -101,6 +104,7 @@ impl TaskHandleResult {
 pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send;
+    type Testnet: Comm;
     fn new(
         group: Group,
         outcomes: HashMap<usize, Vec<TestCondition>>,
@@ -117,7 +121,59 @@ pub trait TestableNetwork {
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome>;
 
+    /// Default method for running the coordinator in tests
+    async fn run_coordinator(
+        coordinator: &mut Coordinator<Self::Testnet>,
+        msgs: MsgQueues,
+        mut shutdown_rx: Receiver<()>,
+        conditions: &mut Vec<TestCondition>,
+        node_id: usize,
+    ) -> TaskHandleResult {
+        match coordinator.start().await {
+            Ok(actions) => {
+                for a in actions {
+                    let _ = coordinator.execute(a).await;
+                }
+            }
+            Err(e) => {
+                panic!("Failed to start coordinator: {}", e);
+            }
+        }
+        loop {
+            let mut events = Vec::new();
+            tokio::select! {
+                res = coordinator.next() => match res {
+                    Ok(actions) => {
+                        events.extend(
+                            msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
+                        );
+                        for a in actions {
+                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
+                            let _ = coordinator.execute(a).await;
+                        }
+                        // Evaluate if we have seen the specified conditions of the test
+                        if Self::evaluate(conditions, &events) {
+                            // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                            coordinator.shutdown().await.expect("Network to be shutdown");
+                            break TaskHandleResult::new(node_id ,TestOutcome::Passed);
+                        }
+                    }
+                    Err(_e) => {}
+                },
+                shutdown_result = shutdown_rx.changed() => {
+                    // Unwrap the potential error with receiving the shutdown token.
+                    coordinator.shutdown().await.expect("Network to be shutdown");
+                    shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                    break TaskHandleResult::new(node_id ,TestOutcome::Failed);
+                }
+            }
+        }
+    }
+
+    /// Default method for evaluating the test conditions in test
     fn evaluate(conditions: &mut Vec<TestCondition>, events: &[CoordinatorAuditEvent]) -> bool {
+        // Go through every test condition and evaluate
+        // Do not terminate loop early to ensure we evaluate all
         let mut all_passed = true;
         for c in conditions.iter_mut() {
             if c.evaluate(events) == TestOutcome::Failed {

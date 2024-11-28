@@ -97,8 +97,9 @@ async fn test_simple_network_round_timeout() {
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
+    let committee = group.committee.clone();
     let timeout_round = 3;
-    let interceptor = NetworkMessageInterceptor::new(move |msg, committee| {
+    let interceptor = NetworkMessageInterceptor::new(move |msg| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
             // If leader vertex do not process, but process every other so we have 2f + 1
@@ -111,24 +112,43 @@ async fn test_simple_network_round_timeout() {
 
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
-            let conditions: Vec<TestCondition> = group
-                .fish
-                .iter()
-                .map(move |_n| {
-                    TestCondition::new(format!("Vertex from {}", node_id), move |e| {
-                        if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
-                            // Ensure vertex has timeout and no vote cert and from round r + 1
-                            if v.data().no_vote_cert().is_some()
-                                && v.data().timeout_cert().is_some()
-                                && *v.data().round() == timeout_round + 1
-                            {
-                                return TestOutcome::Passed;
-                            }
+            // First only check if we received vertex no vote vertex from leader
+            let committee = group.committee.clone();
+            let mut conditions = vec![TestCondition::new(
+                "No vote vertex from leader".to_string(),
+                move |e| {
+                    if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
+                        let d = v.data();
+                        // Ensure vertex has timeout and no vote cert and from round r + 1
+                        let no_vote_checks = d.no_vote_cert().is_some()
+                            && d.timeout_cert().is_some()
+                            && *d.round() == timeout_round + 1;
+                        let is_leader =
+                            *v.signing_key() == committee.leader((timeout_round + 1).into());
+                        if no_vote_checks && !is_leader {
+                            panic!("Should not receive a no vote from non leader");
+                        } else if no_vote_checks && is_leader {
+                            return TestOutcome::Passed;
                         }
-                        TestOutcome::Failed
-                    })
+                    }
+                    TestOutcome::Failed
+                },
+            )];
+
+            // Next make sure we can advance some rounds and receive all vertices from each node
+            conditions.extend(group.fish.iter().map(|n| {
+                let node_public_key = *n.public_key();
+                TestCondition::new(format!("Vertex from {}", node_id), move |e| {
+                    if let CoordinatorAuditEvent::MessageReceived(Message::Vertex(v)) = e {
+                        if *v.data().round() == timeout_round + 20
+                            && node_public_key == *v.data().source()
+                        {
+                            return TestOutcome::Passed;
+                        }
+                    }
+                    TestOutcome::Failed
                 })
-                .collect();
+            }));
             (node_id as usize, conditions)
         })
         .collect();

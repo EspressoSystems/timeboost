@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use crate::{tests::network::CoordinatorAuditEvent, Group};
+use crate::Group;
 use portpicker::pick_unused_port;
 use sailfish::sailfish::Sailfish;
 use timeboost_core::traits::comm::Libp2p;
@@ -25,6 +25,7 @@ pub struct Libp2pNetworkTest {
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
     type Network = Libp2p;
+    type Testnet = TestNet<Self::Network>;
 
     fn new(
         group: Group,
@@ -94,60 +95,20 @@ impl TestableNetwork for Libp2pNetworkTest {
 
         for (i, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let committee = StaticCommittee::from(&*(*staked_nodes).clone());
             let interceptor = self.interceptor.clone();
-            let mut shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
+            let shutdown_rx = self.shutdown_rxs.remove(&i).unwrap();
             let mut conditions = self.outcomes.get(&i).unwrap().clone();
 
             handles.spawn(async move {
-                let net = TestNet::new(network, interceptor, committee);
+                let net = TestNet::new(network, interceptor);
                 let msgs = net.messages();
                 let coordinator = &mut node.init(
                     net,
                     (*staked_nodes).clone(),
                     Arc::new(ConsensusMetrics::default()),
                 );
-                match coordinator.start().await {
-                    Ok(actions) => {
-                        for a in actions {
-                            let _ = coordinator.execute(a).await;
-                        }
-                    }
-                    Err(e) => {
-                        panic!("Failed to start coordinator: {}", e);
-                    }
-                }
-                loop {
-                    let mut events = Vec::new();
-                    tokio::select! {
-                        res = coordinator.next() => match res {
-                            Ok(actions) => {
-                                events.extend(
-                                    msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
-                                );
-                                for a in actions {
-                                    events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
-                                    let _ = coordinator.execute(a).await;
-                                }
-                                // Evaluate if we have seen the specified conditions of the test
-                                if Self::evaluate(&mut conditions, &events) {
-                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                    // Allow us some time to send out any messages
-                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                    coordinator.shutdown().await.expect("Network to be shutdown");
-                                    break TaskHandleResult::new(i ,TestOutcome::Passed);
-                                }
-                            }
-                            Err(_e) => {}
-                        },
-                        shutdown_result = shutdown_rx.changed() => {
-                            // Unwrap the potential error with receiving the shutdown token.
-                            coordinator.shutdown().await.expect("Network to be shutdown");
-                            shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                            break TaskHandleResult::new(i ,TestOutcome::Failed);
-                        }
-                    }
-                }
+
+                Self::run_coordinator(coordinator, msgs, shutdown_rx, &mut conditions, i).await
             });
         }
         handles

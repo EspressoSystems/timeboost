@@ -3,10 +3,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 
+use crate::traits::comm::Comm;
 use crate::types::envelope::Validated;
 use crate::types::message::Message;
 use crate::types::PublicKey;
-use crate::{traits::comm::Comm, types::committee::StaticCommittee};
 
 use super::message_interceptor::NetworkMessageInterceptor;
 
@@ -43,15 +43,10 @@ pub struct TestNet<C> {
     comm: C,
     msgs: MsgQueues,
     interceptor: NetworkMessageInterceptor,
-    committee: StaticCommittee,
 }
 
 impl<C: Comm> TestNet<C> {
-    pub fn new(
-        comm: C,
-        interceptor: NetworkMessageInterceptor,
-        committee: StaticCommittee,
-    ) -> Self {
+    pub fn new(comm: C, interceptor: NetworkMessageInterceptor) -> Self {
         Self {
             comm,
             msgs: MsgQueues {
@@ -59,7 +54,6 @@ impl<C: Comm> TestNet<C> {
                 obox: Arc::new(SegQueue::new()),
             },
             interceptor,
-            committee,
         }
     }
 
@@ -117,7 +111,7 @@ where
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         match self.comm.receive().await {
-            Ok(msg) => match self.interceptor.intercept_message(msg, &self.committee) {
+            Ok(msg) => match self.interceptor.intercept_message(msg) {
                 Ok(m) => {
                     self.msgs.ibox.push(m.clone());
                     return Ok(m);
