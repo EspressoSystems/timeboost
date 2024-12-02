@@ -38,7 +38,6 @@ pub mod api;
 pub mod config;
 pub mod contracts;
 mod mempool;
-mod persistence;
 mod producer;
 pub mod sequencer;
 
