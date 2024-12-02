@@ -6,7 +6,7 @@ use sailfish::sailfish::Sailfish;
 use timeboost_core::traits::comm::Libp2p;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_core::types::{committee::StaticCommittee, metrics::ConsensusMetrics};
+use timeboost_core::types::{committee::StaticCommittee, metrics::SailfishMetrics};
 use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{sync::watch, task::JoinSet};
 
@@ -105,7 +105,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                 let coordinator = &mut node.init(
                     net,
                     (*staked_nodes).clone(),
-                    Arc::new(ConsensusMetrics::default()),
+                    Arc::new(SailfishMetrics::default()),
                 );
 
                 Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await

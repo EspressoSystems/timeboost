@@ -6,7 +6,7 @@ use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use sailfish::coordinator::Coordinator;
 use timeboost_core::types::{
     message::Message,
-    metrics::ConsensusMetrics,
+    metrics::SailfishMetrics,
     test::{
         message_interceptor::NetworkMessageInterceptor,
         net::{Conn, Star},
@@ -71,7 +71,7 @@ impl TestableNetwork for MemoryNetworkTest {
             let co = n.init(
                 test_net,
                 (*self.group.staked_nodes).clone(),
-                Arc::new(ConsensusMetrics::default()),
+                Arc::new(SailfishMetrics::default()),
             );
 
             tracing::debug!("Started coordinator {}", i);
