@@ -1,18 +1,10 @@
 use anyhow::Result;
-use timeboost_core::types::block::Block;
-
-pub trait InclusionPhase {
-    fn produce_inclusion_list(&self, candidate_list: Vec<Block>) -> Result<Vec<Block>>;
-}
-
-pub trait DecryptionPhase {
-    fn decrypt(&self, inclusion_list: Vec<Block>) -> Result<Vec<Block>>;
-}
+use timeboost_core::types::block::SailfishBlock;
 
 pub trait OrderingPhase {
-    fn order(&self, decrypted_list: Vec<Block>) -> Result<Vec<Block>>;
+    fn order(&self, decrypted_list: Vec<SailfishBlock>) -> Result<Vec<SailfishBlock>>;
 }
 
 pub trait BlockBuilder {
-    fn build(&self, ordered_transactions: Vec<Block>) -> Result<Block>;
+    fn build(&self, ordered_transactions: Vec<SailfishBlock>) -> Result<SailfishBlock>;
 }

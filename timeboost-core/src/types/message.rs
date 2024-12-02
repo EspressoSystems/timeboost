@@ -9,7 +9,7 @@ use super::{
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
-use crate::types::block::Block;
+use crate::types::block::SailfishBlock;
 use crate::types::committee::StaticCommittee;
 use crate::types::round_number::RoundNumber;
 
@@ -56,7 +56,7 @@ pub enum Action {
     ResetTimer(RoundNumber),
 
     /// Deliver a block to the application layer.
-    Deliver(Block, RoundNumber, PublicKey),
+    Deliver(SailfishBlock, RoundNumber, PublicKey),
 
     /// Send a vertex proposal to all nodes.
     SendProposal(Envelope<Vertex, Validated>),

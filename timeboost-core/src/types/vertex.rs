@@ -8,10 +8,11 @@ use sqlx::FromRow;
 use super::{
     certificate::Certificate,
     message::{NoVote, Timeout},
+    time::Timestamp,
     PublicKey,
 };
 use crate::types::Label;
-use crate::types::{block::Block, round_number::RoundNumber};
+use crate::types::{block::SailfishBlock, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, FromRow)]
 pub struct Vertex {
@@ -20,18 +21,19 @@ pub struct Vertex {
     edges: BTreeSet<PublicKey>,
     no_vote: Option<Certificate<NoVote>>,
     timeout: Option<Certificate<Timeout>>,
-    block: Block,
+    block: SailfishBlock,
 }
 
 impl Vertex {
     pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
+        let round = r.into();
         Self {
             source: s,
-            round: r.into(),
+            round,
             edges: BTreeSet::new(),
             no_vote: None,
             timeout: None,
-            block: Block::empty(),
+            block: SailfishBlock::empty(round, Timestamp::now()),
         }
     }
 
@@ -63,11 +65,11 @@ impl Vertex {
         self.no_vote.as_ref()
     }
 
-    pub fn block(&self) -> &Block {
+    pub fn block(&self) -> &SailfishBlock {
         &self.block
     }
 
-    pub fn set_block(&mut self, b: Block) -> &mut Self {
+    pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
         self.block = b;
         self
     }

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use timeboost_core::types::block::Block;
+use timeboost_core::types::block::SailfishBlock;
 
 /// The mempool limit in bytes is 500mb.
 pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
@@ -7,7 +7,7 @@ pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
 /// The Timeboost mempool.
 pub struct Mempool {
     /// The set of blocks in the mempool.
-    blocks: VecDeque<Block>,
+    blocks: VecDeque<SailfishBlock>,
 }
 
 impl Mempool {
@@ -18,12 +18,12 @@ impl Mempool {
         }
     }
 
-    pub fn insert(&mut self, block: Block) {
+    pub fn insert(&mut self, block: SailfishBlock) {
         self.blocks.push_back(block);
     }
 
     /// Drains blocks from the mempool until the total size reaches `limit_bytes`.
-    pub fn drain_to_limit(&mut self, limit_bytes: usize) -> Vec<Block> {
+    pub fn drain_to_limit(&mut self, limit_bytes: usize) -> Vec<SailfishBlock> {
         let mut total_size = 0;
         self.blocks
             .drain(..)

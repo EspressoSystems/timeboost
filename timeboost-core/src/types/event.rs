@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{error::SailfishError, round_number::RoundNumber, transaction::Transaction};
 
-use super::block::Block;
+use super::block::SailfishBlock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SailfishEventType {
@@ -16,7 +16,7 @@ pub enum SailfishEventType {
     Timeout { round: RoundNumber },
 
     /// Consensus has committed a round.
-    Committed { round: RoundNumber, block: Block },
+    Committed { round: RoundNumber, block: SailfishBlock },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ pub enum TimeboostEventType {
     Transactions { transactions: Vec<Transaction> },
 
     /// A block has been built.
-    BlockBuilt { block: Block },
+    BlockBuilt { block: SailfishBlock },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

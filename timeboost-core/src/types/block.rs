@@ -4,26 +4,28 @@ use crate::types::transaction::Transaction;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
+use super::{round_number::RoundNumber, time::Timestamp};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct Block {
+pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,
 }
 
-impl Default for Block {
+impl Default for SailfishBlock {
     fn default() -> Self {
-        Self::empty()
+        Self::empty(RoundNumber::genesis(), Timestamp::now())
     }
 }
 
-impl Block {
-    pub fn new() -> Self {
-        Self::empty()
+impl SailfishBlock {
+    pub fn new(round: RoundNumber, timestamp: Timestamp) -> Self {
+        Self::empty(round, timestamp)
     }
 
-    pub fn empty() -> Self {
+    pub fn empty(round: RoundNumber, timestamp: Timestamp) -> Self {
         Self {
-            header: BlockHeader {},
+            header: BlockHeader::new(round, timestamp),
             payload: Vec::new(),
         }
     }
@@ -53,9 +55,21 @@ impl Block {
             self.payload.push(t)
         }
     }
+
+    pub fn round_number(&self) -> RoundNumber {
+        self.header.round()
+    }
+
+    pub fn timestamp(&self) -> Timestamp {
+        self.header.timestamp()
+    }
+
+    pub fn transactions(self) -> Vec<Transaction> {
+        self.payload
+    }
 }
 
-impl Committable for Block {
+impl Committable for SailfishBlock {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Block")
             .field("header", self.header.commit())

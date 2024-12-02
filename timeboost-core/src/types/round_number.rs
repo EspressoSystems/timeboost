@@ -25,6 +25,10 @@ impl RoundNumber {
     pub fn genesis() -> Self {
         Self(*ViewNumber::genesis())
     }
+
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of::<u64>()
+    }
 }
 
 impl From<ViewNumber> for RoundNumber {
