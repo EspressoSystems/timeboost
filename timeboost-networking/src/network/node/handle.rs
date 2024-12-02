@@ -6,15 +6,18 @@
 
 use std::{collections::HashSet, fmt::Debug, marker::PhantomData, time::Duration};
 
-use hotshot_types::traits::{network::NetworkError, signature_key::SignatureKey};
 use libp2p::{request_response::ResponseChannel, Multiaddr};
 use libp2p_identity::PeerId;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, info, instrument};
 
-use crate::network::{
-    behaviours::dht::record::{Namespace, RecordKey, RecordValue},
-    gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
+use crate::{
+    network::{
+        behaviours::dht::record::{Namespace, RecordKey, RecordValue},
+        gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
+    },
+    NetworkError,
 };
 
 /// A handle containing:

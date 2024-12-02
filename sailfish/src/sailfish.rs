@@ -2,11 +2,6 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
 use async_lock::RwLock;
-use hotshot::types::SignatureKey;
-use hotshot_types::{
-    network::{Libp2pConfig, NetworkConfig},
-    PeerConfig,
-};
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
@@ -14,10 +9,15 @@ use timeboost_core::{
     traits::comm::{Comm, Libp2p},
     types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
 };
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_networking::network::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
+};
+use timeboost_utils::{
+    types::config::{Libp2pConfig, NetworkConfig},
+    PeerConfig,
 };
 use tracing::{info, instrument};
 

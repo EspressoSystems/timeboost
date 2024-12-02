@@ -3,10 +3,11 @@ use std::{collections::HashMap, time::Duration};
 use timeboost_core::{
     logging,
     types::{
-        message::Message, round_number::RoundNumber,
+        message::Message,
         test::message_interceptor::NetworkMessageInterceptor,
     },
 };
+use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::Group;
 

@@ -1,5 +1,4 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -23,19 +22,7 @@ impl RoundNumber {
     }
 
     pub fn genesis() -> Self {
-        Self(*ViewNumber::genesis())
-    }
-}
-
-impl From<ViewNumber> for RoundNumber {
-    fn from(val: ViewNumber) -> Self {
-        Self(*val)
-    }
-}
-
-impl From<RoundNumber> for ViewNumber {
-    fn from(val: RoundNumber) -> Self {
-        Self::new(val.0)
+        Self::new(0)
     }
 }
 
