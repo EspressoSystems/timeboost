@@ -10,7 +10,6 @@ use std::{
 
 use anyhow::{ensure, Context, Result as AnyhowResult};
 use futures::{future::poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::{
     core::{muxing::StreamMuxerExt, transport::TransportEvent, StreamMuxer},
     identity::PeerId,
@@ -18,6 +17,7 @@ use libp2p::{
 };
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
 
 /// The maximum size of an authentication message. This is used to prevent
@@ -514,9 +514,10 @@ pub async fn write_length_delimited<S: AsyncWrite + Unpin>(
 mod test {
     use std::{collections::HashSet, sync::Arc};
 
-    use hotshot_types::{signature_key::BLSPubKey, traits::signature_key::SignatureKey};
     use libp2p::{core::transport::dummy::DummyTransport, quic::Connection};
     use rand::Rng;
+    use timeboost_crypto::{signature_key::BLSPubKey, traits};
+    use traits::signature_key::SignatureKey;
 
     use super::*;
 

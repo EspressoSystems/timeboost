@@ -1,6 +1,6 @@
-use crate::types::round_number::RoundNumber;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use timeboost_utils::types::round_number::RoundNumber;
 
 /// An error that can occur in the Sailfish protocol that timeboost would want to know about.
 ///

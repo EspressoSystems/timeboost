@@ -9,50 +9,23 @@ test = ['timeboost-core/test']
 
 [dependencies]
 anyhow = { workspace = true }
-ark-bn254 = { workspace = true }
-ark-ed-on-bn254 = { workspace = true }
-ark-ff = { workspace = true }
-ark-serialize = { workspace = true }
-ark-std = { workspace = true }
 async-lock = { workspace = true }
-async-trait = { workspace = true }
-async-channel = { workspace = true }
-bincode = { workspace = true }
 bitvec = { workspace = true }
-blake3 = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking" }
-digest = { workspace = true }
-either = { workspace = true }
-ethereum-types = { workspace = true }
 futures = { workspace = true }
-hotshot = { workspace = true }
-hotshot-types = { workspace = true }
-jf-crhf = { workspace = true }
-jf-pcs = { workspace = true }
-jf-rescue = { workspace = true }
-jf-signature = { workspace = true }
-jf-utils = { workspace = true }
-jf-vid = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
-rand = { workspace = true }
-rand_chacha = { workspace = true }
+primitive-types = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-tagged-base64 = { workspace = true }
 thiserror = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
+timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-networking = { path = "../timeboost-networking" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-typenum = { workspace = true }
-url = "2.5.2"
-vbs = "0.1.6"
-async-broadcast = { workspace = true }
 
 [[bin]]
 name = "sailfish"

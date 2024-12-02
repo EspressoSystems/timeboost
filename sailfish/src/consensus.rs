@@ -11,11 +11,11 @@ use timeboost_core::types::{
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
-    round_number::RoundNumber,
     transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
+use timeboost_utils::types::round_number::RoundNumber;
 use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;

@@ -3,12 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use ethereum_types::U256;
-use hotshot_types::stake_table::StakeTableEntry;
-use hotshot_types::PeerConfig;
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::stake_table::StakeTableEntry;
+use timeboost_utils::{types::round_number::RoundNumber, PeerConfig};
 
-use crate::types::{round_number::RoundNumber, PublicKey};
+use crate::types::PublicKey;
 
 /// The static committee is just a list of public keys whose stake is equivalent across all nodes.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
