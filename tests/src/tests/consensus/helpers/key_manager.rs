@@ -8,7 +8,7 @@ use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::Envelope,
     message::{Message, Timeout},
-    metrics::ConsensusMetrics,
+    metrics::SailfishMetrics,
     round_number::RoundNumber,
     vertex::Vertex,
     Keypair, NodeId, PublicKey, Signature,
@@ -37,7 +37,7 @@ impl KeyManager {
                 .map(|kpair| *kpair.public_key())
                 .collect(),
         );
-        let metrics = Arc::new(ConsensusMetrics::default());
+        let metrics = Arc::new(SailfishMetrics::default());
         self.keys
             .iter()
             .map(|(id, kpair)| {
