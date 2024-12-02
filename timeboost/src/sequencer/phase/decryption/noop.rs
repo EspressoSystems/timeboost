@@ -1,11 +1,15 @@
 use anyhow::Result;
-use timeboost_core::types::block::SailfishBlock;
 
-use super::traits::DecryptionPhase;
+use crate::sequencer::phase::inclusion::block::InclusionPhaseBlock;
+
+use super::DecryptionPhase;
 
 pub struct NoOpDecryptionPhase;
 impl DecryptionPhase for NoOpDecryptionPhase {
-    fn decrypt(&self, _inclusion_list: Vec<SailfishBlock>) -> Result<Vec<SailfishBlock>> {
-        Ok(_inclusion_list)
+    fn decrypt(
+        &self,
+        inclusion_list: Vec<InclusionPhaseBlock>,
+    ) -> Result<Vec<InclusionPhaseBlock>> {
+        Ok(inclusion_list)
     }
 }

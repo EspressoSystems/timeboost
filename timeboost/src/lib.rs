@@ -3,8 +3,12 @@ use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
 use sequencer::{
-    block_builder::NoOpBlockBuilder, decryption::NoOpDecryptionPhase, ordering::NoOpOrderingPhase,
-    phase::inclusion::noop::NoOpInclusionPhase, protocol::Sequencer, task::run_sequencer_task,
+    phase::{
+        block_builder::noop::NoOpBlockBuilder, decryption::noop::NoOpDecryptionPhase,
+        inclusion::noop::NoOpInclusionPhase, ordering::noop::NoOpOrderingPhase,
+    },
+    protocol::Sequencer,
+    task::run_sequencer_task,
 };
 use std::{
     collections::HashSet,

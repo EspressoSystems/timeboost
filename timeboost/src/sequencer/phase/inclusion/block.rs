@@ -1,5 +1,4 @@
 use anyhow::{ensure, Result};
-use sqlx::types::time::Time;
 use std::collections::BTreeSet;
 
 use timeboost_core::types::{

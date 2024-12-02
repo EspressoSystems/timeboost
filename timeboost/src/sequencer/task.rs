@@ -8,9 +8,11 @@ use tokio::sync::{mpsc::Sender, watch};
 use tracing::error;
 
 use super::{
-    phase::inclusion::InclusionPhase,
+    phase::{
+        block_builder::BlockBuilder, decryption::DecryptionPhase, inclusion::InclusionPhase,
+        ordering::OrderingPhase,
+    },
     protocol::Sequencer,
-    traits::{BlockBuilder, DecryptionPhase, OrderingPhase},
 };
 
 pub async fn run_sequencer_task<

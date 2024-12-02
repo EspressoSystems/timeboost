@@ -16,7 +16,10 @@ pub enum SailfishEventType {
     Timeout { round: RoundNumber },
 
     /// Consensus has committed a round.
-    Committed { round: RoundNumber, block: SailfishBlock },
+    Committed {
+        round: RoundNumber,
+        block: SailfishBlock,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +53,7 @@ pub enum TimeboostEventType {
     Transactions { transactions: Vec<Transaction> },
 
     /// A block has been built.
-    BlockBuilt { block: SailfishBlock },
+    BlockBuilt { block: TimeboostBlock },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

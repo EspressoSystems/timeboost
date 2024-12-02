@@ -4,9 +4,12 @@ use anyhow::{bail, Result};
 use timeboost_core::types::{block::SailfishBlock, metrics::TimeboostMetrics};
 use tracing::{error, info};
 
-use crate::sequencer::traits::*;
-
-use super::phase::inclusion::InclusionPhase;
+use super::phase::{
+    block_builder::{block::TimeboostBlock, BlockBuilder},
+    decryption::DecryptionPhase,
+    inclusion::InclusionPhase,
+    ordering::OrderingPhase,
+};
 
 pub struct Sequencer<I, D, O, B>
 where
@@ -50,7 +53,7 @@ where
         epochno: u64,
         round: u64,
         mempool_snapshot: Vec<SailfishBlock>,
-    ) -> Result<SailfishBlock> {
+    ) -> Result<TimeboostBlock> {
         // Phase 1: Inclusion
         let Ok(inclusion_list) = self
             .inclusion_phase
