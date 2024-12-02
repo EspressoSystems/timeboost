@@ -9,9 +9,9 @@ use std::{num::NonZeroUsize, time::Duration};
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use url::Url;
 
-use super::{
-    constants::REQUEST_DATA_DELAY, HotShotConfig, PeerConfig, UpgradeConfig, ValidatorConfig,
-};
+use crate::{HotShotConfig, PeerConfig, UpgradeConfig, ValidatorConfig};
+
+use super::constants::REQUEST_DATA_DELAY;
 
 /// Default builder URL, used as placeholder
 fn default_builder_urls() -> Vec<Url> {

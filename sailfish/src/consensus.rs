@@ -16,7 +16,7 @@ use timeboost_core::types::{
     Keypair, Label, NodeId, PublicKey,
 };
 use timeboost_utils::types::round_number::RoundNumber;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;
 mod ord;

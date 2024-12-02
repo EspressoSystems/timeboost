@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tide_disco::Url;
-use timeboost_utils::types::PeerConfig;
+use timeboost_utils::PeerConfig;
 use tokio::{sync::mpsc::channel, time::sleep};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;

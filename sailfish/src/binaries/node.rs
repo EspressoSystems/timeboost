@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
+use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::{Keypair, NodeId, PublicKey};
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use timeboost_utils::types::PeerConfig;
+use timeboost_utils::PeerConfig;
 use tokio::signal;
 use tracing::warn;
 

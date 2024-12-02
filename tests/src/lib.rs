@@ -6,7 +6,7 @@ use multiaddr::{multiaddr, Multiaddr};
 use sailfish::sailfish::Sailfish;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::{Keypair, PublicKey};
-use timeboost_utils::types::{PeerConfig, ValidatorConfig};
+use timeboost_utils::{PeerConfig, ValidatorConfig};
 
 #[cfg(test)]
 mod tests;

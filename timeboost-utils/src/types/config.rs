@@ -14,13 +14,14 @@ use thiserror::Error;
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::error;
 
+use crate::{HotShotConfig, ValidatorConfig};
+
 use super::{
     constants::{
         ORCHESTRATOR_DEFAULT_NUM_ROUNDS, ORCHESTRATOR_DEFAULT_TRANSACTIONS_PER_ROUND,
         ORCHESTRATOR_DEFAULT_TRANSACTION_SIZE, REQUEST_DATA_DELAY,
     },
     hotshot_config_file::HotShotConfigFile,
-    HotShotConfig, ValidatorConfig,
 };
 
 /// Configuration describing a libp2p node

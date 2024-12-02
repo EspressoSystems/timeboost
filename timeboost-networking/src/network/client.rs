@@ -44,11 +44,10 @@ use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
 use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
 use timeboost_utils::{
+    boxed_sync,
     traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
-    types::{
-        boxed_sync, config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber,
-        BoxSyncFuture,
-    },
+    types::{config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber},
+    BoxSyncFuture,
 };
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,

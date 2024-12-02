@@ -1,9 +1,8 @@
-use crate::config::Config;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use timeboost_core::types::{Keypair, PublicKey};
 use timeboost_networking::network::client::{derive_libp2p_multiaddr, derive_libp2p_peer_id};
-use timeboost_util::types::PeerConfig;
+use timeboost_utils::{PeerConfig, ValidatorConfig};
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
