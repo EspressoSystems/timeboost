@@ -14,6 +14,8 @@ mod tests;
 #[cfg(test)]
 mod bench;
 
+mod rbc;
+
 pub struct Group {
     pub fish: Vec<Sailfish>,
     pub bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,

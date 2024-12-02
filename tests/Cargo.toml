@@ -9,12 +9,13 @@ benchmark = []
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
-async-channel = { workspace = true }
 async-broadcast = { workspace = true }
+async-channel = { workspace = true }
 async-lock = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking" }
+async-trait = { workspace = true }
+bitvec = { workspace = true }
+bytes = { workspace = true }
+ethereum-types = { workspace = true }
 futures = { workspace = true }
 hotshot = { workspace = true }
 hotshot-types = { workspace = true }
@@ -22,7 +23,10 @@ libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 portpicker = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
+timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
-ethereum-types = { workspace = true }
-bitvec = { workspace = true }
+turmoil = { workspace = true }
