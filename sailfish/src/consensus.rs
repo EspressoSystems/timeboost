@@ -3,19 +3,20 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    metrics::ConsensusMetrics,
+    metrics::SailfishMetrics,
     round_number::RoundNumber,
     transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;
 mod ord;
@@ -107,7 +108,7 @@ pub struct Consensus {
     leader_stack: Vec<Vertex>,
 
     /// The consensus metrics for this node.
-    metrics: Arc<ConsensusMetrics>,
+    metrics: Arc<SailfishMetrics>,
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
@@ -118,7 +119,7 @@ impl Consensus {
         id: NodeId,
         keypair: Keypair,
         committee: StaticCommittee,
-        metrics: Arc<ConsensusMetrics>,
+        metrics: Arc<SailfishMetrics>,
     ) -> Self {
         Self {
             id,
@@ -154,6 +155,10 @@ impl Consensus {
 
     pub fn committee_size(&self) -> NonZeroUsize {
         self.committee.size()
+    }
+
+    pub fn enqueue_transaction(&mut self, t: Transaction) {
+        self.state.transactions.add(t);
     }
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
@@ -708,7 +713,7 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
+                debug!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
