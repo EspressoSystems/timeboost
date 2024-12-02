@@ -5,7 +5,7 @@ use super::traits::InclusionPhase;
 
 pub struct NoOpInclusionPhase;
 impl InclusionPhase for NoOpInclusionPhase {
-    fn produce_inclusion_list(&self, mempool_snapshot: Vec<Block>) -> Result<Vec<Block>> {
-        Ok(mempool_snapshot)
+    fn produce_inclusion_list(&self, candidate_list: Vec<Block>) -> Result<Vec<Block>> {
+        Ok(candidate_list)
     }
 }

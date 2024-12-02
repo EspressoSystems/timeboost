@@ -8,24 +8,24 @@ use tokio::sync::{mpsc::Sender, watch};
 use tracing::error;
 
 use super::{
-    protocol::Consensus,
+    protocol::Sequencer,
     traits::{BlockBuilder, DecryptionPhase, InclusionPhase, OrderingPhase},
 };
 
-pub async fn run_consensus_task<
+pub async fn run_sequencer_task<
     I: InclusionPhase + Send + Sync + 'static,
     D: DecryptionPhase + Send + Sync + 'static,
     O: OrderingPhase + Send + Sync + 'static,
     B: BlockBuilder + Send + Sync + 'static,
 >(
-    cx: Arc<Consensus<I, D, O, B>>,
+    cx: Arc<Sequencer<I, D, O, B>>,
     epoch: u64,
     round: u64,
-    snapshot: Vec<Block>,
+    candidate_list: Vec<Block>,
     app_tx: Sender<TimeboostStatusEvent>,
     mut shutdown_rx: watch::Receiver<()>,
 ) {
-    let handle = tokio::spawn(async move { cx.build(epoch, round, snapshot) });
+    let handle = tokio::spawn(async move { cx.build(epoch, round, candidate_list) });
     let abort_handle = handle.abort_handle();
 
     tokio::select! {

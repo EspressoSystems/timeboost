@@ -35,8 +35,6 @@ async fn main() -> Result<()> {
     let keypair = Keypair::zero(cfg.id);
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cfg.port)).unwrap();
 
-    // Sailfish nodes running individually do not need to communicate with the
-    // application layer, so we make dummy streams.
     let metrics = Arc::new(SailfishMetrics::default());
     let mut coordinator = sailfish_coordinator(
         cfg.id,

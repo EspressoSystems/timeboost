@@ -4,9 +4,9 @@ use anyhow::{bail, Result};
 use timeboost_core::types::{block::Block, metrics::TimeboostMetrics};
 use tracing::{error, info};
 
-use crate::consensus::traits::*;
+use crate::sequencer::traits::*;
 
-pub struct Consensus<I, D, O, B>
+pub struct Sequencer<I, D, O, B>
 where
     I: InclusionPhase + 'static,
     D: DecryptionPhase + 'static,
@@ -20,7 +20,7 @@ where
     metrics: Arc<TimeboostMetrics>,
 }
 
-impl<I, D, O, B> Consensus<I, D, O, B>
+impl<I, D, O, B> Sequencer<I, D, O, B>
 where
     I: InclusionPhase + 'static,
     D: DecryptionPhase + 'static,

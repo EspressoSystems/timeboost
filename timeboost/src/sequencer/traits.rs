@@ -2,7 +2,7 @@ use anyhow::Result;
 use timeboost_core::types::block::Block;
 
 pub trait InclusionPhase {
-    fn produce_inclusion_list(&self, mempool_snapshot: Vec<Block>) -> Result<Vec<Block>>;
+    fn produce_inclusion_list(&self, candidate_list: Vec<Block>) -> Result<Vec<Block>>;
 }
 
 pub trait DecryptionPhase {

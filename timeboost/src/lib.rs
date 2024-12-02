@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use consensus::{
-    block_builder::NoOpBlockBuilder, decryption::NoOpDecryptionPhase,
-    inclusion::NoOpInclusionPhase, ordering::NoOpOrderingPhase, protocol::Consensus,
-    task::run_consensus_task,
-};
 use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
+use sequencer::{
+    block_builder::NoOpBlockBuilder, decryption::NoOpDecryptionPhase,
+    inclusion::NoOpInclusionPhase, ordering::NoOpOrderingPhase, protocol::Sequencer,
+    task::run_sequencer_task,
+};
 use std::{
     collections::HashSet,
     future::pending,
@@ -14,10 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tide_disco::Url;
-use tokio::{
-    sync::{mpsc::channel, RwLock},
-    time::sleep,
-};
+use tokio::{sync::mpsc::channel, time::sleep};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
@@ -39,11 +36,11 @@ use tokio::sync::{
 
 pub mod api;
 pub mod config;
-pub mod consensus;
 pub mod contracts;
 mod mempool;
 mod persistence;
 mod producer;
+pub mod sequencer;
 
 /// The duration of an epoch in seconds.
 const EPOCH_TIME_SECS: u64 = 60;
@@ -87,11 +84,11 @@ pub struct Timeboost {
     epoch: u64,
 
     /// The mempool for the timeboost node.
-    mempool: Arc<RwLock<Mempool>>,
+    mempool: Mempool,
 
     /// The consensus protocol.
     consensus: Arc<
-        Consensus<NoOpInclusionPhase, NoOpDecryptionPhase, NoOpOrderingPhase, NoOpBlockBuilder>,
+        Sequencer<NoOpInclusionPhase, NoOpDecryptionPhase, NoOpOrderingPhase, NoOpBlockBuilder>,
     >,
 
     /// The metrics for the sailfish node.
@@ -116,7 +113,6 @@ impl Timeboost {
         sf_metrics: Arc<SailfishMetrics>,
         tb_metrics: Arc<TimeboostMetrics>,
     ) -> Self {
-        let mempool = Arc::new(RwLock::new(Mempool::new()));
         Self {
             id,
             port,
@@ -127,12 +123,12 @@ impl Timeboost {
             shutdown_rx,
             sf_metrics,
             tb_metrics: tb_metrics.clone(),
-            mempool: mempool.clone(),
+            mempool: Mempool::new(),
             epoch_clock: pending().boxed(),
             epoch_clock_start_time: Instant::now(),
             epoch: 0,
             consensus_interval_clock: pending().boxed(),
-            consensus: Arc::new(Consensus::new(
+            consensus: Arc::new(Sequencer::new(
                 NoOpInclusionPhase,
                 NoOpDecryptionPhase,
                 NoOpOrderingPhase,
@@ -200,16 +196,13 @@ impl Timeboost {
                         .fuse()
                         .boxed();
 
-                    let mempool_snapshot = {
-                        let mut mempool = self.mempool.write().await;
-                        mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES)
-                    };
+                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
 
                     // Make a new handle for the consensus protocol run.
                     let cx = self.consensus.clone();
                     let app_tx_clone = self.app_tx.clone();
                     let shutdown_rx = self.shutdown_rx.clone();
-                    tokio::spawn(run_consensus_task(
+                    tokio::spawn(run_sequencer_task(
                         cx,
                         self.epoch,
                         round,
@@ -245,7 +238,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.write().await.insert(block);
+                                        self.mempool.insert(block);
                                     },
                                 }
                             }
