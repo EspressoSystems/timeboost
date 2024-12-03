@@ -1,6 +1,11 @@
+use std::time::Duration;
+
+use sailfish::consensus::Consensus;
+use sailfish::coordinator::Coordinator;
 use sailfish::rbc::Rbc;
-use timeboost_core::traits::comm::Comm;
+use timeboost_core::logging::init_logging;
 use timeboost_core::types::committee::StaticCommittee;
+use timeboost_core::types::event::SailfishEventType;
 use timeboost_core::types::Keypair;
 
 use crate::rbc::TurmoilComm;
@@ -11,9 +16,16 @@ fn fresh_keys(n: u64) -> (Vec<Keypair>, StaticCommittee) {
     (ks, co)
 }
 
-#[tokio::test]
-async fn smoke() {
-    let mut sim = turmoil::Builder::new().build();
+#[test]
+fn smoke() {
+    init_logging();
+
+    let mut sim = turmoil::Builder::new()
+        .min_message_latency(Duration::from_millis(10))
+        .max_message_latency(Duration::from_secs(1))
+        .enable_random_order()
+        .simulation_duration(Duration::from_secs(500))
+        .build();
 
     let (ks, committee) = fresh_keys(3);
 
@@ -23,7 +35,6 @@ async fn smoke() {
         (*ks[2].public_key(), ("C", 9002)),
     ];
 
-    let peers = peers.clone();
     let key_a = ks[0].clone();
     let committee_a = committee.clone();
 
@@ -31,14 +42,20 @@ async fn smoke() {
         let key_a = key_a.clone();
         let committee_a = committee_a.clone();
         async move {
-            let comm = TurmoilComm::create("0.0.0.0:9000", peers).await?;
-            let mut rbc = Rbc::new(comm, key_a, committee_a);
-            while let Ok(msg) = rbc.receive().await {}
-            Ok(())
+            let comm = TurmoilComm::create(*key_a.public_key(), "0.0.0.0:9000", peers).await?;
+            let rbc = Rbc::new(comm, key_a.clone(), committee_a.clone());
+            let cons = Consensus::new(1, key_a, committee_a);
+            let mut coor = Coordinator::new(1, rbc, cons);
+            let mut actions = coor.start().await?;
+            loop {
+                for a in actions {
+                    coor.execute(a).await?;
+                }
+                actions = coor.next().await?
+            }
         }
     });
 
-    let peers = peers.clone();
     let key_b = ks[1].clone();
     let committee_b = committee.clone();
 
@@ -46,20 +63,42 @@ async fn smoke() {
         let key_b = key_b.clone();
         let committee_b = committee_b.clone();
         async move {
-            let comm = TurmoilComm::create("0.0.0.0:9001", peers).await?;
-            let mut rbc = Rbc::new(comm, key_b, committee_b);
-            while let Ok(msg) = rbc.receive().await {}
-            Ok(())
+            let comm = TurmoilComm::create(*key_b.public_key(), "0.0.0.0:9001", peers).await?;
+            let rbc = Rbc::new(comm, key_b.clone(), committee_b.clone());
+            let cons = Consensus::new(2, key_b, committee_b);
+            let mut coor = Coordinator::new(2, rbc, cons);
+            let mut actions = coor.start().await?;
+            loop {
+                for a in actions {
+                    coor.execute(a).await?;
+                }
+                actions = coor.next().await?
+            }
         }
     });
 
-    let peers = peers.clone();
     let key_c = ks[2].clone();
     let committee_c = committee.clone();
 
     sim.client("C", async move {
-        let comm = TurmoilComm::create("0.0.0.0:9002", peers).await?;
-        let mut rbc = Rbc::new(comm, key_c, committee_c);
-        Ok(())
+        let comm = TurmoilComm::create(*key_c.public_key(), "0.0.0.0:9002", peers).await?;
+        let rbc = Rbc::new(comm, key_c.clone(), committee_c.clone());
+        let cons = Consensus::new(3, key_c, committee_c);
+        let mut coor = Coordinator::new(3, rbc, cons);
+        let mut actions = coor.start().await?;
+        loop {
+            for a in actions {
+                if let Some(event) = coor.execute(a).await? {
+                    if let SailfishEventType::Committed { round, .. } = event.event {
+                        if round >= 3.into() {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            actions = coor.next().await?
+        }
     });
+
+    sim.run().unwrap()
 }

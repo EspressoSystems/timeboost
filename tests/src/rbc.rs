@@ -10,11 +10,11 @@ use futures::SinkExt;
 use timeboost_core::traits::comm::RawComm;
 use timeboost_core::types::PublicKey;
 use timeboost_crypto::traits::signature_key::SignatureKey;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
-use tracing::{error, warn};
+use tracing::{debug, error, trace, warn};
 use turmoil::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use turmoil::net::{TcpListener, TcpStream};
 use turmoil::ToSocketAddrs;
@@ -24,8 +24,8 @@ type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 
 #[derive(Debug)]
 pub struct TurmoilComm {
-    tx: mpsc::UnboundedSender<(Option<PublicKey>, Vec<u8>)>,
-    rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    tx: UnboundedSender<(Option<PublicKey>, Vec<u8>)>,
+    rx: UnboundedReceiver<Vec<u8>>,
     jh: JoinHandle<()>,
 }
 
@@ -36,7 +36,7 @@ impl Drop for TurmoilComm {
 }
 
 impl TurmoilComm {
-    pub async fn create<A, S, I>(addr: A, peers: I) -> io::Result<Self>
+    pub async fn create<A, S, I>(key: PublicKey, addr: A, peers: I) -> io::Result<Self>
     where
         A: ToSocketAddrs,
         S: Display,
@@ -46,6 +46,7 @@ impl TurmoilComm {
         let (to_worker, from_comm) = mpsc::unbounded_channel();
         let (to_comm, from_worker) = mpsc::unbounded_channel();
         let w = Worker {
+            key,
             config: peers
                 .into_iter()
                 .map(|(k, (s, p))| (k, (s.to_string(), p)))
@@ -97,11 +98,17 @@ impl RawComm for TurmoilComm {
     }
 }
 
+enum Connection {
+    Identity,
+    Remote(Writer),
+}
+
 struct Worker {
+    key: PublicKey,
     config: HashMap<PublicKey, (String, u16)>,
-    peers: HashMap<PublicKey, Writer>,
-    tx: mpsc::UnboundedSender<Vec<u8>>,
-    rx: mpsc::UnboundedReceiver<(Option<PublicKey>, Vec<u8>)>,
+    peers: HashMap<PublicKey, Connection>,
+    tx: UnboundedSender<Vec<u8>>,
+    rx: UnboundedReceiver<(Option<PublicKey>, Vec<u8>)>,
     listener: TcpListener,
     identify_tasks: JoinSet<io::Result<(PublicKey, Reader, Writer)>>,
     reader_tasks: JoinSet<io::Result<PublicKey>>,
@@ -113,10 +120,12 @@ impl Worker {
         self.identify_tasks.spawn(pending());
         self.reader_tasks.spawn(pending());
         self.connect_tasks.spawn(pending());
+        self.peers.insert(self.key, Connection::Identity);
         loop {
             tokio::select! {
                 i = self.listener.accept() => match i {
                     Ok((s, _)) => {
+                        debug!("accepted connection");
                         self.identify_tasks.spawn(identify(s));
                     }
                     Err(err) => {
@@ -124,17 +133,16 @@ impl Worker {
                     }
                 },
                 Some(a) = self.identify_tasks.join_next() => match a {
-                    Ok(Ok((k, mut r, w))) => {
+                    Ok(Ok((k, r, w))) => {
+                        if self.peers.contains_key(&k) && !keep_it() {
+                            debug!("rejecting inbound connection");
+                            continue
+                        }
+                        if self.peers.insert(k, Connection::Remote(w)).is_some() {
+                            debug!("dropped existing connection");
+                        }
                         let tx = self.tx.clone();
-                        self.reader_tasks.spawn(async move {
-                            while let Ok(Some(x)) = r.try_next().await {
-                                if tx.send(x.to_vec()).is_err() {
-                                    break
-                                }
-                            }
-                            Ok(k)
-                        });
-                        self.peers.insert(k, w);
+                        self.reader_tasks.spawn(read_loop(k, r, tx));
                     }
                     Ok(Err(err)) => {
                         error!(%err, "task errored while identifying peer")
@@ -144,17 +152,15 @@ impl Worker {
                     }
                 },
                 Some(a) = self.connect_tasks.join_next() => match a {
-                    Ok(Ok((k, mut r, w))) => {
+                    Ok(Ok((k, r, w))) => {
+                        trace!("connection established");
+                        if self.peers.contains_key(&k) && keep_it() {
+                            debug!("connection already established");
+                            continue
+                        }
+                        self.peers.insert(k, Connection::Remote(w));
                         let tx = self.tx.clone();
-                        self.reader_tasks.spawn(async move {
-                            while let Ok(Some(x)) = r.try_next().await {
-                                if tx.send(x.to_vec()).is_err() {
-                                    break
-                                }
-                            }
-                            Ok(k)
-                        });
-                        self.peers.insert(k, w);
+                        self.reader_tasks.spawn(read_loop(k, r, tx));
                     }
                     Ok(Err(err)) => {
                         error!(%err, "task errored while connecting to peer")
@@ -166,8 +172,14 @@ impl Worker {
                 Some(a) = self.reader_tasks.join_next() => match a {
                     Ok(Ok(k)) => {
                         let a = self.resolve(&k);
-                        warn!(addr = %a, "connection lost");
-                        self.connect_tasks.spawn(connect(a, k));
+                        warn!("connection lost");
+                        if self.peers.remove(&k).is_some() {
+                            debug!("dropping lost connection");
+                        }
+                        if self.key <= k {
+                            continue
+                        }
+                        self.connect_tasks.spawn(connect(a, self.key, k));
                     }
                     Ok(Err(err)) => {
                         error!(%err, "task errored while reading from peer")
@@ -179,36 +191,66 @@ impl Worker {
                 Some(o) = self.rx.recv() => {
                     match o {
                         (None, msg) => {
+                            trace!("broadcasting message");
                             let bytes = Bytes::from(msg);
                             for &k in self.config.keys() {
-                                if let Some(w) = self.peers.get_mut(&k) {
-                                    if let Err(err) = w.send(bytes.clone()).await {
-                                        warn!(%err, "error sending message to peer")
+                                match self.peers.get_mut(&k) {
+                                    Some(Connection::Identity) => {
+                                        self.tx.send(bytes.to_vec()).unwrap()
                                     }
-                                } else {
-                                    let bytes = bytes.clone();
-                                    let addr = self.resolve(&k);
-                                    self.connect_tasks.spawn(async move {
-                                        let (k, r, mut w) = connect(addr, k).await?;
-                                        w.send(bytes).await?;
-                                        Ok((k, r, w))
-                                    });
+                                    Some(Connection::Remote(w)) => {
+                                        if let Err(err) = w.send(bytes.clone()).await {
+                                            warn!(%err, "error sending message to peer");
+                                            if self.peers.remove(&k).is_some() {
+                                                debug!("dropping lost connection");
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        if self.key <= k {
+                                            continue
+                                        }
+                                        let bytes = bytes.clone();
+                                        let addr = self.resolve(&k);
+                                        let ours = self.key;
+                                        debug!("establishing connection");
+                                        self.connect_tasks.spawn(async move {
+                                            let (k, r, mut w) = connect(addr, ours, k).await?;
+                                            w.send(bytes).await?;
+                                            Ok((k, r, w))
+                                        });
+                                    }
                                 }
                             }
                         }
                         (Some(to), msg) => {
+                            trace!("sending message");
                             let bytes = Bytes::from(msg);
-                            if let Some(w) = self.peers.get_mut(&to) {
-                                if let Err(err) = w.send(bytes.clone()).await {
-                                    warn!(%err, "error sending message to peer")
+                            match self.peers.get_mut(&to) {
+                                Some(Connection::Identity) => {
+                                    self.tx.send(bytes.to_vec()).unwrap()
                                 }
-                            } else {
-                                let addr = self.resolve(&to);
-                                self.connect_tasks.spawn(async move {
-                                    let (k, r, mut w) = connect(addr, to).await?;
-                                    w.send(bytes).await?;
-                                    Ok((k, r, w))
-                                });
+                                Some(Connection::Remote(w)) => {
+                                    if let Err(err) = w.send(bytes.clone()).await {
+                                        warn!(%err, "error sending message");
+                                        if self.peers.remove(&to).is_some() {
+                                            debug!("dropping lost connection");
+                                        }
+                                    }
+                                }
+                                None => {
+                                    if self.key <= to {
+                                        continue
+                                    }
+                                    let addr = self.resolve(&to);
+                                    let ours = self.key;
+                                    debug!("establishing connection");
+                                    self.connect_tasks.spawn(async move {
+                                        let (k, r, mut w) = connect(addr, ours, to).await?;
+                                        w.send(bytes).await?;
+                                        Ok((k, r, w))
+                                    });
+                                }
                             }
                         }
                     }
@@ -226,11 +268,16 @@ impl Worker {
     }
 }
 
-async fn connect(a: SocketAddr, k: PublicKey) -> io::Result<(PublicKey, Reader, Writer)> {
+async fn connect(
+    a: SocketAddr,
+    ours: PublicKey,
+    theirs: PublicKey,
+) -> io::Result<(PublicKey, Reader, Writer)> {
     let s = TcpStream::connect(a).await?;
+    trace!(addr = %a, "connected to");
     let (r, mut w) = codec(s);
-    w.send(Bytes::from(k.to_bytes())).await?;
-    Ok((k, r, w))
+    w.send(Bytes::from(ours.to_bytes())).await?;
+    Ok((theirs, r, w))
 }
 
 async fn identify(s: TcpStream) -> io::Result<(PublicKey, Reader, Writer)> {
@@ -248,4 +295,29 @@ fn codec(sock: TcpStream) -> (Reader, Writer) {
     let r = c.new_read(r);
     let w = c.new_write(w);
     (r, w)
+}
+
+fn keep_it() -> bool {
+    rand::random()
+}
+
+async fn read_loop(
+    k: PublicKey,
+    mut r: Reader,
+    tx: UnboundedSender<Vec<u8>>,
+) -> io::Result<PublicKey> {
+    loop {
+        match r.try_next().await {
+            Ok(Some(x)) => {
+                if tx.send(x.to_vec()).is_err() {
+                    return Ok(k);
+                }
+            }
+            Ok(None) => return Ok(k),
+            Err(err) => {
+                error!(%err, "error receiving message");
+                return Ok(k);
+            }
+        }
+    }
 }

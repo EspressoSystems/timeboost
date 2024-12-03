@@ -1,6 +1,9 @@
+use std::fmt;
+
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::message::Message;
+use timeboost_core::types::Label;
 use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -22,5 +25,11 @@ impl Committable for Digest {
             .field("round", self.0.commit())
             .fixed_size_field("digest", &self.1)
             .finalize()
+    }
+}
+
+impl fmt::Display for Digest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.0, Label::new(&self.1[..]))
     }
 }

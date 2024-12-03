@@ -14,6 +14,7 @@ mod tests;
 #[cfg(test)]
 mod bench;
 
+#[cfg(test)]
 mod rbc;
 
 pub struct Group {
