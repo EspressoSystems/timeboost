@@ -8,11 +8,11 @@ use timeboost_core::types::{
     committee::StaticCommittee,
     envelope::Envelope,
     message::{Message, Timeout},
-    metrics::ConsensusMetrics,
-    round_number::RoundNumber,
+    metrics::SailfishMetrics,
     vertex::Vertex,
     Keypair, NodeId, PublicKey, Signature,
 };
+use timeboost_utils::types::round_number::RoundNumber;
 
 pub struct KeyManager {
     keys: HashMap<u64, Keypair>,
@@ -37,7 +37,7 @@ impl KeyManager {
                 .map(|kpair| *kpair.public_key())
                 .collect(),
         );
-        let metrics = Arc::new(ConsensusMetrics::default());
+        let metrics = Arc::new(SailfishMetrics::default());
         self.keys
             .iter()
             .map(|(id, kpair)| {

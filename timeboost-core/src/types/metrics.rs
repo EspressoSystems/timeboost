@@ -1,6 +1,10 @@
 pub mod prometheus;
+pub mod sailfish;
+pub mod timeboost;
 
-use hotshot_types::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
+pub use sailfish::SailfishMetrics;
+pub use timeboost::TimeboostMetrics;
+use timeboost_utils::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]

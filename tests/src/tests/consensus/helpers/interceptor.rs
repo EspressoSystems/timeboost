@@ -1,4 +1,5 @@
-use timeboost_core::types::{message::Message, round_number::RoundNumber};
+use timeboost_core::types::message::Message;
+use timeboost_utils::types::round_number::RoundNumber;
 
 use super::{node_instrument::TestNodeInstrument, test_helpers::MessageModifier};
 /// Intercept a message before a node processes it and apply transformations if any provided

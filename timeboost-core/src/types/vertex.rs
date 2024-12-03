@@ -1,17 +1,18 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use timeboost_crypto::traits::signature_key::SignatureKey;
+use timeboost_utils::types::round_number::RoundNumber;
 
 use super::{
     certificate::Certificate,
     message::{NoVote, Timeout},
     PublicKey,
 };
+use crate::types::block::Block;
 use crate::types::Label;
-use crate::types::{block::Block, round_number::RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, FromRow)]
 pub struct Vertex {

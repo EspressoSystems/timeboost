@@ -7,14 +7,14 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::{
     traits::comm::Comm,
     types::{
-        event::{SailfishEventType, SailfishStatusEvent, TimeboostStatusEvent},
+        event::{SailfishEventType, SailfishStatusEvent},
         message::{Action, Message},
-        round_number::RoundNumber,
+        transaction::Transaction,
         NodeId,
     },
 };
+use timeboost_utils::types::round_number::RoundNumber;
 use tokio::time::sleep;
-use tracing::info;
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -59,10 +59,10 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
-    pub async fn handle_tb_event(&mut self, event: TimeboostStatusEvent) -> Result<(), C::Err> {
-        // TODO
-        info!(%event, "received timeboost event");
-        Ok(())
+    pub fn handle_transactions(&mut self, transactions: Vec<Transaction>) {
+        for t in transactions {
+            self.consensus.enqueue_transaction(t);
+        }
     }
 
     pub async fn execute(&mut self, action: Action) -> Result<Option<SailfishStatusEvent>, C::Err> {
@@ -74,10 +74,10 @@ impl<C: Comm> Coordinator<C> {
                     event: SailfishEventType::RoundFinished { round: r },
                 }));
             }
-            Action::Deliver(_b, r, _) => {
+            Action::Deliver(b, r, _) => {
                 return Ok(Some(SailfishStatusEvent {
                     round: r,
-                    event: SailfishEventType::Committed { round: r },
+                    event: SailfishEventType::Committed { round: r, block: b },
                 }));
             }
             Action::SendProposal(e) => {

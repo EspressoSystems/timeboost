@@ -1,8 +1,8 @@
 use std::{hash::Hash, marker::PhantomData};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
 
 use crate::types::{committee::StaticCommittee, Label, PublicKey, Signature};

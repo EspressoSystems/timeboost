@@ -1,24 +1,28 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
     block::Block,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    metrics::ConsensusMetrics,
-    round_number::RoundNumber,
+    metrics::SailfishMetrics,
     transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
-use tracing::{debug, error, info, instrument, trace, warn};
+use timeboost_utils::types::round_number::RoundNumber;
+use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;
+mod ord;
 mod vote;
+
+use ord::OrderedVertex;
 
 pub use dag::Dag;
 pub use vote::VoteAccumulator;
@@ -89,7 +93,7 @@ pub struct Consensus {
     committee: StaticCommittee,
 
     /// The set of vertices that we've received so far.
-    buffer: HashSet<Vertex>,
+    buffer: BTreeSet<OrderedVertex>,
 
     /// The set of values we have delivered so far.
     delivered: HashSet<(RoundNumber, PublicKey)>,
@@ -104,7 +108,7 @@ pub struct Consensus {
     leader_stack: Vec<Vertex>,
 
     /// The consensus metrics for this node.
-    metrics: Arc<ConsensusMetrics>,
+    metrics: Arc<SailfishMetrics>,
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
@@ -115,14 +119,14 @@ impl Consensus {
         id: NodeId,
         keypair: Keypair,
         committee: StaticCommittee,
-        metrics: Arc<ConsensusMetrics>,
+        metrics: Arc<SailfishMetrics>,
     ) -> Self {
         Self {
             id,
             label: Label::new(keypair.public_key()),
             keypair,
             state: ConsensusState::new(&committee),
-            buffer: HashSet::new(),
+            buffer: BTreeSet::new(),
             delivered: HashSet::new(),
             timeouts: BTreeMap::new(),
             no_votes: VoteAccumulator::new(committee.clone()),
@@ -151,6 +155,10 @@ impl Consensus {
 
     pub fn committee_size(&self) -> NonZeroUsize {
         self.committee.size()
+    }
+
+    pub fn enqueue_transaction(&mut self, t: Transaction) {
+        self.state.transactions.add(t);
     }
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
@@ -249,7 +257,7 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                self.buffer.insert(v);
+                self.buffer.insert(v.into());
                 self.metrics.vertex_buffer.set(self.buffer.len());
             }
             Ok(a) => {
@@ -257,9 +265,7 @@ impl Consensus {
                 if v.round() >= self.round() && self.state.dag.vertex_count(v.round()) >= quorum {
                     actions.extend(self.advance_from_round(v.round()));
                 }
-                let mut buffer: Vec<Vertex> = self.buffer.drain().collect();
-                buffer.sort_unstable_by_key(|v| v.round());
-                for v in buffer {
+                for v in std::mem::take(&mut self.buffer) {
                     if let Ok(a) = self.try_to_add_to_dag(&v) {
                         actions.extend(a);
                         if v.round() >= self.round()
@@ -707,7 +713,7 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
+                debug!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
@@ -863,8 +869,8 @@ impl Consensus {
         &self.state.dag
     }
 
-    pub fn buffer(&self) -> &HashSet<Vertex> {
-        &self.buffer
+    pub fn buffer(&self) -> impl Iterator<Item = &Vertex> {
+        self.buffer.iter().map(|ordered| &ordered.0)
     }
 
     pub fn delivered(&self) -> &HashSet<(RoundNumber, PublicKey)> {
