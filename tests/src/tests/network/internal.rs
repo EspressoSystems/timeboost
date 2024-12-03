@@ -1,9 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{
-    tests::network::{CoordinatorAuditEvent, TestOutcome},
-    Group,
-};
+use crate::{tests::network::TestOutcome, Group};
 
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use sailfish::coordinator::Coordinator;
@@ -11,6 +8,7 @@ use timeboost_core::types::{
     message::Message,
     metrics::SailfishMetrics,
     test::{
+        message_interceptor::NetworkMessageInterceptor,
         net::{Conn, Star},
         testnet::{MsgQueues, TestNet},
     },
@@ -31,14 +29,20 @@ pub struct MemoryNetworkTest {
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
-    outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+    outcomes: HashMap<usize, Vec<TestCondition>>,
+    interceptor: NetworkMessageInterceptor,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
     type Node = (Coordinator<TestNet<Conn<Message>>>, MsgQueues);
     type Network = Star<Message>;
+    type Testnet = TestNet<Conn<Message>>;
 
-    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self {
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
             (0..group.fish.len()).map(|_| watch::channel(())).unzip();
         let (network_shutdown_tx, network_shutdown_rx) = oneshot::channel();
@@ -49,6 +53,7 @@ impl TestableNetwork for MemoryNetworkTest {
             network_shutdown_tx,
             network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
+            interceptor,
         }
     }
 
@@ -59,12 +64,12 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             // Join each node to the network
-            let conn = TestNet::new(net.join(*n.public_key()));
-            let messages = conn.messages();
+            let test_net = TestNet::new(net.join(*n.public_key()), self.interceptor.clone());
+            let messages = test_net.messages();
 
             // Initialize the coordinator
             let co = n.init(
-                conn,
+                test_net,
                 (*self.group.staked_nodes).clone(),
                 Arc::new(SailfishMetrics::default()),
             );
@@ -87,55 +92,16 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for (i, (mut co, msgs)) in coordinators.into_iter().enumerate() {
-            let mut shutdown_rx = self
+        for (id, (mut coordinator, msgs)) in coordinators.into_iter().enumerate() {
+            let shutdown_rx = self
                 .shutdown_rxs
-                .remove(&i)
-                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", i));
-            let conditions = Arc::clone(self.outcomes.get(&i).unwrap());
+                .remove(&id)
+                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", id));
+            let mut conditions = self.outcomes.get(&id).unwrap().clone();
 
             co_handles.spawn(async move {
-                let mut events = Vec::new();
-
-                match co.start().await {
-                    Ok(actions) => {
-                        for a in actions {
-                            events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
-                            let _ = co.execute(a).await;
-                        }
-                    }
-                    Err(e) => {
-                        panic!("Failed to start coordinator: {}", e);
-                    }
-                }
-                loop {
-                    tokio::select! {
-                        res = co.next() => match res {
-                            Ok(actions) => {
-                                events.extend(
-                                    msgs.drain_inbox().iter().map(|m| CoordinatorAuditEvent::MessageReceived(m.clone()))
-                                );
-                                // Evaluate if we have seen the specified conditions of the test
-                                if conditions.iter().all(|c| c.evaluate(&events) == TestOutcome::Passed) {
-                                    // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                                    co.shutdown().await.expect("Network to be shutdown");
-                                    break TaskHandleResult::new(i, TestOutcome::Passed);
-                                }
-                                for a in actions {
-                                    events.push(CoordinatorAuditEvent::ActionTaken(a.clone()));
-                                    let _ = co.execute(a).await;
-                                }
-                            }
-                            Err(_e) => {}
-                        },
-                        shutdown_result = shutdown_rx.changed() => {
-                            // Unwrap the potential error with receiving the shutdown token.
-                            co.shutdown().await.expect("Network to be shutdown");
-                            shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                            break TaskHandleResult::new(i, TestOutcome::Failed);
-                        }
-                    }
-                }
+                Self::run_coordinator(&mut coordinator, &mut conditions, msgs, shutdown_rx, id)
+                    .await
             });
         }
 
