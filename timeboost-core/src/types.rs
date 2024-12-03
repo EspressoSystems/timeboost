@@ -7,7 +7,6 @@ pub mod error;
 pub mod event;
 pub mod message;
 pub mod metrics;
-pub mod round_number;
 pub mod sailfish_block;
 pub mod seqno;
 pub mod time;
@@ -19,8 +18,11 @@ pub mod test;
 
 use core::fmt;
 
-use hotshot::types::{BLSPrivKey, BLSPubKey, SignatureKey};
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::{
+    signature_key::{BLSPrivKey, BLSPubKey},
+    traits::signature_key::SignatureKey,
+};
 
 pub type PublicKey = BLSPubKey;
 pub type PrivateKey = BLSPrivKey;

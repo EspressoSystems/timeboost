@@ -4,7 +4,8 @@ use crate::types::transaction::Transaction;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use super::{round_number::RoundNumber, time::Timestamp};
+use super::time::Timestamp;
+use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct SailfishBlock {

@@ -17,12 +17,13 @@ use std::{
     time::{Duration, Instant},
 };
 use tide_disco::Url;
+use timeboost_utils::PeerConfig;
 use tokio::{sync::mpsc::channel, time::sleep};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
-use hotshot_types::PeerConfig;
+
 use multiaddr::{Multiaddr, PeerId};
 use timeboost_core::{
     traits::comm::Libp2p,

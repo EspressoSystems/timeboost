@@ -1,5 +1,4 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -20,23 +19,11 @@ impl RoundNumber {
     }
 
     pub fn genesis() -> Self {
-        Self(*ViewNumber::genesis())
+        Self::new(0)
     }
 
     pub fn size_bytes(&self) -> usize {
         std::mem::size_of::<u64>()
-    }
-}
-
-impl From<ViewNumber> for RoundNumber {
-    fn from(val: ViewNumber) -> Self {
-        Self(*val)
-    }
-}
-
-impl From<RoundNumber> for ViewNumber {
-    fn from(val: RoundNumber) -> Self {
-        Self::new(val.0)
     }
 }
 

@@ -323,7 +323,7 @@ where
 {
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer)?;
+    v.serialize_compressed(&mut writer).unwrap();
     let _ = writer.write(&e);
     writer.flush()?;
     drop(writer);
@@ -337,8 +337,8 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
     let mut hasher = H::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer)?;
-    w.serialize_compressed(&mut writer)?;
+    v.serialize_compressed(&mut writer).unwrap();
+    w.serialize_compressed(&mut writer).unwrap();
     writer.flush()?;
     drop(writer);
     hasher.update(buffer);

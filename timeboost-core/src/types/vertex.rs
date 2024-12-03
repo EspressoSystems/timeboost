@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use hotshot::types::SignatureKey;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::{
     certificate::Certificate,
@@ -10,8 +10,8 @@ use super::{
     time::Timestamp,
     PublicKey,
 };
-use crate::types::Label;
-use crate::types::{round_number::RoundNumber, sailfish_block::SailfishBlock};
+use crate::types::{sailfish_block::SailfishBlock, Label};
+use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {

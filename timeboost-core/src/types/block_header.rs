@@ -1,7 +1,8 @@
 use committable::Committable;
 use serde::{Deserialize, Serialize};
+use timeboost_utils::types::round_number::RoundNumber;
 
-use super::{round_number::RoundNumber, time::Timestamp};
+use super::time::Timestamp;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct BlockHeader {

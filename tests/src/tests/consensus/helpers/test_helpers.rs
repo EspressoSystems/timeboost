@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use bitvec::vec::BitVec;
-use ethereum_types::U256;
-use hotshot::types::SignatureKey;
+use primitive_types::U256;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
@@ -10,6 +9,7 @@ use timeboost_core::types::{
     message::{Message, Timeout},
     PublicKey, Signature,
 };
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;

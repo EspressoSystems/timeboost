@@ -2,12 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use hotshot_types::traits::metrics::{
-    Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
-};
 use parking_lot::RwLock;
 use prometheus::{Encoder, TextEncoder};
 use tide_disco::method::ReadState;
+use timeboost_utils::traits::metrics::{
+    Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
+};
 
 #[derive(Clone, Debug)]
 pub struct TimeboostCounter(prometheus::Counter);

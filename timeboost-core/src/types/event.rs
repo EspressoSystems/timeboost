@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use timeboost_utils::types::round_number::RoundNumber;
 
-use crate::types::{error::SailfishError, round_number::RoundNumber, transaction::Transaction};
+use crate::types::{error::SailfishError, transaction::Transaction};
 
 use super::{block::timeboost::TimeboostBlock, sailfish_block::SailfishBlock};
 

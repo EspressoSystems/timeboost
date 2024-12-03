@@ -1,0 +1,22 @@
+[package]
+name = "timeboost-utils"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+
+[dependencies]
+bincode = { workspace = true }
+clap = { workspace = true }
+committable = { workspace = true }
+derive_more = { workspace = true, features = ["debug"] }
+displaydoc = { workspace = true }
+dyn-clone = { workspace = true }
+libp2p-identity = { workspace = true }
+multiaddr = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-inline-default = { workspace = true }
+thiserror = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
+tracing = { workspace = true }
+url = { workspace = true }

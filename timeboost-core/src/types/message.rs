@@ -3,15 +3,14 @@ use core::fmt;
 use crate::types::vertex::Vertex;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+use timeboost_utils::types::round_number::RoundNumber;
 
 use super::{
     certificate::Certificate,
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
-use crate::types::{
-    committee::StaticCommittee, round_number::RoundNumber, sailfish_block::SailfishBlock,
-};
+use crate::types::{committee::StaticCommittee, sailfish_block::SailfishBlock};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<Status = Validated> {

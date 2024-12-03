@@ -1,10 +1,8 @@
 use crate::types::committee::StaticCommittee;
-use bincode::Options;
 use committable::{Commitment, Committable};
-use ethereum_types::U256;
-use hotshot::types::SignatureKey;
-use hotshot_types::utils::bincode_opts;
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::{PublicKey, QuorumSignature};
 
@@ -63,14 +61,11 @@ pub fn serialize_signature(signatures: &QuorumSignature) -> Vec<u8> {
     signatures_bytes.extend("Yes".as_bytes());
 
     let (sig, proof) = PublicKey::sig_proof(signatures);
-    let proof_bytes = bincode_opts()
-        .serialize(&proof.as_bitslice())
+    let proof_bytes = bincode::serialize(&proof.as_bitslice())
         .expect("This serialization shouldn't be able to fail");
     signatures_bytes.extend("bitvec proof".as_bytes());
     signatures_bytes.extend(proof_bytes.as_slice());
-    let sig_bytes = bincode_opts()
-        .serialize(&sig)
-        .expect("This serialization shouldn't be able to fail");
+    let sig_bytes = bincode::serialize(&sig).expect("This serialization shouldn't be able to fail");
     signatures_bytes.extend("aggregated signature".as_bytes());
     signatures_bytes.extend(sig_bytes.as_slice());
     signatures_bytes

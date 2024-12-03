@@ -9,7 +9,6 @@ use timeboost_core::types::{
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
-    round_number::RoundNumber,
     sailfish_block::SailfishBlock,
     time::Timestamp,
     transaction::Transaction,
@@ -17,6 +16,7 @@ use timeboost_core::types::{
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
 };
+use timeboost_utils::types::round_number::RoundNumber;
 use tracing::{debug, error, instrument, trace, warn};
 
 mod dag;

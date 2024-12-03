@@ -2,10 +2,8 @@ use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-use crate::types::{
-    round_number::RoundNumber, sailfish_block::SailfishBlock, time::Timestamp,
-    transaction::Transaction,
-};
+use crate::types::{sailfish_block::SailfishBlock, time::Timestamp, transaction::Transaction};
+use timeboost_utils::types::round_number::RoundNumber;
 
 /// An inclusion phase block is a block which is emitted by the inclusion phase
 /// of the sequencer protocol. Per the spec, the result of a round is either
