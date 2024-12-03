@@ -51,6 +51,8 @@ pub struct Worker<C> {
 
 /// Tracking information about a message and its status.
 struct Tracker {
+    /// Are we the original producer of this message?
+    ours: bool,
     /// The time when this info was created or last updated.
     start: Instant,
     /// The number of delivery retries.
@@ -225,6 +227,7 @@ impl<C: RawComm> Worker<C> {
             .retain(|k, _| *k.round() + BUFFER_HISTORY_LEN >= *self.round);
 
         let tracker = Tracker {
+            ours: true,
             start: Instant::now(),
             retries: 0,
             message: Some(msg),
@@ -237,6 +240,7 @@ impl<C: RawComm> Worker<C> {
         if let Err(err) = self.comm.broadcast(bytes).await {
             debug!(%err, "network error");
         } else {
+            debug!(%digest, "message broadcast");
             self.buffer
                 .get_mut(&digest)
                 .expect("tracker was just created")
@@ -279,12 +283,15 @@ impl<C: RawComm> Worker<C> {
         let digest = Digest::new(&msg);
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
+            ours: false,
             start: Instant::now(),
             retries: 0,
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
         });
+
+        debug!(%digest, status = %tracker.status, "proposal received");
 
         match tracker.status {
             // First time we see this message.
@@ -321,12 +328,13 @@ impl<C: RawComm> Worker<C> {
             // the application.
             Status::RequestedMsg(_) => {
                 tracker.message = Some(msg.clone());
+                debug!(%msg, %digest, "delivered");
                 self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered
             }
             // These states already have the message, so there is nothing to be done.
             Status::Delivered | Status::SentVote | Status::ReachedQuorum(_) => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring message proposal");
+                debug!(node = %self.label, %digest, status = %tracker.status, "ignoring message proposal");
                 debug_assert!(tracker.message.is_some())
             }
         }
@@ -349,12 +357,15 @@ impl<C: RawComm> Worker<C> {
         let source = *env.signing_key();
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
+            ours: false,
             start: Instant::now(),
             retries: 0,
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
         });
+
+        debug!(%digest, status = %tracker.status, votes = %tracker.votes.votes(), "vote received");
 
         match tracker.status {
             // Votes may precede the message proposal. We just try to add the votes
@@ -378,6 +389,7 @@ impl<C: RawComm> Worker<C> {
                             .send(msg.clone())
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
+                        debug!(%msg, "delivered");
                         tracker.status = Status::Delivered
                     } else {
                         let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
@@ -428,12 +440,15 @@ impl<C: RawComm> Worker<C> {
         let source = *env.signing_key();
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
+            ours: false,
             start: Instant::now(),
             retries: 0,
             message: None,
             votes: VoteAccumulator::new(self.committee.clone()),
             status: Status::Init,
         });
+
+        debug!(%digest, status = %tracker.status, "certificate received");
 
         match tracker.status {
             // The certificate allows us to immediately reach the quorum and deliver the
@@ -455,6 +470,7 @@ impl<C: RawComm> Worker<C> {
                         .send(msg.clone())
                         .await
                         .map_err(|_| RbcError::Shutdown)?;
+                    debug!(%msg, "delivered");
                     tracker.status = Status::Delivered
                 } else {
                     let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
@@ -499,6 +515,8 @@ impl<C: RawComm> Worker<C> {
             return Ok(());
         };
 
+        debug!(digest = %env.data(), status = %tracker.status, "get request received");
+
         match tracker.status {
             // We do not have the message ourselves when in these states.
             Status::Init | Status::RequestedMsg(_) => {
@@ -528,12 +546,13 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(node = %self.label))]
     async fn retry(&mut self, now: Instant) -> Result<()> {
         for (digest, tracker) in &mut self.buffer {
+            debug!(%digest, status = %tracker.status, "revisiting");
             match tracker.status {
                 Status::Init | Status::Delivered => {}
                 // We have sent a message but did not make further progress, so
                 // we try to send the message again and hope for some response.
                 Status::SentMsg => {
-                    let timeout = min(30, 5 * max(1, tracker.retries));
+                    let timeout = min(30, 3 * max(1, tracker.retries));
                     if tracker.start.elapsed() < Duration::from_secs(timeout.into()) {
                         continue;
                     }
@@ -541,7 +560,7 @@ impl<C: RawComm> Worker<C> {
                         .message
                         .as_ref()
                         .expect("message was sent => set in tracker");
-                    debug!(msg = %messg, "re-broadcasting message");
+                    debug!(%digest, msg = %messg, "re-broadcasting message");
                     let proto = Protocol::Propose(Cow::Borrowed(messg));
                     let bytes = bincode::serialize(&proto).expect("idempotent serialization");
                     tracker.start = now;
@@ -553,20 +572,25 @@ impl<C: RawComm> Worker<C> {
                 // If we have a message we might not have been able to send our vote
                 // or it might not have reached enough parties, so we try again here.
                 Status::ReceivedMsg | Status::ReceivedVotes | Status::SentVote => {
-                    if tracker.message.is_none() {
-                        continue;
+                    if let Some(msg) = &tracker.message {
+                        let timeout = min(30, 3 * max(1, tracker.retries));
+                        if tracker.start.elapsed() < Duration::from_millis(timeout.into()) {
+                            continue;
+                        }
+                        if tracker.ours {
+                            debug!(%digest, "sending our message (again)");
+                            let proto = Protocol::Propose(Cow::Borrowed(msg));
+                            let bytes = bincode::serialize(&proto)?;
+                            self.comm.broadcast(bytes).await.map_err(RbcError::net)?
+                        }
+                        debug!(%digest, "sending our vote (again)");
+                        let vote = Protocol::Vote(Envelope::signed(*digest, &self.keypair));
+                        let bytes = bincode::serialize(&vote).expect("idempotent serialization");
+                        tracker.start = now;
+                        tracker.retries = tracker.retries.saturating_add(1);
+                        self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
+                        tracker.status = Status::SentVote
                     }
-                    let timeout = min(30, 3 * max(1, tracker.retries));
-                    if tracker.start.elapsed() < Duration::from_millis(timeout.into()) {
-                        continue;
-                    }
-                    debug!("sending our vote (again)");
-                    let vote = Protocol::Vote(Envelope::signed(*digest, &self.keypair));
-                    let bytes = bincode::serialize(&vote).expect("idempotent serialization");
-                    tracker.start = now;
-                    tracker.retries = tracker.retries.saturating_add(1);
-                    self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
-                    tracker.status = Status::SentVote
                 }
                 // We have reached a quorum of votes but are missing the message which we
                 // had previously requested => try again, potentially from a different
@@ -576,7 +600,7 @@ impl<C: RawComm> Worker<C> {
                     if tracker.start.elapsed() < Duration::from_millis(timeout.into()) {
                         continue;
                     }
-                    debug!("requesting message again");
+                    debug!(%digest, "requesting message again");
                     let m = Protocol::Get(Envelope::signed(*digest, &self.keypair));
                     let b = bincode::serialize(&m).expect("idempotent serialization");
                     let s = tracker
@@ -601,6 +625,7 @@ impl<C: RawComm> Worker<C> {
                             .votes
                             .certificate()
                             .expect("reached quorum => certificate");
+                        debug!(%digest, %msg, "sending certificate");
                         let m = Protocol::Cert(Envelope::signed(c.clone(), &self.keypair));
                         let b = bincode::serialize(&m).expect("idempotent serialization");
                         tracker.start = now;
@@ -610,8 +635,10 @@ impl<C: RawComm> Worker<C> {
                             .send(msg.clone())
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
+                        debug!(%msg, "delivered");
                         tracker.status = Status::Delivered
                     } else {
+                        debug!(%digest, "requesting message");
                         let m = Protocol::Get(Envelope::signed(*digest, &self.keypair));
                         let b = bincode::serialize(&m).expect("idempotent serialization");
                         let s = tracker

@@ -122,7 +122,7 @@ impl Sailfish {
         C: Comm + Send + 'static,
     {
         let committee = StaticCommittee::from(&*staked_nodes);
-        let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
+        let consensus = Consensus::new(self.id, self.keypair, committee).with_metrics(metrics);
 
         Coordinator::new(self.id, comm, consensus)
     }
