@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use async_lock::RwLock;
-use hotshot_types::{PeerConfig, ValidatorConfig};
 use libp2p_identity::PeerId;
 use multiaddr::{multiaddr, Multiaddr};
 use sailfish::sailfish::Sailfish;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::{Keypair, PublicKey};
+use timeboost_utils::{PeerConfig, ValidatorConfig};
 
 #[cfg(test)]
 mod tests;

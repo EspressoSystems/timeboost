@@ -31,28 +31,24 @@ use crate::{
         DEFAULT_REPLICATION_FACTOR,
     },
     reexport::Multiaddr,
+    NetworkError, Topic,
 };
 use anyhow::{anyhow, Context};
 use async_lock::RwLock;
 use bimap::BiHashMap;
-use hotshot_types::{
-    boxed_sync,
-    constants::LOOK_AHEAD,
-    data::ViewNumber,
-    network::NetworkConfig,
-    traits::{
-        metrics::{Counter, Gauge, Metrics, NoMetrics},
-        network::{NetworkError, Topic},
-        signature_key::SignatureKey,
-    },
-    BoxSyncFuture,
-};
 use libp2p_identity::{
     ed25519::{self, SecretKey},
     Keypair, PeerId,
 };
 use rand::{rngs::StdRng, seq::IteratorRandom, SeedableRng};
 use serde::Serialize;
+use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
+use timeboost_utils::{
+    boxed_sync,
+    traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
+    types::{config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber},
+    BoxSyncFuture,
+};
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,
     Sender as BoundedSender, UnboundedReceiver, UnboundedSender,
@@ -139,7 +135,7 @@ pub struct Libp2pNetwork<K: SignatureKey + 'static> {
     /// Sender for broadcast messages
     sender: UnboundedSender<Vec<u8>>,
     /// Sender for node lookup (relevant view number, key of node) (None for shutdown)
-    node_lookup_send: BoundedSender<Option<(ViewNumber, K)>>,
+    node_lookup_send: BoundedSender<Option<(RoundNumber, K)>>,
     /// this is really cheating to enable local tests
     /// hashset of (bootstrap_addr, peer_id)
     bootstrap_addrs: PeerInfoVec,
@@ -170,7 +166,7 @@ pub fn derive_libp2p_keypair<K: SignatureKey>(
     private_key: &K::PrivateKey,
 ) -> anyhow::Result<Keypair> {
     // Derive a secondary key from our primary private key
-    let derived_key = blake3::derive_key("libp2p key", &(bincode::serialize(&private_key)?));
+    let derived_key = blake3::derive_key("libp2p key", &private_key.to_bytes());
     let derived_key = SecretKey::try_from_bytes(derived_key)?;
 
     // Create an `ed25519` keypair from the derived key
@@ -433,7 +429,7 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
 
     /// Spawns task for looking up nodes pre-emptively
     #[allow(clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    fn spawn_node_lookup(&self, mut node_lookup_recv: BoundedReceiver<Option<(ViewNumber, K)>>) {
+    fn spawn_node_lookup(&self, mut node_lookup_recv: BoundedReceiver<Option<(RoundNumber, K)>>) {
         let handle = Arc::clone(&self.handle);
         let dht_timeout = self.dht_timeout;
         let latest_seen_view = Arc::clone(&self.latest_seen_view);
@@ -693,9 +689,9 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
     #[instrument(name = "Libp2pNetwork::queue_node_lookup", skip_all)]
     pub fn queue_node_lookup(
         &self,
-        view_number: ViewNumber,
+        view_number: RoundNumber,
         pk: K,
-    ) -> Result<(), TrySendError<Option<(ViewNumber, K)>>> {
+    ) -> Result<(), TrySendError<Option<(RoundNumber, K)>>> {
         self.node_lookup_send.try_send(Some((view_number, pk)))
     }
 }

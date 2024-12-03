@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use portpicker::pick_unused_port;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_core::types::{committee::StaticCommittee, metrics::ConsensusMetrics};
+use timeboost_core::types::{committee::StaticCommittee, metrics::SailfishMetrics};
 use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{sync::watch, task::JoinSet};
 
@@ -97,7 +97,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                 let mut coordinator = node.init(
                     net,
                     (*staked_nodes).clone(),
-                    Arc::new(ConsensusMetrics::default()),
+                    Arc::new(SailfishMetrics::default()),
                 );
 
                 let mut events = Vec::new();

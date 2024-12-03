@@ -3,9 +3,10 @@ use std::collections::{HashMap, HashSet};
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
 use timeboost_core::types::envelope::Envelope;
+use timeboost_core::types::message::Message;
 use timeboost_core::types::message::{Action, Timeout};
-use timeboost_core::types::{message::Message, round_number::RoundNumber};
 use timeboost_core::types::{Keypair, NodeId, PublicKey, Signature};
+use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
 use crate::tests::consensus::helpers::{
@@ -329,7 +330,7 @@ fn basic_liveness() {
                 assert!(n.dag().max_round().unwrap() >= n.committed_round() - 2);
             }
             // No one is late => buffer should always be empty:
-            assert!(n.buffer().is_empty());
+            assert_eq!(0, n.buffer().count());
         }
         actions = next
     }

@@ -15,7 +15,7 @@ for i in {0..4}; do
         --metrics-port $((9000 + i)) \
         --base local \
         --until 500 \
-        --watchdog-timeout 30 &
+        --watchdog-timeout 300 &
 done
 
 wait
