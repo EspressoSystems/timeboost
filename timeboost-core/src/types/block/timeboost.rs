@@ -15,15 +15,15 @@ use crate::types::{
 /// * a consensus timestamp $T_R$
 /// * a consensus delayed inbox index $I_R$
 /// * an unordered set $N_R$ of non-priority transactions. A subset of
-/// these may be encrypted.
-/// If a non-priority transaction is encrypted, then the entire
-/// transaction is encrypted as a single ciphertext.
+///     these may be encrypted.
+///     If a non-priority transaction is encrypted, then the entire
+///     transaction is encrypted as a single ciphertext.
 /// * an ordered set $B_R$ of priority bundles. A subset of these may be encrypted.
-/// If a priority bundle is encrypted, then the payload
-/// (i.e. the contents of all transactions contained in the bundle)
-/// is encrypted as a single ciphertext, with the other fields of
-/// the bundle (including epoch number, sequence number, and signature)
-/// remaining in plaintext.
+///     If a priority bundle is encrypted, then the payload
+///     (i.e. the contents of all transactions contained in the bundle)
+///     is encrypted as a single ciphertext, with the other fields of
+///     the bundle (including epoch number, sequence number, and signature)
+///     remaining in plaintext.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InclusionPhaseBlock {
     /// The round number of the block.
@@ -47,7 +47,7 @@ pub struct InclusionPhaseBlock {
     /// which satisfies:
     /// * safety: the member’s view is ≤ the true number
     /// * liveness: if the true number is `i`,
-    /// then the member’s view will eventually be ≥ `i`.
+    ///     then the member’s view will eventually be ≥ `i`.
     delayed_inbox_index: u64,
 
     /// The set of transactions in the block. This includes both

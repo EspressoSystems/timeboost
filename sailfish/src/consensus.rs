@@ -3,16 +3,16 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::time::Timestamp;
-use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
-    sailfish_block::SailfishBlock,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
     round_number::RoundNumber,
+    sailfish_block::SailfishBlock,
+    time::Timestamp,
+    transaction::Transaction,
     transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,

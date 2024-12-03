@@ -9,9 +9,9 @@ use super::{
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
-use crate::types::sailfish_block::SailfishBlock;
-use crate::types::committee::StaticCommittee;
-use crate::types::round_number::RoundNumber;
+use crate::types::{
+    committee::StaticCommittee, round_number::RoundNumber, sailfish_block::SailfishBlock,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<Status = Validated> {
