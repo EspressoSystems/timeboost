@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, sync::Arc};
 
+use sailfish::coordinator::Coordinator;
 use timeboost_core::types::message::{Action, Message};
+use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
+use timeboost_core::types::test::testnet::MsgQueues;
 use timeboost_core::{logging, traits::comm::Comm};
+use tokio::sync::watch::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
@@ -10,21 +15,7 @@ use crate::Group;
 
 pub mod external;
 pub mod internal;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CoordinatorAuditEvent {
-    ActionTaken(Action),
-    MessageReceived(Message),
-}
-
-impl std::fmt::Display for CoordinatorAuditEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ActionTaken(a) => write!(f, "Action taken: {a}"),
-            Self::MessageReceived(m) => write!(f, "Message received: {m}"),
-        }
-    }
-}
+pub mod network_tests;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
@@ -32,9 +23,12 @@ pub enum TestOutcome {
     Failed,
 }
 
+type TestConditionFn = Arc<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
+#[derive(Clone)]
 pub struct TestCondition {
     identifier: String,
-    eval: Box<dyn Fn(&CoordinatorAuditEvent) -> TestOutcome + Send + Sync>,
+    outcome: TestOutcome,
+    eval: TestConditionFn,
 }
 
 impl std::fmt::Display for TestCondition {
@@ -46,24 +40,41 @@ impl std::fmt::Display for TestCondition {
 impl TestCondition {
     pub fn new<F>(identifier: String, eval: F) -> Self
     where
-        F: for<'a> Fn(&'a CoordinatorAuditEvent) -> TestOutcome + Send + Sync + 'static,
+        F: for<'a, 'b> Fn(Option<&'a Message>, Option<&'b Action>) -> TestOutcome
+            + Send
+            + Sync
+            + Clone
+            + 'static,
     {
         Self {
             identifier,
-            eval: Box::new(eval),
+            outcome: TestOutcome::Failed,
+            eval: Arc::new(eval),
         }
     }
 
-    pub fn evaluate(&self, logs: &[CoordinatorAuditEvent]) -> TestOutcome {
-        for e in logs.iter() {
-            let result = (self.eval)(e);
-            if result != TestOutcome::Failed {
-                return result;
+    pub fn evaluate(&mut self, msgs: &[Message], actions: &[Action]) -> TestOutcome {
+        // Only try to evaluate if the test condition has not yet passed
+        if self.outcome == TestOutcome::Failed {
+            for m in msgs.iter() {
+                let result = (self.eval)(Some(m), None);
+                if result == TestOutcome::Passed {
+                    // We are done with this test condition
+                    self.outcome = result;
+                    return result;
+                }
+            }
+
+            for a in actions.iter() {
+                let result = (self.eval)(None, Some(a));
+                if result == TestOutcome::Passed {
+                    // We are done with this test condition
+                    self.outcome = result;
+                    return result;
+                }
             }
         }
-
-        // We have yet to see the event that we're looking for.
-        TestOutcome::Failed
+        self.outcome
     }
 }
 
@@ -93,7 +104,12 @@ impl TaskHandleResult {
 pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send;
-    fn new(group: Group, outcomes: HashMap<usize, Arc<Vec<TestCondition>>>) -> Self;
+    type Testnet: Comm;
+    fn new(
+        group: Group,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor,
+    ) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
     async fn start(
         &mut self,
@@ -104,6 +120,59 @@ pub trait TestableNetwork {
         handles: JoinSet<TaskHandleResult>,
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome>;
+
+    /// Default method for running the coordinator in tests
+    async fn run_coordinator(
+        coordinator: &mut Coordinator<Self::Testnet>,
+        conditions: &mut Vec<TestCondition>,
+        msgs: MsgQueues,
+        mut shutdown_rx: Receiver<()>,
+        node_id: usize,
+    ) -> TaskHandleResult {
+        match coordinator.start().await {
+            Ok(actions) => {
+                for a in actions {
+                    let _ = coordinator.execute(a).await;
+                }
+            }
+            Err(e) => {
+                panic!("Failed to start coordinator: {}", e);
+            }
+        }
+        loop {
+            tokio::select! {
+                res = coordinator.next() => match res {
+                    Ok(actions) => {
+                        for a in &actions {
+                            let _ = coordinator.execute(a.clone()).await;
+                        }
+                        // Evaluate if we have seen the specified conditions of the test
+                        // Go through every test condition and evaluate
+                        // Do not terminate loop early to ensure we evaluate all
+                        let mut all_passed = true;
+                        let msgs = msgs.drain_inbox();
+                        for c in conditions.iter_mut() {
+                            if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
+                                all_passed = false;
+                            }
+                        }
+                        if all_passed {
+                            // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                            coordinator.shutdown().await.expect("Network to be shutdown");
+                            return TaskHandleResult::new(node_id, TestOutcome::Passed);
+                        }
+                    }
+                    Err(_e) => {}
+                },
+                shutdown_result = shutdown_rx.changed() => {
+                    coordinator.shutdown().await.expect("Network to be shutdown");
+                    // Unwrap the potential error with receiving the shutdown token.
+                    shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
+                    return TaskHandleResult::new(node_id, TestOutcome::Failed);
+                }
+            }
+        }
+    }
 }
 
 pub struct NetworkTest<N: TestableNetwork> {
@@ -114,12 +183,13 @@ pub struct NetworkTest<N: TestableNetwork> {
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
         group: Group,
-        outcomes: HashMap<usize, Arc<Vec<TestCondition>>>,
+        outcomes: HashMap<usize, Vec<TestCondition>>,
         duration: Option<Duration>,
+        interceptor: NetworkMessageInterceptor,
     ) -> Self {
         Self {
             duration: duration.unwrap_or(Duration::from_secs(4)),
-            network: N::new(group, outcomes),
+            network: N::new(group, outcomes, interceptor),
         }
     }
 
