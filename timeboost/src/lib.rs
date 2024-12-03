@@ -67,10 +67,6 @@ pub struct Timeboost {
     /// The metrics for the sailfish node.
     #[allow(dead_code)]
     sf_metrics: Arc<SailfishMetrics>,
-
-    /// The metrics for the timeboost node.
-    #[allow(dead_code)]
-    tb_metrics: Arc<TimeboostMetrics>,
 }
 
 impl Timeboost {
@@ -84,7 +80,6 @@ impl Timeboost {
         app_rx: Receiver<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
         sf_metrics: Arc<SailfishMetrics>,
-        tb_metrics: Arc<TimeboostMetrics>,
     ) -> Self {
         let mempool = Arc::new(RwLock::new(Mempool::new()));
         Self {
@@ -96,7 +91,6 @@ impl Timeboost {
             app_rx,
             shutdown_rx,
             sf_metrics,
-            tb_metrics: tb_metrics.clone(),
             mempool: mempool.clone(),
         }
     }
@@ -106,6 +100,7 @@ impl Timeboost {
         mut self,
         prom: Arc<PrometheusMetrics>,
         coordinator: &mut Coordinator<Libp2p>,
+        tb_metrics: TimeboostMetrics,
     ) -> Result<()> {
         let app_tx = self.app_tx.clone();
         let rpc_handle = tokio::spawn(async move {
@@ -139,7 +134,7 @@ impl Timeboost {
             NoOpDecryptionPhase,
             NoOpOrderingPhase,
             NoOpBlockBuilder,
-            self.tb_metrics,
+            tb_metrics,
             self.mempool.clone(),
         );
 
@@ -235,7 +230,7 @@ pub async fn run_timeboost(
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
-    let tb_metrics = Arc::new(TimeboostMetrics::new(prom.as_ref()));
+    let tb_metrics = TimeboostMetrics::new(prom.as_ref());
     let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
@@ -261,9 +256,8 @@ pub async fn run_timeboost(
         tb_app_rx,
         shutdown_rx,
         sf_metrics,
-        tb_metrics,
     );
 
     info!("Timeboost is running.");
-    timeboost.go(prom, coordinator).await
+    timeboost.go(prom, coordinator, tb_metrics).await
 }

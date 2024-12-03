@@ -10,14 +10,14 @@ use timeboost_core::types::{
     },
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
-    time::{Epoch, Timestamp},
+    time::{Epoch, Timestamp, EPOCH_DURATION},
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::{
     sync::{mpsc::Sender, watch, RwLock},
     time::{sleep, Instant},
 };
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use crate::{
     mempool::{self, Mempool},
@@ -31,11 +31,8 @@ use super::phase::{
     ordering::OrderingPhase,
 };
 
-/// The duration of an epoch in seconds.
-const EPOCH_TIME_SECS: u64 = 60;
-
 /// The time between consensus intervals in ms.
-const CONSENSUS_INTERVAL_MS: u64 = 250;
+const CONSENSUS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Members must keep the following state between rounds:
 /// - The number of the last successfully completed round.
@@ -99,20 +96,17 @@ where
     decryption_phase: D,
     ordering_phase: O,
     block_builder: B,
-    metrics: Arc<TimeboostMetrics>,
+    metrics: TimeboostMetrics,
     round_state: RoundState,
 
     /// The timeboost clock
-    epoch_clock: BoxFuture<'static, u64>,
+    epoch_clock: BoxFuture<'static, Epoch>,
 
     /// The time the clock started.
     epoch_clock_start_time: Instant,
 
     /// The consensus interval clock.
     consensus_interval_clock: BoxFuture<'static, u64>,
-
-    /// The current epoch.
-    epoch: Epoch,
 
     /// The current round (distinct from the Sailfish round).
     round: RoundNumber,
@@ -133,7 +127,7 @@ where
         decryption_phase: D,
         ordering_phase: O,
         block_builder: B,
-        metrics: Arc<TimeboostMetrics>,
+        metrics: TimeboostMetrics,
         mempool: Arc<RwLock<Mempool>>,
     ) -> Self {
         Self {
@@ -146,7 +140,6 @@ where
             epoch_clock: pending().boxed(),
             epoch_clock_start_time: Instant::now(),
             consensus_interval_clock: pending().boxed(),
-            epoch: Epoch::genesis(),
             round: RoundNumber::genesis(),
             mempool,
         }
@@ -164,17 +157,17 @@ where
                 }
                 round = &mut self.consensus_interval_clock => {
                     info!(%round, "starting timeboost consensus");
-                    self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
+                    self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL)
                         .map(move |_| round + 1)
                         .fuse()
                         .boxed();
 
-                        // Drain the snapshot
+                    // Drain the snapshot
                     let mempool_snapshot = self.mempool.write().await.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
 
                     // Build the block from the snapshoty.
-                    let Ok(block) = self.build(self.epoch, self.round, mempool_snapshot) else {
-                        error!(%self.epoch, %self.round, "failed to build block");
+                    let Ok(block) = self.build(mempool_snapshot) else {
+                        error!(%self.round, "failed to build block");
                         continue;
                     };
 
@@ -185,35 +178,27 @@ where
                         error!(%e, "failed to send block built event");
                     }
                 }
-                _ = &mut self.epoch_clock => {
-                    self.epoch_clock = sleep(Duration::from_secs(EPOCH_TIME_SECS))
-                        .map(move |_| {
-                            let elapsed = Instant::now().duration_since(self.epoch_clock_start_time);
-                            let epoch = elapsed.as_secs() / EPOCH_TIME_SECS;
-                            self.epoch = Epoch::new(epoch.into());
-                            epoch
-                        })
-                        .fuse()
-                        .boxed();
-                }
-
             }
         }
     }
 
-    pub fn build(
-        &mut self,
-        epochno: Epoch,
-        round: RoundNumber,
-        mempool_snapshot: Vec<SailfishBlock>,
-    ) -> Result<TimeboostBlock> {
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(round = %self.round)
+    )]
+    pub fn build(&mut self, mempool_snapshot: Vec<SailfishBlock>) -> Result<TimeboostBlock> {
         let candidate_list =
             CandidateList::from_mempool_snapshot(mempool_snapshot, &self.round_state);
+        let epoch = candidate_list.epoch();
 
         // Phase 1: Inclusion
-        let Ok(inclusion_list) = self.inclusion_phase.produce_inclusion_list(candidate_list) else {
-            self.metrics.failed_epochs.add(1);
-            error!(%epochno, %round, "failed to produce inclusion list");
+        let Ok(inclusion_list) = self
+            .inclusion_phase
+            .produce_inclusion_list(self.round, candidate_list)
+        else {
+            self.metrics.get_failures_in_epoch(epoch).add(1);
+            error!(%epoch, %self.round, "failed to produce inclusion list");
             bail!("failed to produce inclusion list")
         };
 
@@ -222,26 +207,26 @@ where
 
         // Phase 2: Decryption
         let Ok(decrypted_transactions) = self.decryption_phase.decrypt(inclusion_list) else {
-            self.metrics.failed_epochs.add(1);
-            error!(%epochno, %round, "failed to decrypt transactions");
+            self.metrics.get_failures_in_epoch(epoch).add(1);
+            error!(%epoch, %self.round, "failed to decrypt transactions");
             bail!("failed to decrypt transactions")
         };
 
         // Phase 3: Ordering
         let Ok(ordered_transactions) = self.ordering_phase.order(decrypted_transactions) else {
-            self.metrics.failed_epochs.add(1);
-            error!(%epochno, %round, "failed to order transactions");
+            self.metrics.get_failures_in_epoch(epoch).add(1);
+            error!(%epoch, %self.round, "failed to order transactions");
             bail!("failed to order transactions")
         };
 
         // Phase 4: Block Building
         let Ok(block) = self.block_builder.build(ordered_transactions) else {
-            self.metrics.failed_epochs.add(1);
-            error!(%epochno, %round, "failed to build block");
+            self.metrics.get_failures_in_epoch(epoch).add(1);
+            error!(%epoch, %self.round, "failed to build block");
             bail!("failed to build block")
         };
 
-        info!(%epochno, %round, "built block");
+        info!(%self.round, "built block");
 
         Ok(block)
     }

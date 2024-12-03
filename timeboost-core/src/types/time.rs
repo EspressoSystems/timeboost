@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-const EPOCH_DURATION: Duration = Duration::from_secs(60);
+pub const EPOCH_DURATION: Duration = Duration::from_secs(60);
 
 /// Epoch number.
 //
@@ -44,7 +44,7 @@ impl Timestamp {
         Self(d.as_secs())
     }
 
-    pub fn epoch(self) -> Epoch {
+    pub fn into_epoch(self) -> Epoch {
         Epoch(u128::from(self.0 / EPOCH_DURATION.as_secs()))
     }
 
@@ -122,7 +122,7 @@ mod tests {
 
     quickcheck! {
         fn timestamp_of_epoch(n: u64) -> bool {
-            let e: u128 = Timestamp(n).epoch().into();
+            let e: u128 = Timestamp(n).into_epoch().into();
             let t: u128 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }
