@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use timeboost_core::types::{block::SailfishBlock, metrics::TimeboostMetrics};
+use timeboost_core::types::{
+    block::timeboost::TimeboostBlock, metrics::TimeboostMetrics, sailfish_block::SailfishBlock,
+};
 use tracing::{error, info};
 
 use super::phase::{
-    block_builder::{block::TimeboostBlock, BlockBuilder},
-    decryption::DecryptionPhase,
-    inclusion::InclusionPhase,
+    block_builder::BlockBuilder, decryption::DecryptionPhase, inclusion::InclusionPhase,
     ordering::OrderingPhase,
 };
 

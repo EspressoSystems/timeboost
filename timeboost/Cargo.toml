@@ -6,10 +6,6 @@ description.workspace = true
 
 [features]
 until = ["reqwest"]
-sqlite = ["sqlx/sqlite"]
-postgres = ["sqlx/postgres"]
-noop = []
-default = ["noop"]
 
 
 [dependencies]
@@ -37,7 +33,6 @@ prometheus = { workspace = true }
 tracing-subscriber = { workspace = true }
 tide-disco = { workspace = true }
 surf-disco = { workspace = true }
-sqlx = { workspace = true }
 vbs = { workspace = true }
 
 [[bin]]

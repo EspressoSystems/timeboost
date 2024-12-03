@@ -1,6 +1,5 @@
 use anyhow::Result;
-
-use crate::sequencer::phase::inclusion::block::InclusionPhaseBlock;
+use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
 
 use super::OrderingPhase;
 

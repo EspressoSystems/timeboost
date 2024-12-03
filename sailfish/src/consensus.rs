@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use timeboost_core::types::time::Timestamp;
 use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
-    block::SailfishBlock,
+    sailfish_block::SailfishBlock,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use timeboost_core::types::{
-    block::SailfishBlock,
+    sailfish_block::SailfishBlock,
     event::{TimeboostEventType, TimeboostStatusEvent},
 };
 use tokio::sync::{mpsc::Sender, watch};

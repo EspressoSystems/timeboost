@@ -9,7 +9,7 @@ use super::{
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
-use crate::types::block::SailfishBlock;
+use crate::types::sailfish_block::SailfishBlock;
 use crate::types::committee::StaticCommittee;
 use crate::types::round_number::RoundNumber;
 

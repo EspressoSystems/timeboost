@@ -1,8 +1,6 @@
 use anyhow::Result;
-use block::InclusionPhaseBlock;
-use timeboost_core::types::block::SailfishBlock;
+use timeboost_core::types::{block::timeboost::InclusionPhaseBlock, sailfish_block::SailfishBlock};
 
-pub mod block;
 pub mod noop;
 
 pub struct CandidateList {}

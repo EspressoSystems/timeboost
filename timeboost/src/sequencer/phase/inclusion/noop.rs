@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 
-use super::{block::InclusionPhaseBlock, InclusionPhase};
+use super::InclusionPhase;
 use anyhow::Result;
-use timeboost_core::types::{block::SailfishBlock, round_number::RoundNumber};
+use timeboost_core::types::{
+    block::timeboost::InclusionPhaseBlock, round_number::RoundNumber, sailfish_block::SailfishBlock,
+};
 
 pub struct NoOpInclusionPhase;
 impl InclusionPhase for NoOpInclusionPhase {

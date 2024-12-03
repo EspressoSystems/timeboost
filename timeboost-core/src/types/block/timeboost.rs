@@ -1,8 +1,10 @@
 use anyhow::{ensure, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-use timeboost_core::types::{
-    block::SailfishBlock, round_number::RoundNumber, time::Timestamp, transaction::Transaction,
+use crate::types::{
+    round_number::RoundNumber, sailfish_block::SailfishBlock, time::Timestamp,
+    transaction::Transaction,
 };
 
 /// An inclusion phase block is a block which is emitted by the inclusion phase
@@ -22,6 +24,7 @@ use timeboost_core::types::{
 /// is encrypted as a single ciphertext, with the other fields of
 /// the bundle (including epoch number, sequence number, and signature)
 /// remaining in plaintext.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InclusionPhaseBlock {
     /// The round number of the block.
     round: RoundNumber,
@@ -79,5 +82,28 @@ impl InclusionPhaseBlock {
             delayed_inbox_index,
             tx,
         })
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        self.tx.iter().map(|tx| tx.size_bytes()).sum()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeboostBlock {
+    pub transactions: Vec<InclusionPhaseBlock>,
+}
+
+impl TimeboostBlock {
+    pub fn is_empty(&self) -> bool {
+        self.transactions.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.transactions.len()
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        self.transactions.iter().map(|tx| tx.size_bytes()).sum()
     }
 }

@@ -1,11 +1,8 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use hotshot_types::{data::ViewNumber, traits::node_implementation::ConsensusTime};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 
-#[derive(
-    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromRow,
-)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct RoundNumber(u64);
 
 impl RoundNumber {

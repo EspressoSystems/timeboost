@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use timeboost_core::types::block::SailfishBlock;
+use timeboost_core::types::sailfish_block::SailfishBlock;
 
 /// The mempool limit in bytes is 500mb.
 pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;

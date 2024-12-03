@@ -1,6 +1,5 @@
 use anyhow::Result;
-
-use super::inclusion::block::InclusionPhaseBlock;
+use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
 
 pub mod noop;
 
