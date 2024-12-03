@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
+    block::sailfish::SailfishBlock,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
-    sailfish_block::SailfishBlock,
     time::Timestamp,
     transaction::Transaction,
     transaction::TransactionsQueue,

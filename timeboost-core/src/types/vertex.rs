@@ -10,7 +10,7 @@ use super::{
     time::Timestamp,
     PublicKey,
 };
-use crate::types::{sailfish_block::SailfishBlock, Label};
+use crate::types::{block::sailfish::SailfishBlock, Label};
 use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

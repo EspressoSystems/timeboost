@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-use crate::types::{sailfish_block::SailfishBlock, time::Timestamp, transaction::Transaction};
+use crate::types::{block::sailfish::SailfishBlock, time::Timestamp, transaction::Transaction};
 use timeboost_utils::types::round_number::RoundNumber;
 
 /// An inclusion phase block is a block which is emitted by the inclusion phase

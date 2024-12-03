@@ -3,7 +3,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::types::{error::SailfishError, transaction::Transaction};
 
-use super::{block::timeboost::TimeboostBlock, sailfish_block::SailfishBlock};
+use super::{block::sailfish::SailfishBlock, block::timeboost::TimeboostBlock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SailfishEventType {

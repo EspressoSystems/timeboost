@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use timeboost_core::types::{
-    block::timeboost::TimeboostBlock, metrics::TimeboostMetrics, sailfish_block::SailfishBlock,
+    block::sailfish::SailfishBlock, block::timeboost::TimeboostBlock, metrics::TimeboostMetrics,
 };
 use tracing::{error, info};
 

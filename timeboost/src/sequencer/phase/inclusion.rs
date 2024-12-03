@@ -1,5 +1,7 @@
 use anyhow::Result;
-use timeboost_core::types::{block::timeboost::InclusionPhaseBlock, sailfish_block::SailfishBlock};
+use timeboost_core::types::{
+    block::sailfish::SailfishBlock, block::timeboost::InclusionPhaseBlock,
+};
 
 pub mod noop;
 

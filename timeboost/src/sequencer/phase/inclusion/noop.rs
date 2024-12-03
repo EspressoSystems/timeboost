@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 
 use super::InclusionPhase;
 use anyhow::Result;
-use timeboost_core::types::{block::timeboost::InclusionPhaseBlock, sailfish_block::SailfishBlock};
+use timeboost_core::types::{
+    block::sailfish::SailfishBlock, block::timeboost::InclusionPhaseBlock,
+};
 use timeboost_utils::types::round_number::RoundNumber;
 
 pub struct NoOpInclusionPhase;
