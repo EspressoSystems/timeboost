@@ -5,14 +5,12 @@ use std::fmt;
 use std::time::Duration;
 
 use rand::seq::IteratorRandom;
+use timeboost_core::traits::comm::RawComm;
 use timeboost_core::types::certificate::Certificate;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::envelope::{Envelope, Unchecked, Validated};
 use timeboost_core::types::message::Message;
 use timeboost_core::types::{Keypair, Label, PublicKey};
-use timeboost_networking::network::client::Libp2pNetwork;
-use timeboost_networking::NetworkError;
-use timeboost_networking::Topic;
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
@@ -30,13 +28,13 @@ const BUFFER_HISTORY_LEN: u64 = 8;
 
 /// A worker is run by `Rbc` to perform the actual work of sending and
 /// delivering messages.
-pub struct Worker {
+pub struct Worker<C> {
     /// The keypair we use for signing some of our protocol messages.
     keypair: Keypair,
     /// Label, used in debug logs.
     label: Label,
-    /// The underlying network we use.
-    libp2p: Libp2pNetwork<PublicKey>,
+    /// Underlying communication type.
+    comm: C,
     /// Our channel to deliver messages to the application layer.
     tx: Sender,
     /// Our channel to receive messages from the application layer.
@@ -109,18 +107,12 @@ impl fmt::Display for Status {
     }
 }
 
-impl Worker {
-    pub fn new(
-        tx: Sender,
-        rx: Receiver,
-        kp: Keypair,
-        nt: Libp2pNetwork<PublicKey>,
-        sc: StaticCommittee,
-    ) -> Self {
+impl<C: RawComm> Worker<C> {
+    pub fn new(tx: Sender, rx: Receiver, kp: Keypair, nt: C, sc: StaticCommittee) -> Self {
         Self {
             label: Label::new(kp.public_key()),
             keypair: kp,
-            libp2p: nt,
+            comm: nt,
             tx,
             rx,
             round: RoundNumber::genesis(),
@@ -147,14 +139,14 @@ impl Worker {
                         warn!(%err, "error retrying");
                     }
                 },
-                val = self.libp2p.recv_message() => {
+                val = self.comm.receive() => {
                     match val {
                         Ok(bytes) => {
                             if let Err(err) = self.on_inbound(bytes).await {
                                 warn!(%err, "error on inbound message");
                             }
                         }
-                        Err(err) => warn!(%err, "error receiving message from libp2p")
+                        Err(err) => warn!(%err, "error receiving message from network")
                     }
                 },
                 cmd = self.rx.recv() => match cmd {
@@ -165,7 +157,7 @@ impl Worker {
                             }
                             Err(RbcError::Shutdown) => {
                                 warn!("unexpected shutdown detected");
-                                self.libp2p.shut_down().await;
+                                let _ = self.comm.shutdown().await;
                                 return
                             }
                             Err(err) => {
@@ -190,7 +182,7 @@ impl Worker {
                     }
                     // Terminate operation.
                     Some(Command::Shutdown(reply)) => {
-                        self.libp2p.shut_down().await;
+                        let _ = self.comm.shutdown().await;
                         let _ = reply.send(());
                         return
                     }
@@ -207,14 +199,14 @@ impl Worker {
     async fn on_broadcast(&mut self, msg: &Message<Validated>) -> Result<()> {
         let proto = Protocol::Bypass(Cow::Borrowed(msg));
         let bytes = bincode::serialize(&proto)?;
-        self.libp2p.broadcast_message(bytes, Topic::Global).await?;
+        self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
         Ok(())
     }
 
     /// 1:1 communication.
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_send(&mut self, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
-        send(&self.libp2p, to, msg).await
+        send(&mut self.comm, to, msg).await
     }
 
     /// Start RBC broadcast.
@@ -242,7 +234,7 @@ impl Worker {
 
         self.buffer.insert(digest, tracker);
 
-        if let Err(err) = self.libp2p.broadcast_message(bytes, Topic::Global).await {
+        if let Err(err) = self.comm.broadcast(bytes).await {
             debug!(%err, "network error");
         } else {
             self.buffer
@@ -301,7 +293,7 @@ impl Worker {
                 tracker.status = Status::ReceivedMsg;
                 let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                 let bytes = bincode::serialize(&vote)?;
-                self.libp2p.broadcast_message(bytes, Topic::Global).await?;
+                self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
             }
             // We received a duplicate or a reflection of our own outbound message.
@@ -310,7 +302,7 @@ impl Worker {
                 debug_assert!(tracker.message.is_some());
                 let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                 let bytes = bincode::serialize(&vote)?;
-                self.libp2p.broadcast_message(bytes, Topic::Global).await?;
+                self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
             }
             // We received votes, possibly prior to the message. If so we update the
@@ -320,7 +312,7 @@ impl Worker {
                     tracker.message = Some(msg);
                     let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
                     let bytes = bincode::serialize(&vote)?;
-                    self.libp2p.broadcast_message(bytes, Topic::Global).await?;
+                    self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                     tracker.status = Status::SentVote
                 }
             }
@@ -381,7 +373,7 @@ impl Worker {
                     if let Some(msg) = &tracker.message {
                         let m = Protocol::Cert(Envelope::signed(cert.clone(), &self.keypair));
                         let b = bincode::serialize(&m)?;
-                        self.libp2p.broadcast_message(b, Topic::Global).await?;
+                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         self.tx
                             .send(msg.clone())
                             .await
@@ -390,7 +382,7 @@ impl Worker {
                     } else {
                         let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                         let b = bincode::serialize(&m)?;
-                        self.libp2p.direct_message(b, source).await?;
+                        self.comm.send(source, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg(source);
                     }
                 }
@@ -406,7 +398,7 @@ impl Worker {
             Status::ReachedQuorum(source) if tracker.message.is_none() => {
                 let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                 let b = bincode::serialize(&m)?;
-                self.libp2p.direct_message(b, source).await?;
+                self.comm.send(source, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg(source);
             }
             Status::ReachedQuorum(_) | Status::RequestedMsg(_) | Status::Delivered => {
@@ -458,7 +450,7 @@ impl Worker {
                 if let Some(msg) = &tracker.message {
                     let m = Protocol::Cert(Envelope::signed(env.into_data(), &self.keypair));
                     let b = bincode::serialize(&m)?;
-                    self.libp2p.broadcast_message(b, Topic::Global).await?;
+                    self.comm.broadcast(b).await.map_err(RbcError::net)?;
                     self.tx
                         .send(msg.clone())
                         .await
@@ -467,7 +459,7 @@ impl Worker {
                 } else {
                     let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                     let b = bincode::serialize(&m)?;
-                    self.libp2p.direct_message(b, source).await?;
+                    self.comm.send(source, b).await.map_err(RbcError::net)?;
                     tracker.status = Status::RequestedMsg(source);
                 }
             }
@@ -476,7 +468,7 @@ impl Worker {
             Status::ReachedQuorum(source) if tracker.message.is_none() => {
                 let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
                 let b = bincode::serialize(&m)?;
-                self.libp2p.direct_message(b, source).await?;
+                self.comm.send(source, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg(source);
             }
             Status::ReachedQuorum(_) | Status::RequestedMsg(_) | Status::Delivered => {
@@ -516,7 +508,7 @@ impl Worker {
             // Here, we may have the message and if so, we gladly share it.
             Status::SentVote | Status::ReceivedVotes | Status::ReachedQuorum(_) => {
                 if let Some(msg) = &tracker.message {
-                    send(&self.libp2p, *env.signing_key(), msg).await?;
+                    send(&mut self.comm, *env.signing_key(), msg).await?;
                 }
             }
             // In these states we must have the message and send to to the peer.
@@ -525,7 +517,7 @@ impl Worker {
                     .message
                     .as_ref()
                     .expect("message is present in these status");
-                send(&self.libp2p, *env.signing_key(), msg).await?;
+                send(&mut self.comm, *env.signing_key(), msg).await?;
             }
         }
 
@@ -554,7 +546,7 @@ impl Worker {
                     let bytes = bincode::serialize(&proto).expect("idempotent serialization");
                     tracker.start = now;
                     tracker.retries = tracker.retries.saturating_add(1);
-                    if let Err(e) = self.libp2p.broadcast_message(bytes, Topic::Global).await {
+                    if let Err(e) = self.comm.broadcast(bytes).await {
                         debug!(err = %e, "network error");
                     }
                 }
@@ -573,7 +565,7 @@ impl Worker {
                     let bytes = bincode::serialize(&vote).expect("idempotent serialization");
                     tracker.start = now;
                     tracker.retries = tracker.retries.saturating_add(1);
-                    self.libp2p.broadcast_message(bytes, Topic::Global).await?;
+                    self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                     tracker.status = Status::SentVote
                 }
                 // We have reached a quorum of votes but are missing the message which we
@@ -594,7 +586,7 @@ impl Worker {
                         .unwrap_or(&source);
                     tracker.start = now;
                     tracker.retries = tracker.retries.saturating_add(1);
-                    self.libp2p.direct_message(b, *s).await?;
+                    self.comm.send(*s, b).await.map_err(RbcError::net)?;
                 }
                 // We have reached a quorum of votes. We may either already have the message,
                 // in which case we previously failed to broadcast the certificate, or we did
@@ -613,7 +605,7 @@ impl Worker {
                         let b = bincode::serialize(&m).expect("idempotent serialization");
                         tracker.start = now;
                         tracker.retries = tracker.retries.saturating_add(1);
-                        self.libp2p.broadcast_message(b, Topic::Global).await?;
+                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         self.tx
                             .send(msg.clone())
                             .await
@@ -629,7 +621,7 @@ impl Worker {
                             .unwrap_or(&source);
                         tracker.start = now;
                         tracker.retries = tracker.retries.saturating_add(1);
-                        self.libp2p.direct_message(b, *s).await?;
+                        self.comm.send(*s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg(source);
                     }
                 }
@@ -640,14 +632,10 @@ impl Worker {
 }
 
 /// Factored out of `Worker` to help with borrowing.
-async fn send(
-    net: &Libp2pNetwork<PublicKey>,
-    to: PublicKey,
-    msg: &Message<Validated>,
-) -> Result<()> {
+async fn send<C: RawComm>(net: &mut C, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
     let proto = Protocol::Bypass(Cow::Borrowed(msg));
     let bytes = bincode::serialize(&proto)?;
-    net.direct_message(bytes, to).await?;
+    net.send(to, bytes).await.map_err(RbcError::net)?;
     Ok(())
 }
 
@@ -655,7 +643,7 @@ async fn send(
 #[non_exhaustive]
 pub enum RbcError {
     #[error("network error: {0}")]
-    Net(#[from] NetworkError),
+    Net(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     #[error("bincode error: {0}")]
     Serialization(#[from] bincode::Error),
@@ -665,4 +653,10 @@ pub enum RbcError {
 
     #[error("rbc has shut down")]
     Shutdown,
+}
+
+impl RbcError {
+    fn net<E: std::error::Error + Send + Sync + 'static>(e: E) -> Self {
+        Self::Net(Box::new(e))
+    }
 }

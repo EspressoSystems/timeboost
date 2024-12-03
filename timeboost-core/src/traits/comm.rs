@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use timeboost_networking::network::client::Libp2pNetwork;
 use timeboost_networking::{NetworkError, Topic};
 
+/// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
 pub trait Comm {
     type Err: Error + Send + Sync + 'static;
@@ -17,6 +18,23 @@ pub trait Comm {
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err>;
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err>;
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err>;
+}
+
+/// Types that provide broadcast and 1:1 message communication.
+///
+/// In contrast to `Comm` this trait operates on raw byte vectors instead
+/// of `Message`s.
+#[async_trait]
+pub trait RawComm {
+    type Err: Error + Send + Sync + 'static;
+
+    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err>;
+
+    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err>;
+
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err>;
 
     async fn shutdown(&mut self) -> Result<(), Self::Err>;
 }
@@ -42,50 +60,102 @@ impl<T: Comm + Send> Comm for Box<T> {
     }
 }
 
+#[async_trait]
+impl<T: RawComm + Send> RawComm for Box<T> {
+    type Err = T::Err;
+
+    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+        (**self).broadcast(msg).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+        (**self).send(to, msg).await
+    }
+
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+        (**self).receive().await
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        (**self).shutdown().await
+    }
+}
+
+#[async_trait]
+impl RawComm for Libp2pNetwork<PublicKey> {
+    type Err = NetworkError;
+
+    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+        self.broadcast_message(msg, Topic::Global).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+        self.direct_message(msg, to).await
+    }
+
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+        self.recv_message().await
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        self.shut_down().await;
+        Ok(())
+    }
+}
+
+/// An implementation of `Comm` that performs message validation.
 #[derive(Debug)]
-pub struct Libp2p {
-    net: Libp2pNetwork<PublicKey>,
+pub struct CheckedComm<R> {
+    net: R,
     committee: StaticCommittee,
 }
 
-impl Libp2p {
-    pub fn new(net: Libp2pNetwork<PublicKey>, c: StaticCommittee) -> Self {
+impl<R> CheckedComm<R> {
+    pub fn new(net: R, c: StaticCommittee) -> Self {
         Self { net, committee: c }
     }
 }
 
 #[async_trait]
-impl Comm for Libp2p {
-    type Err = NetworkError;
+impl<R: RawComm + Send> Comm for CheckedComm<R> {
+    type Err = CommError<R::Err>;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes =
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
-
-        self.net.broadcast_message(bytes, Topic::Global).await
+        let bytes = bincode::serialize(&msg)?;
+        self.net.broadcast(bytes).await.map_err(CommError::Net)?;
+        Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes =
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
-
-        self.net.direct_message(bytes, to).await
+        let bytes = bincode::serialize(&msg)?;
+        self.net.send(to, bytes).await.map_err(CommError::Net)?;
+        Ok(())
     }
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
-        let bytes = self.net.recv_message().await?;
-        let msg: Message<Unchecked> = bincode::deserialize(&bytes)
-            .map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))?;
+        let bytes = self.net.receive().await.map_err(CommError::Net)?;
+        let msg: Message<Unchecked> = bincode::deserialize(&bytes)?;
         let Some(msg) = msg.validated(&self.committee) else {
-            return Err(NetworkError::FailedToDeserialize(
-                "invalid message signature".to_string(),
-            ));
+            return Err(CommError::Invalid);
         };
         Ok(msg)
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.net.shut_down().await;
+        self.net.shutdown().await.map_err(CommError::Net)?;
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum CommError<E> {
+    #[error("network error: {0}")]
+    Net(#[source] E),
+
+    #[error("bincode error: {0}")]
+    Bincode(#[from] bincode::Error),
+
+    #[error("invalid message signature")]
+    Invalid,
 }
