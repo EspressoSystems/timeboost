@@ -13,5 +13,5 @@ async fn test_simple_network_round_progression() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_round_timeout() {
-    run_network_round_progression_test::<MemoryNetworkTest>().await
+    run_simple_network_round_timeout_test::<MemoryNetworkTest>().await
 }

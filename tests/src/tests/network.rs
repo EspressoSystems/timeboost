@@ -159,7 +159,7 @@ pub trait TestableNetwork {
                         if all_passed {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
-                            break TaskHandleResult::new(node_id, TestOutcome::Passed);
+                            return TaskHandleResult::new(node_id, TestOutcome::Passed);
                         }
                     }
                     Err(_e) => {}
@@ -168,7 +168,7 @@ pub trait TestableNetwork {
                     coordinator.shutdown().await.expect("Network to be shutdown");
                     // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    break TaskHandleResult::new(node_id, TestOutcome::Failed);
+                    return TaskHandleResult::new(node_id, TestOutcome::Failed);
                 }
             }
         }
