@@ -7,17 +7,17 @@ use std::net::SocketAddr;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::SinkExt;
-use hotshot::types::SignatureKey;
 use timeboost_core::traits::comm::RawComm;
 use timeboost_core::types::PublicKey;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tokio::sync::mpsc;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use tracing::{error, warn};
-use turmoil::ToSocketAddrs;
-use turmoil::net::{TcpListener, TcpStream};
 use turmoil::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use turmoil::net::{TcpListener, TcpStream};
+use turmoil::ToSocketAddrs;
 
 type Reader = FramedRead<OwnedReadHalf, LengthDelimitedCodec>;
 type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
@@ -40,13 +40,16 @@ impl TurmoilComm {
     where
         A: ToSocketAddrs,
         S: Display,
-        I: IntoIterator<Item = (PublicKey, (S, u16))>
+        I: IntoIterator<Item = (PublicKey, (S, u16))>,
     {
         let listener = TcpListener::bind(addr).await?;
         let (to_worker, from_comm) = mpsc::unbounded_channel();
         let (to_comm, from_worker) = mpsc::unbounded_channel();
         let w = Worker {
-            config: peers.into_iter().map(|(k, (s, p))| (k, (s.to_string(), p))).collect(),
+            config: peers
+                .into_iter()
+                .map(|(k, (s, p))| (k, (s.to_string(), p)))
+                .collect(),
             peers: HashMap::new(),
             tx: to_comm,
             rx: from_comm,
@@ -58,7 +61,7 @@ impl TurmoilComm {
         Ok(Self {
             tx: to_worker,
             rx: from_worker,
-            jh: tokio::spawn(w.go())
+            jh: tokio::spawn(w.go()),
         })
     }
 }
@@ -68,18 +71,22 @@ impl RawComm for TurmoilComm {
     type Err = io::Error;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.tx.send((None, msg)).map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
+        self.tx
+            .send((None, msg))
+            .map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
         Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.tx.send((Some(to), msg)).map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
+        self.tx
+            .send((Some(to), msg))
+            .map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
         Ok(())
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
         if let Some(msg) = self.rx.recv().await {
-            return Ok(msg)
+            return Ok(msg);
         } else {
             Err(io::ErrorKind::UnexpectedEof.into())
         }
@@ -98,7 +105,7 @@ struct Worker {
     listener: TcpListener,
     identify_tasks: JoinSet<io::Result<(PublicKey, Reader, Writer)>>,
     reader_tasks: JoinSet<io::Result<PublicKey>>,
-    connect_tasks: JoinSet<io::Result<(PublicKey, Reader, Writer)>>
+    connect_tasks: JoinSet<io::Result<(PublicKey, Reader, Writer)>>,
 }
 
 impl Worker {
@@ -230,7 +237,7 @@ async fn identify(s: TcpStream) -> io::Result<(PublicKey, Reader, Writer)> {
     let (mut r, w) = codec(s);
     if let Some(b) = r.try_next().await? {
         let k = PublicKey::from_bytes(&b).map_err(|_| io::Error::other("invalid public key"))?;
-        return Ok((k, r, w))
+        return Ok((k, r, w));
     }
     Err(ErrorKind::UnexpectedEof.into())
 }

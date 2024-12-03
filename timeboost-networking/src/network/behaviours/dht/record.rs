@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::kad::Record;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
 
 /// A (signed or unsigned) record value to be stored (serialized) in the DHT.
@@ -186,7 +186,8 @@ impl<K: SignatureKey + 'static> TryFrom<Record> for RecordValue<K> {
 
 #[cfg(test)]
 mod test {
-    use hotshot_types::signature_key::BLSPubKey;
+
+    use timeboost_crypto::signature_key::BLSPubKey;
 
     use super::*;
 

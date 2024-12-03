@@ -14,22 +14,21 @@ bincode = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
-ethereum-types = { workspace = true }
 futures = { workspace = true }
-hotshot = { workspace = true }
-hotshot-types = { workspace = true }
 parking_lot = { workspace = true }
+primitive-types = { workspace = true }
+prometheus = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
+tide-disco = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-networking = { path = "../timeboost-networking" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-prometheus = { workspace = true }
-tide-disco = { workspace = true }
-itertools = "0.12.1"
-timeboost-networking = { path = "../timeboost-networking" }
 
 [dev-dependencies]
 quickcheck = "1"

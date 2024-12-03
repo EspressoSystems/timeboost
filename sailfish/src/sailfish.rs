@@ -3,22 +3,22 @@ use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
 use async_lock::RwLock;
-use hotshot::types::SignatureKey;
-use hotshot_types::{
-    network::{Libp2pConfig, NetworkConfig},
-    PeerConfig,
-};
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
     traits::comm::Comm,
-    types::{committee::StaticCommittee, metrics::ConsensusMetrics, Keypair, NodeId, PublicKey},
+    types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
 };
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_networking::network::{
     behaviours::dht::record::{Namespace, RecordKey, RecordValue},
     client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
     NetworkNodeConfig, NetworkNodeConfigBuilder,
+};
+use timeboost_utils::{
+    types::config::{Libp2pConfig, NetworkConfig},
+    PeerConfig,
 };
 use tracing::{info, instrument};
 
@@ -116,7 +116,7 @@ impl Sailfish {
         self,
         comm: C,
         staked_nodes: Vec<PeerConfig<PublicKey>>,
-        metrics: Arc<ConsensusMetrics>,
+        metrics: Arc<SailfishMetrics>,
     ) -> Coordinator<C>
     where
         C: Comm + Send + 'static,
@@ -149,7 +149,7 @@ pub async fn sailfish_coordinator(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
-    metrics: Arc<ConsensusMetrics>,
+    metrics: Arc<SailfishMetrics>,
 ) -> Coordinator<Rbc> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");

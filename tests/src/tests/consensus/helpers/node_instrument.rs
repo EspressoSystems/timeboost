@@ -1,18 +1,18 @@
 use std::collections::VecDeque;
 
 use bitvec::vec::BitVec;
-use ethereum_types::U256;
-use hotshot::types::SignatureKey;
+use primitive_types::U256;
 use sailfish::consensus::Consensus;
 use timeboost_core::types::{
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
-    round_number::RoundNumber,
     vertex::Vertex,
     PublicKey, Signature,
 };
+use timeboost_crypto::traits::signature_key::SignatureKey;
+use timeboost_utils::types::round_number::RoundNumber;
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,

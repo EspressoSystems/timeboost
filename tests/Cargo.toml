@@ -1,32 +1,29 @@
 [package]
 name = "tests"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description.workspace = true
 
 [features]
 benchmark = []
 
 [dependencies]
-anyhow = { workspace = true }
-async-broadcast = { workspace = true }
-async-channel = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
 bitvec = { workspace = true }
 bytes = { workspace = true }
-ethereum-types = { workspace = true }
 futures = { workspace = true }
-hotshot = { workspace = true }
-hotshot-types = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 portpicker = { workspace = true }
+primitive-types = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
 turmoil = { workspace = true }
+tracing = { workspace = true }

@@ -6,8 +6,8 @@
 use std::marker::PhantomData;
 
 use delegate::delegate;
-use hotshot_types::traits::signature_key::SignatureKey;
 use libp2p::kad::store::{Error, RecordStore, Result};
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
 
 use super::record::RecordValue;
@@ -90,11 +90,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use hotshot_types::signature_key::BLSPubKey;
     use libp2p::{
         kad::{store::MemoryStore, Record},
         PeerId,
     };
+    use timeboost_crypto::{signature_key::BLSPubKey, traits::signature_key::SignatureKey};
 
     use super::*;
     use crate::network::behaviours::dht::record::Namespace;

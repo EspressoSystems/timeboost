@@ -7,12 +7,12 @@ description.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-lock = { workspace = true }
-blake3 = { workspace = true }
-bincode = { workspace = true }
 bimap = "0.6"
-custom_debug = "0.5"
-derive_builder = "0.20"
+bincode = { workspace = true }
+blake3 = { workspace = true }
+custom_debug = "0.6.2"
 delegate = "0.13"
+derive_builder = "0.20"
 futures = { workspace = true }
 lazy_static = "1"
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
@@ -29,11 +29,13 @@ libp2p = { package = "libp2p", version = "0.53", default-features = false, featu
     "serde",
     "tokio",
 ] }
-libp2p-swarm-derive = "0.34"
 libp2p-identity = { workspace = true }
-serde = { workspace = true }
-tracing = { workspace = true }
-hotshot-types = { workspace = true }
-rand = { workspace = true }
+libp2p-swarm-derive = "0.34"
 pin-project = "1"
+rand = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
+tracing = { workspace = true }

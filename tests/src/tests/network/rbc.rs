@@ -1,7 +1,7 @@
 use sailfish::rbc::Rbc;
+use timeboost_core::traits::comm::Comm;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::Keypair;
-use timeboost_core::traits::comm::Comm;
 
 use crate::rbc::TurmoilComm;
 
@@ -33,8 +33,7 @@ async fn smoke() {
         async move {
             let comm = TurmoilComm::create("0.0.0.0:9000", peers).await?;
             let mut rbc = Rbc::new(comm, key_a, committee_a);
-            while let Ok(msg) = rbc.receive().await {
-            }
+            while let Ok(msg) = rbc.receive().await {}
             Ok(())
         }
     });
@@ -49,8 +48,7 @@ async fn smoke() {
         async move {
             let comm = TurmoilComm::create("0.0.0.0:9001", peers).await?;
             let mut rbc = Rbc::new(comm, key_b, committee_b);
-            while let Ok(msg) = rbc.receive().await {
-            }
+            while let Ok(msg) = rbc.receive().await {}
             Ok(())
         }
     });
@@ -64,5 +62,4 @@ async fn smoke() {
         let mut rbc = Rbc::new(comm, key_c, committee_c);
         Ok(())
     });
-
 }

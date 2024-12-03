@@ -1,7 +1,7 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::message::Message;
-use timeboost_core::types::round_number::RoundNumber;
+use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Digest(RoundNumber, [u8; 32]);
