@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
 use sequencer::{
     phase::{
@@ -8,17 +7,11 @@ use sequencer::{
         inclusion::noop::NoOpInclusionPhase, ordering::noop::NoOpOrderingPhase,
     },
     protocol::Sequencer,
-    task::run_sequencer_task,
 };
-use std::{
-    collections::HashSet,
-    future::pending,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_utils::PeerConfig;
-use tokio::{sync::mpsc::channel, time::sleep};
+use tokio::sync::{mpsc::channel, RwLock};
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
@@ -45,12 +38,6 @@ mod mempool;
 mod producer;
 pub mod sequencer;
 
-/// The duration of an epoch in seconds.
-const EPOCH_TIME_SECS: u64 = 60;
-
-/// The time between consensus intervals in ms.
-const CONSENSUS_INTERVAL_MS: u64 = 250;
-
 pub struct Timeboost {
     /// The ID of the node.
     id: NodeId,
@@ -74,25 +61,8 @@ pub struct Timeboost {
     /// The receiver for the shutdown signal.
     shutdown_rx: watch::Receiver<()>,
 
-    /// The timeboost clock
-    epoch_clock: BoxFuture<'static, u64>,
-
-    /// The time the clock started.
-    epoch_clock_start_time: Instant,
-
-    /// The consensus interval clock.
-    consensus_interval_clock: BoxFuture<'static, u64>,
-
-    /// The current epoch.
-    epoch: u64,
-
     /// The mempool for the timeboost node.
-    mempool: Mempool,
-
-    /// The consensus protocol.
-    consensus: Arc<
-        Sequencer<NoOpInclusionPhase, NoOpDecryptionPhase, NoOpOrderingPhase, NoOpBlockBuilder>,
-    >,
+    mempool: Arc<RwLock<Mempool>>,
 
     /// The metrics for the sailfish node.
     #[allow(dead_code)]
@@ -116,6 +86,7 @@ impl Timeboost {
         sf_metrics: Arc<SailfishMetrics>,
         tb_metrics: Arc<TimeboostMetrics>,
     ) -> Self {
+        let mempool = Arc::new(RwLock::new(Mempool::new()));
         Self {
             id,
             port,
@@ -126,18 +97,7 @@ impl Timeboost {
             shutdown_rx,
             sf_metrics,
             tb_metrics: tb_metrics.clone(),
-            mempool: Mempool::new(),
-            epoch_clock: pending().boxed(),
-            epoch_clock_start_time: Instant::now(),
-            epoch: 0,
-            consensus_interval_clock: pending().boxed(),
-            consensus: Arc::new(Sequencer::new(
-                NoOpInclusionPhase,
-                NoOpDecryptionPhase,
-                NoOpOrderingPhase,
-                NoOpBlockBuilder,
-                tb_metrics,
-            )),
+            mempool: mempool.clone(),
         }
     }
 
@@ -162,18 +122,6 @@ impl Timeboost {
             serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
         });
 
-        // Initialize the epoch clock. This clock is responsible for moving to the next epoch.
-        self.epoch_clock = sleep(Duration::from_secs(EPOCH_TIME_SECS))
-            .map(move |_| 0)
-            .fuse()
-            .boxed();
-
-        // Initialize the consensus interval clock. This clock is responsible for triggering consensus.
-        self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
-            .map(move |_| 0)
-            .fuse()
-            .boxed();
-
         // Kickstart the network.
         match coordinator.start().await {
             Ok(actions) => {
@@ -186,45 +134,24 @@ impl Timeboost {
             }
         }
 
+        let sequencer = Sequencer::new(
+            NoOpInclusionPhase,
+            NoOpDecryptionPhase,
+            NoOpOrderingPhase,
+            NoOpBlockBuilder,
+            self.tb_metrics,
+            self.mempool.clone(),
+        );
+
+        // Start the sequencer.
+        tokio::spawn(sequencer.go(self.shutdown_rx.clone(), self.app_tx.clone()));
+
         // Start the block producer.
         let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
         tokio::spawn(producer.run());
 
         loop {
             tokio::select! { biased;
-                round = &mut self.consensus_interval_clock => {
-                    info!(%round, "starting timeboost consensus");
-                    self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
-                        .map(move |_| round + 1)
-                        .fuse()
-                        .boxed();
-
-                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
-
-                    // Make a new handle for the consensus protocol run.
-                    let cx = self.consensus.clone();
-                    let app_tx_clone = self.app_tx.clone();
-                    let shutdown_rx = self.shutdown_rx.clone();
-                    tokio::spawn(run_sequencer_task(
-                        cx,
-                        self.epoch,
-                        round,
-                        mempool_snapshot,
-                        app_tx_clone,
-                        shutdown_rx,
-                    ));
-                }
-                _ = &mut self.epoch_clock => {
-                    self.epoch_clock = sleep(Duration::from_secs(EPOCH_TIME_SECS))
-                        .map(move |_| {
-                            let elapsed = Instant::now().duration_since(self.epoch_clock_start_time);
-                            let epoch = elapsed.as_secs() / EPOCH_TIME_SECS;
-                            self.epoch = epoch;
-                            epoch
-                        })
-                        .fuse()
-                        .boxed();
-                }
                 result = coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
@@ -241,7 +168,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.insert(block);
+                                        self.mempool.write().await.insert(block);
                                     },
                                 }
                             }

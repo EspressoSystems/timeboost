@@ -1,4 +1,5 @@
 use anyhow::{ensure, Result};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -84,6 +85,20 @@ impl InclusionPhaseBlock {
 
     pub fn size_bytes(&self) -> usize {
         self.tx.iter().map(|tx| tx.size_bytes()).sum()
+    }
+}
+
+impl Committable for InclusionPhaseBlock {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("InclusionPhaseBlock")
+            .field("round", self.round.commit())
+            .field("predecessor_round", self.predecessor_round.commit())
+            .field("consensus_timestamp", self.consensus_timestamp.commit())
+            .u64_field("delayed_inbox_index", self.delayed_inbox_index);
+        self.tx
+            .iter()
+            .fold(builder, |b, tx| b.var_size_bytes(tx.commit().as_ref()))
+            .finalize()
     }
 }
 

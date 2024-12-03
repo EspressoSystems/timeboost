@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::time::{Duration, SystemTime};
 
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 const EPOCH_DURATION: Duration = Duration::from_secs(60);
@@ -13,8 +14,26 @@ const EPOCH_DURATION: Duration = Duration::from_secs(60);
 )]
 pub struct Epoch(u128);
 
+impl Epoch {
+    pub fn new(value: u128) -> Self {
+        Self(value)
+    }
+
+    pub fn genesis() -> Self {
+        Self(0)
+    }
+}
+
+impl std::fmt::Display for Epoch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Unix timestamp in seconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[derive(
+    Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
+)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
@@ -31,6 +50,14 @@ impl Timestamp {
 
     pub fn size_bytes(&self) -> usize {
         std::mem::size_of::<u64>()
+    }
+}
+
+impl Committable for Timestamp {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Timestamp")
+            .u64_field("timestamp", self.0)
+            .finalize()
     }
 }
 

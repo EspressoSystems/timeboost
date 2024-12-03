@@ -12,6 +12,23 @@ pub struct SailfishBlock {
     payload: Vec<Transaction>,
 }
 
+impl PartialOrd for SailfishBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SailfishBlock {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Ties are broken first by timestamp, then by round number, then by payload.
+        self.header
+            .timestamp()
+            .cmp(&other.header.timestamp())
+            .then(self.header.round().cmp(&other.header.round()))
+            .then(self.payload.cmp(&other.payload))
+    }
+}
+
 impl Default for SailfishBlock {
     fn default() -> Self {
         Self::empty(RoundNumber::genesis(), Timestamp::now())
