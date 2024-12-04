@@ -536,7 +536,7 @@ impl<C: RawComm> Worker<C> {
                     send(&mut self.comm, *env.signing_key(), msg).await?;
                 }
             }
-            // In these states we must have the message and send to to the peer.
+            // In these states we must have the message and send to the peer.
             Status::ReceivedMsg | Status::SentMsg | Status::Delivered => {
                 let msg = tracker
                     .message
