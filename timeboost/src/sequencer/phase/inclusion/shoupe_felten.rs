@@ -2,7 +2,7 @@ use super::{CandidateList, InclusionList, InclusionPhase};
 use anyhow::Result;
 use timeboost_utils::types::round_number::RoundNumber;
 
-/// An implementation of the Shoupe-Felden Inclusion phase specification of
+/// An implementation of the Shoupe-Felten Inclusion phase specification of
 /// the
 /// [Decentralized Timeboost](https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md)
 /// protocol.
@@ -29,6 +29,6 @@ impl InclusionPhase for ShoupeFeltenInclusionPhase {
             candidate_list.last_successful_delayed_inbox_index,
         );
 
-        let tx = candidate_list.filter_valid_tx_candidates();
+        let tx = candidate_list.filter_valid_tx_candidates(round_number);
     }
 }

@@ -22,7 +22,7 @@ impl InclusionPhase for NoOpInclusionPhase {
         Ok(InclusionList {
             timestamp: candidate_list.timestamp,
             round_number,
-            transactions: candidate_list
+            bundles: candidate_list
                 .bundles
                 .into_iter()
                 .map(|block| {

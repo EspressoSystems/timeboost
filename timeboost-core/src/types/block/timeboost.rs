@@ -69,7 +69,7 @@ impl InclusionPhaseBlock {
             "round must be greater than predecessor round"
         );
 
-        let mut tx: BTreeSet<Transaction> = block.transactions().into_iter().collect();
+        let mut tx: BTreeSet<Transaction> = block.into_transactions().into_iter().collect();
 
         // Merge the priority transactions with the non-priority transactions.
         tx.extend(priority_tx);
@@ -81,6 +81,10 @@ impl InclusionPhaseBlock {
             delayed_inbox_index,
             tx,
         })
+    }
+
+    pub fn transactions(&self) -> &BTreeSet<Transaction> {
+        &self.tx
     }
 
     pub fn size_bytes(&self) -> usize {
