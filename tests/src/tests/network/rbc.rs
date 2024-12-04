@@ -53,7 +53,6 @@ fn mk_host<T, const N: usize>(
     });
 }
 
-#[ignore]
 #[test]
 #[rustfmt::skip]
 fn small_committee() {
@@ -105,7 +104,6 @@ fn small_committee() {
     sim.run().unwrap()
 }
 
-#[ignore]
 #[test]
 #[rustfmt::skip]
 fn medium_committee() {

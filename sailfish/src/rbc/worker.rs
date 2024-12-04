@@ -256,7 +256,7 @@ impl<C: RawComm> Worker<C> {
         match bincode::deserialize(&bytes)? {
             Protocol::Bypass(msg) => self.on_bypass(msg.into_owned()).await?,
             Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
-            Protocol::Vote(env) => self.on_vote(env).await?,
+            Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::Get(env) => self.on_get(env).await?,
             Protocol::Cert(crt) => self.on_cert(crt).await?,
         }
@@ -298,7 +298,7 @@ impl<C: RawComm> Worker<C> {
             Status::Init => {
                 tracker.message = Some(msg);
                 tracker.status = Status::ReceivedMsg;
-                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
+                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair), false);
                 let bytes = bincode::serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
@@ -307,7 +307,7 @@ impl<C: RawComm> Worker<C> {
             // In any case we did not manage to cast our vote yet, so we try again.
             Status::ReceivedMsg | Status::SentMsg => {
                 debug_assert!(tracker.message.is_some());
-                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
+                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair), false);
                 let bytes = bincode::serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
@@ -317,7 +317,7 @@ impl<C: RawComm> Worker<C> {
             Status::ReceivedVotes => {
                 if tracker.message.is_none() {
                     tracker.message = Some(msg);
-                    let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
+                    let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair), false);
                     let bytes = bincode::serialize(&vote)?;
                     self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                     tracker.status = Status::SentVote
@@ -348,7 +348,7 @@ impl<C: RawComm> Worker<C> {
         from  = %env.signer_label(),
         round = %env.data().round())
     )]
-    async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
+    async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
             return Err(RbcError::InvalidSignature);
         };
@@ -414,11 +414,14 @@ impl<C: RawComm> Worker<C> {
                 tracker.status = Status::RequestedMsg(source);
             }
             Status::ReachedQuorum(_) | Status::RequestedMsg(_) | Status::Delivered => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring vote")
-                //debug!(%digest, status = %tracker.status, "replying with our vote to sender");
-                //let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
-                //let bytes = bincode::serialize(&vote)?;
-                //self.comm.send(source, bytes).await.map_err(RbcError::net)?;
+                if done {
+                    debug!(node = %self.label, status = %tracker.status, "ignoring vote")
+                } else {
+                    debug!(%digest, status = %tracker.status, "replying with our vote to sender");
+                    let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair), true);
+                    let bytes = bincode::serialize(&vote)?;
+                    self.comm.send(source, bytes).await.map_err(RbcError::net)?;
+                }
             }
         }
 
@@ -594,7 +597,7 @@ impl<C: RawComm> Worker<C> {
                             self.comm.broadcast(bytes).await.map_err(RbcError::net)?
                         }
                         debug!(%digest, "sending our vote (again)");
-                        let vote = Protocol::Vote(Envelope::signed(*digest, &self.keypair));
+                        let vote = Protocol::Vote(Envelope::signed(*digest, &self.keypair), false);
                         let bytes = bincode::serialize(&vote).expect("idempotent serialization");
                         tracker.start = now;
                         tracker.retries = tracker.retries.saturating_add(1);

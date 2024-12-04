@@ -25,7 +25,9 @@ enum Protocol<'a, Status: Clone> {
     /// An RBC proposal.
     Propose(Cow<'a, Message<Status>>),
     /// A vote for an RBC proposal.
-    Vote(Envelope<Digest, Status>),
+    ///
+    /// The boolean flag indicates if the sender has received enough votes.
+    Vote(Envelope<Digest, Status>, bool),
     /// A quorum certificate for an RBC proposal.
     Cert(Envelope<Certificate<Digest>, Status>),
     /// A direct request to retrieve a message, identified by the given digest.
