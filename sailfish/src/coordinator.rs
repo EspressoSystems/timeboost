@@ -27,6 +27,8 @@ pub struct Coordinator<C> {
     consensus: Consensus,
 
     timer: BoxFuture<'static, RoundNumber>,
+
+    init: bool,
 }
 
 impl<C: Comm> Coordinator<C> {
@@ -39,6 +41,7 @@ impl<C: Comm> Coordinator<C> {
             comm,
             consensus: cons,
             timer: pending().boxed(),
+            init: false,
         }
     }
 
@@ -46,13 +49,12 @@ impl<C: Comm> Coordinator<C> {
         self.id
     }
 
-    #[cfg(feature = "test")]
-    pub fn consensus(&self) -> &Consensus {
-        &self.consensus
-    }
-
     pub async fn start(&mut self) -> Result<Vec<Action>, C::Err> {
-        Ok(self.consensus.go(Dag::new(self.consensus.committee_size())))
+        if !self.init {
+            self.init = true;
+            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())));
+        }
+        panic!("Cannot call start twice");
     }
 
     pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
