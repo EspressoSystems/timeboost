@@ -3,18 +3,21 @@ use std::fmt::Display;
 use std::future::pending;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::SinkExt;
+use rand::Rng;
 use timeboost_core::traits::comm::RawComm;
 use timeboost_core::types::PublicKey;
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::{JoinHandle, JoinSet};
+use tokio::time;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 use turmoil::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use turmoil::net::{TcpListener, TcpStream};
 use turmoil::ToSocketAddrs;
@@ -121,8 +124,16 @@ impl Worker {
         self.reader_tasks.spawn(pending());
         self.connect_tasks.spawn(pending());
         self.peers.insert(self.key, Connection::Identity);
+        let mut disruptor = time::interval(Duration::from_secs(1));
         loop {
             tokio::select! {
+                _ = disruptor.tick() => {
+                    for k in self.config.keys().filter(|k| **k != self.key) {
+                        if !keep_it(0.75) {
+                            self.peers.remove(k);
+                        }
+                    }
+                },
                 i = self.listener.accept() => match i {
                     Ok((s, _)) => {
                         debug!("accepted connection");
@@ -134,7 +145,7 @@ impl Worker {
                 },
                 Some(a) = self.identify_tasks.join_next() => match a {
                     Ok(Ok((k, r, w))) => {
-                        if self.peers.contains_key(&k) && !keep_it() {
+                        if self.peers.contains_key(&k) && !keep_it(0.5) {
                             debug!("rejecting inbound connection");
                             continue
                         }
@@ -145,7 +156,7 @@ impl Worker {
                         self.reader_tasks.spawn(read_loop(k, r, tx));
                     }
                     Ok(Err(err)) => {
-                        error!(%err, "task errored while identifying peer")
+                        warn!(%err, "task errored while identifying peer")
                     }
                     Err(err) => {
                         warn!(%err, "error identifying peer")
@@ -154,7 +165,7 @@ impl Worker {
                 Some(a) = self.connect_tasks.join_next() => match a {
                     Ok(Ok((k, r, w))) => {
                         trace!("connection established");
-                        if self.peers.contains_key(&k) && keep_it() {
+                        if self.peers.contains_key(&k) && keep_it(0.5) {
                             debug!("connection already established");
                             continue
                         }
@@ -163,7 +174,7 @@ impl Worker {
                         self.reader_tasks.spawn(read_loop(k, r, tx));
                     }
                     Ok(Err(err)) => {
-                        error!(%err, "task errored while connecting to peer")
+                        warn!(%err, "task errored while connecting to peer")
                     }
                     Err(err) => {
                         warn!(%err, "error identifying peer")
@@ -182,7 +193,7 @@ impl Worker {
                         self.connect_tasks.spawn(connect(a, self.key, k));
                     }
                     Ok(Err(err)) => {
-                        error!(%err, "task errored while reading from peer")
+                        warn!(%err, "task errored while reading from peer")
                     }
                     Err(err) => {
                         warn!(%err, "error identifying peer")
@@ -297,8 +308,8 @@ fn codec(sock: TcpStream) -> (Reader, Writer) {
     (r, w)
 }
 
-fn keep_it() -> bool {
-    rand::random()
+fn keep_it(p: f64) -> bool {
+    rand::thread_rng().gen_bool(p)
 }
 
 async fn read_loop(
@@ -315,7 +326,7 @@ async fn read_loop(
             }
             Ok(None) => return Ok(k),
             Err(err) => {
-                error!(%err, "error receiving message");
+                warn!(%err, "error receiving message");
                 return Ok(k);
             }
         }
