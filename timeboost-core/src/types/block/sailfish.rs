@@ -10,6 +10,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,
+    delayed_inbox_index: u64,
 }
 
 impl PartialOrd for SailfishBlock {
@@ -20,11 +21,12 @@ impl PartialOrd for SailfishBlock {
 
 impl Ord for SailfishBlock {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Ties are broken first by timestamp, then by round number, then by payload.
+        // Ties are broken first by timestamp, then by round number, then by delayed inbox index, then by payload.
         self.header
             .timestamp()
             .cmp(&other.header.timestamp())
             .then(self.header.round().cmp(&other.header.round()))
+            .then(self.delayed_inbox_index.cmp(&other.delayed_inbox_index))
             .then(self.payload.cmp(&other.payload))
     }
 }
@@ -44,6 +46,7 @@ impl SailfishBlock {
         Self {
             header: BlockHeader::new(round, timestamp),
             payload: Vec::new(),
+            delayed_inbox_index: 0,
         }
     }
 
@@ -83,6 +86,14 @@ impl SailfishBlock {
 
     pub fn transactions(self) -> Vec<Transaction> {
         self.payload
+    }
+
+    pub fn delayed_inbox_index(&self) -> u64 {
+        self.delayed_inbox_index
+    }
+
+    pub fn set_delayed_inbox_index(&mut self, index: u64) {
+        self.delayed_inbox_index = index;
     }
 }
 

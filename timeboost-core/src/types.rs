@@ -25,6 +25,7 @@ use timeboost_crypto::{
 
 pub type PublicKey = BLSPubKey;
 pub type PrivateKey = BLSPrivKey;
+
 pub type Signature = <PublicKey as SignatureKey>::PureAssembledSignatureType;
 pub type QuorumSignature = <PublicKey as SignatureKey>::QcType;
 

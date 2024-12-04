@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 pub struct SeqNo(u128);
 
 impl SeqNo {
+    pub fn invalid() -> Self {
+        Self(u128::MAX)
+    }
+
     pub fn zero() -> Self {
         Self(0)
     }

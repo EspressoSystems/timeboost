@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
@@ -113,6 +114,9 @@ pub struct Consensus {
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
+
+    /// The current delayed inbox index.
+    delayed_inbox_index: u64,
 }
 
 impl Consensus {
@@ -135,6 +139,7 @@ impl Consensus {
             leader_stack: Vec::new(),
             metrics,
             metrics_timer: std::time::Instant::now(),
+            delayed_inbox_index: 0,
         }
     }
 
@@ -164,6 +169,19 @@ impl Consensus {
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
         self.state.transactions = q
+    }
+
+    pub fn delayed_inbox_index(&self) -> u64 {
+        self.delayed_inbox_index
+    }
+
+    pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
+        ensure!(
+            index >= self.delayed_inbox_index,
+            "delayed inbox index must increase monotonically"
+        );
+        self.delayed_inbox_index = index;
+        Ok(())
     }
 
     /// (Re-)start consensus.
@@ -561,9 +579,14 @@ impl Consensus {
         round  = %self.state.round,
         vround = %v.round())
     )]
-    fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
+    fn add_and_broadcast_vertex(&mut self, mut v: Vertex) -> Vec<Action> {
         self.metrics.dag_depth.set(self.state.dag.depth());
         let mut actions = Vec::new();
+
+        // TODO: This is a temporary hack to get the delayed inbox index into the block.
+        let block = v.block_mut();
+        block.set_delayed_inbox_index(self.delayed_inbox_index);
+
         let e = Envelope::signed(v, &self.keypair);
         actions.push(Action::SendProposal(e));
         actions

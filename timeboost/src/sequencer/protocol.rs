@@ -188,15 +188,19 @@ where
         fields(round = %self.round)
     )]
     pub fn build(&mut self, mempool_snapshot: Vec<SailfishBlock>) -> Result<TimeboostBlock> {
-        let candidate_list =
-            CandidateList::from_mempool_snapshot(mempool_snapshot, &self.round_state);
+        let candidate_list = CandidateList::from_mempool_snapshot(
+            self.round_state.delayed_inbox_index,
+            mempool_snapshot,
+            &self.round_state,
+        );
         let epoch = candidate_list.epoch();
 
         // Phase 1: Inclusion
-        let Ok(inclusion_list) = self
-            .inclusion_phase
-            .produce_inclusion_list(self.round, candidate_list)
-        else {
+        let Ok(inclusion_list) = self.inclusion_phase.produce_inclusion_list(
+            self.round,
+            candidate_list,
+            self.round_state.delayed_inbox_index,
+        ) else {
             self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to produce inclusion list");
             bail!("failed to produce inclusion list")

@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use super::{CandidateList, InclusionList, InclusionPhase};
 use anyhow::Result;
 use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
-use timeboost_core::types::time::Epoch;
 use timeboost_utils::types::round_number::RoundNumber;
 
 pub struct NoOpInclusionPhase;
@@ -12,13 +11,19 @@ impl InclusionPhase for NoOpInclusionPhase {
         &self,
         round_number: RoundNumber,
         candidate_list: CandidateList,
+        last_delayed_inbox_index: u64,
     ) -> Result<InclusionList> {
         let epoch = candidate_list.timestamp.into_epoch();
+        let delayed_inbox_index = std::cmp::max(
+            last_delayed_inbox_index,
+            candidate_list.median_delayed_inbox_index(),
+        );
+
         Ok(InclusionList {
             timestamp: candidate_list.timestamp,
             round_number,
             transactions: candidate_list
-                .transactions
+                .bundles
                 .into_iter()
                 .map(|block| {
                     InclusionPhaseBlock::from_sailfish_block(
@@ -31,7 +36,7 @@ impl InclusionPhase for NoOpInclusionPhase {
                     .unwrap() // This is safe
                 })
                 .collect(),
-            delayed_inbox_index: 0,
+            delayed_inbox_index,
             priority_bundle_sequence_no: 0,
             epoch,
         })

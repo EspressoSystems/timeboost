@@ -68,6 +68,10 @@ impl Vertex {
         &self.block
     }
 
+    pub fn block_mut(&mut self) -> &mut SailfishBlock {
+        &mut self.block
+    }
+
     pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
         self.block = b;
         self
