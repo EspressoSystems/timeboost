@@ -1,10 +1,7 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 
-#[derive(
-    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromRow,
-)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct RoundNumber(u64);
 
 impl RoundNumber {
@@ -23,6 +20,10 @@ impl RoundNumber {
 
     pub fn genesis() -> Self {
         Self::new(0)
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of::<u64>()
     }
 }
 

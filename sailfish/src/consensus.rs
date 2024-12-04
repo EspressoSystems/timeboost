@@ -3,14 +3,15 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::transaction::Transaction;
 use timeboost_core::types::{
-    block::Block,
+    block::sailfish::SailfishBlock,
     certificate::Certificate,
     committee::StaticCommittee,
     envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
+    time::Timestamp,
+    transaction::Transaction,
     transaction::TransactionsQueue,
     vertex::Vertex,
     Keypair, Label, NodeId, PublicKey,
@@ -578,7 +579,10 @@ impl Consensus {
         let prev = self.state.dag.vertices(r - 1);
 
         let mut new = Vertex::new(r, *self.public_key());
-        new.set_block(Block::new().with_transactions(self.state.transactions.take()));
+        new.set_block(
+            SailfishBlock::empty(r, Timestamp::now())
+                .with_transactions(self.state.transactions.take()),
+        );
         new.add_edges(prev.map(Vertex::source).cloned());
 
         // Every vertex in our DAG has > 2f edges to the previous round:

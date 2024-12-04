@@ -28,6 +28,10 @@ impl Timestamp {
     pub fn epoch(self) -> Epoch {
         Epoch(u128::from(self.0 / EPOCH_DURATION.as_secs()))
     }
+
+    pub fn size_bytes(&self) -> usize {
+        std::mem::size_of::<u64>()
+    }
 }
 
 pub fn median(ts: &mut [Timestamp]) -> Option<Timestamp> {

@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
 use timeboost_core::types::{
-    block::Block,
+    block::sailfish::SailfishBlock,
     event::{TimeboostEventType, TimeboostStatusEvent},
 };
 use tokio::sync::{mpsc::Sender, watch};
 use tracing::error;
 
 use super::{
+    phase::{
+        block_builder::BlockBuilder, decryption::DecryptionPhase, inclusion::InclusionPhase,
+        ordering::OrderingPhase,
+    },
     protocol::Sequencer,
-    traits::{BlockBuilder, DecryptionPhase, InclusionPhase, OrderingPhase},
 };
 
 pub async fn run_sequencer_task<
@@ -21,7 +24,7 @@ pub async fn run_sequencer_task<
     cx: Arc<Sequencer<I, D, O, B>>,
     epoch: u64,
     round: u64,
-    candidate_list: Vec<Block>,
+    candidate_list: Vec<SailfishBlock>,
     app_tx: Sender<TimeboostStatusEvent>,
     mut shutdown_rx: watch::Receiver<()>,
 ) {
