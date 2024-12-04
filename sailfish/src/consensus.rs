@@ -609,7 +609,8 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(
         node   = %self.label,
         round  = %self.state.round,
-        vround = %v.round())
+        vround = %v.round(),
+        source = %Label::new(v.source()))
     )]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
         if !v
@@ -617,9 +618,9 @@ impl Consensus {
             .all(|w| self.state.dag.vertex(v.round() - 1, w).is_some())
         {
             debug!(
-               node   = %self.label,
-               round  = %self.round(),
-                vround = %v.round(),
+                node    = %self.label,
+                round   = %self.round(),
+                vround  = %v.round(),
                 "not all edges are resolved in dag"
             );
             return Err(());
