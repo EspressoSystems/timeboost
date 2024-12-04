@@ -107,7 +107,7 @@ impl Comm for Rbc {
 
         // Only vertex proposals require RBC properties. If this message is one
         // we hand it to the worker and wait for its acknowlegement by the worker
-        // before returning. Once we message has been handed over to the worker it
+        // before returning. Once the message has been handed over to the worker it
         // will be eventually delivered.
         if matches!(msg, Message::Vertex(_)) {
             let (tx, rx) = oneshot::channel();
