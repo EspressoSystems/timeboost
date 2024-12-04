@@ -82,22 +82,14 @@ impl TestCondition {
 /// This runs the coordinator logic over the `Comm` implementation
 /// This will be the result that a task returns for a given node
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct TaskHandleResult {
-    id: usize,
+pub(crate) struct TaskHandleResult {
+    id: u64,
     outcome: TestOutcome,
 }
 
 impl TaskHandleResult {
-    pub fn new(id: usize, outcome: TestOutcome) -> Self {
+    pub(crate) fn new(id: u64, outcome: TestOutcome) -> Self {
         Self { id, outcome }
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    pub fn outcome(&self) -> TestOutcome {
-        self.outcome
     }
 }
 
@@ -107,7 +99,7 @@ pub trait TestableNetwork {
     type Testnet: Comm;
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self;
     async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
@@ -118,8 +110,8 @@ pub trait TestableNetwork {
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<usize, TestOutcome>,
-    ) -> HashMap<usize, TestOutcome>;
+        completed: &HashMap<u64, TestOutcome>,
+    ) -> HashMap<u64, TestOutcome>;
 
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
@@ -127,7 +119,7 @@ pub trait TestableNetwork {
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
         mut shutdown_rx: Receiver<()>,
-        node_id: usize,
+        node_id: u64,
     ) -> TaskHandleResult {
         match coordinator.start().await {
             Ok(actions) => {
@@ -162,7 +154,9 @@ pub trait TestableNetwork {
                             return TaskHandleResult::new(node_id, TestOutcome::Passed);
                         }
                     }
-                    Err(_e) => {}
+                    Err(e) => {
+                        tracing::error!("Coordinator Error: {}", e)
+                    }
                 },
                 shutdown_result = shutdown_rx.changed() => {
                     coordinator.shutdown().await.expect("Network to be shutdown");
@@ -183,7 +177,7 @@ pub struct NetworkTest<N: TestableNetwork> {
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         duration: Option<Duration>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
@@ -206,7 +200,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                         Some(result) => {
                             match result {
                                 Ok(handle_res) => {
-                                    results.insert(handle_res.id(), handle_res.outcome());
+                                    results.insert(handle_res.id, handle_res.outcome);
                                 },
                                 Err(err) => {
                                     panic!("Join Err: {}", err);

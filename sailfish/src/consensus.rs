@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -258,6 +258,24 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
+                if v.round() - self.round() > 3.into() {
+                    let prev: HashMap<PublicKey, &OrderedVertex> = self
+                        .buffer
+                        .iter()
+                        .filter_map(|w| {
+                            if v.round() - 1 == w.round() {
+                                return Some((*w.source(), w));
+                            }
+                            None
+                        })
+                        .collect();
+                    if v.edges().all(|w| prev.contains_key(w)) {
+                        for w in prev.values() {
+                            self.state.dag.add(w.0.clone());
+                        }
+                        self.buffer.retain(|x| x.round() > v.round() - 1);
+                    }
+                }
                 self.buffer.insert(v.into());
                 self.metrics.vertex_buffer.set(self.buffer.len());
             }

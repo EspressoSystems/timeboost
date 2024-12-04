@@ -29,7 +29,7 @@ pub struct MemoryNetworkTest {
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
+    outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
 }
 
@@ -40,7 +40,7 @@ impl TestableNetwork for MemoryNetworkTest {
 
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -62,19 +62,20 @@ impl TestableNetwork for MemoryNetworkTest {
         // the instance.
         let mut net = Star::new();
         let mut coordinators = Vec::new();
-        for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
+        for node in std::mem::take(&mut self.group.fish).into_iter() {
+            let id: u64 = node.id().into();
             // Join each node to the network
-            let test_net = TestNet::new(net.join(*n.public_key()), self.interceptor.clone());
+            let test_net = TestNet::new(net.join(*node.public_key()), id, self.interceptor.clone());
             let messages = test_net.messages();
 
             // Initialize the coordinator
-            let co = n.init(
+            let co = node.init(
                 test_net,
                 (*self.group.staked_nodes).clone(),
                 Arc::new(SailfishMetrics::default()),
             );
 
-            tracing::debug!("Started coordinator {}", i);
+            tracing::debug!("Started coordinator {}", id);
             let c = (co, messages);
             coordinators.push(c);
         }
@@ -92,12 +93,13 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         let (coordinators, mut nets) = nodes_and_networks;
-        for (id, (mut coordinator, msgs)) in coordinators.into_iter().enumerate() {
+        for (mut coordinator, msgs) in coordinators.into_iter() {
+            let id: u64 = coordinator.id().into();
             let shutdown_rx = self
                 .shutdown_rxs
-                .remove(&id)
+                .remove(&(id as usize))
                 .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", id));
-            let mut conditions = self.outcomes.get(&id).unwrap().clone();
+            let mut conditions = self.outcomes.remove(&id).unwrap();
 
             co_handles.spawn(async move {
                 Self::run_coordinator(&mut coordinator, &mut conditions, msgs, shutdown_rx, id)
@@ -117,12 +119,12 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<usize, TestOutcome>,
-    ) -> HashMap<usize, TestOutcome> {
+        completed: &HashMap<u64, TestOutcome>,
+    ) -> HashMap<u64, TestOutcome> {
         // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
         // Otherwise they were completed and dont need the shutdown signal
         for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains_key(id) {
+            if !completed.contains_key(&(*id as u64)) {
                 send.send(()).expect(
                     "The shutdown sender was dropped before the receiver could receive the token",
                 );
@@ -130,11 +132,11 @@ impl TestableNetwork for MemoryNetworkTest {
         }
 
         // Wait for all the coordinators to shutdown
-        let res: HashMap<usize, TestOutcome> = handles
+        let res: HashMap<u64, TestOutcome> = handles
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r.outcome()))
+            .map(|r| (r.id, r.outcome))
             .collect();
 
         // Now shutdown the network

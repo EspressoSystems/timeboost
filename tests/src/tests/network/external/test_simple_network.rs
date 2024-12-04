@@ -15,3 +15,8 @@ async fn test_simple_network_round_progression() {
 async fn test_simple_network_round_timeout() {
     run_simple_network_round_timeout_test::<Libp2pNetworkTest>().await
 }
+
+#[tokio::test]
+async fn test_simple_network_catchup() {
+    run_simple_network_catchup_test::<Libp2pNetworkTest>().await
+}

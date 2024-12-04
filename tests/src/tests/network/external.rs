@@ -18,7 +18,7 @@ pub struct Libp2pNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
+    outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
 }
 
@@ -29,7 +29,7 @@ impl TestableNetwork for Libp2pNetworkTest {
 
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -93,14 +93,15 @@ impl TestableNetwork for Libp2pNetworkTest {
             "Nodes and networks vectors must be the same length"
         );
 
-        for (id, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
+        for (node, network) in nodes.into_iter().zip(networks) {
+            let id: u64 = node.id().into();
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let interceptor = self.interceptor.clone();
-            let shutdown_rx = self.shutdown_rxs.remove(&id).unwrap();
-            let mut conditions = self.outcomes.get(&id).unwrap().clone();
+            let shutdown_rx = self.shutdown_rxs.remove(&(id as usize)).unwrap();
+            let mut conditions = self.outcomes.remove(&id).unwrap().clone();
 
             handles.spawn(async move {
-                let net = TestNet::new(network, interceptor);
+                let net = TestNet::new(network, id, interceptor);
                 let msgs = net.messages();
                 let coordinator = &mut node.init(
                     net,
@@ -119,12 +120,12 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<usize, TestOutcome>,
-    ) -> HashMap<usize, TestOutcome> {
+        completed: &HashMap<u64, TestOutcome>,
+    ) -> HashMap<u64, TestOutcome> {
         // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
         // Otherwise they were completed and dont need the shutdown signal
         for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains_key(id) {
+            if !completed.contains_key(&(*id as u64)) {
                 send.send(()).expect(
                     "The shutdown sender was dropped before the receiver could receive the token",
                 );
@@ -135,7 +136,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r.outcome()))
+            .map(|r| (r.id, r.outcome))
             .collect()
     }
 }

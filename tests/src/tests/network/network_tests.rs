@@ -19,7 +19,7 @@ where
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
     // Each node should see the initial vertex proposal from every other node.
-    let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
+    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
                 .fish
@@ -62,7 +62,7 @@ where
     let group = Group::new(num_nodes as u16);
     let rounds = 50;
 
-    let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
+    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
                 .fish
@@ -80,7 +80,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as usize, conditions)
+            (node_id, conditions)
         })
         .collect();
 
@@ -104,18 +104,18 @@ where
     let group = Group::new(num_nodes as u16);
     let committee = group.committee.clone();
     let timeout_round = 3;
-    let interceptor = NetworkMessageInterceptor::new(move |msg| {
+    let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
             // If leader vertex do not process, but process every other so we have 2f + 1
             if *round == timeout_round && *v.signing_key() == committee.leader(round) {
-                return Err("Dropping leader vertex");
+                return Err("Dropping leader vertex".to_string());
             }
         }
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
+    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             // First only check if we received vertex with no vote cert from leader only
             let committee = group.committee.clone();
@@ -156,7 +156,7 @@ where
                     TestOutcome::Failed
                 })
             }));
-            (node_id as usize, conditions)
+            (node_id, conditions)
         })
         .collect();
 
@@ -164,6 +164,59 @@ where
         group,
         node_outcomes,
         Some(Duration::from_secs(15)),
+        interceptor,
+    )
+    .run()
+    .await;
+}
+
+pub async fn run_simple_network_catchup_test<N>()
+where
+    N: TestableNetwork,
+{
+    logging::init_logging();
+
+    let num_nodes = 10;
+    let group = Group::new(num_nodes as u16);
+    let online_at_round = 4;
+    let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
+        let round = *msg.round();
+        // Late start 2 nodes in 10 node committee
+        if round <= online_at_round && id == 8 || round <= online_at_round + 1 && id == 9 {
+            return Err(format!("Node: {}, dropping msg for round: {}", id, round));
+        }
+        Ok(msg.clone())
+    });
+
+    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
+        .map(|node_id| {
+            let conditions = group
+                .fish
+                .iter()
+                .map(|n| {
+                    let node_public_key = *n.public_key();
+                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                        if let Some(Message::Vertex(v)) = msg {
+                            // Go 30 rounds passed from when the nodes come online
+                            // Ensure we receive all vertices even from those that late started
+                            if *v.data().round() == online_at_round + 30
+                                && node_public_key == *v.data().source()
+                            {
+                                return TestOutcome::Passed;
+                            }
+                        }
+                        TestOutcome::Failed
+                    })
+                })
+                .collect();
+            (node_id, conditions)
+        })
+        .collect();
+
+    NetworkTest::<N>::new(
+        group,
+        node_outcomes,
+        Some(Duration::from_secs(45)),
         interceptor,
     )
     .run()
