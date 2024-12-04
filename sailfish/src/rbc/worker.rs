@@ -389,7 +389,7 @@ impl<C: RawComm> Worker<C> {
                             .send(msg.clone())
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
-                        debug!(%msg, "delivered");
+                        debug!(%msg, %digest, "delivered");
                         tracker.status = Status::Delivered
                     } else {
                         let m = Protocol::Get(Envelope::signed(digest, &self.keypair));
@@ -399,7 +399,7 @@ impl<C: RawComm> Worker<C> {
                     }
                 }
                 Err(err) => {
-                    warn!(%err, "failed to add vote");
+                    warn!(%err, %digest, "failed to add vote");
                     if tracker.votes.is_empty() && tracker.message.is_none() {
                         self.buffer.remove(&digest);
                     }
@@ -414,7 +414,10 @@ impl<C: RawComm> Worker<C> {
                 tracker.status = Status::RequestedMsg(source);
             }
             Status::ReachedQuorum(_) | Status::RequestedMsg(_) | Status::Delivered => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring vote")
+                debug!(%digest, status = %tracker.status, "replying with our vote to sender");
+                let vote = Protocol::Vote(Envelope::signed(digest, &self.keypair));
+                let bytes = bincode::serialize(&vote)?;
+                self.comm.send(source, bytes).await.map_err(RbcError::net)?;
             }
         }
 
@@ -546,7 +549,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(node = %self.label))]
     async fn retry(&mut self, now: Instant) -> Result<()> {
         for (digest, tracker) in &mut self.buffer {
-            debug!(%digest, status = %tracker.status, "revisiting");
+            debug!(%digest, status = %tracker.status, retries = %tracker.retries, "revisiting");
             match tracker.status {
                 Status::Init | Status::Delivered => {}
                 // We have sent a message but did not make further progress, so
