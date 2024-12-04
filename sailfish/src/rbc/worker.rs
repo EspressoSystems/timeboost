@@ -556,7 +556,10 @@ impl<C: RawComm> Worker<C> {
                 // We have sent a message but did not make further progress, so
                 // we try to send the message again and hope for some response.
                 Status::SentMsg => {
-                    let timeout = [3, 6, 10, 15, 30].get(tracker.retries).copied().unwrap_or(30);
+                    let timeout = [3, 6, 10, 15, 30]
+                        .get(tracker.retries)
+                        .copied()
+                        .unwrap_or(30);
                     if tracker.start.elapsed() < Duration::from_secs(timeout) {
                         continue;
                     }
@@ -577,7 +580,10 @@ impl<C: RawComm> Worker<C> {
                 // or it might not have reached enough parties, so we try again here.
                 Status::ReceivedMsg | Status::ReceivedVotes | Status::SentVote => {
                     if let Some(msg) = &tracker.message {
-                        let timeout = [3, 6, 10, 15, 30].get(tracker.retries).copied().unwrap_or(30);
+                        let timeout = [3, 6, 10, 15, 30]
+                            .get(tracker.retries)
+                            .copied()
+                            .unwrap_or(30);
                         if tracker.start.elapsed() < Duration::from_millis(timeout) {
                             continue;
                         }
@@ -600,7 +606,10 @@ impl<C: RawComm> Worker<C> {
                 // had previously requested => try again, potentially from a different
                 // source.
                 Status::RequestedMsg(source) => {
-                    let timeout = [1, 3, 6, 10, 15, 30].get(tracker.retries).copied().unwrap_or(30);
+                    let timeout = [1, 3, 6, 10, 15, 30]
+                        .get(tracker.retries)
+                        .copied()
+                        .unwrap_or(30);
                     if tracker.start.elapsed() < Duration::from_millis(timeout) {
                         continue;
                     }
@@ -620,7 +629,10 @@ impl<C: RawComm> Worker<C> {
                 // in which case we previously failed to broadcast the certificate, or we did
                 // not manage to request the message yet.
                 Status::ReachedQuorum(source) => {
-                    let timeout = [3, 6, 10, 15, 30].get(tracker.retries).copied().unwrap_or(30);
+                    let timeout = [3, 6, 10, 15, 30]
+                        .get(tracker.retries)
+                        .copied()
+                        .unwrap_or(30);
                     if tracker.start.elapsed() < Duration::from_millis(timeout) {
                         continue;
                     }
