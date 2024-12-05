@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use timeboost_core::types::{block::Block, metrics::TimeboostMetrics};
+use timeboost_core::types::{
+    block::sailfish::SailfishBlock, block::timeboost::TimeboostBlock, metrics::TimeboostMetrics,
+};
 use tracing::{error, info};
 
-use crate::sequencer::traits::*;
+use super::phase::{
+    block_builder::BlockBuilder, decryption::DecryptionPhase, inclusion::InclusionPhase,
+    ordering::OrderingPhase,
+};
 
 pub struct Sequencer<I, D, O, B>
 where
@@ -43,7 +48,12 @@ where
         }
     }
 
-    pub fn build(&self, epochno: u64, round: u64, mempool_snapshot: Vec<Block>) -> Result<Block> {
+    pub fn build(
+        &self,
+        epochno: u64,
+        round: u64,
+        mempool_snapshot: Vec<SailfishBlock>,
+    ) -> Result<TimeboostBlock> {
         // Phase 1: Inclusion
         let Ok(inclusion_list) = self
             .inclusion_phase

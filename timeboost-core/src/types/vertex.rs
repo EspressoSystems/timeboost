@@ -2,37 +2,37 @@ use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use timeboost_crypto::traits::signature_key::SignatureKey;
-use timeboost_utils::types::round_number::RoundNumber;
 
 use super::{
     certificate::Certificate,
     message::{NoVote, Timeout},
+    time::Timestamp,
     PublicKey,
 };
-use crate::types::block::Block;
-use crate::types::Label;
+use crate::types::{block::sailfish::SailfishBlock, Label};
+use timeboost_utils::types::round_number::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {
     source: PublicKey,
     round: RoundNumber,
     edges: BTreeSet<PublicKey>,
     no_vote: Option<Certificate<NoVote>>,
     timeout: Option<Certificate<Timeout>>,
-    block: Block,
+    block: SailfishBlock,
 }
 
 impl Vertex {
     pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
+        let round = r.into();
         Self {
             source: s,
-            round: r.into(),
+            round,
             edges: BTreeSet::new(),
             no_vote: None,
             timeout: None,
-            block: Block::empty(),
+            block: SailfishBlock::empty(round, Timestamp::now()),
         }
     }
 
@@ -64,11 +64,11 @@ impl Vertex {
         self.no_vote.as_ref()
     }
 
-    pub fn block(&self) -> &Block {
+    pub fn block(&self) -> &SailfishBlock {
         &self.block
     }
 
-    pub fn set_block(&mut self, b: Block) -> &mut Self {
+    pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
         self.block = b;
         self
     }

@@ -11,8 +11,7 @@ use super::{
     envelope::{Envelope, Unchecked, Validated},
     PublicKey,
 };
-use crate::types::block::Block;
-use crate::types::committee::StaticCommittee;
+use crate::types::{block::sailfish::SailfishBlock, committee::StaticCommittee};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<Status = Validated> {
@@ -57,7 +56,7 @@ pub enum Action {
     ResetTimer(RoundNumber),
 
     /// Deliver a block to the application layer.
-    Deliver(Block, RoundNumber, PublicKey),
+    Deliver(SailfishBlock, RoundNumber, PublicKey),
 
     /// Send a vertex proposal to all nodes.
     SendProposal(Envelope<Vertex, Validated>),

@@ -48,6 +48,7 @@ impl TransactionData {
     }
 }
 
+// TODO: Add equality check based on the spec.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Transaction {
     Priority {
