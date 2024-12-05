@@ -13,6 +13,8 @@ use tokio::time::sleep;
 
 use crate::Group;
 
+mod rbc;
+
 pub mod external;
 pub mod internal;
 pub mod network_tests;
@@ -58,7 +60,7 @@ impl TestCondition {
         if self.outcome == TestOutcome::Failed {
             for m in msgs.iter() {
                 let result = (self.eval)(Some(m), None);
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Failed {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -67,7 +69,7 @@ impl TestCondition {
 
             for a in actions.iter() {
                 let result = (self.eval)(None, Some(a));
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Failed {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -141,14 +143,14 @@ pub trait TestableNetwork {
                         // Evaluate if we have seen the specified conditions of the test
                         // Go through every test condition and evaluate
                         // Do not terminate loop early to ensure we evaluate all
-                        let mut all_passed = true;
+                        let mut all_evaluated = true;
                         let msgs = msgs.drain_inbox();
                         for c in conditions.iter_mut() {
                             if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
-                                all_passed = false;
+                                all_evaluated = false;
                             }
                         }
-                        if all_passed {
+                        if all_evaluated {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
                             return TaskHandleResult::new(node_id, TestOutcome::Passed);

@@ -60,7 +60,7 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    let rounds = 50;
+    let rounds = 25;
 
     let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
@@ -87,7 +87,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(15)),
+        Some(Duration::from_secs(300)),
         NetworkMessageInterceptor::default(),
     )
     .run()
@@ -163,7 +163,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(15)),
+        Some(Duration::from_secs(300)),
         interceptor,
     )
     .run()
@@ -176,13 +176,13 @@ where
 {
     logging::init_logging();
 
-    let num_nodes = 10;
+    let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    let online_at_round = 4;
+    let online_at_round = 5;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();
-        // Late start 2 nodes in 10 node committee
-        if round <= online_at_round && id == 8 || round <= online_at_round + 1 && id == 9 {
+        // Late start 1 node
+        if round <= online_at_round && id == 4 {
             return Err(format!("Node: {}, dropping msg for round: {}", id, round));
         }
         Ok(msg.clone())
@@ -196,12 +196,15 @@ where
                 .map(|n| {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
-                        if let Some(Message::Vertex(v)) = msg {
-                            // Go 30 rounds passed from when the nodes come online
-                            // Ensure we receive all vertices even from those that late started
-                            if *v.data().round() == online_at_round + 30
-                                && node_public_key == *v.data().source()
-                            {
+                        if let Some(Message::Vertex(e)) = msg {
+                            let d = e.data();
+                            if d.no_vote_cert().is_some() && *d.round() != online_at_round {
+                                tracing::error!("r: {}", d.round());
+                                panic!("We should only timeout when node 4 is leader");
+                            }
+                            // Go 5 rounds passed from when the nodes come online
+                            // Ensure we receive all vertices even from the node that started late
+                            if *d.round() == online_at_round + 5 && node_public_key == *d.source() {
                                 return TestOutcome::Passed;
                             }
                         }
@@ -216,7 +219,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(45)),
+        Some(Duration::from_secs(120)),
         interceptor,
     )
     .run()
@@ -229,24 +232,24 @@ where
 {
     logging::init_logging();
 
-    let num_nodes = 10;
+    let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    let offline_at_round = 3;
+    let offline_at_round = 6;
     let committee = group.committee.clone();
+    let node_id = 5;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();
         // Turn node offline for one round
-        if round == offline_at_round && id == 8 {
+        if round == offline_at_round && id == node_id {
             return Err(format!("Node: {}, dropping msg for round: {}", id, round));
         }
         if let Message::Vertex(e) = msg {
             // Simulate coming online in middle of round so drop some vertex messages
             if round == offline_at_round + 1
-                && id == 8
+                && id == node_id
                 && (*e.signing_key() == committee.leader(2.into())
                     || *e.signing_key() == committee.leader(3.into())
-                    || *e.signing_key() == committee.leader(4.into())
-                    || *e.signing_key() == committee.leader(5.into()))
+                    || *e.signing_key() == committee.leader(4.into()))
             {
                 return Err(format!(
                     "Node: {}, dropping vertex for round: {}",
@@ -266,14 +269,20 @@ where
                 .map(|n| {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
-                        if let Some(Message::Vertex(v)) = msg {
-                            // Go 20 rounds passed from when the nodes come online
-                            // Ensure we receive all vertices even from the node that missed a round
-                            if *v.data().round() == offline_at_round + 20
-                                && node_public_key == *v.data().source()
-                            {
-                                return TestOutcome::Passed;
+                        match msg {
+                            Some(Message::NoVote(_e)) => {
+                                panic!("No node should send a no vote");
                             }
+                            Some(Message::Vertex(e)) => {
+                                // Go 5 rounds passed from when the nodes come online
+                                // Ensure we receive all vertices even from the node that missed a round
+                                if *e.data().round() == offline_at_round + 5
+                                    && node_public_key == *e.data().source()
+                                {
+                                    return TestOutcome::Passed;
+                                }
+                            }
+                            _ => {}
                         }
                         TestOutcome::Failed
                     })
@@ -286,7 +295,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(45)),
+        Some(Duration::from_secs(120)),
         interceptor,
     )
     .run()

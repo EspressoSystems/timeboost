@@ -1,3 +1,4 @@
+use crate::rbc::Rbc;
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
@@ -6,7 +7,7 @@ use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
 use timeboost_core::{
-    traits::comm::{Comm, Libp2p},
+    traits::comm::Comm,
     types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
 };
 use timeboost_crypto::traits::signature_key::SignatureKey;
@@ -120,7 +121,7 @@ impl Sailfish {
         C: Comm + Send + 'static,
     {
         let committee = StaticCommittee::from(&*staked_nodes);
-        let consensus = Consensus::new(self.id, self.keypair, committee, metrics);
+        let consensus = Consensus::new(self.id, self.keypair, committee).with_metrics(metrics);
 
         Coordinator::new(self.id, comm, consensus)
     }
@@ -147,7 +148,7 @@ pub async fn sailfish_coordinator(
     keypair: Keypair,
     bind_address: Multiaddr,
     metrics: Arc<SailfishMetrics>,
-) -> Coordinator<Libp2p> {
+) -> Coordinator<Rbc> {
     let network_size =
         NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
 
@@ -177,7 +178,7 @@ pub async fn sailfish_coordinator(
         .await
         .expect("Libp2p network setup");
 
-    let libp2p = Libp2p::new(n, StaticCommittee::from(&*staked_nodes));
+    let rbc = Rbc::new(n, s.keypair.clone(), StaticCommittee::from(&*staked_nodes));
 
-    s.init(libp2p, staked_nodes, metrics)
+    s.init(rbc, staked_nodes, metrics)
 }

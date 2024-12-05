@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use futures::{future::BoxFuture, FutureExt};
-use sailfish::{coordinator::Coordinator, sailfish::sailfish_coordinator};
+use sailfish::{coordinator::Coordinator, rbc::Rbc, sailfish::sailfish_coordinator};
 use sequencer::{
     phase::{
         block_builder::noop::NoOpBlockBuilder, decryption::noop::NoOpDecryptionPhase,
@@ -25,13 +25,10 @@ use vbs::version::StaticVersion;
 use crate::mempool::Mempool;
 
 use multiaddr::{Multiaddr, PeerId};
-use timeboost_core::{
-    traits::comm::Libp2p,
-    types::{
-        event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
-        metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
-        Keypair, NodeId, PublicKey,
-    },
+use timeboost_core::types::{
+    event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
+    metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
+    Keypair, NodeId, PublicKey,
 };
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -145,7 +142,7 @@ impl Timeboost {
     pub async fn go(
         mut self,
         prom: Arc<PrometheusMetrics>,
-        coordinator: &mut Coordinator<Libp2p>,
+        coordinator: &mut Coordinator<Rbc>,
     ) -> Result<()> {
         let app_tx = self.app_tx.clone();
         let rpc_handle = tokio::spawn(async move {

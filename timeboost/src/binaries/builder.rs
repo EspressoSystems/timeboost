@@ -130,11 +130,13 @@ async fn main() -> Result<()> {
             bind_address,
             shutdown_rx,
         ) => {
-            #[cfg(feature = "until")] {
+            #[cfg(feature = "until")]
+            {
                 tracing::info!("watchdog completed");
-                return Ok(());
+                Ok(())
             }
 
+            #[cfg(not(feature = "until"))]
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
