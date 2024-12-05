@@ -222,3 +222,73 @@ where
     .run()
     .await;
 }
+
+pub async fn run_simple_network_catchup_node_missed_round_test<N>()
+where
+    N: TestableNetwork,
+{
+    logging::init_logging();
+
+    let num_nodes = 10;
+    let group = Group::new(num_nodes as u16);
+    let offline_at_round = 3;
+    let committee = group.committee.clone();
+    let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
+        let round = *msg.round();
+        // Turn node offline for one round
+        if round == offline_at_round && id == 8 {
+            return Err(format!("Node: {}, dropping msg for round: {}", id, round));
+        }
+        if let Message::Vertex(e) = msg {
+            // Simulate coming online in middle of round so drop some vertex messages
+            if round == offline_at_round + 1
+                && id == 8
+                && (*e.signing_key() == committee.leader(2.into())
+                    || *e.signing_key() == committee.leader(3.into())
+                    || *e.signing_key() == committee.leader(4.into())
+                    || *e.signing_key() == committee.leader(5.into()))
+            {
+                return Err(format!(
+                    "Node: {}, dropping vertex for round: {}",
+                    id, round
+                ));
+            }
+        }
+
+        Ok(msg.clone())
+    });
+
+    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
+        .map(|node_id| {
+            let conditions = group
+                .fish
+                .iter()
+                .map(|n| {
+                    let node_public_key = *n.public_key();
+                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                        if let Some(Message::Vertex(v)) = msg {
+                            // Go 20 rounds passed from when the nodes come online
+                            // Ensure we receive all vertices even from the node that missed a round
+                            if *v.data().round() == offline_at_round + 20
+                                && node_public_key == *v.data().source()
+                            {
+                                return TestOutcome::Passed;
+                            }
+                        }
+                        TestOutcome::Failed
+                    })
+                })
+                .collect();
+            (node_id, conditions)
+        })
+        .collect();
+
+    NetworkTest::<N>::new(
+        group,
+        node_outcomes,
+        Some(Duration::from_secs(45)),
+        interceptor,
+    )
+    .run()
+    .await;
+}

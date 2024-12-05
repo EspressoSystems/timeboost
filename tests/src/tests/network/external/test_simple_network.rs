@@ -20,3 +20,8 @@ async fn test_simple_network_round_timeout() {
 async fn test_simple_network_catchup() {
     run_simple_network_catchup_test::<Libp2pNetworkTest>().await
 }
+
+#[tokio::test]
+async fn test_simple_network_catchup_missed_round() {
+    run_simple_network_catchup_node_missed_round_test::<Libp2pNetworkTest>().await
+}
