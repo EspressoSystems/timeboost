@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use sailfish::coordinator::Coordinator;
@@ -25,8 +24,7 @@ pub enum TestOutcome {
     Failed,
 }
 
-type TestConditionFn = Arc<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
-#[derive(Clone)]
+type TestConditionFn = Box<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
 pub struct TestCondition {
     identifier: String,
     outcome: TestOutcome,
@@ -45,13 +43,12 @@ impl TestCondition {
         F: for<'a, 'b> Fn(Option<&'a Message>, Option<&'b Action>) -> TestOutcome
             + Send
             + Sync
-            + Clone
             + 'static,
     {
         Self {
             identifier,
             outcome: TestOutcome::Failed,
-            eval: Arc::new(eval),
+            eval: Box::new(eval),
         }
     }
 
@@ -60,7 +57,7 @@ impl TestCondition {
         if self.outcome == TestOutcome::Failed {
             for m in msgs.iter() {
                 let result = (self.eval)(Some(m), None);
-                if result != TestOutcome::Failed {
+                if result == TestOutcome::Passed {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -69,7 +66,7 @@ impl TestCondition {
 
             for a in actions.iter() {
                 let result = (self.eval)(None, Some(a));
-                if result != TestOutcome::Failed {
+                if result == TestOutcome::Passed {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -143,14 +140,14 @@ pub trait TestableNetwork {
                         // Evaluate if we have seen the specified conditions of the test
                         // Go through every test condition and evaluate
                         // Do not terminate loop early to ensure we evaluate all
-                        let mut all_evaluated = true;
+                        let mut all_passed = true;
                         let msgs = msgs.drain_inbox();
                         for c in conditions.iter_mut() {
                             if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
-                                all_evaluated = false;
+                                all_passed = false;
                             }
                         }
-                        if all_evaluated {
+                        if all_passed {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
                             return TaskHandleResult::new(node_id, TestOutcome::Passed);

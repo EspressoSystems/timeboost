@@ -98,7 +98,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let interceptor = self.interceptor.clone();
             let shutdown_rx = self.shutdown_rxs.remove(&(id as usize)).unwrap();
-            let mut conditions = self.outcomes.remove(&id).unwrap().clone();
+            let mut conditions = self.outcomes.remove(&id).unwrap();
 
             handles.spawn(async move {
                 let net = TestNet::new(network, id, interceptor);

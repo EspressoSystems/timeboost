@@ -199,7 +199,6 @@ where
                         if let Some(Message::Vertex(e)) = msg {
                             let d = e.data();
                             if d.no_vote_cert().is_some() && *d.round() != online_at_round {
-                                tracing::error!("r: {}", d.round());
                                 panic!("We should only timeout when node 4 is leader");
                             }
                             // Go 5 rounds passed from when the nodes come online
