@@ -188,7 +188,7 @@ impl Timeboost {
         tokio::spawn(producer.run());
 
         loop {
-            tokio::select! {
+            tokio::select! { biased;
                 round = &mut self.consensus_interval_clock => {
                     info!(%round, "starting timeboost consensus");
                     self.consensus_interval_clock = sleep(Duration::from_millis(CONSENSUS_INTERVAL_MS))
