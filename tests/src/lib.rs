@@ -14,11 +14,15 @@ mod tests;
 #[cfg(test)]
 mod bench;
 
+#[cfg(test)]
+mod rbc;
+
 pub struct Group {
     pub fish: Vec<Sailfish>,
     pub bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
     pub staked_nodes: Arc<Vec<PeerConfig<PublicKey>>>,
     pub committee: StaticCommittee,
+    pub keypairs: Vec<Keypair>,
 }
 
 impl Group {
@@ -27,17 +31,22 @@ impl Group {
         let mut vcgfs = vec![];
         let mut pubks = vec![];
 
-        for i in 0..size {
+        let keyps: Vec<Keypair> = (0..size as u64).map(Keypair::zero).collect();
+
+        for (i, kpr) in keyps.iter().enumerate() {
             let cfg = ValidatorConfig::generated_from_seed_indexed(
                 Keypair::ZERO_SEED,
                 i as u64,
                 1,
                 false,
             );
-            let kpr = Keypair::zero(i as u64);
             pubks.push(*kpr.public_key());
-            let sailfish =
-                Sailfish::new(i as u64, kpr, multiaddr!(Ip4([0, 0, 0, 0]), Tcp(8000 + i))).unwrap();
+            let sailfish = Sailfish::new(
+                i as u64,
+                kpr.clone(),
+                multiaddr!(Ip4([0, 0, 0, 0]), Tcp(8000 + i as u16)),
+            )
+            .unwrap();
             nodes.push(sailfish);
             vcgfs.push(cfg)
         }
@@ -58,6 +67,7 @@ impl Group {
             bootstrap_nodes,
             staked_nodes,
             committee: StaticCommittee::new(pubks),
+            keypairs: keyps,
         }
     }
 }

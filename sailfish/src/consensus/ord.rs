@@ -29,7 +29,7 @@ impl Deref for OrderedVertex {
 
 impl PartialEq for OrderedVertex {
     fn eq(&self, other: &Self) -> bool {
-        self.round().eq(&other.round())
+        self.round() == other.round() && self.source() == other.source()
     }
 }
 
@@ -37,7 +37,9 @@ impl Eq for OrderedVertex {}
 
 impl Ord for OrderedVertex {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.round().cmp(&other.round())
+        self.round()
+            .cmp(&other.round())
+            .then_with(|| self.source().cmp(other.source()))
     }
 }
 

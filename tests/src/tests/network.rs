@@ -13,6 +13,8 @@ use tokio::time::sleep;
 
 use crate::Group;
 
+mod rbc;
+
 pub mod external;
 pub mod internal;
 pub mod network_tests;

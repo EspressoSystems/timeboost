@@ -1,6 +1,7 @@
 use core::fmt;
 
 use crate::types::vertex::Vertex;
+use crate::types::Label;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_utils::types::round_number::RoundNumber;
@@ -138,10 +139,24 @@ impl<S: Serialize> Message<S> {
 impl<S> fmt::Display for Message<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Vertex(e) => write!(f, "Vertex({})", e.data().round()),
-            Self::Timeout(e) => write!(f, "Timeout({})", e.data().round),
-            Self::NoVote(e) => write!(f, "NoVote({})", e.data().round),
-            Self::TimeoutCert(c) => write!(f, "TimeoutCert({})", c.data().round),
+            Self::Vertex(e) => {
+                let r = e.data().round();
+                let s = Label::new(e.data().source());
+                write!(f, "Vertex({r},{s})")
+            }
+            Self::Timeout(e) => {
+                let r = e.data().round();
+                let s = Label::new(e.signing_key());
+                write!(f, "Timeout({r},{s})")
+            }
+            Self::NoVote(e) => {
+                let r = e.data().round();
+                let s = Label::new(e.signing_key());
+                write!(f, "NoVote({r},{s})")
+            }
+            Self::TimeoutCert(c) => {
+                write!(f, "TimeoutCert({})", c.data().round)
+            }
         }
     }
 }
