@@ -12,6 +12,7 @@ use crate::types::{seqno::SeqNo, Keypair};
 use super::{PublicKey, Signature};
 
 lazy_static! {
+    // TODO: Derive this from elsewhere.
     static ref PLC_PUBLIC_KEY: PublicKey =
         PublicKey::generated_from_seed_indexed(Keypair::ZERO_SEED, 0).0;
 }

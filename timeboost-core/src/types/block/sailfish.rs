@@ -1,5 +1,7 @@
+use crate::types::time::Epoch;
 use crate::types::transaction::Transaction;
 use crate::types::{block_header::BlockHeader, time::Timestamp};
+use anyhow::{ensure, Result};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
@@ -11,6 +13,7 @@ pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,
     delayed_inbox_index: u64,
+    is_priority_bundle: bool,
 }
 
 impl PartialOrd for SailfishBlock {
@@ -47,11 +50,28 @@ impl SailfishBlock {
             header: BlockHeader::new(round, timestamp),
             payload: Vec::new(),
             delayed_inbox_index: 0,
+            is_priority_bundle: false,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.payload.is_empty()
+    }
+
+    pub fn is_priority_bundle(&self) -> bool {
+        self.is_priority_bundle
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.header.timestamp().into_epoch()
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.is_priority_bundle() {
+            self.payload.iter().all(|t| t.is_valid())
+        } else {
+            true
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -67,13 +87,19 @@ impl SailfishBlock {
         self
     }
 
-    pub fn add_transactions<I>(&mut self, it: I)
+    pub fn add_transactions<I>(&mut self, it: I) -> Result<()>
     where
         I: IntoIterator<Item = Transaction>,
     {
         for t in it {
+            ensure!(
+                !matches!(t, Transaction::Priority { .. }) || self.is_priority_bundle,
+                "cannot add priority tx to non-priority bundle"
+            );
             self.payload.push(t)
         }
+
+        Ok(())
     }
 
     pub fn round_number(&self) -> RoundNumber {

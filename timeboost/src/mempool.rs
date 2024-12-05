@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, VecDeque};
+use committable::{Commitment, Committable};
+use std::collections::{HashSet, VecDeque};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use timeboost_core::types::time::Epoch;
 
 /// The mempool limit in bytes is 500mb.
 pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
@@ -8,7 +8,7 @@ pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
 /// The Timeboost mempool.
 pub struct Mempool {
     /// The set of blocks in the mempool, delineated by the epoch they're associated with.
-    blocks: BTreeMap<Epoch, VecDeque<SailfishBlock>>,
+    blocks: VecDeque<SailfishBlock>,
 }
 
 impl Mempool {
@@ -21,6 +21,14 @@ impl Mempool {
 
     pub fn insert(&mut self, block: SailfishBlock) {
         self.blocks.push_back(block);
+    }
+
+    pub fn remove_duplicate_bundles(
+        &mut self,
+        prior_tx_hashes: &HashSet<Commitment<SailfishBlock>>,
+    ) {
+        self.blocks
+            .retain(|block| !prior_tx_hashes.contains(&block.commit()));
     }
 
     /// Drains blocks from the mempool until the total size reaches `limit_bytes`.

@@ -1,22 +1,23 @@
-use std::{collections::BTreeMap, future::pending, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    future::pending,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{bail, Result};
 use committable::{Commitment, Committable};
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::types::{
-    block::{
-        sailfish::SailfishBlock,
-        timeboost::{InclusionPhaseBlock, TimeboostBlock},
-    },
+    block::{sailfish::SailfishBlock, timeboost::TimeboostBlock},
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
-    time::{Epoch, Timestamp, EPOCH_DURATION},
-    transaction::Transaction,
+    time::Timestamp,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::{
     sync::{mpsc::Sender, watch, RwLock},
-    time::{sleep, Instant},
+    time::sleep,
 };
 use tracing::{error, info, instrument};
 
@@ -40,13 +41,11 @@ const CONSENSUS_INTERVAL: Duration = Duration::from_millis(250);
 /// - The consensus timestamp of the last successfully completed round.
 /// - The delayed inbox index of the last successfully completed round.
 /// - The next expected priority bundle sequence number of the last successfully completed round.
-/// - The hashes of all the non-priority transactions that, in any of the previous 8 rounds,
-///     were seen in at least F + 1 candidate lists produced by the consensus protocol for that round.
 ///
 /// This is essentially information about (this node's view of) the latest consensus inclusion list that was
 /// produced by a previous round. This information helps crashed/restarted nodes recover.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct RoundState {
+pub struct RoundState {
     /// The number of the last successfully completed round.
     pub(crate) round_number: RoundNumber,
 
@@ -58,46 +57,16 @@ pub(crate) struct RoundState {
 
     /// The next expected priority bundle sequence number of the last successfully completed round.
     pub(crate) next_expected_priority_bundle_sequence_no: u64,
-
-    /// The priority transactions that have previously been seen and processed.
-    pub(crate) prior_priority_tx: BTreeMap<RoundNumber, Vec<Transaction>>,
-
-    /// The hashes of all the non-priority transactions that, in any of the previous 8 rounds,
-    /// were seen in at least F + 1 candidate lists produced by the consensus protocol for that round.
-    pub(crate) non_priority_tx_hashes: BTreeMap<RoundNumber, Vec<Commitment<InclusionPhaseBlock>>>,
 }
 
 impl RoundState {
+    /// Updates the round state with the new last-successful inclusion list.
     pub(crate) fn update(&mut self, inclusion_list: &InclusionList) {
         self.round_number = inclusion_list.round_number;
         self.consensus_timestamp = inclusion_list.timestamp;
         self.delayed_inbox_index = inclusion_list.delayed_inbox_index;
         self.next_expected_priority_bundle_sequence_no =
             inclusion_list.priority_bundle_sequence_no + 1;
-        self.collect_garbage();
-        self.non_priority_tx_hashes
-            .entry(inclusion_list.round_number)
-            .or_default()
-            .extend(inclusion_list.bundles.iter().map(|t| t.commit()));
-        self.prior_priority_tx
-            .entry(inclusion_list.round_number)
-            .or_default()
-            .extend(
-                inclusion_list
-                    .bundles
-                    .iter()
-                    .map(|b| b.transactions().clone())
-                    .flatten(),
-            );
-    }
-
-    /// Garbage collects the round state to remove non-priority transactions that are no longer
-    /// in the 8-round window.
-    pub(crate) fn collect_garbage(&mut self) {
-        self.non_priority_tx_hashes
-            .retain(|round, _| *self.round_number - **round <= 8);
-        self.prior_priority_tx
-            .retain(|round, _| *self.round_number - **round <= 8);
     }
 }
 
@@ -113,13 +82,9 @@ where
     ordering_phase: O,
     block_builder: B,
     metrics: TimeboostMetrics,
+
+    /// The round recovery state if a given node crashes and restarts.
     round_state: RoundState,
-
-    /// The timeboost clock
-    epoch_clock: BoxFuture<'static, Epoch>,
-
-    /// The time the clock started.
-    epoch_clock_start_time: Instant,
 
     /// The consensus interval clock.
     consensus_interval_clock: BoxFuture<'static, u64>,
@@ -129,6 +94,12 @@ where
 
     /// The mempool for the timeboost node.
     mempool: Arc<RwLock<Mempool>>,
+
+    /// The transactions/bundles seen at some point in the previous 8 rounds.
+    prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<SailfishBlock>>>,
+
+    /// The previous successful round's bundles.
+    previous_bundles: Vec<SailfishBlock>,
 }
 
 impl<I, D, O, B> Sequencer<I, D, O, B>
@@ -153,11 +124,11 @@ where
             block_builder,
             metrics,
             round_state: RoundState::default(),
-            epoch_clock: pending().boxed(),
-            epoch_clock_start_time: Instant::now(),
             consensus_interval_clock: pending().boxed(),
             round: RoundNumber::genesis(),
             mempool,
+            prior_tx_hashes: BTreeMap::new(),
+            previous_bundles: Vec::new(),
         }
     }
 
@@ -178,10 +149,34 @@ where
                         .fuse()
                         .boxed();
 
+                    // "...Members should make a reasonable best effort to exclude from their candidate lists any transactions or bundles
+                    // that have already been part of the consensus inclusion list produced by a previous round."
+                    //
+                    // First, remove all the transactions/bundles that have been included in the
+                    // previous 8 rounds.
+                    //
+                    // This might be flawed as a prior round might sneak in, but that's okay since it should
+                    // be caught regardless.
+                    let prior_tx_hashes: HashSet<Commitment<SailfishBlock>> =
+                        self.prior_tx_hashes.values().flatten().cloned().collect();
+                    self.mempool.write().await.remove_duplicate_bundles(
+                        &prior_tx_hashes,
+                    );
+
                     // Drain the snapshot
                     let mempool_snapshot = self.mempool.write().await.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
 
-                    // Build the block from the snapshoty.
+                    // This is required for the Shoupe-Felten inclusion phase. We *must* know which of the current bundle
+                    // set has been included in a prior successful round.
+                    let tmp_previous_bundles = mempool_snapshot.clone();
+
+                    // Pre-calculate the commitments so that way if this operation succeeds, we can drop the
+                    // snapshot into the appropriate storage for the round. We do this here because we
+                    // move the mempool snapshot into the builder function.
+                    let mempool_snapshot_commitments: HashSet<Commitment<SailfishBlock>> =
+                        mempool_snapshot.iter().map(|b| b.commit()).collect();
+
+                    // Build the block from the snapshot.
                     let Ok(block) = self.build(mempool_snapshot) else {
                         error!(%self.round, "failed to build block");
                         continue;
@@ -193,6 +188,18 @@ where
                     }).await {
                         error!(%e, "failed to send block built event");
                     }
+
+                    // Add the mempool snapshot to the prior tx hashes.
+                    self.prior_tx_hashes
+                        .entry(self.round_state.round_number)
+                        .or_default()
+                        .extend(mempool_snapshot_commitments);
+
+                    // Remove the prior tx hashes that are not in the 8-round window.
+                    self.prior_tx_hashes.retain(|round, _| *self.round - **round <= 8);
+
+                    // The round was successful, so we update the previous bundles.
+                    self.previous_bundles = tmp_previous_bundles;
                 }
             }
         }
@@ -216,6 +223,7 @@ where
             self.round,
             candidate_list,
             self.round_state.delayed_inbox_index,
+            &self.previous_bundles,
         ) else {
             self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to produce inclusion list");

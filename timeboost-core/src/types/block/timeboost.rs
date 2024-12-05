@@ -3,7 +3,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-use crate::types::{block::sailfish::SailfishBlock, time::Timestamp, transaction::Transaction};
+use crate::types::{time::Timestamp, transaction::Transaction};
 use timeboost_utils::types::round_number::RoundNumber;
 
 /// An inclusion phase block is a block which is emitted by the inclusion phase
@@ -50,18 +50,16 @@ pub struct InclusionPhaseBlock {
     delayed_inbox_index: u64,
 
     /// The set of transactions in the block. This includes both
-    /// priority and non-priority transactions. As the [`Transaction`]
-    /// type is overloaded, so we use a [`BTreeSet`] to store the
-    /// transactions where the Priority is always on top.
-    tx: BTreeSet<Transaction>,
+    /// priority and non-priority transactions.
+    transactions: BTreeSet<Transaction>,
 }
 
 impl InclusionPhaseBlock {
     pub fn from_sailfish_block(
-        block: SailfishBlock,
+        // The transactions are the priority and non-priority transactions.
+        transactions: BTreeSet<Transaction>,
         round: RoundNumber,
         predecessor_round: RoundNumber,
-        priority_tx: BTreeSet<Transaction>,
         delayed_inbox_index: u64,
     ) -> Result<Self> {
         ensure!(
@@ -69,26 +67,21 @@ impl InclusionPhaseBlock {
             "round must be greater than predecessor round"
         );
 
-        let mut tx: BTreeSet<Transaction> = block.into_transactions().into_iter().collect();
-
-        // Merge the priority transactions with the non-priority transactions.
-        tx.extend(priority_tx);
-
         Ok(Self {
             round,
             predecessor_round,
             consensus_timestamp: Timestamp::now(),
             delayed_inbox_index,
-            tx,
+            transactions,
         })
     }
 
     pub fn transactions(&self) -> &BTreeSet<Transaction> {
-        &self.tx
+        &self.transactions
     }
 
     pub fn size_bytes(&self) -> usize {
-        self.tx.iter().map(|tx| tx.size_bytes()).sum()
+        self.transactions.iter().map(|tx| tx.size_bytes()).sum()
     }
 }
 
@@ -99,7 +92,7 @@ impl Committable for InclusionPhaseBlock {
             .field("predecessor_round", self.predecessor_round.commit())
             .field("consensus_timestamp", self.consensus_timestamp.commit())
             .u64_field("delayed_inbox_index", self.delayed_inbox_index);
-        self.tx
+        self.transactions
             .iter()
             .fold(builder, |b, tx| b.var_size_bytes(tx.commit().as_ref()))
             .finalize()
