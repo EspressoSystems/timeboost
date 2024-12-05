@@ -81,6 +81,7 @@ where
     decryption_phase: D,
     ordering_phase: O,
     block_builder: B,
+    #[allow(unused)]
     metrics: TimeboostMetrics,
 
     /// The round recovery state if a given node crashes and restarts.
@@ -225,7 +226,6 @@ where
             self.round_state.delayed_inbox_index,
             &self.previous_bundles,
         ) else {
-            self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to produce inclusion list");
             bail!("failed to produce inclusion list")
         };
@@ -235,21 +235,18 @@ where
 
         // Phase 2: Decryption
         let Ok(decrypted_transactions) = self.decryption_phase.decrypt(inclusion_list) else {
-            self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to decrypt transactions");
             bail!("failed to decrypt transactions")
         };
 
         // Phase 3: Ordering
         let Ok(ordered_transactions) = self.ordering_phase.order(decrypted_transactions) else {
-            self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to order transactions");
             bail!("failed to order transactions")
         };
 
         // Phase 4: Block Building
         let Ok(block) = self.block_builder.build(ordered_transactions) else {
-            self.metrics.get_failures_in_epoch(epoch).add(1);
             error!(%epoch, %self.round, "failed to build block");
             bail!("failed to build block")
         };

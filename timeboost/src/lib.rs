@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use futures::{future::BoxFuture, FutureExt};
 use sailfish::{coordinator::Coordinator, rbc::Rbc, sailfish::sailfish_coordinator};
 use sequencer::{
     phase::{
