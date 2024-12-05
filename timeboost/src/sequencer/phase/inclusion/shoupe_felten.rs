@@ -58,6 +58,8 @@ impl InclusionPhase for ShoupeFeltenInclusionPhase {
             .iter()
             .filter(|bundle| previous_bundles.contains(bundle))
             .enumerate()
+            // TODO: BUG BUG BUG -> This is likely NOT how the sequence number is determined. But, it works for now
+            // since we do NOT have a PLC. Ordering is based on insertion order.
             .map(|(i, _)| i as i64)
             .max()
             .unwrap_or(-1);
@@ -68,6 +70,7 @@ impl InclusionPhase for ShoupeFeltenInclusionPhase {
             let s: Vec<_> = priority_bundles
                 .iter()
                 .enumerate()
+                // TODO: This is the extension of the above potentially problemtic code.
                 .filter(|(i, _)| *i as i64 == k + 1)
                 .collect();
 

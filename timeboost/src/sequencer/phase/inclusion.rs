@@ -13,6 +13,9 @@ pub mod noop;
 pub mod shoupe_felten;
 
 /// A member's candidate list that serves as input to a consensus round R.
+///
+/// Taken directly from the spec:
+/// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L111-L121
 pub struct CandidateList<'a> {
     /// The timestamp of the node at the start of round R, which defines start(m,R).
     pub(crate) timestamp: Timestamp,
@@ -140,6 +143,34 @@ impl<'a> CandidateList<'a> {
     }
 }
 
+/// When the consensus sub-protocol commits a result, all honest members use this
+/// consensus result to compute the result of the inclusion phase, called the round’s *inclusion list*, which consists of:
+///
+/// * The round number
+/// * A consensus timestamp, which is the maximum of:
+///   * the consensus timestamp of the latest successful round, and
+///   * the median of the timestamps of the candidate lists output by the consensus protocol
+///     * if there are an even number of candidate lists, define the median as the *floor* of the mean of the two central items
+/// * A consensus priority epoch number, which is computed from the consensus timestamp
+/// * A consensus delayed inbox index, which is the maximum of:
+///   * the consensus delayed inbox index of the latest successful round, and
+///   * the median of the delayed inbox indexes of the candidate lists output by the consensus protocol
+///     * if there are an even number of candidate lists, define the median as the *floor* of the mean of the two central items
+/// * Among all priority bundle transactions seen in the consensus output that are
+///     tagged with the current consensus epoch number, first discard any that are not from the current consensus
+///     epoch and any that are not properly signed by the priority controller for the current epoch.
+///     Then include those that are designated as included by this procedure:
+///   * Let K be the largest sequence number of any bundle from the current consensus epoch number that has been included by a previous successful round’s invocation of this procedure, or -1 if there is no such bundle
+///   * Loop:
+///     * Let S be the set of bundles from the current epoch with sequence number K+1
+///     * If S is empty, exit
+///     * Otherwise include the contents (calldata) of the member of S with smallest hash, increment K, and continue
+/// * All non-priority transactions that appeared in at least $F+1$ of the candidate lists output by the
+///     consensus round, and for each of the previous 8 rounds, did not appear in at least $F+1$ of the
+///     candidate lists output by that previous round.
+///
+/// Taken directly from the spec:
+/// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L125-L143
 pub struct InclusionList {
     /// The consensus timestamp of the inclusion list. This is the *same* as the
     /// [`CandidateList::timestamp`] and only is created when the candidate list is
@@ -169,6 +200,16 @@ impl InclusionList {
 }
 
 pub trait InclusionPhase {
+    /// Phases are stateless, so this method is pure and takes states in the parent
+    /// protocol state. However, we need to pass in some relevant states from the parent
+    /// to inform the decision making of the inclusion list.
+    ///
+    /// - `round_number`: The current round number that the protocol is executing in.
+    /// - `candidate_list`: The input candidate list of sailfish bundles and transactions.
+    /// - `last_delayed_inbox_index`: The last delayed inbox index of the inclusion list. This is the
+    ///     last *successful* delayed inbox index of the inclusion list, so the different can be > 1.
+    /// - `previous_bundles`: This is the previous set of priority bundles that were included in the
+    ///     prior inclusion list phase. This is important to determine the K value in the loop.
     fn produce_inclusion_list(
         &self,
         round_number: RoundNumber,

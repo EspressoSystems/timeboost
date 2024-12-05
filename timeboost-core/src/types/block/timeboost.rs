@@ -49,14 +49,12 @@ pub struct InclusionPhaseBlock {
     ///     then the member’s view will eventually be ≥ `i`.
     delayed_inbox_index: u64,
 
-    /// The set of transactions in the block. This includes both
-    /// priority and non-priority transactions.
+    /// The set of transactions in the block.
     transactions: BTreeSet<Transaction>,
 }
 
 impl InclusionPhaseBlock {
     pub fn from_sailfish_block(
-        // The transactions are the priority and non-priority transactions.
         transactions: BTreeSet<Transaction>,
         round: RoundNumber,
         predecessor_round: RoundNumber,

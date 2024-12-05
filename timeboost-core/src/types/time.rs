@@ -18,10 +18,6 @@ impl Epoch {
     pub fn new(value: u128) -> Self {
         Self(value)
     }
-
-    pub fn genesis() -> Self {
-        Self(0)
-    }
 }
 
 impl std::fmt::Display for Epoch {
