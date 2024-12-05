@@ -10,6 +10,7 @@ use timeboost_core::types::message::Message;
 use timeboost_core::types::{Keypair, PublicKey};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tracing::{info, warn};
 
 mod digest;
 mod worker;
@@ -146,12 +147,15 @@ impl Comm for Rbc {
         if self.closed {
             return Ok(());
         }
+        info!("shutting down operations");
         self.closed = true;
         let (tx, rx) = oneshot::channel();
-        if self.tx.send(Command::Shutdown(tx)).await.is_ok() {
-            let _ = rx.await;
+        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
+            warn!(%err, "error during shutdown");
         }
+        let _ = rx.await;
         self.rx.close();
+        info!("shutdown complete");
         Ok(())
     }
 }
