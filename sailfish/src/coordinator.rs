@@ -32,9 +32,12 @@ pub struct Coordinator<C> {
 }
 
 impl<C: Comm> Coordinator<C> {
-    pub fn new(id: NodeId, comm: C, cons: Consensus) -> Self {
+    pub fn new<N>(id: N, comm: C, cons: Consensus) -> Self
+    where
+        N: Into<NodeId>,
+    {
         Self {
-            id,
+            id: id.into(),
             comm,
             consensus: cons,
             timer: pending().boxed(),

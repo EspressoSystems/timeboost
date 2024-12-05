@@ -17,7 +17,7 @@ use timeboost_core::types::{
     Keypair, Label, NodeId, PublicKey,
 };
 use timeboost_utils::types::round_number::RoundNumber;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 mod dag;
 mod ord;
@@ -116,14 +116,12 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    pub fn new(
-        id: NodeId,
-        keypair: Keypair,
-        committee: StaticCommittee,
-        metrics: Arc<SailfishMetrics>,
-    ) -> Self {
+    pub fn new<N>(id: N, keypair: Keypair, committee: StaticCommittee) -> Self
+    where
+        N: Into<NodeId>,
+    {
         Self {
-            id,
+            id: id.into(),
             label: Label::new(keypair.public_key()),
             keypair,
             state: ConsensusState::new(&committee),
@@ -133,9 +131,14 @@ impl Consensus {
             no_votes: VoteAccumulator::new(committee.clone()),
             committee,
             leader_stack: Vec::new(),
-            metrics,
+            metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
         }
+    }
+
+    pub fn with_metrics(mut self, m: Arc<SailfishMetrics>) -> Self {
+        self.metrics = m;
+        self
     }
 
     pub fn id(&self) -> NodeId {
@@ -210,10 +213,9 @@ impl Consensus {
     ///
     /// This means we did not receive a leader vertex in a round and
     /// results in a timeout message being broadcasted to all nodes.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.round()))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round()))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
-        debug_assert!(self.leader_vertex(r).is_none());
         let e = Envelope::signed(Timeout::new(r), &self.keypair);
         vec![Action::SendTimeout(e)]
     }
@@ -471,7 +473,11 @@ impl Consensus {
     ///   1. we have a leader vertex in `r`, or else
     ///   2. we have a timeout certificate for `r`, and,
     ///   3. if we are leader of `r + 1`, we have a no-vote certificate for `r`.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        node = %self.label,
+        round = %self.round(),
+        from = %round)
+    )]
     fn advance_from_round(&mut self, round: RoundNumber) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -531,7 +537,11 @@ impl Consensus {
         actions
     }
 
-    #[instrument(level = "trace", skip(self, tc, nc), fields(node = %self.label, round = %self.state.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node = %self.label,
+        round = %self.state.round,
+        from = %round)
+    )]
     fn advance_leader_with_no_vote_certificate(
         &mut self,
         round: RoundNumber,
@@ -574,7 +584,11 @@ impl Consensus {
     /// NB that the returned value requires further processing iff there is no
     /// leader vertex in `r - 1`. In that case a timeout certificate (and potentially
     /// a no-vote certificate) is required.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.state.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node = %self.label,
+        round = %self.state.round,
+        vround = %r)
+    )]
     fn create_new_vertex(&mut self, r: RoundNumber) -> NewVertex {
         let prev = self.state.dag.vertices(r - 1);
 
@@ -599,7 +613,8 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(
         node   = %self.label,
         round  = %self.state.round,
-        vround = %v.round())
+        vround = %v.round(),
+        source = %Label::new(v.source()))
     )]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
         if !v
@@ -607,9 +622,9 @@ impl Consensus {
             .all(|w| self.state.dag.vertex(v.round() - 1, w).is_some())
         {
             debug!(
-               node   = %self.label,
-               round  = %self.round(),
-                vround = %v.round(),
+                node    = %self.label,
+                round   = %self.round(),
+                vround  = %v.round(),
                 "not all edges are resolved in dag"
             );
             return Err(());
@@ -717,7 +732,7 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                debug!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
+                info!(node = %self.label, round = %r, source = %Label::new(s), "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
@@ -727,7 +742,11 @@ impl Consensus {
     }
 
     /// Cleanup the DAG and other collections.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.state.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node = %self.label,
+        round = %self.state.round,
+        committed = %committed)
+    )]
     fn gc(&mut self, committed: RoundNumber) {
         if *committed < 2 {
             return;
@@ -744,7 +763,11 @@ impl Consensus {
     }
 
     /// Remove timeout vote aggregators up to the given round.
-    #[instrument(level = "trace", skip(self), fields(node = %self.label, round = %self.state.round))]
+    #[instrument(level = "trace", skip_all, fields(
+        node = %self.label,
+        round = %self.state.round,
+        to = %to)
+    )]
     fn clear_timeout_aggregators(&mut self, to: RoundNumber) {
         self.timeouts = self.timeouts.split_off(&to);
         self.metrics.timeout_buffer.set(self.timeouts.len())

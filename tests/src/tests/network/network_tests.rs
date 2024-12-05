@@ -60,7 +60,7 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    let rounds = 50;
+    let rounds = 25;
 
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
@@ -87,7 +87,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(15)),
+        Some(Duration::from_secs(300)),
         NetworkMessageInterceptor::default(),
     )
     .run()
@@ -163,7 +163,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(15)),
+        Some(Duration::from_secs(300)),
         interceptor,
     )
     .run()

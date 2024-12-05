@@ -10,7 +10,7 @@ async-lock = { workspace = true }
 bimap = "0.6"
 bincode = { workspace = true }
 blake3 = { workspace = true }
-custom_debug = "0.5"
+custom_debug = "0.6.2"
 delegate = "0.13"
 derive_builder = "0.20"
 futures = { workspace = true }

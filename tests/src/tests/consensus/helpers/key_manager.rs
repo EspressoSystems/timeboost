@@ -42,12 +42,10 @@ impl KeyManager {
             .iter()
             .map(|(id, kpair)| {
                 let node_id = NodeId::from(*id);
-                TestNodeInstrument::new(Consensus::new(
-                    node_id,
-                    kpair.clone(),
-                    committee.clone(),
-                    metrics.clone(),
-                ))
+                TestNodeInstrument::new(
+                    Consensus::new(node_id, kpair.clone(), committee.clone())
+                        .with_metrics(metrics.clone()),
+                )
             })
             .collect()
     }

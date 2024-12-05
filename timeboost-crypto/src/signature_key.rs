@@ -58,7 +58,7 @@ impl SignatureKey for BLSPubKey {
     type QcType = (Self::PureAssembledSignatureType, BitVec);
     type SignError = SignatureError;
 
-    #[instrument(skip(self))]
+    #[instrument(level = "trace", skip(self))]
     fn validate(&self, signature: &Self::PureAssembledSignatureType, data: &[u8]) -> bool {
         // This is the validation for QC partial signature before append().
         BLSOverBN254CurveSignatureScheme::verify(&(), self, data, signature).is_ok()

@@ -2,8 +2,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use crate::Group;
 use portpicker::pick_unused_port;
-use sailfish::sailfish::Sailfish;
-use timeboost_core::traits::comm::Libp2p;
+use sailfish::{rbc::Rbc, sailfish::Sailfish};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_core::types::{committee::StaticCommittee, metrics::SailfishMetrics};
@@ -24,7 +23,7 @@ pub struct Libp2pNetworkTest {
 
 impl TestableNetwork for Libp2pNetworkTest {
     type Node = Sailfish;
-    type Network = Libp2p;
+    type Network = Rbc;
     type Testnet = TestNet<Self::Network>;
 
     fn new(
@@ -48,7 +47,7 @@ impl TestableNetwork for Libp2pNetworkTest {
         let replication_factor = NonZeroUsize::new((2 * self.group.fish.len()).div_ceil(3))
             .expect("ceil(2n/3) with n > 0 never gives 0");
         let mut handles = JoinSet::new();
-        for node in std::mem::take(&mut self.group.fish).into_iter() {
+        for (i, node) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             let staked_nodes = Arc::clone(&self.group.staked_nodes);
             let bootstrap_nodes = Arc::clone(&self.group.bootstrap_nodes);
             let port = pick_unused_port().expect("Failed to pick an unused port");
@@ -66,12 +65,13 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .build()
                 .expect("Failed to build network node config");
             let committee = StaticCommittee::from(&**self.group.staked_nodes);
+            let keypair = self.group.keypairs[i].clone();
             handles.spawn(async move {
                 let net = node
                     .setup_libp2p(config, bootstrap_nodes, &staked_nodes)
                     .await
                     .expect("Failed to start network");
-                (node, Libp2p::new(net, committee))
+                (node, Rbc::new(net, keypair, committee))
             });
         }
         handles.join_all().await.into_iter().collect()
