@@ -135,7 +135,7 @@ impl<C: RawComm> Worker<C> {
     /// progress.
     pub async fn go(mut self) {
         loop {
-            tokio::select! { biased;
+            tokio::select! {
                 now = self.timer.tick() => {
                     if let Err(err) = self.retry(now).await {
                         warn!(%err, "error retrying");
