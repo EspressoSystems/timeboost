@@ -17,15 +17,15 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = Group::new(num_nodes);
     // Each node should see the initial vertex proposal from every other node.
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
-                .fish
+                .keypairs
                 .iter()
-                .map(|n| {
-                    let node_public_key = *n.public_key();
+                .map(|kpr| {
+                    let node_public_key = *kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if v.data().round() == RoundNumber::genesis() + 1
@@ -59,16 +59,16 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = Group::new(num_nodes);
     let rounds = 25;
 
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
             let conditions: Vec<TestCondition> = group
-                .fish
+                .keypairs
                 .iter()
-                .map(|n| {
-                    let node_public_key = *n.public_key();
+                .map(|kpr| {
+                    let node_public_key = *kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round() == rounds && node_public_key == *v.data().source()
@@ -80,7 +80,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as usize, conditions)
+            (node_id, conditions)
         })
         .collect();
 
@@ -101,7 +101,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = Group::new(num_nodes);
     let committee = group.committee.clone();
     let timeout_round = 3;
     let interceptor = NetworkMessageInterceptor::new(move |msg| {
@@ -142,8 +142,8 @@ where
             )];
 
             // Next make sure we can advance some rounds and receive all vertices from each node
-            conditions.extend(group.fish.iter().map(|n| {
-                let node_public_key = *n.public_key();
+            conditions.extend(group.keypairs.iter().map(|kpr| {
+                let node_public_key = *kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
@@ -156,7 +156,7 @@ where
                     TestOutcome::Failed
                 })
             }));
-            (node_id as usize, conditions)
+            (node_id, conditions)
         })
         .collect();
 

@@ -1,6 +1,10 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
-use sailfish::{coordinator::Coordinator, rbc::Rbc, sailfish::sailfish_coordinator};
+use sailfish::{
+    coordinator::Coordinator,
+    rbc::Rbc,
+    sailfish::{Sailfish, SailfishInitializerBuilder},
+};
 use sequencer::{
     phase::{
         block_builder::noop::NoOpBlockBuilder, decryption::noop::NoOpDecryptionPhase,
@@ -10,6 +14,7 @@ use sequencer::{
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
+use timeboost_networking::network::client::{derive_libp2p_peer_id, Libp2pInitializer};
 use timeboost_utils::PeerConfig;
 use tokio::{
     sync::{mpsc::channel, RwLock},
@@ -24,6 +29,7 @@ use multiaddr::{Multiaddr, PeerId};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
     types::{
+        committee::StaticCommittee,
         event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
         metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
         Keypair, NodeId, PublicKey,
@@ -106,22 +112,42 @@ impl HasInitializer for Timeboost {
 
     async fn initialize(initializer: Self::Initializer) -> Result<Self> {
         let prom = Arc::new(PrometheusMetrics::default());
-        let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
+        let sf_metrics = SailfishMetrics::new(prom.as_ref());
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
-        // First, initialize and run the sailfish node.
-        // TODO: Hand the event stream to the sailfish node.
-        let metrics_clone = sf_metrics.clone();
-        let coordinator = sailfish_coordinator(
-            initializer.id,
-            initializer.bootstrap_nodes,
-            initializer.staked_nodes,
-            initializer.keypair,
-            initializer.bind_address,
-            metrics_clone,
+        // Make the network.
+        let network = Libp2pInitializer::new(
+            initializer.keypair.private_key(),
+            initializer.staked_nodes.clone(),
+            initializer.bootstrap_nodes.clone(),
+            initializer.bind_address.clone(),
+        )?
+        .into_network(
+            u64::from(initializer.id) as usize,
+            *initializer.keypair.public_key(),
+            initializer.keypair.private_key().clone(),
         )
-        .await;
+        .await?;
+        network.wait_for_ready().await;
+
+        let peer_id = derive_libp2p_peer_id::<PublicKey>(initializer.keypair.private_key())?;
+
+        let committee = StaticCommittee::from(&*initializer.staked_nodes);
+        let rbc = Rbc::new(network, initializer.keypair.clone(), committee.clone());
+
+        let sailfish_initializer = SailfishInitializerBuilder::default()
+            .id(initializer.id)
+            .keypair(initializer.keypair)
+            .bind_address(initializer.bind_address)
+            .network(rbc)
+            .committee(committee.clone())
+            .metrics(sf_metrics)
+            .peer_id(peer_id)
+            .build()
+            .expect("sailfish initializer to be built");
+        let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();
+        let coordinator = sailfish.into_coordinator();
 
         let mempool = Arc::new(RwLock::new(Mempool::new()));
 
