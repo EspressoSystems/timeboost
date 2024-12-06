@@ -216,7 +216,8 @@ impl Consensus {
         delivered = %self.delivered.len(),
         leaders   = %self.leader_stack.len(),
         timeouts  = %self.timeouts.len(),
-        dag       = %self.state.dag.depth())
+        dag       = %self.state.dag.depth(),
+        delayed_inbox_index = %self.delayed_inbox_index)
     )]
     pub fn handle_message(&mut self, m: Message<Validated>) -> Vec<Action> {
         match m {
@@ -224,6 +225,16 @@ impl Consensus {
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
+            Message::DelayedInboxUpdate(index) => {
+                if let Err(e) = self.set_delayed_inbox_index(index) {
+                    error!(
+                        node = %self.label,
+                        err = %e,
+                        "failed to set delayed inbox index"
+                    );
+                }
+                Vec::new()
+            }
         }
     }
 
@@ -589,14 +600,9 @@ impl Consensus {
         round  = %self.state.round,
         vround = %v.round())
     )]
-    fn add_and_broadcast_vertex(&mut self, mut v: Vertex) -> Vec<Action> {
+    fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.metrics.dag_depth.set(self.state.dag.depth());
         let mut actions = Vec::new();
-
-        // TODO: This is a temporary hack to get the delayed inbox index into the block.
-        let block = v.block_mut();
-        block.set_delayed_inbox_index(self.delayed_inbox_index);
-
         let e = Envelope::signed(v, &self.keypair);
         actions.push(Action::SendProposal(e));
         actions
@@ -621,6 +627,7 @@ impl Consensus {
                 .with_transactions(self.state.transactions.take()),
         );
         new.add_edges(prev.map(Vertex::source).cloned());
+        new.set_delayed_inbox_index(self.delayed_inbox_index);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() as u64 >= self.committee.quorum_size().get());

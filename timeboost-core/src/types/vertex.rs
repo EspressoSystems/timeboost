@@ -77,6 +77,11 @@ impl Vertex {
         self
     }
 
+    pub fn set_delayed_inbox_index(&mut self, index: u64) -> &mut Self {
+        self.block.set_delayed_inbox_index(index);
+        self
+    }
+
     pub fn add_edge(&mut self, id: PublicKey) -> &mut Self {
         self.edges.insert(id);
         self

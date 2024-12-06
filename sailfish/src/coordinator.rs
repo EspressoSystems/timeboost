@@ -87,12 +87,6 @@ impl<C: Comm> Coordinator<C> {
             }
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
-
-                // Update the delayed inbox index.
-                // TODO: Pull this from the L1 contract.
-                self.consensus
-                    .set_delayed_inbox_index(self.consensus.delayed_inbox_index() + 1)
-                    .unwrap(); // This is safe
             }
             Action::SendTimeout(e) => {
                 self.comm.broadcast(Message::Timeout(e)).await?;
