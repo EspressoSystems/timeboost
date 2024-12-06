@@ -11,17 +11,23 @@ use sequencer::{
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_utils::PeerConfig;
-use tokio::sync::{mpsc::channel, RwLock};
-use tracing::{debug, error, info, instrument, warn};
+use tokio::{
+    sync::{mpsc::channel, RwLock},
+    task::JoinHandle,
+};
+use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
 
 use multiaddr::{Multiaddr, PeerId};
-use timeboost_core::types::{
-    event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
-    metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
-    Keypair, NodeId, PublicKey,
+use timeboost_core::{
+    traits::has_initializer::HasInitializer,
+    types::{
+        event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
+        metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
+        Keypair, NodeId, PublicKey,
+    },
 };
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -35,13 +41,35 @@ mod mempool;
 mod producer;
 pub mod sequencer;
 
+pub struct TimeboostInitializer {
+    /// The ID of the node.
+    pub id: NodeId,
+
+    /// The port to bind the RPC server to.
+    pub rpc_port: u16,
+
+    /// The port to bind the metrics API server to.
+    pub metrics_port: u16,
+
+    /// The bootstrap nodes to connect to.
+    pub bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+
+    /// The staked nodes to join the committee with.
+    pub staked_nodes: Vec<PeerConfig<PublicKey>>,
+
+    /// The keypair for the node.
+    pub keypair: Keypair,
+
+    /// The bind address for the node.
+    pub bind_address: Multiaddr,
+
+    /// The receiver for the shutdown signal.
+    pub shutdown_rx: watch::Receiver<()>,
+}
+
 pub struct Timeboost {
     /// The ID of the node.
     id: NodeId,
-
-    /// The port to bind timeboost to.
-    #[allow(dead_code)]
-    port: u16,
 
     /// The port to bind the RPC server to.
     rpc_port: u16,
@@ -61,64 +89,93 @@ pub struct Timeboost {
     /// The mempool for the timeboost node.
     mempool: Arc<RwLock<Mempool>>,
 
-    /// The metrics for the sailfish node.
-    #[allow(dead_code)]
-    sf_metrics: Arc<SailfishMetrics>,
+    /// The coordinator for the timeboost node.
+    coordinator: Coordinator<Rbc>,
+
+    /// The prometheus metrics for all the metrics layers.
+    metrics: Arc<PrometheusMetrics>,
+
+    /// The timeboost metrics layer.
+    tb_metrics: TimeboostMetrics,
+}
+
+#[async_trait::async_trait]
+impl HasInitializer for Timeboost {
+    type Initializer = TimeboostInitializer;
+    type Into = Self;
+
+    async fn initialize(initializer: Self::Initializer) -> Result<Self> {
+        let prom = Arc::new(PrometheusMetrics::default());
+        let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
+        let tb_metrics = TimeboostMetrics::new(prom.as_ref());
+        let (tb_app_tx, tb_app_rx) = channel(100);
+
+        // First, initialize and run the sailfish node.
+        // TODO: Hand the event stream to the sailfish node.
+        let metrics_clone = sf_metrics.clone();
+        let coordinator = sailfish_coordinator(
+            initializer.id,
+            initializer.bootstrap_nodes,
+            initializer.staked_nodes,
+            initializer.keypair,
+            initializer.bind_address,
+            metrics_clone,
+        )
+        .await;
+
+        let mempool = Arc::new(RwLock::new(Mempool::new()));
+
+        // Then, initialize and run the timeboost node.
+        let timeboost = Timeboost {
+            id: initializer.id,
+            rpc_port: initializer.rpc_port,
+            metrics_port: initializer.metrics_port,
+            app_tx: tb_app_tx,
+            app_rx: tb_app_rx,
+            shutdown_rx: initializer.shutdown_rx,
+            mempool,
+            coordinator,
+            metrics: prom,
+            tb_metrics,
+        };
+
+        Ok(timeboost)
+    }
 }
 
 impl Timeboost {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: NodeId,
-        port: u16,
-        rpc_port: u16,
-        metrics_port: u16,
-        app_tx: Sender<TimeboostStatusEvent>,
-        app_rx: Receiver<TimeboostStatusEvent>,
-        shutdown_rx: watch::Receiver<()>,
-        sf_metrics: Arc<SailfishMetrics>,
-    ) -> Self {
-        let mempool = Arc::new(RwLock::new(Mempool::new()));
-        Self {
-            id,
-            port,
-            rpc_port,
-            metrics_port,
-            app_tx,
-            app_rx,
-            shutdown_rx,
-            sf_metrics,
-            mempool: mempool.clone(),
-        }
-    }
-
-    #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(
-        mut self,
-        prom: Arc<PrometheusMetrics>,
-        coordinator: &mut Coordinator<Rbc>,
-        tb_metrics: TimeboostMetrics,
-    ) -> Result<()> {
-        let app_tx = self.app_tx.clone();
-        let rpc_handle = tokio::spawn(async move {
+    async fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
+        tokio::spawn(async move {
             let api = TimeboostApiState::new(app_tx);
             if let Err(e) = api
-                .run(Url::parse(&format!("http://0.0.0.0:{}", self.rpc_port)).unwrap())
+                .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
                 .await
             {
                 error!("failed to run timeboost api: {}", e);
             }
-        });
+        })
+    }
 
-        let metrics_handle = tokio::spawn(async move {
-            serve_metrics_api::<StaticVersion<0, 1>>(self.metrics_port, prom).await
-        });
+    async fn start_metrics_api(
+        metrics: Arc<PrometheusMetrics>,
+        metrics_port: u16,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
+        })
+    }
+
+    #[instrument(level = "info", skip_all, fields(node = %self.id))]
+    pub async fn go(mut self) -> Result<()> {
+        let app_tx = self.app_tx.clone();
+        let rpc_handle = Self::start_rpc_api(app_tx, self.rpc_port).await;
+        let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port).await;
 
         // Kickstart the network.
-        match coordinator.start().await {
+        match self.coordinator.start().await {
             Ok(actions) => {
                 for a in actions {
-                    let _ = coordinator.execute(a).await;
+                    let _ = self.coordinator.execute(a).await;
                 }
             }
             Err(e) => {
@@ -131,7 +188,7 @@ impl Timeboost {
             NoOpDecryptionPhase,
             NoOpOrderingPhase,
             NoOpBlockBuilder,
-            tb_metrics,
+            self.tb_metrics,
             self.mempool.clone(),
         );
 
@@ -144,10 +201,10 @@ impl Timeboost {
 
         loop {
             tokio::select! { biased;
-                result = coordinator.next() => match result {
+                result = self.coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
-                            let event = coordinator.execute(a).await;
+                            let event = self.coordinator.execute(a).await;
                             if let Ok(Some(e)) = event {
                                 match e.event {
                                     SailfishEventType::Error { error } => {
@@ -174,13 +231,12 @@ impl Timeboost {
                     Some(event) => {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
-                                coordinator.handle_transactions(transactions);
+                                self.coordinator.handle_transactions(transactions);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
                                 let _ = p_tx.send(block).await;
                             }
                         }
-
                     }
                     None => {
                         // If we get here, it's a big deal.
@@ -201,7 +257,7 @@ impl Timeboost {
                     rpc_handle.abort();
 
                     warn!("shutting down coordinator");
-                    coordinator.shutdown().await.expect("shutdown coordinator");
+                    self.coordinator.shutdown().await.expect("shutdown coordinator");
 
                     result.expect("the shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());
@@ -209,52 +265,4 @@ impl Timeboost {
             }
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn run_timeboost(
-    id: NodeId,
-    port: u16,
-    rpc_port: u16,
-    metrics_port: u16,
-    bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
-    staked_nodes: Vec<PeerConfig<PublicKey>>,
-    keypair: Keypair,
-    bind_address: Multiaddr,
-    shutdown_rx: watch::Receiver<()>,
-) -> Result<()> {
-    info!("Starting timeboost");
-
-    let prom = Arc::new(PrometheusMetrics::default());
-    let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
-    let tb_metrics = TimeboostMetrics::new(prom.as_ref());
-    let (tb_app_tx, tb_app_rx) = channel(100);
-
-    // First, initialize and run the sailfish node.
-    // TODO: Hand the event stream to the sailfish node.
-    let metrics_clone = sf_metrics.clone();
-    let coordinator = &mut sailfish_coordinator(
-        id,
-        bootstrap_nodes,
-        staked_nodes,
-        keypair,
-        bind_address,
-        metrics_clone,
-    )
-    .await;
-
-    // Then, initialize and run the timeboost node.
-    let timeboost = Timeboost::new(
-        id,
-        port,
-        rpc_port,
-        metrics_port,
-        tb_app_tx,
-        tb_app_rx,
-        shutdown_rx,
-        sf_metrics,
-    );
-
-    info!("Timeboost is running.");
-    timeboost.go(prom, coordinator, tb_metrics).await
 }

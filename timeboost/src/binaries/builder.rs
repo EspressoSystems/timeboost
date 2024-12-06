@@ -1,9 +1,12 @@
 use anyhow::Result;
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
-    run_timeboost,
+    Timeboost, TimeboostInitializer,
 };
-use timeboost_core::types::{Keypair, NodeId};
+use timeboost_core::{
+    traits::has_initializer::HasInitializer,
+    types::{Keypair, NodeId},
+};
 
 use clap::Parser;
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
@@ -16,11 +19,11 @@ struct Cli {
     #[clap(long)]
     id: u16,
 
-    /// The port of the node to build.
+    /// The port to bind Sailfish to.
     #[clap(long)]
     port: u16,
 
-    /// The port of the RPC API.
+    /// The port to bind the metrics server to.
     #[clap(long)]
     rpc_port: u16,
 
@@ -118,18 +121,23 @@ async fn main() -> Result<()> {
         shutdown_tx.clone(),
     ));
 
+    let initializer = TimeboostInitializer {
+        id,
+        rpc_port: cli.rpc_port,
+        metrics_port: cli.metrics_port,
+        bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
+        staked_nodes: committee.staked_nodes(),
+        keypair,
+        bind_address,
+        shutdown_rx,
+    };
+
+    let timeboost = Timeboost::initialize(initializer)
+        .await
+        .expect("failed to initialize timeboost");
+
     tokio::select! {
-        _ = run_timeboost(
-            id,
-            cli.port,
-            cli.rpc_port,
-            cli.metrics_port,
-            committee.bootstrap_nodes().into_iter().collect(),
-            committee.staked_nodes(),
-            keypair,
-            bind_address,
-            shutdown_rx,
-        ) => {
+        _ = timeboost.go() => {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");
