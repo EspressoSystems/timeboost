@@ -20,8 +20,10 @@ pub mod network_tests;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
+    Waiting,
+    Timeout,
     Passed,
-    Failed,
+    Failed(&'static str),
 }
 
 type TestConditionFn = Box<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
@@ -47,17 +49,17 @@ impl TestCondition {
     {
         Self {
             identifier,
-            outcome: TestOutcome::Failed,
+            outcome: TestOutcome::Waiting,
             eval: Box::new(eval),
         }
     }
 
     pub fn evaluate(&mut self, msgs: &[Message], actions: &[Action]) -> TestOutcome {
         // Only try to evaluate if the test condition has not yet passed
-        if self.outcome == TestOutcome::Failed {
+        if self.outcome == TestOutcome::Waiting {
             for m in msgs.iter() {
                 let result = (self.eval)(Some(m), None);
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Waiting {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -66,7 +68,7 @@ impl TestCondition {
 
             for a in actions.iter() {
                 let result = (self.eval)(None, Some(a));
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Waiting {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -140,17 +142,23 @@ pub trait TestableNetwork {
                         // Evaluate if we have seen the specified conditions of the test
                         // Go through every test condition and evaluate
                         // Do not terminate loop early to ensure we evaluate all
-                        let mut all_passed = true;
+                        let mut outcome = TestOutcome::Passed;
                         let msgs = msgs.drain_inbox();
                         for c in conditions.iter_mut() {
-                            if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
-                                all_passed = false;
+                            match c.evaluate(&msgs, &actions) {
+                                TestOutcome::Failed(reason) => {
+                                    outcome =  TestOutcome::Failed(reason);
+                                }
+                                TestOutcome::Waiting => {
+                                    outcome = TestOutcome::Waiting;
+                                }
+                                _ => {}
                             }
                         }
-                        if all_passed {
+                        if outcome != TestOutcome::Waiting {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
-                            return TaskHandleResult::new(node_id, TestOutcome::Passed);
+                            return TaskHandleResult::new(node_id, outcome);
                         }
                     }
                     Err(e) => {
@@ -161,7 +169,7 @@ pub trait TestableNetwork {
                     coordinator.shutdown().await.expect("Network to be shutdown");
                     // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    return TaskHandleResult::new(node_id, TestOutcome::Failed);
+                    return TaskHandleResult::new(node_id, TestOutcome::Timeout);
                 }
             }
         }
@@ -216,13 +224,13 @@ impl<N: TestableNetwork> NetworkTest<N> {
         };
 
         // Now handle the test result
+        results.extend(self.network.shutdown(handles, &results).await);
         if timeout {
             // Shutdown the network for the nodes that did not already complete (hence the timeout)
             // This means that the test will fail
-            results.extend(self.network.shutdown(handles, &results).await);
             for (node_id, result) in results {
                 if result != TestOutcome::Passed {
-                    tracing::error!("Node {} had missing status: {:?}", node_id, result);
+                    tracing::error!("Node {} had status: {:?}", node_id, result);
                 }
             }
             panic!("Test timed out after {:?}", self.duration);
@@ -232,7 +240,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
             results
                 .values()
                 .all(|result| *result == TestOutcome::Passed),
-            "Not all nodes passed. Final statuses: {:?}",
+            "Not all nodes passed. Final statuses: {:#?}",
             results.values()
         );
     }

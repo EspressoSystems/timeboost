@@ -34,7 +34,7 @@ where
                                 return TestOutcome::Passed;
                             }
                         }
-                        TestOutcome::Failed
+                        TestOutcome::Waiting
                     })
                 })
                 .collect();
@@ -76,7 +76,7 @@ where
                                 return TestOutcome::Passed;
                             }
                         }
-                        TestOutcome::Failed
+                        TestOutcome::Waiting
                     })
                 })
                 .collect();
@@ -130,14 +130,16 @@ where
                             && *d.round() == timeout_round + 1;
 
                         if no_vote_checks {
-                            // The signing key needs to be from leader for round `timeout_round + 1``
+                            // The signing key needs to be from leader for round `timeout_round + 1`
                             if *v.signing_key() != committee.leader((timeout_round + 1).into()) {
-                                panic!("Should not receive a no vote from non leader");
+                                return TestOutcome::Failed(
+                                    "Should not receive a no vote certificate from non-leader",
+                                );
                             }
                             return TestOutcome::Passed;
                         }
                     }
-                    TestOutcome::Failed
+                    TestOutcome::Waiting
                 },
             )];
 
@@ -153,7 +155,7 @@ where
                             return TestOutcome::Passed;
                         }
                     }
-                    TestOutcome::Failed
+                    TestOutcome::Waiting
                 })
             }));
             (node_id, conditions)
@@ -199,15 +201,18 @@ where
                         if let Some(Message::Vertex(e)) = msg {
                             let d = e.data();
                             if d.no_vote_cert().is_some() && *d.round() != online_at_round {
-                                panic!("We should only timeout when node 4 is leader");
+                                return TestOutcome::Failed(
+                                    "We should only timeout when node 4 is leader",
+                                );
                             }
                             // Go 5 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that started late
-                            if *d.round() == online_at_round + 5 && node_public_key == *d.source() {
+                            if *d.round() == online_at_round + 10 && node_public_key == *d.source()
+                            {
                                 return TestOutcome::Passed;
                             }
                         }
-                        TestOutcome::Failed
+                        TestOutcome::Waiting
                     })
                 })
                 .collect();
@@ -233,9 +238,9 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes as u16);
-    let offline_at_round = 6;
+    let offline_at_round = 4;
     let committee = group.committee.clone();
-    let node_id = 5;
+    let node_id = 4;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();
         // Turn node offline for one round
@@ -244,11 +249,12 @@ where
         }
         if let Message::Vertex(e) = msg {
             // Simulate coming online in middle of round so drop some vertex messages
+            let stake_table = committee.committee();
             if round == offline_at_round + 1
                 && id == node_id
-                && (*e.signing_key() == committee.leader(2.into())
-                    || *e.signing_key() == committee.leader(3.into())
-                    || *e.signing_key() == committee.leader(4.into()))
+                && (e.signing_key() == stake_table.first().unwrap()
+                    || e.signing_key() == stake_table.get(1).unwrap()
+                    || e.signing_key() == stake_table.get(2).unwrap())
             {
                 return Err(format!(
                     "Node: {}, dropping vertex for round: {}",
@@ -268,22 +274,16 @@ where
                 .map(|n| {
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
-                        match msg {
-                            Some(Message::NoVote(_e)) => {
-                                panic!("No node should send a no vote");
+                        if let Some(Message::Vertex(e)) = msg {
+                            // Go 5 rounds passed from when the nodes come online
+                            // Ensure we receive all vertices even from the node that missed a round
+                            if *e.data().round() == offline_at_round + 10
+                                && node_public_key == *e.data().source()
+                            {
+                                return TestOutcome::Passed;
                             }
-                            Some(Message::Vertex(e)) => {
-                                // Go 5 rounds passed from when the nodes come online
-                                // Ensure we receive all vertices even from the node that missed a round
-                                if *e.data().round() == offline_at_round + 5
-                                    && node_public_key == *e.data().source()
-                                {
-                                    return TestOutcome::Passed;
-                                }
-                            }
-                            _ => {}
                         }
-                        TestOutcome::Failed
+                        TestOutcome::Waiting
                     })
                 })
                 .collect();

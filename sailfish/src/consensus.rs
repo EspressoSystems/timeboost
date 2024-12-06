@@ -236,11 +236,12 @@ impl Consensus {
                 if v.round() - self.round() > 2.into() {
                     self.catchup = true;
                     // Do we have anything in our state for previous round?
-                    // We are in catchup optimistically add to the candidate dag
+                    // We are in catchup, so optimistically add to the candidate dag
+                    // Essentially treat them as genesis vertices
                     if self.candidate_dag.vertex_count(v.round() - 1) == 0 {
-                        self.candidate_dag.add(v.clone());
+                        self.candidate_dag.add(v);
                     }
-                    // Dont add to buffer
+                    // Dont add to buffer, candidate_dag is our buffer for catchup
                     return actions;
                 }
                 self.buffer.insert(v.into());
@@ -611,8 +612,8 @@ impl Consensus {
             );
             return Err(());
         }
-        // We are able to add again to the dag
-        // Copy candidate into dag then clear
+        // We are able to add again to the dag, so catchup is complete
+        // Copy candidate_dag into our actual dag then clear
         if self.catchup {
             self.catchup = false;
             self.dag = self.candidate_dag.clone();
