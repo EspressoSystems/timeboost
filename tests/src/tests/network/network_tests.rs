@@ -6,7 +6,7 @@ use timeboost_core::{
 };
 use timeboost_utils::types::round_number::RoundNumber;
 
-use crate::Group;
+use crate::School;
 
 use super::{NetworkTest, TestCondition, TestOutcome, TestableNetwork};
 
@@ -17,7 +17,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = School::new(num_nodes as u16);
     // Each node should see the initial vertex proposal from every other node.
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
         .map(|node_id| {
@@ -59,7 +59,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = School::new(num_nodes as u16);
     let rounds = 25;
 
     let node_outcomes: HashMap<usize, Vec<TestCondition>> = (0..num_nodes)
@@ -101,7 +101,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes as u16);
+    let group = School::new(num_nodes as u16);
     let committee = group.committee.clone();
     let timeout_round = 3;
     let interceptor = NetworkMessageInterceptor::new(move |msg| {

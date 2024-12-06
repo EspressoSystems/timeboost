@@ -19,6 +19,7 @@ portpicker = { workspace = true }
 primitive-types = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
+timeboost = { path = "../timeboost", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }

@@ -60,10 +60,6 @@ pub struct Timeboost {
 
     /// The mempool for the timeboost node.
     mempool: Arc<RwLock<Mempool>>,
-
-    /// The metrics for the sailfish node.
-    #[allow(dead_code)]
-    sf_metrics: Arc<SailfishMetrics>,
 }
 
 impl Timeboost {
@@ -76,7 +72,6 @@ impl Timeboost {
         app_tx: Sender<TimeboostStatusEvent>,
         app_rx: Receiver<TimeboostStatusEvent>,
         shutdown_rx: watch::Receiver<()>,
-        sf_metrics: Arc<SailfishMetrics>,
     ) -> Self {
         let mempool = Arc::new(RwLock::new(Mempool::new()));
         Self {
@@ -87,7 +82,6 @@ impl Timeboost {
             app_tx,
             app_rx,
             shutdown_rx,
-            sf_metrics,
             mempool: mempool.clone(),
         }
     }
@@ -226,20 +220,18 @@ pub async fn run_timeboost(
     info!("Starting timeboost");
 
     let prom = Arc::new(PrometheusMetrics::default());
-    let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
+    let sf_metrics = SailfishMetrics::new(prom.as_ref());
     let tb_metrics = TimeboostMetrics::new(prom.as_ref());
     let (tb_app_tx, tb_app_rx) = channel(100);
 
     // First, initialize and run the sailfish node.
-    // TODO: Hand the event stream to the sailfish node.
-    let metrics_clone = sf_metrics.clone();
     let coordinator = &mut sailfish_coordinator(
         id,
         bootstrap_nodes,
         staked_nodes,
         keypair,
         bind_address,
-        metrics_clone,
+        sf_metrics,
     )
     .await;
 
@@ -252,7 +244,6 @@ pub async fn run_timeboost(
         tb_app_tx,
         tb_app_rx,
         shutdown_rx,
-        sf_metrics,
     );
 
     info!("Timeboost is running.");

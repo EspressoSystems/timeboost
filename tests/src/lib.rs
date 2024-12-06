@@ -4,6 +4,7 @@ use async_lock::RwLock;
 use libp2p_identity::PeerId;
 use multiaddr::{multiaddr, Multiaddr};
 use sailfish::sailfish::Sailfish;
+use timeboost::Timeboost;
 use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::{Keypair, PublicKey};
 use timeboost_utils::{PeerConfig, ValidatorConfig};
@@ -17,15 +18,16 @@ mod bench;
 #[cfg(test)]
 mod rbc;
 
-pub struct Group {
-    pub fish: Vec<Sailfish>,
+/// Get it? A school of (sail)fish!
+pub struct School<Cx> {
+    pub fish: Vec<Cx>,
     pub bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
     pub staked_nodes: Arc<Vec<PeerConfig<PublicKey>>>,
     pub committee: StaticCommittee,
     pub keypairs: Vec<Keypair>,
 }
 
-impl Group {
+impl<Cx> School<Cx> {
     pub fn new(size: u16) -> Self {
         let mut nodes = vec![];
         let mut vcgfs = vec![];

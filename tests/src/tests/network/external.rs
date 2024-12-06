@@ -1,6 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use crate::Group;
+use crate::School;
 use portpicker::pick_unused_port;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
@@ -14,7 +14,7 @@ use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 pub mod test_simple_network;
 
 pub struct Libp2pNetworkTest {
-    group: Group,
+    group: School,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     outcomes: HashMap<usize, Vec<TestCondition>>,
@@ -27,7 +27,7 @@ impl TestableNetwork for Libp2pNetworkTest {
     type Testnet = TestNet<Self::Network>;
 
     fn new(
-        group: Group,
+        group: School,
         outcomes: HashMap<usize, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
@@ -108,7 +108,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                     Arc::new(SailfishMetrics::default()),
                 );
 
-                Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await
+                Self::run(coordinator, &mut conditions, msgs, shutdown_rx, id).await
             });
         }
         handles

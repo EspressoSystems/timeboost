@@ -11,13 +11,14 @@ use tokio::sync::watch::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use crate::Group;
+use crate::School;
 
 mod rbc;
 
 pub mod external;
 pub mod internal;
 pub mod network_tests;
+pub mod timeboost;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
@@ -108,7 +109,7 @@ pub trait TestableNetwork {
     type Network: Comm + Send;
     type Testnet: Comm;
     fn new(
-        group: Group,
+        group: School,
         outcomes: HashMap<usize, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self;
@@ -123,8 +124,8 @@ pub trait TestableNetwork {
         completed: &HashMap<usize, TestOutcome>,
     ) -> HashMap<usize, TestOutcome>;
 
-    /// Default method for running the coordinator in tests
-    async fn run_coordinator(
+    /// Default method for running the network test.
+    async fn run(
         coordinator: &mut Coordinator<Self::Testnet>,
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
@@ -184,7 +185,7 @@ pub struct NetworkTest<N: TestableNetwork> {
 
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
-        group: Group,
+        group: School,
         outcomes: HashMap<usize, Vec<TestCondition>>,
         duration: Option<Duration>,
         interceptor: NetworkMessageInterceptor,
