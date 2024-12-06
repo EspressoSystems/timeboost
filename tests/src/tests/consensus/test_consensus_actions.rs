@@ -1,6 +1,6 @@
 use timeboost_core::{
     logging,
-    types::message::{Action, Message},
+    types::message::{Action, Message, Timeout},
 };
 use timeboost_utils::types::round_number::RoundNumber;
 
@@ -62,12 +62,8 @@ async fn test_single_node_timeout() {
     // Setup expectations
     let expected_round = RoundNumber::new(5);
     let timeout = node_handle.expected_timeout(expected_round);
-    let signers = manager.signers(
-        expected_round,
-        &committee,
-        committee.quorum_size().get() as usize,
-    );
-    let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
+    let signers = manager.signers(Timeout::new(expected_round), committee.quorum_size().get());
+    let send_cert = node_handle.expected_timeout_certificate(signers);
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert),
@@ -113,19 +109,15 @@ async fn test_single_node_timeout_cert() {
     let no_vote = node_handle.expected_no_vote(expected_round);
 
     // Signers and cert for 2f + 1 nodes
-    let mut signers = manager.signers(
-        expected_round,
-        &committee,
-        committee.quorum_size().get() as usize,
-    );
+    let signers = manager.signers(Timeout::new(expected_round), committee.quorum_size().get());
     // The first cert is sent when we see 2f + 1 timeouts
     // We will still get other timeout votes causing cert to change
-    let send_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
+    let send_cert = node_handle.expected_timeout_certificate(signers);
 
     // Signers from all nodes and cert
-    signers = manager.signers(expected_round, &committee, committee.size().get());
+    let signers = manager.signers(Timeout::new(expected_round), committee.size().get());
     // Proposal will send with a certificate with all signers
-    let expected_cert = node_handle.expected_timeout_certificate(expected_round, &signers);
+    let expected_cert = node_handle.expected_timeout_certificate(signers);
     let vertex_proposal = node_handle.expected_vertex_proposal(
         expected_round + 1,
         // Skip leader edge since we do below when craft vertex proposal messages
@@ -135,7 +127,7 @@ async fn test_single_node_timeout_cert() {
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert.clone()),
-        Action::SendNoVote(committee.leader(expected_round + 1), no_vote),
+        Action::SendNoVote(committee.leader(*expected_round as usize + 1), no_vote),
         Action::ResetTimer(expected_round + 1),
         Action::SendProposal(vertex_proposal),
     ]);
@@ -155,7 +147,7 @@ async fn test_single_node_timeout_cert() {
             if let Message::Vertex(v) = m {
                 let d = v.data();
                 // Process non leader vertices
-                *d.source() != committee.leader(d.round())
+                *d.source() != committee.leader(*d.round() as usize)
             } else {
                 panic!("Expected vertex message in test");
             }

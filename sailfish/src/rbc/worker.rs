@@ -4,20 +4,18 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
+use committable::Committable;
+use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, VoteAccumulator};
+use multisig::{Unchecked, Validated};
 use rand::seq::IteratorRandom;
 use timeboost_core::traits::comm::RawComm;
-use timeboost_core::types::certificate::Certificate;
-use timeboost_core::types::committee::StaticCommittee;
-use timeboost_core::types::envelope::{Envelope, Unchecked, Validated};
 use timeboost_core::types::message::Message;
-use timeboost_core::types::{Keypair, Label, PublicKey};
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
 use tracing::{debug, error, instrument, warn};
 
 use super::{Command, Digest, Protocol};
-use crate::consensus::VoteAccumulator;
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender = mpsc::Sender<Message<Validated>>;
@@ -32,7 +30,7 @@ pub struct Worker<C> {
     /// The keypair we use for signing some of our protocol messages.
     keypair: Keypair,
     /// Label, used in debug logs.
-    label: Label,
+    label: PublicKey,
     /// Underlying communication type.
     comm: C,
     /// Our channel to deliver messages to the application layer.
@@ -42,7 +40,7 @@ pub struct Worker<C> {
     /// The highest round number of the application (used for pruning).
     round: RoundNumber,
     /// The set of voters.
-    committee: StaticCommittee,
+    committee: Committee,
     /// The tracking information per message.
     buffer: HashMap<Digest, Tracker>,
     /// A timer to retry messages.
@@ -110,9 +108,9 @@ impl fmt::Display for Status {
 }
 
 impl<C: RawComm> Worker<C> {
-    pub fn new(tx: Sender, rx: Receiver, kp: Keypair, nt: C, sc: StaticCommittee) -> Self {
+    pub fn new(tx: Sender, rx: Receiver, kp: Keypair, nt: C, sc: Committee) -> Self {
         Self {
-            label: Label::new(kp.public_key()),
+            label: kp.public_key(),
             keypair: kp,
             comm: nt,
             tx,
@@ -345,7 +343,7 @@ impl<C: RawComm> Worker<C> {
     /// A proposal vote has been received.
     #[instrument(level = "trace", skip_all, fields(
         node  = %self.label,
-        from  = %env.signer_label(),
+        from  = %env.signing_key(),
         round = %env.data().round())
     )]
     async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
@@ -354,6 +352,7 @@ impl<C: RawComm> Worker<C> {
         };
 
         let digest = *env.data();
+        let commit = digest.commit();
         let source = *env.signing_key();
 
         let tracker = self.buffer.entry(digest).or_insert_with(|| Tracker {
@@ -365,7 +364,7 @@ impl<C: RawComm> Worker<C> {
             status: Status::Init,
         });
 
-        debug!(%digest, status = %tracker.status, votes = %tracker.votes.votes(), "vote received");
+        debug!(%digest, status = %tracker.status, votes = %tracker.votes.votes(&commit), "vote received");
 
         match tracker.status {
             // Votes may precede the message proposal. We just try to add the votes
@@ -431,7 +430,7 @@ impl<C: RawComm> Worker<C> {
     /// We received a vote certificate.
     #[instrument(level = "trace", skip_all, fields(
         node  = %self.label,
-        from  = %env.signer_label(),
+        from  = %env.signing_key(),
         round = %env.data().data().round())
     )]
     async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
@@ -439,7 +438,7 @@ impl<C: RawComm> Worker<C> {
             return Err(RbcError::InvalidSignature);
         };
 
-        if !env.data().is_valid_quorum(&self.committee) {
+        if !env.data().is_valid_par(&self.committee) {
             return Err(RbcError::InvalidSignature);
         }
 
@@ -505,7 +504,7 @@ impl<C: RawComm> Worker<C> {
     /// One of our peers is asking for a message proposal.
     #[instrument(level = "trace", skip_all, fields(
         node  = %self.label,
-        from  = %env.signer_label(),
+        from  = %env.signing_key(),
         round = %env.data().round())
     )]
     async fn on_get(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
@@ -516,7 +515,7 @@ impl<C: RawComm> Worker<C> {
         let Some(tracker) = self.buffer.get_mut(env.data()) else {
             warn!(
                 node = %self.label,
-                from = %env.signer_label(),
+                from = %env.signing_key(),
                 "ignoring get request for data we do not have"
             );
             return Ok(());
@@ -619,9 +618,10 @@ impl<C: RawComm> Worker<C> {
                     debug!(%digest, "requesting message again");
                     let m = Protocol::Get(Envelope::signed(*digest, &self.keypair));
                     let b = bincode::serialize(&m).expect("idempotent serialization");
+                    let c = digest.commit();
                     let s = tracker
                         .votes
-                        .voters()
+                        .voters(&c)
                         .choose(&mut rand::thread_rng())
                         .unwrap_or(&source);
                     tracker.start = now;
@@ -660,9 +660,10 @@ impl<C: RawComm> Worker<C> {
                         debug!(%digest, "requesting message");
                         let m = Protocol::Get(Envelope::signed(*digest, &self.keypair));
                         let b = bincode::serialize(&m).expect("idempotent serialization");
+                        let c = digest.commit();
                         let s = tracker
                             .votes
-                            .voters()
+                            .voters(&c)
                             .choose(&mut rand::thread_rng())
                             .unwrap_or(&source);
                         tracker.start = now;

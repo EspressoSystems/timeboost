@@ -64,7 +64,7 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut coordinators = Vec::new();
         for (i, n) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
             // Join each node to the network
-            let test_net = TestNet::new(net.join(*n.public_key()), self.interceptor.clone());
+            let test_net = TestNet::new(net.join(n.public_key()), self.interceptor.clone());
             let messages = test_net.messages();
 
             // Initialize the coordinator

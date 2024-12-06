@@ -67,6 +67,7 @@ pub trait SignatureKey:
 {
     /// The private key type for this signature algorithm
     type PrivateKey: PrivateSignatureKey;
+
     /// The type of the entry that contain both public key and stake value
     type StakeTableEntry: StakeTableEntryType<Self>
         + Send
@@ -78,10 +79,9 @@ pub trait SignatureKey:
         + Eq
         + Serialize
         + for<'a> Deserialize<'a>;
-    /// The type of the quorum certificate parameters used for assembled signature
-    type QcParams: Send + Sync + Sized + Clone + Debug + Hash;
-    /// The type of the assembled signature, without `BitVec`
-    type PureAssembledSignatureType: Send
+
+    /// The type of the signature
+    type SignatureType: Send
         + Sync
         + Sized
         + Clone
@@ -93,17 +93,6 @@ pub trait SignatureKey:
         + for<'a> Deserialize<'a>
         + Into<TaggedBase64>
         + for<'a> TryFrom<&'a TaggedBase64>;
-    /// The type of the assembled qc: assembled signature + `BitVec`
-    type QcType: Send
-        + Sync
-        + Sized
-        + Clone
-        + Debug
-        + Hash
-        + PartialEq
-        + Eq
-        + Serialize
-        + for<'a> Deserialize<'a>;
 
     /// Type of error that can occur when signing data
     type SignError: std::error::Error + Send + Sync;
@@ -111,7 +100,7 @@ pub trait SignatureKey:
     // Signature type represented as a vec/slice of bytes to let the implementer handle the nuances
     // of serialization, to avoid Cryptographic pitfalls
     /// Validate a signature
-    fn validate(&self, signature: &Self::PureAssembledSignatureType, data: &[u8]) -> bool;
+    fn validate(&self, signature: &Self::SignatureType, data: &[u8]) -> bool;
 
     /// Produce a signature
     /// # Errors
@@ -119,12 +108,14 @@ pub trait SignatureKey:
     fn sign(
         private_key: &Self::PrivateKey,
         data: &[u8],
-    ) -> Result<Self::PureAssembledSignatureType, Self::SignError>;
+    ) -> Result<Self::SignatureType, Self::SignError>;
 
     /// Produce a public key from a private key
     fn from_private(private_key: &Self::PrivateKey) -> Self;
+
     /// Serialize a public key to bytes
     fn to_bytes(&self) -> Vec<u8>;
+
     /// Deserialize a public key from bytes
     /// # Errors
     ///
@@ -139,6 +130,35 @@ pub trait SignatureKey:
 
     /// only get the public key from the stake table entry
     fn public_key(entry: &Self::StakeTableEntry) -> Self;
+}
+
+pub trait QcSignatureKey: SignatureKey {
+    /// The type of the quorum certificate parameters used for assembled signature
+    type QcParams: Send + Sync + Sized + Clone + Debug + Hash;
+    /// The type of the assembled qc: assembled signature + `BitVec`
+    type QcType: Send
+        + Sync
+        + Sized
+        + Clone
+        + Debug
+        + Hash
+        + PartialEq
+        + Eq
+        + Serialize
+        + for<'a> Deserialize<'a>;
+    /// The type of the assembled signature, without `BitVec`
+    type PureAssembledSignatureType: Send
+        + Sync
+        + Sized
+        + Clone
+        + Debug
+        + Hash
+        + PartialEq
+        + Eq
+        + Serialize
+        + for<'a> Deserialize<'a>
+        + Into<TaggedBase64>
+        + for<'a> TryFrom<&'a TaggedBase64>;
 
     /// get the public parameter for the assembled signature checking
     fn public_parameter(

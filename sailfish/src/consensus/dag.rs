@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
+use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::{vertex::Vertex, PublicKey};
+use timeboost_core::types::vertex::Vertex;
 use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +148,8 @@ impl Dag {
 mod tests {
     use std::num::NonZeroUsize;
 
-    use timeboost_core::types::{vertex::Vertex, Keypair};
+    use multisig::Keypair;
+    use timeboost_core::types::vertex::Vertex;
 
     use crate::consensus::Dag;
 
@@ -155,11 +157,11 @@ mod tests {
     fn test_is_connected() {
         let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
 
-        let pk1 = *Keypair::random().public_key();
-        let pk2 = *Keypair::random().public_key();
-        let pk3 = *Keypair::random().public_key();
-        let pk4 = *Keypair::random().public_key();
-        let pk5 = *Keypair::random().public_key();
+        let pk1 = Keypair::generate().public_key();
+        let pk2 = Keypair::generate().public_key();
+        let pk3 = Keypair::generate().public_key();
+        let pk4 = Keypair::generate().public_key();
+        let pk5 = Keypair::generate().public_key();
 
         // Layer 1
         let v11 = Vertex::new(1, pk1);

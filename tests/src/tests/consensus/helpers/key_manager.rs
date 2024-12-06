@@ -1,18 +1,18 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::node_instrument::TestNodeInstrument;
-use bitvec::bitvec;
-use bitvec::vec::BitVec;
+use committable::Committable;
+use multisig::{Committee, Envelope, Keypair, PublicKey, Validated};
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::{
-    committee::StaticCommittee,
-    envelope::Envelope,
     message::{Message, Timeout},
     metrics::SailfishMetrics,
     vertex::Vertex,
-    Keypair, NodeId, PublicKey, Signature,
+    NodeId,
 };
 use timeboost_utils::types::round_number::RoundNumber;
+use timeboost_utils::unsafe_zero_keypair;
+
+use super::node_instrument::TestNodeInstrument;
 
 pub struct KeyManager {
     keys: HashMap<u64, Keypair>,
@@ -20,7 +20,7 @@ pub struct KeyManager {
 
 impl KeyManager {
     pub(crate) fn new(num_nodes: u64) -> Self {
-        let key_pairs = (0..num_nodes).map(Keypair::new).collect::<Vec<_>>();
+        let key_pairs = (0..num_nodes).map(unsafe_zero_keypair).collect::<Vec<_>>();
         Self {
             keys: key_pairs
                 .iter()
@@ -31,12 +31,7 @@ impl KeyManager {
     }
 
     pub(crate) fn create_node_instruments(&self) -> Vec<TestNodeInstrument> {
-        let committee = StaticCommittee::new(
-            self.keys
-                .values()
-                .map(|kpair| *kpair.public_key())
-                .collect(),
-        );
+        let committee = Committee::new(self.keys.iter().map(|(i, k)| (*i as u8, k.public_key())));
         let metrics = Arc::new(SailfishMetrics::default());
         self.keys
             .iter()
@@ -55,7 +50,7 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let d = Timeout::new(round);
-                let e = Envelope::signed(d, kpair);
+                let e = Envelope::deterministically_signed(d, kpair);
                 Message::Timeout(e)
             })
             .collect()
@@ -75,9 +70,9 @@ impl KeyManager {
         edges: Vec<PublicKey>,
     ) -> Message {
         let kpair = self.keys.get(id).unwrap();
-        let mut v = Vertex::new(round, *kpair.public_key());
+        let mut v = Vertex::new(round, kpair.public_key());
         v.add_edges(edges);
-        let e = Envelope::signed(v, kpair);
+        let e = Envelope::deterministically_signed(v, kpair);
         Message::Vertex(e)
     }
 
@@ -91,54 +86,45 @@ impl KeyManager {
     pub(crate) fn create_timeout_msg_for_node_id(&self, id: &u64, round: u64) -> Message {
         let kpair = self.keys.get(id).unwrap();
         let t = Timeout::new(RoundNumber::new(round));
-        let e = Envelope::signed(t, kpair);
+        let e = Envelope::deterministically_signed(t, kpair);
         Message::Timeout(e)
     }
 
     pub(crate) fn edges_for_round(
         &self,
         round: RoundNumber,
-        committee: &StaticCommittee,
+        committee: &Committee,
         ignore_leader: bool,
     ) -> Vec<PublicKey> {
         // 2f + 1 edges
-        let threshold = committee.quorum_size().get() as usize;
-        let leader = committee.leader(round);
+        let threshold = committee.quorum_size().get();
+        let leader = committee.leader(*round as usize);
         self.keys
             .values()
-            .map(|kpair| *kpair.public_key())
+            .map(|kpair| kpair.public_key())
             .filter(|pub_key| !ignore_leader || *pub_key != leader)
             .take(threshold)
             .collect()
     }
 
-    pub(crate) fn signers(
-        &self,
-        round: RoundNumber,
-        committee: &StaticCommittee,
-        count: usize,
-    ) -> (BitVec, Vec<Signature>) {
-        let mut signers: (BitVec, Vec<Signature>) =
-            (bitvec![0; committee.size().get()], Vec::new());
-        for (i, kpair) in self.keys.values().take(count).enumerate() {
-            let timeout = Envelope::signed(Timeout::new(round), kpair);
-            signers.0.set(i, true);
-            signers.1.push(timeout.signature().clone());
+    pub(crate) fn signers<T>(&self, value: T, count: usize) -> Vec<Envelope<T, Validated>>
+    where
+        T: Committable + Clone,
+    {
+        let mut envs = Vec::new();
+        for kpair in self.keys.values().take(count) {
+            envs.push(Envelope::deterministically_signed(value.clone(), kpair))
         }
-        signers
+        envs
     }
 
-    pub(crate) fn prepare_dag(
-        &self,
-        round: u64,
-        committee: &StaticCommittee,
-    ) -> (Dag, Vec<PublicKey>) {
+    pub(crate) fn prepare_dag(&self, round: u64, committee: &Committee) -> (Dag, Vec<PublicKey>) {
         let mut dag = Dag::new(committee.size());
         let edges = self
             .keys
             .values()
             .map(|kpair| {
-                let v = Vertex::new(round, *kpair.public_key());
+                let v = Vertex::new(round, kpair.public_key());
                 dag.add(v.clone());
                 *v.source()
             })
@@ -152,8 +138,8 @@ impl KeyManager {
         round: RoundNumber,
         kpair: &Keypair,
     ) -> Message {
-        let d = Vertex::new(round, *kpair.public_key());
-        let e = Envelope::signed(d, kpair);
+        let d = Vertex::new(round, kpair.public_key());
+        let e = Envelope::deterministically_signed(d, kpair);
         Message::Vertex(e)
     }
 }

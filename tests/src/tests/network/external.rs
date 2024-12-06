@@ -1,11 +1,12 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use crate::Group;
+use multisig::Committee;
 use portpicker::pick_unused_port;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
+use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_core::types::{committee::StaticCommittee, metrics::SailfishMetrics};
 use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
 use tokio::{sync::watch, task::JoinSet};
 
@@ -64,7 +65,13 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .republication_interval(None)
                 .build()
                 .expect("Failed to build network node config");
-            let committee = StaticCommittee::from(&**self.group.staked_nodes);
+            let committee = Committee::new(
+                self.group
+                    .staked_nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
+            );
             let keypair = self.group.keypairs[i].clone();
             handles.spawn(async move {
                 let net = node
