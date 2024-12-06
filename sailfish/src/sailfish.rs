@@ -20,7 +20,6 @@ use timeboost_utils::PeerConfig;
 #[builder(pattern = "owned")]
 pub struct SailfishInitializer<N: Comm + Send + 'static> {
     /// The ID of the node.
-    /// The ID of the node.
     pub id: NodeId,
 
     /// The network.
