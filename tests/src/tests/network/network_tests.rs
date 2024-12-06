@@ -205,7 +205,7 @@ where
                                     "We should only timeout when node 4 is leader",
                                 );
                             }
-                            // Go 5 rounds passed from when the nodes come online
+                            // Go 10 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that started late
                             if *d.round() == online_at_round + 10 && node_public_key == *d.source()
                             {
@@ -275,7 +275,7 @@ where
                     let node_public_key = *n.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(e)) = msg {
-                            // Go 5 rounds passed from when the nodes come online
+                            // Go 10 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that missed a round
                             if *e.data().round() == offline_at_round + 10
                                 && node_public_key == *e.data().source()
