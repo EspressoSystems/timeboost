@@ -143,19 +143,21 @@ pub trait TestableNetwork {
                         // Go through every test condition and evaluate
                         // Do not terminate loop early to ensure we evaluate all
                         let mut outcome = TestOutcome::Passed;
+                        let mut all_evaluated = true;
                         let msgs = msgs.drain_inbox();
                         for c in conditions.iter_mut() {
                             match c.evaluate(&msgs, &actions) {
                                 TestOutcome::Failed(reason) => {
-                                    outcome =  TestOutcome::Failed(reason);
+                                    // If any failed, the test has failed
+                                    outcome = TestOutcome::Failed(reason);
                                 }
                                 TestOutcome::Waiting => {
-                                    outcome = TestOutcome::Waiting;
+                                    all_evaluated = false;
                                 }
                                 _ => {}
                             }
                         }
-                        if outcome != TestOutcome::Waiting {
+                        if all_evaluated {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
                             return TaskHandleResult::new(node_id, outcome);
