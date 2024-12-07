@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
 use sailfish::sailfish::SailfishInitializerBuilder;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
@@ -9,10 +10,6 @@ use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_networking::network::client::Libp2pInitializer;
 use tokio::{sync::watch, task::JoinSet};
-
-use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
-
-pub mod test_simple_network;
 
 pub struct Libp2pNetworkTest {
     group: Group,

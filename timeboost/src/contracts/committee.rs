@@ -13,7 +13,7 @@ pub enum CommitteeBase {
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
 pub struct CommitteeContract {
-    bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+    bootstrap_nodes: Vec<(PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 
@@ -44,16 +44,12 @@ impl CommitteeContract {
             let kpr = unsafe_zero_keypair(i as u64);
             let peer_id = derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
-                CommitteeBase::Local => {
-                    derive_libp2p_multiaddr(&format!("127.0.0.1:{}", 8000 + i)).unwrap()
-                }
+                CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
                 // Docker uses the docker network IP address for config, but we bind according to
                 // the usual semantics of 127.* or 0.* for localhost.
                 // Here, incrementing the port is not explicitly necessary, but since docker-compose
                 // runs locally, we do it to be consistent.
-                CommitteeBase::Docker => {
-                    derive_libp2p_multiaddr(&format!("172.20.0.{}:{}", 2 + i, 8000 + i)).unwrap()
-                }
+                CommitteeBase::Docker => format!("172.20.0.{}:{}", 2 + i, 8000 + i),
             };
             staked_nodes.push(cfg.public_config());
 
@@ -78,7 +74,7 @@ impl CommitteeContract {
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> Vec<(PeerId, Multiaddr)> {
+    pub fn bootstrap_nodes(&self) -> Vec<(PeerId, String)> {
         self.bootstrap_nodes.to_vec()
     }
 }

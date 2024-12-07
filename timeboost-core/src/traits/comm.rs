@@ -5,6 +5,7 @@ use crate::types::message::Message;
 use async_trait::async_trait;
 use multisig::{Committee, PublicKey, Unchecked, Validated};
 use timeboost_networking::network::client::Libp2pNetwork;
+use timeboost_networking::network1::Network;
 use timeboost_networking::{NetworkError, Topic};
 
 /// Types that provide broadcast and 1:1 message communication.
@@ -78,6 +79,61 @@ impl<T: RawComm + Send> RawComm for Box<T> {
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
         (**self).shutdown().await
     }
+}
+#[derive(Debug)]
+pub struct NetworkWrapper {
+    network: Network,
+    committee: StaticCommittee,
+}
+
+impl NetworkWrapper {
+    pub fn new(network: Network, committee: StaticCommittee) -> Self {
+        Self { network, committee }
+    }
+}
+
+#[async_trait]
+impl Comm for NetworkWrapper {
+    type Err = NetworkError;
+
+    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
+        let bytes = {
+            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?
+        };
+
+        self.network.broadcast_message(bytes).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+        let bytes =
+            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
+
+        //      self.direct_message(bytes, to).await
+        todo!()
+    }
+
+    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+        let bytes = self.network.recv_message().await?;
+        let msg: Message<Unchecked> = bincode::deserialize(&bytes)
+            .map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))?;
+        let Some(msg) = msg.validated(&self.committee) else {
+            return Err(NetworkError::FailedToDeserialize(
+                "invalid message signature".to_string(),
+            ));
+        };
+        Ok(msg)
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Self::Err> {
+        self.network.shut_down().await;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Libp2p {
+    net: Libp2pNetwork<PublicKey>,
+    committee: StaticCommittee,
 }
 
 #[async_trait]

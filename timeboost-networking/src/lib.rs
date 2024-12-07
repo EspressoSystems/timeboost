@@ -12,6 +12,7 @@ use thiserror::Error;
 
 /// Network logic
 pub mod network;
+pub mod network1;
 
 /// symbols needed to implement a networking instance over libp2p-netorking
 pub mod reexport {

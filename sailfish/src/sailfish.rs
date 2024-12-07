@@ -98,7 +98,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
         &self.peer_id
     }
 
-    pub fn bind_addr(&self) -> &Multiaddr {
+    pub fn bind_addr(&self) -> &String {
         &self.bind_address
     }
 
@@ -136,7 +136,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+    bootstrap_nodes: HashSet<(PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,

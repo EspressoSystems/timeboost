@@ -67,7 +67,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    timeboost_core::logging::init_logging();
+    logging::init_logging();
 
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
+    let bind_address = &format!("0.0.0.0:{}", cli.port);
 
     #[cfg(feature = "until")]
     let handle = {

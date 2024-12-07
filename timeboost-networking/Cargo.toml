@@ -32,6 +32,7 @@ libp2p = { package = "libp2p", version = "0.53", default-features = false, featu
 libp2p-identity = { workspace = true }
 libp2p-swarm-derive = "0.34"
 pin-project = "1"
+prometheus = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

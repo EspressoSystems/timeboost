@@ -21,4 +21,5 @@ serde-inline-default = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 url = { workspace = true }
