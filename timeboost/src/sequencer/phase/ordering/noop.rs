@@ -1,11 +1,11 @@
+use crate::sequencer::phase::inclusion::InclusionList;
 use anyhow::Result;
-use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
 
 use super::OrderingPhase;
 
 pub struct NoOpOrderingPhase;
 impl OrderingPhase for NoOpOrderingPhase {
-    fn order(&self, decrypted_list: Vec<InclusionPhaseBlock>) -> Result<Vec<InclusionPhaseBlock>> {
+    fn order(&self, decrypted_list: InclusionList) -> Result<InclusionList> {
         Ok(decrypted_list)
     }
 }

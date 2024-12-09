@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::types::seqno::SeqNo;
 use crate::types::time::Epoch;
 
+use super::time::Timestamp;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Nonce {
     epoch: Epoch,
@@ -40,6 +42,7 @@ pub struct TransactionData {
     nonce: Nonce,
     to: Address,
     data: Bytes,
+    timestamp: Timestamp,
 }
 
 impl TransactionData {
@@ -54,7 +57,7 @@ pub enum Transaction {
     Priority {
         nonce: Nonce,
         to: Address,
-        txns: Vec<TransactionData>,
+        txn: TransactionData,
     },
     Regular {
         txn: TransactionData,
@@ -75,9 +78,21 @@ impl Transaction {
 
     pub fn size_bytes(&self) -> usize {
         match self {
-            Self::Priority { txns, .. } => txns.iter().map(|t| t.size_bytes()).sum(),
+            Self::Priority { txn, .. } => txn.size_bytes(),
             Self::Regular { txn } => txn.size_bytes(),
         }
+    }
+
+    pub fn timestamp(&self) -> Timestamp {
+        match self {
+            Transaction::Priority { txn, .. } => txn.timestamp,
+            Transaction::Regular { txn } => txn.timestamp,
+        }
+    }
+
+    /// TODO: This will check that the transaction was signed by the PLC.
+    pub fn is_valid(&self) -> bool {
+        true
     }
 }
 
@@ -153,15 +168,11 @@ impl Committable for TransactionData {
 impl Committable for Transaction {
     fn commit(&self) -> Commitment<Self> {
         match self {
-            Self::Priority { to, nonce, txns } => {
-                let builder = RawCommitmentBuilder::new("Transaction::Priority")
-                    .field("to", to.commit())
-                    .field("nonce", nonce.commit())
-                    .u64_field("txns", txns.len() as u64);
-                txns.iter()
-                    .fold(builder, |b, t| b.var_size_bytes(t.commit().as_ref()))
-                    .finalize()
-            }
+            Self::Priority { to, nonce, txn } => RawCommitmentBuilder::new("Transaction::Priority")
+                .field("to", to.commit())
+                .field("nonce", nonce.commit())
+                .var_size_field("txn", txn.commit().as_ref())
+                .finalize(),
             Self::Regular { txn } => RawCommitmentBuilder::new("Transaction::Regular")
                 .field("txn", txn.commit())
                 .finalize(),

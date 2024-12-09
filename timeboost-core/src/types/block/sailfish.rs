@@ -1,3 +1,4 @@
+use crate::types::time::Epoch;
 use crate::types::transaction::Transaction;
 use crate::types::{block_header::BlockHeader, time::Timestamp};
 
@@ -10,28 +11,38 @@ use timeboost_utils::types::round_number::RoundNumber;
 pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,
+    delayed_inbox_index: u64,
 }
 
 impl Default for SailfishBlock {
     fn default() -> Self {
-        Self::empty(RoundNumber::genesis(), Timestamp::now())
+        Self::empty(RoundNumber::genesis(), Timestamp::now(), 0)
     }
 }
 
 impl SailfishBlock {
-    pub fn new(round: RoundNumber, timestamp: Timestamp) -> Self {
-        Self::empty(round, timestamp)
+    pub fn new(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
+        Self::empty(round, timestamp, delayed_inbox_index)
     }
 
-    pub fn empty(round: RoundNumber, timestamp: Timestamp) -> Self {
+    pub fn empty(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
         Self {
             header: BlockHeader::new(round, timestamp),
             payload: Vec::new(),
+            delayed_inbox_index,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.payload.is_empty()
+    }
+
+    pub fn has_priority_transactions(&self) -> bool {
+        self.payload.iter().any(|t| t.is_priority())
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.header.timestamp().epoch()
     }
 
     pub fn len(&self) -> usize {
@@ -66,6 +77,14 @@ impl SailfishBlock {
 
     pub fn transactions(self) -> Vec<Transaction> {
         self.payload
+    }
+
+    pub fn delayed_inbox_index(&self) -> u64 {
+        self.delayed_inbox_index
+    }
+
+    pub fn set_delayed_inbox_index(&mut self, index: u64) {
+        self.delayed_inbox_index = index;
     }
 }
 

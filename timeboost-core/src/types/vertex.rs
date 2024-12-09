@@ -32,7 +32,7 @@ impl Vertex {
             edges: BTreeSet::new(),
             no_vote: None,
             timeout: None,
-            block: SailfishBlock::empty(round, Timestamp::now()),
+            block: SailfishBlock::empty(round, Timestamp::now(), 0),
         }
     }
 

@@ -1,8 +1,9 @@
 use anyhow::Result;
-use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
+
+use super::inclusion::InclusionList;
 
 pub mod noop;
 
 pub trait OrderingPhase {
-    fn order(&self, decrypted_list: Vec<InclusionPhaseBlock>) -> Result<Vec<InclusionPhaseBlock>>;
+    fn order(&self, decrypted_list: InclusionList) -> Result<InclusionList>;
 }
