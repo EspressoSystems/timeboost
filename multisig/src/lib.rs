@@ -66,15 +66,12 @@ impl Keypair {
         }
     }
 
-    pub fn sign(&self, data: &[u8]) -> Signature {
+    pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
         Signature {
-            sig: self.pair.sk.sign(data, Some(ed25519::Noise::generate())),
-        }
-    }
-
-    pub fn sign_deterministically(&self, data: &[u8]) -> Signature {
-        Signature {
-            sig: self.pair.sk.sign(data, None),
+            sig: self
+                .pair
+                .sk
+                .sign(data, (!deterministic).then(ed25519::Noise::generate)),
         }
     }
 }
@@ -94,15 +91,11 @@ impl PublicKey {
 }
 
 impl SecretKey {
-    pub fn sign(&self, data: &[u8]) -> Signature {
+    pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
         Signature {
-            sig: self.key.sign(data, Some(ed25519::Noise::generate())),
-        }
-    }
-
-    pub fn sign_deterministically(&self, data: &[u8]) -> Signature {
-        Signature {
-            sig: self.key.sign(data, None),
+            sig: self
+                .key
+                .sign(data, (!deterministic).then(ed25519::Noise::generate)),
         }
     }
 

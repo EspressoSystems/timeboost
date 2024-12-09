@@ -39,7 +39,7 @@ impl<D: Committable> Envelope<D, Validated> {
     /// Create a (validated) envelope by signing data with a private key.
     pub fn signed(d: D, keypair: &Keypair) -> Self {
         let c = d.commit();
-        let s = keypair.sign(c.as_ref());
+        let s = keypair.sign(c.as_ref(), false);
         Self {
             data: d,
             commitment: c,
@@ -54,7 +54,7 @@ impl<D: Committable> Envelope<D, Validated> {
     /// Uses deterministic signing.
     pub fn deterministically_signed(d: D, keypair: &Keypair) -> Self {
         let c = d.commit();
-        let s = keypair.sign_deterministically(c.as_ref());
+        let s = keypair.sign(c.as_ref(), true);
         Self {
             data: d,
             commitment: c,

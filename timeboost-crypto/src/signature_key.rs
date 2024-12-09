@@ -157,7 +157,7 @@ impl SignatureKey for multisig::PublicKey {
     }
 
     fn sign(sk: &Self::PrivateKey, data: &[u8]) -> Result<Self::SignatureType, Self::SignError> {
-        Ok(sk.sign(data))
+        Ok(sk.sign(data, false))
     }
 
     fn from_private(private_key: &Self::PrivateKey) -> Self {
