@@ -4,18 +4,18 @@ set -euox pipefail
 
 just build_release --features until
 
-for i in {0..5}; do
+for i in {0..4}; do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=error,sailfish=error,timeboost_networking=error \
+    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --metrics-port $((9000 + i)) \
         --base local \
-        --until 200 \
-        --watchdog-timeout 30 \
+        --until 100 \
+        --watchdog-timeout 300 \
         --late-start-node-id 0 \
         --late-start &
 done

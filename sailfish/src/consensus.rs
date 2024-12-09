@@ -614,7 +614,15 @@ impl Consensus {
         // Copy from `candidate_dag` into `dag` then clear
         if self.catchup {
             self.catchup = false;
-            self.dag = self.candidate_dag.clone();
+            let max = self.candidate_dag.max_round().unwrap();
+            for w in self.candidate_dag.vertex_range(v.round() - 1..=max) {
+                if w.round() == v.round() - 1 {
+                    self.dag.add(w.clone());
+                } else {
+                    // Make sure any vertices from after `v.round()-1` are not lost
+                    self.buffer.insert(w.clone().into());
+                }
+            }
             self.candidate_dag.clear();
         }
 
