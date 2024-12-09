@@ -60,54 +60,49 @@ impl<'a> CandidateList<'a> {
         self.epoch
     }
 
+    fn calculate_median<T, F>(&self, values: Vec<T>, default: T, get_value: F) -> T
+    where
+        T: Ord + Copy + From<u64>,
+        F: Fn(&T) -> u64,
+    {
+        let median = if values.len() % 2 == 0 {
+            values.iter().map(get_value).sum::<u64>() / values.len() as u64
+        } else {
+            let mut sorted_values = values.iter().map(get_value).collect::<Vec<_>>();
+            sorted_values.sort_unstable();
+            (sorted_values[sorted_values.len() / 2] + sorted_values[sorted_values.len() / 2 + 1])
+                / 2
+        };
+
+        std::cmp::max(default, median.into())
+    }
+
     /// The average timestamp of the transactions in the candidate list. This is
     /// used to determine the consensus timestamp during the inclusion phase run.
     ///
     /// Average timestamp is either the media of the delayed inbox indices of the candidate lists
     /// or, if there's an event number of transactions, then it's the floor of the mean
     /// of the two central items in the sorted list of timestamps.
-    pub fn median_timestep(&self) -> Timestamp {
-        let median = if self.bundles.len() % 2 == 0 {
-            self.bundles.iter().map(|t| *t.timestamp()).sum::<u64>() / self.bundles.len() as u64
-        } else {
-            // the floor of the mean of the two central items in the sorted list of timestamps.
-            let mut sorted_timestamps = self
-                .bundles
-                .iter()
-                .map(|t| *t.timestamp())
-                .collect::<Vec<_>>();
-            sorted_timestamps.sort_unstable();
-            (sorted_timestamps[sorted_timestamps.len() / 2]
-                + sorted_timestamps[sorted_timestamps.len() / 2 + 1])
-                / 2
-        };
-
-        Timestamp::from(median)
+    pub fn median_timestamp(&self) -> Timestamp {
+        self.calculate_median(
+            self.bundles.iter().map(|t| t.timestamp()).collect(),
+            self.recovery_state.consensus_timestamp,
+            |t| **t,
+        )
     }
 
     /// The median delayed inbox index is the median over the delayed inbox indices of the
     /// candidate lists. If there's an even number of transactions, then it's the floor of the mean
     /// of the two central items in the sorted list of delayed inbox indices.
     pub fn median_delayed_inbox_index(&self) -> u64 {
-        let median = if self.bundles.len() % 2 == 0 {
+        self.calculate_median(
             self.bundles
                 .iter()
                 .map(|t| t.delayed_inbox_index())
-                .sum::<u64>()
-                / self.bundles.len() as u64
-        } else {
-            let mut sorted_delayed_inbox_indices = self
-                .bundles
-                .iter()
-                .map(|t| t.delayed_inbox_index())
-                .collect::<Vec<_>>();
-            sorted_delayed_inbox_indices.sort_unstable();
-            (sorted_delayed_inbox_indices[sorted_delayed_inbox_indices.len() / 2]
-                + sorted_delayed_inbox_indices[sorted_delayed_inbox_indices.len() / 2 + 1])
-                / 2
-        };
-
-        std::cmp::max(self.delayed_inbox_index, median)
+                .collect(),
+            self.delayed_inbox_index,
+            |t| *t,
+        )
     }
 
     /// The priority bundles in the candidate list. This is a method which removes the bundles from

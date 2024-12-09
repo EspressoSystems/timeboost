@@ -27,10 +27,7 @@ impl InclusionPhase for ShoupeFeltenInclusionPhase {
     ) -> Result<InclusionList> {
         // The consensus timestamp is the maximum of the consensus timestamp from the last successful round
         // and the media of the timestamps of the candidate list bundles/transactions.
-        let consensus_timestamp = std::cmp::max(
-            candidate_list.recovery_state.consensus_timestamp,
-            candidate_list.median_timestep(),
-        );
+        let consensus_timestamp = candidate_list.median_timestamp();
 
         // The priority epoch number is the epoch of the consensus timestamp.
         let priority_epoch_number = consensus_timestamp.into_epoch();
