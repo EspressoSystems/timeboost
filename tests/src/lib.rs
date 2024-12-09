@@ -11,9 +11,6 @@ use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 mod tests;
 
 #[cfg(test)]
-mod bench;
-
-#[cfg(test)]
 mod rbc;
 
 pub struct Group {
