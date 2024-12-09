@@ -218,7 +218,7 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round()))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
-        let e = self.sign(Timeout::new(r));
+        let e = Envelope::signed(Timeout::new(r), &self.keypair, self.deterministic);
         vec![Action::SendTimeout(e)]
     }
 
@@ -406,11 +406,7 @@ impl Consensus {
         if votes != accum.votes(&commit)
             && accum.votes(&commit) == self.committee.threshold().get() + 1
         {
-            let e = if self.deterministic {
-                Envelope::deterministically_signed(Timeout::new(round), &self.keypair)
-            } else {
-                Envelope::signed(Timeout::new(round), &self.keypair)
-            };
+            let e = Envelope::signed(Timeout::new(round), &self.keypair, self.deterministic);
             actions.push(Action::SendTimeout(e))
         }
 
@@ -517,7 +513,7 @@ impl Consensus {
         };
 
         // We inform the leader of the next round that we did not vote in the previous round.
-        let env = self.sign(NoVote::new(round));
+        let env = Envelope::signed(NoVote::new(round), &self.keypair, self.deterministic);
         let leader = self.committee.leader(*round as usize + 1);
         actions.push(Action::SendNoVote(leader, env));
 
@@ -584,7 +580,7 @@ impl Consensus {
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.metrics.dag_depth.set(self.state.dag.depth());
         let mut actions = Vec::new();
-        let e = self.sign(v);
+        let e = Envelope::signed(v, &self.keypair, self.deterministic);
         actions.push(Action::SendProposal(e));
         actions
     }
@@ -900,18 +896,6 @@ impl Consensus {
             .dag
             .vertex(r, &self.committee.leader(*r as usize))
     }
-
-    #[cfg(not(feature = "test"))]
-    fn sign<D>(&self, d: D) -> Envelope<D, Validated>
-    where
-        D: committable::Committable,
-    {
-        if self.deterministic {
-            Envelope::deterministically_signed(d, &self.keypair)
-        } else {
-            Envelope::signed(d, &self.keypair)
-        }
-    }
 }
 
 #[cfg(feature = "test")]
@@ -952,10 +936,6 @@ impl Consensus {
     where
         D: committable::Committable,
     {
-        if self.deterministic {
-            Envelope::deterministically_signed(d, &self.keypair)
-        } else {
-            Envelope::signed(d, &self.keypair)
-        }
+        Envelope::signed(d, &self.keypair, self.deterministic)
     }
 }

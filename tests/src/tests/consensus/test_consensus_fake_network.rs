@@ -223,10 +223,7 @@ async fn test_invalid_timeout_certificate() {
                 );
                 let mut timeouts = Vec::new();
                 for kp in &new_keys {
-                    timeouts.push(Envelope::deterministically_signed(
-                        Timeout::new(e.data().round()),
-                        kp,
-                    ));
+                    timeouts.push(Envelope::signed(Timeout::new(e.data().round()), kp, true));
                 }
 
                 // Process current message this should be the leader vertex and the invalid certificate

@@ -37,24 +37,9 @@ pub struct Envelope<D: Committable, S> {
 
 impl<D: Committable> Envelope<D, Validated> {
     /// Create a (validated) envelope by signing data with a private key.
-    pub fn signed(d: D, keypair: &Keypair) -> Self {
+    pub fn signed(d: D, keypair: &Keypair, deterministic: bool) -> Self {
         let c = d.commit();
-        let s = keypair.sign(c.as_ref(), false);
-        Self {
-            data: d,
-            commitment: c,
-            signature: s,
-            signing_key: keypair.public_key(),
-            _marker: PhantomData,
-        }
-    }
-
-    /// Create a (validated) envelope by signing data with a private key.
-    ///
-    /// Uses deterministic signing.
-    pub fn deterministically_signed(d: D, keypair: &Keypair) -> Self {
-        let c = d.commit();
-        let s = keypair.sign(c.as_ref(), true);
+        let s = keypair.sign(c.as_ref(), deterministic);
         Self {
             data: d,
             commitment: c,

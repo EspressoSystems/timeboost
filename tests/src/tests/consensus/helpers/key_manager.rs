@@ -50,7 +50,7 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let d = Timeout::new(round);
-                let e = Envelope::deterministically_signed(d, kpair);
+                let e = Envelope::signed(d, kpair, true);
                 Message::Timeout(e)
             })
             .collect()
@@ -72,7 +72,7 @@ impl KeyManager {
         let kpair = self.keys.get(id).unwrap();
         let mut v = Vertex::new(round, kpair.public_key());
         v.add_edges(edges);
-        let e = Envelope::deterministically_signed(v, kpair);
+        let e = Envelope::signed(v, kpair, true);
         Message::Vertex(e)
     }
 
@@ -86,7 +86,7 @@ impl KeyManager {
     pub(crate) fn create_timeout_msg_for_node_id(&self, id: &u64, round: u64) -> Message {
         let kpair = self.keys.get(id).unwrap();
         let t = Timeout::new(RoundNumber::new(round));
-        let e = Envelope::deterministically_signed(t, kpair);
+        let e = Envelope::signed(t, kpair, true);
         Message::Timeout(e)
     }
 
@@ -113,7 +113,7 @@ impl KeyManager {
     {
         let mut envs = Vec::new();
         for kpair in self.keys.values().take(count) {
-            envs.push(Envelope::deterministically_signed(value.clone(), kpair))
+            envs.push(Envelope::signed(value.clone(), kpair, true))
         }
         envs
     }
@@ -139,7 +139,7 @@ impl KeyManager {
         kpair: &Keypair,
     ) -> Message {
         let d = Vertex::new(round, kpair.public_key());
-        let e = Envelope::deterministically_signed(d, kpair);
+        let e = Envelope::signed(d, kpair, true);
         Message::Vertex(e)
     }
 }
