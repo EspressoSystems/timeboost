@@ -65,11 +65,11 @@ impl<'a> CandidateList<'a> {
         T: Ord + Copy + From<u64>,
         F: Fn(&T) -> u64,
     {
+        let mut sorted_values = values.iter().map(get_value).collect::<Vec<_>>();
+        sorted_values.sort_unstable();
         let median = if values.len() % 2 == 0 {
-            values.iter().map(get_value).sum::<u64>() / values.len() as u64
+            sorted_values[(sorted_values.len() / 2) + 1]
         } else {
-            let mut sorted_values = values.iter().map(get_value).collect::<Vec<_>>();
-            sorted_values.sort_unstable();
             (sorted_values[sorted_values.len() / 2] + sorted_values[sorted_values.len() / 2 + 1])
                 / 2
         };
