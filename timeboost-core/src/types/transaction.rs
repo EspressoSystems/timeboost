@@ -9,6 +9,7 @@ use timeboost_crypto::traits::signature_key::SignatureKey;
 use crate::types::time::Epoch;
 use crate::types::{seqno::SeqNo, Keypair};
 
+use super::time::Timestamp;
 use super::{PublicKey, Signature};
 
 lazy_static! {
@@ -47,14 +48,14 @@ impl Address {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TransactionData {
-    nonce: Nonce,
     to: Address,
     data: Bytes,
+    timestamp: Timestamp,
 }
 
 impl TransactionData {
     pub fn size_bytes(&self) -> usize {
-        self.nonce.size_bytes() + self.to.size_bytes() + self.data.len()
+        self.to.size_bytes() + self.data.len()
     }
 }
 
@@ -62,6 +63,7 @@ impl TransactionData {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Transaction {
     Priority {
+        nonce: Nonce,
         txn: TransactionData,
         sig: Signature,
     },
@@ -79,13 +81,13 @@ impl PartialOrd for Transaction {
 impl Ord for Transaction {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Self::Priority { txn: txn1, .. }, Self::Priority { txn: txn2, .. }) => {
-                txn1.nonce.cmp(&txn2.nonce)
+            (Self::Priority { nonce: nonce1, .. }, Self::Priority { nonce: nonce2, .. }) => {
+                nonce1.cmp(nonce2)
             }
             (Self::Priority { .. }, Self::Regular { .. }) => std::cmp::Ordering::Less,
             (Self::Regular { .. }, Self::Priority { .. }) => std::cmp::Ordering::Greater,
             (Self::Regular { txn: txn1 }, Self::Regular { txn: txn2 }) => {
-                txn1.nonce.cmp(&txn2.nonce)
+                txn1.timestamp.cmp(&txn2.timestamp)
             }
         }
     }
@@ -98,7 +100,11 @@ impl Transaction {
 
     pub fn is_valid(&self) -> bool {
         match self {
-            Transaction::Priority { txn: _, sig } => {
+            Transaction::Priority {
+                nonce: _,
+                txn: _,
+                sig,
+            } => {
                 // First compute the commitment of the transaction.
                 let commit = self.commit();
 
@@ -109,10 +115,17 @@ impl Transaction {
         }
     }
 
-    pub fn nonce(&self) -> &Nonce {
+    pub fn timestamp(&self) -> Timestamp {
         match self {
-            Self::Priority { txn, .. } => &txn.nonce,
-            Self::Regular { txn } => &txn.nonce,
+            Self::Priority { txn, .. } => txn.timestamp,
+            Self::Regular { txn } => txn.timestamp,
+        }
+    }
+
+    pub fn nonce(&self) -> Option<&Nonce> {
+        match self {
+            Self::Priority { nonce, .. } => Some(nonce),
+            Self::Regular { .. } => None,
         }
     }
 
@@ -187,7 +200,6 @@ impl Committable for TransactionData {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("TransactionData")
             .field("to", self.to.commit())
-            .field("nonce", self.nonce.commit())
             .var_size_field("bytes", &self.data)
             .finalize()
     }
@@ -196,10 +208,11 @@ impl Committable for TransactionData {
 impl Committable for Transaction {
     fn commit(&self) -> Commitment<Self> {
         match self {
-            Self::Priority { txn, sig } => {
+            Self::Priority { nonce, txn, sig } => {
                 let sig_encoded =
                     bincode::serialize(&sig).expect("serializing signature never fails");
                 RawCommitmentBuilder::new("Transaction::Priority")
+                    .field("nonce", nonce.commit())
                     .field("txn", txn.commit())
                     .var_size_field("sig", &sig_encoded)
                     .finalize()
