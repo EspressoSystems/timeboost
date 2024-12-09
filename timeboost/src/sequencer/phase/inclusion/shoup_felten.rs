@@ -1,7 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::{CandidateList, InclusionList, InclusionPhase};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use timeboost_core::types::block::{sailfish::SailfishBlock, timeboost::InclusionPhaseBlock};
 use timeboost_utils::types::round_number::RoundNumber;
 
@@ -9,9 +9,9 @@ use timeboost_utils::types::round_number::RoundNumber;
 /// the
 /// [Decentralized Timeboost](https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md)
 /// protocol.
-pub struct ShoupeFeltenInclusionPhase {}
+pub struct ShoupFeltenInclusionPhase {}
 
-impl InclusionPhase for ShoupeFeltenInclusionPhase {
+impl InclusionPhase for ShoupFeltenInclusionPhase {
     /// Breakdown of the K loop routine:
     /// 1. Look for Bundles in the Current Epoch
     /// 2. Find the Sequence Numbers
