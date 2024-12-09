@@ -10,7 +10,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 use crate::sequencer::protocol::RoundState;
 
 pub mod noop;
-pub mod shoupe_felten;
+pub mod shoup_felten;
 
 /// A member's candidate list that serves as input to a consensus round R.
 ///
