@@ -15,6 +15,7 @@ use timeboost_core::{
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::time::sleep;
+use tracing::error;
 
 pub struct Coordinator<C> {
     /// The node ID of this coordinator.
@@ -61,6 +62,12 @@ impl<C: Comm> Coordinator<C> {
         tokio::select! { biased;
             vnr = &mut self.timer => Ok(self.consensus.timeout(vnr)),
             msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
+        }
+    }
+
+    pub fn handle_delayed_inbox_update(&mut self, index: u64) {
+        if let Err(e) = self.consensus.set_delayed_inbox_index(index) {
+            error!(%e, "failed to set delayed inbox index");
         }
     }
 

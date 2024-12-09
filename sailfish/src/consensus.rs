@@ -225,16 +225,6 @@ impl Consensus {
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
-            Message::DelayedInboxUpdate(index) => {
-                if let Err(e) = self.set_delayed_inbox_index(index) {
-                    error!(
-                        node = %self.label,
-                        err = %e,
-                        "failed to set delayed inbox index"
-                    );
-                }
-                Vec::new()
-            }
         }
     }
 

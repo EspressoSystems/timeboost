@@ -8,7 +8,7 @@ pub struct NoOpBlockBuilder;
 impl BlockBuilder for NoOpBlockBuilder {
     fn build(&self, ordered_transactions: InclusionList) -> Result<TimeboostBlock> {
         Ok(TimeboostBlock {
-            transactions: ordered_transactions.bundles,
+            transactions: ordered_transactions.into_transactions(),
         })
     }
 }

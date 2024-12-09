@@ -99,7 +99,7 @@ impl Committable for InclusionPhaseBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeboostBlock {
-    pub transactions: Vec<InclusionPhaseBlock>,
+    pub transactions: Vec<Transaction>,
 }
 
 impl TimeboostBlock {

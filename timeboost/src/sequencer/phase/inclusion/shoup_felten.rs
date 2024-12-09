@@ -1,8 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use super::{CandidateList, InclusionList, InclusionPhase};
+use super::{CandidateList, CandidateTransaction, InclusionList, InclusionPhase};
 use anyhow::Result;
-use timeboost_core::types::block::{sailfish::SailfishBlock, timeboost::InclusionPhaseBlock};
 use timeboost_utils::types::round_number::RoundNumber;
 
 /// An implementation of the Shoupe-Felten Inclusion phase specification of
@@ -23,7 +22,7 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
         round_number: RoundNumber,
         mut candidate_list: CandidateList,
         last_delayed_inbox_index: u64,
-        previous_bundles: &[SailfishBlock],
+        previous_bundles: &[CandidateTransaction],
     ) -> Result<InclusionList> {
         // The consensus timestamp is the maximum of the consensus timestamp from the last successful round
         // and the media of the timestamps of the candidate list bundles/transactions.
@@ -41,19 +40,15 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
         // Among all priority bundle transactions seen in the consensus output that are tagged with
         // the current consensus epoch number, first discard any that are not from the current consensus
         // epoch and any that are not properly signed by the priority controller for the current epoch.
-        let mut priority_bundles = candidate_list.priority_bundles();
-        priority_bundles.retain(|bundle| {
-            bundle.epoch() == priority_epoch_number
-                && bundle.is_priority_bundle()
-                && bundle.is_valid()
-        });
+        let mut priority_txns = candidate_list.priority_txns();
+        priority_txns.retain(|txn| txn.epoch() == priority_epoch_number && txn.is_valid());
 
         // Let K be the largest sequence number of any bundle from the current consensus epoch number
         // that has been included by a previous successful round’s invocation of this procedure,
         // or -1 if there is no such bundle
-        let mut k: i64 = priority_bundles
+        let mut k: i64 = priority_txns
             .iter()
-            .filter(|bundle| previous_bundles.contains(bundle))
+            .filter(|txn| previous_bundles.contains(txn))
             .enumerate()
             // TODO: BUG BUG BUG -> This is likely NOT how the sequence number is determined. But, it works for now
             // since we do NOT have a PLC. Ordering is based on insertion order.
@@ -61,10 +56,18 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
             .max()
             .unwrap_or(-1);
 
-        let mut bundles: Vec<InclusionPhaseBlock> = Vec::new();
+        // First, make the empty inclusion list that we'll append to.
+        let mut inclusion_list = InclusionList {
+            timestamp: consensus_timestamp,
+            round_number,
+            delayed_inbox_index,
+            epoch: priority_epoch_number,
+            ..Default::default()
+        };
+
         loop {
             // Let S be the set of bundles from the current consensus epoch number that have sequence number K + 1.
-            let s: Vec<_> = priority_bundles
+            let s: Vec<_> = priority_txns
                 .iter()
                 .enumerate()
                 // TODO: This is the extension of the above potentially problemtic code.
@@ -78,8 +81,8 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
 
             // Otherwise include the contents (calldata) of the member of S with smallest hash,
             // increment K, and continue.
-            let (_, selected_bundle) = s
-                .iter()
+            let (i, _) = s
+                .into_iter()
                 .min_by_key(|(_, bundle)| {
                     let mut hasher = DefaultHasher::new();
                     bundle.hash(&mut hasher);
@@ -87,28 +90,18 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
                 })
                 .unwrap(); // This is safe because S is not empty.
 
-            let bundle = InclusionPhaseBlock::from_sailfish_block(
-                (*selected_bundle)
-                    .clone()
-                    .into_transactions()
-                    .into_iter()
-                    .collect(),
-                round_number,
-                candidate_list.recovery_state.round_number,
-                delayed_inbox_index,
-            )?;
+            // CAN PANIC: This can panic, but should not since we've already gotten a stable index for a real value.
+            // We explicitly take the index here as `s` will only have a reference. We want to remove the value from
+            // the priority txns list so that it is not included again.
+            let selected = priority_txns.remove(i);
 
-            bundles.push(bundle);
+            // Append the selected transaction to the inclusion list.
+            inclusion_list.txns.push(selected.into());
+
+            // Increment K.
             k += 1;
         }
 
-        Ok(InclusionList {
-            bundles,
-            timestamp: consensus_timestamp,
-            round_number,
-            priority_bundle_sequence_no: 0,
-            epoch: priority_epoch_number,
-            delayed_inbox_index,
-        })
+        Ok(inclusion_list)
     }
 }

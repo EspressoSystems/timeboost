@@ -29,7 +29,7 @@ use crate::{
 use super::phase::{
     block_builder::BlockBuilder,
     decryption::DecryptionPhase,
-    inclusion::{InclusionList, InclusionPhase},
+    inclusion::{CandidateTransaction, InclusionList, InclusionPhase},
     ordering::OrderingPhase,
 };
 
@@ -100,7 +100,7 @@ where
     prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<SailfishBlock>>>,
 
     /// The previous successful round's bundles.
-    previous_bundles: Vec<SailfishBlock>,
+    previous_bundles: Vec<CandidateTransaction>,
 }
 
 impl<I, D, O, B> Sequencer<I, D, O, B>
@@ -167,18 +167,24 @@ where
                     // Drain the snapshot
                     let mempool_snapshot = self.mempool.write().await.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
 
-                    // This is required for the Shoupe-Felten inclusion phase. We *must* know which of the current bundle
-                    // set has been included in a prior successful round.
-                    let tmp_previous_bundles = mempool_snapshot.clone();
-
                     // Pre-calculate the commitments so that way if this operation succeeds, we can drop the
                     // snapshot into the appropriate storage for the round. We do this here because we
                     // move the mempool snapshot into the builder function.
                     let mempool_snapshot_commitments: HashSet<Commitment<SailfishBlock>> =
                         mempool_snapshot.iter().map(|b| b.commit()).collect();
 
+                    let candidate_list = CandidateList::from_mempool_snapshot(
+                        self.round_state.delayed_inbox_index,
+                        mempool_snapshot,
+                        self.round_state.clone(),
+                    );
+
+                    // This is required for the Inclusion phase. We *must* know which of the current bundle
+                    // set has been included in a prior successful round.
+                    let tmp_previous_bundles = candidate_list.transactions.clone();
+
                     // Build the block from the snapshot.
-                    let Ok(block) = self.build(mempool_snapshot) else {
+                    let Ok(block) = self.build(candidate_list) else {
                         error!(%self.round, "failed to build block");
                         continue;
                     };
@@ -200,7 +206,7 @@ where
                     self.prior_tx_hashes.retain(|round, _| *self.round - **round <= 8);
 
                     // The round was successful, so we update the previous bundles.
-                    self.previous_bundles = tmp_previous_bundles;
+                    self.previous_bundles = tmp_previous_bundles.into_iter().collect();
                 }
             }
         }
@@ -211,12 +217,7 @@ where
         skip_all,
         fields(round = %self.round)
     )]
-    pub fn build(&mut self, mempool_snapshot: Vec<SailfishBlock>) -> Result<TimeboostBlock> {
-        let candidate_list = CandidateList::from_mempool_snapshot(
-            self.round_state.delayed_inbox_index,
-            mempool_snapshot,
-            &self.round_state,
-        );
+    pub fn build(&mut self, candidate_list: CandidateList) -> Result<TimeboostBlock> {
         let epoch = candidate_list.epoch();
 
         // Phase 1: Inclusion

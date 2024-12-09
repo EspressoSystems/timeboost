@@ -1,9 +1,15 @@
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    hash::{Hash, Hasher},
+};
 
 use anyhow::Result;
+use committable::{Commitment, Committable};
+use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
-    block::{sailfish::SailfishBlock, timeboost::InclusionPhaseBlock},
+    block::sailfish::SailfishBlock,
     time::{Epoch, Timestamp},
+    transaction::Transaction,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 
@@ -12,11 +18,75 @@ use crate::sequencer::protocol::RoundState;
 pub mod noop;
 pub mod shoup_felten;
 
+/// NOTE: We might need to derive a timestamp for the CandidateTransaction from the source
+/// block instead of the transaction itself.
+#[derive(Debug, Clone)]
+pub struct CandidateTransaction {
+    pub txn: Transaction,
+    pub delayed_inbox_index: u64,
+    pub src: Commitment<SailfishBlock>,
+}
+
+impl From<CandidateTransaction> for Transaction {
+    fn from(candidate_txn: CandidateTransaction) -> Self {
+        candidate_txn.txn
+    }
+}
+
+impl CandidateTransaction {
+    pub fn timestamp(&self) -> Timestamp {
+        self.txn.timestamp()
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.timestamp().into_epoch()
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.txn.is_valid()
+    }
+
+    pub fn delayed_inbox_index(&self) -> u64 {
+        self.delayed_inbox_index
+    }
+}
+
+/// Disambiguate a transaction by its transaction data and the source block commitment.
+impl PartialEq for CandidateTransaction {
+    fn eq(&self, other: &Self) -> bool {
+        self.txn == other.txn && self.src == other.src
+    }
+}
+
+impl Eq for CandidateTransaction {}
+
+/// We only care to order a transaction by its transaction data.
+impl PartialOrd for CandidateTransaction {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.txn.cmp(&other.txn))
+    }
+}
+
+/// We only care to order a transaction by its transaction data.
+impl Ord for CandidateTransaction {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.txn.cmp(&other.txn)
+    }
+}
+
+/// This is implemented due to the clippy "derived_hash_with_manual_eq" lint.
+impl Hash for CandidateTransaction {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.txn.hash(state);
+        self.delayed_inbox_index.hash(state);
+    }
+}
+
 /// A member's candidate list that serves as input to a consensus round R.
 ///
 /// Taken directly from the spec:
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L111-L121
-pub struct CandidateList<'a> {
+pub struct CandidateList {
     /// The timestamp of the node at the start of round R, which defines start(m,R).
     pub(crate) timestamp: Timestamp,
 
@@ -28,29 +98,44 @@ pub struct CandidateList<'a> {
     /// The set of transactions in the candidate list, including:
     /// - All priority bundle transactions from the priority epoch e=epoch(start(m,R))
     /// - All non-priority transactions that arrived at least 250ms ago
-    pub(crate) bundles: BTreeSet<SailfishBlock>,
+    pub(crate) transactions: BTreeSet<CandidateTransaction>,
 
     /// The recovery state of the node.
-    pub(crate) recovery_state: &'a RoundState,
+    pub(crate) recovery_state: RoundState,
 
     /// The epoch of the candidate list. This one is not in the spec, but is
     /// used internally to track the epoch of the candidate list.
     epoch: Epoch,
 }
 
-impl<'a> CandidateList<'a> {
+impl CandidateList {
     pub fn from_mempool_snapshot(
         last_successful_delayed_inbox_index: u64,
         mempool_snapshot: Vec<SailfishBlock>,
-        recovery_state: &'a RoundState,
+        recovery_state: RoundState,
     ) -> Self {
-        let transactions: BTreeSet<SailfishBlock> = mempool_snapshot.into_iter().collect();
+        let transactions: BTreeSet<CandidateTransaction> = mempool_snapshot
+            .into_iter()
+            .flat_map(|block| {
+                let src = block.commit();
+                let delayed_inbox_index = block.delayed_inbox_index();
+                block
+                    .into_transactions()
+                    .into_iter()
+                    .map(|t| CandidateTransaction {
+                        txn: t,
+                        src,
+                        delayed_inbox_index,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
 
         let timestamp = Timestamp::now();
         Self {
             timestamp,
             delayed_inbox_index: last_successful_delayed_inbox_index,
-            bundles: transactions,
+            transactions,
             recovery_state,
             epoch: timestamp.into_epoch(),
         }
@@ -85,7 +170,7 @@ impl<'a> CandidateList<'a> {
     /// of the two central items in the sorted list of timestamps.
     pub fn median_timestamp(&self) -> Timestamp {
         self.calculate_median(
-            self.bundles.iter().map(|t| t.timestamp()).collect(),
+            self.transactions.iter().map(|t| t.timestamp()).collect(),
             self.recovery_state.consensus_timestamp,
             |t| **t,
         )
@@ -96,7 +181,7 @@ impl<'a> CandidateList<'a> {
     /// of the two central items in the sorted list of delayed inbox indices.
     pub fn median_delayed_inbox_index(&self) -> u64 {
         self.calculate_median(
-            self.bundles
+            self.transactions
                 .iter()
                 .map(|t| t.delayed_inbox_index())
                 .collect(),
@@ -107,34 +192,20 @@ impl<'a> CandidateList<'a> {
 
     /// The priority bundles in the candidate list. This is a method which removes the bundles from
     /// the candidate list which are priority bundles and returns them.
-    pub fn priority_bundles(&mut self) -> Vec<SailfishBlock> {
-        let to_remove: BTreeSet<_> = self
-            .bundles
+    pub fn priority_txns(&mut self) -> Vec<CandidateTransaction> {
+        self.transactions
             .iter()
-            .filter(|item| item.is_priority_bundle())
+            .filter(|t| t.txn.is_priority())
             .cloned()
-            .collect();
-
-        for item in &to_remove {
-            self.bundles.remove(item);
-        }
-
-        to_remove.into_iter().collect()
+            .collect()
     }
 
-    pub fn non_priority_bundles(&mut self) -> Vec<SailfishBlock> {
-        let to_remove: BTreeSet<_> = self
-            .bundles
+    pub fn non_priority_txns(&mut self) -> Vec<CandidateTransaction> {
+        self.transactions
             .iter()
-            .filter(|item| !item.is_priority_bundle())
+            .filter(|t| !t.txn.is_priority())
             .cloned()
-            .collect();
-
-        for item in &to_remove {
-            self.bundles.remove(item);
-        }
-
-        to_remove.into_iter().collect()
+            .collect()
     }
 }
 
@@ -166,6 +237,7 @@ impl<'a> CandidateList<'a> {
 ///
 /// Taken directly from the spec:
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L125-L143
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InclusionList {
     /// The consensus timestamp of the inclusion list. This is the *same* as the
     /// [`CandidateList::timestamp`] and only is created when the candidate list is
@@ -176,7 +248,7 @@ pub struct InclusionList {
     pub(crate) round_number: RoundNumber,
 
     /// The set of transactions and bundles in the inclusion list.
-    pub(crate) bundles: Vec<InclusionPhaseBlock>,
+    pub(crate) txns: Vec<Transaction>,
 
     /// The delayed inbox index of the inclusion list.
     pub(crate) delayed_inbox_index: u64,
@@ -191,6 +263,10 @@ pub struct InclusionList {
 impl InclusionList {
     pub fn epoch(&self) -> Epoch {
         self.epoch
+    }
+
+    pub fn into_transactions(self) -> Vec<Transaction> {
+        self.txns
     }
 }
 
@@ -210,6 +286,6 @@ pub trait InclusionPhase {
         round_number: RoundNumber,
         candidate_list: CandidateList,
         last_delayed_inbox_index: u64,
-        previous_bundles: &[SailfishBlock],
+        previous_bundles: &[CandidateTransaction],
     ) -> Result<InclusionList>;
 }

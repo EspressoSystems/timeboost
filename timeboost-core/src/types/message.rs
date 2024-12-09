@@ -26,9 +26,6 @@ pub enum Message<Status = Validated> {
 
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
-
-    /// A delayed inbox index update has occurred.
-    DelayedInboxUpdate(u64),
 }
 
 impl<S> Message<S> {
@@ -38,9 +35,6 @@ impl<S> Message<S> {
             Message::Timeout(t) => t.data().round(),
             Message::NoVote(nv) => nv.data().round(),
             Message::TimeoutCert(c) => c.data().round(),
-
-            // TODO: This isn't a valid Round Number. Perhaps we can have some `RoundNumber::Irrelevant`?
-            Message::DelayedInboxUpdate(index) => RoundNumber::from(*index),
         }
     }
 }
@@ -52,7 +46,6 @@ impl Message<Unchecked> {
             Self::Timeout(e) => e.validated(c).map(Message::Timeout),
             Self::NoVote(e) => e.validated(c).map(Message::NoVote),
             Self::TimeoutCert(c) => Some(Message::TimeoutCert(c)),
-            Self::DelayedInboxUpdate(index) => Some(Message::DelayedInboxUpdate(index)),
         }
     }
 }
@@ -164,9 +157,6 @@ impl<S> fmt::Display for Message<S> {
             Self::TimeoutCert(c) => {
                 write!(f, "TimeoutCert({})", c.data().round())
             }
-            Self::DelayedInboxUpdate(index) => {
-                write!(f, "DelayedInboxUpdate({})", index)
-            }
         }
     }
 }
@@ -195,9 +185,6 @@ impl<S> Committable for Message<S> {
             Self::Timeout(e) => builder.field("timeout", e.commit()).finalize(),
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
-            Self::DelayedInboxUpdate(index) => {
-                builder.u64_field("delayed-inbox-update", *index).finalize()
-            }
         }
     }
 }
