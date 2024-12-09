@@ -10,6 +10,20 @@ pub struct BlockHeader {
     timestamp: Timestamp,
 }
 
+impl Ord for BlockHeader {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.round
+            .cmp(&other.round)
+            .then(self.timestamp.cmp(&other.timestamp))
+    }
+}
+
+impl PartialOrd for BlockHeader {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl BlockHeader {
     pub fn new(round: RoundNumber, timestamp: Timestamp) -> Self {
         Self { round, timestamp }

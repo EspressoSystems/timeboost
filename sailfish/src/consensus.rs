@@ -613,7 +613,7 @@ impl Consensus {
 
         let mut new = Vertex::new(r, *self.public_key());
         new.set_block(
-            SailfishBlock::empty(r, Timestamp::now())
+            SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
                 .with_transactions(self.state.transactions.take()),
         );
         new.add_edges(prev.map(Vertex::source).cloned());

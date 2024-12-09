@@ -8,29 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use timeboost_utils::types::round_number::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Ord, PartialOrd, Deserialize, Hash)]
 pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,
     delayed_inbox_index: u64,
-}
-
-impl PartialOrd for SailfishBlock {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SailfishBlock {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Ties are broken first by timestamp, then by round number, then by delayed inbox index, then by payload.
-        self.header
-            .timestamp()
-            .cmp(&other.header.timestamp())
-            .then(self.header.round().cmp(&other.header.round()))
-            .then(self.delayed_inbox_index.cmp(&other.delayed_inbox_index))
-            .then(self.payload.cmp(&other.payload))
-    }
 }
 
 impl Default for SailfishBlock {

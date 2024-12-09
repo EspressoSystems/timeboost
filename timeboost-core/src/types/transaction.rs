@@ -81,14 +81,21 @@ impl PartialOrd for Transaction {
 impl Ord for Transaction {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Self::Priority { nonce: nonce1, .. }, Self::Priority { nonce: nonce2, .. }) => {
-                nonce1.cmp(nonce2)
-            }
+            (
+                Self::Priority {
+                    nonce: nonce1,
+                    txn: txn1,
+                    ..
+                },
+                Self::Priority {
+                    nonce: nonce2,
+                    txn: txn2,
+                    ..
+                },
+            ) => nonce1.cmp(nonce2).then(txn1.cmp(txn2)),
             (Self::Priority { .. }, Self::Regular { .. }) => std::cmp::Ordering::Less,
             (Self::Regular { .. }, Self::Priority { .. }) => std::cmp::Ordering::Greater,
-            (Self::Regular { txn: txn1 }, Self::Regular { txn: txn2 }) => {
-                txn1.timestamp.cmp(&txn2.timestamp)
-            }
+            (Self::Regular { txn: txn1 }, Self::Regular { txn: txn2 }) => txn1.cmp(txn2),
         }
     }
 }
