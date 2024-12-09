@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, Signature};
+use crate::{Committee, PublicKey, Signature};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Certificate<D: Committable> {
@@ -31,6 +31,13 @@ impl<D: Committable> Certificate<D> {
 
     pub fn commitment(&self) -> &Commitment<D> {
         &self.commitment
+    }
+
+    pub fn signers<'a>(&'a self, comm: &'a Committee) -> impl Iterator<Item = &'a PublicKey> {
+        self.signatures
+            .keys()
+            .copied()
+            .filter_map(|i| comm.get_key(i))
     }
 
     pub fn is_valid(&self, committee: &Committee) -> bool {
