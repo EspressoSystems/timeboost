@@ -11,7 +11,7 @@ use sequencer::{
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_utils::PeerConfig;
-use tokio::sync::{mpsc::channel, RwLock};
+use tokio::sync::mpsc::channel;
 use tracing::{debug, error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
@@ -161,7 +161,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.write().await.insert(block);
+                                        self.mempool.insert(block).await;
                                     },
                                 }
                             }

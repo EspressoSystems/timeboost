@@ -16,7 +16,7 @@ use timeboost_core::types::{
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::{
-    sync::{mpsc::Sender, watch, RwLock},
+    sync::{mpsc::Sender, watch},
     time::sleep,
 };
 use tracing::{error, info, instrument};
