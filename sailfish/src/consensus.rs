@@ -233,15 +233,11 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                if v.round() - self.round() > 2.into() {
+                if (*v.round()).saturating_sub(*self.round()) > 2 {
                     self.catchup = true;
                     self.buffer.clear();
-                    // Do we have anything in our state for previous round?
                     // We are in catchup, so optimistically add to the candidate dag
-                    // Essentially treat them as genesis vertices
-                    if self.candidate_dag.vertex_count(v.round() - 1) == 0 {
-                        self.candidate_dag.add(v);
-                    }
+                    self.candidate_dag.add(v);
                     // Dont add to buffer, `candidate_dag` is our buffer for catchup
                     return actions;
                 }
@@ -443,6 +439,7 @@ impl Consensus {
         }
 
         if self.dag.vertex_count(round) as u64 >= self.committee.quorum_size().get() {
+            self.metrics.rounds_timed_out.update(1);
             actions.extend(self.advance_from_round(round));
         }
 

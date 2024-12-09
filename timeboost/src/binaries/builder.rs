@@ -41,6 +41,16 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
+
+    /// The id of a node that will start late
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 0)]
+    late_start_node_id: u16,
+
+    /// Do we want to late start a node
+    #[cfg(feature = "until")]
+    #[clap(long, short, action = clap::ArgAction::SetTrue)]
+    late_start: bool,
 }
 
 #[cfg(feature = "until")]
@@ -78,6 +88,21 @@ async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Send
                             tracing::info!("committed_round: {}", committed_round);
                         }
 
+                        let timeouts = text
+                            .lines()
+                            .find(|line| line.starts_with("rounds_timed_out"))
+                            .and_then(|line| line.split(' ').nth(1))
+                            .and_then(|num| num.parse::<u64>().ok())
+                            .unwrap_or(0);
+
+                        if timeouts >= 10 {
+                            tracing::error!("Too many timeouts, shutting down");
+                            shutdown_tx.send(()).expect(
+                                    "the shutdown sender was dropped before the receiver could receive the token",
+                                );
+                            return;
+                        }
+
                         if committed_round >= until {
                             tracing::info!("watchdog completed successfully");
                             shutdown_tx.send(()).expect(
@@ -100,7 +125,12 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Make a new committee contract instance to read the committee config from.
-    let committee = CommitteeContract::new(cli.base);
+    #[cfg(feature = "until")]
+    let skip_bootstrap_id = Some(cli.late_start_node_id);
+    #[cfg(not(feature = "until"))]
+    let skip_bootstrap_id = None;
+
+    let committee = CommitteeContract::new(cli.base, skip_bootstrap_id);
 
     let id = NodeId::from(cli.id as u64);
 
@@ -111,12 +141,19 @@ async fn main() -> Result<()> {
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
 
     #[cfg(feature = "until")]
-    tokio::spawn(run_until(
-        cli.metrics_port,
-        cli.until,
-        cli.watchdog_timeout,
-        shutdown_tx.clone(),
-    ));
+    {
+        tokio::spawn(run_until(
+            cli.metrics_port,
+            cli.until,
+            cli.watchdog_timeout,
+            shutdown_tx.clone(),
+        ));
+        #[cfg(feature = "until")]
+        if cli.late_start && cli.id == cli.late_start_node_id {
+            tracing::error!("Adding delay before starting node: id: {}", id);
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    }
 
     tokio::select! {
         _ = run_timeboost(
