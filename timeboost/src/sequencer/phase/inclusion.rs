@@ -68,10 +68,10 @@ impl<'a> CandidateList<'a> {
         let mut sorted_values = values.iter().map(get_value).collect::<Vec<_>>();
         sorted_values.sort_unstable();
         let median = if values.len() % 2 == 0 {
-            sorted_values[(sorted_values.len() / 2) + 1]
-        } else {
             (sorted_values[sorted_values.len() / 2] + sorted_values[sorted_values.len() / 2 + 1])
                 / 2
+        } else {
+            sorted_values[(sorted_values.len() / 2) + 1]
         };
 
         std::cmp::max(default, median.into())
