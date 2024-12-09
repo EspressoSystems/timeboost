@@ -94,7 +94,7 @@ where
     round: RoundNumber,
 
     /// The mempool for the timeboost node.
-    mempool: Arc<RwLock<Mempool>>,
+    mempool: Arc<Mempool>,
 
     /// The transactions/bundles seen at some point in the previous 8 rounds.
     prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<SailfishBlock>>>,
@@ -116,7 +116,7 @@ where
         ordering_phase: O,
         block_builder: B,
         metrics: TimeboostMetrics,
-        mempool: Arc<RwLock<Mempool>>,
+        mempool: Arc<Mempool>,
     ) -> Self {
         Self {
             inclusion_phase,
@@ -160,12 +160,12 @@ where
                     // be caught regardless.
                     let prior_tx_hashes: HashSet<Commitment<SailfishBlock>> =
                         self.prior_tx_hashes.values().flatten().cloned().collect();
-                    self.mempool.write().await.remove_duplicate_bundles(
+                    self.mempool.remove_duplicate_bundles(
                         &prior_tx_hashes,
-                    );
+                    ).await;
 
                     // Drain the snapshot
-                    let mempool_snapshot = self.mempool.write().await.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
+                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES).await;
 
                     // Pre-calculate the commitments so that way if this operation succeeds, we can drop the
                     // snapshot into the appropriate storage for the round. We do this here because we

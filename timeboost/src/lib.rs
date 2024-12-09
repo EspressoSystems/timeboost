@@ -59,7 +59,7 @@ pub struct Timeboost {
     shutdown_rx: watch::Receiver<()>,
 
     /// The mempool for the timeboost node.
-    mempool: Arc<RwLock<Mempool>>,
+    mempool: Arc<Mempool>,
 
     /// The metrics for the sailfish node.
     #[allow(dead_code)]
@@ -78,7 +78,7 @@ impl Timeboost {
         shutdown_rx: watch::Receiver<()>,
         sf_metrics: Arc<SailfishMetrics>,
     ) -> Self {
-        let mempool = Arc::new(RwLock::new(Mempool::new()));
+        let mempool = Arc::new(Mempool::new());
         Self {
             id,
             port,
@@ -88,7 +88,7 @@ impl Timeboost {
             app_rx,
             shutdown_rx,
             sf_metrics,
-            mempool: mempool.clone(),
+            mempool,
         }
     }
 
