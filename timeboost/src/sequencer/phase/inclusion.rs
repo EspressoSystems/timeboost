@@ -77,10 +77,10 @@ impl<'a> CandidateList<'a> {
         std::cmp::max(default, median.into())
     }
 
-    /// The average timestamp of the transactions in the candidate list. This is
+    /// The median timestamp of the transactions in the candidate list. This is
     /// used to determine the consensus timestamp during the inclusion phase run.
     ///
-    /// Average timestamp is either the media of the delayed inbox indices of the candidate lists
+    /// Median timestamp is either the median of the timestamps of the candidate lists
     /// or, if there's an event number of transactions, then it's the floor of the mean
     /// of the two central items in the sorted list of timestamps.
     pub fn median_timestamp(&self) -> Timestamp {
