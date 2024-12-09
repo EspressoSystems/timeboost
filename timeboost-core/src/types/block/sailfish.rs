@@ -35,20 +35,20 @@ impl Ord for SailfishBlock {
 
 impl Default for SailfishBlock {
     fn default() -> Self {
-        Self::empty(RoundNumber::genesis(), Timestamp::now())
+        Self::empty(RoundNumber::genesis(), Timestamp::now(), 0)
     }
 }
 
 impl SailfishBlock {
-    pub fn new(round: RoundNumber, timestamp: Timestamp) -> Self {
-        Self::empty(round, timestamp)
+    pub fn new(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
+        Self::empty(round, timestamp, delayed_inbox_index)
     }
 
-    pub fn empty(round: RoundNumber, timestamp: Timestamp) -> Self {
+    pub fn empty(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
         Self {
             header: BlockHeader::new(round, timestamp),
             payload: Vec::new(),
-            delayed_inbox_index: 0,
+            delayed_inbox_index,
         }
     }
 

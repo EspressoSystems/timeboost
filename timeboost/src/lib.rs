@@ -136,7 +136,8 @@ impl Timeboost {
         );
 
         // Start the sequencer.
-        tokio::spawn(sequencer.go(self.shutdown_rx.clone(), self.app_tx.clone()));
+        let sequencer_handle =
+            tokio::spawn(sequencer.go(self.shutdown_rx.clone(), self.app_tx.clone()));
 
         // Start the block producer.
         let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
@@ -199,6 +200,9 @@ impl Timeboost {
 
                     warn!("shutting down rpc handle");
                     rpc_handle.abort();
+
+                    warn!("shutting down sequencer");
+                    sequencer_handle.abort();
 
                     warn!("shutting down coordinator");
                     coordinator.shutdown().await.expect("shutdown coordinator");

@@ -32,7 +32,7 @@ impl Vertex {
             edges: BTreeSet::new(),
             no_vote: None,
             timeout: None,
-            block: SailfishBlock::empty(round, Timestamp::now()),
+            block: SailfishBlock::empty(round, Timestamp::now(), 0),
         }
     }
 
@@ -74,11 +74,6 @@ impl Vertex {
 
     pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
         self.block = b;
-        self
-    }
-
-    pub fn set_delayed_inbox_index(&mut self, index: u64) -> &mut Self {
-        self.block.set_delayed_inbox_index(index);
         self
     }
 

@@ -617,7 +617,6 @@ impl Consensus {
                 .with_transactions(self.state.transactions.take()),
         );
         new.add_edges(prev.map(Vertex::source).cloned());
-        new.set_delayed_inbox_index(self.delayed_inbox_index);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() as u64 >= self.committee.quorum_size().get());
