@@ -87,7 +87,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         NetworkMessageInterceptor::default(),
     )
     .run()
@@ -163,7 +163,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()
