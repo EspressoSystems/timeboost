@@ -39,7 +39,7 @@ impl CandidateTransaction {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.timestamp().into_epoch()
+        self.timestamp().epoch()
     }
 
     pub fn is_valid(&self) -> bool {
@@ -137,7 +137,7 @@ impl CandidateList {
             delayed_inbox_index: last_successful_delayed_inbox_index,
             transactions,
             recovery_state,
-            epoch: timestamp.into_epoch(),
+            epoch: timestamp.epoch(),
         }
     }
 

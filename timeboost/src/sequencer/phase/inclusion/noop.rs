@@ -11,7 +11,7 @@ impl InclusionPhase for NoOpInclusionPhase {
         last_delayed_inbox_index: u64,
         _previous_bundles: &[CandidateTransaction],
     ) -> Result<InclusionList> {
-        let epoch = candidate_list.timestamp.into_epoch();
+        let epoch = candidate_list.timestamp.epoch();
         let delayed_inbox_index = std::cmp::max(
             last_delayed_inbox_index,
             candidate_list.median_delayed_inbox_index(),

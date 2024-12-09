@@ -43,7 +43,7 @@ impl SailfishBlock {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.header.timestamp().into_epoch()
+        self.header.timestamp().epoch()
     }
 
     pub fn is_valid(&self) -> bool {

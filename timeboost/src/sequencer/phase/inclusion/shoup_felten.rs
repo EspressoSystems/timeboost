@@ -29,7 +29,7 @@ impl InclusionPhase for ShoupFeltenInclusionPhase {
         let consensus_timestamp = candidate_list.median_timestamp();
 
         // The priority epoch number is the epoch of the consensus timestamp.
-        let priority_epoch_number = consensus_timestamp.into_epoch();
+        let priority_epoch_number = consensus_timestamp.epoch();
 
         // The delayed inbox index is the max of the last successful delayed inbox index and the
         // median delayed inbox index of the candidate list.

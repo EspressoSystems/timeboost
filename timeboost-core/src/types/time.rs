@@ -40,7 +40,7 @@ impl Timestamp {
         Self(d.as_secs())
     }
 
-    pub fn into_epoch(self) -> Epoch {
+    pub fn epoch(self) -> Epoch {
         Epoch(u128::from(self.0 / EPOCH_DURATION.as_secs()))
     }
 
@@ -118,7 +118,7 @@ mod tests {
 
     quickcheck! {
         fn timestamp_of_epoch(n: u64) -> bool {
-            let e: u128 = Timestamp(n).into_epoch().into();
+            let e: u128 = Timestamp(n).epoch().into();
             let t: u128 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }
