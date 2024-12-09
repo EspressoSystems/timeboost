@@ -102,6 +102,13 @@ impl InclusionPhase for ShoupeFeltenInclusionPhase {
             k += 1;
         }
 
-        bail!("fuck");
+        Ok(InclusionList {
+            bundles,
+            timestamp: consensus_timestamp,
+            round_number,
+            priority_bundle_sequence_no: 0,
+            epoch: priority_epoch_number,
+            delayed_inbox_index,
+        })
     }
 }
