@@ -97,7 +97,7 @@ async fn test_single_node_timeout_cert() {
     logging::init_logging();
 
     // Setup key manager and nodes
-    let num_nodes = 6;
+    let num_nodes = 5;
     let manager = KeyManager::new(num_nodes);
     let mut nodes = manager.create_node_instruments();
     let node_handle = nodes.first_mut().expect("Node 0 should be present");
@@ -133,15 +133,13 @@ async fn test_single_node_timeout_cert() {
     ]);
 
     // Setup up consensus state
-    let mut round = 3;
     let node = node_handle.node_mut();
-    let (dag, vertices_for_round) = manager.prepare_dag(round, &committee);
+    let (dag, vertices_for_round) = manager.prepare_dag(*expected_round - 1, &committee);
     node.go(dag);
 
     // Craft messages, skip leader vertex
-    round += 1;
     let mut input_msgs: Vec<Message> = manager
-        .create_vertex_msgs(round, vertices_for_round)
+        .create_vertex_msgs(*expected_round, vertices_for_round)
         .iter()
         .filter(|m| {
             if let Message::Vertex(v) = m {
@@ -161,7 +159,7 @@ async fn test_single_node_timeout_cert() {
     }
 
     // Craft timeouts
-    input_msgs = manager.create_timeout_msgs(round);
+    input_msgs = manager.create_timeout_msgs(*expected_round);
 
     // Process timeouts
     for msg in input_msgs {

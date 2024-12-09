@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
 use committable::Committable;
 use multisig::{Committee, Envelope, Keypair, PublicKey, Validated};
@@ -15,7 +15,7 @@ use timeboost_utils::unsafe_zero_keypair;
 use super::node_instrument::TestNodeInstrument;
 
 pub struct KeyManager {
-    keys: HashMap<u64, Keypair>,
+    keys: BTreeMap<u64, Keypair>,
 }
 
 impl KeyManager {
