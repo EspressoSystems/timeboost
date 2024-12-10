@@ -1,9 +1,12 @@
 use anyhow::Result;
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
-    run_timeboost,
+    Timeboost, TimeboostInitializer,
 };
-use timeboost_core::types::{Keypair, NodeId};
+use timeboost_core::{
+    traits::has_initializer::HasInitializer,
+    types::{Keypair, NodeId},
+};
 
 use clap::Parser;
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
@@ -118,18 +121,21 @@ async fn main() -> Result<()> {
         shutdown_tx.clone(),
     ));
 
+    let init = TimeboostInitializer {
+        id,
+        rpc_port: cli.rpc_port,
+        metrics_port: cli.metrics_port,
+        bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
+        staked_nodes: committee.staked_nodes(),
+        keypair,
+        bind_address,
+        shutdown_rx,
+    };
+
+    let timeboost = Timeboost::initialize(init).await?;
+
     tokio::select! {
-        _ = run_timeboost(
-            id,
-            cli.port,
-            cli.rpc_port,
-            cli.metrics_port,
-            committee.bootstrap_nodes().into_iter().collect(),
-            committee.staked_nodes(),
-            keypair,
-            bind_address,
-            shutdown_rx,
-        ) => {
+        _ = timeboost.go(committee.staked_nodes().len()) => {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");
