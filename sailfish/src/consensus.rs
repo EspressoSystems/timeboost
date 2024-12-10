@@ -235,10 +235,12 @@ impl Consensus {
             Err(()) => {
                 if (*v.round()).saturating_sub(*self.round()) > 2 {
                     self.catchup = true;
-                    self.buffer.clear();
-                    // We are in catchup, so optimistically add to the candidate dag
+                    // Copy everything from buffer, `candidate_dag` will be our buffer for cathup
+                    for w in std::mem::take(&mut self.buffer) {
+                        self.candidate_dag.add(w.into());
+                    }
+                    // We are in catchup, so add to the candidate_dag
                     self.candidate_dag.add(v);
-                    // Dont add to buffer, `candidate_dag` is our buffer for catchup
                     return actions;
                 }
                 self.buffer.insert(v.into());
@@ -610,16 +612,16 @@ impl Consensus {
             );
             return Err(());
         }
-        // We are able to add again to the `dag`, so catchup is complete
-        // Copy from `candidate_dag` into `dag` then clear
+
         if self.catchup {
+            // We are able to add again to the `dag`, so catchup is complete
             self.catchup = false;
             let max = self.candidate_dag.max_round().unwrap();
             for w in self.candidate_dag.vertex_range(v.round() - 1..=max) {
                 if w.round() == v.round() - 1 {
                     self.dag.add(w.clone());
                 } else {
-                    // Make sure any vertices from after `v.round()-1` are not lost
+                    // Make sure any vertices after `v.round()-1` are not lost
                     self.buffer.insert(w.clone().into());
                 }
             }

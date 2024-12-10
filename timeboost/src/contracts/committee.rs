@@ -59,6 +59,8 @@ impl CommitteeContract {
                 }
             };
             staked_nodes.push(cfg.public_config());
+
+            // Dont add a late start node to bootstrap so the network can start without it
             if let Some(skip_id) = skip_bootstrap_id {
                 if skip_id == i {
                     continue;

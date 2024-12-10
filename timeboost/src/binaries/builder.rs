@@ -148,9 +148,8 @@ async fn main() -> Result<()> {
             cli.watchdog_timeout,
             shutdown_tx.clone(),
         ));
-        #[cfg(feature = "until")]
         if cli.late_start && cli.id == cli.late_start_node_id {
-            tracing::error!("Adding delay before starting node: id: {}", id);
+            tracing::info!("Adding delay before starting node: id: {}", id);
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         }
     }
