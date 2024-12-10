@@ -24,21 +24,6 @@ impl Mempool {
         self.bundles.write().await.push_back(block);
     }
 
-    /// Members should make a reasonable best effort to exclude from their candidate lists any transactions
-    /// or bundles that have already been part of the consensus inclusion list produced by a previous round.
-    /// (Failures to do so will reduce efficiency but won’t compromise the safety or liveness of the protocol).
-    ///
-    /// As Per: https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L123
-    pub async fn remove_duplicate_bundles(
-        &self,
-        prior_tx_hashes: &HashSet<Commitment<SailfishBlock>>,
-    ) {
-        self.bundles
-            .write()
-            .await
-            .retain(|block| !prior_tx_hashes.contains(&block.commit()));
-    }
-
     /// Drains blocks from the mempool until the total size reaches `limit_bytes`.
     pub async fn drain_to_limit(&self, limit_bytes: usize) -> Vec<SailfishBlock> {
         let mut total_size = 0;
