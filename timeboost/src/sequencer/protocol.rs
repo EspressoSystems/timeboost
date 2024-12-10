@@ -9,7 +9,7 @@ use anyhow::{bail, Result};
 use committable::{Commitment, Committable};
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::types::{
-    block::{sailfish::SailfishBlock, timeboost::TimeboostBlock},
+    block::timeboost::TimeboostBlock,
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
     time::Timestamp,
@@ -98,7 +98,7 @@ where
     mempool: Arc<Mempool>,
 
     /// The transactions/bundles seen at some point in the previous 8 rounds.
-    prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<SailfishBlock>>>,
+    prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<Transaction>>>,
 
     /// The previous successful round's bundles.
     previous_bundles: Vec<Transaction>,
@@ -151,33 +151,14 @@ where
                         .fuse()
                         .boxed();
 
-                    // "...Members should make a reasonable best effort to exclude from their candidate lists any transactions or bundles
-                    // that have already been part of the consensus inclusion list produced by a previous round."
-                    //
-                    // First, remove all the transactions/bundles that have been included in the
-                    // previous 8 rounds.
-                    //
-                    // This might be flawed as a prior round might sneak in, but that's okay since it should
-                    // be caught regardless.
-                    let prior_tx_hashes: HashSet<Commitment<SailfishBlock>> =
-                        self.prior_tx_hashes.values().flatten().cloned().collect();
-                    self.mempool.remove_duplicate_bundles(
-                        &prior_tx_hashes,
-                    ).await;
-
                     // Drain the snapshot
                     let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES).await;
-
-                    // Pre-calculate the commitments so that way if this operation succeeds, we can drop the
-                    // snapshot into the appropriate storage for the round. We do this here because we
-                    // move the mempool snapshot into the builder function.
-                    let mempool_snapshot_commitments: HashSet<Commitment<SailfishBlock>> =
-                        mempool_snapshot.iter().map(|b| b.commit()).collect();
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,
                         mempool_snapshot,
                         self.round_state.clone(),
+                        &self.prior_tx_hashes.values().flatten().cloned().collect(),
                     );
 
                     // This is required for the Inclusion phase. We *must* know which of the current bundle
@@ -201,7 +182,7 @@ where
                     self.prior_tx_hashes
                         .entry(self.round_state.round_number)
                         .or_default()
-                        .extend(mempool_snapshot_commitments);
+                        .extend(tmp_previous_bundles.iter().map(|tx| tx.commit()));
 
                     // Remove the prior tx hashes that are not in the 8-round window.
                     self.prior_tx_hashes.retain(|round, _| *self.round - **round <= 8);

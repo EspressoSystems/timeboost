@@ -1,6 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::Result;
+use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
@@ -49,6 +50,7 @@ impl CandidateList {
         last_successful_delayed_inbox_index: u64,
         mempool_snapshot: Vec<SailfishBlock>,
         recovery_state: RoundState,
+        prior_tx_hashes: &HashSet<Commitment<Transaction>>,
     ) -> Self {
         let threshold = (mempool_snapshot.len() / 3) + 1;
 
@@ -71,6 +73,8 @@ impl CandidateList {
             .filter(|(txn, count)| txn.is_priority() || *count >= threshold)
             // Unpair the pairs
             .map(|(txn, _)| txn)
+            // Remove all the transactions that have been successfully included before.
+            .filter(|txn| !prior_tx_hashes.contains(&txn.commit()))
             .collect();
 
         Self {
