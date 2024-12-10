@@ -4,7 +4,6 @@ use clap::Parser;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
 use timeboost_core::types::metrics::SailfishMetrics;
@@ -36,7 +35,7 @@ async fn main() -> Result<()> {
     let keypair = Keypair::zero(cfg.id);
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cfg.port)).unwrap();
 
-    let metrics = Arc::new(SailfishMetrics::default());
+    let metrics = SailfishMetrics::default();
     let mut coordinator = sailfish_coordinator(
         cfg.id,
         cfg.to_connect_addrs,
