@@ -20,15 +20,15 @@ pub struct CommitteeContract {
 impl Default for CommitteeContract {
     /// Default to using the docker config.
     fn default() -> Self {
-        Self::new(CommitteeBase::Docker, None)
+        Self::new(CommitteeBase::Docker, 5, None)
     }
 }
 
 impl CommitteeContract {
     /// Create a new committee contract with 5 nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new(base: CommitteeBase, skip_bootstrap_id: Option<u16>) -> Self {
-        Self::new_n(base, 5, skip_bootstrap_id)
+    pub fn new(base: CommitteeBase, size: u16, skip_bootstrap_id: Option<u16>) -> Self {
+        Self::new_n(base, size, skip_bootstrap_id)
     }
 
     /// Create a new committee contract with `n` nodes. This is a placeholder method for what will

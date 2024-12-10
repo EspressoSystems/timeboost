@@ -4,20 +4,40 @@ set -euox pipefail
 
 just build_release --features until
 
-for i in {0..4}; do
+if [ -z "${1:-}" ]; then
+    nodes=5
+else
+    if ! [[ $1 =~ ^[0-9]+$ ]]; then
+        echo "Error: The number of nodes must be a positive integer."
+        exit 1
+    fi
+    nodes=$1
+fi
+
+late_start=false
+
+if [ "${2:-}" = "true" ]; then
+    late_start=true
+fi
+
+for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    cmd="RUST_LOG=timeboost=error,sailfish=error,timeboost_networking=error \
     ./target/release/timeboost \
         --id $i \
-        --port $((8000 + i)) \
-        --rpc-port $((8800 + i)) \
-        --metrics-port $((9000 + i)) \
+        --port $((8000 + $i)) \
+        --rpc-port $((8800 + $i)) \
+        --metrics-port $((9000 + $i)) \
+        --committee-size $nodes \
         --base local \
         --until 100 \
-        --watchdog-timeout 300 \
-        --late-start-node-id 0 \
-        --late-start &
+        --watchdog-timeout 300"
+    if $late_start; then
+        cmd="$cmd --late-start --late-start-node-id 0"
+    fi
+
+    eval $cmd &
 done
 
 wait

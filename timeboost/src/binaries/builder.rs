@@ -32,6 +32,10 @@ struct Cli {
     #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
     base: CommitteeBase,
 
+    /// The base to use for the committee config.
+    #[clap(long, default_value_t = 5)]
+    committee_size: u16,
+
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
@@ -126,11 +130,15 @@ async fn main() -> Result<()> {
 
     // Make a new committee contract instance to read the committee config from.
     #[cfg(feature = "until")]
-    let skip_bootstrap_id = Some(cli.late_start_node_id);
+    let mut skip_bootstrap_id = Some(cli.late_start_node_id);
+    #[cfg(feature = "until")]
+    if !cli.late_start {
+        skip_bootstrap_id = None;
+    }
     #[cfg(not(feature = "until"))]
     let skip_bootstrap_id = None;
 
-    let committee = CommitteeContract::new(cli.base, skip_bootstrap_id);
+    let committee = CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id);
 
     let id = NodeId::from(cli.id as u64);
 
@@ -150,7 +158,7 @@ async fn main() -> Result<()> {
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {
             tracing::info!("Adding delay before starting node: id: {}", id);
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     }
 
