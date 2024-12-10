@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{

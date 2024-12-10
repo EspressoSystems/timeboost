@@ -4,7 +4,6 @@ use clap::Parser;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::{collections::HashSet, fs};
 use timeboost_core::logging;
 use timeboost_core::types::metrics::SailfishMetrics;
