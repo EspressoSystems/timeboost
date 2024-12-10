@@ -32,7 +32,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --committee-size $nodes \
         --base local \
         --until 100 \
-        --watchdog-timeout 30"
+        --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi

@@ -242,7 +242,9 @@ impl Consensus {
                         }
                     }
                     // We are in catchup, so add to the candidate_dag
-                    self.candidate_dag.add(v);
+                    if !self.candidate_dag.contains(&v) {
+                        self.candidate_dag.add(v);
+                    }
                     self.catchup = true;
                     return actions;
                 }
@@ -468,9 +470,7 @@ impl Consensus {
 
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
-            if self.id == 0.into() || self.id == 1.into() {
-                tracing::error!("advance: {}, r {}", self.id, round);
-            }
+            tracing::error!("advance: {}, r {}", self.id, round);
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);

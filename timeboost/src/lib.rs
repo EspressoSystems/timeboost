@@ -171,7 +171,13 @@ impl Timeboost {
             .fuse()
             .boxed();
 
+        // Start the block producer.
+        let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
+        tokio::spawn(producer.run());
+
         // Kickstart the network.
+        #[cfg(feature = "until")]
+        sleep(Duration::from_secs(2)).await;
         match coordinator.start().await {
             Ok(actions) => {
                 for a in actions {
@@ -182,10 +188,6 @@ impl Timeboost {
                 bail!("failed to start coordinator: {}", e);
             }
         }
-
-        // Start the block producer.
-        let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
-        tokio::spawn(producer.run());
 
         loop {
             tokio::select! { biased;

@@ -63,7 +63,10 @@ async fn run_until(
     until: u64,
     timeout: u64,
     shutdown_tx: watch::Sender<()>,
+    mut shutdown_rx: watch::Receiver<()>,
 ) -> Result<()> {
+    use std::time::{Duration, Instant};
+
     use futures::FutureExt;
     use tokio::time::sleep;
 
@@ -73,15 +76,23 @@ async fn run_until(
         .fuse()
         .boxed();
 
+    let mut last_committed = 0;
+    let mut last_committed_time = Instant::now();
+    
     // Deliberately run this on a timeout to avoid a runaway testing scenario.
     loop {
-        tokio::select! {
+        tokio::select! { biased;
             _ = &mut timer => {
                 tracing::error!("watchdog timed out, shutting down");
                 shutdown_tx.send(()).expect(
                     "the shutdown sender was dropped before the receiver could receive the token",
                 );
-                return anyhow::bail!("failed");
+                anyhow::bail!("Watchdog timeout");
+            }
+            result = shutdown_rx.changed() => {
+                tracing::error!("received shutdown");
+                result.expect("the shutdown sender was dropped before the receiver could receive the token");
+                anyhow::bail!("Shutdown received");
             }
             resp = reqwest::get(format!("http://localhost:{}/status/metrics", port)) => {
                 if let Ok(resp) = resp {
@@ -97,6 +108,18 @@ async fn run_until(
                             tracing::info!("committed_round: {}", committed_round);
                         }
 
+                        let now = Instant::now();
+                        if committed_round == last_committed && last_committed != 0 &&
+                                now.saturating_duration_since(last_committed_time) > Duration::from_secs(10) {
+                            shutdown_tx.send(()).expect(
+                                "the shutdown sender was dropped before the receiver could receive the token",
+                            );
+                            anyhow::bail!("Node stuck on round for more than 15 seconds")
+                        } else if committed_round > last_committed {
+                            last_committed = committed_round;
+                            last_committed_time = now;
+                        }
+
                         let timeouts = text
                             .lines()
                             .find(|line| line.starts_with("rounds_timed_out"))
@@ -107,9 +130,9 @@ async fn run_until(
                         if timeouts >= 10 {
                             tracing::error!("Too many timeouts, shutting down");
                             shutdown_tx.send(()).expect(
-                                    "the shutdown sender was dropped before the receiver could receive the token",
-                                );
-                                break;
+                                "the shutdown sender was dropped before the receiver could receive the token",
+                            );
+                            anyhow::bail!("Node stuck on round for more than 15 seconds")
                         }
 
                         if committed_round >= until {
@@ -158,12 +181,13 @@ async fn main() -> Result<()> {
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
 
     #[cfg(feature = "until")]
-    let t1 = {
+    let handle = {
         let h = tokio::spawn(run_until(
             cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
             shutdown_tx.clone(),
+            shutdown_rx.clone(),
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {
             tracing::error!("Adding delay before starting node: id: {}", id);
@@ -186,10 +210,7 @@ async fn main() -> Result<()> {
             shutdown_rx,
         ) => {
             #[cfg(feature = "until")]
-            {
-                tracing::info!("watchdog completed");
-                // Ok(())
-            }
+            tracing::info!("watchdog completed");
 
             #[cfg(not(feature = "until"))]
             anyhow::bail!("timeboost shutdown unexpectedly");
@@ -197,18 +218,18 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            // Ok(())
         }
     }
 
     #[cfg(feature = "until")]
     {
-        let t = t1.await;
-        return match t {
+        let res = handle.await;
+        return match res {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => Err(e),
-            Err(_) => Ok(()),
+            Err(e) => anyhow::bail!("Error: {}", e),
         };
     }
+    #[cfg(not(feature = "until"))]
     Ok(())
 }
