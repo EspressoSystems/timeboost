@@ -113,7 +113,7 @@ async fn run_until(
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
                             );
-                            anyhow::bail!("Node stuck on round for more than 15 seconds")
+                            anyhow::bail!("Node stuck on round for more than 30 seconds")
                         } else if committed_round > last_committed {
                             last_committed = committed_round;
                             last_committed_time = now;
@@ -127,11 +127,10 @@ async fn run_until(
                             .unwrap_or(0);
 
                         if timeouts >= 20 {
-                            tracing::error!("Too many timeouts, shutting down");
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
                             );
-                            anyhow::bail!("Node stuck on round for more than 15 seconds")
+                            anyhow::bail!("Node timed out too many rounds")
                         }
 
                         if committed_round >= until {
