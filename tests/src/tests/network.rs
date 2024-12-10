@@ -96,18 +96,14 @@ impl TaskHandleResult {
 
 pub trait TestableNetwork {
     type Node: Send;
-    type Network: Comm + Send;
-    type Testnet: Comm;
+    type Network: Comm + Send + 'static;
     fn new(
         group: Group,
         outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self;
-    async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>);
-    async fn start(
-        &mut self,
-        nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<TaskHandleResult>;
+    async fn init(&mut self) -> Vec<Self::Node>;
+    async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult>;
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
@@ -116,7 +112,7 @@ pub trait TestableNetwork {
 
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
-        coordinator: &mut Coordinator<Self::Testnet>,
+        coordinator: &mut Coordinator<Self::Network>,
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
         mut shutdown_rx: Receiver<()>,

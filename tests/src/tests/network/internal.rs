@@ -1,16 +1,22 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use crate::{tests::network::TestOutcome, Group};
 
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
-use sailfish::coordinator::Coordinator;
-use timeboost_core::types::{
-    message::Message,
-    metrics::SailfishMetrics,
-    test::{
-        message_interceptor::NetworkMessageInterceptor,
-        net::{Conn, Star},
-        testnet::{MsgQueues, TestNet},
+use sailfish::{
+    coordinator::Coordinator,
+    sailfish::{Sailfish, SailfishInitializerBuilder},
+};
+use timeboost_core::{
+    traits::has_initializer::HasInitializer,
+    types::{
+        message::Message,
+        metrics::SailfishMetrics,
+        test::{
+            message_interceptor::NetworkMessageInterceptor,
+            net::{Conn, Star},
+            testnet::{MsgQueues, TestNet},
+        },
     },
 };
 use tokio::{
@@ -31,12 +37,12 @@ pub struct MemoryNetworkTest {
     network_shutdown_rx: Option<Receiver<()>>,
     outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
+    star_net: Star<Message>,
 }
 
 impl TestableNetwork for MemoryNetworkTest {
     type Node = (Coordinator<TestNet<Conn<Message>>>, MsgQueues);
-    type Network = Star<Message>;
-    type Testnet = TestNet<Conn<Message>>;
+    type Network = TestNet<Conn<Message>>;
 
     fn new(
         group: Group,
@@ -44,7 +50,7 @@ impl TestableNetwork for MemoryNetworkTest {
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
-            (0..group.fish.len()).map(|_| watch::channel(())).unzip();
+            (0..group.size).map(|_| watch::channel(())).unzip();
         let (network_shutdown_tx, network_shutdown_rx) = oneshot::channel();
         Self {
             group,
@@ -54,46 +60,53 @@ impl TestableNetwork for MemoryNetworkTest {
             network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
             interceptor,
+            star_net: Star::new(),
         }
     }
 
-    async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
+    async fn init(&mut self) -> Vec<Self::Node> {
         // This is intentionally *not* a member of the struct due to `run` consuming
         // the instance.
-        let mut net = Star::new();
         let mut coordinators = Vec::new();
-        for node in std::mem::take(&mut self.group.fish).into_iter() {
-            let id: u64 = node.id().into();
+        for i in 0..self.group.size {
             // Join each node to the network
-            let test_net = TestNet::new(net.join(*node.public_key()), id, self.interceptor.clone());
+            let test_net = TestNet::new(
+                self.star_net.join(*self.group.keypairs[i].public_key()),
+                i as u64,
+                self.interceptor.clone(),
+            );
             let messages = test_net.messages();
 
-            // Initialize the coordinator
-            let co = node.init(
-                test_net,
-                (*self.group.staked_nodes).clone(),
-                Arc::new(SailfishMetrics::default()),
-            );
+            let initializer = SailfishInitializerBuilder::default()
+                .id((i as u64).into())
+                .keypair(self.group.keypairs[i].clone())
+                .bind_address(self.group.addrs[i].clone())
+                .network(test_net)
+                .committee(self.group.committee.clone())
+                .peer_id(self.group.peer_ids[i])
+                .metrics(SailfishMetrics::default())
+                .build()
+                .unwrap();
+            let n = Sailfish::initialize(initializer).await.unwrap();
 
-            tracing::debug!("Started coordinator {}", id);
+            // Initialize the coordinator
+            let co = n.into_coordinator();
+
+            tracing::debug!("Started coordinator {}", i);
             let c = (co, messages);
             coordinators.push(c);
         }
 
-        (coordinators, vec![net])
+        coordinators
     }
 
     /// Return the result of the task handle
     /// This contains node id as well as the outcome of the test
     /// Validation logic in test will then collect this information and assert
-    async fn start(
-        &mut self,
-        nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<TaskHandleResult> {
+    async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
-        let (coordinators, mut nets) = nodes_and_networks;
-        for (mut coordinator, msgs) in coordinators.into_iter() {
+        for (mut coordinator, msgs) in nodes.into_iter() {
             let id: u64 = coordinator.id().into();
             let shutdown_rx = self
                 .shutdown_rxs
@@ -107,8 +120,10 @@ impl TestableNetwork for MemoryNetworkTest {
             });
         }
 
-        let net = nets.pop().expect("memory network to be present");
         let shutdown_rx = std::mem::take(&mut self.network_shutdown_rx);
+
+        // We don't need to own the network anymore.
+        let net = std::mem::take(&mut self.star_net);
         tokio::spawn(async move { net.run(shutdown_rx.unwrap()).await });
 
         co_handles

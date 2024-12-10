@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use super::node_instrument::TestNodeInstrument;
 use bitvec::bitvec;
@@ -37,14 +37,13 @@ impl KeyManager {
                 .map(|kpair| *kpair.public_key())
                 .collect(),
         );
-        let metrics = Arc::new(SailfishMetrics::default());
         self.keys
             .iter()
             .map(|(id, kpair)| {
                 let node_id = NodeId::from(*id);
+                let metrics = SailfishMetrics::default();
                 TestNodeInstrument::new(
-                    Consensus::new(node_id, kpair.clone(), committee.clone())
-                        .with_metrics(metrics.clone()),
+                    Consensus::new(node_id, kpair.clone(), committee.clone()).with_metrics(metrics),
                 )
             })
             .collect()
