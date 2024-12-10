@@ -12,8 +12,8 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
 };
-use timeboost_networking::network::client::derive_libp2p_keypair;
 use timeboost_networking::network::client::Libp2pInitializer;
+use timeboost_networking::network::client::{derive_libp2p_keypair, derive_libp2p_peer_id};
 use timeboost_utils::PeerConfig;
 
 #[derive(Builder)]
@@ -157,6 +157,8 @@ pub async fn sailfish_coordinator(
     net_inner.wait_for_ready().await;
     let committee = StaticCommittee::from(&*staked_nodes);
     let rbc = Rbc::new(net_inner, keypair.clone(), committee.clone());
+    let peer_id =
+        derive_libp2p_peer_id::<PublicKey>(keypair.private_key()).expect("peer id to be derived");
 
     let initializer = SailfishInitializerBuilder::default()
         .id(id)
@@ -165,6 +167,7 @@ pub async fn sailfish_coordinator(
         .network(rbc)
         .committee(committee.clone())
         .metrics(metrics)
+        .peer_id(peer_id)
         .build()
         .expect("sailfish initializer to be built");
 
