@@ -13,6 +13,7 @@ use timeboost_core::types::{
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
     time::Timestamp,
+    transaction::Transaction,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::{
@@ -29,7 +30,7 @@ use crate::{
 use super::phase::{
     block_builder::BlockBuilder,
     decryption::DecryptionPhase,
-    inclusion::{CandidateTransaction, InclusionList, InclusionPhase},
+    inclusion::{InclusionList, InclusionPhase},
     ordering::OrderingPhase,
 };
 
@@ -100,7 +101,7 @@ where
     prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<SailfishBlock>>>,
 
     /// The previous successful round's bundles.
-    previous_bundles: Vec<CandidateTransaction>,
+    previous_bundles: Vec<Transaction>,
 }
 
 impl<I, D, O, B> Sequencer<I, D, O, B>

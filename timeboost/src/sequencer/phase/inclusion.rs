@@ -1,10 +1,6 @@
-use std::{
-    collections::BTreeSet,
-    hash::{Hash, Hasher},
-};
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
-use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
@@ -17,89 +13,30 @@ use crate::sequencer::protocol::RoundState;
 
 pub mod noop;
 
-/// NOTE: We might need to derive a timestamp for the CandidateTransaction from the source
-/// block instead of the transaction itself.
-#[derive(Debug, Clone)]
-pub struct CandidateTransaction {
-    pub txn: Transaction,
-    pub delayed_inbox_index: u64,
-    pub src: Commitment<SailfishBlock>,
-}
-
-impl From<CandidateTransaction> for Transaction {
-    fn from(candidate_txn: CandidateTransaction) -> Self {
-        candidate_txn.txn
-    }
-}
-
-impl CandidateTransaction {
-    pub fn timestamp(&self) -> Timestamp {
-        self.txn.timestamp()
-    }
-
-    pub fn epoch(&self) -> Epoch {
-        self.timestamp().epoch()
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.txn.is_valid()
-    }
-
-    pub fn delayed_inbox_index(&self) -> u64 {
-        self.delayed_inbox_index
-    }
-}
-
-/// Disambiguate a transaction by its transaction data and the source block commitment.
-impl PartialEq for CandidateTransaction {
-    fn eq(&self, other: &Self) -> bool {
-        self.txn == other.txn && self.src == other.src
-    }
-}
-
-impl Eq for CandidateTransaction {}
-
-/// We only care to order a transaction by its transaction data.
-impl PartialOrd for CandidateTransaction {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.txn.cmp(&other.txn))
-    }
-}
-
-/// We only care to order a transaction by its transaction data.
-impl Ord for CandidateTransaction {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.txn.cmp(&other.txn)
-    }
-}
-
-/// This is implemented due to the clippy "derived_hash_with_manual_eq" lint.
-impl Hash for CandidateTransaction {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.txn.hash(state);
-        self.delayed_inbox_index.hash(state);
-    }
-}
-
 /// A member's candidate list that serves as input to a consensus round R.
 ///
 /// Taken directly from the spec:
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L111-L121
 pub struct CandidateList {
-    /// The timestamp of the node at the start of round R, which defines start(m,R).
-    pub(crate) timestamp: Timestamp,
+    /// The median timestamp of the candidate list.
+    median_timestamp: Timestamp,
+
+    /// The median delayed inbox index of the candidate list.
+    median_delayed_inbox_index: u64,
 
     /// The node's current delayed inbox index which defines index(m,R). This is distinct from
     /// the median fields which are computed from this list as the bundles also have potentially
     /// distinct delayed inbox indices.
+    #[allow(unused)]
     pub(crate) delayed_inbox_index: u64,
 
     /// The set of transactions in the candidate list, including:
     /// - All priority bundle transactions from the priority epoch e=epoch(start(m,R))
     /// - All non-priority transactions that arrived at least 250ms ago
-    pub(crate) transactions: BTreeSet<CandidateTransaction>,
+    pub(crate) transactions: BTreeSet<Transaction>,
 
     /// The recovery state of the node.
+    #[allow(unused)]
     pub(crate) recovery_state: RoundState,
 
     /// The epoch of the candidate list. This one is not in the spec, but is
@@ -113,30 +50,36 @@ impl CandidateList {
         mempool_snapshot: Vec<SailfishBlock>,
         recovery_state: RoundState,
     ) -> Self {
-        let transactions: BTreeSet<CandidateTransaction> = mempool_snapshot
+        let threshold = (mempool_snapshot.len() / 3) + 1;
+
+        let median_timestamp = Self::median_timestamp(&mempool_snapshot, &recovery_state);
+        let median_delayed_inbox_index =
+            Self::median_delayed_inbox_index(&mempool_snapshot, &recovery_state);
+
+        // Only take the transactions that exist in at least threshold blocks in the mempool snapshot.
+        let mut counts = HashMap::new();
+        for block in mempool_snapshot {
+            for txn in block.transactions() {
+                *counts.entry(txn).or_insert(0) += 1;
+            }
+        }
+
+        // Transactions are a BTree set so the priority bundles are always at the front.
+        let transactions = counts
             .into_iter()
-            .flat_map(|block| {
-                let src = block.commit();
-                let delayed_inbox_index = block.delayed_inbox_index();
-                block
-                    .transactions()
-                    .into_iter()
-                    .map(|t| CandidateTransaction {
-                        txn: t,
-                        src,
-                        delayed_inbox_index,
-                    })
-                    .collect::<Vec<_>>()
-            })
+            // Priority bundles are always taken no matter what.
+            .filter(|(txn, count)| txn.is_priority() || *count >= threshold)
+            // Unpair the pairs
+            .map(|(txn, _)| txn)
             .collect();
 
-        let timestamp = Timestamp::now();
         Self {
-            timestamp,
+            median_timestamp,
+            median_delayed_inbox_index,
             delayed_inbox_index: last_successful_delayed_inbox_index,
             transactions,
             recovery_state,
-            epoch: timestamp.epoch(),
+            epoch: median_timestamp.epoch(),
         }
     }
 
@@ -144,7 +87,7 @@ impl CandidateList {
         self.epoch
     }
 
-    fn calculate_median<T, F>(&self, values: Vec<T>, default: T, get_value: F) -> T
+    fn calculate_median<T, F>(values: Vec<T>, default: T, get_value: F) -> T
     where
         T: Ord + Copy + From<u64>,
         F: Fn(&T) -> u64,
@@ -167,10 +110,13 @@ impl CandidateList {
     /// Median timestamp is either the median of the timestamps of the candidate lists
     /// or, if there's an event number of transactions, then it's the floor of the mean
     /// of the two central items in the sorted list of timestamps.
-    pub fn median_timestamp(&self) -> Timestamp {
-        self.calculate_median(
-            self.transactions.iter().map(|t| t.timestamp()).collect(),
-            self.recovery_state.consensus_timestamp,
+    fn median_timestamp(
+        mempool_snapshot: &[SailfishBlock],
+        recovery_state: &RoundState,
+    ) -> Timestamp {
+        Self::calculate_median(
+            mempool_snapshot.iter().map(|b| b.timestamp()).collect(),
+            recovery_state.consensus_timestamp,
             |t| **t,
         )
     }
@@ -178,31 +124,34 @@ impl CandidateList {
     /// The median delayed inbox index is the median over the delayed inbox indices of the
     /// candidate lists. If there's an even number of transactions, then it's the floor of the mean
     /// of the two central items in the sorted list of delayed inbox indices.
-    pub fn median_delayed_inbox_index(&self) -> u64 {
-        self.calculate_median(
-            self.transactions
+    fn median_delayed_inbox_index(
+        mempool_snapshot: &[SailfishBlock],
+        recovery_state: &RoundState,
+    ) -> u64 {
+        Self::calculate_median(
+            mempool_snapshot
                 .iter()
-                .map(|t| t.delayed_inbox_index())
+                .map(|b| b.delayed_inbox_index())
                 .collect(),
-            self.delayed_inbox_index,
+            recovery_state.delayed_inbox_index,
             |t| *t,
         )
     }
 
     /// The priority bundles in the candidate list. This is a method which removes the bundles from
     /// the candidate list which are priority bundles and returns them.
-    pub fn priority_txns(&mut self) -> Vec<CandidateTransaction> {
+    pub fn priority_txns(&mut self) -> Vec<Transaction> {
         self.transactions
             .iter()
-            .filter(|t| t.txn.is_priority())
+            .filter(|t| t.is_priority())
             .cloned()
             .collect()
     }
 
-    pub fn non_priority_txns(&mut self) -> Vec<CandidateTransaction> {
+    pub fn non_priority_txns(&mut self) -> Vec<Transaction> {
         self.transactions
             .iter()
-            .filter(|t| !t.txn.is_priority())
+            .filter(|t| !t.is_priority())
             .cloned()
             .collect()
     }
@@ -285,6 +234,6 @@ pub trait InclusionPhase {
         round_number: RoundNumber,
         candidate_list: CandidateList,
         last_delayed_inbox_index: u64,
-        previous_bundles: &[CandidateTransaction],
+        previous_bundles: &[Transaction],
     ) -> Result<InclusionList>;
 }
