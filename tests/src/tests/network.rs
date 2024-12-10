@@ -106,7 +106,6 @@ impl TaskHandleResult {
 pub trait TestableNetwork {
     type Node: Send;
     type Network: Comm + Send + 'static;
-    // type Testnet: Comm;
     fn new(
         group: Group,
         outcomes: HashMap<usize, Vec<TestCondition>>,

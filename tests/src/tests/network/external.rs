@@ -102,7 +102,6 @@ impl TestableNetwork for Libp2pNetworkTest {
             let mut conditions = self.outcomes.get(&id).unwrap().clone();
 
             handles.spawn(async move {
-                // let net = TestNet::new(network, interceptor);
                 let msgs = node.network().messages().clone();
                 let coordinator = &mut node.into_coordinator();
                 Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await
