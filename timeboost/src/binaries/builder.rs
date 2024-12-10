@@ -78,7 +78,7 @@ async fn run_until(
 
     let mut last_committed = 0;
     let mut last_committed_time = Instant::now();
-    
+
     // Deliberately run this on a timeout to avoid a runaway testing scenario.
     loop {
         tokio::select! { biased;
@@ -109,8 +109,7 @@ async fn run_until(
                         }
 
                         let now = Instant::now();
-                        if committed_round == last_committed && last_committed != 0 &&
-                                now.saturating_duration_since(last_committed_time) > Duration::from_secs(10) {
+                        if committed_round == last_committed && now.saturating_duration_since(last_committed_time) > Duration::from_secs(30) {
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
                             );
@@ -127,7 +126,7 @@ async fn run_until(
                             .and_then(|num| num.parse::<u64>().ok())
                             .unwrap_or(0);
 
-                        if timeouts >= 10 {
+                        if timeouts >= 20 {
                             tracing::error!("Too many timeouts, shutting down");
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
