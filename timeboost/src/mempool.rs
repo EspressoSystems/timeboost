@@ -1,6 +1,6 @@
+use parking_lot::RwLock;
 use std::collections::VecDeque;
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use tokio::sync::RwLock;
 
 /// The mempool limit in bytes is 500mb.
 pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
@@ -19,16 +19,15 @@ impl Mempool {
         }
     }
 
-    pub async fn insert(&self, block: SailfishBlock) {
-        self.bundles.write().await.push_back(block);
+    pub fn insert(&self, block: SailfishBlock) {
+        self.bundles.write().push_back(block);
     }
 
     /// Drains blocks from the mempool until the total size reaches `limit_bytes`.
-    pub async fn drain_to_limit(&self, limit_bytes: usize) -> Vec<SailfishBlock> {
+    pub fn drain_to_limit(&self, limit_bytes: usize) -> Vec<SailfishBlock> {
         let mut total_size = 0;
         self.bundles
             .write()
-            .await
             .drain(..)
             .take_while(|block| {
                 let should_take = total_size + block.size_bytes() <= limit_bytes;

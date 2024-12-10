@@ -92,14 +92,18 @@ impl CandidateList {
         self.epoch
     }
 
-    fn calculate_median<T, F>(values: Vec<T>, default: T, get_value: F) -> T
+    fn calculate_median<T, F, I>(values: I, default: T, get_value: F) -> T
     where
         T: Ord + Copy + From<u64>,
-        F: Fn(&T) -> u64,
+        F: Fn(T) -> u64,
+        I: Iterator<Item = T>,
     {
-        let mut sorted_values = values.iter().map(get_value).collect::<Vec<_>>();
+        let mut sorted_values = values.map(get_value).collect::<Vec<_>>();
+        if sorted_values.is_empty() {
+            return default;
+        }
         sorted_values.sort_unstable();
-        let median = if values.len() % 2 == 0 {
+        let median = if sorted_values.len() % 2 == 0 {
             (sorted_values[sorted_values.len() / 2] + sorted_values[sorted_values.len() / 2 + 1])
                 / 2
         } else {
@@ -120,9 +124,9 @@ impl CandidateList {
         recovery_state: &RoundState,
     ) -> Timestamp {
         Self::calculate_median(
-            mempool_snapshot.iter().map(|b| b.timestamp()).collect(),
+            mempool_snapshot.iter().map(|b| b.timestamp()),
             recovery_state.consensus_timestamp,
-            |t| **t,
+            |t| *t,
         )
     }
 
@@ -134,12 +138,9 @@ impl CandidateList {
         recovery_state: &RoundState,
     ) -> u64 {
         Self::calculate_median(
-            mempool_snapshot
-                .iter()
-                .map(|b| b.delayed_inbox_index())
-                .collect(),
+            mempool_snapshot.iter().map(|b| b.delayed_inbox_index()),
             recovery_state.delayed_inbox_index,
-            |t| *t,
+            |t| t,
         )
     }
 

@@ -153,7 +153,7 @@ where
                         .boxed();
 
                     // Drain the snapshot
-                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES).await;
+                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,
