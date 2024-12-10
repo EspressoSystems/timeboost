@@ -19,7 +19,7 @@ late_start=false
 if [ "${2:-}" = "true" ]; then
     late_start=true
 fi
-
+pids=()
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
@@ -32,12 +32,24 @@ for i in $(seq 0 $((nodes - 1))); do
         --committee-size $nodes \
         --base local \
         --until 100 \
-        --watchdog-timeout 300"
+        --watchdog-timeout 30"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
 
     eval $cmd &
+    pids+=($!)
 done
 
-wait
+for pid in "${pids[@]}"; do
+    wait $pid
+    exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        echo "Process $pid completed successfully with exit code $exit_code."
+    else
+        echo "Process $pid failed with exit code $exit_code."
+    fi
+done
+
+echo "All processes have finished."

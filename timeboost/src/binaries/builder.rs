@@ -58,7 +58,12 @@ struct Cli {
 }
 
 #[cfg(feature = "until")]
-async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Sender<()>) {
+async fn run_until(
+    port: u16,
+    until: u64,
+    timeout: u64,
+    shutdown_tx: watch::Sender<()>,
+) -> Result<()> {
     use futures::FutureExt;
     use tokio::time::sleep;
 
@@ -76,7 +81,7 @@ async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Send
                 shutdown_tx.send(()).expect(
                     "the shutdown sender was dropped before the receiver could receive the token",
                 );
-                return;
+                return anyhow::bail!("failed");
             }
             resp = reqwest::get(format!("http://localhost:{}/status/metrics", port)) => {
                 if let Ok(resp) = resp {
@@ -104,7 +109,7 @@ async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Send
                             shutdown_tx.send(()).expect(
                                     "the shutdown sender was dropped before the receiver could receive the token",
                                 );
-                            return;
+                                break;
                         }
 
                         if committed_round >= until {
@@ -112,13 +117,14 @@ async fn run_until(port: u16, until: u64, timeout: u64, shutdown_tx: watch::Send
                             shutdown_tx.send(()).expect(
                                     "the shutdown sender was dropped before the receiver could receive the token",
                                 );
-                            return;
+                            break;
                         }
                     }
                 }
             }
         }
     }
+    Ok(())
 }
 
 #[tokio::main]
@@ -130,11 +136,14 @@ async fn main() -> Result<()> {
 
     // Make a new committee contract instance to read the committee config from.
     #[cfg(feature = "until")]
-    let mut skip_bootstrap_id = Some(cli.late_start_node_id);
-    #[cfg(feature = "until")]
-    if !cli.late_start {
-        skip_bootstrap_id = None;
-    }
+    let skip_bootstrap_id = {
+        let mut res = None;
+        if cli.late_start {
+            res = Some(cli.late_start_node_id);
+        }
+        res
+    };
+
     #[cfg(not(feature = "until"))]
     let skip_bootstrap_id = None;
 
@@ -149,8 +158,8 @@ async fn main() -> Result<()> {
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
 
     #[cfg(feature = "until")]
-    {
-        tokio::spawn(run_until(
+    let t1 = {
+        let h = tokio::spawn(run_until(
             cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
@@ -161,7 +170,8 @@ async fn main() -> Result<()> {
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
         tracing::error!("Starting node id: {}", id);
-    }
+        h
+    };
 
     tokio::select! {
         _ = run_timeboost(
@@ -178,7 +188,7 @@ async fn main() -> Result<()> {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");
-                Ok(())
+                // Ok(())
             }
 
             #[cfg(not(feature = "until"))]
@@ -187,7 +197,18 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            Ok(())
+            // Ok(())
         }
     }
+
+    #[cfg(feature = "until")]
+    {
+        let t = t1.await;
+        return match t {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Ok(()),
+        };
+    }
+    Ok(())
 }
