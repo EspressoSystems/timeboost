@@ -1,5 +1,4 @@
-use committable::{Commitment, Committable};
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use tokio::sync::RwLock;
 

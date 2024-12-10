@@ -10,7 +10,6 @@ use committable::{Commitment, Committable};
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::types::{
     block::timeboost::TimeboostBlock,
-    committee::StaticCommittee,
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
     time::Timestamp,
