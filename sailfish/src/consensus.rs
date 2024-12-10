@@ -109,7 +109,7 @@ pub struct Consensus {
     leader_stack: Vec<Vertex>,
 
     /// The consensus metrics for this node.
-    metrics: Arc<SailfishMetrics>,
+    metrics: SailfishMetrics,
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
@@ -136,7 +136,7 @@ impl Consensus {
         }
     }
 
-    pub fn with_metrics(mut self, m: Arc<SailfishMetrics>) -> Self {
+    pub fn with_metrics(mut self, m: SailfishMetrics) -> Self {
         self.metrics = m;
         self
     }
