@@ -98,6 +98,7 @@ impl Timeboost {
         prom: Arc<PrometheusMetrics>,
         coordinator: &mut Coordinator<Rbc>,
         tb_metrics: TimeboostMetrics,
+        committee_size: usize,
     ) -> Result<()> {
         let app_tx = self.app_tx.clone();
         let rpc_handle = tokio::spawn(async move {
@@ -136,8 +137,11 @@ impl Timeboost {
         );
 
         // Start the sequencer.
-        let sequencer_handle =
-            tokio::spawn(sequencer.go(self.shutdown_rx.clone(), self.app_tx.clone()));
+        let sequencer_handle = tokio::spawn(sequencer.go(
+            self.shutdown_rx.clone(),
+            self.app_tx.clone(),
+            committee_size,
+        ));
 
         // Start the block producer.
         let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
@@ -229,6 +233,7 @@ pub async fn run_timeboost(
 ) -> Result<()> {
     info!("Starting timeboost");
 
+    let committee_size = staked_nodes.len();
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = Arc::new(SailfishMetrics::new(prom.as_ref()));
     let tb_metrics = TimeboostMetrics::new(prom.as_ref());
@@ -260,5 +265,7 @@ pub async fn run_timeboost(
     );
 
     info!("Timeboost is running.");
-    timeboost.go(prom, coordinator, tb_metrics).await
+    timeboost
+        .go(prom, coordinator, tb_metrics, committee_size)
+        .await
 }

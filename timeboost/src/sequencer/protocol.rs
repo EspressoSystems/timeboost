@@ -10,6 +10,7 @@ use committable::{Commitment, Committable};
 use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::types::{
     block::timeboost::TimeboostBlock,
+    committee::StaticCommittee,
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
     time::Timestamp,
@@ -138,6 +139,7 @@ where
         mut self,
         mut shutdown_rx: watch::Receiver<()>,
         app_tx: Sender<TimeboostStatusEvent>,
+        committee_size: usize,
     ) -> Result<()> {
         loop {
             tokio::select! {
@@ -159,6 +161,7 @@ where
                         mempool_snapshot,
                         self.round_state.clone(),
                         &self.prior_tx_hashes.values().flatten().cloned().collect(),
+                        committee_size,
                     );
 
                     // This is required for the Inclusion phase. We *must* know which of the current bundle

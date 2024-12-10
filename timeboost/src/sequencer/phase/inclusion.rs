@@ -51,8 +51,9 @@ impl CandidateList {
         mempool_snapshot: Vec<SailfishBlock>,
         recovery_state: RoundState,
         prior_tx_hashes: &HashSet<Commitment<Transaction>>,
+        committee_size: usize,
     ) -> Self {
-        let threshold = (mempool_snapshot.len() / 3) + 1;
+        let threshold = (committee_size / 3) + 1;
 
         let median_timestamp = Self::median_timestamp(&mempool_snapshot, &recovery_state);
         let median_delayed_inbox_index =
