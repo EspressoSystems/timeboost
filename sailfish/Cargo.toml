@@ -15,6 +15,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
+derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }

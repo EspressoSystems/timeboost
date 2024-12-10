@@ -46,8 +46,12 @@ use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey}
 use timeboost_utils::{
     boxed_sync,
     traits::metrics::{Counter, Gauge, Metrics, NoMetrics},
-    types::{config::NetworkConfig, constants::LOOK_AHEAD, round_number::RoundNumber},
-    BoxSyncFuture,
+    types::{
+        config::{Libp2pConfig, NetworkConfig},
+        constants::LOOK_AHEAD,
+        round_number::RoundNumber,
+    },
+    BoxSyncFuture, PeerConfig,
 };
 use tokio::sync::mpsc::{
     channel, error::TrySendError, unbounded_channel, Receiver as BoundedReceiver,
@@ -693,6 +697,92 @@ impl<K: SignatureKey + 'static> Libp2pNetwork<K> {
         pk: K,
     ) -> Result<(), TrySendError<Option<(RoundNumber, K)>>> {
         self.node_lookup_send.try_send(Some((view_number, pk)))
+    }
+}
+
+/// The initializer for the Libp2p network.
+pub struct Libp2pInitializer<K: SignatureKey + 'static> {
+    /// The bootstrap nodes to connect to.
+    pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+
+    /// The staked nodes to connect to.
+    pub staked_nodes: Vec<PeerConfig<K>>,
+
+    /// The network configuration.
+    pub config: NetworkNodeConfig<K>,
+
+    /// The libp2p keypair
+    pub keypair: Keypair,
+}
+
+impl<K: SignatureKey + 'static> Libp2pInitializer<K> {
+    pub fn new(
+        private_key: &K::PrivateKey,
+        staked_nodes: Vec<PeerConfig<K>>,
+        bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+        bind_address: Multiaddr,
+    ) -> anyhow::Result<Self> {
+        let network_size =
+            NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
+
+        let libp2p_keypair = derive_libp2p_keypair::<K>(private_key).expect("Keypair to derive");
+
+        let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
+            .expect("ceil(2n/3) with n > 0 never gives 0");
+
+        let config = NetworkNodeConfigBuilder::default()
+            .keypair(libp2p_keypair.clone())
+            .replication_factor(replication_factor)
+            .bind_address(Some(bind_address.clone()))
+            .to_connect_addrs(bootstrap_nodes.clone())
+            .republication_interval(None)
+            .build()
+            .expect("Network config to be built");
+
+        let bootstrap_nodes = bootstrap_nodes
+            .into_iter()
+            .collect::<Vec<(PeerId, Multiaddr)>>();
+
+        Ok(Self {
+            bootstrap_nodes,
+            staked_nodes,
+            config,
+            keypair: libp2p_keypair,
+        })
+    }
+
+    pub async fn into_network(
+        self,
+        id: usize,
+        public_key: K,
+        private_key: K::PrivateKey,
+    ) -> anyhow::Result<Libp2pNetwork<K>> {
+        let mut network_config = NetworkConfig::default();
+        network_config.config.known_nodes_with_stake = self.staked_nodes.to_vec();
+        network_config.libp2p_config = Some(Libp2pConfig {
+            bootstrap_nodes: self.bootstrap_nodes.clone(),
+        });
+
+        // We don't have any DA nodes in Sailfish.
+        network_config.config.known_da_nodes = vec![];
+
+        let record_value = RecordValue::new_signed(
+            &RecordKey::new(Namespace::Lookup, public_key.to_bytes()),
+            self.keypair.public().to_peer_id().to_bytes(),
+            &private_key,
+        )?;
+
+        // Create the Libp2p network
+        Libp2pNetwork::new(
+            Libp2pMetricsValue::default(),
+            self.config,
+            public_key,
+            record_value,
+            Arc::new(RwLock::new(self.bootstrap_nodes)),
+            id,
+        )
+        .await
+        .map_err(anyhow::Error::from)
     }
 }
 

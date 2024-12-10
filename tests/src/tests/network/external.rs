@@ -1,12 +1,13 @@
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::collections::HashMap;
 
 use crate::Group;
-use portpicker::pick_unused_port;
+use sailfish::sailfish::SailfishInitializerBuilder;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
+use timeboost_core::traits::has_initializer::HasInitializer;
+use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_core::types::{committee::StaticCommittee, metrics::SailfishMetrics};
-use timeboost_networking::network::{client::derive_libp2p_multiaddr, NetworkNodeConfigBuilder};
+use timeboost_networking::network::client::Libp2pInitializer;
 use tokio::{sync::watch, task::JoinSet};
 
 use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
@@ -22,9 +23,8 @@ pub struct Libp2pNetworkTest {
 }
 
 impl TestableNetwork for Libp2pNetworkTest {
-    type Node = Sailfish;
-    type Network = Rbc;
-    type Testnet = TestNet<Self::Network>;
+    type Node = Sailfish<Self::Network>;
+    type Network = TestNet<Rbc>;
 
     fn new(
         group: Group,
@@ -32,7 +32,7 @@ impl TestableNetwork for Libp2pNetworkTest {
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
-            (0..group.fish.len()).map(|_| watch::channel(())).unzip();
+            (0..group.size).map(|_| watch::channel(())).unzip();
 
         Self {
             group,
@@ -43,35 +43,49 @@ impl TestableNetwork for Libp2pNetworkTest {
         }
     }
 
-    async fn init(&mut self) -> (Vec<Self::Node>, Vec<Self::Network>) {
-        let replication_factor = NonZeroUsize::new((2 * self.group.fish.len()).div_ceil(3))
-            .expect("ceil(2n/3) with n > 0 never gives 0");
+    async fn init(&mut self) -> Vec<Self::Node> {
         let mut handles = JoinSet::new();
-        for (i, node) in std::mem::take(&mut self.group.fish).into_iter().enumerate() {
-            let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let bootstrap_nodes = Arc::clone(&self.group.bootstrap_nodes);
-            let port = pick_unused_port().expect("Failed to pick an unused port");
-            let libp2p_keypair = node
-                .derive_libp2p_keypair()
-                .expect("Failed to derive libp2p keypair");
-            let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{port}"))
-                .expect("Failed to derive libp2p multiaddr");
-            let config = NetworkNodeConfigBuilder::default()
-                .keypair(libp2p_keypair)
-                .replication_factor(replication_factor)
-                .bind_address(Some(bind_address))
-                .to_connect_addrs(bootstrap_nodes.read().await.clone().into_iter().collect())
-                .republication_interval(None)
-                .build()
-                .expect("Failed to build network node config");
-            let committee = StaticCommittee::from(&**self.group.staked_nodes);
-            let keypair = self.group.keypairs[i].clone();
+        let staked = self.group.staked_nodes.clone();
+        let bootstrap_nodes = self.group.bootstrap_nodes.clone();
+        let committee = self.group.committee.clone();
+        for i in 0..self.group.size {
+            let kpr = self.group.keypairs[i].clone();
+            let addr = self.group.addrs[i].clone();
+            let peer_id = self.group.peer_ids[i];
+            let private_key = kpr.private_key().clone();
+
+            let net_fut = Libp2pInitializer::new(
+                kpr.private_key(),
+                staked.clone(),
+                bootstrap_nodes.clone().into_iter().collect(),
+                addr.clone(),
+            )
+            .expect("failed to make libp2p initializer")
+            .into_network(i, *kpr.public_key(), private_key);
+
+            let interceptor = self.interceptor.clone();
+            let committee_clone = committee.clone();
             handles.spawn(async move {
-                let net = node
-                    .setup_libp2p(config, bootstrap_nodes, &staked_nodes)
-                    .await
-                    .expect("Failed to start network");
-                (node, Rbc::new(net, keypair, committee))
+                let net_inner = net_fut.await.expect("failed to make libp2p network");
+                tracing::debug!(%i, "network created, waiting for ready");
+                net_inner.wait_for_ready().await;
+                let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
+                tracing::debug!(%i, "created rbc");
+                let test_net = TestNet::new(net, interceptor);
+                tracing::debug!(%i, "created testnet");
+
+                let initializer = SailfishInitializerBuilder::default()
+                    .id((i as u64).into())
+                    .keypair(kpr)
+                    .bind_address(addr)
+                    .network(test_net)
+                    .committee(committee_clone)
+                    .peer_id(peer_id)
+                    .metrics(SailfishMetrics::default())
+                    .build()
+                    .unwrap();
+
+                Sailfish::initialize(initializer).await.unwrap()
             });
         }
         handles.join_all().await.into_iter().collect()
@@ -80,34 +94,16 @@ impl TestableNetwork for Libp2pNetworkTest {
     /// Return the result of the task handle
     /// This contains node id as well as the outcome of the test
     /// Validation logic in test will then collect this information and assert
-    async fn start(
-        &mut self,
-        nodes_and_networks: (Vec<Self::Node>, Vec<Self::Network>),
-    ) -> JoinSet<TaskHandleResult> {
+    async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult> {
         let mut handles = JoinSet::new();
-        let (nodes, networks) = nodes_and_networks;
 
-        assert_eq!(
-            nodes.len(),
-            networks.len(),
-            "Nodes and networks vectors must be the same length"
-        );
-
-        for (id, (node, network)) in nodes.into_iter().zip(networks).enumerate() {
-            let staked_nodes = Arc::clone(&self.group.staked_nodes);
-            let interceptor = self.interceptor.clone();
+        for (id, node) in nodes.into_iter().enumerate() {
             let shutdown_rx = self.shutdown_rxs.remove(&id).unwrap();
             let mut conditions = self.outcomes.get(&id).unwrap().clone();
 
             handles.spawn(async move {
-                let net = TestNet::new(network, interceptor);
-                let msgs = net.messages();
-                let coordinator = &mut node.init(
-                    net,
-                    (*staked_nodes).clone(),
-                    Arc::new(SailfishMetrics::default()),
-                );
-
+                let msgs = node.network().messages().clone();
+                let coordinator = &mut node.into_coordinator();
                 Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await
             });
         }
