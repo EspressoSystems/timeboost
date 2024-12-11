@@ -172,7 +172,7 @@ impl Timeboost {
 
         // Kickstart the network.
         #[cfg(feature = "until")]
-        sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(50)).await;
         match coordinator.start().await {
             Ok(actions) => {
                 for a in actions {
