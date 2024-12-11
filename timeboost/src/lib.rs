@@ -23,13 +23,13 @@ use vbs::version::StaticVersion;
 use crate::mempool::Mempool;
 
 use multiaddr::{Multiaddr, PeerId};
+use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
     types::{
-        committee::StaticCommittee,
         event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
         metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
-        Keypair, NodeId, PublicKey,
+        NodeId,
     },
 };
 use tokio::sync::{
@@ -115,22 +115,28 @@ impl HasInitializer for Timeboost {
 
         // Make the network.
         let network = Libp2pInitializer::new(
-            initializer.keypair.private_key(),
+            &initializer.keypair.secret_key(),
             initializer.staked_nodes.clone(),
             initializer.bootstrap_nodes.clone(),
             initializer.bind_address.clone(),
         )?
         .into_network(
             u64::from(initializer.id) as usize,
-            *initializer.keypair.public_key(),
-            initializer.keypair.private_key().clone(),
+            initializer.keypair.public_key(),
+            initializer.keypair.secret_key(),
         )
         .await?;
         network.wait_for_ready().await;
 
-        let peer_id = derive_libp2p_peer_id::<PublicKey>(initializer.keypair.private_key())?;
+        let peer_id = derive_libp2p_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
 
-        let committee = StaticCommittee::from(&*initializer.staked_nodes);
+        let committee = Committee::new(
+            initializer
+                .staked_nodes
+                .iter()
+                .enumerate()
+                .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
+        );
         let rbc = Rbc::new(network, initializer.keypair.clone(), committee.clone());
 
         let sailfish_initializer = SailfishInitializerBuilder::default()

@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    cmp::max,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use anyhow::Result;
 use committable::{Commitment, Committable};
@@ -10,7 +13,7 @@ use timeboost_core::types::{
 };
 use timeboost_utils::types::round_number::RoundNumber;
 
-use crate::sequencer::protocol::RoundState;
+use crate::sequencer::{protocol::RoundState, util::median};
 
 pub mod noop;
 
@@ -92,27 +95,6 @@ impl CandidateList {
         self.epoch
     }
 
-    fn calculate_median<T, F, I>(values: I, default: T, get_value: F) -> T
-    where
-        T: Ord + Copy + From<u64>,
-        F: Fn(T) -> u64,
-        I: Iterator<Item = T>,
-    {
-        let mut sorted_values = values.map(get_value).collect::<Vec<_>>();
-        if sorted_values.is_empty() {
-            return default;
-        }
-        sorted_values.sort_unstable();
-        let median = if sorted_values.len() % 2 == 0 {
-            (sorted_values[sorted_values.len() / 2] + sorted_values[sorted_values.len() / 2 + 1])
-                / 2
-        } else {
-            sorted_values[(sorted_values.len() / 2) + 1]
-        };
-
-        std::cmp::max(default, median.into())
-    }
-
     /// The median timestamp of the transactions in the candidate list. This is
     /// used to determine the consensus timestamp during the inclusion phase run.
     ///
@@ -123,11 +105,15 @@ impl CandidateList {
         mempool_snapshot: &[SailfishBlock],
         recovery_state: &RoundState,
     ) -> Timestamp {
-        Self::calculate_median(
-            mempool_snapshot.iter().map(|b| b.timestamp()),
-            recovery_state.consensus_timestamp,
-            |t| *t,
-        )
+        let mut ts = mempool_snapshot
+            .iter()
+            .map(|b| b.timestamp())
+            .collect::<Vec<_>>();
+        if let Some(ts) = median(&mut ts) {
+            max(ts, recovery_state.consensus_timestamp)
+        } else {
+            recovery_state.consensus_timestamp
+        }
     }
 
     /// The median delayed inbox index is the median over the delayed inbox indices of the
@@ -137,11 +123,15 @@ impl CandidateList {
         mempool_snapshot: &[SailfishBlock],
         recovery_state: &RoundState,
     ) -> u64 {
-        Self::calculate_median(
-            mempool_snapshot.iter().map(|b| b.delayed_inbox_index()),
-            recovery_state.delayed_inbox_index,
-            |t| t,
-        )
+        let mut idx = mempool_snapshot
+            .iter()
+            .map(|b| b.delayed_inbox_index())
+            .collect::<Vec<_>>();
+        if let Some(idx) = median(&mut idx) {
+            max(idx, recovery_state.delayed_inbox_index)
+        } else {
+            recovery_state.delayed_inbox_index
+        }
     }
 
     /// The priority bundles in the candidate list. This is a method which removes the bundles from

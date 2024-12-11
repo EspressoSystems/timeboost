@@ -6,7 +6,6 @@ pub struct SailfishMetrics {
     pub committed_round: Box<dyn Gauge>,
     pub dag_depth: Box<dyn Gauge>,
     pub delivered: Box<dyn Gauge>,
-    pub no_votes: Box<dyn Gauge>,
     pub round: Box<dyn Gauge>,
     pub round_duration: Box<dyn Histogram>,
     pub timeout_buffer: Box<dyn Gauge>,
@@ -25,7 +24,6 @@ impl SailfishMetrics {
             committed_round: m.create_gauge("committed_round".to_string(), None),
             dag_depth: m.create_gauge("dag_depth".to_string(), None),
             delivered: m.create_gauge("delivered_filter".to_string(), None),
-            no_votes: m.create_gauge("no_votes".to_string(), None),
             round: m.create_gauge("round".to_string(), None),
             round_duration: m
                 .create_histogram("round_duration".to_string(), Some("seconds".to_string())),

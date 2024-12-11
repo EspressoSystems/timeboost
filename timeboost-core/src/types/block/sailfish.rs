@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use timeboost_utils::types::round_number::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct SailfishBlock {
     header: BlockHeader,
     payload: Vec<Transaction>,

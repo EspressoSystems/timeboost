@@ -71,7 +71,7 @@ impl TestableNetwork for MemoryNetworkTest {
         for i in 0..self.group.size {
             // Join each node to the network
             let test_net = TestNet::new(
-                self.star_net.join(*self.group.keypairs[i].public_key()),
+                self.star_net.join(self.group.keypairs[i].public_key()),
                 self.interceptor.clone(),
             );
             let messages = test_net.messages();
