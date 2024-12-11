@@ -84,6 +84,21 @@ impl Transaction {
     pub fn is_valid(&self) -> bool {
         true
     }
+
+    pub fn to(&self) -> &Address {
+        match self {
+            Self::Priority { to, .. } => to,
+            Self::Regular { txn } => &txn.to,
+        }
+    }
+
+    pub fn data(&self) -> Option<&Bytes> {
+        match self {
+            // Priority transactions don't have a clean data representation.
+            Self::Priority { .. } => None,
+            Self::Regular { txn } => Some(&txn.data),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
