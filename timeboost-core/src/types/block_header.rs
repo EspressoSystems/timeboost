@@ -4,7 +4,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 
 use super::time::Timestamp;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct BlockHeader {
     round: RoundNumber,
     timestamp: Timestamp,

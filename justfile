@@ -13,7 +13,7 @@ build_release *ARGS:
 
 test *ARGS:
   cargo nextest run --no-capture {{ARGS}}
-  cargo test --doc {{ARGS}}
+  @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
   RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --no-capture {{ARGS}}

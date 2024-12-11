@@ -18,10 +18,11 @@ use vbs::version::StaticVersion;
 use crate::mempool::Mempool;
 
 use multiaddr::{Multiaddr, PeerId};
+use multisig::{Keypair, PublicKey};
 use timeboost_core::types::{
     event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
     metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
-    Keypair, NodeId, PublicKey,
+    NodeId,
 };
 use tokio::sync::{
     mpsc::{Receiver, Sender},

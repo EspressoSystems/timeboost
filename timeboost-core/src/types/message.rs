@@ -1,17 +1,13 @@
 use core::fmt;
 
-use crate::types::vertex::Vertex;
-use crate::types::Label;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::{Certificate, Committee, Envelope, PublicKey, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use timeboost_utils::types::round_number::RoundNumber;
 
-use super::{
-    certificate::Certificate,
-    envelope::{Envelope, Unchecked, Validated},
-    PublicKey,
-};
-use crate::types::{block::sailfish::SailfishBlock, committee::StaticCommittee};
+use crate::types::block::sailfish::SailfishBlock;
+use crate::types::vertex::Vertex;
+use crate::types::Label;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<Status = Validated> {
@@ -40,7 +36,7 @@ impl<S> Message<S> {
 }
 
 impl Message<Unchecked> {
-    pub fn validated(self, c: &StaticCommittee) -> Option<Message<Validated>> {
+    pub fn validated(self, c: &Committee) -> Option<Message<Validated>> {
         match self {
             Self::Vertex(e) => e.validated(c).map(Message::Vertex),
             Self::Timeout(e) => e.validated(c).map(Message::Timeout),
@@ -90,12 +86,12 @@ impl fmt::Display for Action {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct Timeout {
     round: RoundNumber,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct NoVote {
     round: RoundNumber,
 }

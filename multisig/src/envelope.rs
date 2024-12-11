@@ -2,12 +2,8 @@ use std::{hash::Hash, marker::PhantomData};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::traits::signature_key::SignatureKey;
-use tracing::warn;
 
-use crate::types::{committee::StaticCommittee, Label, PublicKey, Signature};
-
-use super::Keypair;
+use crate::{Committee, Keypair, PublicKey, Signature};
 
 /// Marker type to denote envelopes whose signature has not been validated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -24,9 +20,9 @@ pub enum Validated {}
 /// create a validated envelope without either creating or verifying the signature.
 ///
 ///```compile_fail
-/// use timeboost_core::types::{envelope::{Envelope, Validated}, message::Timeout};
+/// use multisig::{Envelope, Signature, Validated};
 ///
-/// let _: Envelope<Timeout, Validated> = bincode::deserialize(&[]).unwrap();
+/// let _: Envelope<Signature, Validated> = bincode::deserialize(&[]).unwrap();
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
@@ -41,14 +37,14 @@ pub struct Envelope<D: Committable, S> {
 
 impl<D: Committable> Envelope<D, Validated> {
     /// Create a (validated) envelope by signing data with a private key.
-    pub fn signed(d: D, keypair: &Keypair) -> Self {
+    pub fn signed(d: D, keypair: &Keypair, deterministic: bool) -> Self {
         let c = d.commit();
-        let s = keypair.sign(c.as_ref());
+        let s = keypair.sign(c.as_ref(), deterministic);
         Self {
             data: d,
             commitment: c,
             signature: s,
-            signing_key: *keypair.public_key(),
+            signing_key: keypair.public_key(),
             _marker: PhantomData,
         }
     }
@@ -56,21 +52,20 @@ impl<D: Committable> Envelope<D, Validated> {
 
 impl<D: Committable, S> Envelope<D, S> {
     /// Is the signature of this envelope valid?
-    pub fn is_valid(&self, membership: &StaticCommittee) -> bool {
-        membership.committee().contains(&self.signing_key)
+    pub fn is_valid(&self, membership: &Committee) -> bool {
+        membership.contains_key(&self.signing_key)
             && self.data.commit() == self.commitment
             && self
                 .signing_key
-                .validate(&self.signature, self.commitment.as_ref())
+                .is_valid(self.commitment.as_ref(), &self.signature)
     }
 
     /// Transition from an unchecked envelope to a validated one.
     ///
     /// This checks that the signature of the envelope is valid and represents
     /// the only way to get a validated envelope from an unchecked one.
-    pub fn validated(self, membership: &StaticCommittee) -> Option<Envelope<D, Validated>> {
+    pub fn validated(self, membership: &Committee) -> Option<Envelope<D, Validated>> {
         if !self.is_valid(membership) {
-            warn!(from = %self.signing_key, commit = %self.commitment, "invalid envelope");
             return None;
         }
         Some(Envelope {
@@ -88,10 +83,6 @@ impl<D: Committable, S> Envelope<D, S> {
 
     pub fn signing_key(&self) -> &PublicKey {
         &self.signing_key
-    }
-
-    pub fn signer_label(&self) -> Label {
-        Label::new(self.signing_key())
     }
 
     pub fn commitment(&self) -> Commitment<D> {
@@ -114,7 +105,7 @@ impl<D: Committable, S> Committable for Envelope<D, S> {
             .field("data", self.data.commit())
             .field("commitment", self.commitment)
             .var_size_field("signature", &sig)
-            .var_size_field("signing_key", &self.signing_key.to_bytes())
+            .var_size_field("signing_key", &self.signing_key.as_bytes())
             .finalize()
     }
 }

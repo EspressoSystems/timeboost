@@ -1,10 +1,9 @@
 use std::error::Error;
 
-use crate::types::committee::StaticCommittee;
-use crate::types::envelope::{Unchecked, Validated};
 use crate::types::message::Message;
-use crate::types::PublicKey;
+
 use async_trait::async_trait;
+use multisig::{Committee, PublicKey, Unchecked, Validated};
 use timeboost_networking::network::client::Libp2pNetwork;
 use timeboost_networking::{NetworkError, Topic};
 
@@ -107,11 +106,11 @@ impl RawComm for Libp2pNetwork<PublicKey> {
 #[derive(Debug)]
 pub struct CheckedComm<R> {
     net: R,
-    committee: StaticCommittee,
+    committee: Committee,
 }
 
 impl<R> CheckedComm<R> {
-    pub fn new(net: R, c: StaticCommittee) -> Self {
+    pub fn new(net: R, c: Committee) -> Self {
         Self { net, committee: c }
     }
 }

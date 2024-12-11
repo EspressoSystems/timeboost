@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "multisig",
     "sailfish",
     "tests",
     "timeboost",
@@ -32,6 +33,7 @@ ark-serialize = "0.5"
 ark-std = { version = "0.5", default-features = false }
 async-lock = "3.3"
 async-trait = "0.1"
+bimap = "0.6.3"
 bincode = "1"
 bitvec = { version = "1", default-features = false, features = [
     "alloc",
@@ -43,12 +45,14 @@ bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
 crossbeam-queue = "0.3.11"
+data-encoding = "2.6.0"
 derivative = "2.2.0"
 derive_builder = "0.20"
 derive_more = { version = "1.0" }
 digest = "0.10"
 displaydoc = { version = "0.2.5", default-features = false }
 dyn-clone = "1.0.17"
+ed25519-compact = "2.1.1"
 either = "1.13.0"
 futures = { version = "0.3", default-features = false }
 jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf-signature-v0.2.0", features = [
@@ -66,7 +70,9 @@ portpicker = "0.1.1"
 prometheus = "0.13"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
+rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
 serde-inline-default = "0.2.3"
 sha2 = { version = "0.10", default-features = false }
