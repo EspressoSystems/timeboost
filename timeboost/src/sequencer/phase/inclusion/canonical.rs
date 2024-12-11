@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use timeboost_core::types::{seqno::SeqNo, transaction::Transaction};
 
 use super::{InclusionList, InclusionPhase};
@@ -23,11 +25,20 @@ impl InclusionPhase for CanonicalInclusionPhase {
         // with the committing epoch and without gaps in the sequence number.
         // From the spec, line 110.
         // Let B_{r^*} = {txn ^ txn.priority = true ^ txn.nonce.epoch = committingEpoch}
-        let priority: Vec<Transaction> = candidate_list
+        let mut priority: Vec<Transaction> = candidate_list
             .priority_txns()
             .into_iter()
             .filter(|txn| txn.is_priority() && txn.nonce().epoch() == committing_epoch)
             .collect();
+
+        let seqnos: Vec<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
+        let max_seqno = seqnos.iter().max().cloned().unwrap_or(SeqNo::zero());
+        let expected: Vec<SeqNo> = (0..=*max_seqno).map(|i| i.into()).collect();
+        let actual: HashSet<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
+
+        if !expected.iter().all(|seqno| actual.contains(seqno)) {
+            priority.clear();
+        }
 
         let seqno = priority
             .iter()
