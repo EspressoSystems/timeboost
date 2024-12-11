@@ -117,7 +117,7 @@ fn from_hex<const N: usize>(s: &str) -> [u8; N] {
 }
 
 #[test]
-fn test_vectors_compact() {
+fn test_vectors() {
     use multisig::{PublicKey, Signature};
 
     let mut ok = true;
@@ -132,50 +132,6 @@ fn test_vectors_compact() {
         };
 
         if v != t.v {
-            ok = false;
-            eprintln!("{i:2} FAIL")
-        } else {
-            eprintln!("{i:2} PASS")
-        }
-    }
-
-    assert!(ok)
-}
-
-#[test]
-#[ignore]
-fn test_vectors_dalek() {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-
-    let mut ok = true;
-
-    for (i, t) in TESTS {
-        let k = VerifyingKey::from_bytes(&from_hex(t.k)).unwrap();
-        let s = Signature::from(from_hex(t.s));
-        let m = HEXLOWER.decode(t.m.as_bytes()).unwrap();
-        if (!k.is_weak() && k.verify(&m, &s).is_ok()) != t.v {
-            ok = false;
-            eprintln!("{i:2} FAIL")
-        } else {
-            eprintln!("{i:2} PASS")
-        }
-    }
-
-    assert!(ok)
-}
-
-#[test]
-#[ignore]
-fn test_vectors_consensus() {
-    use ed25519_consensus::{Signature, VerificationKey};
-
-    let mut ok = true;
-
-    for (i, t) in TESTS {
-        let k = VerificationKey::try_from(from_hex(t.k)).unwrap();
-        let s = Signature::from(from_hex(t.s));
-        let m = HEXLOWER.decode(t.m.as_bytes()).unwrap();
-        if k.verify(&s, &m).is_ok() != t.v {
             ok = false;
             eprintln!("{i:2} FAIL")
         } else {
