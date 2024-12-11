@@ -34,7 +34,7 @@ struct Cli {
     #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
     base: CommitteeBase,
 
-    /// The base to use for the committee config.
+    /// The committee size
     #[clap(long, default_value_t = 5)]
     committee_size: u16,
 
@@ -53,7 +53,7 @@ struct Cli {
     #[clap(long, default_value_t = 0)]
     late_start_node_id: u16,
 
-    /// Do we want to late start a node
+    /// The flag if we want to late start a node
     #[cfg(feature = "until")]
     #[clap(long, short, action = clap::ArgAction::SetTrue)]
     late_start: bool,
@@ -92,7 +92,6 @@ async fn run_until(
                 anyhow::bail!("Watchdog timeout");
             }
             result = shutdown_rx.changed() => {
-                tracing::error!("received shutdown");
                 result.expect("the shutdown sender was dropped before the receiver could receive the token");
                 anyhow::bail!("Shutdown received");
             }
@@ -111,10 +110,12 @@ async fn run_until(
                         }
 
                         let now = Instant::now();
-                        if committed_round == last_committed && now.saturating_duration_since(last_committed_time) > Duration::from_secs(30) {
-                            shutdown_tx.send(()).expect(
-                                "the shutdown sender was dropped before the receiver could receive the token",
-                            );
+                        if committed_round == last_committed
+                            && now.saturating_duration_since(last_committed_time) > Duration::from_secs(30)
+                        {
+                            shutdown_tx
+                                .send(())
+                                .expect("the shutdown sender was dropped before the receiver could receive the token");
                             anyhow::bail!("Node stuck on round for more than 30 seconds")
                         } else if committed_round > last_committed {
                             last_committed = committed_round;
@@ -157,7 +158,6 @@ async fn main() -> Result<()> {
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
 
-    // Make a new committee contract instance to read the committee config from.
     #[cfg(feature = "until")]
     let skip_bootstrap_id = {
         let mut res = None;
@@ -170,6 +170,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "until"))]
     let skip_bootstrap_id = None;
 
+    // Make a new committee contract instance to read the committee config from.
     let committee = CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id);
 
     let id = NodeId::from(cli.id as u64);
@@ -182,7 +183,7 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "until")]
     let handle = {
-        let h = tokio::spawn(run_until(
+        let task_handle = tokio::spawn(run_until(
             cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
@@ -190,11 +191,10 @@ async fn main() -> Result<()> {
             shutdown_rx.clone(),
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {
-            tracing::error!("Adding delay before starting node: id: {}", id);
+            tracing::warn!("Adding delay before starting node: id: {}", id);
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
-        tracing::error!("Starting node id: {}", id);
-        h
+        task_handle
     };
 
     let init = TimeboostInitializer {
@@ -213,7 +213,14 @@ async fn main() -> Result<()> {
     tokio::select! {
         _ = timeboost.go(committee.staked_nodes().len()) => {
             #[cfg(feature = "until")]
-            tracing::info!("watchdog completed");
+            {
+                tracing::info!("watchdog completed");
+                return match handle.await {
+                    Ok(Ok(_)) => Ok(()),
+                    Ok(Err(e)) => Err(e),
+                    Err(e) => anyhow::bail!("Error: {}", e),
+                };
+            }
 
             #[cfg(not(feature = "until"))]
             anyhow::bail!("timeboost shutdown unexpectedly");
@@ -221,17 +228,7 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            return Ok(());
+            Ok(())
         }
-    }
-
-    #[cfg(feature = "until")]
-    {
-        let res = handle.await;
-        return match res {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(e)) => Err(e),
-            Err(e) => anyhow::bail!("Error: {}", e),
-        };
     }
 }

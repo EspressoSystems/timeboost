@@ -250,14 +250,18 @@ impl Consensus {
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
                 if (*v.round()).saturating_sub(*self.round()) > 2 {
-                    tracing::error!("catchup: {}, r {}", self.id, v.round());
-                    // Copy everything from buffer, `candidate_dag` will be our buffer for cathup
+                    warn!(
+                        node    = %self.label,
+                        round   = %self.round(),
+                        vround  = %v.round(),
+                        "Node is more than two rounds behind, entering catchup."
+                    );
+                    // Copy everything from buffer, `candidate_dag` will be our buffer for catchup
                     if !self.catchup {
                         for w in std::mem::take(&mut self.buffer) {
                             self.candidate_dag.add(w);
                         }
                     }
-                    // We are in catchup, so add to the candidate_dag
                     if !self.candidate_dag.contains(&v) {
                         self.candidate_dag.add(v);
                     }
@@ -496,7 +500,6 @@ impl Consensus {
 
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
-            tracing::error!("advance: {}, r {}", self.id, round);
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round);
