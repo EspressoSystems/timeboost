@@ -377,7 +377,7 @@ impl<C: RawComm> Worker<C> {
             | Status::ReceivedMsg
             | Status::SentMsg
             | Status::ReceivedVotes
-            | Status::SentVote => match tracker.votes.add(env) {
+            | Status::SentVote => match tracker.votes.add(env.into_signed()) {
                 Ok(None) => tracker.status = Status::ReceivedVotes,
                 Ok(Some(cert)) => {
                     tracker.status = Status::ReachedQuorum(source);

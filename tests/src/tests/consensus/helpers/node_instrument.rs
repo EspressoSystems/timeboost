@@ -1,24 +1,29 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 
+use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
-use multisig::{Envelope, Validated, VoteAccumulator};
+use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
 use sailfish::consensus::Consensus;
 use timeboost_core::types::{
-    message::{Action, Message, NoVote, Timeout},
+    message::{Action, Message, NoVoteMessage, Timeout, TimeoutMessage},
     vertex::Vertex,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
+    kpair: Keypair,
+    manager: KeyManager,
     msg_queue: VecDeque<Message>,
     expected_actions: VecDeque<Action>,
 }
 
 impl TestNodeInstrument {
-    pub(crate) fn new(node: Consensus) -> Self {
+    pub(crate) fn new(manager: KeyManager, kpair: Keypair, node: Consensus) -> Self {
         Self {
+            kpair,
+            manager,
             node: node.sign_deterministically(true),
             msg_queue: VecDeque::new(),
             expected_actions: VecDeque::new(),
@@ -30,12 +35,10 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
+        let c = self.manager.committee();
         for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
-                assert_eq!(
-                    a, expected,
-                    "Expected action {expected} should match actual action {a}"
-                )
+                assert_equiv(&expected, &a, &c)
             } else {
                 panic!("Action was processed but expected actions was empty");
             }
@@ -76,16 +79,29 @@ impl TestNodeInstrument {
         edges: Vec<PublicKey>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
-        let mut v = Vertex::new(round, self.node.public_key());
+        let mut v = if let Some(tc) = timeout_cert {
+            Vertex::new(round, tc, &self.kpair, true)
+        } else {
+            Vertex::new(
+                round,
+                self.manager.gen_round_cert(round - 1),
+                &self.kpair,
+                true,
+            )
+        };
         v.add_edges(edges);
-        if let Some(tc) = timeout_cert {
-            v.set_timeout(tc);
-        }
-        self.node.sign(v.clone())
+        self.node.sign(v)
     }
 
-    pub(crate) fn expected_timeout(&self, round: RoundNumber) -> Envelope<Timeout, Validated> {
-        let d = Timeout::new(round);
+    pub(crate) fn expected_timeout(
+        &self,
+        round: RoundNumber,
+    ) -> Envelope<TimeoutMessage, Validated> {
+        let d = TimeoutMessage::new(
+            self.manager.gen_round_cert(round - 1).into(),
+            &self.kpair,
+            true,
+        );
         self.node.sign(d.clone())
     }
 
@@ -95,13 +111,16 @@ impl TestNodeInstrument {
     ) -> Certificate<Timeout> {
         let mut va = VoteAccumulator::new(self.committee().clone());
         for e in signers {
-            va.add(e).unwrap();
+            va.add(e.into_signed()).unwrap();
         }
         va.certificate().cloned().unwrap()
     }
 
-    pub(crate) fn expected_no_vote(&self, round: RoundNumber) -> Envelope<NoVote, Validated> {
-        let nv = NoVote::new(round);
+    pub(crate) fn expected_no_vote(
+        &self,
+        round: RoundNumber,
+    ) -> Envelope<NoVoteMessage, Validated> {
+        let nv = NoVoteMessage::new(self.manager.gen_timeout_cert(round), &self.kpair, true);
         self.node.sign(nv)
     }
 
@@ -123,5 +142,63 @@ impl TestNodeInstrument {
         }
 
         assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
+    }
+}
+
+fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
+    let parties: BTreeSet<PublicKey> = c.parties().copied().collect();
+    match (a, b) {
+        (Action::ResetTimer(x), Action::ResetTimer(y)) => {
+            assert_eq!(x, y)
+        }
+        (Action::Deliver(xb, xr, xk), Action::Deliver(yb, yr, yk)) => {
+            assert_eq!(xr, yr);
+            assert_eq!(xk, yk);
+            assert_eq!(xb, yb)
+        }
+        (Action::SendProposal(x), Action::SendProposal(y)) => {
+            assert_eq!(x.is_valid(c), y.is_valid(c));
+            let xv = x.data();
+            let yv = y.data();
+            let xe = xv.evidence().is_valid(c);
+            let ye = yv.evidence().is_valid(c);
+            let xn = xv.no_vote_cert().map(|crt| crt.is_valid(c));
+            let yn = yv.no_vote_cert().map(|crt| crt.is_valid(c));
+            let xve = xv.edges().copied().collect::<BTreeSet<_>>();
+            let yve = yv.edges().copied().collect::<BTreeSet<_>>();
+            assert_eq!(xv.round(), yv.round());
+            assert_eq!(xv.source(), yv.source());
+            assert_eq!(xe, ye);
+            assert_eq!(xn, yn);
+            assert!(xve.is_subset(&parties));
+            assert!(yve.is_subset(&parties));
+            assert!(xve.len() >= c.quorum_size().get());
+            assert!(yve.len() >= c.quorum_size().get());
+            assert_eq!(xv.block(), yv.block());
+        }
+        (Action::SendTimeout(x), Action::SendTimeout(y)) => {
+            assert_eq!(x.is_valid(c), y.is_valid(c));
+            let xt = x.data();
+            let yt = y.data();
+            assert_eq!(xt.timeout(), yt.timeout());
+            let xe = xt.evidence().is_valid(c);
+            let ye = yt.evidence().is_valid(c);
+            assert_eq!(xe, ye);
+        }
+        (Action::SendNoVote(xto, x), Action::SendNoVote(yto, y)) => {
+            assert_eq!(xto, yto);
+            assert_eq!(x.is_valid(c), y.is_valid(c));
+            let xn = x.data();
+            let yn = y.data();
+            assert_eq!(xn.no_vote(), yn.no_vote());
+            let xe = xn.certificate().is_valid(c);
+            let ye = yn.certificate().is_valid(c);
+            assert_eq!(xe, ye);
+        }
+        (Action::SendTimeoutCert(x), Action::SendTimeoutCert(y)) => {
+            assert_eq!(x.is_valid(c), y.is_valid(c));
+            assert_eq!(x.data(), y.data());
+        }
+        _ => panic!("{a} ≁ {b}"),
     }
 }

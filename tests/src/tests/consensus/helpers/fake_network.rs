@@ -5,7 +5,7 @@ use std::{
     num::NonZeroUsize,
 };
 use timeboost_core::types::{
-    message::{Action, Message},
+    message::{Action, Evidence, Message},
     NodeId,
 };
 use timeboost_utils::types::round_number::RoundNumber;
@@ -35,7 +35,7 @@ impl FakeNetwork {
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node_instrument in self.nodes.values_mut() {
             let node = node_instrument.node_mut();
-            for a in node.go(Dag::new(committee_size)) {
+            for a in node.go(Dag::new(committee_size), Evidence::Genesis) {
                 Self::handle_action(node.id(), a, &mut next)
             }
         }

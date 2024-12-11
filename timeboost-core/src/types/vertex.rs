@@ -1,45 +1,62 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, PublicKey};
+use multisig::{Certificate, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    message::{NoVote, Timeout},
-    time::Timestamp,
-};
-use crate::types::{block::sailfish::SailfishBlock, Label};
+use super::{message::NoVote, time::Timestamp};
+use crate::types::block::sailfish::SailfishBlock;
+use crate::types::message::Evidence;
 use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex {
-    round: RoundNumber,
+    round: Signed<RoundNumber>,
     source: PublicKey,
     edges: BTreeSet<PublicKey>,
+    evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
-    timeout: Option<Certificate<Timeout>>,
     block: SailfishBlock,
 }
 
 impl Vertex {
-    pub fn new<N: Into<RoundNumber>>(r: N, s: PublicKey) -> Self {
-        let round = r.into();
+    pub fn new<N, E>(r: N, e: E, k: &Keypair, deterministic: bool) -> Self
+    where
+        N: Into<RoundNumber>,
+        E: Into<Evidence>,
+    {
+        let r = r.into();
+        let e = e.into();
+        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
         Self {
-            source: s,
-            round,
+            source: k.public_key(),
+            round: Signed::new(r, k, deterministic),
             edges: BTreeSet::new(),
+            evidence: e,
             no_vote: None,
-            timeout: None,
-            block: SailfishBlock::empty(round, Timestamp::now(), 0),
+            block: SailfishBlock::empty(r, Timestamp::now(), 0),
         }
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        *self.round.data() == RoundNumber::genesis()
+            && *self.round.data() == self.evidence.round()
+            && self.evidence.is_genesis()
+            && self.edges.is_empty()
+            && self.no_vote.is_none()
+            && self.block.is_empty()
     }
 
     pub fn source(&self) -> &PublicKey {
         &self.source
     }
 
-    pub fn round(&self) -> RoundNumber {
-        self.round
+    pub fn round(&self) -> &Signed<RoundNumber> {
+        &self.round
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
     }
 
     pub fn num_edges(&self) -> usize {
@@ -52,10 +69,6 @@ impl Vertex {
 
     pub fn has_edge(&self, id: &PublicKey) -> bool {
         self.edges.contains(id)
-    }
-
-    pub fn timeout_cert(&self) -> Option<&Certificate<Timeout>> {
-        self.timeout.as_ref()
     }
 
     pub fn no_vote_cert(&self) -> Option<&Certificate<NoVote>> {
@@ -89,16 +102,11 @@ impl Vertex {
         self
     }
 
-    pub fn set_timeout(&mut self, t: Certificate<Timeout>) -> &mut Self {
-        self.timeout = Some(t);
-        self
-    }
-
     pub fn dbg_edges(&self) {
         println! { "{} -> {} -> {:?}",
-            Label::new(self.source()),
-            self.round(),
-            self.edges().map(Label::new).collect::<Vec<_>>()
+            self.source(),
+            self.round().data(),
+            self.edges().collect::<Vec<_>>()
         }
     }
 }
@@ -108,7 +116,8 @@ impl Display for Vertex {
         write!(
             f,
             "Vertex {{ round := {}, source := {} }}",
-            self.round, self.source
+            self.round.data(),
+            self.source
         )
     }
 }
@@ -119,8 +128,8 @@ impl Committable for Vertex {
             .fixed_size_field("source", &self.source.as_bytes())
             .field("round", self.round.commit())
             .field("block", self.block.commit())
+            .field("evidence", self.evidence.commit())
             .optional("no_vote", &self.no_vote)
-            .optional("timeout", &self.timeout)
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()

@@ -7,7 +7,7 @@ use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
 pub(crate) fn make_consensus_nodes(
-    num_nodes: u64,
+    num_nodes: u8,
 ) -> (HashMap<PublicKey, TestNodeInstrument>, KeyManager) {
     let manager = KeyManager::new(num_nodes);
     let nodes = manager.create_node_instruments();
@@ -24,7 +24,7 @@ pub(crate) fn create_timeout_certificate_msg(
 ) -> Message {
     let mut va = VoteAccumulator::new(committee.clone());
     for e in env {
-        va.add(e).unwrap();
+        va.add(e.into_signed()).unwrap();
     }
     Message::TimeoutCert(va.certificate().unwrap().clone())
 }

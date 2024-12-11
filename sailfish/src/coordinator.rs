@@ -8,7 +8,7 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{
         event::{SailfishEventType, SailfishStatusEvent},
-        message::{Action, Message},
+        message::{Action, Evidence, Message},
         transaction::Transaction,
         NodeId,
     },
@@ -52,7 +52,9 @@ impl<C: Comm> Coordinator<C> {
     pub async fn start(&mut self) -> Result<Vec<Action>, C::Err> {
         if !self.init {
             self.init = true;
-            return Ok(self.consensus.go(Dag::new(self.consensus.committee_size())));
+            let e = Evidence::Genesis;
+            let d = Dag::new(self.consensus.committee_size());
+            return Ok(self.consensus.go(d, e));
         }
         panic!("Cannot call start twice");
     }

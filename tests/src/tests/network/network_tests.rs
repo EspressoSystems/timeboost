@@ -28,7 +28,7 @@ where
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
-                            if v.data().round() == RoundNumber::genesis() + 1
+                            if *v.data().round().data() == RoundNumber::genesis() + 1
                                 && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;
@@ -71,7 +71,8 @@ where
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
-                            if *v.data().round() == rounds && node_public_key == *v.data().source()
+                            if **v.data().round().data() == rounds
+                                && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;
                             }
@@ -126,8 +127,8 @@ where
                         let d = v.data();
                         // Ensure vertex has timeout and no vote cert and from round r + 1
                         let no_vote_checks = d.no_vote_cert().is_some()
-                            && d.timeout_cert().is_some()
-                            && *d.round() == timeout_round + 1;
+                            && d.evidence().is_timeout()
+                            && **d.round().data() == timeout_round + 1;
 
                         if no_vote_checks {
                             // The signing key needs to be from leader for round `timeout_round + 1``
@@ -147,7 +148,7 @@ where
                 TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
-                        if *v.data().round() == timeout_round + 20
+                        if **v.data().round().data() == timeout_round + 20
                             && node_public_key == *v.data().source()
                         {
                             return TestOutcome::Passed;
