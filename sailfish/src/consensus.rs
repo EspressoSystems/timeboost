@@ -176,7 +176,7 @@ impl Consensus {
     pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
         ensure!(
             index >= self.delayed_inbox_index,
-            "delayed inbox index must be greater than the current delayed inbox index"
+            "delayed inbox index must be >= than the current delayed inbox index"
         );
         self.delayed_inbox_index = index;
 
