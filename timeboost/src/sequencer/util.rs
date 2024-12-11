@@ -14,7 +14,7 @@ where
         values[values.len() / 2]
     };
 
-    Some(median.into())
+    Some(median)
 }
 
 #[cfg(test)]

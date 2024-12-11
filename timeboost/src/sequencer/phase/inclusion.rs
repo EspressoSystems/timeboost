@@ -107,7 +107,7 @@ impl CandidateList {
     ) -> Timestamp {
         let mut ts = mempool_snapshot
             .iter()
-            .map(|b| b.timestamp().into())
+            .map(|b| b.timestamp())
             .collect::<Vec<_>>();
         if let Some(ts) = median(&mut ts) {
             max(ts, recovery_state.consensus_timestamp)
