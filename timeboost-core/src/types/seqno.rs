@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 /// Sequence number.
 //
 // TODO: Is a `u128` required here?
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct SeqNo(u128);
 
 impl SeqNo {
