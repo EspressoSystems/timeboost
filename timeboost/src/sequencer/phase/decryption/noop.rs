@@ -1,14 +1,12 @@
 use anyhow::Result;
-use timeboost_core::types::block::timeboost::InclusionPhaseBlock;
+
+use crate::sequencer::phase::inclusion::InclusionList;
 
 use super::DecryptionPhase;
 
 pub struct NoOpDecryptionPhase;
 impl DecryptionPhase for NoOpDecryptionPhase {
-    fn decrypt(
-        &self,
-        inclusion_list: Vec<InclusionPhaseBlock>,
-    ) -> Result<Vec<InclusionPhaseBlock>> {
+    fn decrypt(&self, inclusion_list: InclusionList) -> Result<InclusionList> {
         Ok(inclusion_list)
     }
 }

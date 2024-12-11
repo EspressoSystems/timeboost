@@ -1,3 +1,4 @@
+use anyhow::{ensure, Result};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 
@@ -106,6 +107,9 @@ pub struct Consensus {
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
 
+    /// The current delayed inbox index.
+    delayed_inbox_index: u64,
+
     /// Sign deterministically?
     deterministic: bool,
 }
@@ -128,6 +132,7 @@ impl Consensus {
             leader_stack: Vec::new(),
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
+            delayed_inbox_index: 0,
             deterministic: false,
         }
     }
@@ -168,6 +173,16 @@ impl Consensus {
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
         self.state.transactions = q
+    }
+
+    pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
+        ensure!(
+            index >= self.delayed_inbox_index,
+            "delayed inbox index must be >= than the current delayed inbox index"
+        );
+        self.delayed_inbox_index = index;
+
+        Ok(())
     }
 
     /// (Re-)start consensus.
@@ -599,7 +614,7 @@ impl Consensus {
 
         let mut new = Vertex::new(r, self.public_key());
         new.set_block(
-            SailfishBlock::empty(r, Timestamp::now())
+            SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
                 .with_transactions(self.state.transactions.take()),
         );
         new.add_edges(prev.map(Vertex::source).cloned());

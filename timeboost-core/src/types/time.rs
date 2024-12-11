@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Add, Deref, Div};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
@@ -13,8 +13,16 @@ const EPOCH_DURATION: Duration = Duration::from_secs(60);
 )]
 pub struct Epoch(u128);
 
+impl std::fmt::Display for Epoch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Unix timestamp in seconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
+)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
@@ -34,17 +42,19 @@ impl Timestamp {
     }
 }
 
-pub fn median(ts: &mut [Timestamp]) -> Option<Timestamp> {
-    if ts.is_empty() {
-        return None;
+impl Add for Timestamp {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
-    ts.sort();
-    if ts.len() % 2 == 0 {
-        let a = ts[ts.len() / 2 - 1];
-        let b = ts[ts.len() / 2];
-        Some(Timestamp((*a + *b) / 2))
-    } else {
-        Some(ts[ts.len() / 2])
+}
+
+impl Div<u64> for Timestamp {
+    type Output = Self;
+
+    fn div(self, rhs: u64) -> Self::Output {
+        Self(self.0 / rhs)
     }
 }
 
@@ -99,28 +109,5 @@ mod tests {
             let t: u128 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }
-    }
-
-    #[test]
-    fn median() {
-        use super::median;
-
-        let mut ts = [];
-        assert_eq!(None, median(&mut ts));
-
-        let mut ts = [1.into()];
-        assert_eq!(Some(Timestamp::from(1)), median(&mut ts));
-
-        let mut ts = [1.into(), 2.into()];
-        assert_eq!(Some(Timestamp::from(1)), median(&mut ts));
-
-        let mut ts = [1.into(), 2.into(), 3.into()];
-        assert_eq!(Some(Timestamp::from(2)), median(&mut ts));
-
-        let mut ts = [1.into(), 2.into(), 3.into(), 4.into()];
-        assert_eq!(Some(Timestamp::from(2)), median(&mut ts));
-
-        let mut ts = [1.into(), 2.into(), 3.into(), 4.into(), 5.into()];
-        assert_eq!(Some(Timestamp::from(3)), median(&mut ts));
     }
 }

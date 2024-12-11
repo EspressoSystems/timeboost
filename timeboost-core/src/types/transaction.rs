@@ -79,6 +79,11 @@ impl Transaction {
             Self::Regular { txn } => txn.size_bytes(),
         }
     }
+
+    /// TODO: This will check that the transaction was signed by the PLC.
+    pub fn is_valid(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
