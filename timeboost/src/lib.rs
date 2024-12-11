@@ -131,8 +131,6 @@ impl Timeboost {
         tokio::spawn(producer.run());
 
         // Kickstart the network.
-        #[cfg(feature = "until")]
-        tokio::time::sleep(Duration::from_millis(50)).await;
         match coordinator.start().await {
             Ok(actions) => {
                 for a in actions {

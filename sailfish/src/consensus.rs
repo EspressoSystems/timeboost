@@ -465,6 +465,12 @@ impl Consensus {
             return actions;
         }
 
+        if round == RoundNumber::genesis() + 1 {
+            let v = self.create_new_vertex(self.round);
+            actions.extend(self.add_and_broadcast_vertex(v.0));
+            self.clear_timeout_aggregators(self.round);
+            return actions;
+        }
         if self.dag.vertex_count(round) >= self.committee.quorum_size().get() {
             self.metrics.rounds_timed_out.update(1);
             actions.extend(self.advance_from_round(round));
