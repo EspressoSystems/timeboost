@@ -105,7 +105,11 @@ impl CandidateList {
         mempool_snapshot: &[SailfishBlock],
         recovery_state: &RoundState,
     ) -> Timestamp {
-        if let Some(ts) = median(mempool_snapshot.iter().map(|b| b.timestamp())) {
+        let mut ts = mempool_snapshot
+            .iter()
+            .map(|b| b.timestamp().into())
+            .collect::<Vec<_>>();
+        if let Some(ts) = median(&mut ts) {
             max(ts, recovery_state.consensus_timestamp)
         } else {
             recovery_state.consensus_timestamp
@@ -119,7 +123,11 @@ impl CandidateList {
         mempool_snapshot: &[SailfishBlock],
         recovery_state: &RoundState,
     ) -> u64 {
-        if let Some(idx) = median(mempool_snapshot.iter().map(|b| b.delayed_inbox_index())) {
+        let mut idx = mempool_snapshot
+            .iter()
+            .map(|b| b.delayed_inbox_index())
+            .collect::<Vec<_>>();
+        if let Some(idx) = median(&mut idx) {
             max(idx, recovery_state.delayed_inbox_index)
         } else {
             recovery_state.delayed_inbox_index
