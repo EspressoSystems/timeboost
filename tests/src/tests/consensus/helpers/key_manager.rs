@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use committable::Committable;
 use multisig::{Committee, Envelope, Keypair, PublicKey, Validated};
@@ -32,14 +32,13 @@ impl KeyManager {
 
     pub(crate) fn create_node_instruments(&self) -> Vec<TestNodeInstrument> {
         let committee = Committee::new(self.keys.iter().map(|(i, k)| (*i as u8, k.public_key())));
-        let metrics = Arc::new(SailfishMetrics::default());
         self.keys
             .iter()
             .map(|(id, kpair)| {
                 let node_id = NodeId::from(*id);
+                let metrics = SailfishMetrics::default();
                 TestNodeInstrument::new(
-                    Consensus::new(node_id, kpair.clone(), committee.clone())
-                        .with_metrics(metrics.clone()),
+                    Consensus::new(node_id, kpair.clone(), committee.clone()).with_metrics(metrics),
                 )
             })
             .collect()

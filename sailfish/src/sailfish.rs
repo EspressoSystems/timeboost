@@ -2,28 +2,47 @@ use crate::rbc::Rbc;
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
-use async_lock::RwLock;
+use async_trait::async_trait;
+use derive_builder::Builder;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
 use multisig::{Committee, Keypair, PublicKey};
-use std::{collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::collections::HashSet;
+use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
-use timeboost_crypto::traits::signature_key::SignatureKey;
-use timeboost_networking::network::{
-    behaviours::dht::record::{Namespace, RecordKey, RecordValue},
-    client::{derive_libp2p_keypair, derive_libp2p_peer_id, Libp2pMetricsValue, Libp2pNetwork},
-    NetworkNodeConfig, NetworkNodeConfigBuilder,
-};
-use timeboost_utils::{
-    types::config::{Libp2pConfig, NetworkConfig},
-    PeerConfig,
-};
-use tracing::{info, instrument};
+use timeboost_networking::network::client::Libp2pInitializer;
+use timeboost_networking::network::client::{derive_libp2p_keypair, derive_libp2p_peer_id};
+use timeboost_utils::PeerConfig;
 
-pub struct Sailfish {
+#[derive(Builder)]
+#[builder(pattern = "owned")]
+pub struct SailfishInitializer<N: Comm + Send + 'static> {
+    /// The ID of the node.
+    pub id: NodeId,
+
+    /// The network.
+    pub network: N,
+
+    /// The keypair of the node.
+    pub keypair: Keypair,
+
+    /// The bind address of the node.
+    pub bind_address: Multiaddr,
+
+    /// The metrics of the node.
+    pub metrics: SailfishMetrics,
+
+    /// The committee of the node.
+    pub committee: Committee,
+
+    /// The peer id of the node.
+    pub peer_id: PeerId,
+}
+
+pub struct Sailfish<N: Comm + Send + 'static> {
     /// The ID of the sailfish node.
     id: NodeId,
 
@@ -34,22 +53,36 @@ pub struct Sailfish {
 
     /// The Libp2p multiaddr of the sailfish node.
     bind_address: Multiaddr,
+
+    /// The metrics of the sailfish node.
+    metrics: SailfishMetrics,
+
+    /// The committee of the sailfish node.
+    committee: Committee,
+
+    /// The network.
+    network: N,
 }
 
-impl Sailfish {
-    pub fn new<N>(id: N, keypair: Keypair, bind: Multiaddr) -> Result<Self>
-    where
-        N: Into<NodeId>,
-    {
-        let peer_id = derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key())?;
+#[async_trait]
+impl<N: Comm + Send + 'static> HasInitializer for Sailfish<N> {
+    type Initializer = SailfishInitializer<N>;
+    type Into = Self;
+
+    async fn initialize(initializer: Self::Initializer) -> Result<Self::Into> {
         Ok(Sailfish {
-            id: id.into(),
-            keypair,
-            peer_id,
-            bind_address: bind,
+            id: initializer.id,
+            keypair: initializer.keypair,
+            peer_id: initializer.peer_id,
+            bind_address: initializer.bind_address,
+            metrics: initializer.metrics,
+            committee: initializer.committee,
+            network: initializer.network,
         })
     }
+}
 
+impl<N: Comm + Send + 'static> Sailfish<N> {
     pub fn id(&self) -> NodeId {
         self.id
     }
@@ -71,65 +104,16 @@ impl Sailfish {
         derive_libp2p_keypair::<PublicKey>(&self.keypair.secret_key())
     }
 
-    #[instrument(skip_all, fields(id = u64::from(self.id)))]
-    pub async fn setup_libp2p(
-        &self,
-        config: NetworkNodeConfig<PublicKey>,
-        bootstrap_nodes: Arc<RwLock<Vec<(PeerId, Multiaddr)>>>,
-        staked_nodes: &[PeerConfig<PublicKey>],
-    ) -> Result<Libp2pNetwork<PublicKey>> {
-        let mut network_config = NetworkConfig::default();
-        network_config.config.known_nodes_with_stake = staked_nodes.to_vec();
-        network_config.libp2p_config = Some(Libp2pConfig {
-            bootstrap_nodes: bootstrap_nodes.read().await.clone(),
-        });
-
-        // We don't have any DA nodes in Sailfish.
-        network_config.config.known_da_nodes = vec![];
-
-        let libp2p_keypair = derive_libp2p_keypair::<PublicKey>(&self.keypair.secret_key())?;
-
-        let record_value = RecordValue::new_signed(
-            &RecordKey::new(Namespace::Lookup, self.keypair.public_key().to_bytes()),
-            libp2p_keypair.public().to_peer_id().to_bytes(),
-            &self.keypair.secret_key(),
-        )?;
-
-        // Create the Libp2p network
-        let network = Libp2pNetwork::new(
-            Libp2pMetricsValue::default(),
-            config,
-            self.keypair.public_key(),
-            record_value,
-            bootstrap_nodes,
-            u64::from(self.id) as usize,
-        )
-        .await?;
-
-        network.wait_for_ready().await;
-
-        info!("Network is ready.");
-        Ok(network)
+    #[cfg(feature = "test")]
+    pub fn network(&self) -> &N {
+        &self.network
     }
 
-    pub fn init<C>(
-        self,
-        comm: C,
-        staked_nodes: Vec<PeerConfig<PublicKey>>,
-        metrics: Arc<SailfishMetrics>,
-    ) -> Coordinator<C>
-    where
-        C: Comm + Send + 'static,
-    {
-        let committee = Committee::new(
-            staked_nodes
-                .into_iter()
-                .enumerate()
-                .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
-        );
-        let consensus = Consensus::new(self.id, self.keypair, committee).with_metrics(metrics);
+    pub fn into_coordinator(self) -> Coordinator<N> {
+        let consensus =
+            Consensus::new(self.id, self.keypair, self.committee).with_metrics(self.metrics);
 
-        Coordinator::new(self.id, comm, consensus)
+        Coordinator::new(self.id, self.network, consensus)
     }
 }
 
@@ -153,37 +137,25 @@ pub async fn sailfish_coordinator(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: Multiaddr,
-    metrics: Arc<SailfishMetrics>,
+    metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let network_size =
-        NonZeroUsize::new(staked_nodes.len()).expect("network size must be positive");
-
-    let libp2p_keypair =
-        derive_libp2p_keypair::<PublicKey>(&keypair.secret_key()).expect("Keypair to derive");
-
-    let replication_factor = NonZeroUsize::new((2 * network_size.get()).div_ceil(3))
-        .expect("ceil(2n/3) with n > 0 never gives 0");
-    let network_config = NetworkNodeConfigBuilder::default()
-        .keypair(libp2p_keypair)
-        .replication_factor(replication_factor)
-        .bind_address(Some(bind_address.clone()))
-        .to_connect_addrs(bootstrap_nodes.clone())
-        .republication_interval(None)
-        .build()
-        .expect("Network config to be built");
-
-    let bootstrap_nodes = Arc::new(RwLock::new(
-        bootstrap_nodes
-            .into_iter()
-            .collect::<Vec<(PeerId, Multiaddr)>>(),
-    ));
-
-    let s = Sailfish::new(id, keypair, bind_address).expect("setup failed");
-    let n = s
-        .setup_libp2p(network_config, bootstrap_nodes, &staked_nodes)
+    let p2p = Libp2pInitializer::new(
+        &keypair.secret_key(),
+        staked_nodes.clone(),
+        bootstrap_nodes,
+        bind_address.clone(),
+    )
+    .expect("libp2p network to be initialized");
+    let net_inner = p2p
+        .into_network(
+            u64::from(id) as usize,
+            keypair.public_key(),
+            keypair.secret_key(),
+        )
         .await
-        .expect("Libp2p network setup");
+        .expect("libp2p network to be initialized");
 
+    net_inner.wait_for_ready().await;
     let committee = Committee::new(
         staked_nodes
             .iter()
@@ -191,7 +163,24 @@ pub async fn sailfish_coordinator(
             .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
     );
 
-    let rbc = Rbc::new(n, s.keypair.clone(), committee);
+    let rbc = Rbc::new(net_inner, keypair.clone(), committee.clone());
+    let peer_id =
+        derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
 
-    s.init(rbc, staked_nodes, metrics)
+    let initializer = SailfishInitializerBuilder::default()
+        .id(id)
+        .keypair(keypair)
+        .bind_address(bind_address)
+        .network(rbc)
+        .committee(committee.clone())
+        .metrics(metrics)
+        .peer_id(peer_id)
+        .build()
+        .expect("sailfish initializer to be built");
+
+    let s = Sailfish::initialize(initializer)
+        .await
+        .expect("setup failed");
+
+    s.into_coordinator()
 }

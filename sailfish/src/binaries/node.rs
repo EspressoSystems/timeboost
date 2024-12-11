@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::{collections::HashSet, fs};
 
 use ::sailfish::sailfish::sailfish_coordinator;
@@ -38,7 +37,7 @@ async fn main() -> Result<()> {
     let keypair = unsafe_zero_keypair(cfg.id);
     let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cfg.port)).unwrap();
 
-    let metrics = Arc::new(SailfishMetrics::default());
+    let metrics = SailfishMetrics::default();
     let mut coordinator = sailfish_coordinator(
         cfg.id,
         cfg.to_connect_addrs,
