@@ -40,11 +40,12 @@ impl InclusionPhase for CanonicalInclusionPhase {
             priority.clear();
         }
 
-        let seqno = priority
-            .iter()
-            .map(|txn| txn.nonce().seqno())
-            .max()
-            .unwrap_or(SeqNo::zero());
+        // If there are no priority transactions, we don't have a priority bundle sequence number.
+        let seqno = if priority.is_empty() {
+            SeqNo::zero()
+        } else {
+            max_seqno
+        };
 
         let non_priority: Vec<Transaction> = candidate_list.non_priority_txns();
 
