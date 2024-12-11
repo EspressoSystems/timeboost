@@ -127,7 +127,7 @@ async fn run_until(
                             .and_then(|num| num.parse::<u64>().ok())
                             .unwrap_or(0);
 
-                        if timeouts >= 20 {
+                        if timeouts >= 15 {
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
                             );
@@ -217,6 +217,7 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
+            return Ok(());
         }
     }
 
@@ -229,6 +230,4 @@ async fn main() -> Result<()> {
             Err(e) => anyhow::bail!("Error: {}", e),
         };
     }
-    #[cfg(not(feature = "until"))]
-    Ok(())
 }

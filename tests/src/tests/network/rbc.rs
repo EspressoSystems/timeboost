@@ -229,7 +229,7 @@ fn medium_committee_partition_network() {
                     }
                 }
                 Err(_) => {
-                    // Once we have timedout out some messages bring back the network
+                    // Once we have timed out bring back the network
                     turmoil::repair("E", "A");
                     turmoil::repair("E", "B");
                     turmoil::repair("E", "C");

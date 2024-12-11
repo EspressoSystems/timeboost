@@ -252,8 +252,8 @@ where
             if round == offline_at_round + 1
                 && id == node_id
                 && (e.signing_key() == committee.get_key(0).unwrap()
-                    || e.signing_key() == committee.get_key(0).unwrap()
-                    || e.signing_key() == committee.get_key(0).unwrap())
+                    || e.signing_key() == committee.get_key(1).unwrap()
+                    || e.signing_key() == committee.get_key(2).unwrap())
             {
                 return Err(format!(
                     "Node: {}, dropping vertex for round: {}",
