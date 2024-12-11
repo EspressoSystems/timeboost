@@ -1,18 +1,15 @@
 use std::collections::VecDeque;
 
-use bitvec::vec::BitVec;
-use primitive_types::U256;
+use committable::Committable;
+use multisig::{Certificate, Committee, PublicKey};
+use multisig::{Envelope, Validated, VoteAccumulator};
 use sailfish::consensus::Consensus;
 use timeboost_core::types::{
-    certificate::Certificate,
-    committee::StaticCommittee,
-    envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     vertex::Vertex,
-    PublicKey, Signature,
 };
-use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::types::round_number::RoundNumber;
+
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
     msg_queue: VecDeque<Message>,
@@ -22,7 +19,7 @@ pub(crate) struct TestNodeInstrument {
 impl TestNodeInstrument {
     pub(crate) fn new(node: Consensus) -> Self {
         Self {
-            node,
+            node: node.sign_deterministically(true),
             msg_queue: VecDeque::new(),
             expected_actions: VecDeque::new(),
         }
@@ -35,7 +32,10 @@ impl TestNodeInstrument {
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
         for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
-                assert_eq!(a, expected, "Expected action should match actual action")
+                assert_eq!(
+                    a, expected,
+                    "Expected action {expected} should match actual action {a}"
+                )
             } else {
                 panic!("Action was processed but expected actions was empty");
             }
@@ -66,7 +66,7 @@ impl TestNodeInstrument {
         &mut self.node
     }
 
-    pub(crate) fn committee(&self) -> &StaticCommittee {
+    pub(crate) fn committee(&self) -> &Committee {
         self.node.committee()
     }
 
@@ -76,7 +76,7 @@ impl TestNodeInstrument {
         edges: Vec<PublicKey>,
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
-        let mut v = Vertex::new(round, *self.node.public_key());
+        let mut v = Vertex::new(round, self.node.public_key());
         v.add_edges(edges);
         if let Some(tc) = timeout_cert {
             v.set_timeout(tc);
@@ -91,15 +91,13 @@ impl TestNodeInstrument {
 
     pub(crate) fn expected_timeout_certificate(
         &self,
-        round: RoundNumber,
-        signers: &(BitVec, Vec<Signature>),
+        signers: Vec<Envelope<Timeout, Validated>>,
     ) -> Certificate<Timeout> {
-        let pp = <PublicKey as SignatureKey>::public_parameter(
-            self.node.committee().stake_table(),
-            U256::from(self.node.committee().quorum_size().get()),
-        );
-        let sig = <PublicKey as SignatureKey>::assemble(&pp, &signers.0, &signers.1);
-        Certificate::new(Timeout::new(round), sig)
+        let mut va = VoteAccumulator::new(self.committee().clone());
+        for e in signers {
+            va.add(e).unwrap();
+        }
+        va.certificate().cloned().unwrap()
     }
 
     pub(crate) fn expected_no_vote(&self, round: RoundNumber) -> Envelope<NoVote, Validated> {
@@ -117,7 +115,7 @@ impl TestNodeInstrument {
 
         if let Some(accumulator) = accumulator {
             assert_eq!(
-                accumulator.votes(),
+                accumulator.votes(&Timeout::new(expected_round).commit()),
                 votes as usize,
                 "Timeout votes accumulated do not match expected votes"
             );

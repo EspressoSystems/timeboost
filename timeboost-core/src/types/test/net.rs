@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::{io, iter};
 
 use crate::traits::comm::Comm;
-use crate::types::envelope::Validated;
 use crate::types::message::Message;
-use crate::types::PublicKey;
 
 use async_trait::async_trait;
+use multisig::{PublicKey, Validated};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot::Receiver;
 use tracing::warn;

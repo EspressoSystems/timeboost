@@ -1,20 +1,24 @@
 use std::time::Duration;
 
+use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::Consensus;
 use sailfish::coordinator::Coordinator;
 use sailfish::rbc::Rbc;
 use timeboost_core::logging::init_logging;
-use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::event::SailfishEventType;
-use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use timeboost_core::types::NodeId;
 
 use crate::rbc::TurmoilComm;
 
 type Peers<const N: usize> = [(PublicKey, (&'static str, u16)); N];
 
-fn fresh_keys(n: u64) -> (Vec<Keypair>, StaticCommittee) {
-    let ks: Vec<Keypair> = (0..n).map(Keypair::zero).collect();
-    let co = StaticCommittee::new(ks.iter().map(|kp| *kp.public_key()).collect());
+fn fresh_keys(n: usize) -> (Vec<Keypair>, Committee) {
+    let ks: Vec<Keypair> = (0..n).map(|_| Keypair::generate()).collect();
+    let co = Committee::new(
+        ks.iter()
+            .enumerate()
+            .map(|(i, kp)| (i as u8, kp.public_key())),
+    );
     (ks, co)
 }
 
@@ -27,7 +31,7 @@ fn mk_host<T, const N: usize>(
     name: &str,
     sim: &mut turmoil::Sim,
     k: Keypair,
-    c: StaticCommittee,
+    c: Committee,
     addr: &'static str,
     peers: Peers<N>,
 ) where
@@ -70,9 +74,9 @@ fn small_committee() {
     let (ks, committee) = fresh_keys(3);
 
     let peers = [
-        (*ks[0].public_key(), ("A", 9000)),
-        (*ks[1].public_key(), ("B", 9001)),
-        (*ks[2].public_key(), ("C", 9002)),
+        (ks[0].public_key(), ("A", 9000)),
+        (ks[1].public_key(), ("B", 9001)),
+        (ks[2].public_key(), ("C", 9002)),
     ];
 
     mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
@@ -121,11 +125,11 @@ fn medium_committee() {
     let (ks, committee) = fresh_keys(5);
 
     let peers = [
-        (*ks[0].public_key(), ("A", 9000)),
-        (*ks[1].public_key(), ("B", 9001)),
-        (*ks[2].public_key(), ("C", 9002)),
-        (*ks[3].public_key(), ("D", 9003)),
-        (*ks[4].public_key(), ("E", 9004)),
+        (ks[0].public_key(), ("A", 9000)),
+        (ks[1].public_key(), ("B", 9001)),
+        (ks[2].public_key(), ("C", 9002)),
+        (ks[3].public_key(), ("D", 9003)),
+        (ks[4].public_key(), ("E", 9004)),
     ];
 
     mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);

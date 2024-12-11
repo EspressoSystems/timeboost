@@ -230,7 +230,7 @@ struct AuthMessage<S: SignatureKey> {
     peer_id_bytes: Vec<u8>,
 
     /// The signature on the public key
-    signature: S::PureAssembledSignatureType,
+    signature: S::SignatureType,
 }
 
 impl<S: SignatureKey> AuthMessage<S> {

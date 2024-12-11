@@ -3,13 +3,12 @@ use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
     Timeboost, TimeboostInitializer,
 };
-use timeboost_core::{
-    traits::has_initializer::HasInitializer,
-    types::{Keypair, NodeId},
-};
+use timeboost_core::traits::has_initializer::HasInitializer;
+use timeboost_core::types::NodeId;
 
 use clap::Parser;
 use timeboost_networking::network::client::derive_libp2p_multiaddr;
+use timeboost_utils::unsafe_zero_keypair;
 use tokio::{signal, sync::watch};
 use tracing::warn;
 
@@ -107,7 +106,7 @@ async fn main() -> Result<()> {
 
     let id = NodeId::from(cli.id as u64);
 
-    let keypair = Keypair::zero(id);
+    let keypair = unsafe_zero_keypair(id);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 

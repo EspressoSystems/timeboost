@@ -2,31 +2,24 @@ use anyhow::{ensure, Result};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 
+use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
-    certificate::Certificate,
-    committee::StaticCommittee,
-    envelope::{Envelope, Validated},
     message::{Action, Message, NoVote, Timeout},
     metrics::SailfishMetrics,
     time::Timestamp,
     transaction::Transaction,
     transaction::TransactionsQueue,
     vertex::Vertex,
-    Keypair, Label, NodeId, PublicKey,
+    Label, NodeId,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tracing::{debug, error, info, instrument, trace, warn};
 
 mod dag;
-mod ord;
-mod vote;
-
-use ord::OrderedVertex;
 
 pub use dag::Dag;
-pub use vote::VoteAccumulator;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
@@ -47,7 +40,7 @@ pub struct ConsensusState {
 }
 
 impl ConsensusState {
-    pub fn new(committee: &StaticCommittee) -> Self {
+    pub fn new(committee: &Committee) -> Self {
         Self {
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
@@ -91,10 +84,10 @@ pub struct Consensus {
     state: ConsensusState,
 
     /// The quorum membership.
-    committee: StaticCommittee,
+    committee: Committee,
 
     /// The set of vertices that we've received so far.
-    buffer: BTreeSet<OrderedVertex>,
+    buffer: BTreeSet<Vertex>,
 
     /// The set of values we have delivered so far.
     delivered: HashSet<(RoundNumber, PublicKey)>,
@@ -116,10 +109,13 @@ pub struct Consensus {
 
     /// The current delayed inbox index.
     delayed_inbox_index: u64,
+
+    /// Sign deterministically?
+    deterministic: bool,
 }
 
 impl Consensus {
-    pub fn new<N>(id: N, keypair: Keypair, committee: StaticCommittee) -> Self
+    pub fn new<N>(id: N, keypair: Keypair, committee: Committee) -> Self
     where
         N: Into<NodeId>,
     {
@@ -137,11 +133,17 @@ impl Consensus {
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
             delayed_inbox_index: 0,
+            deterministic: false,
         }
     }
 
     pub fn with_metrics(mut self, m: SailfishMetrics) -> Self {
         self.metrics = m;
+        self
+    }
+
+    pub fn sign_deterministically(mut self, val: bool) -> Self {
+        self.deterministic = val;
         self
     }
 
@@ -153,7 +155,7 @@ impl Consensus {
         self.label
     }
 
-    pub fn public_key(&self) -> &PublicKey {
+    pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
 
@@ -176,7 +178,7 @@ impl Consensus {
     pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
         ensure!(
             index >= self.delayed_inbox_index,
-            "delayed inbox index must be greater than the current delayed inbox index"
+            "delayed inbox index must be >= than the current delayed inbox index"
         );
         self.delayed_inbox_index = index;
 
@@ -195,7 +197,7 @@ impl Consensus {
         self.state.round = r;
 
         if r == RoundNumber::genesis() {
-            for p in self.committee.committee() {
+            for p in self.committee.parties() {
                 self.state.dag.add(Vertex::new(r, *p))
             }
         }
@@ -230,7 +232,7 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(node = %self.label, round = %self.round()))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
-        let e = Envelope::signed(Timeout::new(r), &self.keypair);
+        let e = Envelope::signed(Timeout::new(r), &self.keypair, self.deterministic);
         vec![Action::SendTimeout(e)]
     }
 
@@ -259,7 +261,7 @@ impl Consensus {
         if self.state.dag.contains(&v) {
             debug!(
                 round  = %self.round(),
-                ours   = %(self.public_key() == v.source()),
+                ours   = %(self.public_key() == *v.source()),
                 vround = %v.round(),
                 "vertex already in dag"
             );
@@ -270,11 +272,11 @@ impl Consensus {
             return actions;
         }
 
-        let quorum = self.committee().quorum_size().get() as usize;
+        let quorum = self.committee.quorum_size().get();
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                self.buffer.insert(v.into());
+                self.buffer.insert(v);
                 self.metrics.vertex_buffer.set(self.buffer.len());
             }
             Ok(a) => {
@@ -318,7 +320,7 @@ impl Consensus {
 
         // Here the no-vote is sent from round r - 1 to leader in round r that is why we add 1 to
         // round to get correct leader
-        if *self.public_key() != self.committee.leader(round + 1) {
+        if self.public_key() != self.committee.leader(*round as usize + 1) {
             warn!(
                 node  = %self.label,
                 round = %self.round(),
@@ -330,7 +332,7 @@ impl Consensus {
 
         match self.no_votes.add(e) {
             // Not enough votes yet.
-            Ok(None) => self.metrics.no_votes.set(self.no_votes.votes()),
+            Ok(None) => {}
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
                 // We need to reset round timer and broadcast vertex with timeout certificate and
@@ -341,7 +343,6 @@ impl Consensus {
                     .and_then(|t| t.certificate())
                     .cloned()
                 else {
-                    self.metrics.no_votes.set(self.no_votes.votes());
                     warn!(
                         node  = %self.label,
                         round = %self.round(),
@@ -396,7 +397,8 @@ impl Consensus {
             .entry(round)
             .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
 
-        let votes = accum.votes();
+        let commit = e.commitment();
+        let votes = accum.votes(&commit);
 
         if let Err(e) = accum.add(e) {
             warn!(
@@ -415,13 +417,17 @@ impl Consensus {
         }
 
         // Have we received more than f timeouts?
-        if votes != accum.votes() && accum.votes() as u64 == self.committee.threshold().get() + 1 {
-            let e = Envelope::signed(Timeout::new(round), &self.keypair);
+        if votes != accum.votes(&commit)
+            && accum.votes(&commit) == self.committee.threshold().get() + 1
+        {
+            let e = Envelope::signed(Timeout::new(round), &self.keypair, self.deterministic);
             actions.push(Action::SendTimeout(e))
         }
 
         // Have we received 2f + 1 timeouts?
-        if votes != accum.votes() && accum.votes() as u64 == self.committee.quorum_size().get() {
+        if votes != accum.votes(&commit)
+            && accum.votes(&commit) == self.committee.quorum_size().get()
+        {
             if let Some(cert) = accum.certificate() {
                 actions.push(Action::SendTimeoutCert(cert.clone()))
             } else {
@@ -463,7 +469,7 @@ impl Consensus {
             return actions;
         }
 
-        if !cert.is_valid_quorum(&self.committee) {
+        if !cert.is_valid_par(&self.committee) {
             warn!(
                 node  = %self.label,
                 round = %self.round(),
@@ -473,7 +479,7 @@ impl Consensus {
             return actions;
         }
 
-        if self.state.dag.vertex_count(round) as u64 >= self.committee.quorum_size().get() {
+        if self.state.dag.vertex_count(round) >= self.committee.quorum_size().get() {
             actions.extend(self.advance_from_round(round));
         }
 
@@ -521,12 +527,12 @@ impl Consensus {
         };
 
         // We inform the leader of the next round that we did not vote in the previous round.
-        let env = Envelope::signed(NoVote::new(round), &self.keypair);
-        let leader = self.committee.leader(round + 1);
+        let env = Envelope::signed(NoVote::new(round), &self.keypair, self.deterministic);
+        let leader = self.committee.leader(*round as usize + 1);
         actions.push(Action::SendNoVote(leader, env));
 
         // If we are not ourselves leader of the next round we can move to it directly.
-        if *self.public_key() != leader {
+        if self.public_key() != leader {
             self.state.round = round + 1;
             actions.push(Action::ResetTimer(self.state.round));
             let NewVertex(mut v) = self.create_new_vertex(self.state.round);
@@ -588,7 +594,7 @@ impl Consensus {
     fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         self.metrics.dag_depth.set(self.state.dag.depth());
         let mut actions = Vec::new();
-        let e = Envelope::signed(v, &self.keypair);
+        let e = Envelope::signed(v, &self.keypair, self.deterministic);
         actions.push(Action::SendProposal(e));
         actions
     }
@@ -606,7 +612,7 @@ impl Consensus {
     fn create_new_vertex(&mut self, r: RoundNumber) -> NewVertex {
         let prev = self.state.dag.vertices(r - 1);
 
-        let mut new = Vertex::new(r, *self.public_key());
+        let mut new = Vertex::new(r, self.public_key());
         new.set_block(
             SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
                 .with_transactions(self.state.transactions.take()),
@@ -614,7 +620,7 @@ impl Consensus {
         new.add_edges(prev.map(Vertex::source).cloned());
 
         // Every vertex in our DAG has > 2f edges to the previous round:
-        debug_assert!(new.num_edges() as u64 >= self.committee.quorum_size().get());
+        debug_assert!(new.num_edges() >= self.committee.quorum_size().get());
 
         NewVertex(new)
     }
@@ -658,7 +664,7 @@ impl Consensus {
             return Ok(Vec::new());
         }
 
-        if self.state.dag.vertex_count(v.round()) as u64 >= self.committee.quorum_size().get() {
+        if self.state.dag.vertex_count(v.round()) >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
             let Some(l) = self.leader_vertex(v.round() - 1).cloned() else {
                 debug!(
@@ -676,7 +682,7 @@ impl Consensus {
                 .dag
                 .vertices(v.round())
                 .filter(|v| v.has_edge(l.source()))
-                .count() as u64
+                .count()
                 >= self.committee.quorum_size().get()
             {
                 return Ok(self.commit_leader(l));
@@ -799,7 +805,7 @@ impl Consensus {
         vround = %v.round())
     )]
     fn is_valid(&self, v: &Vertex) -> bool {
-        if (v.num_edges() as u64) < self.committee.quorum_size().get() {
+        if v.num_edges() < self.committee.quorum_size().get() {
             warn!(
                 node   = %self.label,
                 round  = %self.state.round,
@@ -821,7 +827,7 @@ impl Consensus {
             return false;
         }
 
-        if v.has_edge(&self.committee.leader(v.round() - 1)) {
+        if v.has_edge(&self.committee.leader(*v.round() as usize - 1)) {
             return true;
         }
 
@@ -848,7 +854,7 @@ impl Consensus {
             return false;
         }
 
-        if !tcert.is_valid_quorum(&self.committee) {
+        if !tcert.is_valid_par(&self.committee) {
             warn!(
                 node   = %self.label,
                 round  = %self.state.round,
@@ -859,7 +865,7 @@ impl Consensus {
             return false;
         }
 
-        if v.source() != &self.committee.leader(v.round()) {
+        if v.source() != &self.committee.leader(*v.round() as usize) {
             return true;
         }
 
@@ -885,7 +891,7 @@ impl Consensus {
             return false;
         }
 
-        if !ncert.is_valid_quorum(&self.committee) {
+        if !ncert.is_valid_par(&self.committee) {
             warn!(
                 node   = %self.label,
                 round  = %self.state.round,
@@ -900,7 +906,9 @@ impl Consensus {
     }
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
-        self.state.dag.vertex(r, &self.committee.leader(r))
+        self.state
+            .dag
+            .vertex(r, &self.committee.leader(*r as usize))
     }
 }
 
@@ -911,7 +919,7 @@ impl Consensus {
     }
 
     pub fn buffer(&self) -> impl Iterator<Item = &Vertex> {
-        self.buffer.iter().map(|ordered| &ordered.0)
+        self.buffer.iter()
     }
 
     pub fn delivered(&self) -> &HashSet<(RoundNumber, PublicKey)> {
@@ -926,7 +934,7 @@ impl Consensus {
         self.state.committed_round
     }
 
-    pub fn committee(&self) -> &StaticCommittee {
+    pub fn committee(&self) -> &Committee {
         &self.committee
     }
 
@@ -942,6 +950,6 @@ impl Consensus {
     where
         D: committable::Committable,
     {
-        Envelope::signed(d, &self.keypair)
+        Envelope::signed(d, &self.keypair, self.deterministic)
     }
 }
