@@ -52,16 +52,16 @@ impl TestableNetwork for Libp2pNetworkTest {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
             let peer_id = self.group.peer_ids[i];
-            let private_key = kpr.private_key().clone();
+            let private_key = kpr.secret_key();
 
             let net_fut = Libp2pInitializer::new(
-                kpr.private_key(),
+                &kpr.secret_key(),
                 staked.clone(),
                 bootstrap_nodes.clone().into_iter().collect(),
                 addr.clone(),
             )
             .expect("failed to make libp2p initializer")
-            .into_network(i, *kpr.public_key(), private_key);
+            .into_network(i, kpr.public_key(), private_key);
 
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();

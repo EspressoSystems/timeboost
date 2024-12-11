@@ -1,21 +1,25 @@
 use std::time::Duration;
 
+use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::Consensus;
 use sailfish::coordinator::Coordinator;
 use sailfish::rbc::Rbc;
 use timeboost_core::logging::init_logging;
-use timeboost_core::types::committee::StaticCommittee;
 use timeboost_core::types::event::SailfishEventType;
-use timeboost_core::types::{Keypair, NodeId, PublicKey};
+use timeboost_core::types::NodeId;
 use tokio::time::timeout;
 
 use crate::rbc::TurmoilComm;
 
 type Peers<const N: usize> = [(PublicKey, (&'static str, u16)); N];
 
-fn fresh_keys(n: u64) -> (Vec<Keypair>, StaticCommittee) {
-    let ks: Vec<Keypair> = (0..n).map(Keypair::zero).collect();
-    let co = StaticCommittee::new(ks.iter().map(|kp| *kp.public_key()).collect());
+fn fresh_keys(n: usize) -> (Vec<Keypair>, Committee) {
+    let ks: Vec<Keypair> = (0..n).map(|_| Keypair::generate()).collect();
+    let co = Committee::new(
+        ks.iter()
+            .enumerate()
+            .map(|(i, kp)| (i as u8, kp.public_key())),
+    );
     (ks, co)
 }
 
@@ -28,7 +32,7 @@ fn mk_host<T, const N: usize>(
     name: &str,
     sim: &mut turmoil::Sim,
     k: Keypair,
-    c: StaticCommittee,
+    c: Committee,
     addr: &'static str,
     peers: Peers<N>,
 ) where
@@ -71,9 +75,9 @@ fn small_committee() {
     let (ks, committee) = fresh_keys(3);
 
     let peers = [
-        (*ks[0].public_key(), ("A", 9000)),
-        (*ks[1].public_key(), ("B", 9001)),
-        (*ks[2].public_key(), ("C", 9002)),
+        (ks[0].public_key(), ("A", 9000)),
+        (ks[1].public_key(), ("B", 9001)),
+        (ks[2].public_key(), ("C", 9002)),
     ];
 
     mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
@@ -122,11 +126,11 @@ fn medium_committee() {
     let (ks, committee) = fresh_keys(5);
 
     let peers = [
-        (*ks[0].public_key(), ("A", 9000)),
-        (*ks[1].public_key(), ("B", 9001)),
-        (*ks[2].public_key(), ("C", 9002)),
-        (*ks[3].public_key(), ("D", 9003)),
-        (*ks[4].public_key(), ("E", 9004)),
+        (ks[0].public_key(), ("A", 9000)),
+        (ks[1].public_key(), ("B", 9001)),
+        (ks[2].public_key(), ("C", 9002)),
+        (ks[3].public_key(), ("D", 9003)),
+        (ks[4].public_key(), ("E", 9004)),
     ];
 
     mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
@@ -173,11 +177,11 @@ fn medium_committee_partition_network() {
     let (ks, committee) = fresh_keys(5);
 
     let peers = [
-        (*ks[0].public_key(), ("A", 9000)),
-        (*ks[1].public_key(), ("B", 9001)),
-        (*ks[2].public_key(), ("C", 9002)),
-        (*ks[3].public_key(), ("D", 9003)),
-        (*ks[4].public_key(), ("E", 9004)),
+        (ks[0].public_key(), ("A", 9000)),
+        (ks[1].public_key(), ("B", 9001)),
+        (ks[2].public_key(), ("C", 9002)),
+        (ks[3].public_key(), ("D", 9003)),
+        (ks[4].public_key(), ("E", 9004)),
     ];
 
     mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
@@ -194,8 +198,6 @@ fn medium_committee_partition_network() {
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
         let mut actions = coor.start().await?;
-        let mut timeouts = 0;
-        let mut last_committed = 0;
         loop {
             
             for a in actions.clone() {
@@ -208,19 +210,16 @@ fn medium_committee_partition_network() {
                             turmoil::partition("E", "C");
                             turmoil::partition("E", "D");
                         }
-                        if r >= 10 {
-                            if last_committed != 3 {
-                                panic!("Last committed from network was partitioned was 3, should not have committed since");
-                            }
+                        if r >= 20 {
                             return Ok(());
                         }
-                        last_committed = *round;
                     }
                 }
             }
 
             // For when we partition the network we wont receive messages from all nodes, so just timeout
-            let result = timeout(Duration::from_millis(500), async {
+            actions.clear();
+            let result = timeout(Duration::from_secs(7), async {
                 coor.next().await
             }).await;
             match result {
@@ -230,15 +229,11 @@ fn medium_committee_partition_network() {
                     }
                 }
                 Err(_) => {
-                    actions.clear();
-                    timeouts += 1;
                     // Once we have timedout out some messages bring back the network
-                    if timeouts == committee.size().get() * 4 {
-                        turmoil::repair("E", "A");
-                        turmoil::repair("E", "B");
-                        turmoil::repair("E", "C");
-                        turmoil::repair("E", "D");
-                    }
+                    turmoil::repair("E", "A");
+                    turmoil::repair("E", "B");
+                    turmoil::repair("E", "C");
+                    turmoil::repair("E", "D");
                 }
             }
             

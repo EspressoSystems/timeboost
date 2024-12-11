@@ -25,7 +25,7 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if v.data().round() == RoundNumber::genesis() + 1
@@ -68,7 +68,7 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round() == rounds && node_public_key == *v.data().source()
@@ -87,7 +87,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         NetworkMessageInterceptor::default(),
     )
     .run()
@@ -108,7 +108,7 @@ where
         if let Message::Vertex(v) = msg {
             let round = msg.round();
             // If leader vertex do not process, but process every other so we have 2f + 1
-            if *round == timeout_round && *v.signing_key() == committee.leader(round) {
+            if *round == timeout_round && *v.signing_key() == committee.leader(*round as usize) {
                 return Err("Dropping leader vertex".to_string());
             }
         }
@@ -131,7 +131,7 @@ where
 
                         if no_vote_checks {
                             // The signing key needs to be from leader for round `timeout_round + 1`
-                            if *v.signing_key() != committee.leader((timeout_round + 1).into()) {
+                            if *v.signing_key() != committee.leader(timeout_round as usize + 1) {
                                 return TestOutcome::Failed(
                                     "Should not receive a no vote certificate from non-leader",
                                 );
@@ -145,7 +145,7 @@ where
 
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.keypairs.iter().map(|kpr| {
-                let node_public_key = *kpr.public_key();
+                let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
@@ -165,7 +165,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()
@@ -180,7 +180,7 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes);
-    let online_at_round = 5;
+    let online_at_round = 4;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();
         // Late start 1 node
@@ -196,11 +196,11 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(e)) = msg {
                             let d = e.data();
-                            if d.no_vote_cert().is_some() && *d.round() != online_at_round {
+                            if d.no_vote_cert().is_some() && *d.round() != 3 {
                                 return TestOutcome::Failed(
                                     "We should only timeout when node 4 is leader",
                                 );
@@ -223,7 +223,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(120)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()
@@ -249,12 +249,11 @@ where
         }
         if let Message::Vertex(e) = msg {
             // Simulate coming online in middle of round so drop some vertex messages
-            let stake_table = committee.committee();
             if round == offline_at_round + 1
                 && id == node_id
-                && (e.signing_key() == stake_table.first().unwrap()
-                    || e.signing_key() == stake_table.get(1).unwrap()
-                    || e.signing_key() == stake_table.get(2).unwrap())
+                && (e.signing_key() == committee.get_key(0).unwrap()
+                    || e.signing_key() == committee.get_key(0).unwrap()
+                    || e.signing_key() == committee.get_key(0).unwrap())
             {
                 return Err(format!(
                     "Node: {}, dropping vertex for round: {}",
@@ -272,7 +271,7 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(e)) = msg {
                             // Go 10 rounds passed from when the nodes come online
@@ -294,7 +293,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(120)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()

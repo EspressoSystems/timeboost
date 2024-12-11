@@ -19,6 +19,7 @@ derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
+multisig = { path = "../multisig" }
 primitive-types = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
