@@ -13,8 +13,10 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
+#[cfg(feature = "test")]
+use timeboost_networking::network::client::derive_libp2p_keypair;
+use timeboost_networking::network::client::derive_libp2p_peer_id;
 use timeboost_networking::network::client::Libp2pInitializer;
-use timeboost_networking::network::client::{derive_libp2p_keypair, derive_libp2p_peer_id};
 use timeboost_utils::PeerConfig;
 
 #[derive(Builder)]

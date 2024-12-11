@@ -47,3 +47,6 @@ run_integration_local *ARGS:
 
 run_demo *ARGS:
   ./scripts/run-demo {{ARGS}}
+
+ci_local:
+  just build && just lint && just test_ci --release && just run_demo && just build_docker

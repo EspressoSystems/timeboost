@@ -1,3 +1,4 @@
+use anyhow::{ensure, Result};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 
@@ -74,6 +75,9 @@ pub struct Consensus {
     /// State for when we fall behind
     catchup: bool,
 
+    /// The current delayed inbox index.
+    delayed_inbox_index: u64,
+
     /// Sign deterministically?
     deterministic: bool,
 }
@@ -97,6 +101,7 @@ impl Consensus {
             leader_stack: Vec::new(),
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
+            delayed_inbox_index: 0,
             deterministic: false,
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
@@ -141,6 +146,16 @@ impl Consensus {
 
     pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
         self.transactions = q
+    }
+
+    pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
+        ensure!(
+            index >= self.delayed_inbox_index,
+            "delayed inbox index must be >= than the current delayed inbox index"
+        );
+        self.delayed_inbox_index = index;
+
+        Ok(())
     }
 
     /// (Re-)start consensus.
@@ -587,7 +602,8 @@ impl Consensus {
 
         let mut new = Vertex::new(r, self.public_key());
         new.set_block(
-            SailfishBlock::empty(r, Timestamp::now()).with_transactions(self.transactions.take()),
+            SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
+                .with_transactions(self.transactions.take()),
         );
         new.add_edges(prev.map(Vertex::source).cloned());
 
