@@ -25,7 +25,7 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if v.data().round() == RoundNumber::genesis() + 1
@@ -68,7 +68,7 @@ where
                 .keypairs
                 .iter()
                 .map(|kpr| {
-                    let node_public_key = *kpr.public_key();
+                    let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round() == rounds && node_public_key == *v.data().source()
@@ -87,7 +87,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         NetworkMessageInterceptor::default(),
     )
     .run()
@@ -108,7 +108,7 @@ where
         if let Message::Vertex(v) = msg {
             let round = msg.round();
             // If leader vertex do not process, but process every other so we have 2f + 1
-            if *round == timeout_round && *v.signing_key() == committee.leader(round) {
+            if *round == timeout_round && *v.signing_key() == committee.leader(*round as usize) {
                 return Err("Dropping leader vertex");
             }
         }
@@ -131,7 +131,7 @@ where
 
                         if no_vote_checks {
                             // The signing key needs to be from leader for round `timeout_round + 1``
-                            if *v.signing_key() != committee.leader((timeout_round + 1).into()) {
+                            if *v.signing_key() != committee.leader(timeout_round as usize + 1) {
                                 panic!("Should not receive a no vote from non leader");
                             }
                             return TestOutcome::Passed;
@@ -143,7 +143,7 @@ where
 
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.keypairs.iter().map(|kpr| {
-                let node_public_key = *kpr.public_key();
+                let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
@@ -163,7 +163,7 @@ where
     NetworkTest::<N>::new(
         group,
         node_outcomes,
-        Some(Duration::from_secs(300)),
+        Some(Duration::from_secs(15)),
         interceptor,
     )
     .run()

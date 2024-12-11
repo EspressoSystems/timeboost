@@ -4,8 +4,8 @@ use timeboost_utils::PeerConfig;
 
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
+use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::PublicKey;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {

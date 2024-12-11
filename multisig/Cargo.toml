@@ -1,0 +1,22 @@
+[package]
+name = "multisig"
+version = "0.1.0"
+edition = "2021"
+description = "Signature set over ED25519 signatures"
+
+[features]
+benchmark = []
+
+[dependencies]
+bimap = { workspace = true }
+bincode = { workspace = true }
+committable = { workspace = true }
+data-encoding = { workspace = true }
+ed25519-compact = { workspace = true }
+either = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror = { workspace = true }
+tagged-base64 = { workspace = true, optional = true }
+

@@ -1,3 +1,4 @@
+use multisig::PublicKey;
 use sailfish::consensus::{Consensus, Dag};
 use std::{
     collections::{HashMap, VecDeque},
@@ -5,7 +6,7 @@ use std::{
 };
 use timeboost_core::types::{
     message::{Action, Message},
-    NodeId, PublicKey,
+    NodeId,
 };
 use timeboost_utils::types::round_number::RoundNumber;
 use tracing::info;
@@ -60,7 +61,7 @@ impl FakeNetwork {
             .expect("at least one node exists")
             .node()
             .committee()
-            .leader(round)
+            .leader(*round as usize)
     }
 
     pub(crate) fn leader(&self, round: RoundNumber) -> &Consensus {

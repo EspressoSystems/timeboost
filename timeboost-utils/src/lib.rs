@@ -223,3 +223,11 @@ impl Default for UpgradeConfig {
         }
     }
 }
+
+pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&[0u8; 32]);
+    hasher.update(&i.into().to_le_bytes());
+    let seed = *hasher.finalize().as_bytes();
+    multisig::Keypair::from_seed(seed)
+}

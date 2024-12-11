@@ -6,11 +6,12 @@ use async_trait::async_trait;
 use derive_builder::Builder;
 use libp2p_identity::PeerId;
 use multiaddr::Multiaddr;
+use multisig::{Committee, Keypair, PublicKey};
 use std::collections::HashSet;
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::{
     traits::comm::Comm,
-    types::{committee::StaticCommittee, metrics::SailfishMetrics, Keypair, NodeId, PublicKey},
+    types::{metrics::SailfishMetrics, NodeId},
 };
 use timeboost_networking::network::client::Libp2pInitializer;
 use timeboost_networking::network::client::{derive_libp2p_keypair, derive_libp2p_peer_id};
@@ -35,7 +36,7 @@ pub struct SailfishInitializer<N: Comm + Send + 'static> {
     pub metrics: SailfishMetrics,
 
     /// The committee of the node.
-    pub committee: StaticCommittee,
+    pub committee: Committee,
 
     /// The peer id of the node.
     pub peer_id: PeerId,
@@ -57,7 +58,7 @@ pub struct Sailfish<N: Comm + Send + 'static> {
     metrics: SailfishMetrics,
 
     /// The committee of the sailfish node.
-    committee: StaticCommittee,
+    committee: Committee,
 
     /// The network.
     network: N,
@@ -86,7 +87,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
         self.id
     }
 
-    pub fn public_key(&self) -> &PublicKey {
+    pub fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
 
@@ -100,7 +101,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 
     #[cfg(feature = "test")]
     pub fn derive_libp2p_keypair(&self) -> Result<libp2p_identity::Keypair> {
-        derive_libp2p_keypair::<PublicKey>(self.keypair.private_key())
+        derive_libp2p_keypair::<PublicKey>(&self.keypair.secret_key())
     }
 
     #[cfg(feature = "test")]
@@ -139,7 +140,7 @@ pub async fn sailfish_coordinator(
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
     let p2p = Libp2pInitializer::new(
-        keypair.private_key(),
+        &keypair.secret_key(),
         staked_nodes.clone(),
         bootstrap_nodes,
         bind_address.clone(),
@@ -148,17 +149,23 @@ pub async fn sailfish_coordinator(
     let net_inner = p2p
         .into_network(
             u64::from(id) as usize,
-            *keypair.public_key(),
-            keypair.private_key().clone(),
+            keypair.public_key(),
+            keypair.secret_key(),
         )
         .await
         .expect("libp2p network to be initialized");
 
     net_inner.wait_for_ready().await;
-    let committee = StaticCommittee::from(&*staked_nodes);
+    let committee = Committee::new(
+        staked_nodes
+            .iter()
+            .enumerate()
+            .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
+    );
+
     let rbc = Rbc::new(net_inner, keypair.clone(), committee.clone());
     let peer_id =
-        derive_libp2p_peer_id::<PublicKey>(keypair.private_key()).expect("peer id to be derived");
+        derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
 
     let initializer = SailfishInitializerBuilder::default()
         .id(id)

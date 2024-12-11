@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
+use multisig::{PublicKey, Validated};
 
 use crate::traits::comm::Comm;
-use crate::types::envelope::Validated;
 use crate::types::message::Message;
-use crate::types::PublicKey;
 
 use super::message_interceptor::NetworkMessageInterceptor;
 

@@ -4,17 +4,15 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
-[features]
-benchmark = []
-
 [dependencies]
 async-lock = { workspace = true }
 async-trait = { workspace = true }
-bitvec = { workspace = true }
+committable = { workspace =  true }
 bytes = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
+multisig = { path = "../multisig" }
 portpicker = { workspace = true }
 primitive-types = { workspace = true }
 rand = { workspace = true }

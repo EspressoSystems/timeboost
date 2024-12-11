@@ -9,7 +9,7 @@ use tracing::warn;
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum RecordValue<K: SignatureKey + 'static> {
     /// A signed record value
-    Signed(Vec<u8>, K::PureAssembledSignatureType),
+    Signed(Vec<u8>, K::SignatureType),
 
     /// An unsigned record value
     Unsigned(Vec<u8>),

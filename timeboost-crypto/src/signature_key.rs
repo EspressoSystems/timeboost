@@ -23,7 +23,7 @@ use crate::{
     stake_table::StakeTableEntry,
     traits::{
         qc::QuorumCertificateScheme,
-        signature_key::{PrivateSignatureKey, SignatureKey},
+        signature_key::{PrivateSignatureKey, QcSignatureKey, SignatureKey},
     },
 };
 
@@ -50,24 +50,17 @@ impl PrivateSignatureKey for BLSPrivKey {
 
 impl SignatureKey for BLSPubKey {
     type PrivateKey = BLSPrivKey;
+    type SignatureType = <BLSOverBN254CurveSignatureScheme as SignatureScheme>::Signature;
     type StakeTableEntry = StakeTableEntry<VerKey>;
-    type QcParams =
-        QcParams<BLSPubKey, <BLSOverBN254CurveSignatureScheme as SignatureScheme>::PublicParameter>;
-    type PureAssembledSignatureType =
-        <BLSOverBN254CurveSignatureScheme as SignatureScheme>::Signature;
-    type QcType = (Self::PureAssembledSignatureType, BitVec);
     type SignError = SignatureError;
 
     #[instrument(level = "trace", skip(self))]
-    fn validate(&self, signature: &Self::PureAssembledSignatureType, data: &[u8]) -> bool {
+    fn validate(&self, signature: &Self::SignatureType, data: &[u8]) -> bool {
         // This is the validation for QC partial signature before append().
         BLSOverBN254CurveSignatureScheme::verify(&(), self, data, signature).is_ok()
     }
 
-    fn sign(
-        sk: &Self::PrivateKey,
-        data: &[u8],
-    ) -> Result<Self::PureAssembledSignatureType, Self::SignError> {
+    fn sign(sk: &Self::PrivateKey, data: &[u8]) -> Result<Self::SignatureType, Self::SignError> {
         BitVectorQc::<BLSOverBN254CurveSignatureScheme>::sign(
             &(),
             sk,
@@ -110,6 +103,13 @@ impl SignatureKey for BLSPubKey {
     fn public_key(entry: &Self::StakeTableEntry) -> Self {
         entry.stake_key
     }
+}
+
+impl QcSignatureKey for BLSPubKey {
+    type QcParams =
+        QcParams<BLSPubKey, <BLSOverBN254CurveSignatureScheme as SignatureScheme>::PublicParameter>;
+    type PureAssembledSignatureType = Self::SignatureType;
+    type QcType = (Self::PureAssembledSignatureType, BitVec);
 
     fn public_parameter(
         stake_entries: Vec<Self::StakeTableEntry>,
@@ -143,5 +143,66 @@ impl SignatureKey for BLSPubKey {
     fn genesis_proposer_pk() -> Self {
         let kp = KeyPair::generate(&mut ChaCha20Rng::from_seed([0u8; 32]));
         kp.ver_key()
+    }
+}
+
+impl SignatureKey for multisig::PublicKey {
+    type PrivateKey = multisig::SecretKey;
+    type SignatureType = multisig::Signature;
+    type StakeTableEntry = StakeTableEntry<multisig::PublicKey>;
+    type SignError = std::convert::Infallible;
+
+    fn validate(&self, signature: &Self::SignatureType, data: &[u8]) -> bool {
+        self.is_valid(data, signature)
+    }
+
+    fn sign(sk: &Self::PrivateKey, data: &[u8]) -> Result<Self::SignatureType, Self::SignError> {
+        Ok(sk.sign(data, false))
+    }
+
+    fn from_private(private_key: &Self::PrivateKey) -> Self {
+        private_key.public_key()
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SerializationError> {
+        Self::try_from(bytes).map_err(|_| SerializationError::InvalidData)
+    }
+
+    fn generated_from_seed_indexed(seed: [u8; 32], index: u64) -> (Self, Self::PrivateKey) {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&seed);
+        hasher.update(&index.to_le_bytes());
+        let seed = *hasher.finalize().as_bytes();
+        let kp = multisig::Keypair::from_seed(seed);
+        (kp.public_key(), kp.secret_key())
+    }
+
+    fn stake_table_entry(&self, stake: u64) -> Self::StakeTableEntry {
+        StakeTableEntry {
+            stake_key: *self,
+            stake_amount: U256::from(stake),
+        }
+    }
+
+    fn public_key(entry: &Self::StakeTableEntry) -> Self {
+        entry.stake_key
+    }
+}
+
+impl PrivateSignatureKey for multisig::SecretKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        Ok(Self::try_from(bytes)?)
+    }
+
+    fn to_tagged_base64(&self) -> Result<tagged_base64::TaggedBase64, tagged_base64::Tb64Error> {
+        Ok(self.into())
     }
 }

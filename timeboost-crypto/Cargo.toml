@@ -20,6 +20,7 @@ digest = { workspace = true }
 displaydoc = { workspace = true }
 jf-signature = { workspace = true }
 jf-utils = { workspace = true }
+multisig = { path = "../multisig", features = ["tagged-base64"] }
 nimue = { workspace = true }
 primitive-types = { workspace = true }
 rand = { workspace = true }

@@ -1,22 +1,20 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::{Certificate, PublicKey};
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::traits::signature_key::SignatureKey;
 
 use super::{
-    certificate::Certificate,
     message::{NoVote, Timeout},
     time::Timestamp,
-    PublicKey,
 };
 use crate::types::{block::sailfish::SailfishBlock, Label};
 use timeboost_utils::types::round_number::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex {
-    source: PublicKey,
     round: RoundNumber,
+    source: PublicKey,
     edges: BTreeSet<PublicKey>,
     no_vote: Option<Certificate<NoVote>>,
     timeout: Option<Certificate<Timeout>>,
@@ -118,7 +116,7 @@ impl Display for Vertex {
 impl Committable for Vertex {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
-            .var_size_field("source", &self.source.to_bytes())
+            .fixed_size_field("source", &self.source.as_bytes())
             .field("round", self.round.commit())
             .field("block", self.block.commit())
             .optional("no_vote", &self.no_vote)
@@ -126,7 +124,7 @@ impl Committable for Vertex {
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()
-            .fold(builder, |b, e| b.var_size_bytes(&e.to_bytes()))
+            .fold(builder, |b, e| b.var_size_bytes(e.as_slice()))
             .finalize()
     }
 }
