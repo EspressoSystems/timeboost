@@ -1,4 +1,4 @@
-use tokio::sync::watch;
+use tokio::{signal, sync::watch};
 
 pub async fn run_until(
     port: u16,
@@ -51,6 +51,10 @@ pub async fn run_until(
                         }
                     }
                 }
+            }
+            _ = signal::ctrl_c() => {
+                tracing::info!("ctrl-c received, shutting down");
+                return;
             }
         }
     }
