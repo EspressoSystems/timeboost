@@ -132,6 +132,18 @@ services:
       - "8004:8004"
       - "8804:8804"
       - "9004:9004"
+  tx-generator:
+    image: tx-generator:latest
+    command: ["/app/tx-generator", "--committee-size", "5"]
+    depends_on:
+      - node0
+      - node1
+      - node2
+      - node3
+      - node4
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.7
 
 networks:
   timeboost:

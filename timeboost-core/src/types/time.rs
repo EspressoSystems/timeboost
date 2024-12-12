@@ -13,6 +13,12 @@ const EPOCH_DURATION: Duration = Duration::from_secs(60);
 )]
 pub struct Epoch(u128);
 
+impl Epoch {
+    pub fn now() -> Self {
+        Timestamp::now().epoch()
+    }
+}
+
 impl std::fmt::Display for Epoch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
