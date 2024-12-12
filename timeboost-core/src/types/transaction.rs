@@ -2,7 +2,6 @@ use std::mem;
 
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::types::seqno::SeqNo;

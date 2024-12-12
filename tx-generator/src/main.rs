@@ -1,5 +1,3 @@
-use std::future::pending;
-
 use bytes::Bytes;
 use clap::Parser;
 use futures::FutureExt;
