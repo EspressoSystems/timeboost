@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[features]
+until = ["timeboost-core/until"]
+
 [dependencies]
 bytes = { workspace = true }
 clap = { workspace = true }

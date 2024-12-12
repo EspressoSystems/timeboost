@@ -7,15 +7,22 @@ just build_release --features until
 for i in {0..4}; do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=error \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --metrics-port $((9000 + i)) \
         --base local \
-        --until 500 \
+        --until 100 \
         --watchdog-timeout 300 &
 done
+
+echo "Starting tx-generator"
+RUST_LOG=tx_generator=debug \
+./target/release/tx-generator \
+    --committee-size 5 \
+    --until 100 \
+    --watchdog-timeout 300 &
 
 wait

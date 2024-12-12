@@ -27,7 +27,7 @@ RUN chown -R txgeneratoruser:appgroup /app && chmod +x /app/tx-generator
 USER txgeneratoruser
 
 # Set the log level to debug by default
-ENV RUST_LOG=${RUST_LOG:-tx-generator=debug}
+ENV RUST_LOG=${RUST_LOG:-debug}
 
 
 # Run the timeboost binary

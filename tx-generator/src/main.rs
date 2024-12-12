@@ -7,9 +7,13 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
-use tokio::{signal, task::JoinSet, time::sleep};
+use tokio::{signal, sync::watch, task::JoinSet, time::sleep};
+
+#[cfg(feature = "until")]
+use timeboost_core::until::run_until;
 
 const SIZE_500_KB: usize = 500 * 1024;
+// const SIZE_500_KB: usize = 500;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -24,6 +28,16 @@ struct Cli {
     /// If we're running in docker, we need to use the correct port.
     #[clap(long, default_value = "false")]
     docker: bool,
+
+    /// The until value to use for the committee config.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 1000)]
+    until: u64,
+
+    /// The watchdog timeout.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 30)]
+    watchdog_timeout: u64,
 }
 
 fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
@@ -76,7 +90,7 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
     match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
         match client
             .post(format!(
-                "http://{host}:{port}/submit",
+                "http://{host}:{port}/v0/submit",
                 host = host,
                 port = port
             ))
@@ -85,7 +99,7 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
             .await
         {
             Ok(resp) => {
-                tracing::info!("resp: {:?}", resp);
+                tracing::debug!("resp: {:?}", resp);
             }
             Err(e) => {
                 tracing::error!("error: {:?}", e);
@@ -115,8 +129,19 @@ async fn main() {
         .fuse()
         .boxed();
 
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(());
+
     let client = Box::leak(Box::new(Client::new()));
     let mut handles: JoinSet<()> = JoinSet::new();
+
+    #[cfg(feature = "until")]
+    tokio::spawn(run_until(
+        9000,
+        cli.until,
+        cli.watchdog_timeout,
+        is_docker,
+        shutdown_tx.clone(),
+    ));
 
     loop {
         tokio::select! {
@@ -133,7 +158,6 @@ async fn main() {
                 if let Some(handle) = handle {
                     match handle {
                         Ok(_) => {
-                            tracing::info!("tx sent successfully");
                         }
                         Err(e) => {
                             tracing::error!(%e, "something went wrong sending the tx");
@@ -141,17 +165,17 @@ async fn main() {
                     }
                 }
             }
-            _ = signal::ctrl_c() => {
+            _ = shutdown_rx.changed() => {
                 tracing::info!("shutting down tx generator");
 
-                // Wait for all the handles to finish, or timeout after 4 seconds.
-                if let Err(e) = tokio::time::timeout(std::time::Duration::from_secs(4), handles.join_all()).await {
-                    // The joinset will abort all the handles when it's dropped.
-                    tracing::error!(%e, "timed out waiting for txs to finish");
-                }
-
+                // Abort all the handles, we don't care about the results.
+                handles.abort_all();
 
                 break;
+            }
+            _ = signal::ctrl_c() => {
+                tracing::info!("received ctrl-c; shutting down");
+                shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
             }
         }
     }
