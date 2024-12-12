@@ -1,8 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use futures::future::join_all;
 use libp2p::PeerId;
-use timeboost_crypto::sg_encryption::Committee;
+use libp2p_identity::Keypair;
+use timeboost_crypto::{sg_encryption::Committee, traits::signature_key::SignatureKey};
+use timeboost_utils::PeerConfig;
 use tokio::{
     runtime::Handle,
     sync::{
@@ -13,15 +19,77 @@ use tokio::{
 };
 use transport::{Connection, NetworkMessage, Transport};
 
-use crate::NetworkError;
+use crate::{
+    network::{client::derive_libp2p_keypair, NetworkNodeConfig, NetworkNodeConfigBuilder},
+    NetworkError,
+};
 
 pub mod transport;
+
+/// The initializer for the basic network.
+pub struct NetworkInitializer<K: SignatureKey + 'static> {
+    pub local_id: PeerId,
+    /// The bootstrap nodes to connect to.
+    pub bootstrap_nodes: Vec<(PeerId, String)>,
+
+    /// The staked nodes to connect to.
+    pub staked_nodes: Vec<PeerConfig<K>>,
+
+    // /// The network configuration.
+    // pub config: NetworkNodeConfig<K>,
+    /// The libp2p keypair
+    pub keypair: Keypair,
+
+    pub bind_address: String,
+}
+
+impl<K: SignatureKey + 'static> NetworkInitializer<K> {
+    pub fn new(
+        local_id: PeerId,
+        private_key: &K::PrivateKey,
+        staked_nodes: Vec<PeerConfig<K>>,
+        bootstrap_nodes: HashSet<(PeerId, String)>,
+        bind_address: String,
+    ) -> anyhow::Result<Self> {
+        let libp2p_keypair = derive_libp2p_keypair::<K>(private_key).expect("Keypair to derive");
+
+        let bootstrap_nodes = bootstrap_nodes
+            .into_iter()
+            .collect::<Vec<(PeerId, String)>>();
+
+        Ok(Self {
+            local_id,
+            bootstrap_nodes,
+            staked_nodes,
+            keypair: libp2p_keypair,
+            bind_address,
+        })
+    }
+
+    pub async fn into_network(self, tx_ready: oneshot::Sender<()>) -> anyhow::Result<Network> {
+        // let mut network_config = NetworkConfig::default();
+        // network_config.config.known_nodes_with_stake = self.staked_nodes.to_vec();
+        // network_config.libp2p_config = Some(Libp2pConfig {
+        //     bootstrap_nodes: self.bootstrap_nodes.clone(),
+        // });
+
+        // We don't have any DA nodes in Sailfish.
+        // network_config.config.known_da_nodes = vec![];
+        // Create the Libp2p network
+        Ok(Network::start(
+            self.local_id,
+            self.bind_address,
+            self.bootstrap_nodes,
+            tx_ready,
+        )
+        .await)
+    }
+}
 
 #[derive(Debug)]
 pub struct Network {
     main_task: JoinHandle<()>,
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
-    tx_ready: oneshot::Sender<()>,
     network_rx: mpsc::Receiver<NetworkMessage>,
 }
 
@@ -37,11 +105,15 @@ impl Network {
         let connections = Arc::new(RwLock::new(HashMap::new()));
         // receiving messages each for peer and send to network_rx
         let (network_tx, network_rx) = mpsc::channel(10000);
-        let main_task = handle.spawn(Self::run(transport, Arc::clone(&connections), network_tx));
+        let main_task = handle.spawn(Self::run(
+            transport,
+            Arc::clone(&connections),
+            network_tx,
+            tx_ready,
+        ));
         Self {
             main_task,
             connections,
-            tx_ready,
             network_rx,
         }
     }
@@ -50,6 +122,7 @@ impl Network {
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
         network_tx: Sender<NetworkMessage>,
+        tx_ready: oneshot::Sender<()>,
     ) {
         let rx_connection = transport.rx_connection();
         let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
@@ -84,7 +157,7 @@ impl Network {
             ));
             handles.insert(remote_id, task);
         }
-
+        tx_ready.send(());
         join_all(handles.into_values().into_iter()).await;
         // Arc::try_unwrap(block_fetcher)
         //     .unwrap_or_else(|_| panic!("Failed to drop all connections"))

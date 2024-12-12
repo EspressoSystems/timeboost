@@ -80,31 +80,16 @@ impl<T: RawComm + Send> RawComm for Box<T> {
         (**self).shutdown().await
     }
 }
-#[derive(Debug)]
-pub struct NetworkWrapper {
-    network: Network,
-    committee: StaticCommittee,
-}
-
-impl NetworkWrapper {
-    pub fn new(network: Network, committee: StaticCommittee) -> Self {
-        Self { network, committee }
-    }
-}
 
 #[async_trait]
-impl Comm for NetworkWrapper {
+impl RawComm for Network {
     type Err = NetworkError;
 
-    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes = {
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?
-        };
-
-        self.network.broadcast_message(bytes).await
+    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+        self.broadcast_message(msg).await
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
         let bytes =
             bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
 
@@ -112,28 +97,14 @@ impl Comm for NetworkWrapper {
         todo!()
     }
 
-    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
-        let bytes = self.network.recv_message().await?;
-        let msg: Message<Unchecked> = bincode::deserialize(&bytes)
-            .map_err(|e| NetworkError::FailedToDeserialize(e.to_string()))?;
-        let Some(msg) = msg.validated(&self.committee) else {
-            return Err(NetworkError::FailedToDeserialize(
-                "invalid message signature".to_string(),
-            ));
-        };
-        Ok(msg)
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+        self.recv_message().await
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.network.shut_down().await;
+        self.shut_down().await;
         Ok(())
     }
-}
-
-#[derive(Debug)]
-pub struct Libp2p {
-    net: Libp2pNetwork<PublicKey>,
-    committee: StaticCommittee,
 }
 
 #[async_trait]

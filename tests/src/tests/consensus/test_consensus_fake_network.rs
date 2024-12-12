@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use multisig::PublicKey;
 use sailfish::consensus::Dag;
-use timeboost_core::logging;
 use timeboost_core::types::message::Message;
 use timeboost_core::types::message::{Action, Evidence};
 use timeboost_core::types::NodeId;
+use timeboost_utils::types::logging;
 use timeboost_utils::types::round_number::RoundNumber;
 use timeboost_utils::unsafe_zero_keypair;
 

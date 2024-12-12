@@ -1,7 +1,6 @@
 use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
 use multisig::PublicKey;
-use timeboost_networking::network::client::{derive_libp2p_multiaddr, derive_libp2p_peer_id};
+use timeboost_networking::network::client::derive_libp2p_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]

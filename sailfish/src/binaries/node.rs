@@ -4,14 +4,11 @@ use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
 use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
 use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
-use timeboost_core::logging;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::NodeId;
-use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use timeboost_utils::{unsafe_zero_keypair, PeerConfig};
+use timeboost_utils::{types::logging, unsafe_zero_keypair, PeerConfig};
 use tokio::signal;
 use tracing::warn;
 

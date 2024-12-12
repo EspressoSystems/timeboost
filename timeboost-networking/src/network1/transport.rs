@@ -8,12 +8,10 @@ use libp2p::PeerId;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use timeboost_utils::types::round_number::RoundNumber;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::runtime::Handle;
-use tokio::spawn;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
 use tokio::sync::watch::{self};
@@ -567,7 +565,7 @@ mod test {
         let addresses: Vec<_> = (0..num_of_nodes)
             .map(|i| (PeerId::random(), format!("127.0.0.1:{}", 5500 + i)))
             .collect();
-        let networks = addresses.iter().enumerate().map(|(i, (pid, addr))| {
+        let networks = addresses.iter().enumerate().map(|(_i, (pid, addr))| {
             Transport::run(
                 *pid,
                 addr.clone(),

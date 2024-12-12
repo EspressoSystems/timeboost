@@ -1,7 +1,6 @@
 use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
 use multisig::{Committee, Keypair, PublicKey};
-use timeboost_networking::network::client::{derive_libp2p_multiaddr, derive_libp2p_peer_id};
+use timeboost_networking::network::client::derive_libp2p_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 #[cfg(test)]
@@ -12,8 +11,8 @@ mod rbc;
 
 pub struct Group {
     pub size: usize,
-    pub addrs: Vec<Multiaddr>,
-    pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+    pub addrs: Vec<String>,
+    pub bootstrap_nodes: Vec<(PeerId, String)>,
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
     pub committee: Committee,
     pub peer_ids: Vec<PeerId>,
@@ -33,12 +32,12 @@ impl Group {
         for (i, kpr) in keypairs.iter().enumerate() {
             let cfg = ValidatorConfig::generated_from_seed_indexed([0; 32], i as u64, 1, false);
             pubks.push((i as u8, kpr.public_key()));
-            addrs.push(derive_libp2p_multiaddr(&format!("127.0.0.1:{}", 8000 + i as u16)).unwrap());
+            addrs.push(format!("127.0.0.1:{}", 8000 + i as u16));
             vcgfs.push(cfg);
             peer_ids.push(derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
         }
 
-        let bootstrap_nodes: Vec<(PeerId, Multiaddr)> = peer_ids
+        let bootstrap_nodes: Vec<(PeerId, String)> = peer_ids
             .iter()
             .zip(addrs.iter())
             .map(|(peer_id, addr)| (*peer_id, addr.clone()))
