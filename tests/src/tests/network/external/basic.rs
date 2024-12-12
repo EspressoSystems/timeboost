@@ -8,7 +8,6 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::network::client::{derive_libp2p_multiaddr, Libp2pInitializer};
 use timeboost_networking::network1::NetworkInitializer;
 use tokio::sync::oneshot;
 use tokio::{sync::watch, task::JoinSet};
@@ -63,14 +62,10 @@ impl TestableNetwork for BasicNetworkTest {
             .into_network(tx_ready);
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
-            println!("spawning new handle...");
             handles.spawn(async move {
-                println!("starting network");
                 let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
-                println!("awaiting rx_ready");
-                let _ = rx_ready.await; //net_inner.net_inner.wait_for_ready().await;
-                println!("running rbc");
+                let _ = rx_ready.await;
                 let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);

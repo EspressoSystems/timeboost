@@ -55,7 +55,7 @@ impl TestableNetwork for Libp2pNetworkTest {
                 .map(|(peer_id, addr)| {
                     (
                         *peer_id,
-                        derive_libp2p_multiaddr(&addr).expect("derive multiaddr"),
+                        derive_libp2p_multiaddr(addr).expect("derive multiaddr"),
                     )
                 })
                 .collect();

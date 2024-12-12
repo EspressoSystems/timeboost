@@ -98,7 +98,7 @@ impl RawComm for Network {
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.shut_down().await;
+        self.shut_down().await?;
         Ok(())
     }
 }

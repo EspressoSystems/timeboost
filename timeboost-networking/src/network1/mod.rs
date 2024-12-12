@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    sync::{atomic::AtomicBool, Arc},
+    sync::Arc,
 };
 
 use futures::future::join_all;
@@ -26,18 +25,19 @@ pub mod transport;
 
 /// The initializer for the basic network.
 pub struct NetworkInitializer<K: SignatureKey + 'static> {
+    /// The local peer id
     pub local_id: PeerId,
+
     /// The bootstrap nodes to connect to.
     pub bootstrap_nodes: Vec<(PeerId, String)>,
 
     /// The staked nodes to connect to.
     pub staked_nodes: Vec<PeerConfig<K>>,
 
-    // /// The network configuration.
-    // pub config: NetworkNodeConfig<K>,
-    /// The libp2p keypair
+    /// The keypair
     pub keypair: Keypair,
 
+    /// The local address
     pub bind_address: String,
 }
 
@@ -65,28 +65,19 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
     }
 
     pub async fn into_network(self, tx_ready: oneshot::Sender<()>) -> anyhow::Result<Network> {
-        // let mut network_config = NetworkConfig::default();
-        // network_config.config.known_nodes_with_stake = self.staked_nodes.to_vec();
-        // network_config.libp2p_config = Some(Libp2pConfig {
-        //     bootstrap_nodes: self.bootstrap_nodes.clone(),
-        // });
-
-        // We don't have any DA nodes in Sailfish.
-        // network_config.config.known_da_nodes = vec![];
-        // Create the Libp2p network
-        Ok(Network::start(
+        let net_fut = Network::start(
             self.local_id,
             self.bind_address,
             self.bootstrap_nodes,
             tx_ready,
-        )
-        .await)
+        );
+        Ok(net_fut.await)
     }
 }
 
 #[derive(Debug)]
 pub struct Network {
-    main_task: JoinHandle<()>,
+    _main_task: JoinHandle<()>,
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
     network_rx: mpsc::Receiver<NetworkMessage>,
 }
@@ -101,7 +92,6 @@ impl Network {
         let transport = Transport::run(local_id, local_addr, to_connect.clone()).await;
         let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
-        // receiving messages each for peer and send to network_rx
         let (network_tx, network_rx) = mpsc::channel(10000);
         let main_task = handle.spawn(Self::run(
             transport,
@@ -110,9 +100,8 @@ impl Network {
             network_tx,
             tx_ready,
         ));
-        println!("starting network..");
         Self {
-            main_task,
+            _main_task: main_task,
             connections,
             network_rx,
         }
@@ -134,17 +123,7 @@ impl Network {
                 // wait until previous sync task completes
                 task.await.ok();
             }
-
             let sender = connection.tx.clone();
-            // let authority = peer_id as AuthorityIndex;
-            // block_fetcher
-            //     .register_authority(
-            //         authority,
-            //         sender,
-            //         connection.latency_last_value_receiver.clone(),
-            //     )
-            //     .await;
-            // inner.connected_authorities.lock().insert(authority);
             let (bc_sender, bc_receiver) = mpsc::channel(10000);
             connections
                 .write()
@@ -156,23 +135,16 @@ impl Network {
                 network_tx.clone(),
                 bc_receiver,
             ));
-            println!("inserting the peer: {:?}", remote_id);
+
             handles.insert(remote_id, task);
-            println!("to_connect: {:?}", to_connect);
             to_connect.retain(|(id, _)| id != &remote_id);
-            println!("number of peers left: {}", to_connect.len());
             if to_connect.len() == 1 {
+                // only our own peer id left
                 break;
             }
         }
-        println!("out of the receive loop");
         let _ = tx_ready.send(());
-        join_all(handles.into_values().into_iter()).await;
-        // Arc::try_unwrap(block_fetcher)
-        //     .unwrap_or_else(|_| panic!("Failed to drop all connections"))
-        //     .shutdown()
-        //     .await;
-        //network.shutdown().await;
+        join_all(handles.into_values()).await;
     }
 
     pub async fn connection_task(
@@ -181,11 +153,9 @@ impl Network {
         network_tx: Sender<NetworkMessage>,
         mut bc_receiver: mpsc::Receiver<NetworkMessage>,
     ) -> Option<()> {
-        println!("created a connection task");
         loop {
             tokio::select! {
                 inbound_msg = connection.rx.recv() => {
-                    println!("receiving inbound message..");
                     if let Some(msg) = inbound_msg {
                         network_tx.send(msg).await.ok();
                     } else {
@@ -194,7 +164,6 @@ impl Network {
                 }
                 outbound_msg = bc_receiver.recv() => {
                     if let Some(msg) = outbound_msg {
-                        println!("sending outbound message..");
                         sender.send(msg).await.ok();
                     } else {
                         break
@@ -202,25 +171,18 @@ impl Network {
                 }
             }
         }
-        //        self.connections.remove()
         None
     }
 
+    // TODO: shutdown gracefully
     pub async fn shut_down(&self) -> Result<(), NetworkError> {
-        // drop(self.stop);
-        // todo - wait for network shutdown as well
         self.connections.write().await.clear();
-        println!("shutting down node");
         Ok(())
-        // let Ok(inner) = Arc::try_unwrap(self.inner) else {
-        //     panic!("Shutdown failed - not all resources are freed after main task is completed");
-        // };
-        // inner.syncer.stop()
     }
 
     pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
         for connection in self.connections.read().await.values() {
-            if let Err(_) = connection.send(NetworkMessage::from(message.clone())).await {
+            if (connection.send(NetworkMessage::from(message.clone())).await).is_err() {
                 return Err(NetworkError::ChannelSendError(
                     "Error sending message".to_string(),
                 ));
@@ -229,6 +191,7 @@ impl Network {
         Ok(())
     }
 
+    // TODO: implement direct messaging
     pub async fn direct_message(
         &self,
         _recipient: PublicKey,
