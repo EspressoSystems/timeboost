@@ -40,10 +40,10 @@ impl InclusionPhase for CanonicalInclusionPhase {
 
         let min_seqno = seqnos.iter().min().cloned().unwrap_or(SeqNo::zero());
         let max_seqno = seqnos.iter().max().cloned().unwrap_or(SeqNo::zero());
-        let expected: Vec<SeqNo> = (min_seqno..=max_seqno).map(|i| i.into()).collect();
+        let expected: Vec<SeqNo> = (*min_seqno..=*max_seqno).map(|i| i.into()).collect();
 
         // If there are gaps in the sequence numbers, exclude this priority bundle.
-        if !expected.iter().all(|seqno| actual.contains(seqno)) {
+        if !expected.iter().all(|seqno| seqnos.contains(seqno)) {
             priority.clear();
         }
 
