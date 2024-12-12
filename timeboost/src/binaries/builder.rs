@@ -60,6 +60,13 @@ struct Cli {
 }
 
 #[cfg(feature = "until")]
+const MAX_ROUND_TIMEOUTS: u64 = 15;
+#[cfg(feature = "until")]
+const LATE_START_DELAY_SECS: u64 = 15;
+#[cfg(feature = "until")]
+const ROUND_TIMEOUT_SECS: u64 = 70;
+
+#[cfg(feature = "until")]
 async fn run_until(
     port: u16,
     until: u64,
@@ -111,7 +118,7 @@ async fn run_until(
 
                         let now = Instant::now();
                         if committed_round == last_committed
-                            && now.saturating_duration_since(last_committed_time) > Duration::from_secs(30)
+                            && now.saturating_duration_since(last_committed_time) > Duration::from_secs(ROUND_TIMEOUT_SECS)
                         {
                             shutdown_tx
                                 .send(())
@@ -129,7 +136,7 @@ async fn run_until(
                             .and_then(|num| num.parse::<u64>().ok())
                             .unwrap_or(0);
 
-                        if timeouts >= 15 {
+                        if timeouts >= MAX_ROUND_TIMEOUTS {
                             shutdown_tx.send(()).expect(
                                 "the shutdown sender was dropped before the receiver could receive the token",
                             );
@@ -192,7 +199,7 @@ async fn main() -> Result<()> {
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {
             tracing::warn!("Adding delay before starting node: id: {}", id);
-            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
         }
         task_handle
     };

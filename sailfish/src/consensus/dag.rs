@@ -29,10 +29,6 @@ impl Dag {
         m.insert(*s, v);
     }
 
-    pub fn clear(&mut self) {
-        self.elements.clear();
-    }
-
     /// Removes all rounds up to (and including) the specified round number from the DAG
     pub fn remove(&mut self, r: RoundNumber) {
         self.elements = self.elements.split_off(&r);

@@ -7,8 +7,8 @@ just build_release --features until
 if [ -z "${1:-}" ]; then
     nodes=5
 else
-    if ! [[ $1 =~ ^[0-9]+$ ]]; then
-        echo "Error: The number of nodes must be a positive integer."
+    if ! [[ $1 =~ ^[5-9]+$ ]]; then
+        echo "Error: The number of nodes must be a positive integer greater than 4."
         exit 1
     fi
     nodes=$1
