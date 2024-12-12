@@ -31,10 +31,16 @@ impl InclusionPhase for CanonicalInclusionPhase {
             .filter(|txn| txn.is_priority() && txn.nonce().epoch() == committing_epoch)
             .collect();
 
-        let seqnos: Vec<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
+        let seqnos: HashSet<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
+
+        // If there are dupes, ignore this bundle.
+        if seqnos.len() != priority.len() {
+            priority.clear();
+        }
+
+        let min_seqno = seqnos.iter().min().cloned().unwrap_or(SeqNo::zero());
         let max_seqno = seqnos.iter().max().cloned().unwrap_or(SeqNo::zero());
-        let expected: Vec<SeqNo> = (0..=*max_seqno).map(|i| i.into()).collect();
-        let actual: HashSet<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
+        let expected: Vec<SeqNo> = (min_seqno..=max_seqno).map(|i| i.into()).collect();
 
         // If there are gaps in the sequence numbers, exclude this priority bundle.
         if !expected.iter().all(|seqno| actual.contains(seqno)) {
@@ -47,6 +53,9 @@ impl InclusionPhase for CanonicalInclusionPhase {
         } else {
             max_seqno
         };
+
+        // Sort the priority transactions by sequence number.
+        priority.sort_by_key(|txn| txn.nonce().seqno());
 
         let non_priority: Vec<Transaction> = candidate_list.non_priority_txns();
 
