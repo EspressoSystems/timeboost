@@ -32,7 +32,7 @@ impl TimeboostApiState {
             .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
         let state = RwLock::new(self);
         let mut app = App::<RwLock<TimeboostApiState>, ServerError>::with_state(state);
-        app.register_module("timeboost-api", api)
+        app.register_module("", api)
             .expect("Failed to register timeboost-api");
         app.serve(url, StaticVersion::<0, 1> {}).await
     }
@@ -61,13 +61,13 @@ fn define_api<ApiVer: StaticVersionType + 'static>(
     let toml = toml::from_str::<toml::Value>(include_str!("../../api/endpoints.toml"))?;
     let mut api = Api::<RwLock<TimeboostApiState>, ServerError, ApiVer>::new(toml)?;
 
-    api.at("post_submit", |req, state| {
+    api.post("submit", |req, state| {
         async move {
             let tx = req.body_auto::<Transaction, ApiVer>(ApiVer::instance())?;
 
             let hash = tx.commit();
 
-            state.write().await.submit(tx).await?;
+            state.submit(tx).await?;
 
             Ok(hash)
         }
