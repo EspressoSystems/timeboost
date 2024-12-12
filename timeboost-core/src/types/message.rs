@@ -35,6 +35,10 @@ impl<S> Message<S> {
             Message::TimeoutCert(c) => c.data().round(),
         }
     }
+
+    pub fn is_vertex(&self) -> bool {
+        matches!(self, Self::Vertex(_))
+    }
 }
 
 impl Message<Unchecked> {

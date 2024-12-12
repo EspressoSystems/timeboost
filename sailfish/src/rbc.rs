@@ -44,6 +44,31 @@ enum Command {
     Shutdown(oneshot::Sender<()>),
 }
 
+/// RBC configuration
+#[derive(Debug, Clone)]
+pub struct Config {
+    keypair: Keypair,
+    committee: Committee,
+    early_delivery: bool,
+}
+
+impl Config {
+    pub fn new(k: Keypair, c: Committee) -> Self {
+        Self {
+            keypair: k,
+            committee: c,
+            early_delivery: true,
+        }
+    }
+
+    /// Should RBC deliver first messages as soon as 2f + 1 messages
+    /// have been received in a round?
+    pub fn with_early_delivery(mut self, val: bool) -> Self {
+        self.early_delivery = val;
+        self
+    }
+}
+
 /// Rbc implements `Comm` and provides a reliable broadcast implementation.
 ///
 /// We support message delivery with different properties: best-effort delivery
@@ -81,10 +106,10 @@ impl Drop for Rbc {
 }
 
 impl Rbc {
-    pub fn new<C: RawComm + Send + 'static>(n: C, k: Keypair, c: Committee) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.size().get());
-        let worker = Worker::new(ibound_tx, obound_rx, k, n, c);
+    pub fn new<C: RawComm + Send + 'static>(n: C, c: Config) -> Self {
+        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
+        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+        let worker = Worker::new(ibound_tx, obound_rx, c, n);
         Self {
             rx: ibound_rx,
             tx: obound_tx,

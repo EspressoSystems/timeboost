@@ -1,4 +1,4 @@
-use crate::rbc::Rbc;
+use crate::rbc::{self, Rbc};
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
@@ -166,7 +166,10 @@ pub async fn sailfish_coordinator(
             .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
     );
 
-    let rbc = Rbc::new(net_inner, keypair.clone(), committee.clone());
+    let rbc = Rbc::new(
+        net_inner,
+        rbc::Config::new(keypair.clone(), committee.clone()),
+    );
     let peer_id =
         derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
 

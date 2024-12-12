@@ -3,7 +3,7 @@ use std::time::Duration;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::Consensus;
 use sailfish::coordinator::Coordinator;
-use sailfish::rbc::Rbc;
+use sailfish::rbc::{self, Rbc};
 use timeboost_core::logging::init_logging;
 use timeboost_core::types::event::SailfishEventType;
 use timeboost_core::types::NodeId;
@@ -43,7 +43,7 @@ fn mk_host<T, const N: usize>(
         let c = c.clone();
         async move {
             let comm = TurmoilComm::create(addr, peers).await?;
-            let rbc = Rbc::new(comm, k.clone(), c.clone());
+            let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
             let cons = Consensus::new(id, k, c);
             let mut coor = Coordinator::new(id, rbc, cons);
             let mut actions = coor.start().await?;
@@ -87,7 +87,7 @@ fn small_committee() {
 
     sim.client("C", async move {
         let comm = TurmoilComm::create("0.0.0.0:9002", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(3, k, c);
         let mut coor = Coordinator::new(3, rbc, cons);
         let mut actions = coor.start().await?;
@@ -142,7 +142,7 @@ fn medium_committee() {
 
     sim.client("E", async move {
         let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
         let mut actions = coor.start().await?;
