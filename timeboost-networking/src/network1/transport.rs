@@ -18,7 +18,7 @@ use tokio::sync::watch::{self};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-const PING_INTERVAL: Duration = Duration::from_secs(30);
+const PING_INTERVAL: Duration = Duration::from_secs(10);
 
 // network messages for exchanged by nodes
 #[derive(Debug, Serialize, Deserialize)]
@@ -117,7 +117,6 @@ impl Transport {
 
         // create a channel for stopping the server
         let (tx_stop, rx_stop) = mpsc::channel(1);
-
         // start the server task (sending connections to workers)
         let server_handle = handle.spawn(async {
             Server {
@@ -163,10 +162,15 @@ impl Server {
         loop {
             tokio::select! {
                 result = self.server.accept() => {
+                    tracing::info!("accepting connection");
                     let (mut stream, remote_peer) = result.expect("accept failed");
-                    let mut auth = [0u8; 34];
+                    let auth_len = stream.read_u32().await.expect("first 4 bytes is auth size");
+                    let auth_len_usize = auth_len as usize;
+                    let mut auth = vec![0u8; auth_len_usize];
                     let _ = stream.read_exact(&mut auth).await;
+                    println!("receiving: {:?}", auth);
                     let peer_id = PeerId::from_bytes(&auth).expect("handshake starts with an auth token (PeerId)");
+                    println!("successfully got peer id: {:?}", peer_id);
                     if let Some(sender) = self.worker_senders.get(&peer_id) {
                         sender.send(stream).ok();
                     } else {
@@ -272,8 +276,13 @@ impl Worker {
             }
         };
         stream.set_nodelay(true)?;
+        self.local_id.to_bytes();
         let auth_token: &[u8] = &self.local_id.to_bytes();
+
+        let token_length: u32 = auth_token.len() as u32;
+        stream.write_u32(token_length).await?;
         stream.write(auth_token).await?;
+
         stream.write_u64(Self::ACTIVE_HANDSHAKE).await?;
         let handshake = stream.read_u64().await?;
         if handshake != Self::PASSIVE_HANDSHAKE {
@@ -349,6 +358,7 @@ impl Worker {
         loop {
             tokio::select! {
                             _deadline = tokio::time::sleep_until(ping_deadline) => {
+                                println!("writing ping");
                                 ping_deadline += PING_INTERVAL;
                                 let ping_time = start.elapsed().as_micros() as i64;
                                 // because we wait for PING_INTERVAL the interval it can't be 0
@@ -373,6 +383,7 @@ impl Worker {
                                     match ping.checked_neg() {
                                         Some(pong) => {
                                             let pong = encode_ping(pong);
+                                            println!("got back pong");
                                             writer.write_all(&pong).await?;
                                         },
                                         None => {
@@ -410,6 +421,7 @@ impl Worker {
                                 }
                             }
                             received = receiver.recv() => {
+                                println!("we received a message from the application to write to stream");
                                 // todo - pass signal to break main loop
                                 let Some(message) = received else {return Ok(())};
                                 let serialized = bincode::serialize(&message).expect("Serialization should not fail");
@@ -440,7 +452,8 @@ impl Worker {
                 let buf = &mut buf[..PING_SIZE - 4 /*Already read size(u32)*/];
                 let read = stream.read_exact(buf).await?;
                 assert_eq!(read, buf.len());
-                let pong = decode_ping(buf);
+                println!("received ping");
+                let ping = decode_ping(buf);
                 let permit = pong_sender.try_reserve();
                 if let Err(err) = permit {
                     match err {
@@ -452,10 +465,12 @@ impl Worker {
                         }
                     }
                 } else {
-                    permit.unwrap().send(pong);
+                    println!("writing pong");
+                    permit.unwrap().send(ping);
                 }
                 continue;
             }
+            println!("we received a network message for the application");
             let buf = &mut buf[..size as usize];
             let read = stream.read_exact(buf).await?;
             assert_eq!(read, buf.len());

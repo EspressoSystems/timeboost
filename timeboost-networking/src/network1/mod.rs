@@ -7,7 +7,8 @@ use std::{
 use futures::future::join_all;
 use libp2p::PeerId;
 use libp2p_identity::Keypair;
-use timeboost_crypto::{sg_encryption::Committee, traits::signature_key::SignatureKey};
+use multisig::PublicKey;
+use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::PeerConfig;
 use tokio::{
     runtime::Handle,
@@ -19,10 +20,7 @@ use tokio::{
 };
 use transport::{Connection, NetworkMessage, Transport};
 
-use crate::{
-    network::{client::derive_libp2p_keypair, NetworkNodeConfig, NetworkNodeConfigBuilder},
-    NetworkError,
-};
+use crate::{network::client::derive_libp2p_keypair, NetworkError};
 
 pub mod transport;
 
@@ -100,7 +98,7 @@ impl Network {
         to_connect: Vec<(PeerId, String)>,
         tx_ready: oneshot::Sender<()>,
     ) -> Self {
-        let transport = Transport::run(local_id, local_addr, to_connect).await;
+        let transport = Transport::run(local_id, local_addr, to_connect.clone()).await;
         let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
         // receiving messages each for peer and send to network_rx
@@ -108,9 +106,11 @@ impl Network {
         let main_task = handle.spawn(Self::run(
             transport,
             Arc::clone(&connections),
+            to_connect,
             network_tx,
             tx_ready,
         ));
+        println!("starting network..");
         Self {
             main_task,
             connections,
@@ -121,6 +121,7 @@ impl Network {
     pub async fn run(
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+        mut to_connect: Vec<(PeerId, String)>,
         network_tx: Sender<NetworkMessage>,
         tx_ready: oneshot::Sender<()>,
     ) {
@@ -129,10 +130,10 @@ impl Network {
         let handle = Handle::current();
         while let Some(connection) = rx_connection.recv().await {
             let remote_id = connection.remote_id;
-            // if let Some(task) = connections.remove(&remote_id) {
-            //     // wait until previous sync task completes
-            //     task.await.ok();
-            // }
+            if let Some(task) = handles.remove(&remote_id) {
+                // wait until previous sync task completes
+                task.await.ok();
+            }
 
             let sender = connection.tx.clone();
             // let authority = peer_id as AuthorityIndex;
@@ -155,9 +156,17 @@ impl Network {
                 network_tx.clone(),
                 bc_receiver,
             ));
+            println!("inserting the peer: {:?}", remote_id);
             handles.insert(remote_id, task);
+            println!("to_connect: {:?}", to_connect);
+            to_connect.retain(|(id, _)| id != &remote_id);
+            println!("number of peers left: {}", to_connect.len());
+            if to_connect.len() == 1 {
+                break;
+            }
         }
-        tx_ready.send(());
+        println!("out of the receive loop");
+        let _ = tx_ready.send(());
         join_all(handles.into_values().into_iter()).await;
         // Arc::try_unwrap(block_fetcher)
         //     .unwrap_or_else(|_| panic!("Failed to drop all connections"))
@@ -172,18 +181,21 @@ impl Network {
         network_tx: Sender<NetworkMessage>,
         mut bc_receiver: mpsc::Receiver<NetworkMessage>,
     ) -> Option<()> {
+        println!("created a connection task");
         loop {
             tokio::select! {
                 inbound_msg = connection.rx.recv() => {
+                    println!("receiving inbound message..");
                     if let Some(msg) = inbound_msg {
-                        sender.send(msg).await.ok();
+                        network_tx.send(msg).await.ok();
                     } else {
                         break
                     }
                 }
                 outbound_msg = bc_receiver.recv() => {
                     if let Some(msg) = outbound_msg {
-                        network_tx.send(msg).await.ok();
+                        println!("sending outbound message..");
+                        sender.send(msg).await.ok();
                     } else {
                         break
                     }
@@ -195,7 +207,15 @@ impl Network {
     }
 
     pub async fn shut_down(&self) -> Result<(), NetworkError> {
-        todo!()
+        // drop(self.stop);
+        // todo - wait for network shutdown as well
+        self.connections.write().await.clear();
+        println!("shutting down node");
+        Ok(())
+        // let Ok(inner) = Arc::try_unwrap(self.inner) else {
+        //     panic!("Shutdown failed - not all resources are freed after main task is completed");
+        // };
+        // inner.syncer.stop()
     }
 
     pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
@@ -211,10 +231,10 @@ impl Network {
 
     pub async fn direct_message(
         &self,
-        recipient: PeerId,
+        _recipient: PublicKey,
         message: Vec<u8>,
     ) -> Result<(), NetworkError> {
-        todo!()
+        self.broadcast_message(message).await
     }
 
     pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {

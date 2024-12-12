@@ -38,5 +38,6 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-utils = { path = "../timeboost-utils" }
+multisig = { path = "../multisig" }
 tokio = { workspace = true }
 tracing = { workspace = true }

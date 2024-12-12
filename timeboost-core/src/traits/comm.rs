@@ -90,11 +90,7 @@ impl RawComm for Network {
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
-        let bytes =
-            bincode::serialize(&msg).map_err(|e| NetworkError::FailedToSerialize(e.to_string()))?;
-
-        //      self.direct_message(bytes, to).await
-        todo!()
+        self.direct_message(to, msg).await
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {

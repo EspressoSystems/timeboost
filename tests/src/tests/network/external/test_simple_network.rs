@@ -1,19 +1,24 @@
-use crate::tests::network::{external::p2p::Libp2pNetworkTest, network_tests::*};
+use crate::tests::network::{
+    external::{basic::BasicNetworkTest, p2p::Libp2pNetworkTest},
+    network_tests::*,
+};
 
 #[tokio::test]
 async fn test_simple_network_genesis() {
-    //run_simple_network_genesis_test::<BasicNetworkTest>().await
-    run_simple_network_genesis_test::<Libp2pNetworkTest>().await
+    run_simple_network_genesis_test::<BasicNetworkTest>().await;
+    // run_simple_network_genesis_test::<Libp2pNetworkTest>().await
 }
 
 #[tokio::test]
 async fn test_simple_network_round_progression() {
-    run_network_round_progression_test::<Libp2pNetworkTest>().await
+    run_network_round_progression_test::<BasicNetworkTest>().await;
+    // run_network_round_progression_test::<Libp2pNetworkTest>().await
 }
 
 #[tokio::test]
 async fn test_simple_network_round_timeout() {
-    run_simple_network_round_timeout_test::<Libp2pNetworkTest>().await
+    run_simple_network_round_timeout_test::<BasicNetworkTest>().await;
+    //    run_simple_network_round_timeout_test::<Libp2pNetworkTest>().await
 }
 
 #[tokio::test]

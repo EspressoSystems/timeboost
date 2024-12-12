@@ -51,7 +51,6 @@ impl TestableNetwork for BasicNetworkTest {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
             let peer_id = self.group.peer_ids[i];
-            let private_key = kpr.secret_key();
             let (tx_ready, rx_ready) = oneshot::channel();
             let net_fut = NetworkInitializer::new(
                 peer_id,
@@ -64,10 +63,14 @@ impl TestableNetwork for BasicNetworkTest {
             .into_network(tx_ready);
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
+            println!("spawning new handle...");
             handles.spawn(async move {
-                let net_inner = net_fut.await.expect("failed to make libp2p network");
+                println!("starting network");
+                let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
-                rx_ready.await; //net_inner.net_inner.wait_for_ready().await;
+                println!("awaiting rx_ready");
+                let _ = rx_ready.await; //net_inner.net_inner.wait_for_ready().await;
+                println!("running rbc");
                 let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);
