@@ -36,15 +36,17 @@ impl InclusionPhase for CanonicalInclusionPhase {
         let expected: Vec<SeqNo> = (0..=*max_seqno).map(|i| i.into()).collect();
         let actual: HashSet<SeqNo> = priority.iter().map(|txn| txn.nonce().seqno()).collect();
 
+        // If there are gaps in the sequence numbers, exclude this priority bundle.
         if !expected.iter().all(|seqno| actual.contains(seqno)) {
             priority.clear();
         }
 
-        let seqno = priority
-            .iter()
-            .map(|txn| txn.nonce().seqno())
-            .max()
-            .unwrap_or(SeqNo::zero());
+        // If there are no priority transactions, we don't have a priority bundle sequence number.
+        let seqno = if priority.is_empty() {
+            SeqNo::zero()
+        } else {
+            max_seqno
+        };
 
         let non_priority: Vec<Transaction> = candidate_list.non_priority_txns();
 
