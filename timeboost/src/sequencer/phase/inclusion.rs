@@ -1,6 +1,7 @@
 use std::{
     cmp::max,
     collections::{BTreeSet, HashMap, HashSet},
+    hash::{DefaultHasher, Hash, Hasher},
 };
 
 use anyhow::Result;
@@ -183,7 +184,7 @@ impl CandidateList {
 ///
 /// Taken directly from the spec:
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L125-L143
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct InclusionList {
     /// The consensus timestamp of the inclusion list. This is the *same* as the
     /// [`CandidateList::timestamp`] and only is created when the candidate list is
@@ -213,6 +214,12 @@ impl InclusionList {
 
     pub fn into_transactions(self) -> Vec<Transaction> {
         self.txns
+    }
+
+    pub fn get_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
