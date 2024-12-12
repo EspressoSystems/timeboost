@@ -14,7 +14,7 @@ for i in {0..4}; do
         --rpc-port $((8800 + i)) \
         --metrics-port $((9000 + i)) \
         --base local \
-        --until 100 \
+        --until 500 \
         --watchdog-timeout 300 &
 done
 
@@ -22,7 +22,7 @@ echo "Starting tx-generator"
 RUST_LOG=tx_generator=debug \
 ./target/release/tx-generator \
     --committee-size 5 \
-    --until 100 \
+    --until 500 \
     --watchdog-timeout 300 &
 
 wait

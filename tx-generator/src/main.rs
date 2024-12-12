@@ -56,13 +56,16 @@ fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
 }
 
 fn make_tx() -> Transaction {
+    // Random transaction size betweek 1 byte and 500kb
+    let size = rand::thread_rng().gen_range(1..SIZE_500_KB);
+
     // 10% chance of being a priority tx
     if rand::thread_rng().gen_bool(0.1) {
-        // Genrate some random number of transactions in the bundle
+        // Generate some random number of transactions in the bundle
         let num_txns = rand::thread_rng().gen_range(1..1000);
 
         // Get the txns
-        let txns = make_tx_data(num_txns, SIZE_500_KB);
+        let txns = make_tx_data(num_txns, size);
         Transaction::Priority {
             nonce: Nonce::now(SeqNo::from(0)),
             to: Address::zero(),
@@ -70,8 +73,8 @@ fn make_tx() -> Transaction {
         }
     } else {
         Transaction::Regular {
-            // The index here is safe since we always genrate a single txn.
-            txn: make_tx_data(1, SIZE_500_KB).remove(0),
+            // The index here is safe since we always generate a single txn.
+            txn: make_tx_data(1, size).remove(0),
         }
     }
 }
