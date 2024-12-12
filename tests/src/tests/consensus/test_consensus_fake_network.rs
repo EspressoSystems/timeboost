@@ -1,19 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use multisig::{Committee, Envelope, Keypair, PublicKey};
+use multisig::PublicKey;
 use sailfish::consensus::Dag;
 use timeboost_core::logging;
 use timeboost_core::types::message::Message;
-use timeboost_core::types::message::{Action, Evidence, Timeout};
+use timeboost_core::types::message::{Action, Evidence};
 use timeboost_core::types::NodeId;
 use timeboost_utils::types::round_number::RoundNumber;
 use timeboost_utils::unsafe_zero_keypair;
 
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
 use crate::tests::consensus::helpers::{
-    fake_network::FakeNetwork,
-    interceptor::Interceptor,
-    test_helpers::{create_timeout_certificate_msg, make_consensus_nodes},
+    fake_network::FakeNetwork, interceptor::Interceptor, test_helpers::make_consensus_nodes,
 };
 
 #[tokio::test]
@@ -195,95 +193,6 @@ async fn test_invalid_vertex_signatures() {
     // verify no progress was made
     for node_instrument in network.nodes.values() {
         assert_eq!(node_instrument.node().round(), invalid_msg_at_round);
-    }
-}
-
-#[tokio::test]
-async fn test_invalid_timeout_certificate() {
-    logging::init_logging();
-
-    let num_nodes = 4;
-    let invalid_node_id = num_nodes + 1;
-
-    let (nodes, _manager) = make_consensus_nodes(num_nodes);
-
-    let invalid_msg_at_round = RoundNumber::new(3);
-
-    let interceptor = Interceptor::new(
-        move |msg: &Message, node_handle: &mut TestNodeInstrument| {
-            if let Message::Vertex(e) = msg {
-                // Generate keys for invalid nodes (nodes that are not in stake table)
-                // And create a timeout certificate from them
-                let committee = node_handle.node().committee();
-                let new_keys: Vec<Keypair> = (0..num_nodes)
-                    .map(|i| unsafe_zero_keypair(i + invalid_node_id))
-                    .collect();
-                let new_committee = Committee::new(
-                    new_keys
-                        .iter()
-                        .enumerate()
-                        .map(|(i, kp)| (i as u8, kp.public_key())),
-                );
-                let mut timeouts = Vec::new();
-                for kp in &new_keys {
-                    timeouts.push(Envelope::signed(
-                        Timeout::new(*e.data().round().data()),
-                        kp,
-                        true,
-                    ));
-                }
-
-                // Process current message this should be the leader vertex and the invalid certificate
-                // We should discard the message with the invalid certificate in `handle_timeout_cert` since the signers are invalid
-                // And never broadcast a vertex with a timeout certificate and send a no vote message
-                // End of queue should be leader vertex inject process the certificate first
-                if node_handle.msg_queue().is_empty() {
-                    return vec![
-                        create_timeout_certificate_msg(timeouts, &new_committee),
-                        msg.clone(),
-                    ];
-                }
-                // Process leader vertex last, to test the certificate injection fails (we have 2f + 1 vertices for round r but no leader vertex yet)
-                if *e.signing_key() == committee.leader(**e.data().round().data() as usize) {
-                    node_handle.add_msg(msg.clone());
-                    return vec![];
-                }
-            }
-
-            // Everthing else handle as normal
-            vec![msg.clone()]
-        },
-        invalid_msg_at_round,
-    );
-
-    let mut network = FakeNetwork::new(nodes, interceptor);
-    network.start();
-
-    // Spin the test for some rounds
-    let rounds = 7;
-    for _ in 0..rounds {
-        network.process();
-        for (_id, msgs) in network.msgs_in_queue() {
-            for msg in msgs {
-                match msg {
-                    Message::Vertex(v) => {
-                        assert!(
-                            !v.data().evidence().is_timeout(),
-                            "We should never have a timeout cert in a message"
-                        );
-                    }
-                    Message::NoVote(_nv) => {
-                        panic!("We should never process a no vote message");
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    // verify progress was made
-    for node_instrument in network.nodes.values() {
-        assert_eq!(*node_instrument.node().round(), rounds);
     }
 }
 

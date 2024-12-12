@@ -6,6 +6,7 @@ use multisig::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost_utils::types::round_number::RoundNumber;
+use tracing::warn;
 
 use crate::types::block::sailfish::SailfishBlock;
 use crate::types::vertex::Vertex;
@@ -39,10 +40,117 @@ impl<S> Message<S> {
 impl Message<Unchecked> {
     pub fn validated(self, c: &Committee) -> Option<Message<Validated>> {
         match self {
-            Self::Vertex(e) => e.validated(c).map(Message::Vertex),
-            Self::Timeout(e) => e.validated(c).map(Message::Timeout),
-            Self::NoVote(e) => e.validated(c).map(Message::NoVote),
-            Self::TimeoutCert(c) => Some(Message::TimeoutCert(c)),
+            Self::Vertex(e) => {
+                let Some(e) = e.validated(c) else {
+                    warn!("invalid envelope signature");
+                    return None;
+                };
+                let signer = e.signing_key();
+                if signer != e.data().source() {
+                    warn!(%signer, source = %e.data().source(), "envelope signer != vertex source");
+                    return None;
+                }
+                if !e.data().round().is_valid(c) {
+                    warn!(%signer, "invalid round signature");
+                    return None;
+                }
+                if signer != e.data().round().signing_key() {
+                    warn!(
+                        %signer,
+                        round = %e.data().round().signing_key(),
+                        "envelope signer != vertex round signer"
+                    );
+                    return None;
+                }
+                if *e.data().round().data() != RoundNumber::genesis() {
+                    if !e.data().evidence().is_valid(c) {
+                        warn!(%signer, "invalid evidence in vertex");
+                        return None;
+                    }
+                    if e.data().evidence().round() + 1 != *e.data().round().data() {
+                        warn!(%signer, "evidence in vertex applies to invalid round");
+                        return None;
+                    }
+                    if e.data().num_edges() < c.quorum_size().get() {
+                        warn!(%signer, "vertex has not enough edges");
+                        return None;
+                    }
+                }
+                if let Some(cert) = e.data().no_vote_cert() {
+                    if !cert.is_valid_par(c) {
+                        warn!(%signer, "invalid no-vote certificate in vertex");
+                        return None;
+                    }
+                    if cert.data().round() + 1 != *e.data().round().data() {
+                        warn!(%signer, "no-vote certificate in vertex applies to invalid round");
+                        return None;
+                    }
+                }
+                Some(Message::Vertex(e))
+            }
+            Self::Timeout(e) => {
+                let Some(e) = e.validated(c) else {
+                    warn!("invalid envelope signature");
+                    return None;
+                };
+                let signer = e.signing_key();
+                if signer != e.data().timeout().signing_key() {
+                    warn!(
+                        %signer,
+                        timeout = %e.data().timeout().signing_key(),
+                        "envelope signer != timeout signer"
+                    );
+                    return None;
+                }
+                if !e.data().timeout().is_valid(c) {
+                    warn!(%signer, "invalid timeout signature");
+                    return None;
+                }
+                if !e.data().evidence().is_valid(c) {
+                    warn!(%signer, "invalid timeout evidence");
+                    return None;
+                }
+                if e.data().evidence().round() + 1 != e.data().timeout().data().round() {
+                    warn!(%signer, "timeout evidence applies to invalid round");
+                    return None;
+                }
+                Some(Message::Timeout(e))
+            }
+            Self::NoVote(e) => {
+                let Some(e) = e.validated(c) else {
+                    warn!("invalid envelope signature");
+                    return None;
+                };
+                let signer = e.signing_key();
+                if signer != e.data().no_vote().signing_key() {
+                    warn!(
+                        %signer,
+                        no_vote = %e.data().no_vote().signing_key(),
+                        "envelope signer != no-vote signer"
+                    );
+                    return None;
+                }
+                if !e.data().no_vote().is_valid(c) {
+                    warn!(%signer, "invalid no-vote signature");
+                    return None;
+                }
+                if !e.data().certificate().is_valid_par(c) {
+                    warn!(%signer, "invalid no-vote certificate");
+                    return None;
+                }
+                if e.data().no_vote().data().round() != e.data().certificate().data().round() {
+                    warn!(%signer, "no-vote certificate applies to invalid round");
+                    return None;
+                }
+                Some(Message::NoVote(e))
+            }
+            Self::TimeoutCert(crt) => {
+                if !crt.is_valid_par(c) {
+                    warn!("invalid timeout certiticate");
+                    return None;
+                }
+                Some(Message::TimeoutCert(crt))
+            }
         }
     }
 }

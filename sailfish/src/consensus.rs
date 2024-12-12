@@ -219,11 +219,6 @@ impl Consensus {
     pub fn handle_vertex(&mut self, e: Envelope<Vertex, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        if e.data().source() != e.signing_key() {
-            warn!(src = %e.data().source(), sig = %e.signing_key(), "vertex sender != signer");
-            return actions;
-        }
-
         let v = e.into_data();
 
         if self.dag.contains(&v) {
@@ -319,48 +314,6 @@ impl Consensus {
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
-        if e.data().no_vote().signing_key() != e.signing_key() {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                novote = %e.data().no_vote().signing_key(),
-                "no-vote sender != signer"
-            );
-            return actions;
-        }
-
-        if !e.data().no_vote().is_valid(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                novote = %e.data().no_vote().signing_key(),
-                "no-vote round signature is not valid"
-            );
-            return actions;
-        }
-
-        if !e.data().certificate().is_valid(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                "no-vote has invalid timeout certificate"
-            );
-            return actions;
-        }
-
-        if e.data().certificate().data().round() != e.data().no_vote().data().round() {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                "no-vote round != timeout certificate round"
-            );
-            return actions;
-        }
-
         let timeout_round = e.data().no_vote().data().round();
 
         if timeout_round < self.round {
@@ -435,48 +388,6 @@ impl Consensus {
     )]
     pub fn handle_timeout(&mut self, e: Envelope<TimeoutMessage, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
-
-        if e.data().timeout().signing_key() != e.signing_key() {
-            warn!(
-                node    = %self.public_key(),
-                round   = %self.round,
-                source  = %e.signing_key(),
-                timeout = %e.data().timeout().signing_key(),
-                "timeout sender != signer"
-            );
-            return actions;
-        }
-
-        if !e.data().timeout().is_valid(&self.committee) {
-            warn!(
-                node    = %self.public_key(),
-                round   = %self.round,
-                source  = %e.signing_key(),
-                timeout = %e.data().timeout().signing_key(),
-                "timeout message round signature is not valid"
-            );
-            return actions;
-        }
-
-        if !e.data().evidence().is_valid(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                "timeout message has invalid evidence"
-            );
-            return actions;
-        }
-
-        if e.data().evidence().round() + 1 != e.data().timeout().data().round() {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                source = %e.signing_key(),
-                "timeout message evidence applies to wrong round"
-            );
-            return actions;
-        }
 
         let timeout_round = e.data().timeout().data().round();
 
@@ -558,16 +469,6 @@ impl Consensus {
                 round = %self.round,
                 r     = %round,
                 "ignoring old timeout certificate"
-            );
-            return actions;
-        }
-
-        if !cert.is_valid_par(&self.committee) {
-            warn!(
-                node  = %self.public_key(),
-                round = %self.round,
-                r     = %round,
-                "received invalid certificate"
             );
             return actions;
         }
@@ -926,17 +827,6 @@ impl Consensus {
         vround = %v.round().data())
     )]
     fn is_valid(&self, v: &Vertex) -> bool {
-        if !v.round().is_valid(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex round signature is not valid"
-            );
-            return false;
-        }
-
         if v.is_genesis() {
             info!(
                 node   = %self.public_key(),
@@ -946,39 +836,6 @@ impl Consensus {
                 "accepting genesis vertex"
             );
             return true;
-        }
-
-        if !v.evidence().is_valid(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex has invalid round evidence quorum"
-            );
-            return false;
-        }
-
-        if v.evidence().round() + 1 != *v.round().data() {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex round evidence applies to wrong round"
-            );
-            return false;
-        }
-
-        if v.num_edges() < self.committee.quorum_size().get() {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex has not enough edges"
-            );
-            return false;
         }
 
         if *self.committed_round > 2 && *v.round().data() < self.committed_round - 2 {
@@ -1000,7 +857,7 @@ impl Consensus {
             return true;
         }
 
-        let Some(ncert) = v.no_vote_cert() else {
+        if v.no_vote_cert().is_none() {
             warn!(
                 node   = %self.public_key(),
                 round  = %self.round,
@@ -1010,28 +867,6 @@ impl Consensus {
             );
             return false;
         };
-
-        if ncert.data().round() != *v.round().data() - 1 {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex has no-vote certificate from invalid round"
-            );
-            return false;
-        }
-
-        if !ncert.is_valid_par(&self.committee) {
-            warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex has no-vote certificate with invalid quorum"
-            );
-            return false;
-        }
 
         true
     }

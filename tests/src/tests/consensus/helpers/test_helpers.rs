@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use multisig::{Committee, Envelope, PublicKey, Validated, VoteAccumulator};
-use timeboost_core::types::message::{Message, Timeout};
+use multisig::PublicKey;
+use timeboost_core::types::message::Message;
 
 use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
+
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 
 pub(crate) fn make_consensus_nodes(
@@ -16,15 +17,4 @@ pub(crate) fn make_consensus_nodes(
         .map(|node_instrument| (node_instrument.node().public_key(), node_instrument))
         .collect();
     (nodes, manager)
-}
-
-pub(crate) fn create_timeout_certificate_msg(
-    env: Vec<Envelope<Timeout, Validated>>,
-    committee: &Committee,
-) -> Message {
-    let mut va = VoteAccumulator::new(committee.clone());
-    for e in env {
-        va.add(e.into_signed()).unwrap();
-    }
-    Message::TimeoutCert(va.certificate().unwrap().clone())
 }

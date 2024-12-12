@@ -265,7 +265,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_bypass(&mut self, msg: Message<Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.committee) else {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         };
         self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
         Ok(())
@@ -275,7 +275,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
     async fn on_propose(&mut self, msg: Message<Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.committee) else {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         };
 
         let digest = Digest::new(&msg);
@@ -349,7 +349,7 @@ impl<C: RawComm> Worker<C> {
     )]
     async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         };
 
         let digest = *env.data();
@@ -437,11 +437,11 @@ impl<C: RawComm> Worker<C> {
     )]
     async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         };
 
         if !env.data().is_valid_par(&self.committee) {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         }
 
         let digest = *env.data().data();
@@ -511,7 +511,7 @@ impl<C: RawComm> Worker<C> {
     )]
     async fn on_get(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.committee) else {
-            return Err(RbcError::InvalidSignature);
+            return Err(RbcError::InvalidMessage);
         };
 
         let Some(tracker) = self.buffer.get_mut(env.data()) else {
@@ -698,8 +698,8 @@ pub enum RbcError {
     #[error("bincode error: {0}")]
     Serialization(#[from] bincode::Error),
 
-    #[error("invalid signature")]
-    InvalidSignature,
+    #[error("invalid message")]
+    InvalidMessage,
 
     #[error("rbc has shut down")]
     Shutdown,
