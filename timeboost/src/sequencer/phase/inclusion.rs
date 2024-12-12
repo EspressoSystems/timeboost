@@ -8,6 +8,7 @@ use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
+    seqno::SeqNo,
     time::{Epoch, Timestamp},
     transaction::Transaction,
 };
@@ -15,6 +16,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::sequencer::{protocol::RoundState, util::median};
 
+pub mod canonical;
 pub mod noop;
 
 /// A member's candidate list that serves as input to a consensus round R.
@@ -198,7 +200,7 @@ pub struct InclusionList {
     pub(crate) delayed_inbox_index: u64,
 
     /// The sequence number of the included priority bundle.
-    pub(crate) priority_bundle_sequence_no: u64,
+    pub(crate) priority_bundle_sequence_no: SeqNo,
 
     /// The epoch of the inclusion list.
     pub(crate) epoch: Epoch,
@@ -230,6 +232,5 @@ pub trait InclusionPhase {
         round_number: RoundNumber,
         candidate_list: CandidateList,
         last_delayed_inbox_index: u64,
-        previous_bundles: &[Transaction],
     ) -> Result<InclusionList>;
 }
