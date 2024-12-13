@@ -14,5 +14,6 @@ futures = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
