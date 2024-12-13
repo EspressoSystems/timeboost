@@ -1,5 +1,5 @@
 use anyhow::{ensure, Result};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
@@ -43,7 +43,7 @@ pub struct Consensus {
     committed_round: RoundNumber,
 
     /// The set of vertices that we've received so far.
-    buffer: BTreeSet<Vertex>,
+    buffer: Dag,
 
     /// The set of values we have delivered so far.
     delivered: HashSet<(RoundNumber, PublicKey)>,
@@ -87,7 +87,7 @@ impl Consensus {
             dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: BTreeSet::new(),
+            buffer: Dag::new(committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -171,7 +171,7 @@ impl Consensus {
         node      = %self.public_key(),
         round     = %self.round,
         committed = %self.committed_round,
-        buffered  = %self.buffer.len(),
+        buffered  = %self.buffer.depth(),
         delivered = %self.delivered.len(),
         leaders   = %self.leader_stack.len(),
         timeouts  = %self.timeouts.len(),
@@ -263,8 +263,8 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                self.buffer.insert(v);
-                self.metrics.vertex_buffer.set(self.buffer.len());
+                self.buffer.add(v);
+                self.metrics.vertex_buffer.set(self.buffer.depth());
             }
             Ok(a) => {
                 actions.extend(a);
@@ -282,8 +282,13 @@ impl Consensus {
                         )
                     }
                 }
-                for v in std::mem::take(&mut self.buffer) {
-                    if let Ok(a) = self.try_to_add_to_dag(&v) {
+                for v in self
+                    .buffer
+                    .take_all()
+                    .values()
+                    .flat_map(|inner_map| inner_map.values())
+                {
+                    if let Ok(a) = self.try_to_add_to_dag(v) {
                         actions.extend(a);
                         let r = *v.round().data();
                         if r >= self.round && self.dag.vertex_count(r) >= quorum {
@@ -300,10 +305,11 @@ impl Consensus {
                             }
                         }
                     } else {
-                        self.buffer.insert(v);
+                        self.buffer.add(v.clone());
                     }
                 }
-                self.metrics.vertex_buffer.set(self.buffer.len());
+
+                self.metrics.vertex_buffer.set(self.buffer.depth());
             }
         }
 
@@ -649,18 +655,31 @@ impl Consensus {
         source = %v.source())
     )]
     fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
-        if !v
-            .edges()
-            .all(|w| self.dag.vertex(*v.round().data() - 1, w).is_some())
-        {
-            debug!(
-                node    = %self.public_key(),
-                round   = %self.round,
-                vround  = %v.round().data(),
-                source  = %v.source(),
-                "not all edges are resolved in dag"
-            );
-            return Err(());
+        let r = *v.round().data();
+        if !v.edges().all(|w| self.dag.vertex(r - 1, w).is_some()) {
+            if r.saturating_sub(self.round.into()) <= 2 {
+                debug!(
+                    node    = %self.public_key(),
+                    round   = %self.round,
+                    vround  = %r,
+                    "not all edges are resolved in dag"
+                );
+                return Err(());
+            }
+
+            if !v.edges().all(|w| self.buffer.vertex(r - 1, w).is_some()) {
+                warn!(
+                    node    = %self.public_key(),
+                    round   = %self.round,
+                    vround  = %r,
+                    "Node is more than two rounds behind, not all edges are resolved in buffer"
+                );
+                return Err(());
+            }
+            for w in self.buffer.vertices(r - 1) {
+                self.dag.add(w.clone())
+            }
+            self.buffer.remove(r);
         }
 
         self.dag.add(v.clone());
@@ -793,11 +812,11 @@ impl Consensus {
 
         let r = committed - 2;
         self.dag.remove(r);
+        self.buffer.remove(r);
         self.delivered.retain(|(x, _)| *x >= r);
-        self.buffer.retain(|v| *v.round().data() >= r);
 
         self.metrics.dag_depth.set(self.dag.depth());
-        self.metrics.vertex_buffer.set(self.buffer.len());
+        self.metrics.vertex_buffer.set(self.buffer.depth());
         self.metrics.delivered.set(self.delivered.len());
     }
 
@@ -903,8 +922,8 @@ impl Consensus {
         &self.dag
     }
 
-    pub fn buffer(&self) -> impl Iterator<Item = &Vertex> {
-        self.buffer.iter()
+    pub fn buffer_depth(&self) -> usize {
+        self.buffer.depth()
     }
 
     pub fn delivered(&self) -> &HashSet<(RoundNumber, PublicKey)> {

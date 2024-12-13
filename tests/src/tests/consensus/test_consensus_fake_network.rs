@@ -253,7 +253,7 @@ fn basic_liveness() {
                 assert!(n.dag().max_round().unwrap() >= n.committed_round() - 2);
             }
             // No one is late => buffer should always be empty:
-            assert_eq!(0, n.buffer().count());
+            assert_eq!(0, n.buffer_depth());
         }
         actions = next
     }

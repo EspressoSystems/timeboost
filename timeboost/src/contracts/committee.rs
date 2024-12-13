@@ -20,20 +20,20 @@ pub struct CommitteeContract {
 impl Default for CommitteeContract {
     /// Default to using the docker config.
     fn default() -> Self {
-        Self::new(CommitteeBase::Docker)
+        Self::new(CommitteeBase::Docker, 5, None)
     }
 }
 
 impl CommitteeContract {
     /// Create a new committee contract with 5 nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new(base: CommitteeBase) -> Self {
-        Self::new_n(base, 5)
+    pub fn new(base: CommitteeBase, size: u16, skip_bootstrap_id: Option<u16>) -> Self {
+        Self::new_n(base, size, skip_bootstrap_id)
     }
 
     /// Create a new committee contract with `n` nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new_n(base: CommitteeBase, n: u16) -> Self {
+    pub fn new_n(base: CommitteeBase, n: u16, skip_bootstrap_id: Option<u16>) -> Self {
         let mut bootstrap_nodes = vec![];
         let mut staked_nodes = vec![];
 
@@ -55,9 +55,15 @@ impl CommitteeContract {
                     derive_libp2p_multiaddr(&format!("172.20.0.{}:{}", 2 + i, 8000 + i)).unwrap()
                 }
             };
-
-            bootstrap_nodes.push((peer_id, bind_addr));
             staked_nodes.push(cfg.public_config());
+
+            // Dont add a late start node to bootstrap so the network can start without it
+            if let Some(skip_id) = skip_bootstrap_id {
+                if skip_id == i {
+                    continue;
+                }
+            }
+            bootstrap_nodes.push((peer_id, bind_addr));
         }
 
         Self {

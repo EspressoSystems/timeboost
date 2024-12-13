@@ -67,6 +67,10 @@ impl Dag {
         self.elements.get(&r)?.get(s)
     }
 
+    pub fn take_all(&mut self) -> BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>> {
+        std::mem::take(&mut self.elements)
+    }
+
     /// Returns an iterator over all vertices within the specified round range.
     ///
     /// This method allows iteration over vertices across multiple rounds using any valid range syntax:

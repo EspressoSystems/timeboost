@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::types::message::Message;
 
-type NetworkMessageModifier = Arc<dyn Fn(&Message) -> Result<Message, &'static str> + Send + Sync>;
+type NetworkMessageModifier = Arc<dyn Fn(&Message, u64) -> Result<Message, String> + Send + Sync>;
 /// Intercept a message before a node processes it and apply transformations if any provided
 #[derive(Clone)]
 pub struct NetworkMessageInterceptor {
@@ -12,7 +12,7 @@ pub struct NetworkMessageInterceptor {
 impl NetworkMessageInterceptor {
     pub fn new<F>(msg_modifier: F) -> Self
     where
-        F: Fn(&Message) -> Result<Message, &'static str> + Send + Sync + Clone + 'static,
+        F: Fn(&Message, u64) -> Result<Message, String> + Send + Sync + Clone + 'static,
     {
         Self {
             msg_modifier: Arc::new(msg_modifier),
@@ -20,15 +20,15 @@ impl NetworkMessageInterceptor {
     }
 
     /// Handle the message with any defined logic in the test
-    pub(crate) fn intercept_message(&self, msg: Message) -> Result<Message, &'static str> {
-        (self.msg_modifier)(&msg)
+    pub(crate) fn intercept_message(&self, msg: Message, id: u64) -> Result<Message, String> {
+        (self.msg_modifier)(&msg, id)
     }
 }
 
 impl Default for NetworkMessageInterceptor {
     fn default() -> Self {
         Self {
-            msg_modifier: Arc::new(|msg: &Message| Ok(msg.clone())),
+            msg_modifier: Arc::new(|msg: &Message, _id: u64| Ok(msg.clone())),
         }
     }
 }
