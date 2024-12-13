@@ -286,7 +286,7 @@ impl Consensus {
                     .buffer
                     .take_all()
                     .values()
-                    .flat_map(|inner_map| inner_map.values().map(|v| v))
+                    .flat_map(|inner_map| inner_map.values())
                 {
                     if let Ok(a) = self.try_to_add_to_dag(v) {
                         actions.extend(a);
