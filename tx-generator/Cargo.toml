@@ -1,0 +1,18 @@
+[package]
+name = "tx-generator"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+
+[features]
+until = ["timeboost-core/until"]
+
+[dependencies]
+bytes = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
+tokio = { workspace = true }
+tracing = { workspace = true }

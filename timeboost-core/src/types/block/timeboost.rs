@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::transaction::Transaction;
+use crate::types::{time::Timestamp, transaction::Transaction};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeboostBlock {
     pub transactions: Vec<Transaction>,
+    pub timestamp: Timestamp,
 }
 
 impl TimeboostBlock {

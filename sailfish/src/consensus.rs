@@ -196,9 +196,12 @@ impl Consensus {
     )]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
-        let e = self
-            .evidence(r - 1)
-            .expect("evidence for previous round exists");
+        let e = if r == RoundNumber::genesis() {
+            Evidence::Genesis
+        } else {
+            self.evidence(r - 1)
+                .expect("evidence for previous round exists")
+        };
         let t = TimeoutMessage::new(e, &self.keypair, self.deterministic);
         let e = Envelope::signed(t, &self.keypair, self.deterministic);
         vec![Action::SendTimeout(e)]
@@ -527,7 +530,7 @@ impl Consensus {
             return actions;
         };
 
-        // We inform the leader of the next round that we did not vote in the previous round.
+        // We inform the leader of the next round that we did not vote in this round.
         let nvm = NoVoteMessage::new(tc.clone(), &self.keypair, self.deterministic);
         let env = Envelope::signed(nvm, &self.keypair, self.deterministic);
         let leader = self.committee.leader(*round as usize + 1);
@@ -610,7 +613,8 @@ impl Consensus {
     /// Create a new vertex for the given round `r`.
     ///
     /// NB that the returned value requires further processing iff there is no
-    /// leader vertex in `r - 1`. In that case a no-vote certificate may be required.
+    /// leader vertex in `r - 1`. In that case a timeout certificate (and potentially
+    /// a no-vote certificate) is required.
     #[instrument(level = "trace", skip_all, fields(
         node   = %self.public_key(),
         round  = %self.round,
