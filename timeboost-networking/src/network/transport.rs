@@ -116,7 +116,7 @@ impl Transport {
         let (tx_stop, rx_stop) = mpsc::channel(1);
         let server_handle = handle.spawn(async move {
             Server {
-                local_id: local_id.clone(),
+                local_id,
                 server,
                 worker_senders,
             }

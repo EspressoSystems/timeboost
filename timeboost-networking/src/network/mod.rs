@@ -99,9 +99,8 @@ impl Network {
         let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
-        trace!("Running main network task");
         let main_task = handle.spawn(Self::run(
-            local_id.clone(),
+            local_id,
             transport,
             Arc::clone(&connections),
             to_connect,
