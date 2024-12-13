@@ -85,7 +85,11 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
     let tx = make_tx();
 
     let host = if is_docker {
-        format!("172.20.0.{}", i + 2)
+        if i < 3 {
+            format!("192.168.1.122:{}", port)
+        } else {
+            format!("192.168.1.124:{}", port)
+        }
     } else {
         "localhost".to_string()
     };
