@@ -4,17 +4,14 @@ set -euox pipefail
 
 just build_release
 
-for i in {0..4}; do
-    echo "Starting node $i"
+i=$1
 
-    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
-    ./target/release/timeboost \
-        --id $i \
-        --port $((8000 + i)) \
-        --rpc-port $((8800 + i)) \
-        --metrics-port $((9000 + i)) \
-        --base local &
-done
+echo "Starting node $i"
 
-wait
-
+RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+./target/release/timeboost \
+    --id $i \
+    --port $((8000 + i)) \
+    --rpc-port $((8800 + i)) \
+    --metrics-port $((9000 + i)) \
+    --base local
