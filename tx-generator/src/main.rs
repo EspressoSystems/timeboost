@@ -7,7 +7,7 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
-use tokio::{signal, sync::watch, task::JoinSet, time::sleep};
+use tokio::{signal, spawn, sync::watch, time::sleep};
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
@@ -21,7 +21,7 @@ struct Cli {
     committee_size: usize,
 
     /// How oftern to generate a transaction.
-    #[clap(long, default_value = "100")]
+    #[clap(long, default_value = "200")]
     interval_ms: u64,
 
     /// If we're running in docker, we need to use the correct port.
@@ -89,7 +89,7 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
         "localhost".to_string()
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+    match tokio::time::timeout(std::time::Duration::from_millis(200), async move {
         match client
             .post(format!(
                 "http://{host}:{port}/v0/submit",
@@ -134,7 +134,6 @@ async fn main() {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
 
     let client = Box::leak(Box::new(Client::new()));
-    let mut handles: JoinSet<()> = JoinSet::new();
 
     #[cfg(feature = "until")]
     tokio::spawn(run_until(
@@ -146,38 +145,24 @@ async fn main() {
     ));
 
     loop {
-        tokio::select! {
-            _ = &mut timer => {
-                tracing::debug!("sending tx");
-                timer = sleep(std::time::Duration::from_millis(cli.interval_ms)).fuse().boxed();
-                // We're gonna put this in a thread so that way if there's a delay sending to any
-                // node, it doesn't block the execution.
-                for i in 0..cli.committee_size {
-                    handles.spawn(create_and_send_tx(i, is_docker, client));
-                }
-            }
-            handle = handles.join_next() => {
-                if let Some(handle) = handle {
-                    match handle {
-                        Ok(_) => {
-                        }
-                        Err(e) => {
-                            tracing::error!(%e, "something went wrong sending the tx");
-                        }
-                    }
-                }
-            }
+        tokio::select! { biased;
             _ = shutdown_rx.changed() => {
                 tracing::info!("shutting down tx generator");
-
-                // Abort all the handles, we don't care about the results.
-                handles.abort_all();
 
                 break;
             }
             _ = signal::ctrl_c() => {
                 tracing::info!("received ctrl-c; shutting down");
                 shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
+            }
+            _ = &mut timer => {
+                tracing::debug!("sending tx");
+                timer = sleep(std::time::Duration::from_millis(cli.interval_ms)).fuse().boxed();
+                // We're gonna put this in a thread so that way if there's a delay sending to any
+                // node, it doesn't block the execution.
+                for i in 0..cli.committee_size {
+                    spawn(create_and_send_tx(i, is_docker, client));
+                }
             }
         }
     }

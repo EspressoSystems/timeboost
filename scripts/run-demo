@@ -31,7 +31,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --committee-size $nodes \
         --base local \
-        --until 500 \
+        --until 300 \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
@@ -45,7 +45,7 @@ echo "Starting tx-generator"
 RUST_LOG=tx_generator=none \
 ./target/release/tx-generator \
     --committee-size $nodes \
-    --until 500 \
+    --until 300 \
     --watchdog-timeout 300 &
 pids+=($!)
 

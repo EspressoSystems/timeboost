@@ -21,13 +21,15 @@ pub async fn run_until(
         .fuse()
         .boxed();
 
+    let mut req_timer = sleep(std::time::Duration::from_secs(2)).fuse().boxed();
+
     let host = if is_docker { "172.20.0.2" } else { "localhost" };
 
     let mut last_committed = 0;
     let mut last_committed_time = Instant::now();
     // Deliberately run this on a timeout to avoid a runaway testing scenario.
     loop {
-        tokio::select! {
+        tokio::select! { biased;
             _ = &mut timer => {
                 tracing::error!("watchdog timed out, shutting down");
                 shutdown_tx.send(()).expect(
@@ -35,8 +37,9 @@ pub async fn run_until(
                 );
                 anyhow::bail!("Watchdog timeout")
             }
-            resp = reqwest::get(format!("http://{host}:{port}/status/metrics")) => {
-                if let Ok(resp) = resp {
+            _ = &mut req_timer => {
+                req_timer = sleep(std::time::Duration::from_secs(2)).fuse().boxed();
+                if let Ok(resp) = reqwest::get(format!("http://{host}:{port}/status/metrics")).await {
                     if let Ok(text) = resp.text().await {
                         let committed_round = text
                             .lines()
