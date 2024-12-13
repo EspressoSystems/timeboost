@@ -24,6 +24,14 @@ impl Default for CommitteeContract {
     }
 }
 
+static IPS: [[u8; 4]; 5] = [
+    [192, 168, 1, 122],
+    [192, 168, 1, 122],
+    [192, 168, 1, 122],
+    [192, 168, 1, 124],
+    [192, 168, 1, 124],
+];
+
 impl CommitteeContract {
     /// Create a new committee contract with 5 nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
@@ -33,7 +41,7 @@ impl CommitteeContract {
 
     /// Create a new committee contract with `n` nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new_n(base: CommitteeBase, n: u16) -> Self {
+    pub fn new_n(base: CommitteeBase, n: usize) -> Self {
         let mut bootstrap_nodes = vec![];
         let mut staked_nodes = vec![];
 
@@ -45,7 +53,9 @@ impl CommitteeContract {
             let peer_id = derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
                 CommitteeBase::Local => {
-                    derive_libp2p_multiaddr(&format!("127.0.0.1:{}", 8000 + i)).unwrap()
+                    // derive_libp2p_multiaddr(&format!("127.0.0.1:{}", 8000 + i)).unwrap()
+                    let ip = format!("{}.{}.{}.{}", IPS[i][0], IPS[i][1], IPS[i][2], IPS[i][3]);
+                    derive_libp2p_multiaddr(&format!("{}:{}", ip, 8000 + i)).unwrap()
                 }
                 // Docker uses the docker network IP address for config, but we bind according to
                 // the usual semantics of 127.* or 0.* for localhost.
