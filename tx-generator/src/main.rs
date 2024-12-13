@@ -21,7 +21,7 @@ struct Cli {
     committee_size: usize,
 
     /// How oftern to generate a transaction.
-    #[clap(long, default_value = "400")]
+    #[clap(long, default_value = "5000")]
     interval_ms: u64,
 
     /// If we're running in docker, we need to use the correct port.

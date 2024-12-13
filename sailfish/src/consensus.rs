@@ -305,13 +305,6 @@ impl Consensus {
                             }
                         }
                     } else {
-                        warn!(
-                            node   = %self.public_key(),
-                            round  = %self.round,
-                            vround = %r,
-                            source = %v.source(),
-                            "no evidence for vertex round exists outside of dag"
-                        );
                         self.buffer.add(v.clone());
                     }
                 }
