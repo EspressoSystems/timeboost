@@ -12,9 +12,6 @@ use tokio::{signal, sync::watch, time::sleep};
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
-// const SIZE_500_KB: usize = 50 * 1024;
-const SIZE_500_KB: usize = 50;
-
 #[derive(Parser, Debug)]
 struct Cli {
     /// The committee size.
@@ -28,6 +25,10 @@ struct Cli {
     /// If we're running in docker, we need to use the correct port.
     #[clap(long, default_value = "false")]
     docker: bool,
+
+    /// The maximum transaction size to generate.
+    #[clap(long, default_value_t = 1 * 1024)]
+    max_tx_size: usize,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -55,9 +56,9 @@ fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
         .collect()
 }
 
-fn make_tx() -> Transaction {
+fn make_tx(max_tx_size: usize) -> Transaction {
     // Random transaction size betweek 1 byte and 500kb
-    let size = rand::thread_rng().gen_range(1..SIZE_500_KB);
+    let size = rand::thread_rng().gen_range(1..max_tx_size);
 
     // 10% chance of being a priority tx
     if rand::thread_rng().gen_bool(0.1) {
@@ -80,9 +81,14 @@ fn make_tx() -> Transaction {
 }
 
 /// Creates a transaction and sends it to all the nodes in the committee.
-async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) {
+async fn create_and_send_tx(
+    i: usize,
+    is_docker: bool,
+    client: &'static Client,
+    max_tx_size: usize,
+) {
     let port = 8800 + i;
-    let tx = make_tx();
+    let tx = make_tx(max_tx_size);
 
     let host = if is_docker {
         if i < 3 {
@@ -149,6 +155,8 @@ async fn main() {
         shutdown_tx.clone(),
     ));
 
+    let max_tx_size = cli.max_tx_size;
+
     loop {
         tokio::select! {
             _ = &mut timer => {
@@ -157,7 +165,7 @@ async fn main() {
                 // We're gonna put this in a thread so that way if there's a delay sending to any
                 // node, it doesn't block the execution.
                 for i in 0..cli.committee_size {
-                    create_and_send_tx(i, is_docker, client).await;
+                    create_and_send_tx(i, is_docker, client, max_tx_size).await;
                 }
             }
             _ = shutdown_rx.changed() => {
