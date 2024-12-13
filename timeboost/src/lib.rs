@@ -263,7 +263,6 @@ impl Timeboost {
                     Some(event) => {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
-                                tracing::error!("received: {}", transactions.len());
                                 self.coordinator.handle_transactions(transactions);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
