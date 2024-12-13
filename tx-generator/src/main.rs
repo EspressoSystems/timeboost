@@ -12,8 +12,7 @@ use tokio::{signal, sync::watch, task::JoinSet, time::sleep};
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
-const SIZE_500_KB: usize = 500 * 1024;
-// const SIZE_500_KB: usize = 500;
+const SIZE_500_KB: usize = 50 * 1024;
 
 #[derive(Parser, Debug)]
 struct Cli {
