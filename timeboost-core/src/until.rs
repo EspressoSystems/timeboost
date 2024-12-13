@@ -15,13 +15,11 @@ pub async fn run_until(
     use futures::FutureExt;
     use tokio::time::sleep;
 
-    sleep(std::time::Duration::from_secs(1)).await;
+    sleep(Duration::from_secs(1)).await;
 
-    let mut timer = sleep(std::time::Duration::from_secs(timeout))
-        .fuse()
-        .boxed();
+    let mut timer = sleep(Duration::from_secs(timeout)).fuse().boxed();
 
-    let mut req_timer = sleep(std::time::Duration::from_secs(2)).fuse().boxed();
+    let mut req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
 
     let host = if is_docker { "172.20.0.2" } else { "localhost" };
 
@@ -29,7 +27,7 @@ pub async fn run_until(
     let mut last_committed_time = Instant::now();
     // Deliberately run this on a timeout to avoid a runaway testing scenario.
     loop {
-        tokio::select! { biased;
+        tokio::select! {
             _ = &mut timer => {
                 tracing::error!("watchdog timed out, shutting down");
                 shutdown_tx.send(()).expect(
@@ -38,7 +36,7 @@ pub async fn run_until(
                 anyhow::bail!("Watchdog timeout")
             }
             _ = &mut req_timer => {
-                req_timer = sleep(std::time::Duration::from_secs(2)).fuse().boxed();
+                req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
                 if let Ok(resp) = reqwest::get(format!("http://{host}:{port}/status/metrics")).await {
                     if let Ok(text) = resp.text().await {
                         let committed_round = text
@@ -59,7 +57,7 @@ pub async fn run_until(
                             shutdown_tx
                                 .send(())
                                 .expect("the shutdown sender was dropped before the receiver could receive the token");
-                            anyhow::bail!("Node stuck on round for more than 30 seconds")
+                            anyhow::bail!("Node stuck on round for more than {} seconds", ROUND_TIMEOUT_SECS)
                         } else if committed_round > last_committed {
                             last_committed = committed_round;
                             last_committed_time = now;

@@ -41,11 +41,14 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
+sleep 3
+
 echo "Starting tx-generator"
-RUST_LOG=tx_generator=none \
+# shutdown the generator few rounds early in case we cant poll api cause timeboost is done
+RUST_LOG=tx_generator=info \
 ./target/release/tx-generator \
     --committee-size $nodes \
-    --until 300 \
+    --until 290 \
     --watchdog-timeout 300 &
 pids+=($!)
 
