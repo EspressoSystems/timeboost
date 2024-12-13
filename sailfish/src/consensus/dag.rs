@@ -22,7 +22,7 @@ impl Dag {
     /// Adds a new vertex to the DAG in its corresponding round and source position
     pub fn add(&mut self, v: Vertex) {
         debug_assert!(!self.contains(&v));
-        let r = v.round();
+        let r = *v.round().data();
         let s = v.source();
         let m = self.elements.entry(r).or_default();
         debug_assert!(m.len() < self.max_keys.get());
@@ -52,7 +52,7 @@ impl Dag {
     /// Checks if a specific vertex exists in the DAG
     pub fn contains(&self, v: &Vertex) -> bool {
         self.elements
-            .get(&v.round())
+            .get(v.round().data())
             .map(|m| m.contains_key(v.source()))
             .unwrap_or(false)
     }
@@ -65,6 +65,10 @@ impl Dag {
     /// Retrieves a specific vertex by its round number and source public key
     pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex> {
         self.elements.get(&r)?.get(s)
+    }
+
+    pub fn take_all(&mut self) -> BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>> {
+        std::mem::take(&mut self.elements)
     }
 
     /// Returns an iterator over all vertices within the specified round range.
@@ -94,7 +98,12 @@ impl Dag {
     /// Is there a connection between two vertices?
     pub fn is_connected(&self, from: &Vertex, to: &Vertex) -> bool {
         let mut current = vec![from];
-        for nodes in self.elements.range(..from.round()).rev().map(|e| e.1) {
+        for nodes in self
+            .elements
+            .range(..from.round().data())
+            .rev()
+            .map(|e| e.1)
+        {
             current = nodes
                 .iter()
                 .filter_map(|(_, v)| current.iter().any(|x| x.has_edge(v.source())).then_some(v))
@@ -148,8 +157,9 @@ impl Dag {
 mod tests {
     use std::num::NonZeroUsize;
 
-    use multisig::Keypair;
+    use multisig::{Committee, Keypair, Signed, VoteAccumulator};
     use timeboost_core::types::vertex::Vertex;
+    use timeboost_utils::types::round_number::RoundNumber;
 
     use crate::consensus::Dag;
 
@@ -157,31 +167,54 @@ mod tests {
     fn test_is_connected() {
         let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
 
-        let pk1 = Keypair::generate().public_key();
-        let pk2 = Keypair::generate().public_key();
-        let pk3 = Keypair::generate().public_key();
-        let pk4 = Keypair::generate().public_key();
-        let pk5 = Keypair::generate().public_key();
+        let kp1 = Keypair::generate();
+        let kp2 = Keypair::generate();
+        let kp3 = Keypair::generate();
+        let kp4 = Keypair::generate();
+        let kp5 = Keypair::generate();
+
+        let com = Committee::new([
+            (1, kp1.public_key()),
+            (2, kp2.public_key()),
+            (3, kp3.public_key()),
+            (4, kp4.public_key()),
+            (5, kp5.public_key()),
+        ]);
+
+        let gen_evidence = |r: u64| {
+            let mut va = VoteAccumulator::new(com.clone());
+            va.add(Signed::new(RoundNumber::from(r), &kp1, false))
+                .unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp2, false))
+                .unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp3, false))
+                .unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp4, false))
+                .unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp5, false))
+                .unwrap();
+            va.into_certificate().unwrap()
+        };
 
         // Layer 1
-        let v11 = Vertex::new(1, pk1);
-        let v12 = Vertex::new(1, pk2);
-        let v13 = Vertex::new(1, pk3);
-        let v14 = Vertex::new(1, pk4);
-        let v15 = Vertex::new(1, pk5);
+        let v11 = Vertex::new(1, gen_evidence(0), &kp1, false);
+        let v12 = Vertex::new(1, gen_evidence(0), &kp2, false);
+        let v13 = Vertex::new(1, gen_evidence(0), &kp3, false);
+        let v14 = Vertex::new(1, gen_evidence(0), &kp4, false);
+        let v15 = Vertex::new(1, gen_evidence(0), &kp5, false);
 
         // Layer 2
-        let mut v21 = Vertex::new(2, pk1);
-        let mut v22 = Vertex::new(2, pk2);
-        let mut v23 = Vertex::new(2, pk3);
+        let mut v21 = Vertex::new(2, gen_evidence(1), &kp1, false);
+        let mut v22 = Vertex::new(2, gen_evidence(1), &kp2, false);
+        let mut v23 = Vertex::new(2, gen_evidence(1), &kp3, false);
 
         // Layer 3
-        let mut v31 = Vertex::new(3, pk1);
-        let mut v32 = Vertex::new(3, pk2);
-        let mut v33 = Vertex::new(3, pk3);
+        let mut v31 = Vertex::new(3, gen_evidence(2), &kp1, false);
+        let mut v32 = Vertex::new(3, gen_evidence(2), &kp2, false);
+        let mut v33 = Vertex::new(3, gen_evidence(2), &kp3, false);
 
         // Layer 4
-        let mut v41 = Vertex::new(4, pk1);
+        let mut v41 = Vertex::new(4, gen_evidence(3), &kp1, false);
 
         v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
 

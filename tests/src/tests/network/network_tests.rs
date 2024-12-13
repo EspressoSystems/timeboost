@@ -28,7 +28,7 @@ where
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
-                            if v.data().round() == RoundNumber::genesis() + 1
+                            if *v.data().round().data() == RoundNumber::genesis() + 1
                                 && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;
@@ -71,7 +71,8 @@ where
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
-                            if *v.data().round() == rounds && node_public_key == *v.data().source()
+                            if **v.data().round().data() == rounds
+                                && node_public_key == *v.data().source()
                             {
                                 return TestOutcome::Passed;
                             }
@@ -126,8 +127,8 @@ where
                         let d = v.data();
                         // Ensure vertex has timeout and no vote cert and from round r + 1
                         let no_vote_checks = d.no_vote_cert().is_some()
-                            && d.timeout_cert().is_some()
-                            && *d.round() == timeout_round + 1;
+                            && d.evidence().is_timeout()
+                            && **d.round().data() == timeout_round + 1;
 
                         if no_vote_checks {
                             // The signing key needs to be from leader for round `timeout_round + 1`
@@ -149,7 +150,7 @@ where
                 TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
-                        if *v.data().round() == timeout_round + 20
+                        if **v.data().round().data() == timeout_round + 20
                             && node_public_key == *v.data().source()
                         {
                             return TestOutcome::Passed;
@@ -198,17 +199,16 @@ where
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
-                        if let Some(Message::Vertex(e)) = msg {
-                            let d = e.data();
-                            if d.no_vote_cert().is_some() && *d.round() != 3 {
+                        if let Some(Message::Vertex(v)) = msg {
+                            let r = **v.data().round().data();
+                            if v.data().evidence().is_timeout() && r != 3 {
                                 return TestOutcome::Failed(
-                                    "We should only timeout when node 4 is leader",
+                                    "We should only timeout when node 4 is leader the first time",
                                 );
                             }
                             // Go 10 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that started late
-                            if *d.round() == online_at_round + 10 && node_public_key == *d.source()
-                            {
+                            if r == online_at_round + 10 && node_public_key == *v.signing_key() {
                                 return TestOutcome::Passed;
                             }
                         }
@@ -247,13 +247,13 @@ where
         if round == offline_at_round && id == node_id {
             return Err(format!("Node: {}, dropping msg for round: {}", id, round));
         }
-        if let Message::Vertex(e) = msg {
+        if let Message::Vertex(v) = msg {
             // Simulate coming online in middle of round so drop some vertex messages
             if round == offline_at_round + 1
                 && id == node_id
-                && (e.signing_key() == committee.get_key(0).unwrap()
-                    || e.signing_key() == committee.get_key(1).unwrap()
-                    || e.signing_key() == committee.get_key(2).unwrap())
+                && (v.signing_key() == committee.get_key(0).unwrap()
+                    || v.signing_key() == committee.get_key(1).unwrap()
+                    || v.signing_key() == committee.get_key(2).unwrap())
             {
                 return Err(format!(
                     "Node: {}, dropping vertex for round: {}",
@@ -273,12 +273,11 @@ where
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
-                        if let Some(Message::Vertex(e)) = msg {
+                        if let Some(Message::Vertex(v)) = msg {
                             // Go 10 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that missed a round
-                            if *e.data().round() == offline_at_round + 10
-                                && node_public_key == *e.data().source()
-                            {
+                            let r = **v.data().round().data();
+                            if r == offline_at_round + 10 && node_public_key == *v.signing_key() {
                                 return TestOutcome::Passed;
                             }
                         }

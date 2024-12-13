@@ -1,6 +1,7 @@
 mod cert;
 mod committee;
 mod envelope;
+mod signed;
 mod util;
 mod votes;
 
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub use cert::Certificate;
 pub use committee::Committee;
 pub use envelope::{Envelope, Unchecked, Validated};
+pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
 #[derive(Clone, PartialEq, Eq, Hash)]

@@ -4,7 +4,7 @@ use std::iter;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, Committee, Envelope, PublicKey, Signature, Validated};
+use crate::{Certificate, Committee, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
 pub struct VoteAccumulator<D: Committable> {
@@ -57,6 +57,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.cert.as_ref()
     }
 
+    pub fn into_certificate(self) -> Option<Certificate<D>> {
+        self.cert
+    }
+
     pub fn set_certificate(&mut self, c: Certificate<D>) {
         self.clear();
         self.votes.insert(
@@ -74,18 +78,18 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.cert = None
     }
 
-    pub fn add(&mut self, env: Envelope<D, Validated>) -> Result<Option<&Certificate<D>>, Error> {
-        let Some(ix) = self.committee.get_index(env.signing_key()) else {
+    pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
+        let Some(ix) = self.committee.get_index(signed.signing_key()) else {
             return Err(Error::UnknownSigningKey);
         };
 
-        let commit = env.commitment();
-        let sig = *env.signature();
+        let commit = signed.commitment();
+        let sig = *signed.signature();
 
         let entry = self
             .votes
             .entry(commit)
-            .or_insert_with(|| Entry::new(env.into_data()));
+            .or_insert_with(|| Entry::new(signed.into_data()));
 
         if entry.sigs.contains_key(&ix) {
             return Ok(self.certificate());
