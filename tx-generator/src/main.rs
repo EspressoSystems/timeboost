@@ -88,13 +88,13 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
         if i < 3 {
             "192.168.1.122".to_string()
         } else {
-            "localhost".to_string()
+            "192.168.1.124".to_string()
         }
     } else {
         "localhost".to_string()
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(10), async move {
+    match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
         match client
             .post(format!(
                 "http://{host}:{port}/v0/submit",
@@ -139,7 +139,6 @@ async fn main() {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
 
     let client = Box::leak(Box::new(Client::new()));
-    let mut handles: JoinSet<()> = JoinSet::new();
 
     #[cfg(feature = "until")]
     tokio::spawn(run_until(
@@ -158,25 +157,11 @@ async fn main() {
                 // We're gonna put this in a thread so that way if there's a delay sending to any
                 // node, it doesn't block the execution.
                 for i in 0..cli.committee_size {
-                    handles.spawn(create_and_send_tx(i, is_docker, client));
-                }
-            }
-            handle = handles.join_next() => {
-                if let Some(handle) = handle {
-                    match handle {
-                        Ok(_) => {
-                        }
-                        Err(e) => {
-                            tracing::error!(%e, "something went wrong sending the tx");
-                        }
-                    }
+                    create_and_send_tx(i, is_docker, client).await;
                 }
             }
             _ = shutdown_rx.changed() => {
                 tracing::info!("shutting down tx generator");
-
-                // Abort all the handles, we don't care about the results.
-                handles.abort_all();
 
                 break;
             }
