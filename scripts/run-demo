@@ -41,19 +41,6 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
-if [ "$late_start" == "false" ]; then
-    sleep 3
-    echo "Starting tx-generator"
-    # shutdown the generator few rounds early in case we cant poll api cause timeboost is done
-    RUST_LOG=tx_generator=info \
-    ./target/release/tx-generator \
-        --committee-size $nodes \
-        --until 290 \
-        --watchdog-timeout 300 &
-    pids+=($!)
-fi
-
-
 for pid in "${pids[@]}"; do
     wait $pid
     exit_code=$?
