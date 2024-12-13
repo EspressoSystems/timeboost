@@ -38,6 +38,7 @@ fix:
 
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
+  docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
 
 run_integration: build_docker
   docker compose up --abort-on-container-exit
@@ -47,6 +48,9 @@ run_integration_local *ARGS:
 
 run_demo *ARGS:
   ./scripts/run-demo {{ARGS}}
+
+run_tx_generator *ARGS:
+  cargo run --release --bin tx-generator {{ARGS}}
 
 ci_local:
   just build && just lint && just test_ci --release && just run_demo && just build_docker

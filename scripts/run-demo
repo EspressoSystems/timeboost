@@ -41,6 +41,14 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
+echo "Starting tx-generator"
+RUST_LOG=tx_generator=none \
+./target/release/tx-generator \
+    --committee-size $nodes \
+    --until 500 \
+    --watchdog-timeout 300 &
+pids+=($!)
+
 for pid in "${pids[@]}"; do
     wait $pid
     exit_code=$?

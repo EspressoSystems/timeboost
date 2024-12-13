@@ -8,6 +8,7 @@ members = [
     "timeboost-crypto",
     "timeboost-networking",
     "timeboost-utils",
+    "tx-generator",
 ]
 resolver = "2"
 
@@ -71,6 +72,7 @@ prometheus = "0.13"
 rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3.1"
 rayon = "1.10"
+reqwest = { version = "0.12" }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
