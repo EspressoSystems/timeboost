@@ -25,6 +25,13 @@ impl Nonce {
     pub fn size_bytes(&self) -> usize {
         std::mem::size_of::<Nonce>()
     }
+
+    pub fn now(seqno: SeqNo) -> Self {
+        Self {
+            epoch: Epoch::now(),
+            seqno,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -32,6 +39,10 @@ pub struct Address([u8; 32]); // TODO: Address format
 impl Address {
     pub fn size_bytes(&self) -> usize {
         std::mem::size_of::<Address>()
+    }
+
+    pub fn zero() -> Self {
+        Self([0; 32])
     }
 }
 
@@ -43,6 +54,10 @@ pub struct TransactionData {
 }
 
 impl TransactionData {
+    pub fn new(nonce: Nonce, to: Address, data: Bytes) -> Self {
+        Self { nonce, to, data }
+    }
+
     pub fn size_bytes(&self) -> usize {
         self.nonce.size_bytes() + self.to.size_bytes() + self.data.len()
     }
@@ -83,6 +98,21 @@ impl Transaction {
     /// TODO: This will check that the transaction was signed by the PLC.
     pub fn is_valid(&self) -> bool {
         true
+    }
+
+    pub fn to(&self) -> &Address {
+        match self {
+            Self::Priority { to, .. } => to,
+            Self::Regular { txn } => &txn.to,
+        }
+    }
+
+    pub fn data(&self) -> Option<&Bytes> {
+        match self {
+            // Priority transactions don't have a clean data representation.
+            Self::Priority { .. } => None,
+            Self::Regular { txn } => Some(&txn.data),
+        }
     }
 }
 

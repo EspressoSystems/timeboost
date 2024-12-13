@@ -12,6 +12,7 @@ use timeboost_core::types::{
     block::timeboost::TimeboostBlock,
     event::{TimeboostEventType, TimeboostStatusEvent},
     metrics::TimeboostMetrics,
+    seqno::SeqNo,
     time::Timestamp,
     transaction::Transaction,
 };
@@ -57,7 +58,7 @@ pub struct RoundState {
     pub(crate) delayed_inbox_index: u64,
 
     /// The next expected priority bundle sequence number of the last successfully completed round.
-    pub(crate) next_expected_priority_bundle_sequence_no: u64,
+    pub(crate) next_expected_priority_bundle_sequence_no: SeqNo,
 }
 
 impl RoundState {
@@ -67,7 +68,7 @@ impl RoundState {
         self.consensus_timestamp = inclusion_list.timestamp;
         self.delayed_inbox_index = inclusion_list.delayed_inbox_index;
         self.next_expected_priority_bundle_sequence_no =
-            inclusion_list.priority_bundle_sequence_no + 1;
+            SeqNo::from(*inclusion_list.priority_bundle_sequence_no + 1);
     }
 }
 
@@ -99,9 +100,6 @@ where
 
     /// The transactions/bundles seen at some point in the previous 8 rounds.
     prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<Transaction>>>,
-
-    /// The previous successful round's bundles.
-    previous_bundles: Vec<Transaction>,
 }
 
 impl<I, D, O, B> Sequencer<I, D, O, B>
@@ -130,7 +128,6 @@ where
             round: RoundNumber::genesis(),
             mempool,
             prior_tx_hashes: BTreeMap::new(),
-            previous_bundles: Vec::new(),
         }
     }
 
@@ -163,8 +160,8 @@ where
                         committee_size,
                     );
 
-                    // This is required for the Inclusion phase. We *must* know which of the current bundle
-                    // set has been included in a prior successful round.
+                    // We add the mempool snapshot to the prior tx hashes only if it succeeds, so we have
+                    // to make a copy here.
                     let tmp_previous_bundles = candidate_list.transactions.clone();
 
                     // Build the block from the snapshot.
@@ -188,9 +185,6 @@ where
 
                     // Remove the prior tx hashes that are not in the 8-round window.
                     self.prior_tx_hashes.retain(|round, _| *self.round - **round <= 8);
-
-                    // The round was successful, so we update the previous bundles.
-                    self.previous_bundles = tmp_previous_bundles.into_iter().collect();
                 }
             }
         }
@@ -209,7 +203,6 @@ where
             self.round,
             candidate_list,
             self.round_state.delayed_inbox_index,
-            &self.previous_bundles,
         ) else {
             error!(%epoch, %self.round, "failed to produce inclusion list");
             bail!("failed to produce inclusion list")

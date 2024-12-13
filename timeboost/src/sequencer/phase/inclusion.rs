@@ -1,6 +1,7 @@
 use std::{
     cmp::max,
     collections::{BTreeSet, HashMap, HashSet},
+    hash::{DefaultHasher, Hash, Hasher},
 };
 
 use anyhow::Result;
@@ -8,6 +9,7 @@ use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
+    seqno::SeqNo,
     time::{Epoch, Timestamp},
     transaction::Transaction,
 };
@@ -15,6 +17,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 
 use crate::sequencer::{protocol::RoundState, util::median};
 
+pub mod canonical;
 pub mod noop;
 
 /// A member's candidate list that serves as input to a consensus round R.
@@ -181,7 +184,7 @@ impl CandidateList {
 ///
 /// Taken directly from the spec:
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main/inclusion.md?plain=1#L125-L143
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Hash)]
 pub struct InclusionList {
     /// The consensus timestamp of the inclusion list. This is the *same* as the
     /// [`CandidateList::timestamp`] and only is created when the candidate list is
@@ -198,7 +201,7 @@ pub struct InclusionList {
     pub(crate) delayed_inbox_index: u64,
 
     /// The sequence number of the included priority bundle.
-    pub(crate) priority_bundle_sequence_no: u64,
+    pub(crate) priority_bundle_sequence_no: SeqNo,
 
     /// The epoch of the inclusion list.
     pub(crate) epoch: Epoch,
@@ -211,6 +214,12 @@ impl InclusionList {
 
     pub fn into_transactions(self) -> Vec<Transaction> {
         self.txns
+    }
+
+    pub fn get_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -230,6 +239,5 @@ pub trait InclusionPhase {
         round_number: RoundNumber,
         candidate_list: CandidateList,
         last_delayed_inbox_index: u64,
-        previous_bundles: &[Transaction],
     ) -> Result<InclusionList>;
 }
