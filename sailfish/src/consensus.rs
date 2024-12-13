@@ -152,15 +152,16 @@ impl Consensus {
     /// starts from the genesis round).
     #[instrument(level="info", skip_all, fields(node = %self.public_key(), round = %self.round()))]
     pub fn go(&mut self, d: Dag, e: Evidence) -> Vec<Action> {
-        let r = d.max_round().unwrap_or(RoundNumber::genesis());
+        let genesis_round = RoundNumber::genesis();
+        let r = d.max_round().unwrap_or(genesis_round);
 
         self.dag = d;
         self.round = r;
 
-        if r == RoundNumber::genesis() {
+        if r == genesis_round {
             let vtx = Vertex::new(r, Evidence::Genesis, &self.keypair, self.deterministic);
             let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
-            vec![Action::SendProposal(env)]
+            vec![Action::SendProposal(env), Action::ResetTimer(genesis_round)]
         } else {
             self.advance_from_round(r, e)
         }
@@ -204,6 +205,7 @@ impl Consensus {
         };
         let t = TimeoutMessage::new(e, &self.keypair, self.deterministic);
         let e = Envelope::signed(t, &self.keypair, self.deterministic);
+        tracing::error!("timeout: r: {}, id: {}", r, self.id);
         vec![Action::SendTimeout(e)]
     }
 
@@ -285,10 +287,10 @@ impl Consensus {
                 for v in self
                     .buffer
                     .take_all()
-                    .values()
-                    .flat_map(|inner_map| inner_map.values())
+                    .into_values()
+                    .flat_map(|inner_map| inner_map.into_values())
                 {
-                    if let Ok(a) = self.try_to_add_to_dag(v) {
+                    if let Ok(a) = self.try_to_add_to_dag(&v) {
                         actions.extend(a);
                         let r = *v.round().data();
                         if r >= self.round && self.dag.vertex_count(r) >= quorum {
@@ -305,7 +307,7 @@ impl Consensus {
                             }
                         }
                     } else {
-                        self.buffer.add(v.clone());
+                        self.buffer.add(v);
                     }
                 }
 
@@ -676,8 +678,8 @@ impl Consensus {
                 );
                 return Err(());
             }
-            for w in self.buffer.vertices(r - 1) {
-                self.dag.add(w.clone())
+            for w in self.buffer.drain_round(r - 1) {
+                self.dag.add(w)
             }
             self.buffer.remove(r);
         }

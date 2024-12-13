@@ -67,8 +67,17 @@ impl Dag {
         self.elements.get(&r)?.get(s)
     }
 
+    /// Take all elements in the dag
     pub fn take_all(&mut self) -> BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>> {
         std::mem::take(&mut self.elements)
+    }
+
+    /// Remove elements at a given round and return iterator over the values
+    pub fn drain_round(&mut self, r: RoundNumber) -> impl Iterator<Item = Vertex> {
+        self.elements
+            .remove(&r)
+            .into_iter()
+            .flat_map(|m| m.into_values())
     }
 
     /// Returns an iterator over all vertices within the specified round range.

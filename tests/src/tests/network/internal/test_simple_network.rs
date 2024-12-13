@@ -17,6 +17,11 @@ async fn test_simple_network_round_timeout() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_simple_network_genesis_round_timeout() {
+    run_simple_network_round_timeout_genesis_test::<MemoryNetworkTest>().await
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_simple_network_catchup() {
     run_simple_network_catchup_test::<MemoryNetworkTest>().await
 }
