@@ -94,7 +94,7 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
         "localhost".to_string()
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+    match tokio::time::timeout(std::time::Duration::from_secs(10), async move {
         match client
             .post(format!(
                 "http://{host}:{port}/v0/submit",
