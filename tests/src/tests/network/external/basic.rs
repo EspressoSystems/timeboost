@@ -8,7 +8,7 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::network1::NetworkInitializer;
+use timeboost_networking::network::NetworkInitializer;
 use tokio::sync::oneshot;
 use tokio::{sync::watch, task::JoinSet};
 

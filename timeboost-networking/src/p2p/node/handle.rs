@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 use tracing::{debug, info, instrument};
 
 use crate::{
-    network::{
+    p2p::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         gen_multiaddr, ClientRequest, NetworkEvent, NetworkNode, NetworkNodeConfig,
     },

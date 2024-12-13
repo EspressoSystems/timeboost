@@ -10,9 +10,9 @@ use std::fmt::Display;
 
 use thiserror::Error;
 
-/// Network logic
 pub mod network;
-pub mod network1;
+/// Network logic
+pub mod p2p;
 
 /// symbols needed to implement a networking instance over libp2p-netorking
 pub mod reexport {

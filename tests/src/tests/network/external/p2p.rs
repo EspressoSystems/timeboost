@@ -8,7 +8,7 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::network::client::{derive_libp2p_multiaddr, Libp2pInitializer};
+use timeboost_networking::p2p::client::{derive_libp2p_multiaddr, Libp2pInitializer};
 use tokio::{sync::watch, task::JoinSet};
 
 pub struct Libp2pNetworkTest {

@@ -4,8 +4,8 @@ use crate::types::message::Message;
 
 use async_trait::async_trait;
 use multisig::{Committee, PublicKey, Unchecked, Validated};
-use timeboost_networking::network::client::Libp2pNetwork;
-use timeboost_networking::network1::Network;
+use timeboost_networking::network::Network;
+use timeboost_networking::p2p::client::Libp2pNetwork;
 use timeboost_networking::{NetworkError, Topic};
 
 /// Types that provide broadcast and 1:1 message communication.

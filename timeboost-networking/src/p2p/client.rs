@@ -20,9 +20,9 @@ use std::{
     time::Duration,
 };
 
-pub use crate::network::GossipConfig;
+pub use crate::p2p::GossipConfig;
 use crate::{
-    network::{
+    p2p::{
         behaviours::dht::record::{Namespace, RecordKey, RecordValue},
         spawn_network_node,
         transport::construct_auth_message,

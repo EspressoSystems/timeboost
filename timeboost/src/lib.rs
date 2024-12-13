@@ -14,7 +14,7 @@ use sequencer::{
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_networking::network::client::{
+use timeboost_networking::p2p::client::{
     derive_libp2p_multiaddr, derive_libp2p_peer_id, Libp2pInitializer,
 };
 use timeboost_utils::PeerConfig;
