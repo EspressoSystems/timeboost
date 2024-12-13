@@ -17,13 +17,14 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use tracing::{instrument, trace, warn};
 use transport::{Connection, NetworkMessage, Transport};
 
 use crate::{p2p::client::derive_libp2p_keypair, NetworkError};
 
 pub mod transport;
 
-/// The initializer for the basic network.
+/// The initializer for the network.
 pub struct NetworkInitializer<K: SignatureKey + 'static> {
     /// The local peer id
     pub local_id: PeerId,
@@ -75,10 +76,15 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
     }
 }
 
+/// The network receives established connections and maintains the
+/// communication between the transport layer and the application layer.
 #[derive(Debug)]
 pub struct Network {
+    /// Handle for the main task
     _main_task: JoinHandle<()>,
+    /// Connections received from the transport layer
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+    /// Channel for consuming messages from the network
     network_rx: mpsc::Receiver<NetworkMessage>,
 }
 
@@ -92,48 +98,56 @@ impl Network {
         let transport = Transport::run(local_id, local_addr, to_connect.clone()).await;
         let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
-        let (network_tx, network_rx) = mpsc::channel(10000);
+        let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
+        trace!("Running main network task");
         let main_task = handle.spawn(Self::run(
+            local_id.clone(),
             transport,
             Arc::clone(&connections),
             to_connect,
-            network_tx,
+            inbound_sender,
             tx_ready,
         ));
         Self {
             _main_task: main_task,
             connections,
-            network_rx,
+            network_rx: inbound_receiver,
         }
     }
 
+    /// Make sure that connections are made by the transport and
+    /// set the network as ready when all connections are established
+    #[instrument(level = "trace", skip_all, fields(id = %local_id))]
     pub async fn run(
+        local_id: PeerId,
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
         mut to_connect: Vec<(PeerId, String)>,
         network_tx: Sender<NetworkMessage>,
         tx_ready: oneshot::Sender<()>,
     ) {
-        let rx_connection = transport.rx_connection();
+        let connection_receiver = transport.rx_connection();
         let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
         let handle = Handle::current();
-        while let Some(connection) = rx_connection.recv().await {
+        while let Some(connection) = connection_receiver.recv().await {
             let remote_id = connection.remote_id;
+            trace!("Received connection from: {}", remote_id);
             if let Some(task) = handles.remove(&remote_id) {
-                // wait until previous sync task completes
+                // Wait until previous sync task completes
                 task.await.ok();
             }
             let sender = connection.tx.clone();
-            let (bc_sender, bc_receiver) = mpsc::channel(10000);
+            // Channel for sending outbound communication on the connection
+            let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
             connections
                 .write()
                 .await
-                .insert(connection.remote_id, bc_sender);
+                .insert(connection.remote_id, outbound_sender);
             let task = handle.spawn(Self::connection_task(
                 connection,
                 sender.clone(),
                 network_tx.clone(),
-                bc_receiver,
+                outbound_receiver,
             ));
 
             handles.insert(remote_id, task);
@@ -151,30 +165,42 @@ impl Network {
         mut connection: Connection,
         sender: Sender<NetworkMessage>,
         network_tx: Sender<NetworkMessage>,
-        mut bc_receiver: mpsc::Receiver<NetworkMessage>,
+        mut outbound_receiver: mpsc::Receiver<NetworkMessage>,
     ) -> Option<()> {
         loop {
             tokio::select! {
-                inbound_msg = connection.rx.recv() => {
-                    if let Some(msg) = inbound_msg {
-                        network_tx.send(msg).await.ok();
-                    } else {
-                        break
+            inbound_msg = connection.rx.recv() => {
+                match inbound_msg {
+                    Some(msg) => {
+                        if let Err(e) = network_tx.send(msg).await {
+                        warn!("Failed to send inbound message: {:?}", e);
+                        }
+                    }
+                    None => {
+                        warn!("Inbound channel was closed");
+                        break;
                     }
                 }
-                outbound_msg = bc_receiver.recv() => {
-                    if let Some(msg) = outbound_msg {
-                        sender.send(msg).await.ok();
-                    } else {
-                        break
+            }
+            outbound_msg = outbound_receiver.recv() => {
+                match outbound_msg {
+                    Some(msg) => {
+                        if let Err(e) = sender.send(msg).await {
+                        warn!("Failed to send outbound message: {:?}", e);
+                        }
+                    }
+                    None => {
+                        warn!("Outbound channel was closed");
+                        break;
                     }
                 }
+            }
             }
         }
         None
     }
 
-    // TODO: shutdown gracefully
+    // TODO: Shutdown gracefully
     pub async fn shut_down(&self) -> Result<(), NetworkError> {
         self.connections.write().await.clear();
         Ok(())
@@ -191,7 +217,7 @@ impl Network {
         Ok(())
     }
 
-    // TODO: implement direct messaging
+    // TODO: Implement direct messaging
     pub async fn direct_message(
         &self,
         _recipient: PublicKey,

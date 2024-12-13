@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use futures::future::{select, select_all, Either};
+use futures::future::select_all;
 use futures::FutureExt;
 use libp2p::PeerId;
 use rand::rngs::ThreadRng;
@@ -13,14 +13,14 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
-use tokio::sync::watch::{self};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
+use tracing::{debug, info, instrument, warn};
 
+/// Duration between pings for latency measurements
 const PING_INTERVAL: Duration = Duration::from_secs(10);
 
-// network messages for exchanged by nodes
 // TODO: no need to wrap bytes anymore
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NetworkMessage(Vec<u8>);
@@ -36,50 +36,61 @@ impl From<Vec<u8>> for NetworkMessage {
     }
 }
 
-// connection object representing an established connection to a node
+/// A connection represents an established connection to another node.
 pub struct Connection {
+    /// The Id of the connected peer
     pub remote_id: PeerId,
+    /// Channel for sending outbound messages
     pub tx: Sender<NetworkMessage>,
+    /// Channel for receiving inbound message
     pub rx: Receiver<NetworkMessage>,
-    pub latency: watch::Receiver<Duration>,
+    // Periodic latency measurement
+    // pub latency: watch::Receiver<Duration>,
 }
 
+/// A transport takes connections from the handshake state to the transport
+/// state (established) by conducting a handshake protocol.
 #[derive(Debug)]
 pub struct Transport {
+    /// Channel for receiving established connections
     rx_connection: Receiver<Connection>,
+    /// Channel for stopping the server
     tx_stop: Option<Sender<()>>,
+    /// Server handle
     server_handle: Option<JoinHandle<()>>,
 }
 
 impl Transport {
+    /// Spawns the server and one worker per remote node in `to_connect`.
+    ///
+    /// When the server has accepted a connection the resulting stream
+    /// is forwarded to the dedicated `Worker`.
     pub async fn run(
         local_id: PeerId,
         local_addr: String,
         to_connect: Vec<(PeerId, String)>,
     ) -> Self {
-        // parse the string to a socket
         let local_socket = local_addr
             .parse::<std::net::SocketAddr>()
             .expect("Invalid socket address");
-        // send tcp streams to the dedicated workers after accepted connection
-        let mut worker_senders: HashMap<PeerId, mpsc::UnboundedSender<TcpStream>> =
-            HashMap::default();
-        // start accepting connections on the local socket
+
+        // Channels for sending streams to dedicated workers after accepted connection
+        let mut worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>> = HashMap::default();
+
         let server = TcpListener::bind(local_socket)
             .await
             .expect("Unable to bind to socket");
 
         let handle = Handle::current();
-        // when a connection is fully established it will be send on this channel
         let (tx_connection, rx_connection) = mpsc::channel(20);
 
-        // spawn a worker for each node we want a connection to
+        // Spawn a worker for each node we want a connection to
         for (remote_id, addr) in to_connect.iter() {
             if *remote_id == local_id {
                 continue;
             }
-            // channel for the TcpStream going from the Server to the Worker
-            let (sender, receiver) = mpsc::unbounded_channel();
+            // Channel for the TcpStream going from the Server to the Worker
+            let (sender, receiver) = mpsc::channel(20);
 
             let socket = addr
                 .parse::<std::net::SocketAddr>()
@@ -101,11 +112,11 @@ impl Transport {
                 .run(receiver),
             );
         }
-
-        // channel for stopping the server
+        // Channel for stopping the server
         let (tx_stop, rx_stop) = mpsc::channel(1);
-        let server_handle = handle.spawn(async {
+        let server_handle = handle.spawn(async move {
             Server {
+                local_id: local_id.clone(),
                 server,
                 worker_senders,
             }
@@ -125,7 +136,7 @@ impl Transport {
     }
 
     pub async fn shutdown(mut self) {
-        // shutdown the server
+        // Shutdown the server
         if let Some(tx_stop) = self.tx_stop.take() {
             tx_stop.send(()).await.ok();
         }
@@ -137,33 +148,39 @@ impl Transport {
 
 #[derive(Debug)]
 struct Server {
+    /// Local id of the node
+    local_id: PeerId,
+    /// Socket for accepting connections
     server: TcpListener,
-    worker_senders: HashMap<PeerId, mpsc::UnboundedSender<TcpStream>>,
+    /// Channel for fowarding accepted connections
+    worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>>,
 }
 
 impl Server {
+    #[instrument(level = "trace", skip_all, fields(node = %self.local_id))]
     async fn run(self, mut stop: Receiver<()>) {
         loop {
             tokio::select! {
                 result = self.server.accept() => {
-                    tracing::info!("accepting connection");
-                    let (mut stream, remote_peer) = result.expect("accept failed");
+                    // TODO: modify handshake with noise protocol
+                    // (handshake state -> transport state)
+                    let (mut stream, remote_peer) = result.expect("create tcp stream");
                     let auth_len = stream.read_u32().await.expect("first 4 bytes is auth size");
                     let auth_len_usize = auth_len as usize;
                     let mut auth = vec![0u8; auth_len_usize];
                     let _ = stream.read_exact(&mut auth).await;
                     let peer_id = PeerId::from_bytes(&auth).expect("handshake starts with an auth token (PeerId)");
+                    // Send the stream to the dedicated worker
                     if let Some(sender) = self.worker_senders.get(&peer_id) {
-                        sender.send(stream).ok();
+                        debug!("Accepted connection from peer: {}", peer_id);
+                        sender.send(stream).await.ok();
                     } else {
-                        tracing::warn!("Dropping connection from unknown peer {remote_peer}");
+                        warn!("Dropping connection from unknown peer: {remote_peer} with peer_id: {peer_id}");
                     }
                 }
                 stop = stop.recv() => {
                     if stop.is_none() {
-                        tracing::info!("Shutting down network because of closed channel");
-                    } else {
-                        tracing::info!("Shutting down because of manual intervention");
+                        info!("Shutting down server");
                     }
                     return;
                 }
@@ -172,52 +189,57 @@ impl Server {
     }
 }
 
+/// A worker is responsible for establishing a single connection
 struct Worker {
+    /// The local Id
     local_id: PeerId,
+    /// The local address for the server
     _local_addr: SocketAddr,
+    /// The remote peer for the connection
     remote_id: PeerId,
+    /// The remote address
     remote_addr: SocketAddr,
+    /// True if we should make outbound connection
     active: bool,
+    /// Channel for sending established the connection (post-handshake)
     tx_connection: Sender<Connection>,
-    //    latency_sender: HistogramSender<Duration>,
-    //    network_connection_max_latency: Duration,
 }
 
+/// A worker connection only forwards messages
 struct WorkerConnection {
     sender: mpsc::Sender<NetworkMessage>,
     receiver: mpsc::Receiver<NetworkMessage>,
     remote_id: PeerId,
-    //    latency_sender: HistogramSender<Duration>,
-    //latency_last_value_sender: tokio::sync::watch::Sender<Duration>,
 }
 
 impl Worker {
+    // TODO: Modify handshake with noise protocol upgrade
     const ACTIVE_HANDSHAKE: u64 = 0xDEADBEEF;
     const PASSIVE_HANDSHAKE: u64 = 0xBEEFDEAD;
     const MAX_SIZE: u32 = 16 * 1024 * 1024;
 
-    async fn run(self, mut receiver: UnboundedReceiver<TcpStream>) -> Option<()> {
+    async fn run(self, mut receiver: Receiver<TcpStream>) -> Option<()> {
+        // Delay to avoid races
+        let max = 5u64; //sec
         let initial_delay = if self.active {
-            Duration::ZERO
+            sample_delay(max)
         } else {
-            sample_delay((Duration::from_secs(1), Duration::from_secs(5)))
+            Duration::ZERO
         };
+        // Actively try to establish a connection
+        let mut work = self.active_connect(initial_delay).boxed();
 
-        // actively try to establish a connection
-        let mut work = self.connect_and_handle(initial_delay).boxed();
-
-        // if a connection has been accepted we will handle it as if it was a passive stream
-        // if not, then we try again to establish a handshake
         loop {
-            match select(work, receiver.recv().boxed()).await {
-                Either::Left((_work, _receiver)) => {
-                    let delay = sample_delay((Duration::from_secs(1), Duration::from_secs(5)));
-                    work = self.connect_and_handle(delay).boxed();
+            tokio::select! {
+                // TODO: double check cancel-safety
+                _ = &mut work => {
+                    let delay = sample_delay(max);
+                    work = self.active_connect(delay).boxed();
                 }
-                Either::Right((received, _work)) => {
+                received = receiver.recv() => {
                     if let Some(received) = received {
-                        tracing::debug!("Replaced connection for {}", self.remote_id);
-                        work = self.handle_passive_stream(received).boxed();
+                        debug!("Replaced connection for {}", self.remote_id);
+                        work = self.passive_connect(received).boxed();
                     } else {
                         // Channel closed, server is terminated
                         return None;
@@ -227,8 +249,9 @@ impl Worker {
         }
     }
 
-    async fn connect_and_handle(&self, delay: Duration) -> std::io::Result<()> {
-        // avoid race between active and passive connections
+    /// Active (outbound) handshake protocol and subsequent handling of streams
+    async fn active_connect(&self, delay: Duration) -> std::io::Result<()> {
+        // Avoid races between active and passive connections
         tokio::time::sleep(delay).await;
 
         let mut stream = loop {
@@ -243,12 +266,13 @@ impl Worker {
                     break stream;
                 }
                 Err(_err) => {
-                    println!("sleeping because no connection");
+                    debug!("Sleeping because no connection");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         };
         stream.set_nodelay(true)?;
+        // TODO: Modify authentication with noise protocol upgrade
         self.local_id.to_bytes();
         let auth_token: &[u8] = &self.local_id.to_bytes();
 
@@ -259,7 +283,7 @@ impl Worker {
         stream.write_u64(Self::ACTIVE_HANDSHAKE).await?;
         let handshake = stream.read_u64().await?;
         if handshake != Self::PASSIVE_HANDSHAKE {
-            tracing::warn!("Invalid passive handshake: {handshake}");
+            warn!("Invalid passive handshake: {handshake}");
             return Ok(());
         }
         let Some(connection) = self.make_connection().await else {
@@ -270,47 +294,42 @@ impl Worker {
         Self::handle_stream(stream, connection).await
     }
 
-    async fn handle_passive_stream(&self, mut stream: TcpStream) -> std::io::Result<()> {
+    /// Passive (inbound) handshake protocol and subsequent handling of streams
+    async fn passive_connect(&self, mut stream: TcpStream) -> std::io::Result<()> {
         stream.set_nodelay(true)?;
         stream.write_u64(Self::PASSIVE_HANDSHAKE).await?;
         let handshake = stream.read_u64().await?;
         if handshake != Self::ACTIVE_HANDSHAKE {
-            tracing::warn!("Invalid active handshake: {handshake}");
+            warn!("Invalid active handshake: {handshake}");
             return Ok(());
         }
         let Some(connection) = self.make_connection().await else {
             // todo - pass signal to break the main loop
             return Ok(());
         };
-        Self::handle_stream(
-            stream, connection,
-            //, self.network_connection_max_latency
-        )
-        .await
+        Self::handle_stream(stream, connection).await
     }
 
+    /// Maintains a `Transport` for this connection after successfull handshake
     async fn handle_stream(stream: TcpStream, connection: WorkerConnection) -> std::io::Result<()> {
         let WorkerConnection {
             sender,
             receiver,
             remote_id,
-            //latency_last_value_sender: _,
         } = connection;
-        tracing::debug!("Connected to {}", remote_id);
+        debug!("Connected to {}", remote_id);
         let (reader, writer) = stream.into_split();
         let (pong_sender, pong_receiver) = mpsc::channel(150);
         let write_fut = Self::handle_write_stream(
             writer,
             receiver,
             pong_receiver,
-            //          latency_sender,
-            //            latency_last_value_sender,
-            //            network_connection_max_latency,
+            // TODO: measure concrete latency using ping
         )
         .boxed();
         let read_fut = Self::handle_read_stream(reader, sender, pong_sender).boxed();
         let (r, _, _) = select_all([write_fut, read_fut]).await;
-        tracing::debug!("Disconnected from {}", remote_id);
+        debug!("Disconnected from {}", remote_id);
         r
     }
 
@@ -323,6 +342,7 @@ impl Worker {
         let mut ping_deadline = start + PING_INTERVAL;
         loop {
             tokio::select! {
+                // TODO: Measure latency (rtt) through embedded ping-pong protocol
                 _deadline = tokio::time::sleep_until(ping_deadline) => {
                     ping_deadline += PING_INTERVAL;
                     let ping_time = start.elapsed().as_micros() as i64;
@@ -331,16 +351,9 @@ impl Worker {
                     writer.write_all(&ping).await?;
                 }
                 received = pong_receiver.recv() => {
-                    // We have an embedded ping-pong protocol for measuring RTT:
-                    //
-                    // Every PING_INTERVAL node emits a "ping", positive number encoding some local time
-                    // On receiving positive ping, node replies with "pong" which is negative number (e.g. "ping".neg())
-                    // On receiving negative number we can calculate RTT(by negating it again and getting original ping time)
-                    // todo - we trust remote peer here, might want to enforce ping (not critical for safety though)
-
                     let Some(ping) = received else {return Ok(())}; // todo - pass signal? (pong_sender closed)
                     if ping == 0 {
-                        tracing::warn!("Invalid ping: {ping}");
+                        warn!("Invalid ping: {ping}");
                         return Ok(());
                     }
                     if ping > 0 {
@@ -350,7 +363,7 @@ impl Worker {
                                 writer.write_all(&pong).await?;
                             },
                             None => {
-                                tracing::warn!("Invalid ping: {ping}");
+                                warn!("Invalid ping: {ping}");
                                 return Ok(());
                             }
                         }
@@ -360,32 +373,27 @@ impl Worker {
                                 let time = start.elapsed().as_micros() as u64;
                                 match time.checked_sub(our_ping) {
                                     Some(delay) => {
-                                        let d = Duration::from_micros(delay);
+                                        let _d = Duration::from_micros(delay);
                                         // TODO: include latency observer
-                                        // latency_sender.observe(d);
-                                        // latency_last_value_sender.send(d).ok();
-
-                                        if d >= Duration::from_micros(1000) {
-                                            tracing::warn!("High latency connection: {:?}. Breaking now connection.", d);
-                                            return Ok(());
-                                        }
                                     },
                                     None => {
-                                        tracing::warn!("Invalid ping: {ping}, greater then current time {time}");
+                                        warn!("Invalid ping: {ping}, greater then current time {time}");
                                         return Ok(());
                                     }
                                 }
 
                             },
                             None => {
-                                tracing::warn!("Invalid pong: {ping}");
+                                warn!("Invalid pong: {ping}");
                                 return Ok(());
                             }
                         }
                     }
                 }
+                // Write outbound traffic coming in on the channel
                 received = receiver.recv() => {
-                    // todo - pass signal to break main loop
+                    // TODO: Pass signal to break main loop
+                    // TODO: No need to wrap bytes in `NetworkMessage`
                     let Some(message) = received else {return Ok(())};
                     let serialized = bincode::serialize(&message).expect("Serialization should not fail");
                     writer.write_u32(serialized.len() as u32).await?;
@@ -408,7 +416,6 @@ impl Worker {
                 return Ok(());
             }
             if size == 0 {
-                // ping message
                 let buf = &mut buf[..PING_SIZE - 4];
                 let read = stream.read_exact(buf).await?;
                 assert_eq!(read, buf.len());
@@ -429,6 +436,8 @@ impl Worker {
                 }
                 continue;
             }
+
+            // Read inbound traffic and send on channel
             let buf = &mut buf[..size as usize];
             let read = stream.read_exact(buf).await?;
             assert_eq!(read, buf.len());
@@ -440,7 +449,7 @@ impl Worker {
                     }
                 }
                 Err(err) => {
-                    tracing::warn!("Failed to deserialize: {}", err);
+                    warn!("Failed to deserialize: {}", err);
                     return Ok(());
                 }
             }
@@ -450,27 +459,26 @@ impl Worker {
     async fn make_connection(&self) -> Option<WorkerConnection> {
         let (network_in_sender, network_in_receiver) = mpsc::channel(1_000);
         let (network_out_sender, network_out_receiver) = mpsc::channel(1_000);
-        let (_latency_last_value_sender, latency_last_value_receiver) =
-            tokio::sync::watch::channel(Duration::from_millis(0));
         let connection = Connection {
             remote_id: self.remote_id,
             tx: network_out_sender,
             rx: network_in_receiver,
-            latency: latency_last_value_receiver,
+            // TODO: Ship latency through ping
         };
-
+        // Send the connection downstream
         self.tx_connection.send(connection).await.ok()?;
         Some(WorkerConnection {
             sender: network_in_sender,
             receiver: network_out_receiver,
             remote_id: self.remote_id,
-            //latency_last_value_sender, // TODO: latency through ping
         })
     }
 }
 
-fn sample_delay(range: (Duration, Duration)) -> Duration {
-    ThreadRng::default().gen_range(range.0..range.1)
+fn sample_delay(max: u64) -> Duration {
+    let start = Duration::from_secs(1);
+    let end = Duration::from_secs(max);
+    ThreadRng::default().gen_range(start..end)
 }
 
 const PING_SIZE: usize = 12;
