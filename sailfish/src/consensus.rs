@@ -85,9 +85,9 @@ impl Consensus {
             id: id.into(),
             keypair,
             dag: Dag::new(committee.size()),
-            buffer: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
+            buffer: Dag::new(committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -263,17 +263,6 @@ impl Consensus {
 
         match self.try_to_add_to_dag(&v) {
             Err(()) => {
-                // if (*v.round()).saturating_sub(*self.round()) > 2 {
-                //     warn!(
-                //         node    = %self.public_key(),
-                //         round   = %self.round,
-                //         vround  = %v.round().data(),
-                //         source  = %v.source(),
-                //         "Node is more than two rounds behind, entering catchup."
-                //     );
-                //     // Copy everything from buffer, `candidate_dag` will be our buffer for catchup
-                //     self.catchup = true;
-                // }
                 self.buffer.add(v);
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
@@ -293,7 +282,6 @@ impl Consensus {
                         )
                     }
                 }
-
                 for (_r, v) in self
                     .buffer
                     .take_all()
@@ -317,9 +305,17 @@ impl Consensus {
                             }
                         }
                     } else {
+                        warn!(
+                            node   = %self.public_key(),
+                            round  = %self.round,
+                            vround = %r,
+                            source = %v.source(),
+                            "no evidence for vertex round exists outside of dag"
+                        );
                         self.buffer.add(v.clone());
                     }
                 }
+
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
         }
@@ -823,8 +819,8 @@ impl Consensus {
 
         let r = committed - 2;
         self.dag.remove(r);
+        self.buffer.remove(r);
         self.delivered.retain(|(x, _)| *x >= r);
-        // self.buffer.retain(|v| *v.round().data() >= r);
 
         self.metrics.dag_depth.set(self.dag.depth());
         self.metrics.vertex_buffer.set(self.buffer.depth());
