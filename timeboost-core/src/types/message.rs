@@ -41,19 +41,28 @@ impl Message<Unchecked> {
     pub fn validated(self, c: &Committee) -> Option<Message<Validated>> {
         match self {
             Self::Vertex(e) => {
+                // Validate the envelope's signature:
                 let Some(e) = e.validated(c) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
+
                 let signer = e.signing_key();
+
+                // The signer should be the producer of the vertex:
                 if signer != e.data().source() {
                     warn!(%signer, source = %e.data().source(), "envelope signer != vertex source");
                     return None;
                 }
+
+                // Validate the round signature:
                 if !e.data().round().is_valid(c) {
                     warn!(%signer, "invalid round signature");
                     return None;
                 }
+
+                // The signer of the envelope should also be the same as the one who signed
+                // the round number certificate:
                 if signer != e.data().round().signing_key() {
                     warn!(
                         %signer,
@@ -62,38 +71,55 @@ impl Message<Unchecked> {
                     );
                     return None;
                 }
+
+                // The following checks do not apply to the genesis round:
                 if *e.data().round().data() != RoundNumber::genesis() {
+                    // Validate the signature of the previous round evidence:
                     if !e.data().evidence().is_valid(c) {
                         warn!(%signer, "invalid evidence in vertex");
                         return None;
                     }
+
+                    // The evidence should apply to the immediate predecessor of the
+                    // current vertex round:
                     if e.data().evidence().round() + 1 != *e.data().round().data() {
                         warn!(%signer, "evidence in vertex applies to invalid round");
                         return None;
                     }
+
+                    // The number of vertex edges must be >= to the committee quorum:
                     if e.data().num_edges() < c.quorum_size().get() {
                         warn!(%signer, "vertex has not enough edges");
                         return None;
                     }
                 }
+
+                // No-vote certificate validation:
                 if let Some(cert) = e.data().no_vote_cert() {
                     if !cert.is_valid_par(c) {
                         warn!(%signer, "invalid no-vote certificate in vertex");
                         return None;
                     }
+                    // The no-vote certificate should apply to the immediate predecessor
+                    // of the current vertex round:
                     if cert.data().round() + 1 != *e.data().round().data() {
                         warn!(%signer, "no-vote certificate in vertex applies to invalid round");
                         return None;
                     }
                 }
+
                 Some(Message::Vertex(e))
             }
             Self::Timeout(e) => {
+                // Validate the envelope's signature:
                 let Some(e) = e.validated(c) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
+
                 let signer = e.signing_key();
+
+                // The signer should be the producer of the timeout message:
                 if signer != e.data().timeout().signing_key() {
                     warn!(
                         %signer,
@@ -102,26 +128,41 @@ impl Message<Unchecked> {
                     );
                     return None;
                 }
+
+                // Validate the timeout signature:
                 if !e.data().timeout().is_valid(c) {
                     warn!(%signer, "invalid timeout signature");
                     return None;
                 }
-                if !e.data().evidence().is_valid(c) {
-                    warn!(%signer, "invalid timeout evidence");
-                    return None;
+
+                // The following checks do not apply to the genesis round:
+                if e.data().timeout().data().round() != RoundNumber::genesis() {
+                    // Validate the signature of the previous round evidence:
+                    if !e.data().evidence().is_valid(c) {
+                        warn!(%signer, "invalid timeout evidence");
+                        return None;
+                    }
+
+                    // The evidence should apply to the immediate predecessor of the
+                    // current timeout round:
+                    if e.data().evidence().round() + 1 != e.data().timeout().data().round() {
+                        warn!(%signer, "timeout evidence applies to invalid round");
+                        return None;
+                    }
                 }
-                if e.data().evidence().round() + 1 != e.data().timeout().data().round() {
-                    warn!(%signer, "timeout evidence applies to invalid round");
-                    return None;
-                }
+
                 Some(Message::Timeout(e))
             }
             Self::NoVote(e) => {
+                // Validate the envelope's signature:
                 let Some(e) = e.validated(c) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
+
                 let signer = e.signing_key();
+
+                // The signer should be the producer of the no-vote message:
                 if signer != e.data().no_vote().signing_key() {
                     warn!(
                         %signer,
@@ -130,25 +171,34 @@ impl Message<Unchecked> {
                     );
                     return None;
                 }
+
+                // Validate the no-vote signature:
                 if !e.data().no_vote().is_valid(c) {
                     warn!(%signer, "invalid no-vote signature");
                     return None;
                 }
+
+                // Validate the timeout certificate signatures:
                 if !e.data().certificate().is_valid_par(c) {
                     warn!(%signer, "invalid no-vote certificate");
                     return None;
                 }
+
+                // The no-vote should apply to the same round as the timeout certificate:
                 if e.data().no_vote().data().round() != e.data().certificate().data().round() {
                     warn!(%signer, "no-vote certificate applies to invalid round");
                     return None;
                 }
+
                 Some(Message::NoVote(e))
             }
             Self::TimeoutCert(crt) => {
+                // Validate the timeout certificate signatures:
                 if !crt.is_valid_par(c) {
                     warn!("invalid timeout certiticate");
                     return None;
                 }
+
                 Some(Message::TimeoutCert(crt))
             }
         }
@@ -289,8 +339,13 @@ pub struct TimeoutMessage {
 
 impl TimeoutMessage {
     pub fn new(e: Evidence, k: &Keypair, deterministic: bool) -> Self {
+        let t = Timeout::new(if e.is_genesis() {
+            e.round()
+        } else {
+            e.round() + 1
+        });
         Self {
-            timeout: Signed::new(Timeout::new(e.round() + 1), k, deterministic),
+            timeout: Signed::new(t, k, deterministic),
             evidence: e,
         }
     }
