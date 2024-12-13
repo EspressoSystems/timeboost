@@ -86,9 +86,9 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
 
     let host = if is_docker {
         if i < 3 {
-            format!("192.168.1.122")
+            "192.168.1.122".to_string()
         } else {
-            format!("192.168.1.124")
+            "localhost".to_string()
         }
     } else {
         "localhost".to_string()
