@@ -153,16 +153,8 @@ async fn main() {
     ));
 
     loop {
-        tokio::select! { biased;
-            _ = shutdown_rx.changed() => {
-                tracing::info!("shutting down tx generator");
-                break;
-            }
-            _ = signal::ctrl_c() => {
-                tracing::info!("received ctrl-c; shutting down");
-                shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-                break;
-            }
+        tokio::select! {
+
             _ = &mut timer => {
                 tracing::debug!("sending tx");
                 timer = sleep(std::time::Duration::from_millis(cli.interval_ms)).fuse().boxed();
@@ -172,6 +164,15 @@ async fn main() {
                     // timeout before creating new tasks
                     spawn(create_and_send_tx(i, is_docker, client, cli.interval_ms-10));
                 }
+            }
+            _ = shutdown_rx.changed() => {
+                tracing::info!("shutting down tx generator");
+                break;
+            }
+            _ = signal::ctrl_c() => {
+                tracing::info!("received ctrl-c; shutting down");
+                shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
+                break;
             }
         }
     }

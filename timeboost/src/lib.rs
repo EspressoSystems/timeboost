@@ -232,7 +232,7 @@ impl Timeboost {
             }
         }
         loop {
-            tokio::select! { biased;
+            tokio::select! {
                 result = self.coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
@@ -263,6 +263,7 @@ impl Timeboost {
                     Some(event) => {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
+                                tracing::error!("received: {}", transactions.len());
                                 self.coordinator.handle_transactions(transactions);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
