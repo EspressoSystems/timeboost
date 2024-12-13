@@ -154,7 +154,6 @@ async fn main() {
 
     loop {
         tokio::select! {
-
             _ = &mut timer => {
                 tracing::debug!("sending tx");
                 timer = sleep(std::time::Duration::from_millis(cli.interval_ms)).fuse().boxed();
