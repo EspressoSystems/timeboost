@@ -232,7 +232,7 @@ impl Timeboost {
             }
         }
         loop {
-            tokio::select! { biased;
+            tokio::select! {
                 result = self.coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
