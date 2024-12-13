@@ -1,4 +1,4 @@
-use timeboost_utils::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
+use timeboost_utils::traits::metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -12,6 +12,8 @@ pub struct SailfishMetrics {
     pub novote_buffer: Box<dyn Gauge>,
     pub rounds_buffer: Box<dyn Gauge>,
     pub vertex_buffer: Box<dyn Gauge>,
+    pub average_tx_size: Box<dyn Histogram>,
+    pub tx_processed: Box<dyn Counter>,
 }
 
 impl Default for SailfishMetrics {
@@ -33,6 +35,9 @@ impl SailfishMetrics {
             novote_buffer: m.create_gauge("novote_buffer".to_string(), None),
             rounds_buffer: m.create_gauge("rounds_buffer".to_string(), None),
             vertex_buffer: m.create_gauge("vertex_buffer".to_string(), None),
+            average_tx_size: m
+                .create_histogram("average_tx_size".to_string(), Some("bytes".to_string())),
+            tx_processed: m.create_counter("transactions_processed".to_string(), None),
         }
     }
 }

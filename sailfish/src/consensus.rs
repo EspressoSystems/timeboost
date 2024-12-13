@@ -74,6 +74,10 @@ pub struct Consensus {
 
     /// Sign deterministically?
     deterministic: bool,
+
+    total_tx_seen: usize,
+
+    total_tx_size: usize,
 }
 
 impl Consensus {
@@ -99,6 +103,8 @@ impl Consensus {
             metrics_timer: std::time::Instant::now(),
             delayed_inbox_index: 0,
             deterministic: false,
+            total_tx_seen: 0,
+            total_tx_size: 0,
         }
     }
 
@@ -129,6 +135,12 @@ impl Consensus {
     }
 
     pub fn enqueue_transaction(&mut self, t: Transaction) {
+        self.metrics.tx_processed.add(1);
+        self.total_tx_seen += 1;
+        self.total_tx_size += t.size_bytes();
+        self.metrics
+            .average_tx_size
+            .add_point(self.total_tx_size as f64 / self.total_tx_seen as f64);
         self.transactions.add(t);
     }
 
