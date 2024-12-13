@@ -13,9 +13,9 @@ async-lock = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-data-encoding = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }

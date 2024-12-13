@@ -10,6 +10,7 @@ benchmark = []
 [dependencies]
 bimap = { workspace = true }
 bincode = { workspace = true }
+bs58 = { workspace = true }
 committable = { workspace = true }
 data-encoding = { workspace = true }
 ed25519-compact = { workspace = true }
