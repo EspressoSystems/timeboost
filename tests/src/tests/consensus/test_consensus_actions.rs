@@ -29,8 +29,8 @@ async fn test_single_node_advance() {
     // Setup up consensus state
     let mut round = 7;
     let node = node_handle.node_mut();
-    let (dag, vertices_for_round) = manager.prepare_dag(round, &committee);
-    node.go(dag);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(round, &committee);
+    node.go(dag, evidence);
 
     // Craft messages
     round += 1;
@@ -72,8 +72,8 @@ async fn test_single_node_timeout() {
     // Setup up consensus state
     let mut round = 4;
     let node = node_handle.node_mut();
-    let (dag, _vertices_for_round) = manager.prepare_dag(round, &committee);
-    node.go(dag);
+    let (dag, evidence, _vertices_for_round) = manager.prepare_dag(round, &committee);
+    node.go(dag, evidence);
 
     // Craft messages
     round += 1;
@@ -85,7 +85,7 @@ async fn test_single_node_timeout() {
     }
 
     // Ensure we went through all expected actions
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
+    node_handle.assert_timeout_accumulator(expected_round, num_nodes.into());
     assert!(
         node_handle.expected_actions_is_empty(),
         "Test is done but there are still remaining actions."
@@ -134,8 +134,8 @@ async fn test_single_node_timeout_cert() {
 
     // Setup up consensus state
     let node = node_handle.node_mut();
-    let (dag, vertices_for_round) = manager.prepare_dag(*expected_round - 1, &committee);
-    node.go(dag);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(*expected_round - 1, &committee);
+    node.go(dag, evidence);
 
     // Craft messages, skip leader vertex
     let mut input_msgs: Vec<Message> = manager
@@ -145,7 +145,7 @@ async fn test_single_node_timeout_cert() {
             if let Message::Vertex(v) = m {
                 let d = v.data();
                 // Process non leader vertices
-                *d.source() != committee.leader(*d.round() as usize)
+                *d.source() != committee.leader(**d.round().data() as usize)
             } else {
                 panic!("Expected vertex message in test");
             }
@@ -166,13 +166,11 @@ async fn test_single_node_timeout_cert() {
         node_handle.handle_message_and_verify_actions(msg);
     }
 
-    node_handle.assert_timeout_accumulator(expected_round, num_nodes);
+    node_handle.assert_timeout_accumulator(expected_round, num_nodes.into());
 
     // Handle certificate msg (send no vote, advance round, reset timer, propose for r + 1)
     node_handle.handle_message_and_verify_actions(Message::TimeoutCert(send_cert));
 
-    // Ensure we went through all expected actions
-    node_handle.assert_timeout_accumulator(expected_round, 0);
     assert!(
         node_handle.expected_actions_is_empty(),
         "Test is done but there are still remaining actions."

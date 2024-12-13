@@ -1,9 +1,9 @@
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use data_encoding::BASE64URL_NOPAD;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::message::Message;
-use timeboost_core::types::Label;
 use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -30,6 +30,6 @@ impl Committable for Digest {
 
 impl fmt::Display for Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({},{})", self.0, Label::new(&self.1[..]))
+        write!(f, "({},{})", self.0, BASE64URL_NOPAD.encode(&self.1[..]))
     }
 }

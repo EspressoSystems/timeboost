@@ -9,6 +9,8 @@ pub struct SailfishMetrics {
     pub round: Box<dyn Gauge>,
     pub round_duration: Box<dyn Histogram>,
     pub timeout_buffer: Box<dyn Gauge>,
+    pub novote_buffer: Box<dyn Gauge>,
+    pub rounds_buffer: Box<dyn Gauge>,
     pub vertex_buffer: Box<dyn Gauge>,
 }
 
@@ -28,6 +30,8 @@ impl SailfishMetrics {
             round_duration: m
                 .create_histogram("round_duration".to_string(), Some("seconds".to_string())),
             timeout_buffer: m.create_gauge("timeout_buffer".to_string(), None),
+            novote_buffer: m.create_gauge("novote_buffer".to_string(), None),
+            rounds_buffer: m.create_gauge("rounds_buffer".to_string(), None),
             vertex_buffer: m.create_gauge("vertex_buffer".to_string(), None),
         }
     }
