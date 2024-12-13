@@ -668,7 +668,7 @@ impl Consensus {
             }
 
             if !v.edges().all(|w| self.buffer.vertex(r - 1, w).is_some()) {
-                error!(
+                warn!(
                     node    = %self.public_key(),
                     round   = %self.round,
                     vround  = %r,
