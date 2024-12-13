@@ -41,16 +41,18 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
-sleep 3
+if [ "$late_start" == "false" ]; then
+    sleep 5
+    echo "Starting tx-generator"
+    # shutdown the generator few rounds early in case we cant poll api cause timeboost is done
+    RUST_LOG=tx_generator=info \
+    ./target/release/tx-generator \
+        --committee-size $nodes \
+        --until 290 \
+        --watchdog-timeout 300 &
+    pids+=($!)
+fi
 
-echo "Starting tx-generator"
-# shutdown the generator few rounds early in case we cant poll api cause timeboost is done
-RUST_LOG=tx_generator=info \
-./target/release/tx-generator \
-    --committee-size $nodes \
-    --until 290 \
-    --watchdog-timeout 300 &
-pids+=($!)
 
 for pid in "${pids[@]}"; do
     wait $pid
