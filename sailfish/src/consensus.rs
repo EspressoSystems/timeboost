@@ -282,11 +282,11 @@ impl Consensus {
                         )
                     }
                 }
-                for (_r, v) in self
+                for v in self
                     .buffer
                     .take_all()
-                    .iter()
-                    .flat_map(|(round, inner_map)| inner_map.values().map(|v| (*round, v)))
+                    .values()
+                    .flat_map(|inner_map| inner_map.values().map(|v| v))
                 {
                     if let Ok(a) = self.try_to_add_to_dag(v) {
                         actions.extend(a);
