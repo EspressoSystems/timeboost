@@ -89,3 +89,5 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Run tests
       run: just run_demo
+    - name: Run tests with late-start node
+      run: just run_demo 6 true

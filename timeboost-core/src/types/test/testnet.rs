@@ -41,17 +41,19 @@ impl MsgQueues {
 pub struct TestNet<C> {
     comm: C,
     msgs: MsgQueues,
+    id: u64,
     interceptor: NetworkMessageInterceptor,
 }
 
 impl<C: Comm> TestNet<C> {
-    pub fn new(comm: C, interceptor: NetworkMessageInterceptor) -> Self {
+    pub fn new(comm: C, id: u64, interceptor: NetworkMessageInterceptor) -> Self {
         Self {
             comm,
             msgs: MsgQueues {
                 ibox: Arc::new(SegQueue::new()),
                 obox: Arc::new(SegQueue::new()),
             },
+            id,
             interceptor,
         }
     }
@@ -68,7 +70,7 @@ pub enum TestNetError<C: Comm> {
     SendError(C::Err),
     BroadcastError(C::Err),
     ShutdownError(C::Err),
-    InterceptError(&'static str),
+    InterceptError(String),
 }
 
 impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
@@ -110,7 +112,7 @@ where
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         match self.comm.receive().await {
-            Ok(msg) => match self.interceptor.intercept_message(msg) {
+            Ok(msg) => match self.interceptor.intercept_message(msg, self.id) {
                 Ok(m) => {
                     self.msgs.ibox.push(m.clone());
                     return Ok(m);

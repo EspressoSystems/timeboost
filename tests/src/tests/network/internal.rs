@@ -35,7 +35,7 @@ pub struct MemoryNetworkTest {
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     network_shutdown_tx: Sender<()>,
     network_shutdown_rx: Option<Receiver<()>>,
-    outcomes: HashMap<usize, Vec<TestCondition>>,
+    outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
     star_net: Star<Message>,
 }
@@ -46,7 +46,7 @@ impl TestableNetwork for MemoryNetworkTest {
 
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
         let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
@@ -72,6 +72,7 @@ impl TestableNetwork for MemoryNetworkTest {
             // Join each node to the network
             let test_net = TestNet::new(
                 self.star_net.join(self.group.keypairs[i].public_key()),
+                i as u64,
                 self.interceptor.clone(),
             );
             let messages = test_net.messages();
@@ -105,12 +106,13 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult> {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
-        for (id, (mut coordinator, msgs)) in nodes.into_iter().enumerate() {
+        for (mut coordinator, msgs) in nodes.into_iter() {
+            let id: u64 = coordinator.id().into();
             let shutdown_rx = self
                 .shutdown_rxs
-                .remove(&id)
+                .remove(&(id as usize))
                 .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", id));
-            let mut conditions = self.outcomes.get(&id).unwrap().clone();
+            let mut conditions = self.outcomes.remove(&id).unwrap();
 
             co_handles.spawn(async move {
                 Self::run_coordinator(&mut coordinator, &mut conditions, msgs, shutdown_rx, id)
@@ -132,12 +134,12 @@ impl TestableNetwork for MemoryNetworkTest {
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<usize, TestOutcome>,
-    ) -> HashMap<usize, TestOutcome> {
+        completed: &HashMap<u64, TestOutcome>,
+    ) -> HashMap<u64, TestOutcome> {
         // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
         // Otherwise they were completed and dont need the shutdown signal
         for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains_key(id) {
+            if !completed.contains_key(&(*id as u64)) {
                 send.send(()).expect(
                     "The shutdown sender was dropped before the receiver could receive the token",
                 );
@@ -145,11 +147,11 @@ impl TestableNetwork for MemoryNetworkTest {
         }
 
         // Wait for all the coordinators to shutdown
-        let res: HashMap<usize, TestOutcome> = handles
+        let res: HashMap<u64, TestOutcome> = handles
             .join_all()
             .await
             .into_iter()
-            .map(|r| (r.id(), r.outcome()))
+            .map(|r| (r.id, r.outcome))
             .collect();
 
         // Now shutdown the network

@@ -46,8 +46,8 @@ run_integration: build_docker
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
 
-run_demo:
-  ./scripts/run-demo
+run_demo *ARGS:
+  ./scripts/run-demo {{ARGS}}
 
 run_tx_generator *ARGS:
   cargo run --release --bin tx-generator {{ARGS}}

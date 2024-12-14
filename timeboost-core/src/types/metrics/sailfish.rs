@@ -12,6 +12,7 @@ pub struct SailfishMetrics {
     pub novote_buffer: Box<dyn Gauge>,
     pub rounds_buffer: Box<dyn Gauge>,
     pub vertex_buffer: Box<dyn Gauge>,
+    pub rounds_timed_out: Box<dyn Gauge>,
 }
 
 impl Default for SailfishMetrics {
@@ -33,6 +34,7 @@ impl SailfishMetrics {
             novote_buffer: m.create_gauge("novote_buffer".to_string(), None),
             rounds_buffer: m.create_gauge("rounds_buffer".to_string(), None),
             vertex_buffer: m.create_gauge("vertex_buffer".to_string(), None),
+            rounds_timed_out: m.create_gauge("rounds_timed_out".to_string(), None),
         }
     }
 }

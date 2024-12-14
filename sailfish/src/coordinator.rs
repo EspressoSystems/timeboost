@@ -61,7 +61,7 @@ impl<C: Comm> Coordinator<C> {
 
     pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
         tokio::select! { biased;
-            vnr = &mut self.timer => Ok(self.consensus.timeout(vnr)),
+            r = &mut self.timer => Ok(self.consensus.timeout(r)),
             msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
         }
     }

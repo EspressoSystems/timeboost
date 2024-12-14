@@ -7,13 +7,12 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
-use tokio::{signal, sync::watch, task::JoinSet, time::sleep};
+use tokio::{signal, spawn, sync::watch, time::sleep};
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
 const SIZE_500_KB: usize = 500 * 1024;
-// const SIZE_500_KB: usize = 500;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -22,7 +21,7 @@ struct Cli {
     committee_size: usize,
 
     /// How oftern to generate a transaction.
-    #[clap(long, default_value = "100")]
+    #[clap(long, default_value = "5000")]
     interval_ms: u64,
 
     /// If we're running in docker, we need to use the correct port.
@@ -80,7 +79,12 @@ fn make_tx() -> Transaction {
 }
 
 /// Creates a transaction and sends it to all the nodes in the committee.
-async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) {
+async fn create_and_send_tx(
+    i: usize,
+    is_docker: bool,
+    client: &'static Client,
+    req_timeout_millis: u64,
+) {
     let port = 8800 + i;
     let tx = make_tx();
 
@@ -90,25 +94,28 @@ async fn create_and_send_tx(i: usize, is_docker: bool, client: &'static Client) 
         "localhost".to_string()
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
-        match client
-            .post(format!(
-                "http://{host}:{port}/v0/submit",
-                host = host,
-                port = port
-            ))
-            .json(&tx)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                tracing::debug!("resp: {:?}", resp);
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(req_timeout_millis),
+        async move {
+            match client
+                .post(format!(
+                    "http://{host}:{port}/v0/submit",
+                    host = host,
+                    port = port
+                ))
+                .json(&tx)
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    tracing::debug!("resp: {:?}", resp);
+                }
+                Err(e) => {
+                    tracing::error!("error: {:?}", e);
+                }
             }
-            Err(e) => {
-                tracing::error!("error: {:?}", e);
-            }
-        }
-    })
+        },
+    )
     .await
     {
         Ok(_) => {
@@ -135,11 +142,10 @@ async fn main() {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(());
 
     let client = Box::leak(Box::new(Client::new()));
-    let mut handles: JoinSet<()> = JoinSet::new();
 
     #[cfg(feature = "until")]
     tokio::spawn(run_until(
-        9000,
+        9001,
         cli.until,
         cli.watchdog_timeout,
         is_docker,
@@ -154,31 +160,18 @@ async fn main() {
                 // We're gonna put this in a thread so that way if there's a delay sending to any
                 // node, it doesn't block the execution.
                 for i in 0..cli.committee_size {
-                    handles.spawn(create_and_send_tx(i, is_docker, client));
-                }
-            }
-            handle = handles.join_next() => {
-                if let Some(handle) = handle {
-                    match handle {
-                        Ok(_) => {
-                        }
-                        Err(e) => {
-                            tracing::error!(%e, "something went wrong sending the tx");
-                        }
-                    }
+                    // timeout before creating new tasks
+                    spawn(create_and_send_tx(i, is_docker, client, cli.interval_ms-10));
                 }
             }
             _ = shutdown_rx.changed() => {
                 tracing::info!("shutting down tx generator");
-
-                // Abort all the handles, we don't care about the results.
-                handles.abort_all();
-
                 break;
             }
             _ = signal::ctrl_c() => {
                 tracing::info!("received ctrl-c; shutting down");
                 shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
+                break;
             }
         }
     }

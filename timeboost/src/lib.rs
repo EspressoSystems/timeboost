@@ -201,18 +201,6 @@ impl Timeboost {
         let rpc_handle = Self::start_rpc_api(app_tx, self.rpc_port).await;
         let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port).await;
 
-        // Kickstart the network.
-        match self.coordinator.start().await {
-            Ok(actions) => {
-                for a in actions {
-                    let _ = self.coordinator.execute(a).await;
-                }
-            }
-            Err(e) => {
-                bail!("failed to start coordinator: {}", e);
-            }
-        }
-
         let sequencer = Sequencer::new(
             NoOpInclusionPhase,
             NoOpDecryptionPhase,
@@ -233,6 +221,17 @@ impl Timeboost {
         let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
         tokio::spawn(producer.run());
 
+        // Kickstart the network.
+        match self.coordinator.start().await {
+            Ok(actions) => {
+                for a in actions {
+                    let _ = self.coordinator.execute(a).await;
+                }
+            }
+            Err(e) => {
+                bail!("failed to start coordinator: {}", e);
+            }
+        }
         loop {
             tokio::select! { biased;
                 result = self.coordinator.next() => match result {

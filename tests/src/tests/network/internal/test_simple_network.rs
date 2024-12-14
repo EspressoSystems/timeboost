@@ -15,3 +15,18 @@ async fn test_simple_network_round_progression() {
 async fn test_simple_network_round_timeout() {
     run_simple_network_round_timeout_test::<MemoryNetworkTest>().await
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simple_network_genesis_round_timeout() {
+    run_simple_network_round_timeout_genesis_test::<MemoryNetworkTest>().await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simple_network_catchup() {
+    run_simple_network_catchup_test::<MemoryNetworkTest>().await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_simple_network_catchup_missed_round() {
+    run_simple_network_catchup_node_missed_round_test::<MemoryNetworkTest>().await
+}

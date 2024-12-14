@@ -4,25 +4,52 @@ set -euox pipefail
 
 just build_release --features until
 
-for i in {0..4}; do
+if [ -z "${1:-}" ]; then
+    nodes=5
+else
+    if ! [[ $1 =~ ^[5-9]+$ ]]; then
+        echo "Error: The number of nodes must be a positive integer greater than 4."
+        exit 1
+    fi
+    nodes=$1
+fi
+
+late_start=false
+
+if [ "${2:-}" = "true" ]; then
+    late_start=true
+fi
+pids=()
+for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=error \
+    cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=error \
     ./target/release/timeboost \
         --id $i \
-        --port $((8000 + i)) \
-        --rpc-port $((8800 + i)) \
-        --metrics-port $((9000 + i)) \
+        --port $((8000 + $i)) \
+        --rpc-port $((8800 + $i)) \
+        --metrics-port $((9000 + $i)) \
+        --committee-size $nodes \
         --base local \
-        --until 500 \
-        --watchdog-timeout 300 &
+        --until 300 \
+        --watchdog-timeout 300"
+    if $late_start; then
+        cmd="$cmd --late-start --late-start-node-id 0"
+    fi
+
+    eval $cmd &
+    pids+=($!)
 done
 
-echo "Starting tx-generator"
-RUST_LOG=tx_generator=debug \
-./target/release/tx-generator \
-    --committee-size 5 \
-    --until 500 \
-    --watchdog-timeout 300 &
+for pid in "${pids[@]}"; do
+    wait $pid
+    exit_code=$?
 
-wait
+    if [ $exit_code -eq 0 ]; then
+        echo "Process $pid completed successfully with exit code $exit_code."
+    else
+        echo "Process $pid failed with exit code $exit_code."
+    fi
+done
+
+echo "All processes have finished."
