@@ -249,7 +249,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.insert(block);
+                                        // self.mempool.insert(block);
                                     },
                                 }
                             }
