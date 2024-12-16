@@ -210,15 +210,15 @@ impl Timeboost {
         );
 
         // Start the sequencer.
-        let sequencer_handle = tokio::spawn(sequencer.go(
-            self.shutdown_rx.clone(),
-            self.app_tx.clone(),
-            committee_size,
-        ));
+        // let sequencer_handle = tokio::spawn(sequencer.go(
+        //     self.shutdown_rx.clone(),
+        //     self.app_tx.clone(),
+        //     committee_size,
+        // ));
 
         // Start the block producer.
-        let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
-        tokio::spawn(producer.run());
+        // let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
+        // tokio::spawn(producer.run());
 
         // Kickstart the network.
         match self.coordinator.start().await {
@@ -266,7 +266,7 @@ impl Timeboost {
                                 self.coordinator.handle_transactions(transactions);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
-                                let _ = p_tx.send(block).await;
+                                // let _ = p_tx.send(block).await;
                             }
                         }
 
@@ -289,8 +289,8 @@ impl Timeboost {
                     warn!("shutting down rpc handle");
                     rpc_handle.abort();
 
-                    warn!("shutting down sequencer");
-                    sequencer_handle.abort();
+                    // warn!("shutting down sequencer");
+                    // sequencer_handle.abort();
 
                     warn!("shutting down coordinator");
                     self.coordinator.shutdown().await.expect("shutdown coordinator");
