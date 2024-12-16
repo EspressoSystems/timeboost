@@ -24,7 +24,7 @@ for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
     if [[ $i == 0 ]]; then
-      cmd="RUST_LOG=error,timeboost=debug \
+      cmd="RUST_LOG=error,timeboost=debug,timeboost_core=error,timeboost_networking=error,timeboost_crypto=error \
       heaptrack ./target/release/timeboost \
           --id $i \
           --port $((8000 + $i)) \
@@ -35,7 +35,7 @@ for i in $(seq 0 $((nodes - 1))); do
           --until 10000 \
           --watchdog-timeout 300"
     else
-      cmd="RUST_LOG=error,timeboost=debug \
+      cmd="RUST_LOG=error,timeboost=debug,timeboost_core=error,timeboost_networking=error,timeboost_crypto=error \
       ./target/release/timeboost \
           --id $i \
           --port $((8000 + $i)) \
