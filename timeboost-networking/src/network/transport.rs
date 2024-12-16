@@ -484,7 +484,7 @@ impl Worker {
 }
 
 fn sample_delay(max: Duration) -> Duration {
-    let start = Duration::from_secs(1);
+    let start = Duration::ZERO;
     ThreadRng::default().gen_range(start..max)
 }
 
