@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use libp2p_identity::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_networking::p2p::client::derive_libp2p_peer_id;
@@ -12,7 +14,7 @@ mod rbc;
 pub struct Group {
     pub size: usize,
     pub addrs: Vec<String>,
-    pub bootstrap_nodes: Vec<(PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
     pub committee: Committee,
     pub peer_ids: Vec<PeerId>,
@@ -37,10 +39,11 @@ impl Group {
             peer_ids.push(derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
         }
 
-        let bootstrap_nodes: Vec<(PeerId, String)> = peer_ids
+        let bootstrap_nodes: HashMap<PublicKey, (PeerId, String)> = pubks
             .iter()
-            .zip(addrs.iter())
-            .map(|(peer_id, addr)| (*peer_id, addr.clone()))
+            .zip(peer_ids.clone())
+            .zip(addrs.clone())
+            .map(|((pk, pid), addr)| (pk.1, (pid, addr)))
             .collect();
 
         let staked_nodes: Vec<PeerConfig<PublicKey>> =

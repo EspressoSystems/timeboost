@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
@@ -44,7 +44,6 @@ impl TestableNetwork for BasicNetworkTest {
     async fn init(&mut self) -> Vec<Self::Node> {
         let mut handles = JoinSet::new();
         let staked = self.group.staked_nodes.clone();
-        let bootstrap_nodes: HashSet<_> = self.group.bootstrap_nodes.clone().into_iter().collect();
         let committee = self.group.committee.clone();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
@@ -55,7 +54,7 @@ impl TestableNetwork for BasicNetworkTest {
                 peer_id,
                 &kpr.secret_key(),
                 staked.clone(),
-                bootstrap_nodes.clone(),
+                self.group.bootstrap_nodes.clone(),
                 addr.clone(),
             )
             .expect("failed to make libp2p initializer")

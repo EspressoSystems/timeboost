@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use futures::future::join_all;
 use libp2p::PeerId;
@@ -30,7 +27,7 @@ pub struct NetworkInitializer<K: SignatureKey + 'static> {
     pub local_id: PeerId,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: Vec<(PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
 
     /// The staked nodes to connect to.
     pub staked_nodes: Vec<PeerConfig<K>>,
@@ -47,14 +44,10 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
         local_id: PeerId,
         private_key: &K::PrivateKey,
         staked_nodes: Vec<PeerConfig<K>>,
-        bootstrap_nodes: HashSet<(PeerId, String)>,
+        bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
         bind_address: String,
     ) -> anyhow::Result<Self> {
         let libp2p_keypair = derive_libp2p_keypair::<K>(private_key).expect("Keypair to derive");
-
-        let bootstrap_nodes = bootstrap_nodes
-            .into_iter()
-            .collect::<Vec<(PeerId, String)>>();
 
         Ok(Self {
             local_id,
@@ -84,6 +77,8 @@ pub struct Network {
     _main_task: JoinHandle<()>,
     /// Connections received from the transport layer
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+    /// Mapping from public keys to peer Id
+    nodes: HashMap<PublicKey, (PeerId, String)>,
     /// Channel for consuming messages from the network
     network_rx: mpsc::Receiver<NetworkMessage>,
 }
@@ -92,10 +87,15 @@ impl Network {
     pub async fn start(
         local_id: PeerId,
         local_addr: String,
-        to_connect: Vec<(PeerId, String)>,
+        to_connect: HashMap<PublicKey, (PeerId, String)>,
         tx_ready: oneshot::Sender<()>,
     ) -> Self {
-        let transport = Transport::run(local_id, local_addr, to_connect.clone()).await;
+        let transport = Transport::run(
+            local_id,
+            local_addr,
+            to_connect.clone().into_values().collect(),
+        )
+        .await;
         let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
@@ -103,13 +103,14 @@ impl Network {
             local_id,
             transport,
             Arc::clone(&connections),
-            to_connect,
+            to_connect.clone(),
             inbound_sender,
             tx_ready,
         ));
         Self {
             _main_task: main_task,
             connections,
+            nodes: to_connect,
             network_rx: inbound_receiver,
         }
     }
@@ -121,13 +122,14 @@ impl Network {
         local_id: PeerId,
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
-        mut to_connect: Vec<(PeerId, String)>,
+        to_connect: HashMap<PublicKey, (PeerId, String)>,
         network_tx: Sender<NetworkMessage>,
         tx_ready: oneshot::Sender<()>,
     ) {
         let connection_receiver = transport.rx_connection();
         let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
         let handle = Handle::current();
+        let mut not_yet_connected: Vec<_> = to_connect.values().cloned().collect();
         while let Some(connection) = connection_receiver.recv().await {
             let remote_id = connection.remote_id;
             trace!("Received connection from: {}", remote_id);
@@ -150,8 +152,8 @@ impl Network {
             ));
 
             handles.insert(remote_id, task);
-            to_connect.retain(|(id, _)| id != &remote_id);
-            if to_connect.len() == 1 {
+            not_yet_connected.retain(|(id, _)| id != &remote_id);
+            if not_yet_connected.len() == 1 {
                 // only our own peer id left
                 break;
             }
@@ -216,13 +218,28 @@ impl Network {
         Ok(())
     }
 
-    // TODO: Implement direct messaging
     pub async fn direct_message(
         &self,
-        _recipient: PublicKey,
+        recipient: PublicKey,
         message: Vec<u8>,
     ) -> Result<(), NetworkError> {
-        self.broadcast_message(message).await
+        if let Some((peer_id, _)) = self.nodes.get(&recipient) {
+            if let Some(connection) = self.connections.read().await.get(peer_id) {
+                connection
+                    .send(NetworkMessage::from(message))
+                    .await
+                    .map_err(|_| {
+                        NetworkError::ChannelSendError("Error sending message".to_string())
+                    })?;
+                return Ok(());
+            }
+            return Err(NetworkError::ChannelReceiveError(
+                "Connection not found".to_string(),
+            ));
+        }
+        Err(NetworkError::ChannelReceiveError(
+            "Unable to find the pid connected to the public key".to_string(),
+        ))
     }
 
     pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {

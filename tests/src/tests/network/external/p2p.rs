@@ -51,7 +51,7 @@ impl TestableNetwork for Libp2pNetworkTest {
             let peer_id = self.group.peer_ids[i];
             let private_key = kpr.secret_key();
             let libp2p_nodes: HashSet<_> = bootstrap_nodes
-                .iter()
+                .values()
                 .map(|(peer_id, addr)| {
                     (
                         *peer_id,
