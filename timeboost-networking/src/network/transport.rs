@@ -450,8 +450,9 @@ impl Worker {
 
             // Read inbound traffic and send on channel
             let buf = &mut buf[..size as usize];
-            let read = stream.read_exact(buf).await?;
-            assert_eq!(read, buf.len());
+            if let Err(err) = stream.read_exact(buf).await {
+                error!("Failed to read message into buffer: {}", err);
+            }
             match bincode::deserialize::<NetworkMessage>(buf) {
                 Ok(message) => {
                     if sender.send(message).await.is_err() {
