@@ -22,6 +22,8 @@ use tracing::{debug, info, instrument, warn};
 const PING_INTERVAL: Duration = Duration::from_secs(10);
 /// Size of the channel for sennding established connections
 const MAX_CONNECTIONS: usize = 30;
+/// Size of the channel for ping/pong protocol
+const MAX_PING_CHANNEL_SIZE: usize = 150;
 
 // TODO: no need to wrap bytes anymore
 #[derive(Debug, Serialize, Deserialize)]
@@ -321,7 +323,7 @@ impl Worker {
         } = connection;
         debug!("Connected to {}", remote_id);
         let (reader, writer) = stream.into_split();
-        let (pong_sender, pong_receiver) = mpsc::channel(150);
+        let (pong_sender, pong_receiver) = mpsc::channel(MAX_PING_CHANNEL_SIZE);
         let write_fut = Self::handle_write_stream(
             writer,
             receiver,
