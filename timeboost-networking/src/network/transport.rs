@@ -422,7 +422,7 @@ impl Worker {
                 return Ok(());
             }
             if size == 0 {
-                let buf = &mut buf[..PING_SIZE - 4];
+                let buf = &mut buf[..PING_SIZE - 4 /* Already read the length */];
                 let read = stream.read_exact(buf).await?;
                 assert_eq!(read, buf.len());
                 let ping = decode_ping(buf);
