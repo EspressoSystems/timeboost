@@ -221,8 +221,8 @@ impl Worker {
     const MAX_SIZE: u32 = 16 * 1024 * 1024;
 
     async fn run(self, mut receiver: Receiver<TcpStream>) -> Option<()> {
-        // Delay to avoid races
-        let max = 5u64; //sec
+        // Avoid live locks (nodes connecting to each other at the same time)
+        let max = Duration::from_secs(5);
         let initial_delay = if self.active {
             sample_delay(max)
         } else {
@@ -477,10 +477,9 @@ impl Worker {
     }
 }
 
-fn sample_delay(max: u64) -> Duration {
+fn sample_delay(max: Duration) -> Duration {
     let start = Duration::from_secs(1);
-    let end = Duration::from_secs(max);
-    ThreadRng::default().gen_range(start..end)
+    ThreadRng::default().gen_range(start..max)
 }
 
 const PING_SIZE: usize = 12;
