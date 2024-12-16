@@ -490,6 +490,7 @@ fn sample_delay(max: Duration) -> Duration {
 
 fn encode_ping(message: i64) -> [u8; PING_SIZE] {
     let mut m = [0u8; PING_SIZE];
+    // first 4 represents the size == 0
     m[4..].copy_from_slice(&message.to_le_bytes());
     m
 }
