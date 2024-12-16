@@ -57,7 +57,7 @@ struct Cli {
     /// The id of a node that will start late
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 0)]
-    late_start_node_id: u16,
+    late_start_node_id: usize,
 
     /// The flag if we want to late start a node
     #[cfg(feature = "until")]
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
             matches!(cli.base, CommitteeBase::Docker),
             shutdown_tx.clone(),
         ));
-        if cli.late_start && cli.id == cli.late_start_node_id {
+        if cli.late_start && (cli.id as usize) == cli.late_start_node_id {
             tracing::warn!("Adding delay before starting node: id: {}", id);
             tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
         }

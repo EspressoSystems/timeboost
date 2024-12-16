@@ -31,8 +31,8 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --committee-size $nodes \
         --base local \
-        --until 300 \
-        --watchdog-timeout 300"
+        --until 10000 \
+        --watchdog-timeout 3000"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
@@ -40,6 +40,16 @@ for i in $(seq 0 $((nodes - 1))); do
     eval $cmd &
     pids+=($!)
 done
+
+RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=error \
+./target/release/timeboost \
+  --commitee-size $nodes \
+  --interval-ms 1000 \
+  --max-tx-size 10 * 1024 \
+  --until 10000 \
+  --watchdog-timeout 3000 &
+
+pids+=($!)
 
 for pid in "${pids[@]}"; do
     wait $pid

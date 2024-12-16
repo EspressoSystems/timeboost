@@ -12,6 +12,9 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+debug = true
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
