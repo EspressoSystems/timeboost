@@ -20,6 +20,8 @@ use tracing::{debug, info, instrument, warn};
 
 /// Duration between pings for latency measurements
 const PING_INTERVAL: Duration = Duration::from_secs(10);
+/// Size of the channel for sennding established connections
+const MAX_CONNECTIONS: usize = 30;
 
 // TODO: no need to wrap bytes anymore
 #[derive(Debug, Serialize, Deserialize)]
@@ -82,7 +84,7 @@ impl Transport {
             .expect("Unable to bind to socket");
 
         let handle = Handle::current();
-        let (tx_connection, rx_connection) = mpsc::channel(20);
+        let (tx_connection, rx_connection) = mpsc::channel(MAX_CONNECTIONS);
 
         // Spawn a worker for each node we want a connection to
         for (remote_id, addr) in to_connect.iter() {
@@ -90,7 +92,7 @@ impl Transport {
                 continue;
             }
             // Channel for the TcpStream going from the Server to the Worker
-            let (sender, receiver) = mpsc::channel(20);
+            let (sender, receiver) = mpsc::channel(MAX_CONNECTIONS);
 
             let socket = addr
                 .parse::<std::net::SocketAddr>()
