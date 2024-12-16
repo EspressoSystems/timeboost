@@ -23,16 +23,29 @@ pids=()
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-    cmd="RUST_LOG=error \
-    ./target/release/timeboost \
-        --id $i \
-        --port $((8000 + $i)) \
-        --rpc-port $((8800 + $i)) \
-        --metrics-port $((9000 + $i)) \
-        --committee-size $nodes \
-        --base local \
-        --until 100000 \
-        --watchdog-timeout 3000"
+    if [[ $i == 0 ]]; then
+      cmd="RUST_LOG=error \
+      heaptrack ./target/release/timeboost \
+          --id $i \
+          --port $((8000 + $i)) \
+          --rpc-port $((8800 + $i)) \
+          --metrics-port $((9000 + $i)) \
+          --committee-size $nodes \
+          --base local \
+          --until 100000 \
+          --watchdog-timeout 3000"
+    else
+      cmd="RUST_LOG=error \
+      ./target/release/timeboost \
+          --id $i \
+          --port $((8000 + $i)) \
+          --rpc-port $((8800 + $i)) \
+          --metrics-port $((9000 + $i)) \
+          --committee-size $nodes \
+          --base local \
+          --until 100000 \
+          --watchdog-timeout 3000"
+    fi
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
