@@ -150,9 +150,9 @@ where
                         .boxed();
 
                     // Drain the snapshot
-                    debug!("mempool starting size {}", self.mempool.len());
+                    error!("mempool starting size {}", self.mempool.len());
                     let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
-                    debug!("mempool ending size {}", self.mempool.len());
+                    error!("mempool ending size {}", self.mempool.len());
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,
@@ -190,7 +190,7 @@ where
 
                     info!("block was built successfully");
 
-                    debug!("prior_tx_keylen {}", self.prior_tx_hashes.len());
+                    error!("prior_tx_keylen {}", self.prior_tx_hashes.len());
                 }
             }
         }
