@@ -427,17 +427,16 @@ impl Worker {
                 assert_eq!(read, buf.len());
                 let ping = decode_ping(buf);
                 let permit = pong_sender.try_reserve();
-                if let Err(err) = permit {
-                    match err {
-                        TrySendError::Full(_) => {
-                            tracing::error!("Pong sender channel is saturated. Will drop.");
-                        }
-                        TrySendError::Closed(_) => {
-                            return Ok(());
-                        }
+                match permit {
+                    Err(TrySendError::Full(_)) => {
+                        tracing::error!("Pong sender channel is saturated. Will drop.");
                     }
-                } else {
-                    permit.unwrap().send(ping);
+                    Err(TrySendError::Closed(_)) => {
+                        return Ok(());
+                    }
+                    Ok(permit) => {
+                        permit.send(ping);
+                    }
                 }
                 continue;
             }
