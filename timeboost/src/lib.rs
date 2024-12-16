@@ -243,10 +243,8 @@ impl Timeboost {
                                         error!(%error, "sailfish encountered an error");
                                     },
                                     SailfishEventType::RoundFinished { round: _ } => {
-                                        debug!("round finished");
                                     },
                                     SailfishEventType::Timeout { round: _ } => {
-                                        debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
                                         self.mempool.insert(block);
