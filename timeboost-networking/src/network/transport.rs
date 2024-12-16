@@ -26,6 +26,8 @@ const CONNECTION_BUFFER_SIZE: usize = 30;
 const PING_BUFFER_SIZE: usize = 150;
 /// Size of the ping protocol message
 const PING_SIZE: usize = 12;
+/// Length representation (u32) size
+const LENGTH_SIZE: usize = 4;
 /// Maximum channel size for inbound/outbound messages
 const NETWORK_BUFFER_SIZE: usize = 1_000;
 
@@ -422,18 +424,19 @@ impl Worker {
         loop {
             let size = stream.read_u32().await?;
             if size > Self::MAX_SIZE {
-                tracing::warn!("Invalid size: {size}");
+                warn!("Invalid size: {size}");
                 return Ok(());
             }
             if size == 0 {
-                let buf = &mut buf[..PING_SIZE - 4 /* Already read the length */];
-                let read = stream.read_exact(buf).await?;
-                assert_eq!(read, buf.len());
+                let buf = &mut buf[..PING_SIZE - LENGTH_SIZE];
+                if let Err(err) = stream.read_exact(buf).await {
+                    error!("Failed to read ping into buffer: {}", err);
+                }
                 let ping = decode_ping(buf);
                 let permit = pong_sender.try_reserve();
                 match permit {
                     Err(TrySendError::Full(_)) => {
-                        tracing::error!("Pong sender channel is saturated. Will drop.");
+                        error!("Pong sender channel is saturated. Will drop.");
                     }
                     Err(TrySendError::Closed(_)) => {
                         return Ok(());
@@ -491,12 +494,13 @@ fn sample_delay(max: Duration) -> Duration {
 fn encode_ping(message: i64) -> [u8; PING_SIZE] {
     let mut m = [0u8; PING_SIZE];
     // first 4 represents the size == 0
-    m[4..].copy_from_slice(&message.to_le_bytes());
+    m[LENGTH_SIZE..].copy_from_slice(&message.to_le_bytes());
     m
 }
 
 fn decode_ping(message: &[u8]) -> i64 {
-    let mut m = [0u8; 8];
+    // already consumed the length of the ping message
+    let mut m = [0u8; PING_SIZE - LENGTH_SIZE];
     m.copy_from_slice(message);
     i64::from_le_bytes(m)
 }
