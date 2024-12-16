@@ -512,21 +512,18 @@ mod test {
     use super::Transport;
     use futures::future::join_all;
     use libp2p::PeerId;
-    use timeboost_utils::types::logging::init_logging;
 
     #[tokio::test]
     async fn network_connect_test() {
-        init_logging();
         let (networks, addresses) = networks_and_addresses(5usize).await;
         for (mut network, address) in networks.into_iter().zip(addresses.iter()) {
             let mut waiting_peers: HashSet<_> = HashSet::from_iter(addresses.iter().cloned());
             waiting_peers.remove(address);
             while let Some(connection) = network.rx_connection.recv().await {
-                let (peer, addr) = addresses
+                let (_, addr) = addresses
                     .iter()
                     .find(|(pid, _)| *pid == connection.remote_id)
                     .expect("Peer not found");
-                eprintln!("{:?} connected to {:?}", address, peer);
                 waiting_peers.retain(|(_, a)| a != addr);
                 if waiting_peers.is_empty() {
                     break;
