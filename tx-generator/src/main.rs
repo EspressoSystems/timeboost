@@ -126,7 +126,7 @@ async fn create_and_send_tx(
     .await
     {
         Ok(_) => {
-            tracing::info!("tx sent successfully");
+            tracing::debug!("tx sent successfully");
         }
         Err(e) => {
             tracing::error!(%e, "timeout sending tx");
