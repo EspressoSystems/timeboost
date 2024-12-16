@@ -437,7 +437,6 @@ impl Worker {
                         }
                     }
                 } else {
-                    println!("writing pong");
                     permit.unwrap().send(ping);
                 }
                 continue;
