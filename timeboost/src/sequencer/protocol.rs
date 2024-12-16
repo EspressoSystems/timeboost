@@ -137,7 +137,7 @@ where
         app_tx: Sender<TimeboostStatusEvent>,
         committee_size: usize,
     ) -> Result<()> {
-        self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL).map(move |_| 0).fuse().boxed();
+        self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL).map(|_| 0).fuse().boxed();
         loop {
             tokio::select! {
                 _ = shutdown_rx.changed() => {
