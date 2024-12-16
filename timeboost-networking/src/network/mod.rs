@@ -233,11 +233,11 @@ impl Network {
                     })?;
                 return Ok(());
             }
-            return Err(NetworkError::ChannelReceiveError(
+            return Err(NetworkError::MessageSendError(
                 "Connection not found".to_string(),
             ));
         }
-        Err(NetworkError::ChannelReceiveError(
+        Err(NetworkError::LookupError(
             "Unable to find the pid connected to the public key".to_string(),
         ))
     }
