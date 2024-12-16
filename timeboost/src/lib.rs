@@ -210,11 +210,11 @@ impl Timeboost {
         );
 
         // Start the sequencer.
-        // let sequencer_handle = tokio::spawn(sequencer.go(
-        //     self.shutdown_rx.clone(),
-        //     self.app_tx.clone(),
-        //     committee_size,
-        // ));
+        let sequencer_handle = tokio::spawn(sequencer.go(
+            self.shutdown_rx.clone(),
+            self.app_tx.clone(),
+            committee_size,
+        ));
 
         // Start the block producer.
         // let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
@@ -249,7 +249,7 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        // self.mempool.insert(block);
+                                        self.mempool.insert(block);
                                     },
                                 }
                             }
@@ -289,8 +289,8 @@ impl Timeboost {
                     warn!("shutting down rpc handle");
                     rpc_handle.abort();
 
-                    // warn!("shutting down sequencer");
-                    // sequencer_handle.abort();
+                    warn!("shutting down sequencer");
+                    sequencer_handle.abort();
 
                     warn!("shutting down coordinator");
                     self.coordinator.shutdown().await.expect("shutdown coordinator");

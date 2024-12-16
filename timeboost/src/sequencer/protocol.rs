@@ -21,7 +21,7 @@ use tokio::{
     sync::{mpsc::Sender, watch},
     time::sleep,
 };
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 use crate::{
     mempool::{self, Mempool},
@@ -150,7 +150,9 @@ where
                         .boxed();
 
                     // Drain the snapshot
+                    debug!("mempool starting size {}", self.mempool.len());
                     let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
+                    debug!("mempool ending size {}", self.mempool.len());
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,
@@ -185,6 +187,10 @@ where
 
                     // Remove the prior tx hashes that are not in the 8-round window.
                     self.prior_tx_hashes.retain(|round, _| *self.round - **round <= 8);
+
+                    info!("block was built successfully");
+
+                    debug!("prior_tx_keylen {}", self.prior_tx_hashes.len());
                 }
             }
         }

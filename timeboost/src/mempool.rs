@@ -19,6 +19,10 @@ impl Mempool {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.bundles.read().len()
+    }
+
     pub fn insert(&self, block: SailfishBlock) {
         self.bundles.write().push_back(block);
     }
