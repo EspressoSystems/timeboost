@@ -14,6 +14,7 @@ pub struct SailfishMetrics {
     pub vertex_buffer: Box<dyn Gauge>,
     pub average_tx_size: Box<dyn Histogram>,
     pub tx_processed: Box<dyn Counter>,
+    pub rounds_timed_out: Box<dyn Gauge>,
 }
 
 impl Default for SailfishMetrics {
@@ -38,6 +39,7 @@ impl SailfishMetrics {
             average_tx_size: m
                 .create_histogram("average_tx_size".to_string(), Some("bytes".to_string())),
             tx_processed: m.create_counter("transactions_processed".to_string(), None),
+            rounds_timed_out: m.create_gauge("rounds_timed_out".to_string(), None),
         }
     }
 }

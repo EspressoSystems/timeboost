@@ -7,7 +7,7 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
-use tokio::{signal, sync::watch, time::sleep};
+use tokio::{signal, spawn, sync::watch, time::sleep};
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
@@ -19,7 +19,7 @@ struct Cli {
     committee_size: usize,
 
     /// How oftern to generate a transaction.
-    #[clap(long, default_value = "100")]
+    #[clap(long, default_value = "5000")]
     interval_ms: u64,
 
     /// If we're running in docker, we need to use the correct port.
@@ -86,6 +86,7 @@ async fn create_and_send_tx(
     is_docker: bool,
     client: &'static Client,
     max_tx_size: usize,
+    req_timeout_millis: u64,
 ) {
     let port = 8800 + i;
     let tx = make_tx(max_tx_size);
@@ -100,25 +101,28 @@ async fn create_and_send_tx(
         "localhost".to_string()
     };
 
-    match tokio::time::timeout(std::time::Duration::from_secs(1), async move {
-        match client
-            .post(format!(
-                "http://{host}:{port}/v0/submit",
-                host = host,
-                port = port
-            ))
-            .json(&tx)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                tracing::debug!("resp: {:?}", resp);
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(req_timeout_millis),
+        async move {
+            match client
+                .post(format!(
+                    "http://{host}:{port}/v0/submit",
+                    host = host,
+                    port = port
+                ))
+                .json(&tx)
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    tracing::debug!("resp: {:?}", resp);
+                }
+                Err(e) => {
+                    tracing::error!("error: {:?}", e);
+                }
             }
-            Err(e) => {
-                tracing::error!("error: {:?}", e);
-            }
-        }
-    })
+        },
+    )
     .await
     {
         Ok(_) => {
@@ -148,7 +152,7 @@ async fn main() {
 
     #[cfg(feature = "until")]
     tokio::spawn(run_until(
-        9000,
+        9001,
         cli.until,
         cli.watchdog_timeout,
         is_docker,
@@ -165,17 +169,18 @@ async fn main() {
                 // We're gonna put this in a thread so that way if there's a delay sending to any
                 // node, it doesn't block the execution.
                 for i in 0..cli.committee_size {
-                    create_and_send_tx(i, is_docker, client, max_tx_size).await;
+                    // timeout before creating new tasks
+                    spawn(create_and_send_tx(i, is_docker, client, max_tx_size, cli.interval_ms-10));
                 }
             }
             _ = shutdown_rx.changed() => {
                 tracing::info!("shutting down tx generator");
-
                 break;
             }
             _ = signal::ctrl_c() => {
                 tracing::info!("received ctrl-c; shutting down");
                 shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
+                break;
             }
         }
     }

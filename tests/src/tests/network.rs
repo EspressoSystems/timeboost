@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use sailfish::coordinator::Coordinator;
@@ -21,12 +20,13 @@ pub mod network_tests;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TestOutcome {
+    Waiting,
+    Timeout,
     Passed,
-    Failed,
+    Failed(&'static str),
 }
 
-type TestConditionFn = Arc<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
-#[derive(Clone)]
+type TestConditionFn = Box<dyn Fn(Option<&Message>, Option<&Action>) -> TestOutcome + Send + Sync>;
 pub struct TestCondition {
     identifier: String,
     outcome: TestOutcome,
@@ -45,22 +45,21 @@ impl TestCondition {
         F: for<'a, 'b> Fn(Option<&'a Message>, Option<&'b Action>) -> TestOutcome
             + Send
             + Sync
-            + Clone
             + 'static,
     {
         Self {
             identifier,
-            outcome: TestOutcome::Failed,
-            eval: Arc::new(eval),
+            outcome: TestOutcome::Waiting,
+            eval: Box::new(eval),
         }
     }
 
     pub fn evaluate(&mut self, msgs: &[Message], actions: &[Action]) -> TestOutcome {
         // Only try to evaluate if the test condition has not yet passed
-        if self.outcome == TestOutcome::Failed {
+        if self.outcome == TestOutcome::Waiting {
             for m in msgs.iter() {
                 let result = (self.eval)(Some(m), None);
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Waiting {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -69,7 +68,7 @@ impl TestCondition {
 
             for a in actions.iter() {
                 let result = (self.eval)(None, Some(a));
-                if result == TestOutcome::Passed {
+                if result != TestOutcome::Waiting {
                     // We are done with this test condition
                     self.outcome = result;
                     return result;
@@ -84,22 +83,14 @@ impl TestCondition {
 /// This runs the coordinator logic over the `Comm` implementation
 /// This will be the result that a task returns for a given node
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct TaskHandleResult {
-    id: usize,
+pub(crate) struct TaskHandleResult {
+    id: u64,
     outcome: TestOutcome,
 }
 
 impl TaskHandleResult {
-    pub fn new(id: usize, outcome: TestOutcome) -> Self {
+    pub(crate) fn new(id: u64, outcome: TestOutcome) -> Self {
         Self { id, outcome }
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    pub fn outcome(&self) -> TestOutcome {
-        self.outcome
     }
 }
 
@@ -108,7 +99,7 @@ pub trait TestableNetwork {
     type Network: Comm + Send + 'static;
     fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self;
     async fn init(&mut self) -> Vec<Self::Node>;
@@ -116,8 +107,8 @@ pub trait TestableNetwork {
     async fn shutdown(
         self,
         handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<usize, TestOutcome>,
-    ) -> HashMap<usize, TestOutcome>;
+        completed: &HashMap<u64, TestOutcome>,
+    ) -> HashMap<u64, TestOutcome>;
 
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
@@ -125,7 +116,7 @@ pub trait TestableNetwork {
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
         mut shutdown_rx: Receiver<()>,
-        node_id: usize,
+        node_id: u64,
     ) -> TaskHandleResult {
         match coordinator.start().await {
             Ok(actions) => {
@@ -147,26 +138,36 @@ pub trait TestableNetwork {
                         // Evaluate if we have seen the specified conditions of the test
                         // Go through every test condition and evaluate
                         // Do not terminate loop early to ensure we evaluate all
-                        let mut all_passed = true;
+                        let mut outcome = TestOutcome::Passed;
+                        let mut all_evaluated = true;
                         let msgs = msgs.drain_inbox();
                         for c in conditions.iter_mut() {
-                            if c.evaluate(&msgs, &actions) == TestOutcome::Failed {
-                                all_passed = false;
+                            match c.evaluate(&msgs, &actions) {
+                                TestOutcome::Failed(reason) => {
+                                    // If any failed, the test has failed
+                                    outcome = TestOutcome::Failed(reason);
+                                }
+                                TestOutcome::Waiting => {
+                                    all_evaluated = false;
+                                }
+                                _ => {}
                             }
                         }
-                        if all_passed {
+                        if all_evaluated {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             coordinator.shutdown().await.expect("Network to be shutdown");
-                            return TaskHandleResult::new(node_id, TestOutcome::Passed);
+                            return TaskHandleResult::new(node_id, outcome);
                         }
                     }
-                    Err(_e) => {}
+                    Err(e) => {
+                        tracing::error!("Coordinator Error: {}", e)
+                    }
                 },
                 shutdown_result = shutdown_rx.changed() => {
                     coordinator.shutdown().await.expect("Network to be shutdown");
                     // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    return TaskHandleResult::new(node_id, TestOutcome::Failed);
+                    return TaskHandleResult::new(node_id, TestOutcome::Timeout);
                 }
             }
         }
@@ -181,7 +182,7 @@ pub struct NetworkTest<N: TestableNetwork> {
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
         group: Group,
-        outcomes: HashMap<usize, Vec<TestCondition>>,
+        outcomes: HashMap<u64, Vec<TestCondition>>,
         duration: Option<Duration>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
@@ -204,7 +205,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                         Some(result) => {
                             match result {
                                 Ok(handle_res) => {
-                                    results.insert(handle_res.id(), handle_res.outcome());
+                                    results.insert(handle_res.id, handle_res.outcome);
                                 },
                                 Err(err) => {
                                     panic!("Join Err: {}", err);
@@ -221,13 +222,13 @@ impl<N: TestableNetwork> NetworkTest<N> {
         };
 
         // Now handle the test result
+        results.extend(self.network.shutdown(handles, &results).await);
         if timeout {
             // Shutdown the network for the nodes that did not already complete (hence the timeout)
             // This means that the test will fail
-            results.extend(self.network.shutdown(handles, &results).await);
             for (node_id, result) in results {
                 if result != TestOutcome::Passed {
-                    tracing::error!("Node {} had missing status: {:?}", node_id, result);
+                    tracing::error!("Node {} had status: {:?}", node_id, result);
                 }
             }
             panic!("Test timed out after {:?}", self.duration);
@@ -237,7 +238,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
             results
                 .values()
                 .all(|result| *result == TestOutcome::Passed),
-            "Not all nodes passed. Final statuses: {:?}",
+            "Not all nodes passed. Final statuses: {:#?}",
             results.values()
         );
     }
