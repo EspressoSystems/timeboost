@@ -16,7 +16,7 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Duration between pings for latency measurements
 const PING_INTERVAL: Duration = Duration::from_secs(10);
@@ -350,7 +350,9 @@ impl Worker {
                 _deadline = tokio::time::sleep_until(ping_deadline) => {
                     ping_deadline += PING_INTERVAL;
                     let ping_time = start.elapsed().as_micros() as i64;
-                    assert!(ping_time > 0);
+                    if ping_time > 0 {
+                        error!("Invalid ping time {ping_time}");
+                    }
                     let ping = encode_ping(ping_time);
                     writer.write_all(&ping).await?;
                 }
