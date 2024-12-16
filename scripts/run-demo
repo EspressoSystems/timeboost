@@ -24,7 +24,7 @@ for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
     if [[ $i == 0 ]]; then
-      cmd="RUST_LOG=error \
+      cmd="RUST_LOG=error,timeboost=debug \
       heaptrack ./target/release/timeboost \
           --id $i \
           --port $((8000 + $i)) \
@@ -32,10 +32,10 @@ for i in $(seq 0 $((nodes - 1))); do
           --metrics-port $((9000 + $i)) \
           --committee-size $nodes \
           --base local \
-          --until 100000 \
-          --watchdog-timeout 3000"
+          --until 10000 \
+          --watchdog-timeout 300"
     else
-      cmd="RUST_LOG=error \
+      cmd="RUST_LOG=error,timeboost=debug \
       ./target/release/timeboost \
           --id $i \
           --port $((8000 + $i)) \
@@ -43,8 +43,8 @@ for i in $(seq 0 $((nodes - 1))); do
           --metrics-port $((9000 + $i)) \
           --committee-size $nodes \
           --base local \
-          --until 100000 \
-          --watchdog-timeout 3000"
+          --until 10000 \
+          --watchdog-timeout 300"
     fi
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
@@ -54,7 +54,7 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
-RUST_LOG=debug ./target/release/tx-generator --committee-size $nodes --interval-ms 1000 --max-tx-size 10240 --until 100000 --watchdog-timeout 3000 &
+RUST_LOG=info ./target/release/tx-generator --committee-size $nodes --interval-ms 1000 --max-tx-size 10240 --until 10000 --watchdog-timeout 300 &
 
 pids+=($!)
 
