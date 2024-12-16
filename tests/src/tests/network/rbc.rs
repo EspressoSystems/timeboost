@@ -194,12 +194,12 @@ fn medium_committee_partition_network() {
 
     sim.client("E", async move {
         let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
         let mut actions = coor.start().await?;
         loop {
-            
+
             for a in actions.clone() {
                 if let Some(event) = coor.execute(a).await? {
                     if let SailfishEventType::Committed { round, .. } = event.event {
@@ -236,7 +236,7 @@ fn medium_committee_partition_network() {
                     turmoil::repair("E", "D");
                 }
             }
-            
+
         }
     });
 

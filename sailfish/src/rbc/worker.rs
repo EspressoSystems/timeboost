@@ -181,18 +181,18 @@ impl<C: RawComm> Worker<C> {
         loop {
             tokio::select! {
                 now = self.timer.tick() => {
-                    if let Err(err) = self.retry(now).await {
-                        warn!(%err, "error retrying");
+                    if let Err(e) = self.retry(now).await {
+                        warn!(n = %self.label, %e, "error retrying");
                     }
                 },
                 val = self.comm.receive() => {
                     match val {
                         Ok(bytes) => {
-                            if let Err(err) = self.on_inbound(bytes).await {
-                                warn!(%err, "error on inbound message");
+                            if let Err(e) = self.on_inbound(bytes).await {
+                                warn!(n = %self.label, %e, "error on inbound message");
                             }
                         }
-                        Err(err) => warn!(%err, "error receiving message from network")
+                        Err(e) => warn!(n = %self.label, %e, "error receiving message from network")
                     }
                 },
                 cmd = self.rx.recv() => match cmd {
@@ -202,13 +202,13 @@ impl<C: RawComm> Worker<C> {
                                 let _ = tx.send(Ok(()));
                             }
                             Err(RbcError::Shutdown) => {
-                                warn!("unexpected shutdown detected");
+                                warn!(n = %self.label, "unexpected shutdown detected");
                                 let _ = self.comm.shutdown().await;
                                 return
                             }
-                            Err(err) => {
-                                warn!(%err, "error rbc broadcasting message");
-                                let _ = tx.send(Err(err));
+                            Err(e) => {
+                                warn!(n = %self.label, %e, "error rbc broadcasting message");
+                                let _ = tx.send(Err(e));
                             }
                         }
                     }
@@ -216,14 +216,14 @@ impl<C: RawComm> Worker<C> {
                     Some(Command::Send(to, msg)) => {
                         match self.on_send(to, &msg).await {
                             Ok(()) => {}
-                            Err(err) => warn!(%err, "error sending message")
+                            Err(e) => warn!(n = %self.label, %e, "error sending message")
                         }
                     }
                     // Best-effort broadcast without RBC properties.
                     Some(Command::Broadcast(msg)) => {
                         match self.on_broadcast(&msg).await {
                             Ok(()) => {}
-                            Err(err) => warn!(%err, "error broadcasting message")
+                            Err(e) => warn!(n = %self.label, %e, "error broadcasting message")
                         }
                     }
                     // Terminate operation.
@@ -241,7 +241,7 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// Best effort broadcast.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_broadcast(&mut self, msg: &Message<Validated>) -> Result<()> {
         let proto = Protocol::Bypass(Cow::Borrowed(msg));
         let bytes = bincode::serialize(&proto)?;
@@ -250,13 +250,13 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// 1:1 communication.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_send(&mut self, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
         send(&mut self.comm, to, msg).await
     }
 
     /// Start RBC broadcast.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_outbound(&mut self, msg: Message<Validated>) -> Result<()> {
         let proto = Protocol::Propose(Cow::Borrowed(&msg));
         let bytes = bincode::serialize(&proto)?;
@@ -287,10 +287,10 @@ impl<C: RawComm> Worker<C> {
             .entry(digest)
             .or_insert(tracker);
 
-        if let Err(err) = self.comm.broadcast(bytes).await {
-            debug!(%err, "network error");
+        if let Err(e) = self.comm.broadcast(bytes).await {
+            debug!(n = %self.label, %e, "network error");
         } else {
-            debug!(%digest, "message broadcast");
+            debug!(n = %self.label, d = %digest, "message broadcast");
             tracker.status = Status::SentMsg;
         }
 
@@ -298,7 +298,7 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// We received a message from the network.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label))]
     async fn on_inbound(&mut self, bytes: Vec<u8>) -> Result<()> {
         match bincode::deserialize(&bytes)? {
             Protocol::Bypass(msg) => self.on_bypass(msg.into_owned()).await?,
@@ -311,7 +311,7 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// A non-RBC message has been received which we deliver directly to the application.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_bypass(&mut self, msg: Message<Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
@@ -321,7 +321,7 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// An RBC message proposal has been received.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label, %msg))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_propose(&mut self, msg: Message<Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
@@ -340,7 +340,7 @@ impl<C: RawComm> Worker<C> {
             status: Status::Init,
         });
 
-        debug!(%digest, status = %tracker.status, "proposal received");
+        debug!(n = %self.label, d = %digest, s = %tracker.status, "proposal received");
 
         match tracker.status {
             // First time we see this message.
@@ -380,13 +380,13 @@ impl<C: RawComm> Worker<C> {
             // the application.
             Status::RequestedMsg => {
                 tracker.message = Item::some(msg.clone());
-                debug!(%msg, %digest, "delivered");
+                debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                 self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
                 tracker.status = Status::Delivered
             }
             // These states already have the message, so there is nothing to be done.
             Status::Delivered | Status::SentVote | Status::ReachedQuorum => {
-                debug!(node = %self.label, %digest, status = %tracker.status, "ignoring message proposal");
+                debug!(n = %self.label, d = %digest, s = %tracker.status, "ignoring message proposal");
                 debug_assert!(tracker.message.item.is_some())
             }
         }
@@ -409,7 +409,7 @@ impl<C: RawComm> Worker<C> {
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
                         tracker.message.early = true;
-                        debug!(%msg, %digest, "delivered");
+                        debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                     }
                 }
                 messages.early = true
@@ -421,9 +421,9 @@ impl<C: RawComm> Worker<C> {
 
     /// A proposal vote has been received.
     #[instrument(level = "trace", skip_all, fields(
-        node  = %self.label,
-        from  = %env.signing_key(),
-        round = %env.data().round())
+        n = %self.label,
+        s = %env.signing_key(),
+        r = %env.data().round())
     )]
     async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
@@ -450,9 +450,10 @@ impl<C: RawComm> Worker<C> {
             });
 
         debug!(
-            digest = %digest,
-            status = %tracker.status,
-            votes  = %tracker.votes.votes(&commit),
+            n = %self.label,
+            d = %digest,
+            s = %tracker.status,
+            v = %tracker.votes.votes(&commit),
             "vote received"
         );
 
@@ -480,7 +481,7 @@ impl<C: RawComm> Worker<C> {
                                 .send(msg.clone())
                                 .await
                                 .map_err(|_| RbcError::Shutdown)?;
-                            debug!(%msg, %digest, "delivered");
+                            debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                         }
                         tracker.status = Status::Delivered
                     } else {
@@ -492,8 +493,8 @@ impl<C: RawComm> Worker<C> {
                         tracker.status = Status::RequestedMsg;
                     }
                 }
-                Err(err) => {
-                    warn!(%err, %digest, "failed to add vote");
+                Err(e) => {
+                    warn!(n = %self.label, %e, d = %digest, "failed to add vote");
                     if tracker.votes.is_empty() && tracker.message.item.is_none() {
                         if let Some(messages) = self.buffer.get_mut(&digest.round()) {
                             messages.map.remove(&digest);
@@ -512,9 +513,14 @@ impl<C: RawComm> Worker<C> {
             }
             Status::ReachedQuorum | Status::RequestedMsg | Status::Delivered => {
                 if done {
-                    debug!(node = %self.label, status = %tracker.status, "ignoring vote")
+                    debug!(n = %self.label, s = %tracker.status, "ignoring vote")
                 } else {
-                    debug!(%digest, status = %tracker.status, "replying with our vote to sender");
+                    debug!(
+                        n = %self.label,
+                        d = %digest,
+                        s = %tracker.status,
+                        "replying with our vote to sender"
+                    );
                     let env = Envelope::signed(digest, &self.config.keypair, false);
                     let vote = Protocol::Vote(env, true);
                     let bytes = bincode::serialize(&vote)?;
@@ -528,9 +534,9 @@ impl<C: RawComm> Worker<C> {
 
     /// We received a vote certificate.
     #[instrument(level = "trace", skip_all, fields(
-        node  = %self.label,
-        from  = %env.signing_key(),
-        round = %env.data().data().round())
+        n = %self.label,
+        s = %env.signing_key(),
+        r = %env.data().data().round())
     )]
     async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
@@ -559,7 +565,7 @@ impl<C: RawComm> Worker<C> {
                 status: Status::Init,
             });
 
-        debug!(%digest, status = %tracker.status, "certificate received");
+        debug!(n = %self.label, d = %digest, s = %tracker.status, "certificate received");
 
         match tracker.status {
             // The certificate allows us to immediately reach the quorum and deliver the
@@ -583,7 +589,7 @@ impl<C: RawComm> Worker<C> {
                             .send(msg.clone())
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
-                        debug!(%msg, "delivered");
+                        debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                     }
                     tracker.status = Status::Delivered
                 } else {
@@ -605,7 +611,7 @@ impl<C: RawComm> Worker<C> {
                 tracker.status = Status::RequestedMsg;
             }
             Status::ReachedQuorum | Status::RequestedMsg | Status::Delivered => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring certificate")
+                debug!(n = %self.label, s = %tracker.status, "ignoring certificate")
             }
         }
 
@@ -614,9 +620,9 @@ impl<C: RawComm> Worker<C> {
 
     /// One of our peers is asking for a message proposal.
     #[instrument(level = "trace", skip_all, fields(
-        node  = %self.label,
-        from  = %env.signing_key(),
-        round = %env.data().round())
+        n = %self.label,
+        s = %env.signing_key(),
+        r = %env.data().round())
     )]
     async fn on_get(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
@@ -629,19 +635,19 @@ impl<C: RawComm> Worker<C> {
             .and_then(|m| m.map.get_mut(env.data()))
         else {
             warn!(
-                node = %self.label,
-                from = %env.signing_key(),
+                n = %self.label,
+                f = %env.signing_key(),
                 "ignoring get request for data we do not have"
             );
             return Ok(());
         };
 
-        debug!(digest = %env.data(), status = %tracker.status, "get request received");
+        debug!(n = %self.label, d = %env.data(), s = %tracker.status, "get request received");
 
         match tracker.status {
             // We do not have the message ourselves when in these states.
             Status::Init | Status::RequestedMsg => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring get request");
+                debug!(n = %self.label, d = %env.data(), s = %tracker.status, "ignoring get request");
                 debug_assert!(tracker.message.item.is_none())
             }
             // Here, we may have the message and if so, we gladly share it.
@@ -665,10 +671,10 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// Periodically we go over message status and retry incomplete items.
-    #[instrument(level = "trace", skip_all, fields(node = %self.label))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.label))]
     async fn retry(&mut self, now: Instant) -> Result<()> {
         for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
-            debug!(%digest, status = %tracker.status, retries = %tracker.retries, "revisiting");
+            debug!(n = %self.label, d = %digest, s = %tracker.status, r = %tracker.retries, "revisiting");
             match tracker.status {
                 Status::Init | Status::Delivered => {}
                 // We have sent a message but did not make further progress, so
@@ -686,13 +692,13 @@ impl<C: RawComm> Worker<C> {
                         .item
                         .as_ref()
                         .expect("message was sent => set in tracker");
-                    debug!(%digest, msg = %messg, "re-broadcasting message");
+                    debug!(n = %self.label, d = %digest, m = %messg, "re-broadcasting message");
                     let proto = Protocol::Propose(Cow::Borrowed(messg));
                     let bytes = bincode::serialize(&proto).expect("idempotent serialization");
                     tracker.start = now;
                     tracker.retries = tracker.retries.saturating_add(1);
                     if let Err(e) = self.comm.broadcast(bytes).await {
-                        debug!(err = %e, "network error");
+                        debug!(n = %self.label, %e, "network error");
                     }
                 }
                 // If we have a message we might not have been able to send our vote
@@ -707,12 +713,12 @@ impl<C: RawComm> Worker<C> {
                             continue;
                         }
                         if tracker.ours {
-                            debug!(%digest, "sending our message (again)");
+                            debug!(n = %self.label, d = %digest, "sending our message (again)");
                             let proto = Protocol::Propose(Cow::Borrowed(msg));
                             let bytes = bincode::serialize(&proto)?;
                             self.comm.broadcast(bytes).await.map_err(RbcError::net)?
                         }
-                        debug!(%digest, "sending our vote (again)");
+                        debug!(n = %self.label, d = %digest, "sending our vote (again)");
                         let env = Envelope::signed(*digest, &self.config.keypair, false);
                         let vote = Protocol::Vote(env, false);
                         let bytes = bincode::serialize(&vote).expect("idempotent serialization");
@@ -733,7 +739,7 @@ impl<C: RawComm> Worker<C> {
                     if tracker.start.elapsed() < Duration::from_millis(timeout) {
                         continue;
                     }
-                    debug!(%digest, "requesting message again");
+                    debug!(n = %self.label, d = %digest, "requesting message again");
                     let m = Protocol::Get(Envelope::signed(*digest, &self.config.keypair, false));
                     let b = bincode::serialize(&m).expect("idempotent serialization");
                     let c = digest.commit();
@@ -758,7 +764,7 @@ impl<C: RawComm> Worker<C> {
                             .votes
                             .certificate()
                             .expect("reached quorum => certificate");
-                        debug!(%digest, %msg, "sending certificate");
+                        debug!(n = %self.label, d = %digest, m = %msg, "sending certificate");
                         let e = Envelope::signed(c.clone(), &self.config.keypair, false);
                         let m = Protocol::Cert(e);
                         let b = bincode::serialize(&m).expect("idempotent serialization");
@@ -770,11 +776,11 @@ impl<C: RawComm> Worker<C> {
                                 .send(msg.clone())
                                 .await
                                 .map_err(|_| RbcError::Shutdown)?;
-                            debug!(%msg, "delivered");
+                            debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                         }
                         tracker.status = Status::Delivered
                     } else {
-                        debug!(%digest, "requesting message");
+                        debug!(n = %self.label, d = %digest, "requesting message");
                         let e = Envelope::signed(*digest, &self.config.keypair, false);
                         let m = Protocol::Get(e);
                         let b = bincode::serialize(&m).expect("idempotent serialization");
