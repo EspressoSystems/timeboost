@@ -42,7 +42,7 @@ for i in $(seq 0 $((nodes - 1))); do
 done
 
 RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=error \
-./target/release/timeboost \
+./target/release/tx-generator \
   --committee-size $nodes \
   --interval-ms 1000 \
   --max-tx-size 10 * 1024 \
