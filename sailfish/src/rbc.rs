@@ -57,7 +57,7 @@ impl Config {
         Self {
             keypair: k,
             committee: c,
-            early_delivery: false,
+            early_delivery: true,
         }
     }
 

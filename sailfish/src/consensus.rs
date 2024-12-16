@@ -621,10 +621,8 @@ impl Consensus {
                     n = %self.public_key(),
                     r = %self.round,
                     v = %r,
-                    x = ?v.edges().filter(|w| self.dag.vertex(r - 1, w).is_none()).collect::<Vec<_>>(),
                     "not all edges are resolved in dag"
                 );
-                debug!(n = %self.public_key(), g = %self.dag.dbg());
                 return Err(v);
             }
             if v.edges().any(|w| self.buffer.vertex(r - 1, w).is_none()) {
@@ -632,10 +630,8 @@ impl Consensus {
                     n = %self.public_key(),
                     r = %self.round,
                     v = %r,
-                    x = ?v.edges().filter(|w| self.dag.vertex(r - 1, w).is_none()).collect::<Vec<_>>(),
                     "not all edges are resolved in buffer"
                 );
-                debug!(n = %self.public_key(), g = %self.dag.dbg());
                 return Err(v);
             }
             for w in self.buffer.drain_round(r - 1) {
@@ -763,11 +759,11 @@ impl Consensus {
         c = %self.committed_round)
     )]
     fn gc(&mut self) {
-        if *self.committed_round < 2 {
+        if *self.committed_round < self.committee.size().get() as u64 {
             return;
         }
 
-        let r = self.committed_round - 2;
+        let r = self.committed_round - self.committee.size().get() as u64;
         self.dag.remove(r);
         self.buffer.remove(r);
         self.delivered.retain(|(x, _)| *x >= r);
