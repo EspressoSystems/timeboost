@@ -170,32 +170,32 @@ impl Network {
     ) -> Option<()> {
         loop {
             tokio::select! {
-            inbound_msg = connection.rx.recv() => {
-                match inbound_msg {
-                    Some(msg) => {
-                        if let Err(e) = network_tx.send(msg).await {
-                        warn!("Failed to send inbound message: {:?}", e);
+                inbound_msg = connection.rx.recv() => {
+                    match inbound_msg {
+                        Some(msg) => {
+                            if let Err(e) = network_tx.send(msg).await {
+                                warn!("Failed to send inbound message: {:?}", e);
+                            }
+                        }
+                        None => {
+                            warn!("Inbound channel was closed");
+                            break;
                         }
                     }
-                    None => {
-                        warn!("Inbound channel was closed");
-                        break;
-                    }
                 }
-            }
-            outbound_msg = outbound_receiver.recv() => {
-                match outbound_msg {
-                    Some(msg) => {
-                        if let Err(e) = sender.send(msg).await {
-                        warn!("Failed to send outbound message: {:?}", e);
+                outbound_msg = outbound_receiver.recv() => {
+                    match outbound_msg {
+                        Some(msg) => {
+                            if let Err(e) = sender.send(msg).await {
+                                warn!("Failed to send outbound message: {:?}", e);
+                            }
+                        }
+                        None => {
+                            warn!("Outbound channel was closed");
+                            break;
                         }
                     }
-                    None => {
-                        warn!("Outbound channel was closed");
-                        break;
-                    }
                 }
-            }
             }
         }
         None
