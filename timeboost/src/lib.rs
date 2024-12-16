@@ -196,17 +196,6 @@ impl Timeboost {
 
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
     pub async fn go(mut self, committee_size: usize) -> Result<()> {
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
-        error!("timeboost starting");
         let app_tx = self.app_tx.clone();
         let rpc_handle = Self::start_rpc_api(app_tx, self.rpc_port).await;
         let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port).await;
