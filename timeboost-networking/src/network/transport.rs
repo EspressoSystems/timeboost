@@ -21,9 +21,13 @@ use tracing::{debug, error, info, instrument, warn};
 /// Duration between pings for latency measurements
 const PING_INTERVAL: Duration = Duration::from_secs(10);
 /// Size of the channel for sennding established connections
-const MAX_CONNECTIONS: usize = 30;
+const CONNECTION_BUFFER_SIZE: usize = 30;
 /// Size of the channel for ping/pong protocol
-const MAX_PING_CHANNEL_SIZE: usize = 150;
+const PING_BUFFER_SIZE: usize = 150;
+/// Size of the ping protocol message
+const PING_SIZE: usize = 12;
+/// Maximum channel size for inbound/outbound messages
+const NETWORK_BUFFER_SIZE: usize = 1_000;
 
 // TODO: no need to wrap bytes anymore
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,7 +90,7 @@ impl Transport {
             .expect("Unable to bind to socket");
 
         let handle = Handle::current();
-        let (tx_connection, rx_connection) = mpsc::channel(MAX_CONNECTIONS);
+        let (tx_connection, rx_connection) = mpsc::channel(CONNECTION_BUFFER_SIZE);
 
         // Spawn a worker for each node we want a connection to
         for (remote_id, addr) in to_connect.iter() {
@@ -94,7 +98,7 @@ impl Transport {
                 continue;
             }
             // Channel for the TcpStream going from the Server to the Worker
-            let (sender, receiver) = mpsc::channel(MAX_CONNECTIONS);
+            let (sender, receiver) = mpsc::channel(CONNECTION_BUFFER_SIZE);
 
             let socket = addr
                 .parse::<std::net::SocketAddr>()
@@ -323,7 +327,7 @@ impl Worker {
         } = connection;
         debug!("Connected to {}", remote_id);
         let (reader, writer) = stream.into_split();
-        let (pong_sender, pong_receiver) = mpsc::channel(MAX_PING_CHANNEL_SIZE);
+        let (pong_sender, pong_receiver) = mpsc::channel(PING_BUFFER_SIZE);
         let write_fut = Self::handle_write_stream(
             writer,
             receiver,
@@ -461,8 +465,8 @@ impl Worker {
     }
 
     async fn make_connection(&self) -> Option<WorkerConnection> {
-        let (network_in_sender, network_in_receiver) = mpsc::channel(1_000);
-        let (network_out_sender, network_out_receiver) = mpsc::channel(1_000);
+        let (network_in_sender, network_in_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
+        let (network_out_sender, network_out_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
         let connection = Connection {
             remote_id: self.remote_id,
             tx: network_out_sender,
@@ -484,9 +488,8 @@ fn sample_delay(max: Duration) -> Duration {
     ThreadRng::default().gen_range(start..max)
 }
 
-const PING_SIZE: usize = 12;
 fn encode_ping(message: i64) -> [u8; PING_SIZE] {
-    let mut m = [0u8; 12];
+    let mut m = [0u8; PING_SIZE];
     m[4..].copy_from_slice(&message.to_le_bytes());
     m
 }
