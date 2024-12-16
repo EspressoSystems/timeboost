@@ -64,7 +64,7 @@ impl TestableNetwork for BasicNetworkTest {
             handles.spawn(async move {
                 let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
-                let _ = rx_ready.await;
+                rx_ready.await.expect("failed to connect to remote nodes");
                 let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);
