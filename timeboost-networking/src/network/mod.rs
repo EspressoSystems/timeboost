@@ -121,7 +121,7 @@ impl Network {
             tx_ready,
         ));
         Self {
-            keypair: keypair,
+            keypair,
             connections,
             nodes: to_connect,
             network_rx: inbound_receiver,
