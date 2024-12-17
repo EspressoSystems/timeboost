@@ -73,8 +73,6 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
 /// communication between the transport layer and the application layer.
 #[derive(Debug)]
 pub struct Network {
-    /// Handle for the main task
-    _main_task: JoinHandle<()>,
     /// Connections received from the transport layer
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
     /// Mapping from public keys to peer Id
@@ -98,7 +96,7 @@ impl Network {
         .await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
-        let main_task = spawn(Self::run(
+        spawn(Self::run(
             local_id,
             transport,
             Arc::clone(&connections),
@@ -107,7 +105,6 @@ impl Network {
             tx_ready,
         ));
         Self {
-            _main_task: main_task,
             connections,
             nodes: to_connect,
             network_rx: inbound_receiver,
