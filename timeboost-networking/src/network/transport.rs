@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
-use tokio::runtime::Handle;
+use tokio::spawn;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -90,8 +90,6 @@ impl Transport {
         let server = TcpListener::bind(local_socket)
             .await
             .expect("Unable to bind to socket");
-
-        let handle = Handle::current();
         let (tx_connection, rx_connection) = mpsc::channel(CONNECTION_BUFFER_SIZE);
 
         // Spawn a worker for each node we want a connection to
@@ -110,7 +108,7 @@ impl Transport {
                 "Duplicated address {} in list",
                 socket
             );
-            handle.spawn(
+            spawn(
                 Worker {
                     local_id,
                     _local_addr: local_socket,
@@ -124,7 +122,7 @@ impl Transport {
         }
         // Channel for stopping the server
         let (tx_stop, rx_stop) = mpsc::channel(1);
-        let server_handle = handle.spawn(async move {
+        let server_handle = spawn(async move {
             Server {
                 local_id,
                 server,

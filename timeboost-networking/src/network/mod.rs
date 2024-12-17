@@ -7,7 +7,7 @@ use multisig::PublicKey;
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::PeerConfig;
 use tokio::{
-    runtime::Handle,
+    spawn,
     sync::{
         mpsc::{self, Sender},
         oneshot, RwLock,
@@ -96,10 +96,9 @@ impl Network {
             to_connect.clone().into_values().collect(),
         )
         .await;
-        let handle = Handle::current();
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
-        let main_task = handle.spawn(Self::run(
+        let main_task = spawn(Self::run(
             local_id,
             transport,
             Arc::clone(&connections),
@@ -128,7 +127,6 @@ impl Network {
     ) {
         let connection_receiver = transport.rx_connection();
         let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
-        let handle = Handle::current();
         let mut not_yet_connected: Vec<_> = to_connect.values().cloned().collect();
         while let Some(connection) = connection_receiver.recv().await {
             let remote_id = connection.remote_id;
@@ -144,7 +142,7 @@ impl Network {
                 .write()
                 .await
                 .insert(connection.remote_id, outbound_sender);
-            let task = handle.spawn(Self::connection_task(
+            let task = spawn(Self::connection_task(
                 connection,
                 sender.clone(),
                 network_tx.clone(),
