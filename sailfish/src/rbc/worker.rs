@@ -225,8 +225,11 @@ impl<C: RawComm> Worker<C> {
                     }
                     // Terminate operation.
                     Some(Command::Shutdown(reply)) => {
+                        tracing::error!("shutdown comm");
                         let _ = self.comm.shutdown().await;
+                        tracing::error!("send reply");
                         let _ = reply.send(());
+                        tracing::error!("sent reply");
                         return
                     }
                     None => {
