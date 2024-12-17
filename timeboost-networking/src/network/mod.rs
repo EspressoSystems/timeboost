@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use futures::future::join_all;
 use libp2p::PeerId;
@@ -100,7 +103,7 @@ impl Network {
             local_id,
             transport,
             Arc::clone(&connections),
-            to_connect.clone(),
+            to_connect.iter().map(|(_, node)| node.0).collect(),
             inbound_sender,
             tx_ready,
         ));
@@ -118,13 +121,12 @@ impl Network {
         local_id: PeerId,
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
-        to_connect: HashMap<PublicKey, (PeerId, String)>,
+        mut to_connect: HashSet<PeerId>,
         network_tx: Sender<NetworkMessage>,
         tx_ready: oneshot::Sender<()>,
     ) {
         let connection_receiver = transport.rx_connection();
         let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
-        let mut not_yet_connected: Vec<_> = to_connect.values().cloned().collect();
         while let Some(connection) = connection_receiver.recv().await {
             let remote_id = connection.remote_id;
             trace!("Received connection from: {}", remote_id);
@@ -147,8 +149,8 @@ impl Network {
             ));
 
             handles.insert(remote_id, task);
-            not_yet_connected.retain(|(id, _)| id != &remote_id);
-            if not_yet_connected.len() == 1 {
+            to_connect.remove(&remote_id);
+            if to_connect.len() == 1 {
                 // only our own peer id left
                 break;
             }
