@@ -99,11 +99,21 @@ impl Network {
         .await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
+        let remote_nodes: HashSet<_> = to_connect
+            .iter()
+            .filter_map(|(_, node)| {
+                if node.0 != local_id {
+                    Some(node.0)
+                } else {
+                    None
+                }
+            })
+            .collect();
         spawn(Self::run(
             local_id,
             transport,
             Arc::clone(&connections),
-            to_connect.iter().map(|(_, node)| node.0).collect(),
+            remote_nodes,
             inbound_sender,
             tx_ready,
         ));
@@ -150,8 +160,7 @@ impl Network {
 
             handles.insert(remote_id, task);
             to_connect.remove(&remote_id);
-            if to_connect.len() == 1 {
-                // only our own peer id left
+            if to_connect.is_empty() {
                 break;
             }
         }
