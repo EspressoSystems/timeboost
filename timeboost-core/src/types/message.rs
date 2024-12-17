@@ -29,10 +29,10 @@ pub enum Message<Status = Validated> {
 impl<S> Message<S> {
     pub fn round(&self) -> RoundNumber {
         match self {
-            Message::Vertex(v) => *v.data().round().data(),
-            Message::Timeout(t) => t.data().timeout().data().round(),
-            Message::NoVote(nv) => nv.data().no_vote().data().round(),
-            Message::TimeoutCert(c) => c.data().round(),
+            Self::Vertex(v) => *v.data().round().data(),
+            Self::Timeout(t) => t.data().timeout().data().round(),
+            Self::NoVote(nv) => nv.data().no_vote().data().round(),
+            Self::TimeoutCert(c) => c.data().round(),
         }
     }
 }

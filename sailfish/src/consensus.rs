@@ -150,18 +150,17 @@ impl Consensus {
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
-    #[instrument(level="info", skip_all, fields(node = %self.public_key(), round = %self.round()))]
+    #[instrument(level="info", skip_all, fields(n = %self.public_key(), r = %self.round()))]
     pub fn go(&mut self, d: Dag, e: Evidence) -> Vec<Action> {
-        let genesis_round = RoundNumber::genesis();
-        let r = d.max_round().unwrap_or(genesis_round);
+        let r = d.max_round().unwrap_or(RoundNumber::genesis());
 
         self.dag = d;
         self.round = r;
 
-        if r == genesis_round {
+        if r == RoundNumber::genesis() {
             let vtx = Vertex::new(r, Evidence::Genesis, &self.keypair, self.deterministic);
             let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
-            vec![Action::SendProposal(env), Action::ResetTimer(genesis_round)]
+            vec![Action::SendProposal(env), Action::ResetTimer(r)]
         } else {
             self.advance_from_round(r, e)
         }
@@ -169,14 +168,14 @@ impl Consensus {
 
     /// Main entry point to process a `Message`.
     #[instrument(level = "trace", skip_all, fields(
-        node      = %self.public_key(),
-        round     = %self.round,
-        committed = %self.committed_round,
-        buffered  = %self.buffer.depth(),
-        delivered = %self.delivered.len(),
-        leaders   = %self.leader_stack.len(),
-        timeouts  = %self.timeouts.len(),
-        dag       = %self.dag.depth())
+        n = %self.public_key(),
+        r = %self.round,
+        c = %self.committed_round,
+        b = %self.buffer.depth(),
+        d = %self.delivered.len(),
+        l = %self.leader_stack.len(),
+        t = %self.timeouts.len(),
+        g = %self.dag.depth())
     )]
     pub fn handle_message(&mut self, m: Message<Validated>) -> Vec<Action> {
         match m {
@@ -191,10 +190,7 @@ impl Consensus {
     ///
     /// This means we did not receive a leader vertex in a round and
     /// results in a timeout message being broadcasted to all nodes.
-    #[instrument(level = "trace", skip_all, fields(
-        node  = %self.public_key(),
-        round = %self.round())
-    )]
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round()))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
         let e = if r == RoundNumber::genesis() {
@@ -205,7 +201,6 @@ impl Consensus {
         };
         let t = TimeoutMessage::new(e, &self.keypair, self.deterministic);
         let e = Envelope::signed(t, &self.keypair, self.deterministic);
-        tracing::error!("timeout: r: {}, id: {}", r, self.id);
         vec![Action::SendTimeout(e)]
     }
 
@@ -216,10 +211,9 @@ impl Consensus {
     /// DAG elements yet), we store it in a buffer and retry adding it once we have
     /// received another vertex which we sucessfully added.
     #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %e.data().round().data(),
-        source = %e.data().source())
+        n = %self.public_key(),
+        r = %self.round,
+        v = %e.data())
     )]
     pub fn handle_vertex(&mut self, e: Envelope<Vertex, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -227,13 +221,7 @@ impl Consensus {
         let v = e.into_data();
 
         if self.dag.contains(&v) {
-            debug!(
-                round  = %self.round,
-                ours   = %(self.public_key() == *v.source()),
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex already in dag"
-            );
+            debug!(n = %self.public_key(), r = %self.round, %v, "vertex already in dag");
             return actions;
         }
 
@@ -246,15 +234,8 @@ impl Consensus {
             .entry(*v.round().data())
             .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
 
-        if let Err(err) = accum.add(v.round().clone()) {
-            warn!(
-                node   = %self.id,
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                err    = %err,
-                "failed to add round to evidence"
-            );
+        if let Err(e) = accum.add(v.round().clone()) {
+            warn!(n = %self.id, r = %self.round, %v, %e, "failed to add round to evidence");
             if accum.is_empty() {
                 self.rounds.remove(v.round().data());
             }
@@ -263,51 +244,47 @@ impl Consensus {
 
         let quorum = self.committee.quorum_size().get();
 
-        match self.try_to_add_to_dag(&v) {
-            Err(()) => {
+        let r = *v.round().data();
+        match self.try_to_add_to_dag(v) {
+            Err(v) => {
                 self.buffer.add(v);
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
             Ok(a) => {
                 actions.extend(a);
-                let r = *v.round().data();
                 if r >= self.round && self.dag.vertex_count(r) >= quorum {
                     if let Some(e) = self.evidence(r) {
                         actions.extend(self.advance_from_round(r, e))
                     } else {
                         warn!(
-                            node   = %self.public_key(),
-                            round  = %self.round,
-                            vround = %r,
-                            source = %v.source(),
+                            n = %self.public_key(),
+                            r = %self.round,
+                            v = %r,
                             "no evidence for vertex round exists outside of dag"
                         )
                     }
                 }
-                for v in self
-                    .buffer
-                    .take_all()
-                    .into_values()
-                    .flat_map(|inner_map| inner_map.into_values())
-                {
-                    if let Ok(a) = self.try_to_add_to_dag(&v) {
-                        actions.extend(a);
-                        let r = *v.round().data();
-                        if r >= self.round && self.dag.vertex_count(r) >= quorum {
-                            if let Some(e) = self.evidence(r) {
-                                actions.extend(self.advance_from_round(r, e))
-                            } else {
-                                warn!(
-                                    node   = %self.public_key(),
-                                    round  = %self.round,
-                                    vround = %r,
-                                    source = %v.source(),
-                                    "no evidence for vertex round exists outside of dag"
-                                )
+                for v in self.buffer.drain().map(|(.., v)| v) {
+                    let r = *v.round().data();
+                    match self.try_to_add_to_dag(v) {
+                        Ok(a) => {
+                            actions.extend(a);
+                            if r >= self.round && self.dag.vertex_count(r) >= quorum {
+                                if let Some(e) = self.evidence(r) {
+                                    actions.extend(self.advance_from_round(r, e))
+                                } else {
+                                    warn!(
+                                        n = %self.public_key(),
+                                        r = %self.round,
+                                        v = %r,
+                                        "no evidence for vertex round exists outside of dag"
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        self.buffer.add(v);
+                        Err(v) => {
+                            self.buffer.add(v);
+                        }
                     }
                 }
 
@@ -318,10 +295,7 @@ impl Consensus {
         actions
     }
 
-    #[instrument(level = "trace", skip_all, fields(
-        node = %self.public_key(),
-        round = %self.round())
-    )]
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round()))]
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -329,9 +303,9 @@ impl Consensus {
 
         if timeout_round < self.round {
             debug!(
-                node  = %self.public_key(),
-                round = %self.round,
-                r     = %timeout_round,
+                n = %self.public_key(),
+                r = %self.round,
+                t = %timeout_round,
                 "ignoring old no-vote"
             );
             return actions;
@@ -341,9 +315,9 @@ impl Consensus {
         // round to get correct leader
         if self.public_key() != self.committee.leader(*timeout_round as usize + 1) {
             warn!(
-                node  = %self.public_key(),
-                round = %self.round,
-                r     = %timeout_round,
+                n = %self.public_key(),
+                r = %self.round,
+                t = %timeout_round,
                 "received no vote for round in which we are not the leader"
             );
             return actions;
@@ -372,11 +346,7 @@ impl Consensus {
                 actions.extend(self.advance_leader_with_no_vote_certificate(timeout_round, tc, nc));
             }
             Err(e) => {
-                warn!(
-                    r   = %timeout_round,
-                    err = %e,
-                    "could not add no-vote to vote accumulator"
-                );
+                warn!(t = %timeout_round, %e, "could not add no-vote to vote accumulator");
                 if accum.is_empty() {
                     self.rounds.remove(&timeout_round);
                 }
@@ -392,10 +362,10 @@ impl Consensus {
     /// Eventually, if we receive more than 2f timeouts we form a timeout certificate and
     /// broadcast that too.
     #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        source = %e.signing_key(),
-        tround = %e.data().timeout().data().round())
+        n = %self.public_key(),
+        r = %self.round,
+        s = %e.signing_key(),
+        t = %e.data().timeout().data().round())
     )]
     pub fn handle_timeout(&mut self, e: Envelope<TimeoutMessage, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -404,9 +374,9 @@ impl Consensus {
 
         if timeout_round < self.round {
             debug!(
-                node  = %self.public_key(),
-                round = %self.round,
-                r     = %timeout_round,
+                n = %self.public_key(),
+                r = %self.round,
+                t = %timeout_round,
                 "ignoring old timeout"
             );
             return actions;
@@ -423,7 +393,7 @@ impl Consensus {
         let votes = accum.votes(&commit);
 
         if let Err(e) = accum.add(timeout) {
-            warn!(r = %timeout_round, err = %e, "could not add timeout to vote accumulator");
+            warn!(t = %timeout_round, %e, "could not add timeout to vote accumulator");
             if accum.is_empty() {
                 self.timeouts.remove(&timeout_round);
             }
@@ -447,8 +417,8 @@ impl Consensus {
                 actions.push(Action::SendTimeoutCert(cert.clone()))
             } else {
                 error!(
-                    node  = %self.public_key(),
-                    round = %self.round,
+                    n = %self.public_key(),
+                    r = %self.round,
                     "no timeout certificate despite enough votes"
                 );
             }
@@ -465,9 +435,9 @@ impl Consensus {
     /// leader vertex), we can move to the next round and include the certificate in
     /// our next vertex proposal.
     #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        tround = %cert.data().round())
+        n = %self.public_key(),
+        r = %self.round,
+        t = %cert.data().round())
     )]
     pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -476,9 +446,9 @@ impl Consensus {
 
         if round < self.round() {
             debug!(
-                node  = %self.public_key(),
-                round = %self.round,
-                r     = %round,
+                n = %self.public_key(),
+                r = %self.round,
+                t = %round,
                 "ignoring old timeout certificate"
             );
             return actions;
@@ -506,9 +476,9 @@ impl Consensus {
     ///   2. we have a timeout certificate for `r`, and,
     ///   3. if we are leader of `r + 1`, we have a no-vote certificate for `r`.
     #[instrument(level = "trace", skip_all, fields(
-        node = %self.public_key(),
-        round = %self.round,
-        from = %round)
+        n = %self.public_key(),
+        r = %self.round,
+        x = %round)
     )]
     fn advance_from_round(&mut self, round: RoundNumber, evidence: Evidence) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -518,7 +488,7 @@ impl Consensus {
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let v = self.create_new_vertex(self.round, evidence);
-            actions.extend(self.add_and_broadcast_vertex(v.0));
+            actions.extend(self.broadcast_vertex(v.0));
             self.clear_aggregators(self.round);
             self.metrics
                 .round_duration
@@ -550,7 +520,7 @@ impl Consensus {
             actions.push(Action::ResetTimer(self.round));
             let NewVertex(v) = self.create_new_vertex(self.round, tc.into());
             debug_assert!(v.evidence().is_timeout());
-            actions.extend(self.add_and_broadcast_vertex(v));
+            actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
             self.metrics
                 .round_duration
@@ -576,9 +546,9 @@ impl Consensus {
     }
 
     #[instrument(level = "trace", skip_all, fields(
-        node  = %self.public_key(),
-        round = %self.round,
-        from  = %round)
+        n = %self.public_key(),
+        r = %self.round,
+        x = %round)
     )]
     fn advance_leader_with_no_vote_certificate(
         &mut self,
@@ -592,9 +562,8 @@ impl Consensus {
         actions.push(Action::ResetTimer(self.round));
         let NewVertex(mut v) = self.create_new_vertex(self.round, tc.into());
         v.set_no_vote(nc);
-        actions.extend(self.add_and_broadcast_vertex(v));
+        actions.extend(self.broadcast_vertex(v));
         self.clear_aggregators(self.round);
-        self.no_votes.clear();
         self.metrics
             .round_duration
             .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -604,18 +573,10 @@ impl Consensus {
     }
 
     /// Add a new vertex to the DAG and send it as a proposal to nodes.
-    #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %v.round().data(),
-        source = %v.source())
-    )]
-    fn add_and_broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
-        self.metrics.dag_depth.set(self.dag.depth());
-        let mut actions = Vec::new();
+    #[instrument(level = "trace", skip_all, fields( n = %self.public_key(), r = %self.round, %v))]
+    fn broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
         let e = Envelope::signed(v, &self.keypair, self.deterministic);
-        actions.push(Action::SendProposal(e));
-        actions
+        vec![Action::SendProposal(e)]
     }
 
     /// Create a new vertex for the given round `r`.
@@ -624,9 +585,9 @@ impl Consensus {
     /// leader vertex in `r - 1`. In that case a timeout certificate (and potentially
     /// a no-vote certificate) is required.
     #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %r)
+        n = %self.public_key(),
+        r = %self.round,
+        v = %r)
     )]
     fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex {
         let previous = self.dag.vertices(r - 1);
@@ -650,33 +611,28 @@ impl Consensus {
     /// If all edges of the vertex point to other vertices in the DAG we add the
     /// vertex to the DAG. If we also have more than 2f vertices for the given
     /// round, we can try to commit the leader vertex of a round.
-    #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %v.round().data(),
-        source = %v.source())
-    )]
-    fn try_to_add_to_dag(&mut self, v: &Vertex) -> Result<Vec<Action>, ()> {
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round, %v))]
+    fn try_to_add_to_dag(&mut self, v: Vertex) -> Result<Vec<Action>, Vertex> {
         let r = *v.round().data();
-        if !v.edges().all(|w| self.dag.vertex(r - 1, w).is_some()) {
-            if r.saturating_sub(self.round.into()) <= 2 {
+
+        if v.edges().any(|w| self.dag.vertex(r - 1, w).is_none()) {
+            if self.round + 2 >= r {
                 debug!(
-                    node    = %self.public_key(),
-                    round   = %self.round,
-                    vround  = %r,
+                    n = %self.public_key(),
+                    r = %self.round,
+                    v = %r,
                     "not all edges are resolved in dag"
                 );
-                return Err(());
+                return Err(v);
             }
-
-            if !v.edges().all(|w| self.buffer.vertex(r - 1, w).is_some()) {
+            if v.edges().any(|w| self.buffer.vertex(r - 1, w).is_none()) {
                 warn!(
-                    node    = %self.public_key(),
-                    round   = %self.round,
-                    vround  = %r,
-                    "Node is more than two rounds behind, not all edges are resolved in buffer"
+                    n = %self.public_key(),
+                    r = %self.round,
+                    v = %r,
+                    "not all edges are resolved in buffer"
                 );
-                return Err(());
+                return Err(v);
             }
             for w in self.buffer.drain_round(r - 1) {
                 self.dag.add(w)
@@ -684,35 +640,35 @@ impl Consensus {
             self.buffer.remove(r);
         }
 
-        self.dag.add(v.clone());
+        let is_genesis_vertex = v.is_genesis();
+
+        self.dag.add(v);
         self.metrics.dag_depth.set(self.dag.depth());
 
-        if v.is_genesis() {
+        if is_genesis_vertex {
             // A genesis vertex has no edges to prior rounds.
             return Ok(Vec::new());
         }
 
-        if *v.round().data() <= self.committed_round {
+        if r <= self.committed_round {
             debug!(
-                node      = %self.public_key(),
-                round     = %self.round,
-                committed = %self.committed_round,
-                vround    = %v.round().data(),
-                source    = %v.source(),
+                n = %self.public_key(),
+                r = %self.round,
+                c = %self.committed_round,
+                v = %r,
                 "leader has already been committed"
             );
             return Ok(Vec::new());
         }
 
-        if self.dag.vertex_count(*v.round().data()) >= self.committee.quorum_size().get() {
+        if self.dag.vertex_count(r) >= self.committee.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
-            let Some(l) = self.leader_vertex(*v.round().data() - 1).cloned() else {
+            let Some(l) = self.leader_vertex(r - 1).cloned() else {
                 debug!(
-                    node   = %self.public_key(),
-                    round  = %self.round,
-                    vround = %v.round().data(),
-                    source = %v.source(),
-                    "no leader vertex in vround - 1 => can not commit"
+                    n = %self.public_key(),
+                    r = %self.round,
+                    v = %r,
+                    "no leader vertex in vertex round v - 1 => can not commit"
                 );
                 return Ok(Vec::new());
             };
@@ -720,7 +676,7 @@ impl Consensus {
             // leader vertex.
             if self
                 .dag
-                .vertices(*v.round().data())
+                .vertices(r)
                 .filter(|v| v.has_edge(l.source()))
                 .count()
                 >= self.committee.quorum_size().get()
@@ -740,22 +696,17 @@ impl Consensus {
     /// In addition to committing the argument vertex, this will also commit leader
     /// vertices between the last previously committed leader vertex and the current
     /// leader vertex, if there is a path between them.
-    #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %v.round().data(),
-        source = %v.source())
-    )]
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round, %v))]
     fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
         debug_assert!(*v.round().data() >= self.committed_round);
         self.leader_stack.push(v.clone());
         for r in (*self.committed_round + 1..**v.round().data()).rev() {
-            let Some(l) = self.leader_vertex(RoundNumber::new(r)).cloned() else {
+            let Some(l) = self.leader_vertex(r.into()).cloned() else {
                 debug! {
-                    node  = %self.public_key(),
-                    round = %self.round,
-                    r     = %r,
-                    "no leader vertex in round r => can not commit"
+                    n = %self.public_key(),
+                    r = %self.round,
+                    x = %r,
+                    "no leader vertex in round x => can not commit"
                 }
                 continue;
             };
@@ -776,7 +727,7 @@ impl Consensus {
     ///
     /// Leader vertices are ordered on the leader stack. The other vertices of a round
     /// are ordered arbitrarily, but consistently, relative to the leaders.
-    #[instrument(level = "trace", skip_all, fields(node = %self.public_key(), round = %self.round))]
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round))]
     fn order_vertices(&mut self) -> Vec<Action> {
         let mut actions = Vec::new();
         while let Some(v) = self.leader_stack.pop() {
@@ -792,27 +743,27 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(node = %self.public_key(), round = %r, source = %s, "deliver");
+                info!(n = %self.public_key(), v = %to_deliver, "deliver");
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
         }
-        self.gc(self.committed_round);
+        self.gc();
         actions
     }
 
     /// Cleanup the DAG and other collections.
     #[instrument(level = "trace", skip_all, fields(
-        node      = %self.public_key(),
-        round     = %self.round,
-        committed = %committed)
+        n = %self.public_key(),
+        r = %self.round,
+        c = %self.committed_round)
     )]
-    fn gc(&mut self, committed: RoundNumber) {
-        if *committed < 2 {
+    fn gc(&mut self) {
+        if *self.committed_round < self.committee.size().get() as u64 {
             return;
         }
 
-        let r = committed - 2;
+        let r = self.committed_round - self.committee.size().get() as u64;
         self.dag.remove(r);
         self.buffer.remove(r);
         self.delivered.retain(|(x, _)| *x >= r);
@@ -824,9 +775,9 @@ impl Consensus {
 
     /// Remove vote aggregators up to the given round.
     #[instrument(level = "trace", skip_all, fields(
-        node  = %self.public_key(),
-        round = %self.round,
-        to    = %to)
+        n = %self.public_key(),
+        r = %self.round,
+        x = %to)
     )]
     fn clear_aggregators(&mut self, to: RoundNumber) {
         if to == RoundNumber::genesis() {
@@ -846,31 +797,15 @@ impl Consensus {
     /// vertex needs to have either a path to the leader vertex of the
     /// previous round, or a timeout certificate and (if from the leader) a
     /// no-vote certificate.
-    #[instrument(level = "trace", skip_all, fields(
-        node   = %self.public_key(),
-        round  = %self.round,
-        vround = %v.round().data())
-    )]
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round, %v))]
     fn is_valid(&self, v: &Vertex) -> bool {
         if v.is_genesis() {
-            info!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "accepting genesis vertex"
-            );
+            info!(n = %self.public_key(), r = %self.round, %v, "accepting genesis vertex");
             return true;
         }
 
-        if *self.committed_round > 2 && *v.round().data() < self.committed_round - 2 {
-            debug!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
-                "vertex round is too old"
-            );
+        if *v.round().data() < self.dag.min_round().unwrap_or_else(RoundNumber::genesis) {
+            debug!(n = %self.public_key(), r = %self.round, %v, "vertex round is too old");
             return false;
         }
 
@@ -884,10 +819,9 @@ impl Consensus {
 
         if v.no_vote_cert().is_none() {
             warn!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vround = %v.round().data(),
-                source = %v.source(),
+                n = %self.public_key(),
+                r = %self.round,
+                v = %v,
                 "vertex is missing no-vote certificate"
             );
             return false;

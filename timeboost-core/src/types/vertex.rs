@@ -102,23 +102,14 @@ impl Vertex {
         self
     }
 
-    pub fn dbg_edges(&self) {
-        println! { "{} -> {} -> {:?}",
-            self.source(),
-            self.round().data(),
-            self.edges().collect::<Vec<_>>()
-        }
+    pub fn dbg(&self) -> String {
+        format!("{} -> {:?}", self, self.edges().collect::<Vec<_>>())
     }
 }
 
 impl Display for Vertex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Vertex {{ round := {}, source := {} }}",
-            self.round.data(),
-            self.source
-        )
+        write!(f, "Vertex({},{})", self.round.data(), self.source)
     }
 }
 

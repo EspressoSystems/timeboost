@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
+use sailfish::rbc::{self, Rbc};
+use sailfish::sailfish::Sailfish;
 use sailfish::sailfish::SailfishInitializerBuilder;
-use sailfish::{rbc::Rbc, sailfish::Sailfish};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
@@ -65,7 +66,8 @@ impl TestableNetwork for BasicNetworkTest {
                 let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
                 rx_ready.await.expect("failed to connect to remote nodes");
-                let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
+                let cfg = rbc::Config::new(kpr.clone(), committee_clone.clone());
+                let net = Rbc::new(net_inner, cfg);
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);
                 tracing::debug!(%i, "created testnet");

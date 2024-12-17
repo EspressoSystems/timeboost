@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use sailfish::rbc::{self, Rbc};
 use sailfish::{
     coordinator::Coordinator,
-    rbc::Rbc,
     sailfish::{Sailfish, SailfishInitializerBuilder},
 };
 use sequencer::{
@@ -152,7 +152,8 @@ impl HasInitializer for Timeboost {
                 .enumerate()
                 .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
         );
-        let rbc = Rbc::new(network, initializer.keypair.clone(), committee.clone());
+        let cfg = rbc::Config::new(initializer.keypair.clone(), committee.clone());
+        let rbc = Rbc::new(network, cfg);
 
         let sailfish_initializer = SailfishInitializerBuilder::default()
             .id(initializer.id)

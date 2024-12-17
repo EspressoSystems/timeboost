@@ -3,7 +3,7 @@ use std::time::Duration;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::Consensus;
 use sailfish::coordinator::Coordinator;
-use sailfish::rbc::Rbc;
+use sailfish::rbc::{self, Rbc};
 use timeboost_core::types::event::SailfishEventType;
 use timeboost_core::types::NodeId;
 use timeboost_utils::types::logging::init_logging;
@@ -44,7 +44,7 @@ fn mk_host<T, const N: usize>(
         let c = c.clone();
         async move {
             let comm = TurmoilComm::create(addr, peers).await?;
-            let rbc = Rbc::new(comm, k.clone(), c.clone());
+            let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
             let cons = Consensus::new(id, k, c);
             let mut coor = Coordinator::new(id, rbc, cons);
             let mut actions = coor.start().await?;
@@ -88,7 +88,7 @@ fn small_committee() {
 
     sim.client("C", async move {
         let comm = TurmoilComm::create("0.0.0.0:9002", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(3, k, c);
         let mut coor = Coordinator::new(3, rbc, cons);
         let mut actions = coor.start().await?;
@@ -143,7 +143,7 @@ fn medium_committee() {
 
     sim.client("E", async move {
         let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
         let mut actions = coor.start().await?;
@@ -194,12 +194,12 @@ fn medium_committee_partition_network() {
 
     sim.client("E", async move {
         let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
-        let rbc = Rbc::new(comm, k.clone(), c.clone());
+        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
         let mut actions = coor.start().await?;
         loop {
-            
+
             for a in actions.clone() {
                 if let Some(event) = coor.execute(a).await? {
                     if let SailfishEventType::Committed { round, .. } = event.event {
@@ -236,7 +236,7 @@ fn medium_committee_partition_network() {
                     turmoil::repair("E", "D");
                 }
             }
-            
+
         }
     });
 

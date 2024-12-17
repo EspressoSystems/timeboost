@@ -161,7 +161,7 @@ pub trait TestableNetwork {
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Coordinator Error: {}", e)
+                        tracing::warn!("Coordinator Error: {}", e)
                     }
                 },
                 shutdown_result = shutdown_rx.changed() => {

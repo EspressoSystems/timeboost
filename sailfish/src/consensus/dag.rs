@@ -19,6 +19,17 @@ impl Dag {
         }
     }
 
+    pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
+    where
+        I: IntoIterator<Item = Vertex>,
+    {
+        let mut dag = Self::new(max_keys);
+        for v in entries {
+            dag.add(v);
+        }
+        dag
+    }
+
     /// Adds a new vertex to the DAG in its corresponding round and source position
     pub fn add(&mut self, v: Vertex) {
         debug_assert!(!self.contains(&v));
@@ -44,9 +55,14 @@ impl Dag {
         self.elements.keys().copied()
     }
 
-    /// Returns the highest round number present in the DAG, if any
+    /// Returns the highest round number present in the DAG, if any.
     pub fn max_round(&self) -> Option<RoundNumber> {
-        self.elements.keys().max().cloned()
+        self.elements.keys().max().copied()
+    }
+
+    /// Returns the lowest round number present in the DAG, if any.
+    pub fn min_round(&self) -> Option<RoundNumber> {
+        self.elements.keys().min().copied()
     }
 
     /// Checks if a specific vertex exists in the DAG
@@ -67,9 +83,11 @@ impl Dag {
         self.elements.get(&r)?.get(s)
     }
 
-    /// Take all elements in the dag
-    pub fn take_all(&mut self) -> BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>> {
+    /// Consume the DAG as an iterator over its elements.
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex)> {
         std::mem::take(&mut self.elements)
+            .into_iter()
+            .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
@@ -129,36 +147,24 @@ impl Dag {
         false
     }
 
-    pub fn dbg_dag(&self) {
-        for (r, e) in &self.elements {
-            println!("{r} -> {{");
-            for v in e.values() {
-                print!("  ");
-                v.dbg_edges();
-            }
-            println!("}}")
-        }
-    }
-
-    pub fn max_keys(&self) -> NonZeroUsize {
-        self.max_keys
-    }
-
-    pub fn to_entries(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
+    /// Iterate over the DAG elements.
+    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
         self.elements
             .iter()
             .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))
     }
 
-    pub fn from_entries<I>(entries: I, max_keys: NonZeroUsize) -> Self
-    where
-        I: IntoIterator<Item = (RoundNumber, PublicKey, Vertex)>,
-    {
-        let mut dag = Self::new(max_keys);
-        for (_, _, vertex) in entries {
-            dag.add(vertex);
+    /// Create a string representation of the DAG for debugging purposes.
+    pub fn dbg(&self) -> String {
+        let mut s = String::from("\n\n");
+        for (r, e) in &self.elements {
+            s += &format!("{r} -> {{\n");
+            for v in e.values() {
+                s += &format!("  {}\n", v.dbg())
+            }
+            s += "}\n"
         }
-        dag
+        s
     }
 }
 

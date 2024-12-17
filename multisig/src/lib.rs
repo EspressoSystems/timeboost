@@ -9,7 +9,6 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use data_encoding::BASE64URL_NOPAD;
 use ed25519_compact as ed25519;
 use serde::{Deserialize, Serialize};
 
@@ -201,13 +200,13 @@ impl fmt::Debug for Keypair {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", BASE64URL_NOPAD.encode(&self.as_bytes()))
+        write!(f, "{}", bs58::encode(&self.as_bytes()).into_string())
     }
 }
 
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", BASE64URL_NOPAD.encode(&self.as_bytes()))
+        write!(f, "{}", bs58::encode(&self.as_bytes()).into_string())
     }
 }
 
