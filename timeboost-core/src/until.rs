@@ -4,6 +4,8 @@ use tokio::{signal, sync::watch};
 // TODO: Reduce when we remove libp2p
 const ROUND_TIMEOUT_SECS: u64 = 70;
 const MAX_ROUND_TIMEOUTS: u64 = 15;
+const API_REQUEST_TIMER_SECS: u64 = 1;
+const API_REQUEST_TIMEOUT_MILLIS: u64 = 850;
 
 pub async fn run_until(
     port: u16,
@@ -19,7 +21,9 @@ pub async fn run_until(
 
     let mut timer = sleep(Duration::from_secs(timeout)).fuse().boxed();
 
-    let mut req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
+    let mut req_timer = sleep(Duration::from_secs(API_REQUEST_TIMER_SECS))
+        .fuse()
+        .boxed();
 
     let host = if is_docker { "172.20.0.2" } else { "localhost" };
 
@@ -36,9 +40,9 @@ pub async fn run_until(
                 anyhow::bail!("Watchdog timeout")
             }
             _ = &mut req_timer => {
-                req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
+                req_timer = sleep(Duration::from_secs(API_REQUEST_TIMER_SECS)).fuse().boxed();
                 match tokio::time::timeout(
-                    Duration::from_millis(750),
+                    Duration::from_millis(API_REQUEST_TIMEOUT_MILLIS),
                     async move {
                         reqwest::get(format!("http://{host}:{port}/status/metrics")).await
                     }).await {
@@ -51,10 +55,6 @@ pub async fn run_until(
                                     .and_then(|num| num.parse::<u64>().ok())
                                     .unwrap_or(0);
 
-                                if committed_round > 0 && committed_round % 10 == 0 {
-                                    tracing::info!("committed_round: {}", committed_round);
-                                }
-
                                 let now = Instant::now();
                                 if committed_round == last_committed
                                     && now.saturating_duration_since(last_committed_time) > Duration::from_secs(ROUND_TIMEOUT_SECS)
@@ -64,9 +64,9 @@ pub async fn run_until(
                                         .expect("the shutdown sender was dropped before the receiver could receive the token");
                                     anyhow::bail!("Node stuck on round for more than {} seconds", ROUND_TIMEOUT_SECS)
                                 } else if committed_round > last_committed {
+                                    tracing::info!("committed_round: {}", committed_round);
                                     last_committed = committed_round;
                                     last_committed_time = now;
-                                    tracing::error!("id: {}, committed_round: {}", port, committed_round);
                                 }
 
                                 let timeouts = text
@@ -84,10 +84,9 @@ pub async fn run_until(
                                 }
 
                                 if committed_round >= until {
-                                    // tracing::info!("watchdog completed successfully");
+                                    tracing::info!("watchdog completed successfully");
                                     // Make sure not to shutdown right away in case other nodes needs messages still
                                     sleep(Duration::from_secs(5)).await;
-                                    tracing::error!("watchdog completed successfully id: {}, committed_round: {}", port, committed_round);
                                     shutdown_tx.send(()).expect(
                                             "the shutdown sender was dropped before the receiver could receive the token",
                                         );
@@ -96,10 +95,10 @@ pub async fn run_until(
                             }
                         }
                         Ok(Err(_)) => {
-                            tracing::error!("request failed. id: {}, last_committed: {}", port, last_committed);
+                            tracing::warn!("Metrics API request failed. Port: {}", port);
                         }
                         Err(_) => {
-                            tracing::error!("timeout {}, committed: {}", port, last_committed);
+                            tracing::warn!("Metrics API request timed out. Port {}", port);
                         }
                 }
             }

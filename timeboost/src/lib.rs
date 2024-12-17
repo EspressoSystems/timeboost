@@ -296,23 +296,22 @@ impl Timeboost {
                     warn!("received shutdown signal; shutting down.");
 
                     // Timeout waiting for all the handles to shut down
-                    tracing::error!("waiting for consensus handles to shut down: {}", self.coordinator.id());
+                    warn!("waiting for consensus handles to shut down");
                     let _ = tokio::time::sleep(Duration::from_secs(4)).await;
 
-                    tracing::error!("shutting down metrics handle: {}", self.coordinator.id());
+                    warn!("shutting down metrics handle");
                     metrics_handle.abort();
 
-                    tracing::error!("shutting down rpc handle: {}", self.coordinator.id());
+                    warn!("shutting down rpc handle");
                     rpc_handle.abort();
 
-                    tracing::error!("shutting down sequencer: {}", self.coordinator.id());
+                    warn!("shutting down sequencer");
                     sequencer_handle.abort();
 
-                    tracing::error!("shutting down coordinator: {}", self.coordinator.id());
+                    warn!("shutting down coordinator");
                     self.coordinator.shutdown().await.expect("shutdown coordinator");
 
                     result.expect("the shutdown sender was dropped before the receiver could receive the token");
-                    tracing::error!("done: {}", self.coordinator.id());
                     return Ok(());
                 }
             }
