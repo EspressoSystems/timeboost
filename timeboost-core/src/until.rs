@@ -61,6 +61,7 @@ pub async fn run_until(
                         } else if committed_round > last_committed {
                             last_committed = committed_round;
                             last_committed_time = now;
+                            tracing::error!("id: {}, committed_round: {}", port, committed_round);
                         }
 
                         let timeouts = text
@@ -78,13 +79,16 @@ pub async fn run_until(
                         }
 
                         if committed_round >= until {
-                            tracing::info!("watchdog completed successfully");
+                            // tracing::info!("watchdog completed successfully");
+                            tracing::error!("watchdog completed successfully id: {}, committed_round: {}", port, committed_round);
                             shutdown_tx.send(()).expect(
                                     "the shutdown sender was dropped before the receiver could receive the token",
                                 );
                             break;
                         }
                     }
+                } else {
+                    tracing::error!("request failed. id: {}, last_committed: {}", port, last_committed)
                 }
             }
             _ = signal::ctrl_c() => {

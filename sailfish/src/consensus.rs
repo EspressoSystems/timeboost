@@ -247,7 +247,9 @@ impl Consensus {
         let r = *v.round().data();
         match self.try_to_add_to_dag(v) {
             Err(v) => {
-                self.buffer.add(v);
+                if !self.buffer.contains(&v) {
+                    self.buffer.add(v);
+                }
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
             Ok(a) => {
