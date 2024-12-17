@@ -4,14 +4,11 @@ use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
 use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
 use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
-use timeboost_core::logging;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::NodeId;
-use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use timeboost_utils::{unsafe_zero_keypair, PeerConfig};
+use timeboost_utils::{types::logging, unsafe_zero_keypair, PeerConfig};
 use tokio::signal;
 use tracing::warn;
 
@@ -23,7 +20,7 @@ struct Cli {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    to_connect_addrs: HashSet<(PeerId, Multiaddr)>,
+    to_connect_addrs: HashSet<(PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     id: NodeId,
     port: u16,
@@ -35,7 +32,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
     let keypair = unsafe_zero_keypair(cfg.id);
-    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cfg.port)).unwrap();
+    let bind_address = &format!("0.0.0.0:{}", cfg.port);
 
     let metrics = SailfishMetrics::default();
     let mut coordinator = sailfish_coordinator(
@@ -43,7 +40,7 @@ async fn main() -> Result<()> {
         cfg.to_connect_addrs,
         cfg.staked_nodes,
         keypair,
-        bind_address,
+        bind_address.to_string(),
         metrics,
     )
     .await;

@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use sailfish::coordinator::Coordinator;
+use timeboost_core::traits::comm::Comm;
 use timeboost_core::types::message::{Action, Message};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::MsgQueues;
-use timeboost_core::{logging, traits::comm::Comm};
+use timeboost_utils::types::logging;
 use tokio::sync::watch::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::sleep;

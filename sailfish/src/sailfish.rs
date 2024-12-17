@@ -5,7 +5,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use derive_builder::Builder;
 use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
 use multisig::{Committee, Keypair, PublicKey};
 use std::collections::HashSet;
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -13,12 +12,13 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
-use timeboost_networking::network::client::derive_libp2p_peer_id;
-use timeboost_networking::network::client::Libp2pInitializer;
+use timeboost_networking::p2p::client::{
+    derive_libp2p_multiaddr, derive_libp2p_peer_id, Libp2pInitializer,
+};
 use timeboost_utils::PeerConfig;
 
 #[cfg(feature = "test")]
-use timeboost_networking::network::client::derive_libp2p_keypair;
+use timeboost_networking::p2p::client::derive_libp2p_keypair;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -33,7 +33,7 @@ pub struct SailfishInitializer<N: Comm + Send + 'static> {
     pub keypair: Keypair,
 
     /// The bind address of the node.
-    pub bind_address: Multiaddr,
+    pub bind_address: String,
 
     /// The metrics of the node.
     pub metrics: SailfishMetrics,
@@ -55,7 +55,7 @@ pub struct Sailfish<N: Comm + Send + 'static> {
     peer_id: PeerId,
 
     /// The Libp2p multiaddr of the sailfish node.
-    bind_address: Multiaddr,
+    bind_address: String,
 
     /// The metrics of the sailfish node.
     metrics: SailfishMetrics,
@@ -98,7 +98,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
         &self.peer_id
     }
 
-    pub fn bind_addr(&self) -> &Multiaddr {
+    pub fn bind_addr(&self) -> &String {
         &self.bind_address
     }
 
@@ -136,17 +136,27 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+    bootstrap_nodes: HashSet<(PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
-    bind_address: Multiaddr,
+    bind_address: String,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
+    let bootstrap_nodes: HashSet<_> = bootstrap_nodes
+        .into_iter()
+        .map(|(peer_id, addr)| {
+            (
+                peer_id,
+                derive_libp2p_multiaddr(&addr).expect("derive multiaddr"),
+            )
+        })
+        .collect();
+    let libp2p_address = derive_libp2p_multiaddr(&bind_address).expect("derive multiaddr");
     let p2p = Libp2pInitializer::new(
         &keypair.secret_key(),
         staked_nodes.clone(),
         bootstrap_nodes,
-        bind_address.clone(),
+        libp2p_address,
     )
     .expect("libp2p network to be initialized");
     let net_inner = p2p

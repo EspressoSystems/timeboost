@@ -7,6 +7,7 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
+use timeboost_utils::types::logging;
 use tokio::{signal, spawn, sync::watch, time::sleep};
 
 #[cfg(feature = "until")]
@@ -129,7 +130,7 @@ async fn create_and_send_tx(
 
 #[tokio::main]
 async fn main() {
-    timeboost_core::logging::init_logging();
+    logging::init_logging();
 
     let cli = Cli::parse();
     let is_docker = cli.docker;

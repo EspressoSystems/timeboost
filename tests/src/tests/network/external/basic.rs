@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
 use sailfish::sailfish::SailfishInitializerBuilder;
 use sailfish::{rbc::Rbc, sailfish::Sailfish};
@@ -7,14 +8,11 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::network::client::Libp2pInitializer;
+use timeboost_networking::network::NetworkInitializer;
+use tokio::sync::oneshot;
 use tokio::{sync::watch, task::JoinSet};
 
-use super::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
-
-pub mod test_simple_network;
-
-pub struct Libp2pNetworkTest {
+pub struct BasicNetworkTest {
     group: Group,
     shutdown_txs: HashMap<usize, watch::Sender<()>>,
     shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
@@ -22,7 +20,7 @@ pub struct Libp2pNetworkTest {
     interceptor: NetworkMessageInterceptor,
 }
 
-impl TestableNetwork for Libp2pNetworkTest {
+impl TestableNetwork for BasicNetworkTest {
     type Node = Sailfish<Self::Network>;
     type Network = TestNet<Rbc>;
 
@@ -46,29 +44,27 @@ impl TestableNetwork for Libp2pNetworkTest {
     async fn init(&mut self) -> Vec<Self::Node> {
         let mut handles = JoinSet::new();
         let staked = self.group.staked_nodes.clone();
-        let bootstrap_nodes = self.group.bootstrap_nodes.clone();
         let committee = self.group.committee.clone();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
             let peer_id = self.group.peer_ids[i];
-            let private_key = kpr.secret_key();
-
-            let net_fut = Libp2pInitializer::new(
-                &kpr.secret_key(),
+            let (tx_ready, rx_ready) = oneshot::channel();
+            let net_fut = NetworkInitializer::new(
+                peer_id,
+                kpr.clone(),
                 staked.clone(),
-                bootstrap_nodes.clone().into_iter().collect(),
+                self.group.bootstrap_nodes.clone(),
                 addr.clone(),
             )
             .expect("failed to make libp2p initializer")
-            .into_network(i, kpr.public_key(), private_key);
-
+            .into_network(tx_ready);
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {
-                let net_inner = net_fut.await.expect("failed to make libp2p network");
+                let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
-                net_inner.wait_for_ready().await;
+                rx_ready.await.expect("failed to connect to remote nodes");
                 let net = Rbc::new(net_inner, kpr.clone(), committee_clone.clone());
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);
