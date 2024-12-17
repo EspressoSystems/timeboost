@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
@@ -171,19 +172,28 @@ impl Comm for Rbc {
         }
         info!("shutting down operations");
         self.closed = true;
-        let (tx, rx) = oneshot::channel();
-        tracing::error!("rbc shutdown");
-        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
-            tracing::error!(%err, "error on tx during shutdown");
+        let mut retries = 0;
+        while retries < 5 {
+            tracing::error!("rbc shutdown: {}", retries);
+            let (tx, rx) = oneshot::channel();
+            tracing::error!("send shutdown: retries: {}", retries);
+            let _ = self.tx.send(Command::Shutdown(tx)).await;
+            if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), async {
+                let res = rx.await;
+                tracing::error!("rx result: {}", res.is_ok());
+                res
+            })
+            .await
+            {
+                tracing::error!("rx complete");
+                self.rx.close();
+                tracing::error!("done");
+                return Ok(());
+            }
+            retries += 1;
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        tracing::error!("rbc await rx");
-        if let Err(err) = rx.await {
-            tracing::error!(%err, "error on rx shutdown");
-        }
-        tracing::error!("close");
-        self.rx.close();
-        tracing::error!("complete");
-        info!("shutdown complete");
-        Ok(())
+
+        panic!("unsuccesful shutdown");
     }
 }
