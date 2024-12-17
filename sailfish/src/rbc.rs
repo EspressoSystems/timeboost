@@ -7,7 +7,7 @@ use timeboost_core::traits::comm::{Comm, RawComm};
 use timeboost_core::types::message::Message;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::info;
 
 mod digest;
 mod worker;
