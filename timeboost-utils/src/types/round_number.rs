@@ -24,6 +24,10 @@ impl RoundNumber {
         Self::new(0)
     }
 
+    pub fn is_genesis(self) -> bool {
+        self == Self::genesis()
+    }
+
     pub fn size_bytes(&self) -> usize {
         std::mem::size_of::<u64>()
     }
