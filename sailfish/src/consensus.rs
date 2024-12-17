@@ -157,7 +157,7 @@ impl Consensus {
         self.dag = d;
         self.round = r;
 
-        if r == RoundNumber::genesis() {
+        if r.is_genesis() {
             let vtx = Vertex::new(r, Evidence::Genesis, &self.keypair, self.deterministic);
             let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
             vec![Action::SendProposal(env), Action::ResetTimer(r)]
@@ -193,7 +193,7 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round()))]
     pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
         debug_assert_eq!(r, self.round());
-        let e = if r == RoundNumber::genesis() {
+        let e = if r.is_genesis() {
             Evidence::Genesis
         } else {
             self.evidence(r - 1)
@@ -620,7 +620,7 @@ impl Consensus {
                 debug!(
                     n = %self.public_key(),
                     r = %self.round,
-                    v = %r,
+                    v = %v,
                     "not all edges are resolved in dag"
                 );
                 return Err(v);
@@ -629,7 +629,7 @@ impl Consensus {
                 warn!(
                     n = %self.public_key(),
                     r = %self.round,
-                    v = %r,
+                    v = %v,
                     "not all edges are resolved in buffer"
                 );
                 return Err(v);
@@ -780,7 +780,7 @@ impl Consensus {
         x = %to)
     )]
     fn clear_aggregators(&mut self, to: RoundNumber) {
-        if to == RoundNumber::genesis() {
+        if to.is_genesis() {
             return;
         }
         self.rounds = self.rounds.split_off(&(to - 1));
