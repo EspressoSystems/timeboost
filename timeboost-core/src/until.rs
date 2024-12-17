@@ -37,58 +37,68 @@ pub async fn run_until(
             }
             _ = &mut req_timer => {
                 req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
-                if let Ok(resp) = reqwest::get(format!("http://{host}:{port}/status/metrics")).await {
-                    if let Ok(text) = resp.text().await {
-                        let committed_round = text
-                            .lines()
-                            .find(|line| line.starts_with("committed_round"))
-                            .and_then(|line| line.split(' ').nth(1))
-                            .and_then(|num| num.parse::<u64>().ok())
-                            .unwrap_or(0);
+                match tokio::time::timeout(
+                    Duration::from_millis(750),
+                    async move {
+                        reqwest::get(format!("http://{host}:{port}/status/metrics")).await
+                    }).await {
+                        Ok(Ok(resp)) => {
+                            if let Ok(text) = resp.text().await {
+                                let committed_round = text
+                                    .lines()
+                                    .find(|line| line.starts_with("committed_round"))
+                                    .and_then(|line| line.split(' ').nth(1))
+                                    .and_then(|num| num.parse::<u64>().ok())
+                                    .unwrap_or(0);
 
-                        if committed_round > 0 && committed_round % 10 == 0 {
-                            tracing::info!("committed_round: {}", committed_round);
+                                if committed_round > 0 && committed_round % 10 == 0 {
+                                    tracing::info!("committed_round: {}", committed_round);
+                                }
+
+                                let now = Instant::now();
+                                if committed_round == last_committed
+                                    && now.saturating_duration_since(last_committed_time) > Duration::from_secs(ROUND_TIMEOUT_SECS)
+                                {
+                                    shutdown_tx
+                                        .send(())
+                                        .expect("the shutdown sender was dropped before the receiver could receive the token");
+                                    anyhow::bail!("Node stuck on round for more than {} seconds", ROUND_TIMEOUT_SECS)
+                                } else if committed_round > last_committed {
+                                    last_committed = committed_round;
+                                    last_committed_time = now;
+                                    tracing::error!("id: {}, committed_round: {}", port, committed_round);
+                                }
+
+                                let timeouts = text
+                                    .lines()
+                                    .find(|line| line.starts_with("rounds_timed_out"))
+                                    .and_then(|line| line.split(' ').nth(1))
+                                    .and_then(|num| num.parse::<u64>().ok())
+                                    .unwrap_or(0);
+
+                                if timeouts >= MAX_ROUND_TIMEOUTS {
+                                    shutdown_tx.send(()).expect(
+                                        "the shutdown sender was dropped before the receiver could receive the token",
+                                    );
+                                    anyhow::bail!("Node timed out too many rounds")
+                                }
+
+                                if committed_round >= until {
+                                    // tracing::info!("watchdog completed successfully");
+                                    tracing::error!("watchdog completed successfully id: {}, committed_round: {}", port, committed_round);
+                                    shutdown_tx.send(()).expect(
+                                            "the shutdown sender was dropped before the receiver could receive the token",
+                                        );
+                                    break;
+                                }
+                            }
                         }
-
-                        let now = Instant::now();
-                        if committed_round == last_committed
-                            && now.saturating_duration_since(last_committed_time) > Duration::from_secs(ROUND_TIMEOUT_SECS)
-                        {
-                            shutdown_tx
-                                .send(())
-                                .expect("the shutdown sender was dropped before the receiver could receive the token");
-                            anyhow::bail!("Node stuck on round for more than {} seconds", ROUND_TIMEOUT_SECS)
-                        } else if committed_round > last_committed {
-                            last_committed = committed_round;
-                            last_committed_time = now;
-                            tracing::error!("id: {}, committed_round: {}", port, committed_round);
+                        Ok(Err(_)) => {
+                            tracing::error!("request failed. id: {}, last_committed: {}", port, last_committed);
                         }
-
-                        let timeouts = text
-                            .lines()
-                            .find(|line| line.starts_with("rounds_timed_out"))
-                            .and_then(|line| line.split(' ').nth(1))
-                            .and_then(|num| num.parse::<u64>().ok())
-                            .unwrap_or(0);
-
-                        if timeouts >= MAX_ROUND_TIMEOUTS {
-                            shutdown_tx.send(()).expect(
-                                "the shutdown sender was dropped before the receiver could receive the token",
-                            );
-                            anyhow::bail!("Node timed out too many rounds")
+                        Err(_) => {
+                            tracing::error!("timeout {}, committed: {}", port, last_committed);
                         }
-
-                        if committed_round >= until {
-                            // tracing::info!("watchdog completed successfully");
-                            tracing::error!("watchdog completed successfully id: {}, committed_round: {}", port, committed_round);
-                            shutdown_tx.send(()).expect(
-                                    "the shutdown sender was dropped before the receiver could receive the token",
-                                );
-                            break;
-                        }
-                    }
-                } else {
-                    tracing::error!("request failed. id: {}, last_committed: {}", port, last_committed)
                 }
             }
             _ = signal::ctrl_c() => {

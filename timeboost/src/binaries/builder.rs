@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
         _ = timeboost.go(committee.staked_nodes().len()) => {
             #[cfg(feature = "until")]
             {
-                tracing::info!("watchdog completed");
+                tracing::error!("watchdog completed: {}", cli.metrics_port);
                 return match handle.await {
                     Ok(Ok(_)) => Ok(()),
                     Ok(Err(e)) => Err(e),
