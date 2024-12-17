@@ -354,7 +354,7 @@ impl Worker {
                 _deadline = tokio::time::sleep_until(ping_deadline) => {
                     ping_deadline += PING_INTERVAL;
                     let ping_time = start.elapsed().as_micros() as i64;
-                    if ping_time > 0 {
+                    if ping_time <= 0 {
                         error!("Invalid ping time {ping_time}");
                     }
                     let ping = encode_ping(ping_time);
