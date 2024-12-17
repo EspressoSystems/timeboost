@@ -5,8 +5,7 @@ use std::{
 
 use futures::future::join_all;
 use libp2p::PeerId;
-use libp2p_identity::Keypair;
-use multisig::PublicKey;
+use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::PeerConfig;
 use tokio::{
@@ -20,7 +19,7 @@ use tokio::{
 use tracing::{instrument, trace, warn};
 use transport::{Connection, NetworkMessage, Transport};
 
-use crate::{p2p::client::derive_libp2p_keypair, NetworkError};
+use crate::NetworkError;
 
 pub mod transport;
 
@@ -45,18 +44,16 @@ pub struct NetworkInitializer<K: SignatureKey + 'static> {
 impl<K: SignatureKey + 'static> NetworkInitializer<K> {
     pub fn new(
         local_id: PeerId,
-        private_key: &K::PrivateKey,
+        keypair: Keypair,
         staked_nodes: Vec<PeerConfig<K>>,
         bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
         bind_address: String,
     ) -> anyhow::Result<Self> {
-        let libp2p_keypair = derive_libp2p_keypair::<K>(private_key).expect("Keypair to derive");
-
         Ok(Self {
             local_id,
             bootstrap_nodes,
             staked_nodes,
-            keypair: libp2p_keypair,
+            keypair,
             bind_address,
         })
     }
@@ -65,6 +62,7 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
         let net_fut = Network::start(
             self.local_id,
             self.bind_address,
+            self.keypair,
             self.bootstrap_nodes,
             tx_ready,
         );
@@ -76,18 +74,23 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
 /// communication between the transport layer and the application layer.
 #[derive(Debug)]
 pub struct Network {
+    /// Keypair of this node
+    keypair: Keypair,
     /// Connections received from the transport layer
     connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
     /// Mapping from public keys to peer Id
     nodes: HashMap<PublicKey, (PeerId, String)>,
     /// Channel for consuming messages from the network
     network_rx: mpsc::Receiver<NetworkMessage>,
+    /// Channel for sending messages from this node
+    network_tx: mpsc::Sender<NetworkMessage>,
 }
 
 impl Network {
     pub async fn start(
         local_id: PeerId,
         local_addr: String,
+        keypair: Keypair,
         to_connect: HashMap<PublicKey, (PeerId, String)>,
         tx_ready: oneshot::Sender<()>,
     ) -> Self {
@@ -114,13 +117,15 @@ impl Network {
             transport,
             Arc::clone(&connections),
             remote_nodes,
-            inbound_sender,
+            inbound_sender.clone(),
             tx_ready,
         ));
         Self {
+            keypair: keypair,
             connections,
             nodes: to_connect,
             network_rx: inbound_receiver,
+            network_tx: inbound_sender,
         }
     }
 
@@ -214,13 +219,17 @@ impl Network {
     }
 
     pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
+        let msg: NetworkMessage = NetworkMessage::from(message);
         for connection in self.connections.read().await.values() {
-            if (connection.send(NetworkMessage::from(message.clone())).await).is_err() {
+            if (connection.send(msg.clone()).await).is_err() {
                 return Err(NetworkError::ChannelSendError(
                     "Error sending message".to_string(),
                 ));
             }
         }
+        self.network_tx.send(msg).await.map_err(|_| {
+            NetworkError::ChannelSendError("Error sending message to self".to_string())
+        })?;
         Ok(())
     }
 
@@ -229,14 +238,17 @@ impl Network {
         recipient: PublicKey,
         message: Vec<u8>,
     ) -> Result<(), NetworkError> {
+        let msg = NetworkMessage::from(message);
+        if recipient == self.keypair.public_key() {
+            self.network_tx.send(msg.clone()).await.map_err(|_| {
+                NetworkError::ChannelSendError("Error sending message to self".to_string())
+            })?;
+        }
         if let Some((peer_id, _)) = self.nodes.get(&recipient) {
             if let Some(connection) = self.connections.read().await.get(peer_id) {
-                connection
-                    .send(NetworkMessage::from(message))
-                    .await
-                    .map_err(|_| {
-                        NetworkError::ChannelSendError("Error sending message".to_string())
-                    })?;
+                connection.send(msg).await.map_err(|_| {
+                    NetworkError::ChannelSendError("Error sending message".to_string())
+                })?;
                 return Ok(());
             }
             return Err(NetworkError::MessageSendError(

@@ -32,7 +32,7 @@ const LENGTH_SIZE: usize = 4;
 const NETWORK_BUFFER_SIZE: usize = 1_000;
 
 // TODO: no need to wrap bytes anymore
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMessage(Vec<u8>);
 impl NetworkMessage {
     pub fn into_bytes(self) -> Vec<u8> {

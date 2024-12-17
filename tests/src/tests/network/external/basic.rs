@@ -52,7 +52,7 @@ impl TestableNetwork for BasicNetworkTest {
             let (tx_ready, rx_ready) = oneshot::channel();
             let net_fut = NetworkInitializer::new(
                 peer_id,
-                &kpr.secret_key(),
+                kpr.clone(),
                 staked.clone(),
                 self.group.bootstrap_nodes.clone(),
                 addr.clone(),
