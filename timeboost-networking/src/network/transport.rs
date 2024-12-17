@@ -1,727 +1,546 @@
-use std::{
-    collections::HashSet,
-    future::Future,
-    hash::BuildHasher,
-    io::{Error as IoError, ErrorKind as IoErrorKind},
-    pin::Pin,
-    sync::Arc,
-    task::Poll,
-};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::Duration;
 
-use anyhow::{ensure, Context, Result as AnyhowResult};
-use futures::{future::poll_fn, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use libp2p::{
-    core::{muxing::StreamMuxerExt, transport::TransportEvent, StreamMuxer},
-    identity::PeerId,
-    Transport,
-};
-use pin_project::pin_project;
+use futures::future::select_all;
+use futures::FutureExt;
+use libp2p::PeerId;
+use rand::rngs::ThreadRng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::traits::signature_key::SignatureKey;
-use tracing::warn;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::spawn;
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
+use tracing::{debug, error, info, instrument, warn};
 
-/// The maximum size of an authentication message. This is used to prevent
-/// DoS attacks by sending large messages.
-const MAX_AUTH_MESSAGE_SIZE: usize = 1024;
+/// Duration between pings for latency measurements
+const PING_INTERVAL: Duration = Duration::from_secs(10);
+/// Size of the channel for sennding established connections
+const CONNECTION_BUFFER_SIZE: usize = 30;
+/// Size of the channel for ping/pong protocol
+const PING_BUFFER_SIZE: usize = 150;
+/// Size of the ping protocol message
+const PING_SIZE: usize = 12;
+/// Length representation (u32) size
+const LENGTH_SIZE: usize = 4;
+/// Maximum channel size for inbound/outbound messages
+const NETWORK_BUFFER_SIZE: usize = 1_000;
 
-/// The timeout for the authentication handshake. This is used to prevent
-/// attacks that keep connections open indefinitely by half-finishing the
-/// handshake.
-const AUTH_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// A wrapper for a `Transport` that bidirectionally authenticates connections
-/// by performing a handshake that checks if the remote peer is present in the
-/// stake table.
-#[pin_project]
-pub struct StakeTableAuthentication<T: Transport, S: SignatureKey + 'static, C: StreamMuxer + Unpin>
-{
-    #[pin]
-    /// The underlying transport we are wrapping
-    pub inner: T,
-
-    /// The stake table we check against to authenticate connections
-    pub stake_table: Arc<Option<HashSet<S>>>,
-
-    /// A pre-signed message that we send to the remote peer for authentication
-    pub auth_message: Arc<Option<Vec<u8>>>,
-
-    /// Phantom data for the connection type
-    pd: std::marker::PhantomData<C>,
+// TODO: no need to wrap bytes anymore
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkMessage(Vec<u8>);
+impl NetworkMessage {
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.0
+    }
 }
 
-/// A type alias for the future that upgrades a connection to perform the authentication handshake
-type UpgradeFuture<T> =
-    Pin<Box<dyn Future<Output = Result<<T as Transport>::Output, <T as Transport>::Error>> + Send>>;
-
-impl<T: Transport, S: SignatureKey, C: StreamMuxer + Unpin> StakeTableAuthentication<T, S, C> {
-    /// Create a new `StakeTableAuthentication` transport that wraps the given transport
-    /// and authenticates connections against the stake table.
-    pub fn new(inner: T, stake_table: Option<HashSet<S>>, auth_message: Option<Vec<u8>>) -> Self {
-        Self {
-            inner,
-            stake_table: Arc::from(stake_table),
-            auth_message: Arc::from(auth_message),
-            pd: std::marker::PhantomData,
-        }
+impl From<Vec<u8>> for NetworkMessage {
+    fn from(bytes: Vec<u8>) -> Self {
+        NetworkMessage(bytes)
     }
+}
 
-    /// Prove to the remote peer that we are in the stake table by sending
-    /// them our authentication message.
+/// A connection represents an established connection to another node.
+pub struct Connection {
+    /// The Id of the connected peer
+    pub remote_id: PeerId,
+    /// Channel for sending outbound messages
+    pub tx: Sender<NetworkMessage>,
+    /// Channel for receiving inbound message
+    pub rx: Receiver<NetworkMessage>,
+    // Periodic latency measurement
+    // pub latency: watch::Receiver<Duration>,
+}
+
+/// A transport takes connections from the handshake state to the transport
+/// state (established) by conducting a handshake protocol.
+#[derive(Debug)]
+pub struct Transport {
+    /// Channel for receiving established connections
+    rx_connection: Receiver<Connection>,
+    /// Channel for stopping the server
+    tx_stop: Option<Sender<()>>,
+    /// Server handle
+    server_handle: Option<JoinHandle<()>>,
+}
+
+impl Transport {
+    /// Spawns the server and one worker per remote node in `to_connect`.
     ///
-    /// # Errors
-    /// - If we fail to write the message to the stream
-    pub async fn authenticate_with_remote_peer<W: AsyncWrite + Unpin>(
-        stream: &mut W,
-        auth_message: Arc<Option<Vec<u8>>>,
-    ) -> AnyhowResult<()> {
-        // If we have an auth message, send it to the remote peer, prefixed with
-        // the message length
-        if let Some(auth_message) = auth_message.as_ref() {
-            // Write the length-delimited message
-            write_length_delimited(stream, auth_message).await?;
-        }
+    /// When the server has accepted a connection the resulting stream
+    /// is forwarded to the dedicated `Worker`.
+    pub async fn run(
+        local_id: PeerId,
+        local_addr: String,
+        to_connect: Vec<(PeerId, String)>,
+    ) -> Self {
+        let local_socket = local_addr
+            .parse::<std::net::SocketAddr>()
+            .expect("Invalid socket address");
 
-        Ok(())
-    }
+        // Channels for sending streams to dedicated workers after accepted connection
+        let mut worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>> = HashMap::default();
 
-    /// Verify that the remote peer is:
-    /// - In the stake table
-    /// - Sending us a valid authentication message
-    /// - Sending us a valid signature
-    /// - Matching the peer ID we expect
-    ///
-    /// # Errors
-    /// If the peer fails verification. This can happen if:
-    /// - We fail to read the message from the stream
-    /// - The message is too large
-    /// - The message is invalid
-    /// - The peer is not in the stake table
-    /// - The signature is invalid
-    pub async fn verify_peer_authentication<R: AsyncReadExt + Unpin, H: BuildHasher>(
-        stream: &mut R,
-        stake_table: Arc<Option<HashSet<S, H>>>,
-        required_peer_id: &PeerId,
-    ) -> AnyhowResult<()> {
-        // If we have a stake table, check if the remote peer is in it
-        if let Some(stake_table) = stake_table.as_ref() {
-            // Read the length-delimited message from the remote peer
-            let message = read_length_delimited(stream, MAX_AUTH_MESSAGE_SIZE).await?;
-
-            // Deserialize the authentication message
-            let auth_message: AuthMessage<S> = bincode::deserialize(&message)
-                .with_context(|| "Failed to deserialize auth message")?;
-
-            // Verify the signature on the public keys
-            let public_key = auth_message
-                .validate()
-                .with_context(|| "Failed to verify authentication message")?;
-
-            // Deserialize the `PeerId`
-            let peer_id = PeerId::from_bytes(&auth_message.peer_id_bytes)
-                .with_context(|| "Failed to deserialize peer ID")?;
-
-            // Verify that the peer ID is the same as the remote peer
-            if peer_id != *required_peer_id {
-                return Err(anyhow::anyhow!("Peer ID mismatch"));
-            }
-
-            // Check if the public key is in the stake table
-            if !stake_table.contains(&public_key) {
-                return Err(anyhow::anyhow!("Peer not in stake table"));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Wrap the supplied future in an upgrade that performs the authentication handshake.
-    ///
-    /// `outgoing` is a boolean that indicates if the connection is incoming or outgoing.
-    /// This is needed because the flow of the handshake is different for each.
-    fn gen_handshake<F: Future<Output = Result<T::Output, T::Error>> + Send + 'static>(
-        original_future: F,
-        outgoing: bool,
-        stake_table: Arc<Option<HashSet<S>>>,
-        auth_message: Arc<Option<Vec<u8>>>,
-    ) -> UpgradeFuture<T>
-    where
-        T::Error: From<<C as StreamMuxer>::Error> + From<IoError>,
-        T::Output: AsOutput<C> + Send,
-
-        C::Substream: Unpin + Send,
-    {
-        // Create a new upgrade that performs the authentication handshake on top
-        Box::pin(async move {
-            // Wait for the original future to resolve
-            let mut stream = original_future.await?;
-
-            // Time out the authentication block
-            tokio::time::timeout(AUTH_HANDSHAKE_TIMEOUT, async {
-                // Open a substream for the handshake.
-                // The handshake order depends on whether the connection is incoming or outgoing.
-                let mut substream = if outgoing {
-                    poll_fn(|cx| stream.as_connection().poll_outbound_unpin(cx)).await?
-                } else {
-                    poll_fn(|cx| stream.as_connection().poll_inbound_unpin(cx)).await?
-                };
-
-                if outgoing {
-                    // If the connection is outgoing, authenticate with the remote peer first
-                    Self::authenticate_with_remote_peer(&mut substream, auth_message)
-                        .await
-                        .map_err(|e| {
-                            warn!("Failed to authenticate with remote peer: {:?}", e);
-                            IoError::new(IoErrorKind::Other, e)
-                        })?;
-
-                    // Verify the remote peer's authentication
-                    Self::verify_peer_authentication(
-                        &mut substream,
-                        stake_table,
-                        stream.as_peer_id(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        warn!("Failed to verify remote peer: {:?}", e);
-                        IoError::new(IoErrorKind::Other, e)
-                    })?;
-                } else {
-                    // If it is incoming, verify the remote peer's authentication first
-                    Self::verify_peer_authentication(
-                        &mut substream,
-                        stake_table,
-                        stream.as_peer_id(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        warn!("Failed to verify remote peer: {:?}", e);
-                        IoError::new(IoErrorKind::Other, e)
-                    })?;
-
-                    // Authenticate with the remote peer
-                    Self::authenticate_with_remote_peer(&mut substream, auth_message)
-                        .await
-                        .map_err(|e| {
-                            warn!("Failed to authenticate with remote peer: {:?}", e);
-                            IoError::new(IoErrorKind::Other, e)
-                        })?;
-                }
-
-                Ok(stream)
-            })
+        let server = TcpListener::bind(local_socket)
             .await
-            .map_err(|e| {
-                warn!("Timed out performing authentication handshake: {:?}", e);
-                IoError::new(IoErrorKind::TimedOut, e)
-            })?
+            .expect("Unable to bind to socket");
+        let (tx_connection, rx_connection) = mpsc::channel(CONNECTION_BUFFER_SIZE);
+
+        // Spawn a worker for each node we want a connection to
+        for (remote_id, addr) in to_connect.iter() {
+            if *remote_id == local_id {
+                continue;
+            }
+            // Channel for the TcpStream going from the Server to the Worker
+            let (sender, receiver) = mpsc::channel(CONNECTION_BUFFER_SIZE);
+
+            let socket = addr
+                .parse::<std::net::SocketAddr>()
+                .expect("Invalid socket address");
+            assert!(
+                worker_senders.insert(*remote_id, sender).is_none(),
+                "Duplicated address {} in list",
+                socket
+            );
+            spawn(
+                Worker {
+                    local_id,
+                    _local_addr: local_socket,
+                    remote_id: *remote_id,
+                    remote_addr: socket,
+                    active: *remote_id.to_base58() < *local_id.to_base58(),
+                    tx_connection: tx_connection.clone(),
+                }
+                .run(receiver),
+            );
+        }
+        // Channel for stopping the server
+        let (tx_stop, rx_stop) = mpsc::channel(1);
+        let server_handle = spawn(async move {
+            Server {
+                local_id,
+                server,
+                worker_senders,
+            }
+            .run(rx_stop)
+            .await
+        });
+
+        Self {
+            rx_connection,
+            tx_stop: Some(tx_stop),
+            server_handle: Some(server_handle),
+        }
+    }
+
+    pub fn rx_connection(&mut self) -> &mut Receiver<Connection> {
+        &mut self.rx_connection
+    }
+
+    pub async fn shutdown(mut self) {
+        // Shutdown the server
+        if let Some(tx_stop) = self.tx_stop.take() {
+            tx_stop.send(()).await.ok();
+        }
+        if let Some(handle) = self.server_handle.take() {
+            handle.await.ok();
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Server {
+    /// Local id of the node
+    local_id: PeerId,
+    /// Socket for accepting connections
+    server: TcpListener,
+    /// Channel for fowarding accepted connections
+    worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>>,
+}
+
+impl Server {
+    #[instrument(level = "trace", skip_all, fields(node = %self.local_id))]
+    async fn run(self, mut stop: Receiver<()>) {
+        loop {
+            tokio::select! {
+                result = self.server.accept() => {
+                    // TODO: modify handshake with noise protocol
+                    // (handshake state -> transport state)
+                    let (mut stream, remote_peer) = result.expect("create tcp stream");
+                    let auth_len = stream.read_u32().await.expect("first 4 bytes is auth size");
+                    let auth_len_usize = auth_len as usize;
+                    let mut auth = vec![0u8; auth_len_usize];
+                    let _ = stream.read_exact(&mut auth).await;
+                    let peer_id = PeerId::from_bytes(&auth).expect("handshake starts with an auth token (PeerId)");
+                    // Send the stream to the dedicated worker
+                    if let Some(sender) = self.worker_senders.get(&peer_id) {
+                        debug!("Accepted connection from peer: {}", peer_id);
+                        sender.send(stream).await.ok();
+                    } else {
+                        warn!("Dropping connection from unknown peer: {remote_peer} with peer_id: {peer_id}");
+                    }
+                }
+                stop = stop.recv() => {
+                    if stop.is_none() {
+                        info!("Shutting down server");
+                    }
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// A worker is responsible for establishing a single connection
+struct Worker {
+    /// The local Id
+    local_id: PeerId,
+    /// The local address for the server
+    _local_addr: SocketAddr,
+    /// The remote peer for the connection
+    remote_id: PeerId,
+    /// The remote address
+    remote_addr: SocketAddr,
+    /// True if we should make outbound connection
+    active: bool,
+    /// Channel for sending established the connection (post-handshake)
+    tx_connection: Sender<Connection>,
+}
+
+/// A worker connection only forwards messages
+struct WorkerConnection {
+    sender: mpsc::Sender<NetworkMessage>,
+    receiver: mpsc::Receiver<NetworkMessage>,
+    remote_id: PeerId,
+}
+
+impl Worker {
+    // TODO: Modify handshake with noise protocol upgrade
+    const ACTIVE_HANDSHAKE: u64 = 0xDEADBEEF;
+    const PASSIVE_HANDSHAKE: u64 = 0xBEEFDEAD;
+    const MAX_SIZE: u32 = 16 * 1024 * 1024;
+
+    async fn run(self, mut receiver: Receiver<TcpStream>) -> Option<()> {
+        // Avoid live locks (nodes connecting to each other at the same time)
+        let max = Duration::from_secs(5);
+        let initial_delay = if self.active {
+            sample_delay(max)
+        } else {
+            Duration::ZERO
+        };
+        // Actively try to establish a connection
+        let mut work = self.active_connect(initial_delay).boxed();
+
+        loop {
+            tokio::select! {
+                // TODO: double check cancel-safety
+                _ = &mut work => {
+                    let delay = sample_delay(max);
+                    work = self.active_connect(delay).boxed();
+                }
+                received = receiver.recv() => {
+                    if let Some(received) = received {
+                        debug!("Replaced connection for {}", self.remote_id);
+                        work = self.passive_connect(received).boxed();
+                    } else {
+                        // Channel closed, server is terminated
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Active (outbound) handshake protocol and subsequent handling of streams
+    async fn active_connect(&self, delay: Duration) -> std::io::Result<()> {
+        // Avoid races between active and passive connections
+        tokio::time::sleep(delay).await;
+
+        let mut stream = loop {
+            let socket = if self.remote_addr.is_ipv4() {
+                TcpSocket::new_v4().unwrap()
+            } else {
+                TcpSocket::new_v6().unwrap()
+            };
+
+            match socket.connect(self.remote_addr).await {
+                Ok(stream) => {
+                    break stream;
+                }
+                Err(_err) => {
+                    debug!("Sleeping because no connection");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        };
+        stream.set_nodelay(true)?;
+        // TODO: Modify authentication with noise protocol upgrade
+        self.local_id.to_bytes();
+        let auth_token: &[u8] = &self.local_id.to_bytes();
+
+        let token_length: u32 = auth_token.len() as u32;
+        stream.write_u32(token_length).await?;
+        stream.write_all(auth_token).await?;
+
+        stream.write_u64(Self::ACTIVE_HANDSHAKE).await?;
+        let handshake = stream.read_u64().await?;
+        if handshake != Self::PASSIVE_HANDSHAKE {
+            warn!("Invalid passive handshake: {handshake}");
+            return Ok(());
+        }
+        let Some(connection) = self.make_connection().await else {
+            // todo - pass signal to break the main loop
+            return Ok(());
+        };
+
+        Self::handle_stream(stream, connection).await
+    }
+
+    /// Passive (inbound) handshake protocol and subsequent handling of streams
+    async fn passive_connect(&self, mut stream: TcpStream) -> std::io::Result<()> {
+        stream.set_nodelay(true)?;
+        stream.write_u64(Self::PASSIVE_HANDSHAKE).await?;
+        let handshake = stream.read_u64().await?;
+        if handshake != Self::ACTIVE_HANDSHAKE {
+            warn!("Invalid active handshake: {handshake}");
+            return Ok(());
+        }
+        let Some(connection) = self.make_connection().await else {
+            // todo - pass signal to break the main loop
+            return Ok(());
+        };
+        Self::handle_stream(stream, connection).await
+    }
+
+    /// Maintains a `Transport` for this connection after successfull handshake
+    async fn handle_stream(stream: TcpStream, connection: WorkerConnection) -> std::io::Result<()> {
+        let WorkerConnection {
+            sender,
+            receiver,
+            remote_id,
+        } = connection;
+        debug!("Connected to {}", remote_id);
+        let (reader, writer) = stream.into_split();
+        let (pong_sender, pong_receiver) = mpsc::channel(PING_BUFFER_SIZE);
+        let write_fut = Self::handle_write_stream(
+            writer,
+            receiver,
+            pong_receiver,
+            // TODO: measure concrete latency using ping
+        )
+        .boxed();
+        let read_fut = Self::handle_read_stream(reader, sender, pong_sender).boxed();
+        let (r, _, _) = select_all([write_fut, read_fut]).await;
+        debug!("Disconnected from {}", remote_id);
+        r
+    }
+
+    async fn handle_write_stream(
+        mut writer: OwnedWriteHalf,
+        mut receiver: mpsc::Receiver<NetworkMessage>,
+        mut pong_receiver: mpsc::Receiver<i64>,
+    ) -> std::io::Result<()> {
+        let start = Instant::now();
+        let mut ping_deadline = start + PING_INTERVAL;
+        loop {
+            tokio::select! {
+                // TODO: Measure latency (rtt) through embedded ping-pong protocol
+                _deadline = tokio::time::sleep_until(ping_deadline) => {
+                    ping_deadline += PING_INTERVAL;
+                    let ping_time = start.elapsed().as_micros() as i64;
+                    if ping_time <= 0 {
+                        error!("Invalid ping time {ping_time}");
+                    }
+                    let ping = encode_ping(ping_time);
+                    writer.write_all(&ping).await?;
+                }
+                received = pong_receiver.recv() => {
+                    let Some(ping) = received else {return Ok(())}; // todo - pass signal? (pong_sender closed)
+                    if ping == 0 {
+                        warn!("Invalid ping: {ping}");
+                        return Ok(());
+                    }
+                    if ping > 0 {
+                        match ping.checked_neg() {
+                            Some(pong) => {
+                                let pong = encode_ping(pong);
+                                writer.write_all(&pong).await?;
+                            },
+                            None => {
+                                warn!("Invalid ping: {ping}");
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        match ping.checked_neg().and_then(|n|u64::try_from(n).ok()) {
+                            Some(our_ping) => {
+                                let time = start.elapsed().as_micros() as u64;
+                                match time.checked_sub(our_ping) {
+                                    Some(delay) => {
+                                        let _d = Duration::from_micros(delay);
+                                        // TODO: include latency observer
+                                    },
+                                    None => {
+                                        warn!("Invalid ping: {ping}, greater then current time {time}");
+                                        return Ok(());
+                                    }
+                                }
+
+                            },
+                            None => {
+                                warn!("Invalid pong: {ping}");
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                // Write outbound traffic coming in on the channel
+                received = receiver.recv() => {
+                    // TODO: Pass signal to break main loop
+                    // TODO: No need to wrap bytes in `NetworkMessage`
+                    let Some(message) = received else {return Ok(())};
+                    let serialized = bincode::serialize(&message).expect("Serialization should not fail");
+                    writer.write_u32(serialized.len() as u32).await?;
+                    writer.write_all(&serialized).await?;
+                }
+            }
+        }
+    }
+
+    async fn handle_read_stream(
+        mut stream: OwnedReadHalf,
+        sender: mpsc::Sender<NetworkMessage>,
+        pong_sender: mpsc::Sender<i64>,
+    ) -> std::io::Result<()> {
+        let mut buf = vec![0u8; Self::MAX_SIZE as usize].into_boxed_slice();
+        loop {
+            let size = stream.read_u32().await?;
+            if size > Self::MAX_SIZE {
+                warn!("Invalid size: {size}");
+                return Ok(());
+            }
+            if size == 0 {
+                let buf = &mut buf[..PING_SIZE - LENGTH_SIZE];
+                if let Err(err) = stream.read_exact(buf).await {
+                    error!("Failed to read ping into buffer: {}", err);
+                }
+                let ping = decode_ping(buf);
+                let permit = pong_sender.try_reserve();
+                match permit {
+                    Err(TrySendError::Full(_)) => {
+                        error!("Pong sender channel is saturated. Will drop.");
+                    }
+                    Err(TrySendError::Closed(_)) => {
+                        return Ok(());
+                    }
+                    Ok(permit) => {
+                        permit.send(ping);
+                    }
+                }
+                continue;
+            }
+
+            // Read inbound traffic and send on channel
+            let buf = &mut buf[..size as usize];
+            if let Err(err) = stream.read_exact(buf).await {
+                error!("Failed to read message into buffer: {}", err);
+            }
+            match bincode::deserialize::<NetworkMessage>(buf) {
+                Ok(message) => {
+                    if sender.send(message).await.is_err() {
+                        // todo - pass signal to break main loop
+                        return Ok(());
+                    }
+                }
+                Err(err) => {
+                    warn!("Failed to deserialize: {}", err);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    async fn make_connection(&self) -> Option<WorkerConnection> {
+        let (network_in_sender, network_in_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
+        let (network_out_sender, network_out_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
+        let connection = Connection {
+            remote_id: self.remote_id,
+            tx: network_out_sender,
+            rx: network_in_receiver,
+            // TODO: Ship latency through ping
+        };
+        // Send the connection downstream
+        self.tx_connection.send(connection).await.ok()?;
+        Some(WorkerConnection {
+            sender: network_in_sender,
+            receiver: network_out_receiver,
+            remote_id: self.remote_id,
         })
     }
 }
 
-/// The deserialized form of an authentication message that is sent to the remote peer
-#[derive(Clone, Serialize, Deserialize)]
-struct AuthMessage<S: SignatureKey> {
-    /// The encoded (stake table) public key of the sender. This, along with the peer ID, is
-    /// signed. It is still encoded here to enable easy verification.
-    public_key_bytes: Vec<u8>,
-
-    /// The encoded peer ID of the sender. This is appended to the public key before signing.
-    /// It is still encoded here to enable easy verification.
-    peer_id_bytes: Vec<u8>,
-
-    /// The signature on the public key
-    signature: S::SignatureType,
+fn sample_delay(max: Duration) -> Duration {
+    let start = Duration::ZERO;
+    ThreadRng::default().gen_range(start..max)
 }
 
-impl<S: SignatureKey> AuthMessage<S> {
-    /// Validate the signature on the public key and return it if valid
-    pub fn validate(&self) -> AnyhowResult<S> {
-        // Deserialize the stake table public key
-        let public_key = S::from_bytes(&self.public_key_bytes)
-            .with_context(|| "Failed to deserialize public key")?;
-
-        // Reconstruct the signed message from the public key and peer ID
-        let mut signed_message = public_key.to_bytes();
-        signed_message.extend(self.peer_id_bytes.clone());
-
-        // Check if the signature is valid across both
-        if !public_key.validate(&self.signature, &signed_message) {
-            return Err(anyhow::anyhow!("Invalid signature"));
-        }
-
-        Ok(public_key)
-    }
+fn encode_ping(message: i64) -> [u8; PING_SIZE] {
+    let mut m = [0u8; PING_SIZE];
+    // first 4 represents the size == 0
+    m[LENGTH_SIZE..].copy_from_slice(&message.to_le_bytes());
+    m
 }
 
-/// Create an sign an authentication message to be sent to the remote peer
-///
-/// # Errors
-/// - If we fail to sign the public key
-/// - If we fail to serialize the authentication message
-pub fn construct_auth_message<S: SignatureKey + 'static>(
-    public_key: &S,
-    peer_id: &PeerId,
-    private_key: &S::PrivateKey,
-) -> AnyhowResult<Vec<u8>> {
-    // Serialize the stake table public key
-    let mut public_key_bytes = public_key.to_bytes();
-
-    // Serialize the peer ID and append it
-    let peer_id_bytes = peer_id.to_bytes();
-    public_key_bytes.extend_from_slice(&peer_id_bytes);
-
-    // Sign our public key
-    let signature =
-        S::sign(private_key, &public_key_bytes).with_context(|| "Failed to sign public key")?;
-
-    // Create the auth message
-    let auth_message = AuthMessage::<S> {
-        public_key_bytes,
-        peer_id_bytes,
-        signature,
-    };
-
-    // Serialize the auth message
-    bincode::serialize(&auth_message).with_context(|| "Failed to serialize auth message")
-}
-
-impl<T: Transport, S: SignatureKey + 'static, C: StreamMuxer + Unpin> Transport
-    for StakeTableAuthentication<T, S, C>
-where
-    T::Dial: Future<Output = Result<T::Output, T::Error>> + Send + 'static,
-    T::ListenerUpgrade: Send + 'static,
-    T::Output: AsOutput<C> + Send,
-    T::Error: From<<C as StreamMuxer>::Error> + From<IoError>,
-
-    C::Substream: Unpin + Send,
-{
-    // `Dial` is for connecting out, `ListenerUpgrade` is for accepting incoming connections
-    type Dial = Pin<Box<dyn Future<Output = Result<T::Output, T::Error>> + Send>>;
-    type ListenerUpgrade = Pin<Box<dyn Future<Output = Result<T::Output, T::Error>> + Send>>;
-
-    // These are just passed through
-    type Output = T::Output;
-    type Error = T::Error;
-
-    /// Dial a remote peer. This function is changed to perform an authentication handshake
-    /// on top.
-    fn dial(
-        &mut self,
-        addr: libp2p::Multiaddr,
-    ) -> Result<Self::Dial, libp2p::TransportError<Self::Error>> {
-        // Perform the inner dial
-        let res = self.inner.dial(addr);
-
-        // Clone the necessary fields
-        let auth_message = Arc::clone(&self.auth_message);
-        let stake_table = Arc::clone(&self.stake_table);
-
-        // If the dial was successful, perform the authentication handshake on top
-        match res {
-            Ok(dial) => Ok(Self::gen_handshake(dial, true, stake_table, auth_message)),
-            Err(err) => Err(err),
-        }
-    }
-
-    /// Dial a remote peer as a listener. This function is changed to perform an authentication
-    /// handshake on top. The flow should be the reverse of the `dial` function and the
-    /// same as the `poll` function.
-    fn dial_as_listener(
-        &mut self,
-        addr: libp2p::Multiaddr,
-    ) -> Result<Self::Dial, libp2p::TransportError<Self::Error>> {
-        // Perform the inner dial
-        let res = self.inner.dial(addr);
-
-        // Clone the necessary fields
-        let auth_message = Arc::clone(&self.auth_message);
-        let stake_table = Arc::clone(&self.stake_table);
-
-        // If the dial was successful, perform the authentication handshake on top
-        match res {
-            Ok(dial) => Ok(Self::gen_handshake(dial, false, stake_table, auth_message)),
-            Err(err) => Err(err),
-        }
-    }
-
-    /// This function is where we perform the authentication handshake for _incoming_ connections.
-    /// The flow in this case is the reverse of the `dial` function: we first verify the remote peer's
-    /// authentication, and then authenticate with them.
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<libp2p::core::transport::TransportEvent<Self::ListenerUpgrade, Self::Error>>
-    {
-        match self.as_mut().project().inner.poll(cx) {
-            Poll::Ready(event) => Poll::Ready(match event {
-                // If we have an incoming connection, we need to perform the authentication handshake
-                TransportEvent::Incoming {
-                    listener_id,
-                    upgrade,
-                    local_addr,
-                    send_back_addr,
-                } => {
-                    // Clone the necessary fields
-                    let auth_message = Arc::clone(&self.auth_message);
-                    let stake_table = Arc::clone(&self.stake_table);
-
-                    // Generate the handshake upgrade future (inbound)
-                    let auth_upgrade =
-                        Self::gen_handshake(upgrade, false, stake_table, auth_message);
-
-                    // Return the new event
-                    TransportEvent::Incoming {
-                        listener_id,
-                        upgrade: auth_upgrade,
-                        local_addr,
-                        send_back_addr,
-                    }
-                }
-
-                // We need to re-map the other events because we changed the type of the upgrade
-                TransportEvent::AddressExpired {
-                    listener_id,
-                    listen_addr,
-                } => TransportEvent::AddressExpired {
-                    listener_id,
-                    listen_addr,
-                },
-                TransportEvent::ListenerClosed {
-                    listener_id,
-                    reason,
-                } => TransportEvent::ListenerClosed {
-                    listener_id,
-                    reason,
-                },
-                TransportEvent::ListenerError { listener_id, error } => {
-                    TransportEvent::ListenerError { listener_id, error }
-                }
-                TransportEvent::NewAddress {
-                    listener_id,
-                    listen_addr,
-                } => TransportEvent::NewAddress {
-                    listener_id,
-                    listen_addr,
-                },
-            }),
-
-            Poll::Pending => Poll::Pending,
-        }
-    }
-
-    /// The below functions just pass through to the inner transport, but we had
-    /// to define them
-    fn remove_listener(&mut self, id: libp2p::core::transport::ListenerId) -> bool {
-        self.inner.remove_listener(id)
-    }
-    fn address_translation(
-        &self,
-        listen: &libp2p::Multiaddr,
-        observed: &libp2p::Multiaddr,
-    ) -> Option<libp2p::Multiaddr> {
-        self.inner.address_translation(listen, observed)
-    }
-    fn listen_on(
-        &mut self,
-        id: libp2p::core::transport::ListenerId,
-        addr: libp2p::Multiaddr,
-    ) -> Result<(), libp2p::TransportError<Self::Error>> {
-        self.inner.listen_on(id, addr)
-    }
-}
-
-/// A helper trait that allows us to access the underlying connection
-/// and `PeerId` from a transport output
-trait AsOutput<C: StreamMuxer + Unpin> {
-    /// Get a mutable reference to the underlying connection
-    fn as_connection(&mut self) -> &mut C;
-
-    /// Get a mutable reference to the underlying `PeerId`
-    fn as_peer_id(&mut self) -> &mut PeerId;
-}
-
-/// The implementation of the `AsConnection` trait for a tuple of a `PeerId`
-/// and a connection.
-impl<C: StreamMuxer + Unpin> AsOutput<C> for (PeerId, C) {
-    /// Get a mutable reference to the underlying connection
-    fn as_connection(&mut self) -> &mut C {
-        &mut self.1
-    }
-
-    /// Get a mutable reference to the underlying `PeerId`
-    fn as_peer_id(&mut self) -> &mut PeerId {
-        &mut self.0
-    }
-}
-
-/// A helper function to read a length-delimited message from a stream. Takes into
-/// account the maximum message size.
-///
-/// # Errors
-/// - If the message is too big
-/// - If we fail to read from the stream
-pub async fn read_length_delimited<S: AsyncRead + Unpin>(
-    stream: &mut S,
-    max_size: usize,
-) -> AnyhowResult<Vec<u8>> {
-    // Receive the first 8 bytes of the message, which is the length
-    let mut len_bytes = [0u8; 4];
-    stream
-        .read_exact(&mut len_bytes)
-        .await
-        .with_context(|| "Failed to read message length")?;
-
-    // Parse the length of the message as a `u32`
-    let len = usize::try_from(u32::from_be_bytes(len_bytes))?;
-
-    // Quit if the message is too large
-    ensure!(len <= max_size, "Message too large");
-
-    // Read the actual message
-    let mut message = vec![0u8; len];
-    stream
-        .read_exact(&mut message)
-        .await
-        .with_context(|| "Failed to read message")?;
-
-    Ok(message)
-}
-
-/// A helper function to write a length-delimited message to a stream.
-///
-/// # Errors
-/// - If we fail to write to the stream
-pub async fn write_length_delimited<S: AsyncWrite + Unpin>(
-    stream: &mut S,
-    message: &[u8],
-) -> AnyhowResult<()> {
-    // Write the length of the message
-    stream
-        .write_all(&u32::try_from(message.len())?.to_be_bytes())
-        .await
-        .with_context(|| "Failed to write message length")?;
-
-    // Write the actual message
-    stream
-        .write_all(message)
-        .await
-        .with_context(|| "Failed to write message")?;
-
-    Ok(())
+fn decode_ping(message: &[u8]) -> i64 {
+    // already consumed the length of the ping message
+    let mut m = [0u8; PING_SIZE - LENGTH_SIZE];
+    m.copy_from_slice(message);
+    i64::from_le_bytes(m)
 }
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashSet, sync::Arc};
+    use std::collections::HashSet;
 
-    use libp2p::{core::transport::dummy::DummyTransport, quic::Connection};
-    use rand::Rng;
-    use timeboost_crypto::{signature_key::BLSPubKey, traits};
-    use traits::signature_key::SignatureKey;
+    use super::Transport;
+    use futures::future::join_all;
+    use libp2p::PeerId;
 
-    use super::*;
-
-    /// A mock type to help with readability
-    type MockStakeTableAuth = StakeTableAuthentication<DummyTransport, BLSPubKey, Connection>;
-
-    // Helper macro for generating a new identity and authentication message
-    macro_rules! new_identity {
-        () => {{
-            // Gen a new seed
-            let seed = rand::rngs::OsRng.gen::<[u8; 32]>();
-
-            // Create a new keypair
-            let keypair = BLSPubKey::generated_from_seed_indexed(seed, 1337);
-
-            // Create a peer ID
-            let peer_id = libp2p::identity::Keypair::generate_ed25519()
-                .public()
-                .to_peer_id();
-
-            // Construct an authentication message
-            let auth_message =
-                super::construct_auth_message(&keypair.0, &peer_id, &keypair.1).unwrap();
-
-            (keypair, peer_id, auth_message)
-        }};
+    #[tokio::test]
+    async fn network_connect_test() {
+        let (networks, addresses) = networks_and_addresses(5usize).await;
+        for (mut network, address) in networks.into_iter().zip(addresses.iter()) {
+            let mut waiting_peers: HashSet<_> = HashSet::from_iter(addresses.iter().cloned());
+            waiting_peers.remove(address);
+            while let Some(connection) = network.rx_connection.recv().await {
+                let (_, addr) = addresses
+                    .iter()
+                    .find(|(pid, _)| *pid == connection.remote_id)
+                    .expect("Peer not found");
+                waiting_peers.retain(|(_, a)| a != addr);
+                if waiting_peers.is_empty() {
+                    break;
+                }
+            }
+        }
     }
 
-    // Helper macro to generator a cursor from a length-delimited message
-    macro_rules! cursor_from {
-        ($auth_message:expr) => {{
-            let mut stream = futures::io::Cursor::new(vec![]);
-            write_length_delimited(&mut stream, &$auth_message)
-                .await
-                .expect("Failed to write message");
-            stream.set_position(0);
-            stream
-        }};
-    }
-
-    /// Test valid construction and verification of an authentication message
-    #[test]
-    fn signature_verify() {
-        // Create a new identity
-        let (_, _, auth_message) = new_identity!();
-
-        // Verify the authentication message
-        let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
-        );
-        assert!(public_key.is_ok());
-    }
-
-    /// Test invalid construction and verification of an authentication message with
-    /// an invalid public key. This ensures we are signing over it correctly.
-    #[test]
-    fn signature_verify_invalid_public_key() {
-        // Create a new identity
-        let (_, _, auth_message) = new_identity!();
-
-        // Deserialize the authentication message
-        let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode::deserialize(&auth_message).unwrap();
-
-        // Change the public key
-        auth_message.public_key_bytes[0] ^= 0x01;
-
-        // Serialize the message again
-        let auth_message = bincode::serialize(&auth_message).unwrap();
-
-        // Verify the authentication message
-        let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
-        );
-        assert!(public_key.is_err());
-    }
-
-    /// Test invalid construction and verification of an authentication message with
-    /// an invalid peer ID. This ensures we are signing over it correctly.
-    #[test]
-    fn signature_verify_invalid_peer_id() {
-        // Create a new identity
-        let (_, _, auth_message) = new_identity!();
-
-        // Deserialize the authentication message
-        let mut auth_message: super::AuthMessage<BLSPubKey> =
-            bincode::deserialize(&auth_message).unwrap();
-
-        // Change the peer ID
-        auth_message.peer_id_bytes[0] ^= 0x01;
-
-        // Serialize the message again
-        let auth_message = bincode::serialize(&auth_message).unwrap();
-
-        // Verify the authentication message
-        let public_key = super::AuthMessage::<BLSPubKey>::validate(
-            &bincode::deserialize(&auth_message).unwrap(),
-        );
-        assert!(public_key.is_err());
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn valid_authentication() {
-        // Create a new identity
-        let (keypair, peer_id, auth_message) = new_identity!();
-
-        // Create a stream and write the message to it
-        let mut stream = cursor_from!(auth_message);
-
-        // Create a stake table with the key
-        let mut stake_table = std::collections::HashSet::new();
-        stake_table.insert(keypair.0);
-
-        // Verify the authentication message
-        let result = MockStakeTableAuth::verify_peer_authentication(
-            &mut stream,
-            Arc::new(Some(stake_table)),
-            &peer_id,
-        )
-        .await;
-
-        assert!(
-            result.is_ok(),
-            "Should have passed authentication but did not"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn key_not_in_stake_table() {
-        // Create a new identity
-        let (_, peer_id, auth_message) = new_identity!();
-
-        // Create a stream and write the message to it
-        let mut stream = cursor_from!(auth_message);
-
-        // Create an empty stake table
-        let stake_table: HashSet<BLSPubKey> = std::collections::HashSet::new();
-
-        // Verify the authentication message
-        let result = MockStakeTableAuth::verify_peer_authentication(
-            &mut stream,
-            Arc::new(Some(stake_table)),
-            &peer_id,
-        )
-        .await;
-
-        // Make sure it errored for the right reason
-        assert!(
-            result
-                .expect_err("Should have failed authentication but did not")
-                .to_string()
-                .contains("Peer not in stake table"),
-            "Did not fail with the correct error"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn peer_id_mismatch() {
-        // Create a new identity and authentication message
-        let (keypair, _, auth_message) = new_identity!();
-
-        // Create a second (malicious) identity
-        let (_, malicious_peer_id, _) = new_identity!();
-
-        // Create a stream and write the message to it
-        let mut stream = cursor_from!(auth_message);
-
-        // Create a stake table with the key
-        let mut stake_table: HashSet<BLSPubKey> = std::collections::HashSet::new();
-        stake_table.insert(keypair.0);
-
-        // Check against the malicious peer ID
-        let result = MockStakeTableAuth::verify_peer_authentication(
-            &mut stream,
-            Arc::new(Some(stake_table)),
-            &malicious_peer_id,
-        )
-        .await;
-
-        // Make sure it errored for the right reason
-        assert!(
-            result
-                .expect_err("Should have failed authentication but did not")
-                .to_string()
-                .contains("Peer ID mismatch"),
-            "Did not fail with the correct error"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn read_and_write_length_delimited() {
-        // Create a message
-        let message = b"Hello, world!";
-
-        // Write the message to a buffer
-        let mut buffer = Vec::new();
-        write_length_delimited(&mut buffer, message).await.unwrap();
-
-        // Read the message from the buffer
-        let read_message = read_length_delimited(&mut buffer.as_slice(), 1024)
-            .await
-            .unwrap();
-
-        // Check if the messages are the same
-        assert_eq!(message, read_message.as_slice());
+    async fn networks_and_addresses(
+        num_of_nodes: usize,
+    ) -> (Vec<Transport>, Vec<(PeerId, String)>) {
+        let addresses: Vec<_> = (0..num_of_nodes)
+            .map(|i| (PeerId::random(), format!("127.0.0.1:{}", 5500 + i)))
+            .collect();
+        let networks = addresses
+            .iter()
+            .map(|(pid, addr)| Transport::run(*pid, addr.clone(), addresses.clone()));
+        let networks = join_all(networks).await;
+        (networks, addresses)
     }
 }

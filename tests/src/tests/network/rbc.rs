@@ -4,9 +4,9 @@ use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::Consensus;
 use sailfish::coordinator::Coordinator;
 use sailfish::rbc::{self, Rbc};
-use timeboost_core::logging::init_logging;
 use timeboost_core::types::event::SailfishEventType;
 use timeboost_core::types::NodeId;
+use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 
 use crate::rbc::TurmoilComm;

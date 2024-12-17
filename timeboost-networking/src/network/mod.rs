@@ -1,184 +1,271 @@
-// Copyright (c) 2021-2024 Espresso Systems (espressosys.com)
-// This file is part of the HotShot repository.
-
-// You should have received a copy of the MIT License
-// along with the HotShot repository. If not, see <https://mit-license.org/>.
-
-/// networking behaviours wrapping libp2p's behaviours
-pub mod behaviours;
-/// defines the swarm and network definition (internal)
-mod def;
-/// functionality of a libp2p network node
-mod node;
-/// Alternative Libp2p transport implementations
-pub mod transport;
-
-/// The client side of the network
-pub mod client;
-
-use std::{collections::HashSet, fmt::Debug};
-
-use futures::channel::oneshot::Sender;
-use libp2p::dns::tokio::Transport as DnsTransport;
-use libp2p::{
-    build_multiaddr,
-    core::{muxing::StreamMuxerBox, transport::Boxed},
-    gossipsub::Event as GossipEvent,
-    identify::Event as IdentifyEvent,
-    identity::Keypair,
-    quic,
-    request_response::ResponseChannel,
-    Multiaddr, Transport,
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
 };
-use libp2p_identity::PeerId;
-use quic::tokio::Transport as QuicTransport;
+
+use futures::future::join_all;
+use libp2p::PeerId;
+use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
-use tracing::instrument;
-use transport::StakeTableAuthentication;
+use timeboost_utils::PeerConfig;
+use tokio::{
+    spawn,
+    sync::{
+        mpsc::{self, Sender},
+        oneshot, RwLock,
+    },
+    task::JoinHandle,
+};
+use tracing::{instrument, trace, warn};
+use transport::{Connection, NetworkMessage, Transport};
 
 use crate::NetworkError;
 
-pub use self::{
-    def::NetworkDef,
-    node::{
-        spawn_network_node, GossipConfig, NetworkNode, NetworkNodeConfig, NetworkNodeConfigBuilder,
-        NetworkNodeConfigBuilderError, NetworkNodeHandle, NetworkNodeReceiver,
-        DEFAULT_REPLICATION_FACTOR,
-    },
-};
+pub mod transport;
 
-/// Actions to send from the client to the swarm
+/// The initializer for the network.
+pub struct NetworkInitializer<K: SignatureKey + 'static> {
+    /// The local peer id
+    pub local_id: PeerId,
+
+    /// The bootstrap nodes to connect to.
+    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+
+    /// The staked nodes to connect to.
+    pub staked_nodes: Vec<PeerConfig<K>>,
+
+    /// The keypair
+    pub keypair: Keypair,
+
+    /// The local address
+    pub bind_address: String,
+}
+
+impl<K: SignatureKey + 'static> NetworkInitializer<K> {
+    pub fn new(
+        local_id: PeerId,
+        keypair: Keypair,
+        staked_nodes: Vec<PeerConfig<K>>,
+        bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+        bind_address: String,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            local_id,
+            bootstrap_nodes,
+            staked_nodes,
+            keypair,
+            bind_address,
+        })
+    }
+
+    pub async fn into_network(self, tx_ready: oneshot::Sender<()>) -> anyhow::Result<Network> {
+        let net_fut = Network::start(
+            self.local_id,
+            self.bind_address,
+            self.keypair,
+            self.bootstrap_nodes,
+            tx_ready,
+        );
+        Ok(net_fut.await)
+    }
+}
+
+/// The network receives established connections and maintains the
+/// communication between the transport layer and the application layer.
 #[derive(Debug)]
-pub enum ClientRequest {
-    /// Start the bootstrap process to kademlia
-    BeginBootstrap,
-    /// kill the swarm
-    Shutdown,
-    /// broadcast a serialized message
-    GossipMsg(String, Vec<u8>),
-    /// subscribe to a topic
-    Subscribe(String, Option<Sender<()>>),
-    /// unsubscribe from a topic
-    Unsubscribe(String, Option<Sender<()>>),
-    /// client request to send a direct serialized message
-    DirectRequest {
-        /// peer id
-        pid: PeerId,
-        /// msg contents
-        contents: Vec<u8>,
-        /// number of retries
-        retry_count: u8,
-    },
-    /// client request to send a direct reply to a message
-    DirectResponse(ResponseChannel<Vec<u8>>, Vec<u8>),
-    /// prune a peer
-    Prune(PeerId),
-    /// add vec of known peers or addresses
-    AddKnownPeers(Vec<(PeerId, Multiaddr)>),
-    /// Ignore peers. Only here for debugging purposes.
-    /// Allows us to have nodes that are never pruned
-    IgnorePeers(Vec<PeerId>),
-    /// Put(Key, Value) into DHT
-    /// relay success back on channel
-    PutDHT {
-        /// Key to publish under
-        key: Vec<u8>,
-        /// Value to publish under
-        value: Vec<u8>,
-        /// Channel to notify caller of result of publishing
-        notify: Sender<()>,
-    },
-    /// Get(Key, Chan)
-    GetDHT {
-        /// Key to search for
-        key: Vec<u8>,
-        /// Channel to notify caller of value (or failure to find value)
-        notify: Sender<Vec<u8>>,
-        /// number of retries to make
-        retry_count: u8,
-    },
-    /// Request the number of connected peers
-    GetConnectedPeerNum(Sender<usize>),
-    /// Request the set of connected peers
-    GetConnectedPeers(Sender<HashSet<PeerId>>),
-    /// Print the routing  table to stderr, debugging only
-    GetRoutingTable(Sender<()>),
-    /// Get address of peer
-    LookupPeer(PeerId, Sender<()>),
+pub struct Network {
+    /// Keypair of this node
+    keypair: Keypair,
+    /// Connections received from the transport layer
+    connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+    /// Mapping from public keys to peer Id
+    nodes: HashMap<PublicKey, (PeerId, String)>,
+    /// Channel for consuming messages from the network
+    network_rx: mpsc::Receiver<NetworkMessage>,
+    /// Channel for sending messages from this node
+    network_tx: mpsc::Sender<NetworkMessage>,
 }
 
-/// events generated by the swarm that we wish
-/// to relay to the client
-#[derive(Debug)]
-pub enum NetworkEvent {
-    /// Recv-ed a broadcast
-    GossipMsg(Vec<u8>),
-    /// Recv-ed a direct message from a node
-    DirectRequest(Vec<u8>, PeerId, ResponseChannel<Vec<u8>>),
-    /// Recv-ed a direct response from a node (that hopefully was initiated by this node)
-    DirectResponse(Vec<u8>, PeerId),
-    /// Report that kademlia has successfully bootstrapped into the network
-    IsBootstrapped,
-    /// The number of connected peers has possibly changed
-    ConnectedPeersUpdate(usize),
-}
+impl Network {
+    pub async fn start(
+        local_id: PeerId,
+        local_addr: String,
+        keypair: Keypair,
+        to_connect: HashMap<PublicKey, (PeerId, String)>,
+        tx_ready: oneshot::Sender<()>,
+    ) -> Self {
+        let transport = Transport::run(
+            local_id,
+            local_addr,
+            to_connect.clone().into_values().collect(),
+        )
+        .await;
+        let connections = Arc::new(RwLock::new(HashMap::new()));
+        let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
+        let remote_nodes: HashSet<_> = to_connect
+            .iter()
+            .filter_map(|(_, node)| {
+                if node.0 != local_id {
+                    Some(node.0)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        spawn(Self::run(
+            local_id,
+            transport,
+            Arc::clone(&connections),
+            remote_nodes,
+            inbound_sender.clone(),
+            tx_ready,
+        ));
+        Self {
+            keypair,
+            connections,
+            nodes: to_connect,
+            network_rx: inbound_receiver,
+            network_tx: inbound_sender,
+        }
+    }
 
-#[derive(Debug)]
-/// internal representation of the network events
-/// only used for event processing before relaying to client
-pub enum NetworkEventInternal {
-    /// a DHT event
-    DHTEvent(libp2p::kad::Event),
-    /// a identify event. Is boxed because this event is much larger than the other ones so we want
-    /// to store it on the heap.
-    IdentifyEvent(Box<IdentifyEvent>),
-    /// a gossip  event
-    GossipEvent(Box<GossipEvent>),
-    /// a direct message event
-    DMEvent(libp2p::request_response::Event<Vec<u8>, Vec<u8>>),
-    /// a autonat event
-    AutonatEvent(libp2p::autonat::Event),
-}
+    /// Make sure that connections are made by the transport and
+    /// set the network as ready when all connections are established
+    #[instrument(level = "trace", skip_all, fields(id = %local_id))]
+    pub async fn run(
+        local_id: PeerId,
+        mut transport: Transport,
+        connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+        mut to_connect: HashSet<PeerId>,
+        network_tx: Sender<NetworkMessage>,
+        tx_ready: oneshot::Sender<()>,
+    ) {
+        let connection_receiver = transport.rx_connection();
+        let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
+        while let Some(connection) = connection_receiver.recv().await {
+            let remote_id = connection.remote_id;
+            trace!("Received connection from: {}", remote_id);
+            if let Some(task) = handles.remove(&remote_id) {
+                // Wait until previous sync task completes
+                task.await.ok();
+            }
+            let sender = connection.tx.clone();
+            // Channel for sending outbound communication on the connection
+            let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
+            connections
+                .write()
+                .await
+                .insert(connection.remote_id, outbound_sender);
+            let task = spawn(Self::connection_task(
+                connection,
+                sender.clone(),
+                network_tx.clone(),
+                outbound_receiver,
+            ));
 
-/// Bind all interfaces on port `port`
-/// NOTE we may want something more general in the fture.
-#[must_use]
-pub fn gen_multiaddr(port: u16) -> Multiaddr {
-    build_multiaddr!(Ip4([0, 0, 0, 0]), Udp(port), QuicV1)
-}
+            handles.insert(remote_id, task);
+            to_connect.remove(&remote_id);
+            if to_connect.is_empty() {
+                break;
+            }
+        }
+        let _ = tx_ready.send(());
+        join_all(handles.into_values()).await;
+    }
 
-/// `BoxedTransport` is a type alias for a boxed tuple containing a `PeerId` and a `StreamMuxerBox`.
-///
-/// This type is used to represent a transport in the libp2p network framework. The `PeerId` is a unique identifier for each peer in the network, and the `StreamMuxerBox` is a type of multiplexer that can handle multiple substreams over a single connection.
-type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
+    pub async fn connection_task(
+        mut connection: Connection,
+        sender: Sender<NetworkMessage>,
+        network_tx: Sender<NetworkMessage>,
+        mut outbound_receiver: mpsc::Receiver<NetworkMessage>,
+    ) -> Option<()> {
+        loop {
+            tokio::select! {
+                inbound_msg = connection.rx.recv() => {
+                    match inbound_msg {
+                        Some(msg) => {
+                            if let Err(e) = network_tx.send(msg).await {
+                                warn!("Failed to send inbound message: {:?}", e);
+                            }
+                        }
+                        None => {
+                            warn!("Inbound channel was closed");
+                            break;
+                        }
+                    }
+                }
+                outbound_msg = outbound_receiver.recv() => {
+                    match outbound_msg {
+                        Some(msg) => {
+                            if let Err(e) = sender.send(msg).await {
+                                warn!("Failed to send outbound message: {:?}", e);
+                            }
+                        }
+                        None => {
+                            warn!("Outbound channel was closed");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 
-/// Generates an authenticated transport checked against the stake table.
-/// If the stake table or authentication message is not provided, the transport will
-/// not participate in stake table authentication.
-///
-/// # Errors
-/// If we could not create a DNS transport
-#[instrument(skip(identity))]
-pub async fn gen_transport<K: SignatureKey + 'static>(
-    identity: Keypair,
-    stake_table: Option<HashSet<K>>,
-    auth_message: Option<Vec<u8>>,
-) -> Result<BoxedTransport, NetworkError> {
-    // Create the initial `Quic` transport
-    let transport = {
-        let mut config = quic::Config::new(&identity);
-        config.handshake_timeout = std::time::Duration::from_secs(20);
-        QuicTransport::new(config)
-    };
+    // TODO: Shutdown gracefully
+    pub async fn shut_down(&self) -> Result<(), NetworkError> {
+        self.connections.write().await.clear();
+        Ok(())
+    }
 
-    // Require authentication against the stake table
-    let transport = StakeTableAuthentication::new(transport, stake_table, auth_message);
+    pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
+        let msg: NetworkMessage = NetworkMessage::from(message);
+        for connection in self.connections.read().await.values() {
+            if (connection.send(msg.clone()).await).is_err() {
+                return Err(NetworkError::ChannelSendError(
+                    "Error sending message".to_string(),
+                ));
+            }
+        }
+        self.network_tx.send(msg).await.map_err(|_| {
+            NetworkError::ChannelSendError("Error sending message to self".to_string())
+        })?;
+        Ok(())
+    }
 
-    // Support DNS resolution
-    let transport = { DnsTransport::system(transport) }
-        .map_err(|e| NetworkError::ConfigError(format!("failed to build DNS transport: {e}")))?;
+    pub async fn direct_message(
+        &self,
+        recipient: PublicKey,
+        message: Vec<u8>,
+    ) -> Result<(), NetworkError> {
+        let msg = NetworkMessage::from(message);
+        if recipient == self.keypair.public_key() {
+            self.network_tx.send(msg.clone()).await.map_err(|_| {
+                NetworkError::ChannelSendError("Error sending message to self".to_string())
+            })?;
+        }
+        if let Some((peer_id, _)) = self.nodes.get(&recipient) {
+            if let Some(connection) = self.connections.read().await.get(peer_id) {
+                connection.send(msg).await.map_err(|_| {
+                    NetworkError::ChannelSendError("Error sending message".to_string())
+                })?;
+                return Ok(());
+            }
+            return Err(NetworkError::MessageSendError(
+                "Connection not found".to_string(),
+            ));
+        }
+        Err(NetworkError::LookupError(
+            "Unable to find the pid connected to the public key".to_string(),
+        ))
+    }
 
-    Ok(transport
-        .map(|(peer_id, connection), _| (peer_id, StreamMuxerBox::new(connection)))
-        .boxed())
+    pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {
+        match self.network_rx.recv().await {
+            Some(message) => Ok(message.into_bytes()),
+            None => Err(NetworkError::ChannelReceiveError(
+                "Error receiving message".to_string(),
+            )),
+        }
+    }
 }

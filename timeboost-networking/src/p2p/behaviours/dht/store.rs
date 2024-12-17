@@ -11,7 +11,7 @@ use timeboost_crypto::traits::signature_key::SignatureKey;
 use tracing::warn;
 
 use super::record::RecordValue;
-use crate::network::behaviours::dht::record::RecordKey;
+use crate::p2p::behaviours::dht::record::RecordKey;
 
 /// A `RecordStore` wrapper that validates records before storing them.
 pub struct ValidatedStore<R: RecordStore, K: SignatureKey> {
@@ -97,7 +97,7 @@ mod test {
     use timeboost_crypto::{signature_key::BLSPubKey, traits::signature_key::SignatureKey};
 
     use super::*;
-    use crate::network::behaviours::dht::record::Namespace;
+    use crate::p2p::behaviours::dht::record::Namespace;
 
     /// Test that a valid record is stored
     #[test]

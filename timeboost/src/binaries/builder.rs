@@ -10,8 +10,7 @@ use timeboost_core::types::NodeId;
 use timeboost_core::until::run_until;
 
 use clap::Parser;
-use timeboost_networking::network::client::derive_libp2p_multiaddr;
-use timeboost_utils::unsafe_zero_keypair;
+use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::{signal, sync::watch};
 use tracing::warn;
 
@@ -67,7 +66,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    timeboost_core::logging::init_logging();
+    logging::init_logging();
 
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
@@ -93,7 +92,7 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let bind_address = derive_libp2p_multiaddr(&format!("0.0.0.0:{}", cli.port)).unwrap();
+    let bind_address = &format!("0.0.0.0:{}", cli.port);
 
     #[cfg(feature = "until")]
     let handle = {
@@ -118,7 +117,7 @@ async fn main() -> Result<()> {
         bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
         staked_nodes: committee.staked_nodes(),
         keypair,
-        bind_address,
+        bind_address: bind_address.clone(),
         shutdown_rx,
     };
 

@@ -1,8 +1,5 @@
-use timeboost_core::{
-    logging,
-    types::message::{Action, Message, Timeout},
-};
-use timeboost_utils::types::round_number::RoundNumber;
+use timeboost_core::types::message::{Action, Message, Timeout};
+use timeboost_utils::types::{logging, round_number::RoundNumber};
 
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 

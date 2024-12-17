@@ -14,7 +14,9 @@ use sequencer::{
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_networking::network::client::{derive_libp2p_peer_id, Libp2pInitializer};
+use timeboost_networking::p2p::client::{
+    derive_libp2p_multiaddr, derive_libp2p_peer_id, Libp2pInitializer,
+};
 use timeboost_utils::PeerConfig;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
@@ -22,7 +24,7 @@ use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
 
-use multiaddr::{Multiaddr, PeerId};
+use multiaddr::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
@@ -55,7 +57,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashSet<(PeerId, Multiaddr)>,
+    pub bootstrap_nodes: HashSet<(PeerId, String)>,
 
     /// The staked nodes to join the committee with.
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
@@ -64,7 +66,7 @@ pub struct TimeboostInitializer {
     pub keypair: Keypair,
 
     /// The bind address for the node.
-    pub bind_address: Multiaddr,
+    pub bind_address: String,
 
     /// The receiver for the shutdown signal.
     pub shutdown_rx: watch::Receiver<()>,
@@ -113,12 +115,25 @@ impl HasInitializer for Timeboost {
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
+        let libp2p_bootstrap_nodes = initializer
+            .bootstrap_nodes
+            .into_iter()
+            .map(|(pid, addr)| {
+                (
+                    pid,
+                    derive_libp2p_multiaddr(&addr).expect("derive multiaddr"),
+                )
+            })
+            .collect();
+        let libp2p_bind_address =
+            derive_libp2p_multiaddr(&initializer.bind_address).expect("derive multiaddr");
+
         // Make the network.
         let network = Libp2pInitializer::new(
             &initializer.keypair.secret_key(),
             initializer.staked_nodes.clone(),
-            initializer.bootstrap_nodes.clone(),
-            initializer.bind_address.clone(),
+            libp2p_bootstrap_nodes,
+            libp2p_bind_address,
         )?
         .into_network(
             u64::from(initializer.id) as usize,
