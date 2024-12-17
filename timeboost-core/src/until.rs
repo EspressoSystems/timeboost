@@ -85,6 +85,8 @@ pub async fn run_until(
 
                                 if committed_round >= until {
                                     // tracing::info!("watchdog completed successfully");
+                                    // Make sure not to shutdown right away in case other nodes needs messages still
+                                    sleep(Duration::from_secs(5)).await;
                                     tracing::error!("watchdog completed successfully id: {}, committed_round: {}", port, committed_round);
                                     shutdown_tx.send(()).expect(
                                             "the shutdown sender was dropped before the receiver could receive the token",

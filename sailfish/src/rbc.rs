@@ -172,11 +172,15 @@ impl Comm for Rbc {
         info!("shutting down operations");
         self.closed = true;
         let (tx, rx) = oneshot::channel();
+        tracing::error!("rbc shutdown");
         if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
             warn!(%err, "error during shutdown");
         }
+        tracing::error!("rbc await rx");
         let _ = rx.await;
+        tracing::error!("close");
         self.rx.close();
+        tracing::error!("complete");
         info!("shutdown complete");
         Ok(())
     }
