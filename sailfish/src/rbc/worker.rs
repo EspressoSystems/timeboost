@@ -20,9 +20,6 @@ type Result<T> = std::result::Result<T, RbcError>;
 type Sender = mpsc::Sender<Message<Validated>>;
 type Receiver = mpsc::Receiver<Command>;
 
-/// The number of old rounds for which to keep data in our buffer.
-const BUFFER_HISTORY_LEN: u64 = 8;
-
 /// A worker is run by `Rbc` to perform the actual work of sending and
 /// delivering messages.
 pub struct Worker<C> {
@@ -267,8 +264,11 @@ impl<C: RawComm> Worker<C> {
         self.round = max(self.round, msg.round());
 
         // Remove buffer entries that are too old to be relevant.
-        self.buffer
-            .retain(|r, _| *r + BUFFER_HISTORY_LEN >= self.round);
+        self.buffer.retain(|r, _| {
+            let n = self.config.committee.size().get() as u64;
+            let t = self.config.committee.threshold().get() as u64;
+            *r + n + t >= self.round
+        });
 
         let tracker = Tracker {
             ours: true,
