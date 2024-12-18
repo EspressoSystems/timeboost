@@ -171,39 +171,34 @@ impl Comm for Rbc {
             return Ok(());
         }
         info!("shutting down operations");
+        info!("shutting down operations");
         self.closed = true;
-        let mut retries = 0;
-        while retries < 5 {
-            let (tx, rx) = oneshot::channel();
-            tracing::error!(
-                "rbc shutdown: {}, closed: {}, len: {}, capacity: {}",
-                retries,
-                self.rx.is_closed(),
-                self.rx.len(),
-                self.rx.capacity()
-            );
-            let _ = self.tx.send(Command::Shutdown(tx)).await;
-            tracing::error!(
-                "send shutdown: {}, closed: {}, len: {}, capacity: {}",
-                retries,
-                self.rx.is_closed(),
-                self.rx.len(),
-                self.rx.capacity()
-            );
-            if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), async {
-                let res = rx.await;
-                tracing::error!("rx result: {}", res.is_ok());
-                res
-            })
-            .await
-            {
-                tracing::error!("rx complete");
-                self.rx.close();
-                tracing::error!("done");
-                return Ok(());
-            }
-            retries += 1;
-            tokio::time::sleep(Duration::from_millis(200)).await;
+        let (tx, rx) = oneshot::channel();
+        tracing::error!(
+            "rbc shutdown: rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
+            self.rx.is_closed(),
+            self.rx.len(),
+            self.rx.capacity(),
+            self.tx.is_closed(),
+            self.tx.max_capacity(),
+            self.tx.capacity(),
+        );
+        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
+            tracing::error!(%err, "error on tx during shutdown");
+        }
+        tracing::error!(
+            "send shutdown: rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
+            self.rx.is_closed(),
+            self.rx.len(),
+            self.rx.capacity(),
+            self.tx.is_closed(),
+            self.tx.max_capacity(),
+            self.tx.capacity(),
+        );
+        if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), rx).await {
+            tracing::error!("close");
+            self.rx.close();
+            return Ok(());
         }
 
         panic!("unsuccesful shutdown");
