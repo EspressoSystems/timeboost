@@ -202,7 +202,7 @@ impl Comm for Rbc {
         }
 
         tracing::error!(
-            "panicking!!!!! rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
+            "maybe panic!!!!! rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
             self.rx.is_closed(),
             self.rx.len(),
             self.rx.capacity(),
@@ -210,6 +210,39 @@ impl Comm for Rbc {
             self.tx.max_capacity(),
             self.tx.capacity(),
         );
+        loop {
+            match self.rx.try_recv() {
+                Ok(msg) => {
+                    tracing::error!("Drained message: {}", msg);
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    tracing::error!("Receiver is empty, draining complete");
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    tracing::error!("Receiver has been disconnected, draining complete");
+                    break;
+                }
+            }
+        }
+        let (tx, rx) = oneshot::channel();
+        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
+            tracing::error!(%err, "error on tx during shutdown");
+        }
+        tracing::error!(
+            "waiting second time! rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
+            self.rx.is_closed(),
+            self.rx.len(),
+            self.rx.capacity(),
+            self.tx.is_closed(),
+            self.tx.max_capacity(),
+            self.tx.capacity(),
+        );
+        if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), rx).await {
+            tracing::error!("close second");
+            self.rx.close();
+            return Ok(());
+        }
         panic!("unsuccesful shutdown");
     }
 }
