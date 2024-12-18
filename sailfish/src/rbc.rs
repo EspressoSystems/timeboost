@@ -201,6 +201,15 @@ impl Comm for Rbc {
             return Ok(());
         }
 
+        tracing::error!(
+            "panicking!!!!! rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
+            self.rx.is_closed(),
+            self.rx.len(),
+            self.rx.capacity(),
+            self.tx.is_closed(),
+            self.tx.max_capacity(),
+            self.tx.capacity(),
+        );
         panic!("unsuccesful shutdown");
     }
 }
