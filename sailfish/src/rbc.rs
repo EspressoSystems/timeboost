@@ -8,7 +8,7 @@ use timeboost_core::traits::comm::{Comm, RawComm};
 use timeboost_core::types::message::Message;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{info, warn};
 
 mod digest;
 mod worker;
@@ -171,32 +171,12 @@ impl Comm for Rbc {
             return Ok(());
         }
         info!("shutting down operations");
-        info!("shutting down operations");
         self.closed = true;
         let (tx, rx) = oneshot::channel();
-        tracing::error!(
-            "rbc shutdown: rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
-            self.rx.is_closed(),
-            self.rx.len(),
-            self.rx.capacity(),
-            self.tx.is_closed(),
-            self.tx.max_capacity(),
-            self.tx.capacity(),
-        );
         if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
-            tracing::error!(%err, "error on tx during shutdown");
+            warn!(%err, "error during shutdown");
         }
-        tracing::error!(
-            "send shutdown: rx closed: {}, rx len: {}, rx capacity: {}, tx closed: {}, tx max: {}, tx capacity: {}",
-            self.rx.is_closed(),
-            self.rx.len(),
-            self.rx.capacity(),
-            self.tx.is_closed(),
-            self.tx.max_capacity(),
-            self.tx.capacity(),
-        );
         if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), rx).await {
-            tracing::error!("close");
             self.rx.close();
             return Ok(());
         }
@@ -225,8 +205,8 @@ impl Comm for Rbc {
                 }
             }
         }
-        let (tx, rx) = oneshot::channel();
-        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
+        let (tx1, rx1) = oneshot::channel();
+        if let Err(err) = self.tx.send(Command::Shutdown(tx1)).await {
             tracing::error!(%err, "error on tx during shutdown");
         }
         tracing::error!(
@@ -238,7 +218,7 @@ impl Comm for Rbc {
             self.tx.max_capacity(),
             self.tx.capacity(),
         );
-        if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), rx).await {
+        if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), rx1).await {
             tracing::error!("close second");
             self.rx.close();
             return Ok(());

@@ -229,7 +229,12 @@ impl<C: RawComm> Worker<C> {
                         let c = self.comm.shutdown().await;
                         tracing::error!("send reply: {}", c.is_ok());
                         let s = reply.send(());
-                        tracing::error!("sent reply: {}", s.is_ok());
+                        if s.is_ok() {
+                            tracing::error!("succesfully sent reply");
+                        } else {
+                            tracing::error!("error reply: {:?}", s);
+                        }
+
                         return
                     }
                     None => {
