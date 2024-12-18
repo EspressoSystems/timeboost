@@ -233,6 +233,7 @@ impl<C: RawComm> Worker<C> {
                         return
                     }
                     None => {
+                        tracing::error!("channel closed");
                         return
                     }
                 }

@@ -174,10 +174,22 @@ impl Comm for Rbc {
         self.closed = true;
         let mut retries = 0;
         while retries < 5 {
-            tracing::error!("rbc shutdown: {}", retries);
             let (tx, rx) = oneshot::channel();
-            tracing::error!("send shutdown: retries: {}", retries);
+            tracing::error!(
+                "rbc shutdown: {}, closed: {}, len: {}, capacity: {}",
+                retries,
+                self.rx.is_closed(),
+                self.rx.len(),
+                self.rx.capacity()
+            );
             let _ = self.tx.send(Command::Shutdown(tx)).await;
+            tracing::error!(
+                "send shutdown: {}, closed: {}, len: {}, capacity: {}",
+                retries,
+                self.rx.is_closed(),
+                self.rx.len(),
+                self.rx.capacity()
+            );
             if let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(1), async {
                 let res = rx.await;
                 tracing::error!("rx result: {}", res.is_ok());
