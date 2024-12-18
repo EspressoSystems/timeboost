@@ -178,59 +178,73 @@ impl<C: RawComm> Worker<C> {
         loop {
             tokio::select! {
                 now = self.timer.tick() => {
-                    if let Err(e) = self.retry(now).await {
-                        warn!(n = %self.label, %e, "error retrying");
+                    match self.retry(now).await {
+                        Ok(()) => {}
+                        Err(RbcError::Shutdown) => {
+                            debug!(n = %self.label, "rbc shutdown detected");
+                            let _ = self.comm.shutdown().await;
+                            return;
+                        }
+                        Err(e) => {
+                            warn!(n = %self.label, %e, "error retrying");
+                        }
                     }
                 },
                 val = self.comm.receive() => {
                     match val {
                         Ok(bytes) => {
-                            if let Err(e) = self.on_inbound(bytes).await {
-                                warn!(n = %self.label, %e, "error on inbound message");
+                            match self.on_inbound(bytes).await {
+                                Ok(()) => {}
+                                Err(RbcError::Shutdown) => {
+                                    debug!(n = %self.label, "rbc shutdown detected");
+                                    let _ = self.comm.shutdown().await;
+                                    return;
+                                }
+                                Err(e) => {
+                                    warn!(n = %self.label, %e, "error on inbound message");
+                                }
                             }
                         }
                         Err(e) => warn!(n = %self.label, %e, "error receiving message from network")
                     }
                 },
-                cmd = self.rx.recv() => match cmd {
-                    Some(Command::RbcBroadcast(msg, tx)) => {
-                        match self.on_outbound(msg).await {
-                            Ok(()) => {
-                                let _ = tx.send(Ok(()));
-                            }
-                            Err(RbcError::Shutdown) => {
-                                warn!(n = %self.label, "unexpected shutdown detected");
-                                let _ = self.comm.shutdown().await;
-                                return
-                            }
-                            Err(e) => {
-                                warn!(n = %self.label, %e, "error rbc broadcasting message");
-                                let _ = tx.send(Err(e));
+                cmd = self.rx.recv() => {
+                    match cmd {
+                        Some(Command::RbcBroadcast(msg, tx)) => {
+                            match self.on_outbound(msg).await {
+                                Ok(()) => {
+                                    let _ = tx.send(Ok(()));
+                                }
+                                Err(e) => {
+                                    warn!(n = %self.label, %e, "error rbc broadcasting message");
+                                    let _ = tx.send(Err(e));
+                                }
                             }
                         }
-                    }
-                    // Best-effort sending to a peer without RBC properties.
-                    Some(Command::Send(to, msg)) => {
-                        match self.on_send(to, &msg).await {
-                            Ok(()) => {}
-                            Err(e) => warn!(n = %self.label, %e, "error sending message")
+                        // Best-effort sending to a peer without RBC properties.
+                        Some(Command::Send(to, msg)) => {
+                            match self.on_send(to, &msg).await {
+                                Ok(()) => {}
+                                Err(e) => warn!(n = %self.label, %e, "error sending message")
+                            }
                         }
-                    }
-                    // Best-effort broadcast without RBC properties.
-                    Some(Command::Broadcast(msg)) => {
-                        match self.on_broadcast(&msg).await {
-                            Ok(()) => {}
-                            Err(e) => warn!(n = %self.label, %e, "error broadcasting message")
+                        // Best-effort broadcast without RBC properties.
+                        Some(Command::Broadcast(msg)) => {
+                            match self.on_broadcast(&msg).await {
+                                Ok(()) => {}
+                                Err(e) => warn!(n = %self.label, %e, "error broadcasting message")
+                            }
                         }
-                    }
-                    // Terminate operation.
-                    Some(Command::Shutdown(reply)) => {
-                        let _ = self.comm.shutdown().await;
-                        let _ = reply.send(());
-                        return
-                    }
-                    None => {
-                        return
+                        // Terminate operation.
+                        Some(Command::Shutdown) => {
+                            let _ = self.comm.shutdown().await;
+                            return
+                        }
+                        None => {
+                            debug!(n = %self.label, "rbc shutdown detected");
+                            let _ = self.comm.shutdown().await;
+                            return
+                        }
                     }
                 }
             }

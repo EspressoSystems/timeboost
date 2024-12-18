@@ -41,7 +41,7 @@ enum Command {
     /// Do a byzantine reliable broadcast of the given message.
     RbcBroadcast(Message<Validated>, oneshot::Sender<Result<(), RbcError>>),
     /// End operation.
-    Shutdown(oneshot::Sender<()>),
+    Shutdown,
 }
 
 /// RBC configuration
@@ -89,14 +89,13 @@ impl Config {
 ///      (arXiv:2102.07240v3)
 #[derive(Debug)]
 pub struct Rbc {
+    id: PublicKey,
     // Inbound, RBC-delivered messages.
     rx: mpsc::Receiver<Message<Validated>>,
     // Directives to the RBC worker.
     tx: mpsc::Sender<Command>,
     // The worker task handle.
     jh: JoinHandle<()>,
-    // Have we shutdown?
-    closed: bool,
 }
 
 impl Drop for Rbc {
@@ -109,12 +108,13 @@ impl Rbc {
     pub fn new<C: RawComm + Send + 'static>(n: C, c: Config) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+        let id = c.keypair.public_key();
         let worker = Worker::new(ibound_tx, obound_rx, c, n);
         Self {
+            id,
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
-            closed: false,
         }
     }
 }
@@ -124,7 +124,7 @@ impl Comm for Rbc {
     type Err = RbcError;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        if self.closed {
+        if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
 
@@ -151,7 +151,7 @@ impl Comm for Rbc {
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        if self.closed {
+        if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
         self.tx
@@ -166,17 +166,14 @@ impl Comm for Rbc {
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        if self.closed {
+        if self.rx.is_closed() {
             return Ok(());
         }
-        info!("shutting down operations");
-        self.closed = true;
-        let (tx, rx) = oneshot::channel();
-        if let Err(err) = self.tx.send(Command::Shutdown(tx)).await {
-            warn!(%err, "error during shutdown");
-        }
-        let _ = rx.await;
+        info!(n = %self.id, "shutting down operations");
         self.rx.close();
+        if let Err(e) = self.tx.send(Command::Shutdown).await {
+            warn!(n = %self.id, %e, "error during shutdown");
+        }
         info!("shutdown complete");
         Ok(())
     }
