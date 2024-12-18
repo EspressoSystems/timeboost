@@ -174,7 +174,7 @@ impl Comm for Rbc {
         if let Err(e) = self.tx.send(Command::Shutdown).await {
             warn!(n = %self.id, %e, "error during shutdown");
         }
-        info!("shutdown complete");
+        info!(n = %self.id, "shutdown complete");
         Ok(())
     }
 }
