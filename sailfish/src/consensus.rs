@@ -220,14 +220,16 @@ impl Consensus {
 
         let v = e.into_data();
 
-        if self.dag.contains(&v) {
-            debug!(n = %self.public_key(), r = %self.round, %v, "vertex already in dag");
+        if self.dag.contains(&v) || self.buffer.contains(&v) {
+            debug!(n = %self.public_key(), r = %self.round, %v, "duplicate vertex");
             return actions;
         }
 
         if !self.is_valid(&v) {
             return actions;
         }
+
+        actions.extend(self.catchup());
 
         let accum = self
             .rounds
@@ -264,31 +266,42 @@ impl Consensus {
                         )
                     }
                 }
-                for v in self.buffer.drain().map(|(.., v)| v) {
-                    let r = *v.round().data();
-                    match self.try_to_add_to_dag(v) {
-                        Ok(a) => {
-                            actions.extend(a);
-                            if r >= self.round && self.dag.vertex_count(r) >= quorum {
-                                if let Some(e) = self.evidence(r) {
-                                    actions.extend(self.advance_from_round(r, e))
-                                } else {
-                                    warn!(
-                                        n = %self.public_key(),
-                                        r = %self.round,
-                                        v = %r,
-                                        "no evidence for vertex round exists outside of dag"
-                                    )
-                                }
-                            }
-                        }
-                        Err(v) => {
-                            self.buffer.add(v);
+                actions.extend(self.try_to_add_from_buffer());
+                self.metrics.vertex_buffer.set(self.buffer.depth());
+            }
+        }
+
+        actions
+    }
+
+    /// Try to add vertices from buffer to DAG in increasing number of rounds.
+    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round))]
+    fn try_to_add_from_buffer(&mut self) -> Vec<Action> {
+        let mut actions = Vec::new();
+
+        let quorum = self.committee.quorum_size().get();
+
+        for v in self.buffer.drain().map(|(.., v)| v) {
+            let r = *v.round().data();
+            match self.try_to_add_to_dag(v) {
+                Ok(a) => {
+                    actions.extend(a);
+                    if r >= self.round && self.dag.vertex_count(r) >= quorum {
+                        if let Some(e) = self.evidence(r) {
+                            actions.extend(self.advance_from_round(r, e))
+                        } else {
+                            warn!(
+                                n = %self.public_key(),
+                                r = %self.round,
+                                v = %r,
+                                "no evidence for vertex round exists outside of dag"
+                            )
                         }
                     }
                 }
-
-                self.metrics.vertex_buffer.set(self.buffer.depth());
+                Err(v) => {
+                    self.buffer.add(v);
+                }
             }
         }
 
@@ -616,28 +629,13 @@ impl Consensus {
         let r = *v.round().data();
 
         if v.edges().any(|w| self.dag.vertex(r - 1, w).is_none()) {
-            if self.round + 2 >= r {
-                debug!(
-                    n = %self.public_key(),
-                    r = %self.round,
-                    v = %v,
-                    "not all edges are resolved in dag"
-                );
-                return Err(v);
-            }
-            if v.edges().any(|w| self.buffer.vertex(r - 1, w).is_none()) {
-                warn!(
-                    n = %self.public_key(),
-                    r = %self.round,
-                    v = %v,
-                    "not all edges are resolved in buffer"
-                );
-                return Err(v);
-            }
-            for w in self.buffer.drain_round(r - 1) {
-                self.dag.add(w)
-            }
-            self.buffer.remove(r);
+            debug!(
+                n = %self.public_key(),
+                r = %self.round,
+                v = %v,
+                "not all edges are resolved in dag"
+            );
+            return Err(v);
         }
 
         let is_genesis_vertex = v.is_genesis();
@@ -828,6 +826,50 @@ impl Consensus {
         };
 
         true
+    }
+
+    /// Try to catch up if we see that the buffer has grown too large.
+    ///
+    /// When we see the buffer has grown to contain more rounds than we have
+    /// committee members, we assume that we lag behind. Conditions such as
+    /// late starts or messages that have been withheld may cause vertex edges
+    /// to not be resolvable in our DAG.
+    ///
+    /// To prevent unbounded buffer growth we abandon our DAG and replace it
+    /// with the first round of > 2f vertices from the buffer. This allows us
+    /// to fast-forward, but skips over rounds in between.
+    #[instrument(level = "trace", skip_all, fields(
+        n = %self.public_key(),
+        r = %self.round,
+        c = %self.committed_round,
+        b = %self.buffer.depth())
+    )]
+    fn catchup(&mut self) -> Vec<Action> {
+        if self.buffer.depth() <= self.committee.size().get() {
+            return Vec::new();
+        }
+
+        let Some(r) = self.buffer.min_round() else {
+            return Vec::new();
+        };
+
+        if self.buffer.vertex_count(r) < self.committee.quorum_size().get() {
+            // If the first round does not contain enough vertices we remove
+            // it and try to catch up when the next vertex arrives. We do this
+            // because we consider it unlikely for the first round to see
+            // more messages at this point.
+            self.buffer.remove(r);
+            return Vec::new();
+        }
+
+        warn!(n = %self.public_key(), r = %self.round, c = %self.committed_round, "replacing dag");
+
+        self.dag.clear();
+        for v in self.buffer.drain_round(r) {
+            self.dag.add(v)
+        }
+
+        self.try_to_add_from_buffer()
     }
 
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {

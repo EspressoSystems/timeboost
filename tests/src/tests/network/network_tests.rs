@@ -259,6 +259,7 @@ where
     let num_nodes = 5;
     let group = Group::new(num_nodes);
     let online_at_round = 4;
+
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();
         // Late start 1 node
@@ -278,9 +279,9 @@ where
                     TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             let r = **v.data().round().data();
-                            if v.data().evidence().is_timeout() && r != 3 {
+                            if v.data().evidence().is_timeout() && ![3, 8].contains(&r) {
                                 return TestOutcome::Failed(
-                                    "We should only timeout when node 4 is leader the first time",
+                                    "We should only timeout when node 4 is leader twice",
                                 );
                             }
                             // Go 10 rounds passed from when the nodes come online

@@ -42,17 +42,17 @@ impl Dag {
 
     /// Removes all rounds up to (and including) the specified round number from the DAG
     pub fn remove(&mut self, r: RoundNumber) {
-        self.elements = self.elements.split_off(&r);
+        self.elements = self.elements.split_off(&(r + 1));
+    }
+
+    /// Remove all elements from this DAG.
+    pub fn clear(&mut self) {
+        self.elements.clear()
     }
 
     /// Returns the total number of rounds present in the DAG
     pub fn depth(&self) -> usize {
         self.elements.len()
-    }
-
-    /// Returns an iterator over all round numbers present in the DAG
-    pub fn rounds(&self) -> impl Iterator<Item = RoundNumber> + '_ {
-        self.elements.keys().copied()
     }
 
     /// Returns the highest round number present in the DAG, if any.
