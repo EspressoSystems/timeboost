@@ -14,7 +14,7 @@ custom_debug = "0.6.2"
 delegate = "0.13"
 derive_builder = { workspace = true }
 futures = { workspace = true }
-lazy_static = "1"
+lazy_static = { workspace = true }
 libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
     "macros",
     "autonat",

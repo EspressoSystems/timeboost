@@ -23,10 +23,13 @@ run *ARGS:
   cargo run {{ARGS}}
 
 clippy:
-  cargo clippy --workspace --lib --tests -- -D warnings
+  cargo clippy --workspace --lib --tests --benches -- -D warnings
+
+check:
+  cargo check --all
 
 fmt:
-  cargo fmt
+  cargo fmt --all
 
 fmt_check:
   cargo fmt --check
@@ -54,3 +57,5 @@ run_tx_generator *ARGS:
 
 ci_local:
   just build && just lint && just test_ci --release && just run_demo && just build_docker
+
+bacon: clippy check fmt
