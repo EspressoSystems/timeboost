@@ -85,7 +85,7 @@ impl Net {
             init_actions.extend(node.go(d.clone(), Evidence::Genesis));
         }
         let mut msgs = Self::action_to_msg(init_actions);
-        // ret.extend(msgs.clone());
+        ret.extend(msgs.clone());
 
         while *self.round() < self.rounds {
             let a = self.send(msgs);
@@ -145,7 +145,7 @@ fn bench_multi_round_consensus(rounds: u64) {
         .get(&rounds)
         .expect("data for rounds to exist")
         .clone();
-    assert_eq!(msgs.len() as u64, 10);
+    assert_eq!(msgs.len() as u64, 11);
 
     // Run the actual test.
     let kp = Keypair::from_seed(SEED);
