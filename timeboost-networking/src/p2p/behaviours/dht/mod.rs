@@ -18,7 +18,6 @@ use futures::{
     channel::{mpsc, oneshot::Sender},
     SinkExt,
 };
-use lazy_static::lazy_static;
 use libp2p::kad::{
     /* handler::KademliaHandlerIn, */ store::MemoryStore, BootstrapOk, GetClosestPeersOk,
     GetRecordOk, GetRecordResult, ProgressStep, PutRecordResult, QueryId, QueryResult, Record,
@@ -42,10 +41,8 @@ pub mod store;
 /// in order to trust that the answer is correct when retrieving from the DHT
 pub(crate) const NUM_REPLICATED_TO_TRUST: usize = 2;
 
-lazy_static! {
-    /// the maximum number of nodes to query in the DHT at any one time
-    static ref MAX_DHT_QUERY_SIZE: NonZeroUsize = NonZeroUsize::new(50).unwrap();
-}
+/// the maximum number of nodes to query in the DHT at any one time
+const MAX_DHT_QUERY_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(50) };
 
 use super::exponential_backoff::ExponentialBackoff;
 use crate::p2p::{ClientRequest, NetworkEvent};
@@ -345,7 +342,7 @@ impl<K: SignatureKey + 'static> DHTBehaviour<K> {
                         warn!("Get DHT: Internal disagreement for get dht request {:?}! requerying with more nodes. {:?} retries left", progress, new_retry_count);
                         let new_factor = NonZeroUsize::max(
                             NonZeroUsize::new(num_replicas.get() + 1).unwrap_or(num_replicas),
-                            *MAX_DHT_QUERY_SIZE,
+                            MAX_DHT_QUERY_SIZE,
                         );
                         self.retry_get(KadGetQuery {
                             backoff,
