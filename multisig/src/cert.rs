@@ -3,17 +3,17 @@ use std::collections::BTreeMap;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, PublicKey, Signature};
+use crate::{Committee, KeyId, PublicKey, Signature};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Certificate<D: Committable> {
     data: D,
     commitment: Commitment<D>,
-    signatures: BTreeMap<u8, Signature>,
+    signatures: BTreeMap<KeyId, Signature>,
 }
 
 impl<D: Committable> Certificate<D> {
-    pub(crate) fn new(data: D, commit: Commitment<D>, sigs: BTreeMap<u8, Signature>) -> Self {
+    pub(crate) fn new(data: D, commit: Commitment<D>, sigs: BTreeMap<KeyId, Signature>) -> Self {
         Self {
             data,
             commitment: commit,
@@ -55,7 +55,7 @@ impl<D: Committable> Certificate<D> {
         n >= committee.quorum_size().get()
     }
 
-    pub(crate) fn signatures(&self) -> &BTreeMap<u8, Signature> {
+    pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
         &self.signatures
     }
 }
