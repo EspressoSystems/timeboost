@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use libp2p_identity::PeerId;
 use multisig::PublicKey;
 use timeboost_networking::p2p::client::derive_libp2p_peer_id;
@@ -12,7 +14,7 @@ pub enum CommitteeBase {
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
 pub struct CommitteeContract {
-    bootstrap_nodes: Vec<(PeerId, String)>,
+    bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 
@@ -33,7 +35,7 @@ impl CommitteeContract {
     /// Create a new committee contract with `n` nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
     pub fn new_n(base: CommitteeBase, n: u16, skip_bootstrap_id: Option<u16>) -> Self {
-        let mut bootstrap_nodes = vec![];
+        let mut bootstrap_nodes = HashMap::new();
         let mut staked_nodes = vec![];
 
         for i in 0..n {
@@ -58,7 +60,7 @@ impl CommitteeContract {
                     continue;
                 }
             }
-            bootstrap_nodes.push((peer_id, bind_addr));
+            bootstrap_nodes.insert(kpr.public_key(), (peer_id, bind_addr));
         }
 
         Self {
@@ -73,7 +75,7 @@ impl CommitteeContract {
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> Vec<(PeerId, String)> {
-        self.bootstrap_nodes.to_vec()
+    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, (PeerId, String)> {
+        self.bootstrap_nodes.clone()
     }
 }

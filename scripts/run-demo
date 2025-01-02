@@ -20,6 +20,7 @@ if [ "${2:-}" = "true" ]; then
     late_start=true
 fi
 pids=()
+SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
@@ -51,5 +52,5 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
-
-echo "All processes have finished."
+duration=$SECONDS
+echo "All processes have finished (duration: $((duration)) sec)."

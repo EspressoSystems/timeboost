@@ -12,12 +12,13 @@ use sequencer::{
     },
     protocol::Sequencer,
 };
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_networking::p2p::client::{
-    derive_libp2p_multiaddr, derive_libp2p_peer_id, Libp2pInitializer,
-};
+use timeboost_networking::network::NetworkInitializer;
+use timeboost_networking::p2p::client::derive_libp2p_peer_id;
 use timeboost_utils::PeerConfig;
+use tokio::sync::oneshot;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
@@ -57,7 +58,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashSet<(PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
 
     /// The staked nodes to join the committee with.
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
@@ -115,35 +116,19 @@ impl HasInitializer for Timeboost {
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
-        let libp2p_bootstrap_nodes = initializer
-            .bootstrap_nodes
-            .into_iter()
-            .map(|(pid, addr)| {
-                (
-                    pid,
-                    derive_libp2p_multiaddr(&addr).expect("derive multiaddr"),
-                )
-            })
-            .collect();
-        let libp2p_bind_address =
-            derive_libp2p_multiaddr(&initializer.bind_address).expect("derive multiaddr");
-
-        // Make the network.
-        let network = Libp2pInitializer::new(
-            &initializer.keypair.secret_key(),
-            initializer.staked_nodes.clone(),
-            libp2p_bootstrap_nodes,
-            libp2p_bind_address,
-        )?
-        .into_network(
-            u64::from(initializer.id) as usize,
-            initializer.keypair.public_key(),
-            initializer.keypair.secret_key(),
-        )
-        .await?;
-        network.wait_for_ready().await;
-
+        let (tx_ready, rx_ready) = oneshot::channel();
         let peer_id = derive_libp2p_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
+        let network_init = NetworkInitializer::new(
+            peer_id,
+            initializer.keypair.clone(),
+            initializer.staked_nodes.clone(),
+            initializer.bootstrap_nodes,
+            initializer.bind_address.clone(),
+        )
+        .expect("failed to make initializer")
+        .into_network(tx_ready);
+        let network = network_init.await.expect("failed to make network");
+        rx_ready.await.expect("failed to connect to remote nodes");
 
         let committee = Committee::new(
             initializer
