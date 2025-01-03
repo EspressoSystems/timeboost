@@ -1,8 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lazy_static::lazy_static;
 use multisig::{Committee, Keypair, PublicKey, Validated};
 use sailfish::consensus::{Consensus, Dag};
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::{collections::HashMap, num::NonZeroUsize, sync::LazyLock};
 use timeboost_core::types::{
     message::{Action, Evidence, Message},
     NodeId,
@@ -13,19 +12,17 @@ const SEED: [u8; 32] = [
     1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-lazy_static! {
-    static ref TEST_DATA: HashMap<u64, Vec<Message>> = {
-        let mut m = HashMap::new();
-        m.insert(
-            10,
-            generate_quorum_data(MultiRoundTestSpec {
-                rounds: 10,
-                ..Default::default()
-            }),
-        );
-        m
-    };
-}
+static TEST_DATA: LazyLock<HashMap<u64, Vec<Message>>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert(
+        10,
+        generate_quorum_data(MultiRoundTestSpec {
+            rounds: 10,
+            ..Default::default()
+        }),
+    );
+    m
+});
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {

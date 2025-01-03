@@ -18,6 +18,33 @@ pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct KeyId(u8);
+
+impl KeyId {
+    pub fn to_bytes(self) -> [u8; 1] {
+        [self.0]
+    }
+}
+
+impl From<u8> for KeyId {
+    fn from(val: u8) -> Self {
+        Self(val)
+    }
+}
+
+impl From<KeyId> for usize {
+    fn from(val: KeyId) -> Self {
+        val.0.into()
+    }
+}
+
+impl From<KeyId> for u64 {
+    fn from(val: KeyId) -> Self {
+        val.0.into()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Keypair {
     pair: ed25519::KeyPair,
