@@ -3,19 +3,20 @@ use std::sync::Arc;
 
 use bimap::BiBTreeMap;
 
-use super::PublicKey;
+use super::{KeyId, PublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Committee {
-    parties: Arc<BiBTreeMap<u8, PublicKey>>,
+    parties: Arc<BiBTreeMap<KeyId, PublicKey>>,
 }
 
 impl Committee {
-    pub fn new<I>(it: I) -> Self
+    pub fn new<I, T>(it: I) -> Self
     where
-        I: IntoIterator<Item = (u8, PublicKey)>,
+        I: IntoIterator<Item = (T, PublicKey)>,
+        T: Into<KeyId>,
     {
-        let map = BiBTreeMap::from_iter(it);
+        let map = BiBTreeMap::from_iter(it.into_iter().map(|(i, k)| (i.into(), k)));
         assert!(!map.is_empty());
         Self {
             parties: Arc::new(map),
@@ -35,11 +36,11 @@ impl Committee {
         NonZeroUsize::new(q).expect("n + 1 > 0")
     }
 
-    pub fn get_key(&self, ix: u8) -> Option<&PublicKey> {
-        self.parties.get_by_left(&ix)
+    pub fn get_key<T: Into<KeyId>>(&self, ix: T) -> Option<&PublicKey> {
+        self.parties.get_by_left(&ix.into())
     }
 
-    pub fn get_index(&self, k: &PublicKey) -> Option<u8> {
+    pub fn get_index(&self, k: &PublicKey) -> Option<KeyId> {
         self.parties.get_by_right(k).copied()
     }
 
@@ -47,7 +48,7 @@ impl Committee {
         self.parties.contains_right(k)
     }
 
-    pub fn entries(&self) -> impl Iterator<Item = (u8, &PublicKey)> {
+    pub fn entries(&self) -> impl Iterator<Item = (KeyId, &PublicKey)> {
         self.parties.iter().map(|e| (*e.0, e.1))
     }
 
@@ -59,6 +60,15 @@ impl Committee {
         let i = round % self.parties.len();
         self.parties
             .right_values()
+            .nth(i)
+            .copied()
+            .expect("round % len < len")
+    }
+
+    pub fn leader_index(&self, round: usize) -> KeyId {
+        let i = round % self.parties.len();
+        self.parties
+            .left_values()
             .nth(i)
             .copied()
             .expect("round % len < len")
