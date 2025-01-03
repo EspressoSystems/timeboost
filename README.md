@@ -1,5 +1,5 @@
 # Timeboost
-Timeboost is a protocol which implements the Felden-Shoup [decentralized timeboost protocol](https://github.com/OffchainLabs/decentralized-timeboost-spec). This protocol is backed up by the [Sailfish](https://eprint.iacr.org/2024/472.pdf) distributed consensus protocol. This repository contains the implementation of the protocol in Rust, as well as exhaustive testing. The layout of the repository is as follows:
+Timeboost is a protocol which implements the Felten-Shoup [decentralized timeboost protocol](https://github.com/OffchainLabs/decentralized-timeboost-spec). This protocol is backed up by the [Sailfish](https://eprint.iacr.org/2024/472.pdf) distributed consensus protocol. This repository contains the implementation of the protocol in Rust, as well as exhaustive testing. The layout of the repository is as follows:
 
 - `timeboost` contains the core implementation of the decentralized Timeboost builder protocol.
 - `sailfish` contains the implementation of the Sailfish consensus protocol.
