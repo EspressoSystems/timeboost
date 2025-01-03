@@ -33,9 +33,13 @@ fn immediate_delivery_to_all() {
 /// references can not be fully resolved. D however keeps adding those
 /// references as it receives its own proposals immediately.
 ///
-/// Once this happens there will be continuous timeouts everytime D becomes
-/// leader as the other parties can not advance before timeout. NB how all
-/// parties except D have buffered vertex proposals.
+/// Once this happens there would be continuous timeouts everytime D becomes
+/// leader as the other parties can not advance before timeout. However D
+/// checks how many times its own public key has been included in vertex
+/// proposals from others and if in all of its DAG rounds the number is 0
+/// it will not include a self-reference in the next proposal (assuming it
+/// has > quorum proposals available). This allows others to include that
+/// proposal and subsequent ones from D.
 #[test]
 fn delayed_delivery() {
     timeboost_utils::types::logging::init_logging();
@@ -64,13 +68,11 @@ fn delayed_delivery() {
     ]);
     sim.goto(500);
 
-    assert_eq!(135, sim.events().iter().filter(|e| e.is_timeout()).count());
+    assert_eq!(5, sim.events().iter().filter(|e| e.is_timeout()).count());
 
-    assert_eq!(6, sim.consensus("A").buffer_depth());
-    assert_eq!(6, sim.consensus("B").buffer_depth());
-    assert_eq!(6, sim.consensus("C").buffer_depth());
-    assert_eq!(6, sim.consensus("E").buffer_depth());
-
+    assert_eq!(0, sim.consensus("A").buffer_depth());
+    assert_eq!(0, sim.consensus("B").buffer_depth());
+    assert_eq!(0, sim.consensus("C").buffer_depth());
     assert_eq!(0, sim.consensus("D").buffer_depth());
 
     assert!(is_valid_delivery(&sim));

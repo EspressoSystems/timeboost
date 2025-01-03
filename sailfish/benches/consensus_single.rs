@@ -55,12 +55,12 @@ impl Net {
     }
 
     pub fn run(&mut self) {
-        let d = Dag::new(NonZeroUsize::new(self.nodes.len()).unwrap());
-
         let mut actions = Vec::new();
 
+        let size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node in self.nodes.values_mut() {
-            actions.extend(node.go(d.clone(), Evidence::Genesis));
+            let d = Dag::new(node.public_key(), size);
+            actions.extend(node.go(d, Evidence::Genesis));
         }
 
         let mut messages: Vec<Message> = actions.drain(..).filter_map(action_to_msg).collect();

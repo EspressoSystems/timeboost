@@ -209,7 +209,10 @@ fn basic_liveness() {
             let node = node_handle.node_mut();
             (
                 (i as u64).into(),
-                node.go(Dag::new(node.committee_size()), Evidence::Genesis),
+                node.go(
+                    Dag::new(node.public_key(), node.committee_size()),
+                    Evidence::Genesis,
+                ),
             )
         })
         .collect();

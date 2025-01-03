@@ -7,23 +7,31 @@ use timeboost_utils::types::round_number::RoundNumber;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dag {
-    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
+    id: PublicKey,
+    elements: BTreeMap<RoundNumber, Round>,
     max_keys: NonZeroUsize,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Round {
+    items: BTreeMap<PublicKey, Vertex>,
+    views: u8,
+}
+
 impl Dag {
-    pub fn new(max_keys: NonZeroUsize) -> Self {
+    pub fn new(id: PublicKey, max_keys: NonZeroUsize) -> Self {
         Self {
+            id,
             elements: BTreeMap::new(),
             max_keys,
         }
     }
 
-    pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
+    pub fn from_iter<I>(id: PublicKey, entries: I, max_keys: NonZeroUsize) -> Self
     where
         I: IntoIterator<Item = Vertex>,
     {
-        let mut dag = Self::new(max_keys);
+        let mut dag = Self::new(id, max_keys);
         for v in entries {
             dag.add(v);
         }
@@ -34,10 +42,11 @@ impl Dag {
     pub fn add(&mut self, v: Vertex) {
         debug_assert!(!self.contains(&v));
         let r = *v.round().data();
-        let s = v.source();
+        let s = *v.source();
         let m = self.elements.entry(r).or_default();
-        debug_assert!(m.len() < self.max_keys.get());
-        m.insert(*s, v);
+        debug_assert!(m.items.len() < self.max_keys.get());
+        m.views += (s != self.id && v.has_edge(&self.id)) as u8;
+        m.items.insert(s, v);
     }
 
     /// Removes all rounds up to (and including) the specified round number from the DAG
@@ -69,25 +78,33 @@ impl Dag {
     pub fn contains(&self, v: &Vertex) -> bool {
         self.elements
             .get(v.round().data())
-            .map(|m| m.contains_key(v.source()))
+            .map(|m| m.items.contains_key(v.source()))
             .unwrap_or(false)
+    }
+
+    /// The number of times our public key was pointed to by others per round.
+    pub fn views(&self) -> impl Iterator<Item = u8> + '_ {
+        self.elements.values().map(|m| m.views)
     }
 
     /// Returns an iterator over all vertices in a specific round
     pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
-        self.elements.get(&r).into_iter().flat_map(|m| m.values())
+        self.elements
+            .get(&r)
+            .into_iter()
+            .flat_map(|m| m.items.values())
     }
 
     /// Retrieves a specific vertex by its round number and source public key
     pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex> {
-        self.elements.get(&r)?.get(s)
+        self.elements.get(&r)?.items.get(s)
     }
 
     /// Consume the DAG as an iterator over its elements.
     pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex)> {
         std::mem::take(&mut self.elements)
             .into_iter()
-            .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))
+            .flat_map(|(r, m)| m.items.into_iter().map(move |(pk, v)| (r, pk, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
@@ -95,7 +112,7 @@ impl Dag {
         self.elements
             .remove(&r)
             .into_iter()
-            .flat_map(|m| m.into_values())
+            .flat_map(|m| m.items.into_values())
     }
 
     /// Returns an iterator over all vertices within the specified round range.
@@ -114,12 +131,12 @@ impl Dag {
     where
         R: RangeBounds<RoundNumber>,
     {
-        self.elements.range(r).flat_map(|(_, m)| m.values())
+        self.elements.range(r).flat_map(|(_, m)| m.items.values())
     }
 
     /// Returns the number of vertices present in a specific round
     pub fn vertex_count(&self, r: RoundNumber) -> usize {
-        self.elements.get(&r).map(|m| m.len()).unwrap_or(0)
+        self.elements.get(&r).map(|m| m.items.len()).unwrap_or(0)
     }
 
     /// Is there a connection between two vertices?
@@ -132,6 +149,7 @@ impl Dag {
             .map(|e| e.1)
         {
             current = nodes
+                .items
                 .iter()
                 .filter_map(|(_, v)| current.iter().any(|x| x.has_edge(v.source())).then_some(v))
                 .collect();
@@ -151,7 +169,7 @@ impl Dag {
     pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
         self.elements
             .iter()
-            .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))
+            .flat_map(|(r, m)| m.items.iter().map(move |(pk, v)| (r, pk, v)))
     }
 
     /// Create a string representation of the DAG for debugging purposes.
@@ -159,7 +177,7 @@ impl Dag {
         let mut s = String::from("\n\n");
         for (r, e) in &self.elements {
             s += &format!("{r} -> {{\n");
-            for v in e.values() {
+            for v in e.items.values() {
                 s += &format!("  {}\n", v.dbg())
             }
             s += "}\n"
@@ -180,7 +198,10 @@ mod tests {
 
     #[test]
     fn test_is_connected() {
-        let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
+        let mut dag = Dag::new(
+            Keypair::generate().public_key(),
+            NonZeroUsize::new(10).unwrap(),
+        );
 
         let kp1 = Keypair::generate();
         let kp2 = Keypair::generate();

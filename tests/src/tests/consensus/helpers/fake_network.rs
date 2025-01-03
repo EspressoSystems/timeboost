@@ -35,7 +35,10 @@ impl FakeNetwork {
         let committee_size = NonZeroUsize::new(self.nodes.len()).unwrap();
         for node_instrument in self.nodes.values_mut() {
             let node = node_instrument.node_mut();
-            for a in node.go(Dag::new(committee_size), Evidence::Genesis) {
+            for a in node.go(
+                Dag::new(node.public_key(), committee_size),
+                Evidence::Genesis,
+            ) {
                 Self::handle_action(node.id(), a, &mut next)
             }
         }

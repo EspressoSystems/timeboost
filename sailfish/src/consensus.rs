@@ -81,13 +81,14 @@ impl Consensus {
     where
         N: Into<NodeId>,
     {
+        let pk = keypair.public_key();
         Self {
             id: id.into(),
             keypair,
-            dag: Dag::new(committee.size()),
+            dag: Dag::new(pk, committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committee.size()),
+            buffer: Dag::new(pk, committee.size()),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -616,7 +617,32 @@ impl Consensus {
 
         let mut new = Vertex::new(r, e, &self.keypair, self.deterministic);
         new.set_block(block);
-        new.add_edges(previous.map(Vertex::source).cloned());
+
+        // If we detect that the DAG does not contain enough views of our public key
+        // and we have more than the quorum number of vertices, we do not include an
+        // edge to ourselves to allow others to make progress.
+        if self.dag.views().all(|n| n == 0)
+            && self.dag.vertex_count(r - 1) > self.committee.quorum_size().get()
+            && self.dag.depth() >= self.committee.size().get()
+            && self
+                .leader_vertex(r - 1)
+                .map(|v| *v.source() != self.public_key())
+                .unwrap_or(true)
+        {
+            warn!(
+                n = %self.public_key(),
+                r = %self.round,
+                "not enough views => skipping edge to ourselves"
+            );
+            new.add_edges(
+                previous
+                    .map(Vertex::source)
+                    .filter(|k| **k != self.public_key())
+                    .cloned(),
+            );
+        } else {
+            new.add_edges(previous.map(Vertex::source).cloned());
+        }
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() >= self.committee.quorum_size().get());

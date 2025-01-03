@@ -344,12 +344,12 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
-        let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
-
         let mut actions = Vec::new();
 
         for (name, party) in &mut parties {
-            actions.push((*name, party.logic.go(dag.clone(), Evidence::Genesis)));
+            let key = party.logic.public_key();
+            let dag = Dag::new(key, NonZeroUsize::new(committee.size().get()).unwrap());
+            actions.push((*name, party.logic.go(dag, Evidence::Genesis)));
         }
 
         Self {

@@ -120,10 +120,11 @@ impl KeyManager {
 
     pub(crate) fn prepare_dag(
         &self,
+        key: PublicKey,
         round: u64,
         committee: &Committee,
     ) -> (Dag, Evidence, Vec<PublicKey>) {
-        let mut dag = Dag::new(committee.size());
+        let mut dag = Dag::new(key, committee.size());
         let edges = self
             .keys
             .values()

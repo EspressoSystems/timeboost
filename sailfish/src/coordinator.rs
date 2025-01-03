@@ -53,7 +53,7 @@ impl<C: Comm> Coordinator<C> {
         if !self.init {
             self.init = true;
             let e = Evidence::Genesis;
-            let d = Dag::new(self.consensus.committee_size());
+            let d = Dag::new(self.consensus.public_key(), self.consensus.committee_size());
             return Ok(self.consensus.go(d, e));
         }
         panic!("Cannot call start twice");
