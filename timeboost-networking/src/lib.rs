@@ -4,20 +4,95 @@
 // You should have received a copy of the MIT License
 // along with the HotShot repository. If not, see <https://mit-license.org/>.
 
-//! Library for p2p communication
+use std::{
+    fmt::Display,
+    net::{IpAddr, ToSocketAddrs},
+};
 
-use std::fmt::Display;
-
+use anyhow::{anyhow, Context};
+use libp2p_identity::{
+    ed25519::{self, SecretKey},
+    Keypair, PeerId,
+};
+use multiaddr::Multiaddr;
 use thiserror::Error;
-
+use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
+use tracing::warn;
 pub mod network;
-/// Network logic
-pub mod p2p;
 
-/// symbols needed to implement a networking instance over libp2p-netorking
-pub mod reexport {
-    pub use libp2p::{request_response::ResponseChannel, Multiaddr};
-    pub use libp2p_identity::PeerId;
+/// Derive a Libp2p keypair from a given private key
+///
+/// # Errors
+/// If we are unable to derive a new `SecretKey` from the `blake3`-derived
+/// bytes.
+pub fn derive_keypair<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<Keypair> {
+    // Derive a secondary key from our primary private key
+    let derived_key = blake3::derive_key("libp2p key", &private_key.to_bytes());
+    let derived_key = SecretKey::try_from_bytes(derived_key)?;
+
+    // Create an `ed25519` keypair from the derived key
+    Ok(ed25519::Keypair::from(derived_key).into())
+}
+
+/// Derive a Libp2p Peer ID from a given private key
+///
+/// # Errors
+/// If we are unable to derive a Libp2p keypair
+pub fn derive_peer_id<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<PeerId> {
+    // Get the derived keypair
+    let keypair = derive_keypair::<K>(private_key)?;
+
+    // Return the PeerID derived from the public key
+    Ok(PeerId::from_public_key(&keypair.public()))
+}
+
+/// Parse a Libp2p Multiaddr from a string. The input string should be in the format
+/// `hostname:port` or `ip:port`. This function derives a `Multiaddr` from the input string.
+///
+/// This borrows from Rust's implementation of `to_socket_addrs` but will only warn if the domain
+/// does not yet resolve.
+///
+/// # Errors
+/// - If the input string is not in the correct format
+pub fn derive_multiaddr(addr: &String) -> anyhow::Result<Multiaddr> {
+    // Split the address into the host and port parts
+    let (host, port) = match addr.rfind(':') {
+        Some(idx) => (&addr[..idx], &addr[idx + 1..]),
+        None => return Err(anyhow!("Invalid address format, no port supplied")),
+    };
+
+    // Try parsing the host as an IP address
+    let ip = host.parse::<IpAddr>();
+
+    // Conditionally build the multiaddr string
+    let multiaddr_string = match ip {
+        Ok(IpAddr::V4(ip)) => format!("/ip4/{ip}/udp/{port}/quic-v1"),
+        Ok(IpAddr::V6(ip)) => format!("/ip6/{ip}/udp/{port}/quic-v1"),
+        Err(_) => {
+            // Try resolving the host. If it fails, continue but warn the user
+            let lookup_result = addr.to_socket_addrs();
+
+            // See if the lookup failed
+            let failed = lookup_result
+                .map(|result| result.collect::<Vec<_>>().is_empty())
+                .unwrap_or(true);
+
+            // If it did, warn the user
+            if failed {
+                warn!(
+                    "Failed to resolve domain name {}, assuming it has not yet been provisioned",
+                    host
+                );
+            }
+
+            format!("/dns/{host}/udp/{port}/quic-v1")
+        }
+    };
+
+    // Convert the multiaddr string to a `Multiaddr`
+    multiaddr_string.parse().with_context(|| {
+        format!("Failed to convert Multiaddr string to Multiaddr: {multiaddr_string}",)
+    })
 }
 
 /// Errors that can occur in the network

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use libp2p_identity::PeerId;
 use multisig::PublicKey;
-use timeboost_networking::p2p::client::derive_libp2p_peer_id;
+use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
@@ -43,7 +43,7 @@ impl CommitteeContract {
                 [0; 32], i as u64, 1, false,
             );
             let kpr = unsafe_zero_keypair(i as u64);
-            let peer_id = derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
+            let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
                 CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
                 // Docker uses the docker network IP address for config, but we bind according to

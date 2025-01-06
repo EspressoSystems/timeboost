@@ -14,22 +14,8 @@ custom_debug = "0.6.2"
 delegate = "0.13"
 derive_builder = { workspace = true }
 futures = { workspace = true }
-libp2p = { package = "libp2p", version = "0.53", default-features = false, features = [
-    "macros",
-    "autonat",
-    "cbor",
-    "dns",
-    "gossipsub",
-    "identify",
-    "kad",
-    "quic",
-    "request-response",
-    "secp256k1",
-    "serde",
-    "tokio",
-] }
 libp2p-identity = { workspace = true }
-libp2p-swarm-derive = "0.34"
+multiaddr = { workspace = true }
 pin-project = "1"
 prometheus = { workspace = true }
 rand = { workspace = true }

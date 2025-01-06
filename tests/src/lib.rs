@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use libp2p_identity::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
-use timeboost_networking::p2p::client::derive_libp2p_peer_id;
+use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 #[cfg(test)]
@@ -36,7 +36,7 @@ impl Group {
             pubks.push((i as u8, kpr.public_key()));
             addrs.push(format!("127.0.0.1:{}", 8000 + i as u16));
             vcgfs.push(cfg);
-            peer_ids.push(derive_libp2p_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
+            peer_ids.push(derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
         }
 
         let bootstrap_nodes: HashMap<PublicKey, (PeerId, String)> = pubks
