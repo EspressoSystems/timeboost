@@ -49,7 +49,6 @@ impl TestableNetwork for BasicNetworkTest {
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
-            tracing::error!("addr: {}", addr);
             let peer_id = self.group.peer_ids[i];
             let (tx_ready, mut rx_ready) = mpsc::channel(1);
             let net_fut = NetworkInitializer::new(
