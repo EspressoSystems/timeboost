@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use futures::future::join_all;
+use futures::{stream::FuturesOrdered, StreamExt};
 use libp2p::PeerId;
 use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
@@ -12,7 +12,7 @@ use tokio::{
     spawn,
     sync::{
         mpsc::{self, Sender},
-        oneshot, RwLock,
+        RwLock,
     },
     task::JoinHandle,
 };
@@ -58,7 +58,7 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
         })
     }
 
-    pub async fn into_network(self, tx_ready: oneshot::Sender<()>) -> anyhow::Result<Network> {
+    pub async fn into_network(self, tx_ready: mpsc::Sender<()>) -> anyhow::Result<Network> {
         let net_fut = Network::start(
             self.local_id,
             self.bind_address,
@@ -70,6 +70,7 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
     }
 }
 
+type PeerComm = (mpsc::Sender<NetworkMessage>, mpsc::Sender<()>);
 /// The network receives established connections and maintains the
 /// communication between the transport layer and the application layer.
 #[derive(Debug)]
@@ -77,13 +78,15 @@ pub struct Network {
     /// Keypair of this node
     keypair: Keypair,
     /// Connections received from the transport layer
-    connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
+    connections: Arc<RwLock<HashMap<PeerId, PeerComm>>>,
     /// Mapping from public keys to peer Id
     nodes: HashMap<PublicKey, (PeerId, String)>,
     /// Channel for consuming messages from the network
-    network_rx: mpsc::Receiver<NetworkMessage>,
+    network_receiver: mpsc::Receiver<NetworkMessage>,
     /// Channel for sending messages from this node
-    network_tx: mpsc::Sender<NetworkMessage>,
+    network_sender: mpsc::Sender<NetworkMessage>,
+    /// Shutdown channel
+    network_shutdown_sender: mpsc::Sender<()>,
 }
 
 impl Network {
@@ -92,7 +95,7 @@ impl Network {
         local_addr: String,
         keypair: Keypair,
         to_connect: HashMap<PublicKey, (PeerId, String)>,
-        tx_ready: oneshot::Sender<()>,
+        ready_sender: mpsc::Sender<()>,
     ) -> Self {
         let transport = Transport::run(
             local_id,
@@ -101,7 +104,7 @@ impl Network {
         )
         .await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
-        let (inbound_sender, inbound_receiver) = mpsc::channel(10000);
+        let (network_sender, network_receiver) = mpsc::channel(10000);
         let remote_nodes: HashSet<_> = to_connect
             .iter()
             .filter_map(|(_, node)| {
@@ -112,20 +115,23 @@ impl Network {
                 }
             })
             .collect();
+        let (network_shutdown_sender, network_shutdown_receiver) = mpsc::channel(1);
         spawn(Self::run(
             local_id,
             transport,
             Arc::clone(&connections),
             remote_nodes,
-            inbound_sender.clone(),
-            tx_ready,
+            network_sender.clone(),
+            ready_sender,
+            network_shutdown_receiver,
         ));
         Self {
             keypair,
             connections,
             nodes: to_connect,
-            network_rx: inbound_receiver,
-            network_tx: inbound_sender,
+            network_receiver,
+            network_sender,
+            network_shutdown_sender,
         }
     }
 
@@ -135,42 +141,49 @@ impl Network {
     pub async fn run(
         local_id: PeerId,
         mut transport: Transport,
-        connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
-        mut to_connect: HashSet<PeerId>,
-        network_tx: Sender<NetworkMessage>,
-        tx_ready: oneshot::Sender<()>,
+        connections: Arc<RwLock<HashMap<PeerId, PeerComm>>>,
+        to_connect: HashSet<PeerId>,
+        network_sender: Sender<NetworkMessage>,
+        ready_sender: mpsc::Sender<()>,
+        mut network_shutdown_receiver: mpsc::Receiver<()>,
     ) {
         let connection_receiver = transport.rx_connection();
-        let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
-        while let Some(connection) = connection_receiver.recv().await {
-            let remote_id = connection.remote_id;
-            trace!("Received connection from: {}", remote_id);
-            if let Some(task) = handles.remove(&remote_id) {
-                // Wait until previous sync task completes
-                task.await.ok();
-            }
-            let sender = connection.tx.clone();
-            // Channel for sending outbound communication on the connection
-            let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
-            connections
-                .write()
-                .await
-                .insert(connection.remote_id, outbound_sender);
-            let task = spawn(Self::connection_task(
-                connection,
-                sender.clone(),
-                network_tx.clone(),
-                outbound_receiver,
-            ));
+        let mut handles: FuturesOrdered<JoinHandle<Option<()>>> = FuturesOrdered::new();
+        loop {
+            tokio::select! {
+                Some(connection) = connection_receiver.recv() => {
+                    let remote_id = connection.remote_id;
+                    trace!("Received connection from: {}", remote_id);
+                    let sender = connection.tx.clone();
+                    // Channel for sending outbound communication on the connection
+                    let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
+                    let (shutdown_sender, shutdown_receiver) = mpsc::channel(1);
+                    connections
+                        .write()
+                        .await
+                        .insert(connection.remote_id, (outbound_sender, shutdown_sender));
+                    let task = spawn(Self::connection_task(
+                        connection,
+                        sender.clone(),
+                        network_sender.clone(),
+                        outbound_receiver,
+                        shutdown_receiver,
+                    ));
 
-            handles.insert(remote_id, task);
-            to_connect.remove(&remote_id);
-            if to_connect.is_empty() {
-                break;
+                    handles.push_back(task);
+                    // Network is considered ready when we have
+                    // established connections to 2/3 of the remote nodes
+                    if handles.len() == 2 * (to_connect.len() / 3) {
+                        let _ = ready_sender.send(()).await;
+                    }
+                },
+                Some(_) = handles.next() => {}
+                _ = network_shutdown_receiver.recv() => {
+                    trace!("Received shutdown signal");
+                    break;
+                }
             }
         }
-        let _ = tx_ready.send(());
-        join_all(handles.into_values()).await;
     }
 
     pub async fn connection_task(
@@ -178,6 +191,7 @@ impl Network {
         sender: Sender<NetworkMessage>,
         network_tx: Sender<NetworkMessage>,
         mut outbound_receiver: mpsc::Receiver<NetworkMessage>,
+        mut shutdown_receiver: mpsc::Receiver<()>,
     ) -> Option<()> {
         loop {
             tokio::select! {
@@ -207,13 +221,25 @@ impl Network {
                         }
                     }
                 }
+                _ = shutdown_receiver.recv() => {
+                    trace!("Shutting down connection to peer: {}", connection.remote_id);
+                    break;
+                }
             }
         }
         None
     }
 
-    // TODO: Shutdown gracefully
     pub async fn shut_down(&self) -> Result<(), NetworkError> {
+        trace!("Shutting down connections to remote nodes");
+        for (_, (_, shutdown_sender)) in self.connections.read().await.iter() {
+            let _ = shutdown_sender.send(()).await;
+        }
+        trace!("Shutting down network");
+        self.network_shutdown_sender.send(()).await.map_err(|_| {
+            NetworkError::ChannelSendError("Error sending shutdown signal".to_string())
+        })?;
+        trace!("Dropping network state");
         self.connections.write().await.clear();
         Ok(())
     }
@@ -221,13 +247,13 @@ impl Network {
     pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
         let msg: NetworkMessage = NetworkMessage::from(message);
         for connection in self.connections.read().await.values() {
-            if (connection.send(msg.clone()).await).is_err() {
+            if (connection.0.send(msg.clone()).await).is_err() {
                 return Err(NetworkError::ChannelSendError(
                     "Error sending message".to_string(),
                 ));
             }
         }
-        self.network_tx.send(msg).await.map_err(|_| {
+        self.network_sender.send(msg).await.map_err(|_| {
             NetworkError::ChannelSendError("Error sending message to self".to_string())
         })?;
         Ok(())
@@ -240,13 +266,13 @@ impl Network {
     ) -> Result<(), NetworkError> {
         let msg = NetworkMessage::from(message);
         if recipient == self.keypair.public_key() {
-            self.network_tx.send(msg.clone()).await.map_err(|_| {
+            self.network_sender.send(msg.clone()).await.map_err(|_| {
                 NetworkError::ChannelSendError("Error sending message to self".to_string())
             })?;
         }
         if let Some((peer_id, _)) = self.nodes.get(&recipient) {
             if let Some(connection) = self.connections.read().await.get(peer_id) {
-                connection.send(msg).await.map_err(|_| {
+                connection.0.send(msg).await.map_err(|_| {
                     NetworkError::ChannelSendError("Error sending message".to_string())
                 })?;
                 return Ok(());
@@ -261,7 +287,7 @@ impl Network {
     }
 
     pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {
-        match self.network_rx.recv().await {
+        match self.network_receiver.recv().await {
             Some(message) => Ok(message.into_bytes()),
             None => Err(NetworkError::ChannelReceiveError(
                 "Error receiving message".to_string(),
