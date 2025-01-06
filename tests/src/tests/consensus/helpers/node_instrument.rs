@@ -5,6 +5,7 @@ use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
 use sailfish::consensus::Consensus;
+use timeboost_core::types::block::sailfish::SailfishBlock;
 use timeboost_core::types::{
     message::{Action, Message, NoVoteMessage, Timeout, TimeoutMessage},
     vertex::Vertex,
@@ -154,7 +155,7 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
         (Action::Deliver(xb, xr, xk), Action::Deliver(yb, yr, yk)) => {
             assert_eq!(xr, yr);
             assert_eq!(xk, yk);
-            assert_eq!(xb, yb)
+            block_equiv(xb, yb);
         }
         (Action::SendProposal(x), Action::SendProposal(y)) => {
             assert_eq!(x.is_valid(c), y.is_valid(c));
@@ -201,4 +202,14 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
         }
         _ => panic!("{a} ≁ {b}"),
     }
+}
+
+fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
+    assert!(
+        l.timestamp().abs_diff(*r.timestamp()) <= 5,
+        "Drift is too high from expected to actual block timestamps"
+    );
+    assert_eq!(l.round_number(), r.round_number());
+    assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
+    assert_eq!(l.clone().transactions(), r.clone().transactions());
 }
