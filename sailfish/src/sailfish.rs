@@ -12,13 +12,13 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
+use timeboost_networking::derive_peer_id;
 use timeboost_networking::network::NetworkInitializer;
-use timeboost_networking::p2p::client::derive_libp2p_peer_id;
 use timeboost_utils::PeerConfig;
 use tokio::sync::mpsc;
 
 #[cfg(feature = "test")]
-use timeboost_networking::p2p::client::derive_libp2p_keypair;
+use timeboost_networking::derive_keypair;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -104,7 +104,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 
     #[cfg(feature = "test")]
     pub fn derive_libp2p_keypair(&self) -> Result<libp2p_identity::Keypair> {
-        derive_libp2p_keypair::<PublicKey>(&self.keypair.secret_key())
+        derive_keypair::<PublicKey>(&self.keypair.secret_key())
     }
 
     #[cfg(feature = "test")]
@@ -142,8 +142,8 @@ pub async fn sailfish_coordinator(
     bind_address: String,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let peer_id = derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key())
-        .expect("derive peer id from key pair");
+    let peer_id =
+        derive_peer_id::<PublicKey>(&keypair.secret_key()).expect("derive peer id from key pair");
     let (tx_ready, mut rx_ready) = mpsc::channel(1);
     let network_init = NetworkInitializer::new(
         peer_id,
@@ -171,7 +171,7 @@ pub async fn sailfish_coordinator(
         rbc::Config::new(keypair.clone(), committee.clone()),
     );
     let peer_id =
-        derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
+        derive_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
 
     let initializer = SailfishInitializerBuilder::default()
         .id(id)

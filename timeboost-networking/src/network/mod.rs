@@ -4,7 +4,7 @@ use std::{
 };
 
 use futures::{stream::FuturesOrdered, StreamExt};
-use libp2p::PeerId;
+use libp2p_identity::PeerId;
 use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::PeerConfig;

@@ -5,8 +5,7 @@ use crate::types::message::Message;
 use async_trait::async_trait;
 use multisig::{Committee, PublicKey, Unchecked, Validated};
 use timeboost_networking::network::Network;
-use timeboost_networking::p2p::client::Libp2pNetwork;
-use timeboost_networking::{NetworkError, Topic};
+use timeboost_networking::NetworkError;
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
@@ -99,28 +98,6 @@ impl RawComm for Network {
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
         self.shut_down().await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl RawComm for Libp2pNetwork<PublicKey> {
-    type Err = NetworkError;
-
-    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.broadcast_message(msg, Topic::Global).await
-    }
-
-    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.direct_message(msg, to).await
-    }
-
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
-        self.recv_message().await
-    }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.shut_down().await;
         Ok(())
     }
 }

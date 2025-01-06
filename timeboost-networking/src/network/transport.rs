@@ -6,7 +6,7 @@ use std::time::Duration;
 use async_lock::Mutex;
 use futures::future::select_all;
 use futures::FutureExt;
-use libp2p::PeerId;
+use libp2p_identity::PeerId;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -531,9 +531,13 @@ fn decode_ping(message: &[u8]) -> i64 {
 mod test {
     use std::collections::HashSet;
 
+    use crate::derive_peer_id;
+
     use super::Transport;
     use futures::future::join_all;
-    use libp2p::PeerId;
+    use libp2p_identity::PeerId;
+    use multisig::PublicKey;
+    use timeboost_utils::unsafe_zero_keypair;
 
     #[tokio::test]
     async fn network_connect_test() {
@@ -558,7 +562,11 @@ mod test {
         num_of_nodes: usize,
     ) -> (Vec<Transport>, Vec<(PeerId, String)>) {
         let addresses: Vec<_> = (0..num_of_nodes)
-            .map(|i| (PeerId::random(), format!("127.0.0.1:{}", 5500 + i)))
+            .map(|i| {
+                let keypair = unsafe_zero_keypair(i as u64);
+                let peer_id = derive_peer_id::<PublicKey>(&keypair.secret_key()).unwrap();
+                (peer_id, format!("127.0.0.1:{}", 5500 + i))
+            })
             .collect();
         let networks = addresses
             .iter()

@@ -15,8 +15,8 @@ use sequencer::{
 use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
+use timeboost_networking::derive_peer_id;
 use timeboost_networking::network::NetworkInitializer;
-use timeboost_networking::p2p::client::derive_libp2p_peer_id;
 use timeboost_utils::PeerConfig;
 use tokio::sync::mpsc;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
@@ -117,7 +117,7 @@ impl HasInitializer for Timeboost {
         let (tb_app_tx, tb_app_rx) = channel(100);
 
         let (tx_ready, mut rx_ready) = mpsc::channel(1);
-        let peer_id = derive_libp2p_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
+        let peer_id = derive_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
         let network_init = NetworkInitializer::new(
             peer_id,
             initializer.keypair.clone(),
