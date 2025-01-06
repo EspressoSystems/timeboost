@@ -220,8 +220,8 @@ impl Consensus {
 
         let v = e.into_data();
 
-        if self.dag.contains(&v) {
-            debug!(n = %self.public_key(), r = %self.round, %v, "vertex already in dag");
+        if self.dag.contains(&v) || self.buffer.contains(&v) {
+            debug!(n = %self.public_key(), r = %self.round, %v, "duplicate vertex");
             return actions;
         }
 
