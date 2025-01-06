@@ -4,20 +4,40 @@
 // You should have received a copy of the MIT License
 // along with the HotShot repository. If not, see <https://mit-license.org/>.
 
-//! Library for p2p communication
-
 use std::fmt::Display;
 
+use libp2p_identity::{
+    ed25519::{self, SecretKey},
+    Keypair, PeerId,
+};
 use thiserror::Error;
-
+use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
 pub mod network;
-/// Network logic
-pub mod p2p;
 
-/// symbols needed to implement a networking instance over libp2p-netorking
-pub mod reexport {
-    pub use libp2p::{request_response::ResponseChannel, Multiaddr};
-    pub use libp2p_identity::PeerId;
+/// Derive a Libp2p keypair from a given private key
+///
+/// # Errors
+/// If we are unable to derive a new `SecretKey` from the `blake3`-derived
+/// bytes.
+pub fn derive_keypair<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<Keypair> {
+    // Derive a secondary key from our primary private key
+    let derived_key = blake3::derive_key("libp2p key", &private_key.to_bytes());
+    let derived_key = SecretKey::try_from_bytes(derived_key)?;
+
+    // Create an `ed25519` keypair from the derived key
+    Ok(ed25519::Keypair::from(derived_key).into())
+}
+
+/// Derive a Libp2p Peer ID from a given private key
+///
+/// # Errors
+/// If we are unable to derive a Libp2p keypair
+pub fn derive_peer_id<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<PeerId> {
+    // Get the derived keypair
+    let keypair = derive_keypair::<K>(private_key)?;
+
+    // Return the PeerID derived from the public key
+    Ok(PeerId::from_public_key(&keypair.public()))
 }
 
 /// Errors that can occur in the network
