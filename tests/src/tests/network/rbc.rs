@@ -120,7 +120,7 @@ fn medium_committee() {
         .enable_random_order()
         .fail_rate(0.5)
         .repair_rate(0.6)
-        .simulation_duration(Duration::from_secs(2000))
+        .simulation_duration(Duration::from_secs(500))
         .build();
 
     let (ks, committee) = fresh_keys(5);

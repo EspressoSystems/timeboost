@@ -175,7 +175,7 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert!(yve.is_subset(&parties));
             assert!(xve.len() >= c.quorum_size().get());
             assert!(yve.len() >= c.quorum_size().get());
-            assert_eq!(xv.block(), yv.block());
+            block_equiv(xv.block(), yv.block());
         }
         (Action::SendTimeout(x), Action::SendTimeout(y)) => {
             assert_eq!(x.is_valid(c), y.is_valid(c));
