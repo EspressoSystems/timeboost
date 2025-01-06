@@ -4,7 +4,7 @@ use std::iter;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, Committee, PublicKey, Signature, Signed};
+use crate::{Certificate, Committee, KeyId, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
 pub struct VoteAccumulator<D: Committable> {
@@ -16,7 +16,7 @@ pub struct VoteAccumulator<D: Committable> {
 #[derive(Debug, Clone)]
 struct Entry<D> {
     data: D,
-    sigs: BTreeMap<u8, Signature>,
+    sigs: BTreeMap<KeyId, Signature>,
 }
 
 impl<D> Entry<D> {
