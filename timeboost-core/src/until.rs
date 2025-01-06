@@ -1,8 +1,7 @@
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tokio::{signal, sync::watch};
-// TODO: Reduce when we remove libp2p
-const ROUND_TIMEOUT_SECS: u64 = 70;
+const ROUND_TIMEOUT_SECS: u64 = 20;
 const MAX_ROUND_TIMEOUTS: u64 = 15;
 
 pub async fn run_until(
