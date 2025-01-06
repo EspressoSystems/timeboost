@@ -15,7 +15,6 @@ delegate = "0.13"
 derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
-multiaddr = { workspace = true }
 pin-project = "1"
 prometheus = { workspace = true }
 rand = { workspace = true }
