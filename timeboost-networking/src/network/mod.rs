@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use futures::future::join_all;
+use futures::{stream::FuturesOrdered, StreamExt};
 use libp2p::PeerId;
 use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
@@ -12,11 +12,11 @@ use tokio::{
     spawn,
     sync::{
         mpsc::{self, Sender},
-        oneshot, RwLock,
+        RwLock,
     },
     task::JoinHandle,
 };
-use tracing::{instrument, trace, warn};
+use tracing::{info, instrument, trace, warn};
 use transport::{Connection, NetworkMessage, Transport};
 
 use crate::NetworkError;
@@ -58,7 +58,7 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
         })
     }
 
-    pub async fn into_network(self, tx_ready: oneshot::Sender<()>) -> anyhow::Result<Network> {
+    pub async fn into_network(self, tx_ready: mpsc::Sender<()>) -> anyhow::Result<Network> {
         let net_fut = Network::start(
             self.local_id,
             self.bind_address,
@@ -92,7 +92,7 @@ impl Network {
         local_addr: String,
         keypair: Keypair,
         to_connect: HashMap<PublicKey, (PeerId, String)>,
-        tx_ready: oneshot::Sender<()>,
+        tx_ready: mpsc::Sender<()>,
     ) -> Self {
         let transport = Transport::run(
             local_id,
@@ -136,41 +136,43 @@ impl Network {
         local_id: PeerId,
         mut transport: Transport,
         connections: Arc<RwLock<HashMap<PeerId, mpsc::Sender<NetworkMessage>>>>,
-        mut to_connect: HashSet<PeerId>,
+        to_connect: HashSet<PeerId>,
         network_tx: Sender<NetworkMessage>,
-        tx_ready: oneshot::Sender<()>,
+        tx_ready: mpsc::Sender<()>,
     ) {
         let connection_receiver = transport.rx_connection();
-        let mut handles: HashMap<PeerId, JoinHandle<Option<()>>> = HashMap::new();
-        while let Some(connection) = connection_receiver.recv().await {
-            let remote_id = connection.remote_id;
-            trace!("Received connection from: {}", remote_id);
-            if let Some(task) = handles.remove(&remote_id) {
-                // Wait until previous sync task completes
-                task.await.ok();
-            }
-            let sender = connection.tx.clone();
-            // Channel for sending outbound communication on the connection
-            let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
-            connections
-                .write()
-                .await
-                .insert(connection.remote_id, outbound_sender);
-            let task = spawn(Self::connection_task(
-                connection,
-                sender.clone(),
-                network_tx.clone(),
-                outbound_receiver,
-            ));
+        let mut handles: FuturesOrdered<JoinHandle<Option<()>>> = FuturesOrdered::new();
+        loop {
+            tokio::select! {
+                Some(connection) = connection_receiver.recv() => {
+                    let remote_id = connection.remote_id;
+                    trace!("Received connection from: {}", remote_id);
+                    let sender = connection.tx.clone();
+                    // Channel for sending outbound communication on the connection
+                    let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
+                    connections
+                        .write()
+                        .await
+                        .insert(connection.remote_id, outbound_sender);
+                    let task = spawn(Self::connection_task(
+                        connection,
+                        sender.clone(),
+                        network_tx.clone(),
+                        outbound_receiver,
+                    ));
 
-            handles.insert(remote_id, task);
-            to_connect.remove(&remote_id);
-            if to_connect.is_empty() {
-                break;
+                    handles.push_back(task);
+                    // We declare the network "ready" when are conneceted to 2/3
+                    // of the bootstrap nodes (including ourselves).
+                    if handles.len() == 2 * (to_connect.len() / 3) {
+                        let _ = tx_ready.send(()).await;
+                    }
+                },
+                Some(_) = handles.next() => {
+                    info!("Future received");
+                }
             }
         }
-        let _ = tx_ready.send(());
-        join_all(handles.into_values()).await;
     }
 
     pub async fn connection_task(

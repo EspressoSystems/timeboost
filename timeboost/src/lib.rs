@@ -18,7 +18,7 @@ use tide_disco::Url;
 use timeboost_networking::network::NetworkInitializer;
 use timeboost_networking::p2p::client::derive_libp2p_peer_id;
 use timeboost_utils::PeerConfig;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
@@ -116,7 +116,7 @@ impl HasInitializer for Timeboost {
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
-        let (tx_ready, rx_ready) = oneshot::channel();
+        let (tx_ready, mut rx_ready) = mpsc::channel(1);
         let peer_id = derive_libp2p_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
         let network_init = NetworkInitializer::new(
             peer_id,
@@ -128,7 +128,10 @@ impl HasInitializer for Timeboost {
         .expect("failed to make initializer")
         .into_network(tx_ready);
         let network = network_init.await.expect("failed to make network");
-        rx_ready.await.expect("failed to connect to remote nodes");
+        rx_ready
+            .recv()
+            .await
+            .expect("failed to connect to remote nodes");
 
         let committee = Committee::new(
             initializer
