@@ -6,16 +6,16 @@ use async_trait::async_trait;
 use derive_builder::Builder;
 use libp2p_identity::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
-use timeboost_networking::p2p::client::{
-    derive_libp2p_multiaddr, derive_libp2p_peer_id, Libp2pInitializer,
-};
+use timeboost_networking::network::NetworkInitializer;
+use timeboost_networking::p2p::client::derive_libp2p_peer_id;
 use timeboost_utils::PeerConfig;
+use tokio::sync::mpsc;
 
 #[cfg(feature = "test")]
 use timeboost_networking::p2p::client::derive_libp2p_keypair;
@@ -136,39 +136,29 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashSet<(PeerId, String)>,
+    bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: String,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let bootstrap_nodes: HashSet<_> = bootstrap_nodes
-        .into_iter()
-        .map(|(peer_id, addr)| {
-            (
-                peer_id,
-                derive_libp2p_multiaddr(&addr).expect("derive multiaddr"),
-            )
-        })
-        .collect();
-    let libp2p_address = derive_libp2p_multiaddr(&bind_address).expect("derive multiaddr");
-    let p2p = Libp2pInitializer::new(
-        &keypair.secret_key(),
+    let peer_id = derive_libp2p_peer_id::<PublicKey>(&keypair.secret_key())
+        .expect("derive peer id from key pair");
+    let (tx_ready, mut rx_ready) = mpsc::channel(1);
+    let network_init = NetworkInitializer::new(
+        peer_id,
+        keypair.clone(),
         staked_nodes.clone(),
         bootstrap_nodes,
-        libp2p_address,
+        bind_address.clone(),
     )
-    .expect("libp2p network to be initialized");
-    let net_inner = p2p
-        .into_network(
-            u64::from(id) as usize,
-            keypair.public_key(),
-            keypair.secret_key(),
-        )
+    .expect("creating network initializer");
+    let network = network_init
+        .into_network(tx_ready)
         .await
-        .expect("libp2p network to be initialized");
+        .expect("starting network");
 
-    net_inner.wait_for_ready().await;
+    rx_ready.recv().await;
     let committee = Committee::new(
         staked_nodes
             .iter()
@@ -177,7 +167,7 @@ pub async fn sailfish_coordinator(
     );
 
     let rbc = Rbc::new(
-        net_inner,
+        network,
         rbc::Config::new(keypair.clone(), committee.clone()),
     );
     let peer_id =
