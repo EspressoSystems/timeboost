@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
+use async_lock::Mutex;
 use futures::future::select_all;
 use futures::FutureExt;
 use libp2p::PeerId;
@@ -85,7 +87,8 @@ impl Transport {
             .expect("Invalid socket address");
 
         // Channels for sending streams to dedicated workers after accepted connection
-        let mut worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>> = HashMap::default();
+        let worker_senders: Arc<Mutex<HashMap<PeerId, mpsc::Sender<TcpStream>>>> =
+            Arc::new(Mutex::new(HashMap::default()));
 
         let server = TcpListener::bind(local_socket)
             .await
@@ -104,9 +107,13 @@ impl Transport {
                 .parse::<std::net::SocketAddr>()
                 .expect("Invalid socket address");
             assert!(
-                worker_senders.insert(*remote_id, sender).is_none(),
-                "Duplicated address {} in list",
-                socket
+                worker_senders
+                    .lock()
+                    .await
+                    .insert(*remote_id, sender)
+                    .is_none(),
+                "Duplicated peer {} in list",
+                remote_id
             );
             spawn(
                 Worker {
@@ -126,9 +133,9 @@ impl Transport {
             Server {
                 local_id,
                 server,
-                worker_senders,
+                worker_senders: Arc::clone(&worker_senders),
             }
-            .run(rx_stop)
+            .run(rx_stop, tx_connection.clone())
             .await
         });
 
@@ -161,12 +168,12 @@ struct Server {
     /// Socket for accepting connections
     server: TcpListener,
     /// Channel for fowarding accepted connections
-    worker_senders: HashMap<PeerId, mpsc::Sender<TcpStream>>,
+    worker_senders: Arc<Mutex<HashMap<PeerId, mpsc::Sender<TcpStream>>>>,
 }
 
 impl Server {
     #[instrument(level = "trace", skip_all, fields(node = %self.local_id))]
-    async fn run(self, mut stop: Receiver<()>) {
+    async fn run(self, mut stop: Receiver<()>, tx_connection: Sender<Connection>) {
         loop {
             tokio::select! {
                 result = self.server.accept() => {
@@ -179,11 +186,27 @@ impl Server {
                     let _ = stream.read_exact(&mut auth).await;
                     let peer_id = PeerId::from_bytes(&auth).expect("handshake starts with an auth token (PeerId)");
                     // Send the stream to the dedicated worker
-                    if let Some(sender) = self.worker_senders.get(&peer_id) {
-                        debug!("Accepted connection from peer: {}", peer_id);
+                    if let Some(sender) = self.worker_senders.lock().await.get(&peer_id) {
+                        debug!("Accepted connection from bootstrap node: {}", peer_id);
                         sender.send(stream).await.ok();
                     } else {
-                        warn!("Dropping connection from unknown peer: {remote_peer} with peer_id: {peer_id}");
+                        // TODO: For now we just blindly accept connections from non-bootstrap nodes
+                        // but we should authenticate and check that the nodes are staked correctly
+                        warn!("Accepted connection attempt from node: {remote_peer} with peer_id: {peer_id}");
+                        let (sender, receiver) = mpsc::channel(CONNECTION_BUFFER_SIZE);
+                        spawn(
+                            Worker {
+                                local_id: self.local_id,
+                                _local_addr: self.server.local_addr().unwrap(),
+                                remote_id: peer_id,
+                                remote_addr: remote_peer,
+                                active: peer_id.to_base58() < self.local_id.to_base58(),
+                                tx_connection: tx_connection.clone(),
+                            }
+                        .run(receiver),
+                        );
+                        let _ = sender.send(stream).await;
+                        self.worker_senders.lock().await.insert(peer_id, sender);
                     }
                 }
                 stop = stop.recv() => {
