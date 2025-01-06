@@ -16,7 +16,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tracing::{info, instrument, trace, warn};
+use tracing::{instrument, trace, warn};
 use transport::{Connection, NetworkMessage, Transport};
 
 use crate::NetworkError;
@@ -168,9 +168,7 @@ impl Network {
                         let _ = tx_ready.send(()).await;
                     }
                 },
-                Some(_) = handles.next() => {
-                    info!("Future received");
-                }
+                Some(_) = handles.next() => {}
             }
         }
     }
