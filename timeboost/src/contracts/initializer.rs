@@ -72,7 +72,6 @@ pub async fn submit_ready(
 }
 
 pub async fn wait_for_committee(
-    kpr: Keypair,
     url: reqwest::Url,
 ) -> Result<(
     HashMap<PublicKey, (PeerId, String)>,
@@ -113,7 +112,8 @@ pub async fn wait_for_committee(
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
-            c.public_key,
+            PublicKey::try_from(c.public_key.as_slice())
+                .expect("public key to deserialize successfully"),
             (
                 bincode::deserialize::<PeerId>(&c.peer_id)
                     .expect("peer id to deserialize successfully"),
