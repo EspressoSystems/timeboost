@@ -2,11 +2,9 @@ use std::collections::HashMap;
 
 use libp2p_identity::PeerId;
 use multisig::PublicKey;
-use serde::{Deserialize, Serialize};
 use timeboost_core::types::NodeId;
 use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
-use tracing::error;
 
 /// The `CommitteeBase` defines which underlying commitee basis is used when
 /// calculating (or polling for) public keys of the other nodes in the network.
@@ -19,21 +17,6 @@ pub enum CommitteeBase {
     /// for registering instances. This is a trusted-environment-only method as
     /// it is a generally insecure method, and not suitable for production.
     Network,
-}
-
-/// The response payload for the registrant.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ReadyResponse {
-    node_id: u64,
-    ip_addr: String,
-    public_key: Vec<u8>,
-}
-
-/// The response payload for the network startup.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StartResponse {
-    started: bool,
-    committee: Vec<ReadyResponse>,
 }
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
@@ -101,84 +84,18 @@ impl CommitteeContract {
     }
 
     pub async fn new_from_network(id: NodeId, url: reqwest::Url) -> Self {
-        // First, submit our public key (generated deterministically).
-        let client = reqwest::Client::new();
-        let timeout_duration = std::time::Duration::from_secs(60);
-
         let kpr = unsafe_zero_keypair(u64::from(id));
-        let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
 
-        tokio::time::timeout(timeout_duration, async {
-            loop {
-                match client
-                    .post(url.clone().join("ready/").expect("valid url"))
-                    .body(
-                        serde_json::to_string(
-                            &serde_json::json!({ "node_id": u64::from(id), "public_key": kpr.public_key().as_bytes() }),
-                        )
-                        .unwrap(),
-                    )
-                    .send()
-                    .await
-                {
-                    Ok(response) => match response.json::<ReadyResponse>().await {
-                        Ok(payload) => break payload,
-                        Err(e) => {
-                            error!(%e, "failed to parse response payload");
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        }
-                    },
-                    Err(e) => {
-                        error!(%e, "http request failed");
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    }
-                }
-            }
-        })
-        .await.expect("response before timeout");
+        // First, submit that we're ready
+        crate::contracts::initializer::submit_ready(u64::from(id), kpr.clone(), url.clone())
+            .await
+            .expect("ready submission to succeed");
 
-        // Run the timeout again, except waiting for the full system startup
-        let committee_data = tokio::time::timeout(timeout_duration, async {
-            loop {
-                match client
-                    .get(url.clone().join("start/").expect("valid url"))
-                    .send()
-                    .await
-                {
-                    Ok(response) => match response.json::<StartResponse>().await {
-                        Ok(payload) => {
-                            if payload.started {
-                                break payload;
-                            }
-
-                            // Otherwise, wait a sec before checking again
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        }
-                        Err(e) => {
-                            error!(%e, "failed to parse response payload");
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        }
-                    },
-                    Err(e) => {
-                        error!(%e, "http request failed");
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    }
-                }
-            }
-        })
-        .await
-        .expect("commitee to be created before timeout");
-
-        let mut bootstrap_nodes = HashMap::new();
-        let mut staked_nodes = vec![];
-        for c in committee_data.committee.into_iter() {
-            let cfg = ValidatorConfig::<PublicKey>::generated_from_seed_indexed(
-                [0; 32], c.node_id, 1, false,
-            );
-            bootstrap_nodes.insert(kpr.public_key(), (peer_id, c.ip_addr));
-            staked_nodes.push(cfg.public_config());
-        }
-
+        // Then, wait for the rest of the committee to be ready.
+        let (bootstrap_nodes, staked_nodes) =
+            crate::contracts::initializer::wait_for_committee(kpr, url)
+                .await
+                .expect("committee to be ready");
         Self {
             bootstrap_nodes,
             staked_nodes,

@@ -12,8 +12,16 @@ cli = typer.Typer()
 
 @dataclass
 class CommitteeEntry:
+    # The id of the node (so we know how to associate the entries)
     node_id: int
-    public_key: str
+
+    # Public key as bytes
+    public_key: list[int]
+
+    # Peer Id as bytes
+    peer_id: list[int]
+
+    # The ip address of the sender (for the bind addr)
     ip_addr: str
 
     def to_json(self) -> Dict[str, str]:
@@ -27,6 +35,7 @@ class CommitteeEntry:
 class ReadyPayload(BaseModel):
     node_id: int
     public_key: list[int]
+    peer_id: list[int]
 
 
 COMMITTEE: list[CommitteeEntry] = []
@@ -43,7 +52,9 @@ def ready(request: Request, payload: ReadyPayload):
                 detail=f"key '{payload.public_key}' was already registered",
             )
 
-    e = CommitteeEntry(payload.node_id, payload.public_key, request.client[0])
+    e = CommitteeEntry(
+        payload.node_id, payload.public_key, payload.peer_id, request.client[0]
+    )
     COMMITTEE.append(e)
 
     return e
