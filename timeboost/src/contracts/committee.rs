@@ -87,13 +87,18 @@ impl CommitteeContract {
         let kpr = unsafe_zero_keypair(u64::from(node_id));
 
         // First, submit that we're ready
-        crate::contracts::initializer::submit_ready(u64::from(node_id), kpr.clone(), url.clone())
-            .await
-            .expect("ready submission to succeed");
+        crate::contracts::initializer::submit_ready(
+            u64::from(node_id),
+            node_port,
+            kpr.clone(),
+            url.clone(),
+        )
+        .await
+        .expect("ready submission to succeed");
 
         // Then, wait for the rest of the committee to be ready.
         let (bootstrap_nodes, staked_nodes) =
-            crate::contracts::initializer::wait_for_committee(kpr, node_port, url)
+            crate::contracts::initializer::wait_for_committee(kpr, url)
                 .await
                 .expect("committee to be ready");
         Self {

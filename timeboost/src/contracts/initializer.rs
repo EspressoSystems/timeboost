@@ -26,7 +26,12 @@ pub struct StartResponse {
     pub committee: Vec<ReadyResponse>,
 }
 
-pub async fn submit_ready(node_id: u64, kpr: Keypair, url: reqwest::Url) -> Result<()> {
+pub async fn submit_ready(
+    node_id: u64,
+    node_port: u16,
+    kpr: Keypair,
+    url: reqwest::Url,
+) -> Result<()> {
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
@@ -35,7 +40,7 @@ pub async fn submit_ready(node_id: u64, kpr: Keypair, url: reqwest::Url) -> Resu
     let peer_id_bytes = bincode::serialize(&peer_id).expect("peer id to serialize successfully");
 
     let registration = serde_json::to_string(
-        &serde_json::json!({ "node_id": node_id, "public_key": kpr.public_key().as_bytes(),  "peer_id": peer_id_bytes }),
+        &serde_json::json!({ "node_id": node_id, "public_key": kpr.public_key().as_bytes(), "node_port": node_port,  "peer_id": peer_id_bytes }),
     )?;
 
     timeout(READY_TIMEOUT, async {
@@ -62,12 +67,12 @@ pub async fn submit_ready(node_id: u64, kpr: Keypair, url: reqwest::Url) -> Resu
     })
     .await
     .context("response before timeout")?;
+
     Ok(())
 }
 
 pub async fn wait_for_committee(
     kpr: Keypair,
-    port: u16,
     url: reqwest::Url,
 ) -> Result<(
     HashMap<PublicKey, (PeerId, String)>,
@@ -104,8 +109,7 @@ pub async fn wait_for_committee(
     let mut bootstrap_nodes = HashMap::new();
     let mut staked_nodes = vec![];
     for c in committee_data.committee.into_iter() {
-        let remote_bind_addr = format!("{}:{}", c.ip_addr, port);
-        info!("{remote_bind_addr}");
+        info!("{}", c.ip_addr);
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
@@ -113,7 +117,7 @@ pub async fn wait_for_committee(
             (
                 bincode::deserialize::<PeerId>(&c.peer_id)
                     .expect("peer id to deserialize successfully"),
-                remote_bind_addr,
+                c.ip_addr,
             ),
         );
         staked_nodes.push(cfg.public_config());
