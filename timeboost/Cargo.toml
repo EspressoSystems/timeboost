@@ -20,8 +20,10 @@ multiaddr = { workspace = true }
 parking_lot = { workspace = true }
 multisig = { path = "../multisig" }
 prometheus = { workspace = true }
+reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }

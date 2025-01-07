@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 import typer
-from typing import Optional
+from typing import Optional, Dict
 import uvicorn
 from typing_extensions import Annotated
 
@@ -12,12 +12,21 @@ cli = typer.Typer()
 
 @dataclass
 class CommitteeEntry:
+    node_id: int
     public_key: str
     ip_addr: str
 
+    def to_json(self) -> Dict[str, str]:
+        return {
+            "node_id": self.node_id,
+            "public_key": self.public_key,
+            "ip_addr": self.ip_addr,
+        }
+
 
 class ReadyPayload(BaseModel):
-    public_key: str
+    node_id: int
+    public_key: list[int]
 
 
 COMMITTEE: list[CommitteeEntry] = []
@@ -28,24 +37,27 @@ def ready(request: Request, payload: ReadyPayload):
     global COMMITTEE
 
     for entry in COMMITTEE:
-        if payload.public_key == entry.public_key:
+        if payload.public_key == entry.public_key or payload.node_id == entry.node_id:
             raise HTTPException(
                 status_code=401,
                 detail=f"key '{payload.public_key}' was already registered",
             )
 
-    COMMITTEE.append(CommitteeEntry(payload.public_key, request.client[0]))
+    e = CommitteeEntry(payload.node_id, payload.public_key, request.client[0])
+    COMMITTEE.append(e)
 
-    return {
-        "client": request.client[0],
-        "public_key": payload.public_key,
-        "commitee_size": len(COMMITTEE),
-    }
+    return e
 
 
 @app.get("/start/")
 def start():
-    return {"started": len(COMMITEE) == app.state.committee_size}
+    started = len(COMMITTEE) == app.state.committee_size
+    committee = [e.to_json() for e in COMMITTEE] if started else []
+
+    return {
+        "started": started,
+        "committee": committee,
+    }
 
 
 @cli.command()
@@ -58,7 +70,7 @@ def main(
     # Store the committee_size in the app state
     app.state.committee_size = committee_size
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7200)
 
 
 if __name__ == "__main__":

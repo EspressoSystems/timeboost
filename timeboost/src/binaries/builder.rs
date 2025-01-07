@@ -43,6 +43,10 @@ struct Cli {
     #[clap(long, default_value_t = 5)]
     committee_size: u16,
 
+    /// The ip address of the startup coordinator
+    #[clap(long, default_value = "http://localhost:7200/")]
+    startup_url: reqwest::Url,
+
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
@@ -83,10 +87,13 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "until"))]
     let skip_bootstrap_id = None;
 
-    // Make a new committee contract instance to read the committee config from.
-    let committee = CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id);
-
     let id = NodeId::from(cli.id as u64);
+
+    // Make a new committee contract instance to read the committee config from.
+    let committee = match cli.base {
+        CommitteeBase::Network => CommitteeContract::new_from_network(id, cli.startup_url).await,
+        _ => CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id),
+    };
 
     let keypair = unsafe_zero_keypair(id);
 
