@@ -113,7 +113,7 @@ pub async fn wait_for_committee(
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
-            kpr.public_key(),
+            c.public_key,
             (
                 bincode::deserialize::<PeerId>(&c.peer_id)
                     .expect("peer id to deserialize successfully"),
