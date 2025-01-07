@@ -6,7 +6,7 @@ use std::{collections::HashMap, time::Duration};
 use timeboost_networking::derive_peer_id;
 use timeboost_utils::{PeerConfig, ValidatorConfig};
 use tokio::time::{sleep, timeout};
-use tracing::error;
+use tracing::{error, info};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -78,6 +78,7 @@ pub async fn wait_for_committee(
             match reqwest::get(url.clone().join("start/").expect("valid url")).await {
                 Ok(response) => match response.json::<StartResponse>().await {
                     Ok(payload) => {
+                        tracing::info!("{:?}", payload);
                         if payload.started {
                             break payload;
                         }
@@ -103,6 +104,7 @@ pub async fn wait_for_committee(
     let mut bootstrap_nodes = HashMap::new();
     let mut staked_nodes = vec![];
     for c in committee_data.committee.into_iter() {
+        info!("{:?}", c);
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
