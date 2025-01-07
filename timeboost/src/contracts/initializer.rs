@@ -67,6 +67,7 @@ pub async fn submit_ready(node_id: u64, kpr: Keypair, url: reqwest::Url) -> Resu
 
 pub async fn wait_for_committee(
     kpr: Keypair,
+    port: u16,
     url: reqwest::Url,
 ) -> Result<(
     HashMap<PublicKey, (PeerId, String)>,
@@ -112,7 +113,7 @@ pub async fn wait_for_committee(
             (
                 bincode::deserialize::<PeerId>(&c.peer_id)
                     .expect("peer id to deserialize successfully"),
-                c.ip_addr,
+                format!("{}:{}", c.ip_addr, port),
             ),
         );
         staked_nodes.push(cfg.public_config());

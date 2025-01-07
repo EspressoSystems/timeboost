@@ -91,7 +91,9 @@ async fn main() -> Result<()> {
 
     // Make a new committee contract instance to read the committee config from.
     let committee = match cli.base {
-        CommitteeBase::Network => CommitteeContract::new_from_network(id, cli.startup_url).await,
+        CommitteeBase::Network => {
+            CommitteeContract::new_from_network(id, cli.port, cli.startup_url).await
+        }
         _ => CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id),
     };
 
