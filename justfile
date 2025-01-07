@@ -56,6 +56,9 @@ run_demo *ARGS:
 run_tx_generator *ARGS:
   cargo run --release --bin tx-generator {{ARGS}}
 
+run_fake_contract *ARGS:
+  cd fake-contract && uv run main.py {{ARGS}}
+
 ci_local:
   just build && just lint && just test_ci --release && just run_demo && just build_docker
 

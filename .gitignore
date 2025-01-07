@@ -30,3 +30,5 @@ Cargo.lock
 
 # Vim
 bacon.toml
+
+__pycache__/
