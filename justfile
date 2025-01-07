@@ -42,6 +42,7 @@ fix:
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
+  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
 run_integration: build_docker
   docker compose up --abort-on-container-exit

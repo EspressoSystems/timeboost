@@ -8,6 +8,8 @@ WORKDIR /app
 
 RUN uv sync --frozen --no-install-project --no-dev
 
+ENV PATH="/app/.venv/bin:$PATH"
+
 ENTRYPOINT []
 
 CMD["fastapi", "run", "main.py"]
