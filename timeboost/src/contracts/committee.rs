@@ -20,6 +20,7 @@ pub enum CommitteeBase {
 }
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
+#[derive(Debug, Clone)]
 pub struct CommitteeContract {
     /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
     bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,

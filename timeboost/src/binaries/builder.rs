@@ -97,6 +97,10 @@ async fn main() -> Result<()> {
         _ => CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id),
     };
 
+    if id == 0.into() {
+        tracing::info!("{:?}", committee);
+    }
+
     let keypair = unsafe_zero_keypair(id);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
