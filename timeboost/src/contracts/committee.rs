@@ -138,7 +138,7 @@ impl CommitteeContract {
         .await.expect("response before timeout");
 
         // Run the timeout again, except waiting for the full system startup
-        let result = tokio::time::timeout(timeout_duration, async {
+        let committee_data = tokio::time::timeout(timeout_duration, async {
             loop {
                 match client
                     .get(url.clone().join("start/").expect("valid url"))
@@ -166,18 +166,12 @@ impl CommitteeContract {
                 }
             }
         })
-        .await;
-
-        let payload = match result {
-            Ok(payload) => payload,
-            Err(_) => {
-                panic!("timed out starting up");
-            }
-        };
+        .await
+        .expect("commitee to be created before timeout");
 
         let mut bootstrap_nodes = HashMap::new();
         let mut staked_nodes = vec![];
-        for c in payload.committee.into_iter() {
+        for c in committee_data.committee.into_iter() {
             let cfg = ValidatorConfig::<PublicKey>::generated_from_seed_indexed(
                 [0; 32], c.node_id, 1, false,
             );
