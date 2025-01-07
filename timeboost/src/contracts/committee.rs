@@ -54,14 +54,7 @@ impl CommitteeContract {
             let kpr = unsafe_zero_keypair(i as u64);
             let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
-                // CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
-                CommitteeBase::Local => {
-                    if i == 0 {
-                        format!("192.168.1.124:{}", 8000 + i)
-                    } else {
-                        format!("192.168.1.14:{}", 8000 + i)
-                    }
-                }
+                CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
                 // Docker uses the docker network IP address for config, but we bind according to
                 // the usual semantics of 127.* or 0.* for localhost.
                 // Here, incrementing the port is not explicitly necessary, but since docker-compose
