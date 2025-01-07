@@ -79,7 +79,6 @@ pub async fn wait_for_committee(
             match reqwest::get(url.clone().join("start/").expect("valid url")).await {
                 Ok(response) => match response.json::<StartResponse>().await {
                     Ok(payload) => {
-                        tracing::info!("{:?}", payload);
                         if payload.started {
                             break payload;
                         }
@@ -105,7 +104,8 @@ pub async fn wait_for_committee(
     let mut bootstrap_nodes = HashMap::new();
     let mut staked_nodes = vec![];
     for c in committee_data.committee.into_iter() {
-        info!("{:?}", c);
+        let remote_bind_addr = format!("{}:{}", c.ip_addr, port);
+        info!("{remote_bind_addr}");
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
@@ -113,7 +113,7 @@ pub async fn wait_for_committee(
             (
                 bincode::deserialize::<PeerId>(&c.peer_id)
                     .expect("peer id to deserialize successfully"),
-                format!("{}:{}", c.ip_addr, port),
+                remote_bind_addr,
             ),
         );
         staked_nodes.push(cfg.public_config());
