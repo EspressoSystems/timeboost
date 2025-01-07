@@ -27,8 +27,9 @@ class CommitteeEntry:
     def to_json(self) -> Dict[str, str]:
         return {
             "node_id": self.node_id,
-            "public_key": self.public_key,
             "ip_addr": self.ip_addr,
+            "peer_id": self.peer_id,
+            "public_key": self.public_key,
         }
 
 
