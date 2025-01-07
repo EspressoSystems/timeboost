@@ -34,7 +34,10 @@ impl Group {
         for (i, kpr) in keypairs.iter().enumerate() {
             let cfg = ValidatorConfig::generated_from_seed_indexed([0; 32], i as u64, 1, false);
             pubks.push((i as u8, kpr.public_key()));
-            addrs.push(format!("127.0.0.1:{}", 8000 + i as u16));
+            addrs.push(format!(
+                "127.0.0.1:{}",
+                portpicker::pick_unused_port().expect("Could not find an open port")
+            ));
             vcgfs.push(cfg);
             peer_ids.push(derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
         }
