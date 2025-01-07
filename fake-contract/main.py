@@ -58,7 +58,7 @@ def ready(request: Request, payload: ReadyPayload):
         payload.node_id,
         payload.public_key,
         payload.peer_id,
-        f"{request.client[0]}:{payload.port}",
+        f"{request.client[0]}:{payload.node_port}",
     )
     COMMITTEE.append(e)
 
