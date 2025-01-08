@@ -13,7 +13,9 @@ services:
         "--metrics-port",
         "9000",
         "--base",
-        "network"
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -41,7 +43,9 @@ services:
         "--metrics-port",
         "9001",
         "--base",
-        "network"
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -69,7 +73,9 @@ services:
         "--metrics-port",
         "9002",
         "--base",
-        "network"
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -97,7 +103,9 @@ services:
         "--metrics-port",
         "9003",
         "--base",
-        "network"
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -126,7 +134,9 @@ services:
         "--metrics-port",
         "9004",
         "--base",
-        "network"
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
