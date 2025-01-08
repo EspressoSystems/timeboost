@@ -68,3 +68,42 @@ fn delayed_delivery() {
 
     assert_eq!(0, sim.consensus("D").buffer_depth());
 }
+
+/// In this test B ignores A for some time, i.e. it does not send its messages
+/// to A. This creates a gap where vertices can not be fully resolved and
+/// subsequent vertex proposals can not be added to the DAG but must be buffered.
+/// The catch-up logic in sailfish inspects the buffer size and eventually
+/// replaces its DAG with the buffer, which prevents infinite buffer growth and
+/// allows A to rejoin the game again.
+#[test]
+fn gap_does_not_cause_infinite_buffer_growth() {
+    timeboost_utils::types::logging::init_logging();
+
+    let all = ["A", "B", "C", "D", "E"];
+
+    let mut sim = Simulator::new(all);
+    sim.set_rules([
+        Rule::new("immediate fanout")
+            .repeat(10)
+            .with(edges("A", all))
+            .with(edges("B", all))
+            .with(edges("C", all))
+            .with(edges("D", all))
+            .with(edges("E", all)),
+        Rule::new("B ignores A")
+            .repeat(10)
+            .with(edges("A", all))
+            .plus(edge("B", "B"))
+            .plus(edge("B", "C"))
+            .plus(edge("B", "D"))
+            .plus(edge("B", "E"))
+            .with(edges("C", all))
+            .with(edges("D", all))
+            .with(edges("E", all)),
+    ]);
+    sim.go(100);
+
+    assert!(sim.events().iter().filter(|e| e.is_timeout()).count() > 0);
+
+    assert_eq!(0, sim.consensus("A").buffer_depth())
+}

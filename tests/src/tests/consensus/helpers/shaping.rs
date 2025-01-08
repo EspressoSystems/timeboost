@@ -150,10 +150,10 @@ impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Deliver(t, n, r, k) => {
-                write!(f, "[{t:4}] {n}: deliver (round := {r}, source := {k})")
+                write!(f, "✅ [{t:4}] {n}: deliver (round := {r}, source := {k})")
             }
             Self::Timeout(t, n, r, m) => {
-                write!(f, "[{t:4}] {n}: timeout (round := {r}, leader := {m})")
+                write!(f, "❌ [{t:4}] {n}: timeout (round := {r}, leader := {m})")
             }
         }
     }
