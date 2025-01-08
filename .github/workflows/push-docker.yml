@@ -15,7 +15,6 @@ on:
 
 jobs:
   build-docker:
-    needs: build
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.set-tag.outputs.tag }}
