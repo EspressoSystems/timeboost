@@ -175,6 +175,13 @@ services:
     networks:
       timeboost:
         ipv4_address: 172.20.0.9
+  fake-contract:
+    image: fake-contract:latest
+    command: ["uv", "run", "main.py"]
+    networks:
+      timeboost:
+        ipv4_address:
+          172.20.0.10
 
 networks:
   timeboost:
