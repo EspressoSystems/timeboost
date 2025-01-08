@@ -12,11 +12,11 @@ build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
 test *ARGS:
-  cargo nextest run --test-threads $(nproc) {{ARGS}}
+  cargo nextest run {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --test-threads $(nproc) {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 {{ARGS}}
   RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
 
 run *ARGS:
