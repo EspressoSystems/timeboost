@@ -34,7 +34,6 @@ jobs:
       id: set-tag
       run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
     - name: Build and push Docker image
-      uses: docker/build-push-action@v6
       env:
         TAG: ${{ env.tag }}
       run: |
