@@ -48,5 +48,5 @@ jobs:
       run: |
         docker buildx build \
           --platform linux/amd64 \
-          --tag ghcr.io/${{ github.repository }}:${TAG} \
+          --tag ghcr.io/espressosystems/timeboost:${TAG} \
           --push .
