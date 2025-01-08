@@ -12,4 +12,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 ENTRYPOINT []
 
-CMD ["fastapi", "run", "main.py"]
+CMD ["uv", "run", "main.py"]
