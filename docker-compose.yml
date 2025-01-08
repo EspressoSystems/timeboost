@@ -12,6 +12,8 @@ services:
         "8800",
         "--metrics-port",
         "9000",
+        "--base",
+        "network"
       ]
     networks:
       timeboost:
@@ -38,6 +40,8 @@ services:
         "8801",
         "--metrics-port",
         "9001",
+        "--base",
+        "network"
       ]
     networks:
       timeboost:
@@ -64,6 +68,8 @@ services:
         "8802",
         "--metrics-port",
         "9002",
+        "--base",
+        "network"
       ]
     networks:
       timeboost:
@@ -90,6 +96,8 @@ services:
         "8803",
         "--metrics-port",
         "9003",
+        "--base",
+        "network"
       ]
     networks:
       timeboost:
@@ -117,6 +125,8 @@ services:
         "8804",
         "--metrics-port",
         "9004",
+        "--base",
+        "network"
       ]
     networks:
       timeboost:
