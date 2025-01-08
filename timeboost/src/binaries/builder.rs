@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
             cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
-            matches!(cli.base, CommitteeBase::Local),
+            matches!(cli.base, CommitteeBase::Network),
             shutdown_tx.clone(),
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {
