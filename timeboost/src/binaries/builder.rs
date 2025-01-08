@@ -36,7 +36,7 @@ struct Cli {
     metrics_port: u16,
 
     /// The base to use for the committee config.
-    #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
+    #[clap(long, value_enum, default_value_t = CommitteeBase::Local)]
     base: CommitteeBase,
 
     /// The committee size

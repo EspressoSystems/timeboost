@@ -11,7 +11,6 @@ use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommitteeBase {
-    Docker,
     Local,
     /// The Network configuration allows for us to use the fake-contract server
     /// for registering instances. This is a trusted-environment-only method as
@@ -30,7 +29,7 @@ pub struct CommitteeContract {
 impl Default for CommitteeContract {
     /// Default to using the docker config.
     fn default() -> Self {
-        Self::new(CommitteeBase::Docker, 5, None)
+        Self::new(CommitteeBase::Local, 5, None)
     }
 }
 
@@ -55,13 +54,6 @@ impl CommitteeContract {
             let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
                 CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
-                // Docker uses the docker network IP address for config, but we bind according to
-                // the usual semantics of 127.* or 0.* for localhost.
-                // Here, incrementing the port is not explicitly necessary, but since docker-compose
-                // runs locally, we do it to be consistent. Note that this IP needs to match
-                // whatever the network configuration in the `docker-compose.yml` file is. If that
-                // changes, then this will break.
-                CommitteeBase::Docker => format!("172.20.0.{}:{}", 2 + i, 8000 + i),
                 _ => {
                     // If we get here that's a mistake
                     unreachable!();
