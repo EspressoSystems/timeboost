@@ -10,7 +10,7 @@ use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_networking::network::NetworkInitializer;
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 use tokio::{sync::watch, task::JoinSet};
 
 pub struct BasicNetworkTest {
@@ -50,7 +50,7 @@ impl TestableNetwork for BasicNetworkTest {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
             let peer_id = self.group.peer_ids[i];
-            let (tx_ready, rx_ready) = oneshot::channel();
+            let (ready_sender, mut ready_receiver) = mpsc::channel(1);
             let net_fut = NetworkInitializer::new(
                 peer_id,
                 kpr.clone(),
@@ -59,13 +59,16 @@ impl TestableNetwork for BasicNetworkTest {
                 addr.clone(),
             )
             .expect("failed to make libp2p initializer")
-            .into_network(tx_ready);
+            .into_network(ready_sender);
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {
                 let net_inner = net_fut.await.expect("failed to make network");
                 tracing::debug!(%i, "network created, waiting for ready");
-                rx_ready.await.expect("failed to connect to remote nodes");
+                ready_receiver
+                    .recv()
+                    .await
+                    .expect("failed to connect to remote nodes");
                 let cfg = rbc::Config::new(kpr.clone(), committee_clone.clone());
                 let net = Rbc::new(net_inner, cfg);
                 tracing::debug!(%i, "created rbc");

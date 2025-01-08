@@ -12,21 +12,24 @@ build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
 test *ARGS:
-  cargo nextest run --no-capture {{ARGS}}
+  cargo nextest run --test-threads $(nproc) {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --no-capture {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --test-threads $(nproc) {{ARGS}}
   RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}
 
 clippy:
-  cargo clippy --workspace --lib --tests -- -D warnings
+  cargo clippy --workspace --lib --tests --benches -- -D warnings
+
+check:
+  cargo check --all
 
 fmt:
-  cargo fmt
+  cargo fmt --all
 
 fmt_check:
   cargo fmt --check
@@ -54,3 +57,5 @@ run_tx_generator *ARGS:
 
 ci_local:
   just build && just lint && just test_ci --release && just run_demo && just build_docker
+
+bacon: clippy check fmt

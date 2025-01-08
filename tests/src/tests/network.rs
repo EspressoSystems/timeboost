@@ -156,6 +156,7 @@ pub trait TestableNetwork {
                         }
                         if all_evaluated {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                            sleep(Duration::from_secs(1)).await;
                             coordinator.shutdown().await.expect("Network to be shutdown");
                             return TaskHandleResult::new(node_id, outcome);
                         }

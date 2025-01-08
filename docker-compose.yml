@@ -144,6 +144,37 @@ services:
         ipv4_address: 172.20.0.7
     environment:
       - RUST_LOG=debug
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    depends_on:
+      - node0
+      - node1
+      - node2
+      - node3
+      - node4
+    ports:
+      - 3000:3000
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=timeboost
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.8
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prom_data:/prometheus
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.9
 
 networks:
   timeboost:
@@ -152,3 +183,6 @@ networks:
       driver: default
       config:
         - subnet: 172.20.0.0/16
+
+volumes:
+  prom_data:

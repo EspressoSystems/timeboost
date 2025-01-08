@@ -7,6 +7,10 @@ description = "Sailfish is a DAG-based BFT consensus protocol."
 [features]
 test = ['timeboost-core/test']
 
+[[bench]]
+name = "consensus_single"
+harness = false
+
 [dependencies]
 anyhow = { workspace = true }
 async-lock = { workspace = true }
@@ -16,6 +20,7 @@ bitvec = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
+criterion = "0.5"
 derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
@@ -32,6 +37,9 @@ timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+rayon = { workspace = true }
 
 [[bin]]
 name = "sailfish"

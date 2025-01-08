@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs};
+use std::{collections::HashMap, fs};
 
 use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
@@ -20,7 +20,7 @@ struct Cli {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    to_connect_addrs: HashSet<(PeerId, String)>,
+    to_connect_addrs: HashMap<PublicKey, (PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     id: NodeId,
     port: u16,
