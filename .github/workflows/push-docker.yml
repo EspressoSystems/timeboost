@@ -32,9 +32,16 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
-    - name: Extract tag
+    - name: Set tag
       id: set-tag
-      run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          echo "TAG=$(date +%Y%m%d)" >> $GITHUB_ENV
+        elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        else
+          echo "TAG=$(date +%Y%m%d)" >> $GITHUB_ENV
+        fi
     - name: Build and push Docker image
       env:
         TAG: ${{ env.tag }}
