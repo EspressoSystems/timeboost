@@ -44,7 +44,7 @@ jobs:
         fi
     - name: Build and push Docker image
       env:
-        TAG: ${{ env.tag }}
+        TAG: ${{ env.TAG }}
       run: |
         docker buildx build \
           --platform linux/amd64 \
