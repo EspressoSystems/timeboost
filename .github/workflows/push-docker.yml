@@ -48,5 +48,6 @@ jobs:
       run: |
         docker buildx build \
           --platform linux/amd64 \
+          --file ./docker/timeboost.Dockerfile \
           --tag ghcr.io/espressosystems/timeboost:${TAG} \
           --push .
