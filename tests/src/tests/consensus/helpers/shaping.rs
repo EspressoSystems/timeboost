@@ -20,24 +20,36 @@ type Time = u64;
 ///
 /// Optionally, an edge may attach a time delay for messages to arrive
 /// at destination.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge {
     src: Name,
     dst: Name,
-    delay: Time,
+    delay: Box<dyn Fn(&Message) -> Time>,
 }
 
 impl Edge {
     /// Attach some message delay to this edge.
     pub fn delay(mut self, d: Time) -> Self {
-        self.delay = d;
+        self.delay = Box::new(move |_| d);
+        self
+    }
+
+    /// Attach some message delay function to this edge.
+    pub fn delay_fn<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Message) -> Time + 'static,
+    {
+        self.delay = Box::new(f);
         self
     }
 }
 
 /// Create an edge with 0 delay.
 pub fn edge(src: Name, dst: Name) -> Edge {
-    Edge { src, dst, delay: 0 }
+    Edge {
+        src,
+        dst,
+        delay: Box::new(move |_| 0),
+    }
 }
 
 /// Create multiple edges with 0 delay.
@@ -48,17 +60,19 @@ where
     dst.into_iter().map(move |d| Edge {
         src,
         dst: d,
-        delay: 0,
+        delay: Box::new(move |_| 0),
     })
 }
 
 /// A rule contains edges from multiple sources to multiple destinations.
-#[derive(Debug, Clone)]
 pub struct Rule {
     /// A short description of the rule.
     descr: &'static str,
-    /// The actual edges.
-    edges: BTreeMap<Name, BTreeMap<Name, Time>>,
+    /// A precondition to hold before applying the rule.
+    precond: Box<dyn Fn(&Simulator) -> bool>,
+    /// The actual edges as a map from source to destination with delay function.
+    #[allow(clippy::type_complexity)]
+    edges: BTreeMap<Name, BTreeMap<Name, Box<dyn Fn(&Message) -> Time>>>,
     /// How many times the rule should be repeated?
     repeat: usize,
 }
@@ -67,6 +81,7 @@ impl Rule {
     pub fn new(descr: &'static str) -> Self {
         Self {
             descr,
+            precond: Box::new(|_| true),
             edges: BTreeMap::new(),
             repeat: 0,
         }
@@ -74,6 +89,14 @@ impl Rule {
 
     pub fn repeat(mut self, r: usize) -> Self {
         self.repeat = r;
+        self
+    }
+
+    pub fn precondition<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Simulator) -> bool + 'static,
+    {
+        self.precond = Box::new(f);
         self
     }
 
@@ -92,8 +115,8 @@ impl Rule {
         self
     }
 
-    pub fn lookup(&self, src: Name, dst: Name) -> Option<Time> {
-        self.edges.get(src)?.get(dst).copied()
+    pub fn lookup(&self, src: Name, dst: Name) -> Option<&dyn Fn(&Message) -> Time> {
+        self.edges.get(src)?.get(dst).map(|f| &**f)
     }
 }
 
@@ -255,6 +278,14 @@ impl Simulator {
         &self.parties[n].logic
     }
 
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     pub fn go(&mut self, timeout: Time) {
         let mut rule = self.rules.pop();
 
@@ -283,6 +314,9 @@ impl Simulator {
     }
 
     fn eval(&mut self, party: Name, actions: Vec<Action>, rule: Option<&Rule>) {
+        if let Some(r) = &rule {
+            assert!((r.precond)(self), "{}: precondition failed", r.descr)
+        }
         for a in actions {
             match a {
                 Action::SendNoVote(to, e) => {
@@ -292,7 +326,8 @@ impl Simulator {
                     };
                     if let Some(rule) = rule {
                         if let Some(delay) = rule.lookup(party, dst.name) {
-                            dst.add_message(self.time + delay, Message::NoVote(e))
+                            let m = Message::NoVote(e);
+                            dst.add_message(self.time + delay(&m), m)
                         }
                     } else {
                         dst.add_message(self.time, Message::NoVote(e))
@@ -302,7 +337,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::Vertex(e.clone()))
+                                let m = Message::Vertex(e.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
@@ -315,7 +351,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::Timeout(e.clone()))
+                                let m = Message::Timeout(e.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
@@ -328,7 +365,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::TimeoutCert(c.clone()))
+                                let m = Message::TimeoutCert(c.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
