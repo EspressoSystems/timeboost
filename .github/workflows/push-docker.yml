@@ -5,6 +5,13 @@ on:
     tags:
       # Match tags in the format YYYYMMDD
       - "20[0-9][0-9][0-1][0-9][0-3][0-9]*"
+  # THIS CANNOT MERGE DO NOT MERGE THIS AHH
+  pull_request:
+    branches:
+      - main
+    tags:
+      # Match tags in the format YYYYMMDD
+      - "20[0-9][0-9][0-1][0-9][0-3][0-9]*"
 
 jobs:
   build-docker:
@@ -35,7 +42,7 @@ jobs:
         else
           echo "TAG=$(date +%Y%m%d)" >> $GITHUB_ENV
         fi
-    - name: Build and push Docker image
+    - name: Build and push Timeboost Docker image
       env:
         TAG: ${{ env.TAG }}
       run: |
@@ -43,4 +50,22 @@ jobs:
           --platform linux/amd64 \
           --file ./docker/timeboost.Dockerfile \
           --tag ghcr.io/espressosystems/timeboost:${TAG} \
+          --push .
+    - name: Build and push Contract Docker image
+      env:
+        TAG: ${{ env.TAG }}
+      run: |
+        docker buildx build \
+          --platform linux/amd64 \
+          --file ./docker/fake-contract.Dockerfile \
+          --tag ghcr.io/espressosystems/fake-contract:${TAG} \
+          --push .
+    - name: Build and push Tx Generator Docker image
+      env:
+        TAG: ${{ env.TAG }}
+      run: |
+        docker buildx build \
+          --platform linux/amd64 \
+          --file ./docker/tx-generator.Dockerfile \
+          --tag ghcr.io/espressosystems/tx-generator:${TAG} \
           --push .
