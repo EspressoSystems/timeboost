@@ -12,6 +12,10 @@ services:
         "8800",
         "--metrics-port",
         "9000",
+        "--base",
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -38,6 +42,10 @@ services:
         "8801",
         "--metrics-port",
         "9001",
+        "--base",
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -64,6 +72,10 @@ services:
         "8802",
         "--metrics-port",
         "9002",
+        "--base",
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -90,6 +102,10 @@ services:
         "8803",
         "--metrics-port",
         "9003",
+        "--base",
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -117,6 +133,10 @@ services:
         "8804",
         "--metrics-port",
         "9004",
+        "--base",
+        "network",
+        "--startup-url",
+        "http://172.20.0.10:7200"
       ]
     networks:
       timeboost:
@@ -175,6 +195,13 @@ services:
     networks:
       timeboost:
         ipv4_address: 172.20.0.9
+  fake-contract:
+    image: fake-contract:latest
+    command: ["uv", "run", "main.py"]
+    networks:
+      timeboost:
+        ipv4_address:
+          172.20.0.10
 
 networks:
   timeboost:

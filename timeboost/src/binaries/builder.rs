@@ -36,12 +36,16 @@ struct Cli {
     metrics_port: u16,
 
     /// The base to use for the committee config.
-    #[clap(long, value_enum, default_value_t = CommitteeBase::Docker)]
+    #[clap(long, value_enum, default_value_t = CommitteeBase::Local)]
     base: CommitteeBase,
 
     /// The committee size
     #[clap(long, default_value_t = 5)]
     committee_size: u16,
+
+    /// The ip address of the startup coordinator
+    #[clap(long, default_value = "http://localhost:7200/")]
+    startup_url: reqwest::Url,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -83,10 +87,15 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "until"))]
     let skip_bootstrap_id = None;
 
-    // Make a new committee contract instance to read the committee config from.
-    let committee = CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id);
-
     let id = NodeId::from(cli.id as u64);
+
+    // Make a new committee contract instance to read the committee config from.
+    let committee = match cli.base {
+        CommitteeBase::Network => {
+            CommitteeContract::new_from_network(id, cli.port, cli.startup_url).await
+        }
+        _ => CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id),
+    };
 
     let keypair = unsafe_zero_keypair(id);
 
@@ -100,7 +109,7 @@ async fn main() -> Result<()> {
             cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
-            matches!(cli.base, CommitteeBase::Docker),
+            matches!(cli.base, CommitteeBase::Network),
             shutdown_tx.clone(),
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {

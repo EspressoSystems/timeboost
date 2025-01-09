@@ -2,18 +2,26 @@ use std::collections::HashMap;
 
 use libp2p_identity::PeerId;
 use multisig::PublicKey;
+use timeboost_core::types::NodeId;
 use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
+/// The `CommitteeBase` defines which underlying commitee basis is used when
+/// calculating (or polling for) public keys of the other nodes in the network.
 #[derive(Debug, Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommitteeBase {
-    Docker,
     Local,
+    /// The Network configuration allows for us to use the fake-contract server
+    /// for registering instances. This is a trusted-environment-only method as
+    /// it is a generally insecure method, and not suitable for production.
+    Network,
 }
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
+#[derive(Debug, Clone)]
 pub struct CommitteeContract {
+    /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
     bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
@@ -21,7 +29,7 @@ pub struct CommitteeContract {
 impl Default for CommitteeContract {
     /// Default to using the docker config.
     fn default() -> Self {
-        Self::new(CommitteeBase::Docker, 5, None)
+        Self::new(CommitteeBase::Local, 5, None)
     }
 }
 
@@ -46,11 +54,10 @@ impl CommitteeContract {
             let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
                 CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
-                // Docker uses the docker network IP address for config, but we bind according to
-                // the usual semantics of 127.* or 0.* for localhost.
-                // Here, incrementing the port is not explicitly necessary, but since docker-compose
-                // runs locally, we do it to be consistent.
-                CommitteeBase::Docker => format!("172.20.0.{}:{}", 2 + i, 8000 + i),
+                _ => {
+                    // If we get here that's a mistake
+                    unreachable!();
+                }
             };
             staked_nodes.push(cfg.public_config());
 
@@ -63,6 +70,30 @@ impl CommitteeContract {
             bootstrap_nodes.insert(kpr.public_key(), (peer_id, bind_addr));
         }
 
+        Self {
+            bootstrap_nodes,
+            staked_nodes,
+        }
+    }
+
+    pub async fn new_from_network(node_id: NodeId, node_port: u16, url: reqwest::Url) -> Self {
+        let kpr = unsafe_zero_keypair(u64::from(node_id));
+
+        // First, submit that we're ready
+        crate::contracts::initializer::submit_ready(
+            u64::from(node_id),
+            node_port,
+            kpr,
+            url.clone(),
+        )
+        .await
+        .expect("ready submission to succeed");
+
+        // Then, wait for the rest of the committee to be ready.
+        let (bootstrap_nodes, staked_nodes) =
+            crate::contracts::initializer::wait_for_committee(url)
+                .await
+                .expect("committee to be ready");
         Self {
             bootstrap_nodes,
             staked_nodes,
