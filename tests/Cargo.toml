@@ -5,20 +5,15 @@ edition.workspace = true
 description.workspace = true
 
 [dependencies]
-async-lock = { workspace = true }
 async-trait = { workspace = true }
-committable = { workspace =  true }
+committable = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
-multiaddr = { workspace = true }
 multisig = { path = "../multisig" }
 portpicker = { workspace = true }
-primitive-types = { workspace = true }
-rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
-timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }

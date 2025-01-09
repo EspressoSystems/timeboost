@@ -15,7 +15,6 @@ ark-serialize = { version = "0.4.2", features = ["derive"] }
 ark-std = { workspace = true }
 bitvec = { workspace = true }
 blake3 = { workspace = true }
-committable = { workspace = true }
 digest = { workspace = true }
 displaydoc = { workspace = true }
 jf-signature = { workspace = true }
