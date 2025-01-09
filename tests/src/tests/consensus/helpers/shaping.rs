@@ -122,22 +122,34 @@ impl Rule {
 }
 
 /// A rule generator.
+///
+/// Generates random rules subject to certain configurable constraints.
 pub struct RuleGen {
+    /// The parties for which to create edge rules.
     parties: Vec<Name>,
+    /// The highest time delay to apply to an edge.
     max_delay: Time,
+    /// How often to repeat applying a rule (upper bound).
     max_repeat: usize,
+    /// The mininum number of edges to have between each pair of parties.
     min_edges: usize,
+    /// The seed for the randon number generator.
     seed: u64,
+    /// The random number generator to use.
     rgen: StdRng,
 }
 
 impl RuleGen {
+    /// Create a new rule generator for the given parties using defaults.
     pub fn new<I: IntoIterator<Item = &'static str>>(names: I) -> Self {
         let seed = rand::random();
         let parties: Vec<Name> = names.into_iter().collect();
         assert!(!parties.is_empty());
         Self {
+            // Some arbitrary value. Should take the timeout setting of
+            // the `Simulator` into considerations, which is 10 by default.
             max_delay: 19,
+            // Another arbitrary value.
             max_repeat: 27,
             min_edges: parties.len(),
             parties,
@@ -146,31 +158,39 @@ impl RuleGen {
         }
     }
 
+    /// Use the given max. time delay for edges.
     pub fn with_max_delay(mut self, d: Time) -> Self {
         self.max_delay = d;
         self
     }
 
+    /// Repeat the generated rule at most `r` times.
     pub fn with_max_repeat(mut self, r: usize) -> Self {
         self.max_repeat = r;
         self
     }
 
+    /// Use at least `n` edges between each pair of parties.
     pub fn with_min_edges(mut self, n: usize) -> Self {
         self.min_edges = n;
         self
     }
 
+    /// Use the given see with the internal entropy source.
+    ///
+    /// Useful for reproducing test runs.
     pub fn with_seed(mut self, s: u64) -> Self {
         self.seed = s;
         self.rgen = StdRng::seed_from_u64(s);
         self
     }
 
+    /// Get the seed used for the entropy source.
     pub fn seed(&self) -> u64 {
         self.seed
     }
 
+    /// Generate a sequence of random rules.
     pub fn generate(&mut self, len: usize) -> Vec<Rule> {
         let mut rules = Vec::new();
 
