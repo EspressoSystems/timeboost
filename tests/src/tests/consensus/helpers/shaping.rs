@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
+use rand::prelude::*;
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::message::{Action, Evidence, Message};
 use timeboost_utils::types::round_number::RoundNumber;
@@ -117,6 +118,82 @@ impl Rule {
 
     pub fn lookup(&self, src: Name, dst: Name) -> Option<&dyn Fn(&Message) -> Time> {
         self.edges.get(src)?.get(dst).map(|f| &**f)
+    }
+}
+
+/// A rule generator.
+pub struct RuleGen {
+    parties: Vec<Name>,
+    max_delay: Time,
+    max_repeat: usize,
+    min_edges: usize,
+    seed: u64,
+    rgen: StdRng,
+}
+
+impl RuleGen {
+    pub fn new<I: IntoIterator<Item = &'static str>>(names: I) -> Self {
+        let seed = rand::random();
+        let parties: Vec<Name> = names.into_iter().collect();
+        assert!(!parties.is_empty());
+        Self {
+            max_delay: 19,
+            max_repeat: 27,
+            min_edges: parties.len(),
+            parties,
+            seed,
+            rgen: StdRng::seed_from_u64(seed),
+        }
+    }
+
+    pub fn with_max_delay(mut self, d: Time) -> Self {
+        self.max_delay = d;
+        self
+    }
+
+    pub fn with_max_repeat(mut self, r: usize) -> Self {
+        self.max_repeat = r;
+        self
+    }
+
+    pub fn with_min_edges(mut self, n: usize) -> Self {
+        self.min_edges = n;
+        self
+    }
+
+    pub fn with_seed(mut self, s: u64) -> Self {
+        self.seed = s;
+        self.rgen = StdRng::seed_from_u64(s);
+        self
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn generate(&mut self, len: usize) -> Vec<Rule> {
+        let mut rules = Vec::new();
+
+        for _ in 0..len {
+            let mut rule = Rule::new("randomly generated");
+            while rule.edges.len() < self.min_edges {
+                let src = self
+                    .parties
+                    .choose(&mut self.rgen)
+                    .expect("parties not empty");
+                while rule.edges.get(src).map(|d| d.len()).unwrap_or(0) < self.min_edges {
+                    let dst = self
+                        .parties
+                        .choose(&mut self.rgen)
+                        .expect("parties not empty");
+                    let del = self.rgen.gen_range(0..self.max_delay);
+                    rule = rule.plus(edge(src, dst).delay(del))
+                }
+            }
+            rules.push(rule.repeat(self.rgen.gen_range(0..self.max_repeat)))
+        }
+
+        rules
     }
 }
 
@@ -237,6 +314,8 @@ impl Simulator {
                 (n, p)
             })
             .collect();
+
+        assert!(!parties.is_empty());
 
         let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
 
