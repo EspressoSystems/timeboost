@@ -1,4 +1,4 @@
-use crate::tests::consensus::helpers::shaping::{edge, edges, Rule, Simulator};
+use crate::tests::consensus::helpers::shaping::{edge, edges, Rule, RuleGen, Simulator};
 
 /// A simple test that always delivers messages to all parties.
 ///
@@ -67,4 +67,37 @@ fn delayed_delivery() {
     assert_eq!(8, sim.consensus("E").buffer_depth());
 
     assert_eq!(0, sim.consensus("D").buffer_depth());
+}
+
+/// Show that any prefix of edge delays is followed by deliver events.
+#[test]
+fn progress_after_random_prefix() {
+    timeboost_utils::types::logging::init_logging();
+
+    let all = ["A", "B", "C", "D", "E"];
+    let mut gen = RuleGen::new(all)
+        .with_max_delay(17)
+        .with_max_repeat(29)
+        .with_min_edges(all.len());
+
+    let mut sim = Simulator::new(all);
+    sim.set_rules(gen.generate(20));
+    sim.go(100);
+
+    let n = sim.events().len();
+
+    sim.set_rules([]);
+    sim.go(200);
+
+    assert!(
+        sim.events().len() > n,
+        "no new events (seed = {})",
+        gen.seed()
+    );
+
+    assert!(
+        sim.events()[n..].iter().any(|e| e.is_deliver()),
+        "no deliveries (seed = {})",
+        gen.seed()
+    )
 }
