@@ -97,12 +97,8 @@ impl Network {
         to_connect: HashMap<PublicKey, (PeerId, String)>,
         ready_sender: mpsc::Sender<()>,
     ) -> Self {
-        let transport = Transport::run(
-            local_id,
-            local_addr,
-            to_connect.clone().into_values().collect(),
-        )
-        .await;
+        let transport =
+            Transport::run(local_id, local_addr, to_connect.clone(), keypair.clone()).await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (network_sender, network_receiver) = mpsc::channel(10000);
         let remote_nodes: HashSet<_> = to_connect
