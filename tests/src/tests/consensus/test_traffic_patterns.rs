@@ -1,4 +1,8 @@
-use crate::tests::consensus::helpers::shaping::{edge, edges, Rule, RuleGen, Simulator};
+use crate::tests::consensus::helpers::shaping::{
+    edge, edges, Event, Name, Rule, RuleGen, Simulator,
+};
+use std::collections::{BTreeMap, HashSet};
+use timeboost_utils::types::round_number::RoundNumber;
 
 /// A simple test that always delivers messages to all parties.
 ///
@@ -17,8 +21,9 @@ fn immediate_delivery_to_all() {
         .with(edges("C", all))
         .with(edges("D", all))
         .with(edges("E", all))]);
-    sim.go(100);
+    sim.goto(100);
     assert!(sim.events().iter().all(|e| e.is_deliver()));
+    assert!(is_valid_delivery(&sim));
 }
 
 /// A single node (D) sees its own messages immediately but everyone else
@@ -57,7 +62,7 @@ fn delayed_delivery() {
             .plus(edge("D", "E").delay(20))
             .with(edges("E", all)),
     ]);
-    sim.go(500);
+    sim.goto(500);
 
     assert_eq!(135, sim.events().iter().filter(|e| e.is_timeout()).count());
 
@@ -67,6 +72,8 @@ fn delayed_delivery() {
     assert_eq!(8, sim.consensus("E").buffer_depth());
 
     assert_eq!(0, sim.consensus("D").buffer_depth());
+
+    assert!(is_valid_delivery(&sim));
 }
 
 /// Show that any prefix of edge delays is followed by deliver events.
@@ -81,13 +88,16 @@ fn progress_after_random_prefix() {
         .with_min_edges(all.len());
 
     let mut sim = Simulator::new(all);
-    sim.set_rules(gen.generate(20));
-    sim.go(100);
+    sim.set_rules(gen.generate(50));
+    sim.goto(1000);
+
+    assert_eq!(0, sim.pending_messages());
+    assert_eq!(0, sim.rules().count());
 
     let n = sim.events().len();
 
     sim.set_rules([]);
-    sim.go(200);
+    sim.goto(2000);
 
     assert!(
         sim.events().len() > n,
@@ -99,5 +109,45 @@ fn progress_after_random_prefix() {
         sim.events()[n..].iter().any(|e| e.is_deliver()),
         "no deliveries (seed = {})",
         gen.seed()
+    );
+
+    assert!(
+        is_valid_delivery(&sim),
+        "invalid deliveries (seed = {})",
+        gen.seed()
     )
+}
+
+/// Check that delivery properties hold true.
+///
+/// 1. All parties deliver the same sequence of deliver events.
+/// 2. No delivery is repeated.
+/// 3. The sequence of deliveries is non-empty.
+fn is_valid_delivery(sim: &Simulator) -> bool {
+    let mut m: BTreeMap<Name, Vec<(RoundNumber, Name)>> = BTreeMap::new();
+    for e in sim.events() {
+        if let Event::Deliver(_, source, round, party) = e {
+            m.entry(*source).or_default().push((*round, *party))
+        }
+    }
+    if m.is_empty() {
+        return false;
+    }
+    if m.values().zip(m.values().skip(1)).any(|(a, b)| a != b) {
+        return false;
+    }
+    let mut s = HashSet::new();
+    for e in m.values() {
+        s.clear();
+        for d in e {
+            s.insert(d);
+        }
+        if s.is_empty() {
+            return false;
+        }
+        if e.len() != s.len() {
+            return false;
+        }
+    }
+    true
 }
