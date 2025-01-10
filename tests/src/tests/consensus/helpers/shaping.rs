@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
+use rand::prelude::*;
 use sailfish::consensus::{Consensus, Dag};
 use timeboost_core::types::message::{Action, Evidence, Message};
 use timeboost_utils::types::round_number::RoundNumber;
@@ -20,24 +21,36 @@ type Time = u64;
 ///
 /// Optionally, an edge may attach a time delay for messages to arrive
 /// at destination.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge {
     src: Name,
     dst: Name,
-    delay: Time,
+    delay: Box<dyn Fn(&Message) -> Time>,
 }
 
 impl Edge {
     /// Attach some message delay to this edge.
     pub fn delay(mut self, d: Time) -> Self {
-        self.delay = d;
+        self.delay = Box::new(move |_| d);
+        self
+    }
+
+    /// Attach some message delay function to this edge.
+    pub fn delay_fn<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Message) -> Time + 'static,
+    {
+        self.delay = Box::new(f);
         self
     }
 }
 
 /// Create an edge with 0 delay.
 pub fn edge(src: Name, dst: Name) -> Edge {
-    Edge { src, dst, delay: 0 }
+    Edge {
+        src,
+        dst,
+        delay: Box::new(move |_| 0),
+    }
 }
 
 /// Create multiple edges with 0 delay.
@@ -48,17 +61,19 @@ where
     dst.into_iter().map(move |d| Edge {
         src,
         dst: d,
-        delay: 0,
+        delay: Box::new(move |_| 0),
     })
 }
 
 /// A rule contains edges from multiple sources to multiple destinations.
-#[derive(Debug, Clone)]
 pub struct Rule {
     /// A short description of the rule.
     descr: &'static str,
-    /// The actual edges.
-    edges: BTreeMap<Name, BTreeMap<Name, Time>>,
+    /// A precondition to hold before applying the rule.
+    precond: Box<dyn Fn(&Simulator) -> bool>,
+    /// The actual edges as a map from source to destination with delay function.
+    #[allow(clippy::type_complexity)]
+    edges: BTreeMap<Name, BTreeMap<Name, Box<dyn Fn(&Message) -> Time>>>,
     /// How many times the rule should be repeated?
     repeat: usize,
 }
@@ -67,6 +82,7 @@ impl Rule {
     pub fn new(descr: &'static str) -> Self {
         Self {
             descr,
+            precond: Box::new(|_| true),
             edges: BTreeMap::new(),
             repeat: 0,
         }
@@ -74,6 +90,14 @@ impl Rule {
 
     pub fn repeat(mut self, r: usize) -> Self {
         self.repeat = r;
+        self
+    }
+
+    pub fn precondition<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Simulator) -> bool + 'static,
+    {
+        self.precond = Box::new(f);
         self
     }
 
@@ -92,8 +116,104 @@ impl Rule {
         self
     }
 
-    pub fn lookup(&self, src: Name, dst: Name) -> Option<Time> {
-        self.edges.get(src)?.get(dst).copied()
+    pub fn lookup(&self, src: Name, dst: Name) -> Option<&dyn Fn(&Message) -> Time> {
+        self.edges.get(src)?.get(dst).map(|f| &**f)
+    }
+}
+
+/// A rule generator.
+///
+/// Generates random rules subject to certain configurable constraints.
+pub struct RuleGen {
+    /// The parties for which to create edge rules.
+    parties: Vec<Name>,
+    /// The highest time delay to apply to an edge.
+    max_delay: Time,
+    /// How often to repeat applying a rule (upper bound).
+    max_repeat: usize,
+    /// The mininum number of edges to have between each pair of parties.
+    min_edges: usize,
+    /// The seed for the randon number generator.
+    seed: u64,
+    /// The random number generator to use.
+    rgen: StdRng,
+}
+
+impl RuleGen {
+    /// Create a new rule generator for the given parties using defaults.
+    pub fn new<I: IntoIterator<Item = &'static str>>(names: I) -> Self {
+        let seed = rand::random();
+        let parties: Vec<Name> = names.into_iter().collect();
+        assert!(!parties.is_empty());
+        Self {
+            // Some arbitrary value. Should take the timeout setting of
+            // the `Simulator` into considerations, which is 10 by default.
+            max_delay: 19,
+            // Another arbitrary value.
+            max_repeat: 27,
+            min_edges: parties.len(),
+            parties,
+            seed,
+            rgen: StdRng::seed_from_u64(seed),
+        }
+    }
+
+    /// Use the given max. time delay for edges.
+    pub fn with_max_delay(mut self, d: Time) -> Self {
+        self.max_delay = d;
+        self
+    }
+
+    /// Repeat the generated rule at most `r` times.
+    pub fn with_max_repeat(mut self, r: usize) -> Self {
+        self.max_repeat = r;
+        self
+    }
+
+    /// Use at least `n` edges between each pair of parties.
+    pub fn with_min_edges(mut self, n: usize) -> Self {
+        self.min_edges = n;
+        self
+    }
+
+    /// Use the given see with the internal entropy source.
+    ///
+    /// Useful for reproducing test runs.
+    pub fn with_seed(mut self, s: u64) -> Self {
+        self.seed = s;
+        self.rgen = StdRng::seed_from_u64(s);
+        self
+    }
+
+    /// Get the seed used for the entropy source.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// Generate a sequence of random rules.
+    pub fn generate(&mut self, len: usize) -> Vec<Rule> {
+        let mut rules = Vec::new();
+
+        for _ in 0..len {
+            let mut rule = Rule::new("randomly generated");
+            while rule.edges.len() < self.min_edges {
+                let src = self
+                    .parties
+                    .choose(&mut self.rgen)
+                    .expect("parties not empty");
+                while rule.edges.get(src).map(|d| d.len()).unwrap_or(0) < self.min_edges {
+                    let dst = self
+                        .parties
+                        .choose(&mut self.rgen)
+                        .expect("parties not empty");
+                    let del = self.rgen.gen_range(0..self.max_delay);
+                    rule = rule.plus(edge(src, dst).delay(del))
+                }
+            }
+            rules.push(rule.repeat(self.rgen.gen_range(0..self.max_repeat)))
+        }
+
+        rules
     }
 }
 
@@ -215,6 +335,8 @@ impl Simulator {
             })
             .collect();
 
+        assert!(!parties.is_empty());
+
         let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
 
         let mut actions = Vec::new();
@@ -255,6 +377,14 @@ impl Simulator {
         &self.parties[n].logic
     }
 
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     pub fn go(&mut self, timeout: Time) {
         let mut rule = self.rules.pop();
 
@@ -283,6 +413,9 @@ impl Simulator {
     }
 
     fn eval(&mut self, party: Name, actions: Vec<Action>, rule: Option<&Rule>) {
+        if let Some(r) = &rule {
+            assert!((r.precond)(self), "{}: precondition failed", r.descr)
+        }
         for a in actions {
             match a {
                 Action::SendNoVote(to, e) => {
@@ -292,7 +425,8 @@ impl Simulator {
                     };
                     if let Some(rule) = rule {
                         if let Some(delay) = rule.lookup(party, dst.name) {
-                            dst.add_message(self.time + delay, Message::NoVote(e))
+                            let m = Message::NoVote(e);
+                            dst.add_message(self.time + delay(&m), m)
                         }
                     } else {
                         dst.add_message(self.time, Message::NoVote(e))
@@ -302,7 +436,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::Vertex(e.clone()))
+                                let m = Message::Vertex(e.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
@@ -315,7 +450,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::Timeout(e.clone()))
+                                let m = Message::Timeout(e.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
@@ -328,7 +464,8 @@ impl Simulator {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                p.add_message(self.time + delay, Message::TimeoutCert(c.clone()))
+                                let m = Message::TimeoutCert(c.clone());
+                                p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
