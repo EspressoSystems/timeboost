@@ -12,6 +12,7 @@ futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multisig = { path = "../multisig" }
 portpicker = { workspace = true }
+rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-networking = { path = "../timeboost-networking" }
