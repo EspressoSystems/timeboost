@@ -118,40 +118,6 @@ fn progress_after_random_prefix() {
     )
 }
 
-/// Check that delivery properties hold true.
-///
-/// 1. All parties deliver the same sequence of deliver events.
-/// 2. No delivery is repeated.
-/// 3. The sequence of deliveries is non-empty.
-fn is_valid_delivery(sim: &Simulator) -> bool {
-    let mut m: BTreeMap<Name, Vec<(RoundNumber, Name)>> = BTreeMap::new();
-    for e in sim.events() {
-        if let Event::Deliver(_, source, round, party) = e {
-            m.entry(*source).or_default().push((*round, *party))
-        }
-    }
-    if m.is_empty() {
-        return false;
-    }
-    if m.values().zip(m.values().skip(1)).any(|(a, b)| a != b) {
-        return false;
-    }
-    let mut s = HashSet::new();
-    for e in m.values() {
-        s.clear();
-        for d in e {
-            s.insert(d);
-        }
-        if s.is_empty() {
-            return false;
-        }
-        if e.len() != s.len() {
-            return false;
-        }
-    }
-    true
-}
-
 /// In this test B ignores A for some time, i.e. it does not send its messages
 /// to A. This creates a gap where vertices can not be fully resolved and
 /// subsequent vertex proposals can not be added to the DAG but must be buffered.
@@ -184,9 +150,73 @@ fn gap_does_not_cause_infinite_buffer_growth() {
             .with(edges("D", all))
             .with(edges("E", all)),
     ]);
-    sim.go(100);
+    sim.goto(100);
 
     assert!(sim.events().iter().filter(|e| e.is_timeout()).count() > 0);
 
-    assert_eq!(0, sim.consensus("A").buffer_depth())
+    assert_eq!(0, sim.consensus("A").buffer_depth());
+
+    // Collect deliver events per party an check properties:
+
+    let mut events: BTreeMap<Name, Vec<(RoundNumber, Name)>> = BTreeMap::new();
+    for e in sim.events() {
+        if let Event::Deliver(_, source, round, party) = e {
+            events.entry(*source).or_default().push((*round, *party))
+        }
+    }
+
+    assert!(!events.is_empty());
+
+    assert_eq!(events.get("B"), events.get("C"));
+    assert_eq!(events.get("C"), events.get("D"));
+    assert_eq!(events.get("D"), events.get("E"));
+
+    assert_eq! { // Up until round 10, A is in sync with everyone:
+        events.get("A").unwrap().iter().filter(|(r, _)| **r < 10).collect::<Vec<_>>(),
+        events.get("B").unwrap().iter().filter(|(r, _)| **r < 10).collect::<Vec<_>>()
+    }
+
+    assert_eq! { // Party A is missing deliver events in rounds 10 to 15:
+        0,
+        events.get("A").unwrap().iter().filter(|(r, _)| **r >= 10 && **r <= 15).count()
+    }
+
+    assert_eq! { // After catching up, A is in sync again:
+        events.get("A").unwrap().iter().filter(|(r, _)| **r > 15).collect::<Vec<_>>(),
+        events.get("B").unwrap().iter().filter(|(r, _)| **r > 15).collect::<Vec<_>>()
+    }
+}
+
+/// Check that delivery properties hold true.
+///
+/// 1. All parties deliver the same sequence of deliver events.
+/// 2. No delivery is repeated.
+/// 3. The sequence of deliveries is non-empty.
+fn is_valid_delivery(sim: &Simulator) -> bool {
+    let mut m: BTreeMap<Name, Vec<(RoundNumber, Name)>> = BTreeMap::new();
+    for e in sim.events() {
+        if let Event::Deliver(_, source, round, party) = e {
+            m.entry(*source).or_default().push((*round, *party))
+        }
+    }
+    if m.is_empty() {
+        return false;
+    }
+    if m.values().zip(m.values().skip(1)).any(|(a, b)| a != b) {
+        return false;
+    }
+    let mut s = HashSet::new();
+    for e in m.values() {
+        s.clear();
+        for d in e {
+            s.insert(d);
+        }
+        if s.is_empty() {
+            return false;
+        }
+        if e.len() != s.len() {
+            return false;
+        }
+    }
+    true
 }
