@@ -257,6 +257,13 @@ impl Event {
         }
     }
 
+    pub fn round(&self) -> RoundNumber {
+        match self {
+            Self::Deliver(.., r, _) => *r,
+            Self::Timeout(.., r, _) => *r,
+        }
+    }
+
     pub fn is_deliver(&self) -> bool {
         matches!(self, Self::Deliver(..))
     }
