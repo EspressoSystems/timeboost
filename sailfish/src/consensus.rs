@@ -308,7 +308,12 @@ impl Consensus {
         actions
     }
 
-    #[instrument(level = "trace", skip_all, fields(n = %self.public_key(), r = %self.round()))]
+    #[instrument(level = "trace", skip_all, fields(
+        n = %self.public_key(),
+        r = %self.round(),
+        s = %e.signing_key(),
+        t = %e.data().no_vote().data().round())
+    )]
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action> {
         let mut actions = Vec::new();
 

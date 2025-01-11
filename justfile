@@ -42,6 +42,7 @@ fix:
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
+  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
 run_integration: build_docker
   docker compose up --abort-on-container-exit
@@ -54,6 +55,9 @@ run_demo *ARGS:
 
 run_tx_generator *ARGS:
   cargo run --release --bin tx-generator {{ARGS}}
+
+run_fake_contract *ARGS:
+  cd fake-contract && uv run main.py {{ARGS}}
 
 ci_local:
   just build && just lint && just test_ci --release && just run_demo && just build_docker
