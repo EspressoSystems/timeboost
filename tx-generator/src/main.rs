@@ -85,7 +85,7 @@ async fn create_and_send_tx(host: reqwest::Url, client: &'static Client, req_tim
         std::time::Duration::from_millis(req_timeout_millis),
         async move {
             match client
-                .post(format!("{host}/v0/submit",))
+                .post(host.join("/v0/submit").expect("valid url"))
                 .json(&tx)
                 .send()
                 .await
