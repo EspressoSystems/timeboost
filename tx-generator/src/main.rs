@@ -9,11 +9,12 @@ use timeboost_core::types::{
 };
 use timeboost_utils::types::logging;
 use tokio::{signal, spawn, sync::watch, time::sleep};
+use tracing::debug;
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
-const SIZE_500_KB: usize = 500 * 1024;
+const SIZE_512_B: usize = 512;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -25,9 +26,9 @@ struct Cli {
     #[clap(long, default_value = "5000")]
     interval_ms: u64,
 
-    /// If we're running in docker, we need to use the correct port.
-    #[clap(long, default_value = "false")]
-    docker: bool,
+    /// The contract endpoint to fetch the current keyset
+    #[clap(long, default_value = "http://localhost:7200")]
+    startup_url: reqwest::Url,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -56,16 +57,13 @@ fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
 }
 
 fn make_tx() -> Transaction {
-    // Random transaction size betweek 1 byte and 500kb
-    let size = rand::thread_rng().gen_range(1..SIZE_500_KB);
-
     // 10% chance of being a priority tx
     if rand::thread_rng().gen_bool(0.1) {
         // Generate some random number of transactions in the bundle
         let num_txns = rand::thread_rng().gen_range(1..1000);
 
         // Get the txns
-        let txns = make_tx_data(num_txns, size);
+        let txns = make_tx_data(num_txns, SIZE_512_B);
         Transaction::Priority {
             nonce: Nonce::now(SeqNo::from(0)),
             to: Address::zero(),
@@ -74,36 +72,20 @@ fn make_tx() -> Transaction {
     } else {
         Transaction::Regular {
             // The index here is safe since we always generate a single txn.
-            txn: make_tx_data(1, size).remove(0),
+            txn: make_tx_data(1, SIZE_512_B).remove(0),
         }
     }
 }
 
 /// Creates a transaction and sends it to all the nodes in the committee.
-async fn create_and_send_tx(
-    i: usize,
-    is_docker: bool,
-    client: &'static Client,
-    req_timeout_millis: u64,
-) {
-    let port = 8800 + i;
+async fn create_and_send_tx(host: reqwest::Url, client: &'static Client, req_timeout_millis: u64) {
     let tx = make_tx();
-
-    let host = if is_docker {
-        format!("172.20.0.{}", i + 2)
-    } else {
-        "localhost".to_string()
-    };
 
     match tokio::time::timeout(
         std::time::Duration::from_millis(req_timeout_millis),
         async move {
             match client
-                .post(format!(
-                    "http://{host}:{port}/v0/submit",
-                    host = host,
-                    port = port
-                ))
+                .post(format!("http://{host}/v0/submit",))
                 .json(&tx)
                 .send()
                 .await
@@ -133,7 +115,17 @@ async fn main() {
     logging::init_logging();
 
     let cli = Cli::parse();
-    let is_docker = cli.docker;
+
+    let (com_map, _) = timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
+        .await
+        .expect("failed to wait for the committee");
+    let hosts = com_map
+        .into_values()
+        .map(|v| v.1)
+        .map(|url_str| url_str.parse::<reqwest::Url>().unwrap())
+        .collect::<Vec<_>>();
+
+    debug!("hostlist {:?}", hosts);
 
     // Generate a transaction every interval.
     let mut timer = sleep(std::time::Duration::from_millis(cli.interval_ms))
@@ -160,9 +152,9 @@ async fn main() {
                 timer = sleep(std::time::Duration::from_millis(cli.interval_ms)).fuse().boxed();
                 // We're gonna put this in a thread so that way if there's a delay sending to any
                 // node, it doesn't block the execution.
-                for i in 0..cli.committee_size {
+                for host in &hosts {
                     // timeout before creating new tasks
-                    spawn(create_and_send_tx(i, is_docker, client, cli.interval_ms-10));
+                    spawn(create_and_send_tx(host.clone(), client, cli.interval_ms-10));
                 }
             }
             _ = shutdown_rx.changed() => {
