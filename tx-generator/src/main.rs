@@ -119,11 +119,16 @@ async fn main() {
     let (com_map, _) = timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
         .await
         .expect("failed to wait for the committee");
-    let hosts = com_map
+    let mut hosts = com_map
         .into_values()
         .map(|v| v.1)
         .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
         .collect::<Vec<_>>();
+
+    // HACK: Our local port scheme is always 800 + SAILFISH_PORT
+    hosts
+        .iter_mut()
+        .for_each(|h| h.set_port(Some(h.port().unwrap() + 800)).unwrap());
 
     debug!("hostlist {:?}", hosts);
 
