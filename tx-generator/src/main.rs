@@ -85,7 +85,7 @@ async fn create_and_send_tx(host: reqwest::Url, client: &'static Client, req_tim
         std::time::Duration::from_millis(req_timeout_millis),
         async move {
             match client
-                .post(format!("http://{host}/v0/submit",))
+                .post(format!("{host}/v0/submit",))
                 .json(&tx)
                 .send()
                 .await
@@ -122,7 +122,7 @@ async fn main() {
     let hosts = com_map
         .into_values()
         .map(|v| v.1)
-        .map(|url_str| url_str.parse::<reqwest::Url>().unwrap())
+        .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
         .collect::<Vec<_>>();
 
     debug!("hostlist {:?}", hosts);
