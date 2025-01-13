@@ -121,11 +121,11 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let mut hosts = {
+    let hosts = {
         match cli.base {
             CommitteeBase::Local => (0..cli.committee_size)
                 .map(|i| {
-                    format!("http://localhost:{}", 8000 + i)
+                    format!("http://localhost:{}", 8800 + i)
                         .parse::<reqwest::Url>()
                         .unwrap()
                 })
@@ -136,19 +136,21 @@ async fn main() {
                         .await
                         .expect("failed to wait for the committee");
 
-                com_map
+                let mut hosts = com_map
                     .into_values()
                     .map(|v| v.1)
                     .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+
+                // HACK: Our local port scheme is always 800 + SAILFISH_PORT
+                hosts
+                    .iter_mut()
+                    .for_each(|h| h.set_port(Some(h.port().unwrap() + 800)).unwrap());
+
+                hosts
             }
         }
     };
-
-    // HACK: Our local port scheme is always 800 + SAILFISH_PORT
-    hosts
-        .iter_mut()
-        .for_each(|h| h.set_port(Some(h.port().unwrap() + 800)).unwrap());
 
     debug!("hostlist {:?}", hosts);
 
@@ -163,10 +165,9 @@ async fn main() {
 
     #[cfg(feature = "until")]
     tokio::spawn(run_until(
-        9001,
         cli.until,
         cli.watchdog_timeout,
-        hosts[0],
+        hosts[0].clone(),
         shutdown_tx.clone(),
     ));
 

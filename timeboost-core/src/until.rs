@@ -5,7 +5,6 @@ const ROUND_TIMEOUT_SECS: u64 = 30;
 const MAX_ROUND_TIMEOUTS: u64 = 15;
 
 pub async fn run_until(
-    port: u16,
     until: u64,
     timeout: u64,
     host: reqwest::Url,
