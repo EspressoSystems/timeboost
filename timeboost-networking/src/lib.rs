@@ -79,7 +79,7 @@ pub enum NetworkError {
     #[error("Failed to deserialize: {0}")]
     FailedToDeserialize(String),
 
-    /// Failed to serialize
+    /// Failed to complete the noise handshake
     #[error("Failed to serialize: {0}")]
     FailedToCompleteNoiseHandshake(String),
 
@@ -95,7 +95,7 @@ pub enum NetworkError {
     #[error("The network was not ready yet")]
     NotReadyYet,
 
-    /// The cannot set no delay
+    /// The node cannot set no delay on TCP stream
     #[error("The stream was not able to set no delay")]
     SetNoDelayFailure,
 
