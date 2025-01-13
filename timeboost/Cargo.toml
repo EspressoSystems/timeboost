@@ -31,8 +31,6 @@ timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-surf-disco = { workspace = true }
 vbs = { workspace = true }
 
 [[bin]]

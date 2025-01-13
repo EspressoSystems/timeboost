@@ -18,19 +18,15 @@ crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
-rand = { workspace = true }
 serde = { workspace = true }
 reqwest = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
-timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 quickcheck = "1"

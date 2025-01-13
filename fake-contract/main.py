@@ -43,6 +43,11 @@ class ReadyPayload(BaseModel):
 COMMITTEE: list[CommitteeEntry] = []
 
 
+@app.get("/healthz/")
+def healthz():
+    return {"status": "ok"}
+
+
 @app.post("/ready/")
 def ready(request: Request, payload: ReadyPayload):
     global COMMITTEE

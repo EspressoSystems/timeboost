@@ -12,7 +12,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 use tracing::debug;
 
 /// Name of a party.
-type Name = &'static str;
+pub type Name = &'static str;
 
 /// Simulated time.
 type Time = u64;
@@ -357,6 +357,10 @@ impl Simulator {
         }
     }
 
+    pub fn rules(&mut self) -> impl Iterator<Item = &Rule> {
+        self.rules.iter().rev()
+    }
+
     pub fn set_rules<I>(&mut self, rules: I)
     where
         I: IntoIterator<Item = Rule>,
@@ -385,7 +389,13 @@ impl Simulator {
         &self.committee
     }
 
-    pub fn go(&mut self, timeout: Time) {
+    pub fn pending_messages(&self) -> usize {
+        self.parties.values().fold(0, |acc, p| {
+            acc + p.buffer.items.values().map(|v| v.len()).sum::<usize>()
+        })
+    }
+
+    pub fn goto(&mut self, timeout: Time) {
         let mut rule = self.rules.pop();
 
         while self.time < timeout {
