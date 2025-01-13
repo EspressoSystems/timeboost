@@ -1,2 +1,2 @@
 pub mod committee;
-mod initializer;
+pub mod initializer;
