@@ -289,7 +289,7 @@ struct Worker {
     tx_connection: Sender<Connection>,
     /// The public and private key of this node.
     keypair: Keypair,
-    /// Public key of worker we are creating a connection to
+    /// Public key of node that we are creating a connection to
     remote_pk: PublicKey,
 }
 
@@ -403,14 +403,18 @@ impl Worker {
             ))
         })?;
 
-        handshake
-            .read_message(&recv(stream).await.unwrap(), &mut buf)
-            .map_err(|e| {
-                NetworkError::FailedToCompleteNoiseHandshake(format!(
-                    "Initiator failed to write noise message during handshake: {}",
-                    e
-                ))
-            })?;
+        let m = recv(stream).await.map_err(|e| {
+            NetworkError::MessageReceiveError(format!(
+                "Initiator failed receiving handshake message: {}",
+                e
+            ))
+        })?;
+        handshake.read_message(&m, &mut buf).map_err(|e| {
+            NetworkError::FailedToCompleteNoiseHandshake(format!(
+                "Initiator failed to write noise message during handshake: {}",
+                e
+            ))
+        })?;
 
         handshake.into_transport_mode().map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
@@ -543,7 +547,9 @@ impl Worker {
                     })?;
                     let m = bincode::serialize(&message).expect("Serialization should not fail");
                     let mut s = state.lock().await;
-                    let len = s.write_message(&m, &mut buf).unwrap();
+                    let len = s.write_message(&m, &mut buf).map_err(|e| {
+                        NetworkError::MessageSendError(format!("Failed to write noise message: {}", e))
+                    })?;
                     drop(s);
                     writer.write_u16_le(u16::try_from(len).expect("Message too large")).await.map_err(|e| {
                         NetworkError::MessageSendError(format!("Failed to send message size: {}", e))
