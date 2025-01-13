@@ -5,6 +5,8 @@ mod signed;
 mod util;
 mod votes;
 
+pub mod x25519;
+
 use std::cmp::Ordering;
 use std::fmt;
 
@@ -256,6 +258,10 @@ impl Committable for Signature {
             .finalize()
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid keypair")]
+pub struct InvalidKeypair(());
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid secret key")]
