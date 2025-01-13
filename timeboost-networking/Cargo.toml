@@ -7,15 +7,10 @@ description.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-lock = { workspace = true }
-bimap = "0.6"
 bincode = { workspace = true }
 blake3 = { workspace = true }
-custom_debug = "0.6.2"
-delegate = "0.13"
-derive_builder = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
-pin-project = "1"
 prometheus = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
