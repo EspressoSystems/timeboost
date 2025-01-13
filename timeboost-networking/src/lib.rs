@@ -79,6 +79,10 @@ pub enum NetworkError {
     #[error("Failed to deserialize: {0}")]
     FailedToDeserialize(String),
 
+    /// Failed to serialize
+    #[error("Failed to serialize: {0}")]
+    FailedToCompleteNoiseHandshake(String),
+
     /// Timed out performing an operation
     #[error("Timeout: {0}")]
     Timeout(String),
@@ -90,6 +94,10 @@ pub enum NetworkError {
     /// The network was not ready yet
     #[error("The network was not ready yet")]
     NotReadyYet,
+
+    /// The cannot set no delay
+    #[error("The stream was not able to set no delay")]
+    SetNoDelayFailure,
 
     /// Failed to look up a node on the network
     #[error("Node lookup failed: {0}")]
