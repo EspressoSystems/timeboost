@@ -8,7 +8,7 @@ pub async fn run_until(
     port: u16,
     until: u64,
     timeout: u64,
-    is_docker: bool,
+    host: reqwest::Url,
     shutdown_tx: watch::Sender<()>,
 ) -> Result<()> {
     use futures::FutureExt;
@@ -19,8 +19,6 @@ pub async fn run_until(
     let mut timer = sleep(Duration::from_secs(timeout)).fuse().boxed();
 
     let mut req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
-
-    let host = if is_docker { "172.20.0.2" } else { "localhost" };
 
     let mut last_committed = 0;
     let mut last_committed_time = Instant::now();
@@ -36,7 +34,7 @@ pub async fn run_until(
             }
             _ = &mut req_timer => {
                 req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
-                if let Ok(resp) = reqwest::get(format!("http://{host}:{port}/status/metrics")).await {
+                if let Ok(resp) = reqwest::get(host.join("/status/metrics").expect("valid url")).await {
                     if let Ok(text) = resp.text().await {
                         let committed_round = text
                             .lines()

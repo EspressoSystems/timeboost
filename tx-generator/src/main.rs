@@ -3,6 +3,7 @@ use clap::Parser;
 use futures::FutureExt;
 use rand::Rng;
 use reqwest::Client;
+use timeboost::contracts::committee::CommitteeBase;
 use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
@@ -34,6 +35,10 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
     until: u64,
+
+    /// The base to use for the committee config.
+    #[clap(long, value_enum, default_value_t = CommitteeBase::Local)]
+    base: CommitteeBase,
 
     /// The watchdog timeout.
     #[cfg(feature = "until")]
@@ -116,14 +121,29 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let (com_map, _) = timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
-        .await
-        .expect("failed to wait for the committee");
-    let mut hosts = com_map
-        .into_values()
-        .map(|v| v.1)
-        .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
-        .collect::<Vec<_>>();
+    let mut hosts = {
+        match cli.base {
+            CommitteeBase::Local => (0..cli.committee_size)
+                .map(|i| {
+                    format!("http://localhost:{}", 8000 + i)
+                        .parse::<reqwest::Url>()
+                        .unwrap()
+                })
+                .collect::<Vec<_>>(),
+            CommitteeBase::Network => {
+                let (com_map, _) =
+                    timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
+                        .await
+                        .expect("failed to wait for the committee");
+
+                com_map
+                    .into_values()
+                    .map(|v| v.1)
+                    .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
+                    .collect::<Vec<_>>()
+            }
+        }
+    };
 
     // HACK: Our local port scheme is always 800 + SAILFISH_PORT
     hosts
@@ -146,7 +166,7 @@ async fn main() {
         9001,
         cli.until,
         cli.watchdog_timeout,
-        is_docker,
+        hosts[0],
         shutdown_tx.clone(),
     ));
 
