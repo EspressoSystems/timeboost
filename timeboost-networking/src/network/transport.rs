@@ -24,8 +24,6 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::NetworkError;
 
-type WorkerSender = Arc<Mutex<HashMap<PeerId, mpsc::Sender<(TcpStream, TransportState)>>>>;
-
 /// Duration between pings for latency measurements
 const PING_INTERVAL: Duration = Duration::from_secs(10);
 /// Size of the channel for sennding established connections
@@ -98,7 +96,7 @@ impl Transport {
             .expect("Invalid socket address");
 
         // Channels for sending streams to dedicated workers after accepted connection
-        let worker_senders: WorkerSender = Arc::new(Mutex::new(HashMap::default()));
+        let mut worker_senders = HashMap::new();
 
         let server = TcpListener::bind(local_socket)
             .await
@@ -117,11 +115,7 @@ impl Transport {
                 .parse::<std::net::SocketAddr>()
                 .expect("Invalid socket address");
             assert!(
-                worker_senders
-                    .lock()
-                    .await
-                    .insert(remote_id, sender)
-                    .is_none(),
+                worker_senders.insert(remote_id, sender).is_none(),
                 "Duplicated peer {} in list",
                 remote_id
             );
@@ -145,10 +139,10 @@ impl Transport {
             Server {
                 local_id,
                 server,
-                worker_senders: Arc::clone(&worker_senders),
+                worker_senders,
                 keypair: keypair.clone(),
             }
-            .run(rx_stop, tx_connection.clone())
+            .run(rx_stop)
             .await
         });
 
@@ -181,21 +175,24 @@ struct Server {
     /// Socket for accepting connections
     server: TcpListener,
     /// Channel for fowarding accepted connections
-    worker_senders: WorkerSender,
+    worker_senders: HashMap<PeerId, mpsc::Sender<(TcpStream, TransportState)>>,
     /// The public and private key of this node.
     keypair: Keypair,
 }
 
 impl Server {
     #[instrument(level = "trace", skip_all, fields(node = %self.local_id))]
-    async fn run(self, mut stop: Receiver<()>, _tx_connection: Sender<Connection>) {
+    async fn run(self, mut stop: Receiver<()>) {
         loop {
             tokio::select! {
-                result = self.server.accept() => {
-                    let (mut stream, _remote_peer) = result.expect("create tcp stream");
+                connection = self.server.accept() => {
+                    let Ok((mut stream, _)) = connection else {
+                        warn!("Failed to accept connection!");
+                        continue;
+                    };
                     // (handshake state -> transport state)
                     let (state, peer_id) = match self.noise_responder_handshake(&mut stream).await {
-                        Ok((s, id)) => (s, id),
+                        Ok(val) => val,
                         Err(e) => {
                             drop(stream);
                             warn!("Error during noise handshake: {}", e);
@@ -203,7 +200,7 @@ impl Server {
                         }
                     };
                     // Send the stream to the dedicated worker
-                    if let Some(sender) = self.worker_senders.lock().await.get(&peer_id) {
+                    if let Some(sender) = self.worker_senders.get(&peer_id) {
                         debug!("Accepted connection from bootstrap node: {}", peer_id);
                         sender.send((stream, state)).await.ok();
                     }
@@ -226,14 +223,16 @@ impl Server {
     ) -> Result<(TransportState, PeerId), NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("Noise parameters to be parsed"));
 
-        // TODO: Add new keys instead of doing this conversion
+        // TODO: Add new Montgomery keys instead of converting our Edwards signing keys
         let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
             .expect("Secret key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes()[..32]) // first 32 bytes is the secret key
             .build_responder()
-            .expect("Noise builder to be built");
+            .map_err(|e| {
+                NetworkError::ConfigError(format!("Failed to initialize noise builder: {}", e))
+            })?;
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
         let m = recv(stream).await.map_err(|e| {
             NetworkError::MessageReceiveError(format!(
@@ -320,9 +319,9 @@ impl Worker {
                     work = self.active_connect(delay).boxed();
                 }
                 received = receiver.recv() => {
-                    if let Some(received) = received {
+                    if let Some((stream, state)) = received {
                         debug!("Replaced connection for {}", self.remote_id);
-                        work = self.passive_connect(received.0, received.1).boxed();
+                        work = self.passive_connect(stream, state).boxed();
                     } else {
                         // Channel closed, server is terminated
                         return None;
@@ -377,16 +376,18 @@ impl Worker {
     ) -> Result<TransportState, NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("Noise parameters to be parsed"));
 
-        // TODO: Add new keys instead of doing this conversion
+        // TODO: Add new Montgomery keys instead of converting our Edwards signing keys
         let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
             .expect("Secret key to be derived");
-        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("Secret key to be derived");
+        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("Public key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes()[..32])
             .remote_public_key(&pk.as_bytes())
             .build_initiator()
-            .expect("Noise initiator builder to be built");
+            .map_err(|e| {
+                NetworkError::ConfigError(format!("Failed to initialize noise builder: {}", e))
+            })?;
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
         let len = handshake
             .write_message(&self.local_id.to_bytes(), &mut buf)
@@ -542,10 +543,12 @@ impl Worker {
                     // TODO: Pass signal to break main loop
                     // TODO: No need to wrap bytes in `NetworkMessage`
                     let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-                    let message = received.ok_or_else(|| {
+                    let msg = received.ok_or_else(|| {
                         NetworkError::ChannelReceiveError("Message received on channel was None".into())
                     })?;
-                    let m = bincode::serialize(&message).expect("Serialization should not fail");
+                    let m = bincode::serialize(&msg).map_err(|e| {
+                        NetworkError::FailedToSerialize(format!("Failed to serialize message bytes: {}", e))
+                    })?;
                     let mut s = state.lock().await;
                     let len = s.write_message(&m, &mut buf).map_err(|e| {
                         NetworkError::MessageSendError(format!("Failed to write noise message: {}", e))
