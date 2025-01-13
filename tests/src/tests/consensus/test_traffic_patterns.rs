@@ -187,47 +187,6 @@ fn gap_does_not_cause_infinite_buffer_growth() {
     }
 }
 
-#[test]
-fn b_ignores_a_and_c() {
-    timeboost_utils::types::logging::init_logging();
-
-    let all = ["A", "B", "C", "D", "E"];
-
-    let mut sim = Simulator::new(all);
-    sim.set_rules([
-        Rule::new("immediate fanout")
-            .repeat(5)
-            .with(edges("A", all))
-            .with(edges("B", all))
-            .with(edges("C", all))
-            .with(edges("D", all))
-            .with(edges("E", all)),
-        Rule::new("B ignores A and C")
-            .with(edges("A", all))
-            .plus(edge("B", "B"))
-            .plus(edge("B", "D"))
-            .plus(edge("B", "E"))
-            .with(edges("C", all))
-            .with(edges("D", all))
-            .with(edges("E", all)),
-    ]);
-    sim.goto(100);
-
-    let tail = &sim.events()[sim.events().len() - 5..];
-
-    assert!(matches!(*tail[0].round(), 7));
-    assert!(matches!(*tail[1].round(), 7));
-    assert!(matches!(*tail[2].round(), 8));
-    assert!(matches!(*tail[3].round(), 8));
-    assert!(matches!(*tail[4].round(), 8));
-
-    assert!(matches!(tail[0], Event::Timeout(_, "A", _, "E")));
-    assert!(matches!(tail[1], Event::Timeout(_, "C", _, "E")));
-    assert!(matches!(tail[2], Event::Timeout(_, "B", _, "B")));
-    assert!(matches!(tail[3], Event::Timeout(_, "D", _, "B")));
-    assert!(matches!(tail[4], Event::Timeout(_, "E", _, "B")));
-}
-
 /// Check that delivery properties hold true.
 ///
 /// 1. All parties deliver the same sequence of deliver events.

@@ -229,7 +229,7 @@ impl Consensus {
             return actions;
         }
 
-        actions.extend(self.catchup());
+        actions.extend(self.catch_up());
 
         let accum = self
             .rounds
@@ -849,7 +849,7 @@ impl Consensus {
         c = %self.committed_round,
         b = %self.buffer.depth())
     )]
-    fn catchup(&mut self) -> Vec<Action> {
+    fn catch_up(&mut self) -> Vec<Action> {
         if self.buffer.depth() <= self.committee.size().get() {
             return Vec::new();
         }
