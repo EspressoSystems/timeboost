@@ -93,11 +93,22 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "until")]
     let handle = {
+        // Get a random host. These are always run on the same box, so it doesn't matter.
+        let mut host = committee
+            .bootstrap_nodes()
+            .into_values()
+            .map(|v| v.1)
+            .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
+            .nth(0)
+            .expect("first host to be present");
+
+        // HACK: The port is always 9000 + i in the local setup
+        host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
+
         let task_handle = tokio::spawn(run_until(
-            cli.metrics_port,
             cli.until,
             cli.watchdog_timeout,
-            matches!(cli.base, CommitteeBase::Network),
+            host,
             shutdown_tx.clone(),
         ));
         if cli.late_start && cli.id == cli.late_start_node_id {

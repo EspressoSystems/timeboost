@@ -13,6 +13,7 @@ clap = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+timeboost = { path = "../timeboost" }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
