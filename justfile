@@ -11,6 +11,9 @@ build *ARGS:
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
+bench:
+  cargo bench --benches -- --nocapture
+
 test *ARGS:
   cargo nextest run --test-threads $(nproc) {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
