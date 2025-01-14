@@ -378,7 +378,7 @@ impl Worker {
     /// Client side of the noise protocol handshake
     /// Create the state machine `HandshakeState`, from the noise parameters then start the handshake.
     /// After we complete the handshake, we try to go into our `TransportState`.
-    /// This will contains the cyphers for encryption and decryption between the server.
+    /// This contains the cyphers for encryption and decryption between the server.
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a server who we will try authenticate with
