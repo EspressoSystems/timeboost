@@ -220,7 +220,7 @@ impl Server {
     /// Server side of the noise protocol handshake
     /// Create the state machine `HandshakeState`, from the noise parameters then wait for client to start
     /// After we complete the handshake, we try to go into our `TransportState`.
-    /// This will contains the cyphers for encryption and decryption between the client.
+    /// This contains the cyphers for encryption and decryption between client and server.
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a client who we will try authenticate with
@@ -239,7 +239,7 @@ impl Server {
             .expect("secret key to be derived");
 
         let mut handshake = builder
-            .local_private_key(&sk.as_bytes()[..32]) // first 32 bytes is the secret key
+            .local_private_key(&sk.as_bytes()) // first 32 bytes is the secret key
             .build_responder()
             .map_err(|e| {
                 NetworkError::ConfigError(format!("failed to initialize noise builder: {}", e))
@@ -365,6 +365,7 @@ impl Worker {
         let state = match self.noise_client_handshake(&mut stream).await {
             Ok(s) => s,
             Err(e) => {
+                let _ = stream.shutdown().await;
                 drop(stream);
                 warn!("error during noise handshake: {}", e);
                 return Err(e);
@@ -378,7 +379,7 @@ impl Worker {
     /// Client side of the noise protocol handshake
     /// Create the state machine `HandshakeState`, from the noise parameters then start the handshake.
     /// After we complete the handshake, we try to go into our `TransportState`.
-    /// This contains the cyphers for encryption and decryption between the server.
+    /// This contains the cyphers for encryption and decryption between client and the server.
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a server who we will try authenticate with
@@ -398,7 +399,7 @@ impl Worker {
         let pk = x25519::PublicKey::try_from(self.remote_pk).expect("public key to be derived");
 
         let mut handshake = builder
-            .local_private_key(&sk.as_bytes()[..32])
+            .local_private_key(&sk.as_bytes())
             .remote_public_key(&pk.as_bytes())
             .build_initiator()
             .map_err(|e| {
@@ -418,7 +419,7 @@ impl Worker {
         let m = recv(stream).await?;
         handshake.read_message(&m, &mut buf).map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "initiator failed to write noise message during handshake: {}",
+                "initiator failed to read noise message during handshake: {}",
                 e
             ))
         })?;
@@ -550,7 +551,7 @@ impl Worker {
                     // TODO: No need to wrap bytes in `NetworkMessage`
                     let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
                     let msg = m.ok_or_else(|| {
-                        NetworkError::ChannelReceiveError("message received on channel was None".into())
+                        NetworkError::ChannelReceiveError("channel has been closed".into())
                     })?;
                     let m = bincode::serialize(&msg).map_err(|e| {
                         NetworkError::FailedToSerialize(format!("failed to serialize message bytes: {}", e))
