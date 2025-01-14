@@ -44,7 +44,7 @@ bacon: clippy check fmt
 ####RUN COMMANDS####
 ####################
 run_integration: build_docker
-  docker compose -f docker-compose.yml -f docker-compose.prometheus-grafana.yml up -d
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
