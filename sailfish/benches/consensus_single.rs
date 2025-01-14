@@ -136,8 +136,32 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             rounds: 10,
         },
         MultiRoundTestSpec {
+            nodes: 15,
+            rounds: 10,
+        },
+        MultiRoundTestSpec {
             nodes: 20,
             rounds: 10,
+        },
+        MultiRoundTestSpec {
+            nodes: 1,
+            rounds: 100,
+        },
+        MultiRoundTestSpec {
+            nodes: 5,
+            rounds: 100,
+        },
+        MultiRoundTestSpec {
+            nodes: 10,
+            rounds: 100,
+        },
+        MultiRoundTestSpec {
+            nodes: 15,
+            rounds: 100,
+        },
+        MultiRoundTestSpec {
+            nodes: 20,
+            rounds: 100,
         },
     ] {
         group.bench_with_input(BenchmarkId::from_parameter(s), &s, |b, &s| {
