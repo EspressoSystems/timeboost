@@ -29,20 +29,20 @@ pub struct CommitteeContract {
 impl Default for CommitteeContract {
     /// Default to using the docker config.
     fn default() -> Self {
-        Self::new(CommitteeBase::Local, 5, None)
+        Self::new(CommitteeBase::Local, 5)
     }
 }
 
 impl CommitteeContract {
     /// Create a new committee contract with 5 nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new(base: CommitteeBase, size: u16, skip_bootstrap_id: Option<u16>) -> Self {
-        Self::new_n(base, size, skip_bootstrap_id)
+    pub fn new(base: CommitteeBase, size: u16) -> Self {
+        Self::new_n(base, size)
     }
 
     /// Create a new committee contract with `n` nodes. This is a placeholder method for what will
     /// eventually be read from an actual smart contract.
-    pub fn new_n(base: CommitteeBase, n: u16, skip_bootstrap_id: Option<u16>) -> Self {
+    pub fn new_n(base: CommitteeBase, n: u16) -> Self {
         let mut bootstrap_nodes = HashMap::new();
         let mut staked_nodes = vec![];
 
@@ -60,13 +60,6 @@ impl CommitteeContract {
                 }
             };
             staked_nodes.push(cfg.public_config());
-
-            // Dont add a late start node to bootstrap so the network can start without it
-            if let Some(skip_id) = skip_bootstrap_id {
-                if skip_id == i {
-                    continue;
-                }
-            }
             bootstrap_nodes.insert(kpr.public_key(), (peer_id, bind_addr));
         }
 

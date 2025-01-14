@@ -1,11 +1,3 @@
-// Copyright (c) 2021-2024 Espresso Systems (espressosys.com)
-// This file is part of the HotShot repository.
-
-// You should have received a copy of the MIT License
-// along with the HotShot repository. If not, see <https://mit-license.org/>.
-
-use std::fmt::Display;
-
 use libp2p_identity::{
     ed25519::{self, SecretKey},
     Keypair, PeerId,
@@ -87,6 +79,10 @@ pub enum NetworkError {
     #[error("Failed to deserialize: {0}")]
     FailedToDeserialize(String),
 
+    /// Failed to complete the noise handshake
+    #[error("Failed to serialize: {0}")]
+    FailedToCompleteNoiseHandshake(String),
+
     /// Timed out performing an operation
     #[error("Timeout: {0}")]
     Timeout(String),
@@ -99,25 +95,11 @@ pub enum NetworkError {
     #[error("The network was not ready yet")]
     NotReadyYet,
 
+    /// The node cannot set no delay on TCP stream
+    #[error("The stream was not able to set no delay")]
+    SetNoDelayFailure,
+
     /// Failed to look up a node on the network
     #[error("Node lookup failed: {0}")]
     LookupError(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Topic {
-    /// The `Global` topic goes out to all nodes
-    Global,
-    /// The `Da` topic goes out to only the DA committee
-    Da,
-}
-
-/// Libp2p topics require a string, so we need to convert our enum to a string
-impl Display for Topic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Topic::Global => write!(f, "global"),
-            Topic::Da => write!(f, "DA"),
-        }
-    }
 }

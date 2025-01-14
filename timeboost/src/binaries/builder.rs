@@ -75,18 +75,6 @@ async fn main() -> Result<()> {
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
 
-    #[cfg(feature = "until")]
-    let skip_bootstrap_id = {
-        let mut res = None;
-        if cli.late_start {
-            res = Some(cli.late_start_node_id);
-        }
-        res
-    };
-
-    #[cfg(not(feature = "until"))]
-    let skip_bootstrap_id = None;
-
     let id = NodeId::from(cli.id as u64);
 
     // Make a new committee contract instance to read the committee config from.
@@ -94,7 +82,7 @@ async fn main() -> Result<()> {
         CommitteeBase::Network => {
             CommitteeContract::new_from_network(id, cli.port, cli.startup_url).await
         }
-        _ => CommitteeContract::new(cli.base, cli.committee_size, skip_bootstrap_id),
+        _ => CommitteeContract::new(cli.base, cli.committee_size),
     };
 
     let keypair = unsafe_zero_keypair(id);

@@ -18,5 +18,6 @@ thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-utils = { path = "../timeboost-utils" }
 multisig = { path = "../multisig" }
+snow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
