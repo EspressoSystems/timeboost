@@ -39,7 +39,7 @@ services:
 
 networks:
   timeboost:
-    external: true
+    name: timeboost
 
 volumes:
   prom_data:
