@@ -89,18 +89,18 @@ impl Transport {
         local_id: PeerId,
         local_addr: String,
         bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
-        keypair: Keypair,
+        kp: &Keypair,
     ) -> Self {
         let local_socket = local_addr
             .parse::<std::net::SocketAddr>()
-            .expect("Invalid socket address");
+            .expect("invalid socket address");
 
         // Channels for sending streams to dedicated workers after accepted connection
         let mut worker_senders = HashMap::new();
 
         let server = TcpListener::bind(local_socket)
             .await
-            .expect("Unable to bind to socket");
+            .expect("unable to bind to socket");
         let (tx_connection, rx_connection) = mpsc::channel(CONNECTION_BUFFER_SIZE);
 
         // Spawn a worker for each node we want a connection to
@@ -113,21 +113,20 @@ impl Transport {
 
             let socket = addr
                 .parse::<std::net::SocketAddr>()
-                .expect("Invalid socket address");
+                .expect("invalid socket address");
             assert!(
                 worker_senders.insert(remote_id, sender).is_none(),
-                "Duplicated peer {} in list",
+                "duplicated peer {} in list",
                 remote_id
             );
             spawn(
                 Worker {
                     local_id,
-                    _local_addr: local_socket,
                     remote_id,
                     remote_addr: socket,
                     active: remote_id.to_base58() < local_id.to_base58(),
                     tx_connection: tx_connection.clone(),
-                    keypair: keypair.clone(),
+                    keypair: kp.clone(),
                     remote_pk,
                 }
                 .run(receiver),
@@ -135,12 +134,13 @@ impl Transport {
         }
         // Channel for stopping the server
         let (tx_stop, rx_stop) = mpsc::channel(1);
+        let keypair = kp.clone();
         let server_handle = spawn(async move {
             Server {
                 local_id,
                 server,
                 worker_senders,
-                keypair: keypair.clone(),
+                keypair,
             }
             .run(rx_stop)
             .await
@@ -187,21 +187,21 @@ impl Server {
             tokio::select! {
                 connection = self.server.accept() => {
                     let Ok((mut stream, _)) = connection else {
-                        warn!("Failed to accept connection!");
+                        warn!("failed to accept connection!");
                         continue;
                     };
-                    // (handshake state -> transport state)
-                    let (state, peer_id) = match self.noise_responder_handshake(&mut stream).await {
+                    let (state, peer_id) = match self.noise_server_handshake(&mut stream).await {
                         Ok(val) => val,
                         Err(e) => {
+                            let _ = stream.shutdown().await;
                             drop(stream);
-                            warn!("Error during noise handshake: {}", e);
+                            warn!("error during noise handshake: {}", e);
                             continue;
                         }
                     };
                     // Send the stream to the dedicated worker
                     if let Some(sender) = self.worker_senders.get(&peer_id) {
-                        debug!("Accepted connection from bootstrap node: {}", peer_id);
+                        debug!("accepted connection from bootstrap node: {}", peer_id);
                         sender.send((stream, state)).await.ok();
                     }
                     // TODO: For now we dont accept connections from non-bootstrap nodes
@@ -209,7 +209,7 @@ impl Server {
                 }
                 stop = stop.recv() => {
                     if stop.is_none() {
-                        info!("Shutting down server");
+                        info!("shutting down server");
                     }
                     return;
                 }
@@ -217,54 +217,61 @@ impl Server {
         }
     }
 
-    async fn noise_responder_handshake(
+    /// Server side of the noise protocol handshake
+    /// Create the state machine `HandshakeState`, from the noise parameters then wait for client to start
+    /// After we complete the handshake, we try to go into our `TransportState`.
+    /// This will contains the cyphers for encryption and decryption between the client.
+    /// # Arguments
+    ///
+    /// * `stream` - A tcp connection to a client who we will try authenticate with
+    ///
+    /// # Panics
+    ///
+    /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
+    async fn noise_server_handshake(
         &self,
         stream: &mut TcpStream,
     ) -> Result<(TransportState, PeerId), NetworkError> {
-        let builder = Builder::new(NOISE_PARAMS.parse().expect("Noise parameters to be parsed"));
+        let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
-        // TODO: Add new Montgomery keys instead of converting our Edwards signing keys
+        // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
         let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("Secret key to be derived");
+            .expect("secret key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes()[..32]) // first 32 bytes is the secret key
             .build_responder()
             .map_err(|e| {
-                NetworkError::ConfigError(format!("Failed to initialize noise builder: {}", e))
+                NetworkError::ConfigError(format!("failed to initialize noise builder: {}", e))
             })?;
-        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-        let m = recv(stream).await.map_err(|e| {
-            NetworkError::MessageReceiveError(format!(
-                "Responder failed receiving handshake message: {}",
-                e
-            ))
-        })?;
 
+        let m = recv(stream).await?;
+
+        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
         let len = handshake.read_message(&m, &mut buf).map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "Responder failed to read noise message during handshake: {}",
+                "failed to read noise message during handshake: {}",
                 e
             ))
         })?;
-        let peer_id = PeerId::from_bytes(&buf[..len]).expect("peer id");
+        let peer_id = PeerId::from_bytes(&buf[..len]).map_err(|e| {
+            NetworkError::FailedToDeserialize(format!(
+                "peer id could not be derived from bytes: {}",
+                e
+            ))
+        })?;
 
         let len = handshake.write_message(&[], &mut buf).map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "Responder failed to write noise message during handshake: {}",
+                "responder failed to write noise message during handshake: {}",
                 e
             ))
         })?;
-        send(stream, &buf[..len]).await.map_err(|e| {
-            NetworkError::MessageSendError(format!(
-                "Responder failed sending handshake message: {}",
-                e
-            ))
-        })?;
+        send(stream, &buf[..len]).await?;
 
         let state = handshake.into_transport_mode().map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "Responder failed to go into transport mode: {}",
+                "responder failed to go into transport mode: {}",
                 e
             ))
         })?;
@@ -276,8 +283,6 @@ impl Server {
 struct Worker {
     /// The local Id
     local_id: PeerId,
-    /// The local address for the server
-    _local_addr: SocketAddr,
     /// The remote peer for the connection
     remote_id: PeerId,
     /// The remote address
@@ -320,7 +325,7 @@ impl Worker {
                 }
                 received = receiver.recv() => {
                     if let Some((stream, state)) = received {
-                        debug!("Replaced connection for {}", self.remote_id);
+                        debug!("replaced connection for {}", self.remote_id);
                         work = self.passive_connect(stream, state).boxed();
                     } else {
                         // Channel closed, server is terminated
@@ -348,7 +353,7 @@ impl Worker {
                     break stream;
                 }
                 Err(_err) => {
-                    debug!("Sleeping because no connection");
+                    debug!("sleeping because no connection");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -357,11 +362,11 @@ impl Worker {
             .set_nodelay(true)
             .map_err(|_e| NetworkError::SetNoDelayFailure)?;
 
-        let state = match self.noise_initiator_handshake(&mut stream).await {
+        let state = match self.noise_client_handshake(&mut stream).await {
             Ok(s) => s,
             Err(e) => {
                 drop(stream);
-                warn!("Error during noise handshake: {}", e);
+                warn!("error during noise handshake: {}", e);
                 return Err(e);
             }
         };
@@ -370,56 +375,57 @@ impl Worker {
         Self::handle_stream(state, stream, connection).await
     }
 
-    async fn noise_initiator_handshake(
+    /// Client side of the noise protocol handshake
+    /// Create the state machine `HandshakeState`, from the noise parameters then start the handshake.
+    /// After we complete the handshake, we try to go into our `TransportState`.
+    /// This will contains the cyphers for encryption and decryption between the server.
+    /// # Arguments
+    ///
+    /// * `stream` - A tcp connection to a server who we will try authenticate with
+    ///
+    /// # Panics
+    ///
+    /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
+    async fn noise_client_handshake(
         &self,
         stream: &mut TcpStream,
     ) -> Result<TransportState, NetworkError> {
-        let builder = Builder::new(NOISE_PARAMS.parse().expect("Noise parameters to be parsed"));
+        let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
-        // TODO: Add new Montgomery keys instead of converting our Edwards signing keys
+        // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
         let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("Secret key to be derived");
-        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("Public key to be derived");
+            .expect("secret key to be derived");
+        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("public key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes()[..32])
             .remote_public_key(&pk.as_bytes())
             .build_initiator()
             .map_err(|e| {
-                NetworkError::ConfigError(format!("Failed to initialize noise builder: {}", e))
+                NetworkError::ConfigError(format!("failed to initialize noise builder: {}", e))
             })?;
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
         let len = handshake
             .write_message(&self.local_id.to_bytes(), &mut buf)
             .map_err(|e| {
                 NetworkError::FailedToCompleteNoiseHandshake(format!(
-                    "Initiator failed to write noise message during handshake: {}",
+                    "initiator failed to write noise message during handshake: {}",
                     e
                 ))
             })?;
-        send(stream, &buf[..len]).await.map_err(|e| {
-            NetworkError::MessageSendError(format!(
-                "Initiator failed to send message during noise handshake: {}",
-                e
-            ))
-        })?;
+        send(stream, &buf[..len]).await?;
 
-        let m = recv(stream).await.map_err(|e| {
-            NetworkError::MessageReceiveError(format!(
-                "Initiator failed receiving handshake message: {}",
-                e
-            ))
-        })?;
+        let m = recv(stream).await?;
         handshake.read_message(&m, &mut buf).map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "Initiator failed to write noise message during handshake: {}",
+                "initiator failed to write noise message during handshake: {}",
                 e
             ))
         })?;
 
         handshake.into_transport_mode().map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
-                "Initiator failed to go into transport mode: {}",
+                "initiator failed to go into transport mode: {}",
                 e
             ))
         })
@@ -449,7 +455,7 @@ impl Worker {
             receiver,
             remote_id,
         } = connection;
-        debug!("Connected to {}", remote_id);
+        debug!("connected to {}", remote_id);
         let (reader, writer) = stream.into_split();
         let writer_state = Arc::new(Mutex::new(state));
         let reader_state = Arc::clone(&writer_state);
@@ -464,7 +470,7 @@ impl Worker {
         .boxed();
         let read_fut = Self::handle_read_stream(reader_state, reader, sender, pong_sender).boxed();
         let (r, _, _) = select_all([write_fut, read_fut]).await;
-        debug!("Disconnected from {}", remote_id);
+        debug!("disconnected from {}", remote_id);
         r
     }
 
@@ -483,19 +489,19 @@ impl Worker {
                     ping_deadline += PING_INTERVAL;
                     let ping_time = start.elapsed().as_micros() as i64;
                     if ping_time <= 0 {
-                        warn!("Invalid ping time {ping_time}");
+                        warn!("invalid ping time {ping_time}");
                     }
                     let ping = encode_ping(ping_time);
                     writer.write_all(&ping).await.map_err(|e| {
-                        NetworkError::MessageSendError(format!("Failed to send ping: {}", e))
+                        NetworkError::MessageSendError(format!("failed to send ping: {}", e))
                     })?;
                 }
                 received = pong_receiver.recv() => {
                     let Some(ping) = received else {return Ok(())}; // todo - pass signal? (pong_sender closed)
                     if ping == 0 {
-                        warn!("Invalid ping: {ping}");
+                        warn!("invalid ping: {ping}");
                         return Err(
-                            NetworkError::MessageReceiveError(format!("Invalid ping: {}", ping))
+                            NetworkError::MessageReceiveError(format!("invalid ping: {}", ping))
                         );
                     }
                     if ping > 0 {
@@ -503,13 +509,13 @@ impl Worker {
                             Some(pong) => {
                                 let pong = encode_ping(pong);
                                 writer.write_all(&pong).await.map_err(|e| {
-                                    NetworkError::MessageSendError(format!("Failed to send pong: {}", e))
+                                    NetworkError::MessageSendError(format!("failed to send pong: {}", e))
                                 })?;
                             },
                             None => {
-                                warn!("Invalid ping: {ping}");
+                                warn!("invalid ping: {ping}");
                                 return Err(
-                                    NetworkError::MessageReceiveError(format!("Invalid ping: {}", ping))
+                                    NetworkError::MessageReceiveError(format!("invalid ping: {}", ping))
                                 );
                             }
                         }
@@ -523,43 +529,38 @@ impl Worker {
                                         // TODO: include latency observer
                                     },
                                     None => {
-                                        warn!("Invalid ping: {ping}, greater then current time {time}");
+                                        warn!("invalid ping: {ping}, greater then current time {time}");
                                         return Err(
-                                            NetworkError::MessageReceiveError(format!("Invalid ping: {ping}, greater then current time {time}"))
+                                            NetworkError::MessageReceiveError(format!("invalid ping: {ping}, greater then current time {time}"))
                                         );
                                     }
                                 }
 
                             },
                             None => {
-                                warn!("Invalid pong: {ping}");
-                                return Err(NetworkError::MessageReceiveError(format!("Invalid pong: {ping}")));
+                                warn!("invalid pong: {ping}");
+                                return Err(NetworkError::MessageReceiveError(format!("invalid pong: {ping}")));
                             }
                         }
                     }
                 }
                 // Write outbound traffic coming in on the channel
-                received = receiver.recv() => {
+                m = receiver.recv() => {
                     // TODO: Pass signal to break main loop
                     // TODO: No need to wrap bytes in `NetworkMessage`
                     let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-                    let msg = received.ok_or_else(|| {
-                        NetworkError::ChannelReceiveError("Message received on channel was None".into())
+                    let msg = m.ok_or_else(|| {
+                        NetworkError::ChannelReceiveError("message received on channel was None".into())
                     })?;
                     let m = bincode::serialize(&msg).map_err(|e| {
-                        NetworkError::FailedToSerialize(format!("Failed to serialize message bytes: {}", e))
+                        NetworkError::FailedToSerialize(format!("failed to serialize message bytes: {}", e))
                     })?;
                     let mut s = state.lock().await;
                     let len = s.write_message(&m, &mut buf).map_err(|e| {
-                        NetworkError::MessageSendError(format!("Failed to write noise message: {}", e))
+                        NetworkError::MessageSendError(format!("failed to write noise message: {}", e))
                     })?;
                     drop(s);
-                    writer.write_u16_le(u16::try_from(len).expect("Message too large")).await.map_err(|e| {
-                        NetworkError::MessageSendError(format!("Failed to send message size: {}", e))
-                    })?;
-                    writer.write_all(&buf[..len]).await.map_err(|e| {
-                        NetworkError::MessageSendError(format!("Failed to send payload: {}", e))
-                    })?;
+                    send(&mut writer, &buf[..len]).await?;
                 }
             }
         }
@@ -571,32 +572,32 @@ impl Worker {
         sender: mpsc::Sender<NetworkMessage>,
         pong_sender: mpsc::Sender<i64>,
     ) -> Result<(), NetworkError> {
-        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
+        let mut buffer = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
         loop {
             let size = stream.read_u16_le().await.map_err(|e| {
-                NetworkError::MessageReceiveError(format!("Failed to receive message size: {}", e))
+                NetworkError::MessageReceiveError(format!("failed to receive message size: {}", e))
             })?;
             if size as usize > MAX_NOISE_MESSAGE_SIZE {
-                error!("Invalid size: {size}");
+                error!("invalid size: {size}");
                 return Err(NetworkError::MessageReceiveError(
-                    "Message size is greater than supported in noise.".into(),
+                    "message size is greater than supported in noise.".into(),
                 ));
             }
             if size == 0 {
-                let buf = &mut buf[..PING_SIZE - LENGTH_SIZE];
+                let buf = &mut buffer[..PING_SIZE - LENGTH_SIZE];
                 if let Err(err) = stream.read_exact(buf).await {
-                    error!("Failed to read ping into buffer: {}", err);
+                    error!("failed to read ping into buffer: {}", err);
                     continue;
                 }
                 let ping = decode_ping(buf);
                 let permit = pong_sender.try_reserve();
                 match permit {
                     Err(TrySendError::Full(_)) => {
-                        error!("Pong sender channel is saturated. Will drop.");
+                        error!("pong sender channel is saturated. Will drop.");
                     }
                     Err(TrySendError::Closed(_)) => {
                         return Err(NetworkError::ChannelReceiveError(
-                            "Pong channel is closed".into(),
+                            "pong channel is closed".into(),
                         ))?;
                     }
                     Ok(permit) => {
@@ -607,27 +608,27 @@ impl Worker {
             }
 
             // Read inbound traffic and send on channel
-            let buf = &mut buf[..size as usize];
+            let buf = &mut buffer[..size as usize];
             if let Err(err) = stream.read_exact(buf).await {
-                error!("Failed to read message into buffer: {}", err);
+                error!("failed to read message into buffer: {}", err);
                 continue;
             }
             let mut s = state.lock().await;
-            let mut m = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-            let Ok(len) = s.read_message(buf, &mut m) else {
+            let mut b = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
+            let Ok(len) = s.read_message(buf, &mut b) else {
                 drop(s);
-                warn!("Noise failed to read message");
+                warn!("noise failed to read message");
                 continue;
             };
             drop(s);
-            match bincode::deserialize::<NetworkMessage>(&m[..len]) {
+            match bincode::deserialize::<NetworkMessage>(&b[..len]) {
                 Ok(message) => {
                     sender.send(message).await.map_err(|e| {
-                        NetworkError::ChannelSendError(format!("Error sending on channel: {}", e))
+                        NetworkError::ChannelSendError(format!("error sending on channel: {}", e))
                     })?;
                 }
                 Err(err) => {
-                    warn!("Failed to deserialize: {}", err);
+                    warn!("failed to deserialize: {}", err);
                     return Err(NetworkError::FailedToDeserialize(err.to_string()));
                 }
             }
@@ -645,7 +646,7 @@ impl Worker {
         };
         // Send the connection downstream
         self.tx_connection.send(connection).await.map_err(|e| {
-            NetworkError::ChannelSendError(format!("Failed to send connection downstream: {}", e))
+            NetworkError::ChannelSendError(format!("failed to send connection downstream: {}", e))
         })?;
         Ok(WorkerConnection {
             sender: network_in_sender,
@@ -662,7 +663,7 @@ fn sample_delay(max: Duration) -> Duration {
 
 fn encode_ping(message: i64) -> [u8; PING_SIZE] {
     let mut m = [0u8; PING_SIZE];
-    // first 4 represents the size == 0
+    // first 2 represents the size == 0
     m[LENGTH_SIZE..].copy_from_slice(&message.to_le_bytes());
     m
 }
@@ -674,19 +675,35 @@ fn decode_ping(message: &[u8]) -> i64 {
     i64::from_le_bytes(m)
 }
 
-async fn recv(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    let msg_len_buf = stream.read_u16_le().await?;
-    let msg_len = usize::from(msg_len_buf);
+async fn recv(stream: &mut TcpStream) -> Result<Vec<u8>, NetworkError> {
+    let len = stream.read_u16_le().await.map_err(|e| {
+        NetworkError::MessageReceiveError(format!("failed to receive the message size: {}", e))
+    })?;
+    let msg_len = usize::from(len);
     let mut msg = vec![0u8; msg_len];
-    stream.read_exact(&mut msg[..]).await?;
+    stream.read_exact(&mut msg[..]).await.map_err(|e| {
+        NetworkError::MessageReceiveError(format!("failed receiving message: {}", e))
+    })?;
     Ok(msg)
 }
 
-async fn send(stream: &mut TcpStream, buf: &[u8]) -> std::io::Result<()> {
-    let len = u16::try_from(buf.len()).expect("message too large");
-    stream.write_u16_le(len).await?;
-    stream.write_all(buf).await?;
-    stream.flush().await?;
+async fn send<W>(writer: &mut W, buf: &[u8]) -> Result<(), NetworkError>
+where
+    W: AsyncWriteExt + Unpin,
+{
+    let len = u16::try_from(buf.len()).map_err(|e| {
+        NetworkError::MessageSendError(format!(
+            "message size is too large for noise protocol: {}",
+            e
+        ))
+    })?;
+    writer.write_u16_le(len).await.map_err(|e| {
+        NetworkError::MessageSendError(format!("failed to send the message size: {}", e))
+    })?;
+    writer
+        .write_all(buf)
+        .await
+        .map_err(|e| NetworkError::MessageSendError(format!("failed to send payload: {}", e)))?;
     Ok(())
 }
 #[cfg(test)]
@@ -711,7 +728,7 @@ mod test {
                 let (_, addr) = addresses
                     .iter()
                     .find(|(pid, _)| *pid == connection.remote_id)
-                    .expect("Peer not found");
+                    .expect("peer not found");
                 waiting_peers.retain(|(_, a)| a != addr);
                 if waiting_peers.is_empty() {
                     break;
@@ -736,12 +753,8 @@ mod test {
             })
             .collect();
         let networks = addresses.iter().map(|(pk, (pid, addr))| {
-            Transport::run(
-                *pid,
-                addr.clone(),
-                addresses.clone(),
-                kps.remove(pk).unwrap(),
-            )
+            let kp = kps.get(pk).unwrap();
+            Transport::run(*pid, addr.clone(), addresses.clone(), kp)
         });
         let networks = join_all(networks).await;
         (networks, addresses.into_values().collect())

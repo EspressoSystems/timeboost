@@ -97,8 +97,7 @@ impl Network {
         to_connect: HashMap<PublicKey, (PeerId, String)>,
         ready_sender: mpsc::Sender<()>,
     ) -> Self {
-        let transport =
-            Transport::run(local_id, local_addr, to_connect.clone(), keypair.clone()).await;
+        let transport = Transport::run(local_id, local_addr, to_connect.clone(), &keypair).await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (network_sender, network_receiver) = mpsc::channel(10000);
         let remote_nodes: HashSet<_> = to_connect
@@ -149,7 +148,7 @@ impl Network {
             tokio::select! {
                 Some(connection) = connection_receiver.recv() => {
                     let remote_id = connection.remote_id;
-                    trace!("Received connection from: {}", remote_id);
+                    trace!("received connection from: {}", remote_id);
                     let sender = connection.tx.clone();
                     // Channel for sending outbound communication on the connection
                     let (outbound_sender, outbound_receiver) = mpsc::channel(10000);
@@ -175,7 +174,7 @@ impl Network {
                 },
                 Some(_) = handles.next() => {}
                 _ = network_shutdown_receiver.recv() => {
-                    trace!("Received shutdown signal");
+                    trace!("received shutdown signal");
                     break;
                 }
             }
@@ -195,11 +194,11 @@ impl Network {
                     match inbound_msg {
                         Some(msg) => {
                             if let Err(e) = network_tx.send(msg).await {
-                                warn!("Failed to send inbound message: {:?}", e);
+                                warn!("failed to send inbound message: {:?}", e);
                             }
                         }
                         None => {
-                            warn!("Inbound channel was closed");
+                            warn!("inbound channel was closed");
                             break;
                         }
                     }
@@ -208,17 +207,17 @@ impl Network {
                     match outbound_msg {
                         Some(msg) => {
                             if let Err(e) = sender.send(msg).await {
-                                warn!("Failed to send outbound message: {:?}", e);
+                                warn!("failed to send outbound message: {:?}", e);
                             }
                         }
                         None => {
-                            warn!("Outbound channel was closed");
+                            warn!("outbound channel was closed");
                             break;
                         }
                     }
                 }
                 _ = shutdown_receiver.recv() => {
-                    trace!("Shutting down connection to peer: {}", connection.remote_id);
+                    trace!("shutting down connection to peer: {}", connection.remote_id);
                     break;
                 }
             }
@@ -227,30 +226,30 @@ impl Network {
     }
 
     pub async fn shut_down(&self) -> Result<(), NetworkError> {
-        trace!("Shutting down connections to remote nodes");
+        trace!("shutting down connections to remote nodes");
         for (_, (_, shutdown_sender)) in self.connections.read().await.iter() {
             let _ = shutdown_sender.send(()).await;
         }
-        trace!("Shutting down network");
+        trace!("shutting down network");
         self.network_shutdown_sender.send(()).await.map_err(|_| {
-            NetworkError::ChannelSendError("Error sending shutdown signal".to_string())
+            NetworkError::ChannelSendError("error sending shutdown signal".to_string())
         })?;
-        trace!("Dropping network state");
+        trace!("dropping network state");
         self.connections.write().await.clear();
         Ok(())
     }
 
     pub async fn broadcast_message(&self, message: Vec<u8>) -> Result<(), NetworkError> {
         let msg: NetworkMessage = NetworkMessage::from(message);
-        for connection in self.connections.read().await.values() {
-            if (connection.0.send(msg.clone()).await).is_err() {
+        for (network_sender, _) in self.connections.read().await.values() {
+            if (network_sender.send(msg.clone()).await).is_err() {
                 return Err(NetworkError::ChannelSendError(
-                    "Error sending message".to_string(),
+                    "error sending message".to_string(),
                 ));
             }
         }
         self.network_sender.send(msg).await.map_err(|_| {
-            NetworkError::ChannelSendError("Error sending message to self".to_string())
+            NetworkError::ChannelSendError("error sending message to self".to_string())
         })?;
         Ok(())
     }
@@ -263,22 +262,22 @@ impl Network {
         let msg = NetworkMessage::from(message);
         if recipient == self.keypair.public_key() {
             self.network_sender.send(msg.clone()).await.map_err(|_| {
-                NetworkError::ChannelSendError("Error sending message to self".to_string())
+                NetworkError::ChannelSendError("error sending message to self".to_string())
             })?;
         }
         if let Some((peer_id, _)) = self.nodes.get(&recipient) {
             if let Some(connection) = self.connections.read().await.get(peer_id) {
                 connection.0.send(msg).await.map_err(|_| {
-                    NetworkError::ChannelSendError("Error sending message".to_string())
+                    NetworkError::ChannelSendError("error sending message".to_string())
                 })?;
                 return Ok(());
             }
             return Err(NetworkError::MessageSendError(
-                "Connection not found".to_string(),
+                "connection not found".to_string(),
             ));
         }
         Err(NetworkError::LookupError(
-            "Unable to find the pid connected to the public key".to_string(),
+            "unable to find the pid connected to the public key".to_string(),
         ))
     }
 
@@ -286,7 +285,7 @@ impl Network {
         match self.network_receiver.recv().await {
             Some(message) => Ok(message.into_bytes()),
             None => Err(NetworkError::ChannelReceiveError(
-                "Error receiving message".to_string(),
+                "error receiving message".to_string(),
             )),
         }
     }
