@@ -47,11 +47,6 @@ scrape_configs:
       - 172.20.0.5:9003
       - 172.20.0.6:9004
   metrics_path: /v0/status/metrics
-
-global:
-  scrape_interval: 5s
-
-scrape_configs:
 - job_name: cloud_status
   static_configs:
     - targets:
