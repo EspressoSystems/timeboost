@@ -84,7 +84,10 @@
       "type": "gauge"
     },
     {
-      "datasource": "prom1",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PABF2E7BD7AE7B0F4"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -144,7 +147,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 0
       },
       "id": 1,
       "options": {
@@ -159,7 +162,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "11.4.0",
       "targets": [
         {
           "datasource": "prom1",
@@ -239,8 +242,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Cloud Testing: Committed Round And Average Round Time",
-  "uid": "bea3gveiqnls0c",
-  "version": 2,
+  "title": "Cloud Dashboard",
+  "uid": "fea3obtksxqf4f",
+  "version": 4,
   "weekStart": ""
 }
