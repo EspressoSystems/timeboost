@@ -2,12 +2,6 @@ services:
   grafana:
     image: grafana/grafana
     container_name: grafana
-    depends_on:
-      - node0
-      - node1
-      - node2
-      - node3
-      - node4
     ports:
       - 3000:3000
     environment:
