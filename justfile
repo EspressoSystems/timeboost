@@ -46,6 +46,9 @@ bacon: clippy check fmt
 run_integration: build_docker
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
+stop_integration:
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml down
+
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
 
