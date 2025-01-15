@@ -31,13 +31,13 @@ const CONNECTION_BUFFER_SIZE: usize = 30;
 /// Size of the channel for ping/pong protocol
 const PING_BUFFER_SIZE: usize = 150;
 /// Size of the ping protocol message
-const PING_SIZE: usize = 10;
-/// Length representation (u16) size
-const LENGTH_SIZE: usize = 2;
+const PING_SIZE: usize = 12;
+/// Length representation (u32) size
+const LENGTH_SIZE: usize = 4;
 /// Maximum channel size for inbound/outbound messages
 const NETWORK_BUFFER_SIZE: usize = 1_000;
 /// Max message size using noise protocol
-const MAX_NOISE_MESSAGE_SIZE: usize = 1024 * 64;
+const MAX_NOISE_MESSAGE_SIZE: usize = u16::MAX as usize;
 /// Noise parameters to initialize the builders
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
@@ -239,7 +239,7 @@ impl Server {
             .expect("secret key to be derived");
 
         let mut handshake = builder
-            .local_private_key(&sk.as_bytes()) // first 32 bytes is the secret key
+            .local_private_key(&sk.as_bytes())
             .build_responder()
             .map_err(|e| {
                 NetworkError::ConfigError(format!("failed to initialize noise builder: {}", e))
@@ -267,7 +267,7 @@ impl Server {
                 e
             ))
         })?;
-        send(stream, &buf[..len]).await?;
+        send(stream, &buf[..len], Some(len)).await?;
 
         let state = handshake.into_transport_mode().map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
@@ -414,7 +414,7 @@ impl Worker {
                     e
                 ))
             })?;
-        send(stream, &buf[..len]).await?;
+        send(stream, &buf[..len], Some(len)).await?;
 
         let m = recv(stream).await?;
         handshake.read_message(&m, &mut buf).map_err(|e| {
@@ -549,19 +549,31 @@ impl Worker {
                 m = receiver.recv() => {
                     // TODO: Pass signal to break main loop
                     // TODO: No need to wrap bytes in `NetworkMessage`
-                    let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
                     let msg = m.ok_or_else(|| {
                         NetworkError::ChannelReceiveError("channel has been closed".into())
                     })?;
                     let m = bincode::serialize(&msg).map_err(|e| {
                         NetworkError::FailedToSerialize(format!("failed to serialize message bytes: {}", e))
                     })?;
+                    let mut len = 0;
+                    let chunks = m.chunks(100);
+                    let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
+                    let mut offsets = Vec::new();
                     let mut s = state.lock().await;
-                    let len = s.write_message(&m, &mut buf).map_err(|e| {
-                        NetworkError::MessageSendError(format!("failed to write noise message: {}", e))
-                    })?;
+                    for chunk in chunks {
+                        let chunk_len = s.write_message(chunk, &mut buf[len..]).map_err(|e| {
+                            NetworkError::MessageSendError(format!("failed to write noise message: {}", e))
+                        })?;
+                        offsets.push((len, len + chunk_len));
+                        len += chunk_len;
+
+                    }
                     drop(s);
-                    send(&mut writer, &buf[..len]).await?;
+                    let mut t = Some(len);
+                    for (s, e) in offsets {
+                        send(&mut writer, &buf[s..e], t).await?;
+                        t = None;
+                    }
                 }
             }
         }
@@ -575,7 +587,7 @@ impl Worker {
     ) -> Result<(), NetworkError> {
         let mut buffer = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
         loop {
-            let size = stream.read_u16_le().await.map_err(|e| {
+            let size = stream.read_u32_le().await.map_err(|e| {
                 NetworkError::MessageReceiveError(format!("failed to receive message size: {}", e))
             })?;
             if size as usize > MAX_NOISE_MESSAGE_SIZE {
@@ -609,20 +621,38 @@ impl Worker {
             }
 
             // Read inbound traffic and send on channel
+            let mut decrypted_buf = vec![0u8; size as usize];
             let buf = &mut buffer[..size as usize];
             if let Err(err) = stream.read_exact(buf).await {
                 error!("failed to read message into buffer: {}", err);
                 continue;
             }
+
+            let mut count: usize = 0;
+            let mut start = 0;
             let mut s = state.lock().await;
-            let mut b = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-            let Ok(len) = s.read_message(buf, &mut b) else {
-                drop(s);
-                warn!("noise failed to read message");
-                continue;
-            };
+            while count < size as usize {
+                let til = if count + 116 > size as usize {
+                    size as usize
+                } else {
+                    count + 116
+                };
+                let len = match s.read_message(&buf[count..til], &mut decrypted_buf[start..]) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        tracing::error!("e: {}", e);
+                        break;
+                    } // drop(s);
+                      // error!("noise failed to read message");
+                      // break;
+                };
+
+                count += len + 16;
+                start += len;
+            }
             drop(s);
-            match bincode::deserialize::<NetworkMessage>(&b[..len]) {
+
+            match bincode::deserialize::<NetworkMessage>(&decrypted_buf) {
                 Ok(message) => {
                     sender.send(message).await.map_err(|e| {
                         NetworkError::ChannelSendError(format!("error sending on channel: {}", e))
@@ -677,10 +707,10 @@ fn decode_ping(message: &[u8]) -> i64 {
 }
 
 async fn recv(stream: &mut TcpStream) -> Result<Vec<u8>, NetworkError> {
-    let len = stream.read_u16_le().await.map_err(|e| {
+    let len = stream.read_u32_le().await.map_err(|e| {
         NetworkError::MessageReceiveError(format!("failed to receive the message size: {}", e))
     })?;
-    let msg_len = usize::from(len);
+    let msg_len = usize::try_from(len).map_err(|_| NetworkError::NotReadyYet)?;
     let mut msg = vec![0u8; msg_len];
     stream.read_exact(&mut msg[..]).await.map_err(|e| {
         NetworkError::MessageReceiveError(format!("failed receiving message: {}", e))
@@ -688,19 +718,22 @@ async fn recv(stream: &mut TcpStream) -> Result<Vec<u8>, NetworkError> {
     Ok(msg)
 }
 
-async fn send<W>(writer: &mut W, buf: &[u8]) -> Result<(), NetworkError>
+async fn send<W>(writer: &mut W, buf: &[u8], len: Option<usize>) -> Result<(), NetworkError>
 where
     W: AsyncWriteExt + Unpin,
 {
-    let len = u16::try_from(buf.len()).map_err(|e| {
-        NetworkError::MessageSendError(format!(
-            "message size is too large for noise protocol: {}",
-            e
-        ))
-    })?;
-    writer.write_u16_le(len).await.map_err(|e| {
-        NetworkError::MessageSendError(format!("failed to send the message size: {}", e))
-    })?;
+    if let Some(len) = len {
+        let len = u32::try_from(len).map_err(|e| {
+            NetworkError::MessageSendError(format!(
+                "message size is too large for noise protocol: {}",
+                e
+            ))
+        })?;
+        writer.write_u32_le(len).await.map_err(|e| {
+            NetworkError::MessageSendError(format!("failed to send the message size: {}", e))
+        })?;
+    }
+
     writer
         .write_all(buf)
         .await
