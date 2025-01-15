@@ -19,6 +19,7 @@ DOCKER_IPS = [
 
 PROM_PATH = os.path.join("prometheus", "prometheus.yml")
 GRAF_PATH = os.path.join("grafana", "dashboards")
+REFIDS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 ENTRY_TEMPLATE = r"""
         {{
           "datasource": "prom1",
@@ -29,7 +30,7 @@ ENTRY_TEMPLATE = r"""
           "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A",
+          "refId": "{}",
           "useBackend": false
         }}
 """
@@ -55,8 +56,8 @@ scrape_configs:
 """
 
 
-def make_entry(ip: str, port: int) -> str:
-    return ENTRY_TEMPLATE.format(ip, port)
+def make_entry(ip: str, port: int, refid: str) -> str:
+    return ENTRY_TEMPLATE.format(ip, port, refid)
 
 
 def get_ips() -> list[str]:
@@ -106,7 +107,7 @@ if __name__ == "__main__":
         exit(1)
 
     ip_addrs = get_ips()
-    ips = [json.loads(make_entry(ip, 9000)) for ip in ip_addrs]
+    ips = [json.loads(make_entry(ip, 9000, REFIDS[i])) for i, ip in enumerate(ip_addrs)]
 
     make_grafana(ips)
     make_prom([f"{ip}:9000" for ip in ip_addrs])

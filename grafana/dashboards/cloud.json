@@ -182,7 +182,7 @@
           "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A",
+          "refId": "B",
           "useBackend": false
         },
         {
@@ -194,7 +194,7 @@
           "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A",
+          "refId": "C",
           "useBackend": false
         },
         {
@@ -206,7 +206,7 @@
           "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A",
+          "refId": "D",
           "useBackend": false
         },
         {
@@ -218,7 +218,7 @@
           "includeNullMetadata": true,
           "legendFormat": "__auto",
           "range": true,
-          "refId": "A",
+          "refId": "E",
           "useBackend": false
         }
       ],
