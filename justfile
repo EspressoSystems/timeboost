@@ -50,7 +50,7 @@ stop_integration:
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml down
 
 run_monitoring:
-  docker network create --subnet=172.20.0.0/16 timeboost 2>/dev/null
+  -docker network create --subnet=172.20.0.0/16 timeboost
   docker compose -f docker-compose.metrics.yml up -d
 
 stop_monitoring:
