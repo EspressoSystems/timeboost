@@ -17,17 +17,35 @@ use worker::{RbcError, Worker};
 
 /// The message type exchanged during RBC.
 #[derive(Debug, Serialize, Deserialize)]
+#[rustfmt::skip]
 enum Protocol<'a, Status: Clone> {
-    /// A message that is sent and received on a best-effort basis.
-    Bypass(Cow<'a, Message<Status>>),
+    // Non-RBC section ////////////////////////////////////////////////////////
+
+    /// A message that is sent without expectations ("fire and forget").
+    Fire(Cow<'a, Message<Status>>),
+
+    /// A message that is sent and received without quorum requirements.
+    ///
+    /// The sender expects an `Ack` for each message and will retry until
+    /// it has been received (or the protocol moved on).
+    Send(Cow<'a, Message<Status>>),
+
+    /// An acknowledgement reply of a message.
+    Ack(Envelope<Digest, Status>),
+
+    // RBC section ////////////////////////////////////////////////////////////
+
     /// An RBC proposal.
     Propose(Cow<'a, Message<Status>>),
+
     /// A vote for an RBC proposal.
     ///
     /// The boolean flag indicates if the sender has received enough votes.
     Vote(Envelope<Digest, Status>, bool),
+
     /// A quorum certificate for an RBC proposal.
     Cert(Envelope<Certificate<Digest>, Status>),
+
     /// A direct request to retrieve a message, identified by the given digest.
     Get(Envelope<Digest, Status>),
 }

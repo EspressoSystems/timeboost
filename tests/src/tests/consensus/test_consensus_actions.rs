@@ -119,7 +119,7 @@ async fn test_single_node_timeout_cert() {
         expected_round + 1,
         // Skip leader edge since we do below when craft vertex proposal messages
         manager.edges_for_round(expected_round, &committee, true),
-        Some(expected_cert),
+        Some(expected_cert.data().clone()),
     );
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),

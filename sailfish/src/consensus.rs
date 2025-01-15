@@ -182,7 +182,7 @@ impl Consensus {
             Message::Vertex(e) => self.handle_vertex(e),
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
-            Message::TimeoutCert(c) => self.handle_timeout_cert(c),
+            Message::TimeoutCert(e) => self.handle_timeout_cert(e),
         }
     }
 
@@ -419,7 +419,8 @@ impl Consensus {
             && accum.votes(&commit) == self.committee.quorum_size().get()
         {
             if let Some(cert) = accum.certificate() {
-                actions.push(Action::SendTimeoutCert(cert.clone()))
+                let e = Envelope::signed(cert.clone(), &self.keypair, self.deterministic);
+                actions.push(Action::SendTimeoutCert(e))
             } else {
                 error!(
                     n = %self.public_key(),
@@ -442,11 +443,15 @@ impl Consensus {
     #[instrument(level = "trace", skip_all, fields(
         n = %self.public_key(),
         r = %self.round,
-        t = %cert.data().round())
+        t = %e.data().data().round())
     )]
-    pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
+    pub fn handle_timeout_cert(
+        &mut self,
+        e: Envelope<Certificate<Timeout>, Validated>,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
 
+        let cert = e.into_data();
         let round = cert.data().round();
 
         if round < self.round() {

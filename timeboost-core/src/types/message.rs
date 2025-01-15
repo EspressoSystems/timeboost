@@ -23,7 +23,7 @@ pub enum Message<Status = Validated> {
     NoVote(Envelope<NoVoteMessage, Status>),
 
     /// A timeout certificate from a node.
-    TimeoutCert(Certificate<Timeout>),
+    TimeoutCert(Envelope<Certificate<Timeout>, Status>),
 }
 
 impl<S> Message<S> {
@@ -32,7 +32,16 @@ impl<S> Message<S> {
             Self::Vertex(v) => *v.data().round().data(),
             Self::Timeout(t) => t.data().timeout().data().round(),
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
-            Self::TimeoutCert(c) => c.data().round(),
+            Self::TimeoutCert(c) => c.data().data().round(),
+        }
+    }
+
+    pub fn signer(&self) -> &PublicKey {
+        match self {
+            Self::Vertex(e) => e.signing_key(),
+            Self::Timeout(e) => e.signing_key(),
+            Self::NoVote(e) => e.signing_key(),
+            Self::TimeoutCert(e) => e.signing_key(),
         }
     }
 
@@ -208,14 +217,20 @@ impl Message<Unchecked> {
 
                 Some(Message::NoVote(e))
             }
-            Self::TimeoutCert(crt) => {
+            Self::TimeoutCert(e) => {
+                // Validate the envelope's signature:
+                let Some(e) = e.validated(c) else {
+                    warn!("invalid envelope signature");
+                    return None;
+                };
+
                 // Validate the timeout certificate signatures:
-                if !crt.is_valid_par(c) {
+                if !e.data().is_valid_par(c) {
                     warn!("invalid timeout certiticate");
                     return None;
                 }
 
-                Some(Message::TimeoutCert(crt))
+                Some(Message::TimeoutCert(e))
             }
         }
     }
@@ -239,7 +254,7 @@ pub enum Action {
     SendNoVote(PublicKey, Envelope<NoVoteMessage, Validated>),
 
     /// Send a timeout certificate to all nodes.
-    SendTimeoutCert(Certificate<Timeout>),
+    SendTimeoutCert(Envelope<Certificate<Timeout>, Validated>),
 }
 
 impl fmt::Display for Action {
@@ -266,7 +281,7 @@ impl fmt::Display for Action {
                 )
             }
             Action::SendTimeoutCert(certificate) => {
-                write!(f, "SendTimeoutCert({})", certificate.data().round())
+                write!(f, "SendTimeoutCert({})", certificate.data().data().round())
             }
         }
     }
@@ -441,7 +456,7 @@ impl<S> fmt::Display for Message<S> {
                 write!(f, "NoVote({r},{s})")
             }
             Self::TimeoutCert(c) => {
-                write!(f, "TimeoutCert({})", c.data().round)
+                write!(f, "TimeoutCert({})", c.data().data().round())
             }
         }
     }
