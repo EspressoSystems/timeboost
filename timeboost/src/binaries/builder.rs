@@ -93,14 +93,13 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "until")]
     let handle = {
-        // Get a random host. These are always run on the same box, so it doesn't matter.
+        // Get a host for the public key
         let mut host = committee
             .bootstrap_nodes()
-            .into_values()
-            .map(|v| v.1)
+            .get(&keypair.public_key())
+            .map(|v| v.1.clone())
             .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
-            .nth(0)
-            .expect("first host to be present");
+            .expect("host to be present");
 
         // HACK: The port is always 9000 + i in the local setup
         host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
