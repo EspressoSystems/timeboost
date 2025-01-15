@@ -49,6 +49,10 @@ run_integration: build_docker
 stop_integration:
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml down
 
+run_prometheus:
+  docker network create --subnet=172.20.0.0/16 timeboost 2>/dev/null
+  docker compose -f docker-compose.metrics.yml up -d
+
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
 
