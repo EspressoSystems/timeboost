@@ -2,11 +2,6 @@
 
 set -euo pipefail
 
-
-#!/bin/bash
-
-set -euo pipefail
-
 # Inputs: cluster name and profile
 CLUSTER_NAME=$1
 PROFILE_NAME=$2
