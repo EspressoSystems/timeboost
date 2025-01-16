@@ -36,8 +36,13 @@ const PING_SIZE: usize = 12;
 const LENGTH_SIZE: usize = 4;
 /// Maximum channel size for inbound/outbound messages
 const NETWORK_BUFFER_SIZE: usize = 1_000;
-/// Max message size using noise protocol
+/// Max encrypted message size using noise protocol
 const MAX_NOISE_MESSAGE_SIZE: usize = u16::MAX as usize;
+/// Max size of the payload that will be able to fit into `MAX_NOISE_MESSAGE_SIZE`
+/// Note this isnt specified anywhere so to be safe by taking off 2KB
+const MAX_NOISE_PAYLOAD_SIZE: usize = u16::MAX as usize - 2048;
+/// Max message size
+const MAX_MSG_SIZE: usize = u32::MAX as usize;
 /// Noise parameters to initialize the builders
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
@@ -190,7 +195,7 @@ impl Server {
                         warn!("failed to accept connection!");
                         continue;
                     };
-                    let (state, peer_id) = match self.noise_server_handshake(&mut stream).await {
+                    let (state, peer_id) = match Self::noise_server_handshake(&mut stream, &self.keypair).await {
                         Ok(val) => val,
                         Err(e) => {
                             let _ = stream.shutdown().await;
@@ -224,19 +229,19 @@ impl Server {
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a client who we will try authenticate with
+    /// * `kp` - Private and public key of the node
     ///
     /// # Panics
     ///
     /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
     async fn noise_server_handshake(
-        &self,
         stream: &mut TcpStream,
+        kp: &Keypair,
     ) -> Result<(TransportState, PeerId), NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
         // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
-        let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("secret key to be derived");
+        let sk = x25519::SecretKey::try_from(kp.secret_key()).expect("secret key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes())
@@ -362,7 +367,14 @@ impl Worker {
             .set_nodelay(true)
             .map_err(|_e| NetworkError::SetNoDelayFailure)?;
 
-        let state = match self.noise_client_handshake(&mut stream).await {
+        let state = match Self::noise_client_handshake(
+            &mut stream,
+            &self.keypair,
+            &self.remote_pk,
+            &self.local_id,
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => {
                 let _ = stream.shutdown().await;
@@ -383,20 +395,24 @@ impl Worker {
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a server who we will try authenticate with
+    /// * `kp` - Private and public key of the node
+    /// * `remote_pk` - Public key of the remote node we are trying to authentic with
+    /// * `local_id - Id of this node
     ///
     /// # Panics
     ///
     /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
     async fn noise_client_handshake(
-        &self,
         stream: &mut TcpStream,
+        kp: &Keypair,
+        remote_pk: &PublicKey,
+        local_id: &PeerId,
     ) -> Result<TransportState, NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
         // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
-        let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("secret key to be derived");
-        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("public key to be derived");
+        let sk = x25519::SecretKey::try_from(kp.secret_key()).expect("secret key to be derived");
+        let pk = x25519::PublicKey::try_from(*remote_pk).expect("public key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes())
@@ -407,7 +423,7 @@ impl Worker {
             })?;
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
         let len = handshake
-            .write_message(&self.local_id.to_bytes(), &mut buf)
+            .write_message(&local_id.to_bytes(), &mut buf)
             .map_err(|e| {
                 NetworkError::FailedToCompleteNoiseHandshake(format!(
                     "initiator failed to write noise message during handshake: {}",
@@ -483,7 +499,7 @@ impl Worker {
     ) -> Result<(), NetworkError> {
         let start = Instant::now();
         let mut ping_deadline = start + PING_INTERVAL;
-        let mut buf = vec![0u8; u32::MAX.try_into().unwrap()].into_boxed_slice();
+        let mut buf = vec![0u8; MAX_MSG_SIZE].into_boxed_slice();
         loop {
             tokio::select! {
                 // TODO: Measure latency (rtt) through embedded ping-pong protocol
@@ -556,26 +572,43 @@ impl Worker {
                     let m = bincode::serialize(&msg).map_err(|e| {
                         NetworkError::FailedToSerialize(format!("failed to serialize message bytes: {}", e))
                     })?;
-                    let mut len = 0;
-                    let chunks = m.chunks(100);
-                    let mut offsets = Vec::new();
-                    let mut s = state.lock().await;
-                    for chunk in chunks {
-                        let chunk_len = s.write_message(chunk, &mut buf[len..]).map_err(|e| {
-                            NetworkError::MessageSendError(format!("failed to write noise message: {}", e))
-                        })?;
-                        offsets.push((len, len + chunk_len));
-                        len += chunk_len;
-                    }
-                    drop(s);
-                    let mut t = Some(len);
+                    let Ok((l, offsets)) = Self::encrypt_bytes(&state, &m, &mut buf).await else {
+                        continue;
+                    };
+                    let mut len = Some(l);
                     for (s, e) in offsets {
-                        send(&mut writer, &buf[s..e], t).await?;
-                        t = None;
+                        send(&mut writer, &buf[s..e], len).await?;
+                        len = None;
                     }
                 }
             }
         }
+    }
+
+    async fn encrypt_bytes(
+        state: &Arc<Mutex<TransportState>>,
+        m: &[u8],
+        buf: &mut [u8],
+    ) -> Result<(usize, Vec<(usize, usize)>), NetworkError> {
+        let mut len = 0;
+        let chunks = m.chunks(MAX_NOISE_PAYLOAD_SIZE);
+        let mut offsets = Vec::new();
+        let mut s = state.lock().await;
+        for chunk in chunks {
+            let chunk_len = match s.write_message(chunk, &mut buf[len..]) {
+                Ok(l) => l,
+                Err(e) => {
+                    warn!("failed to write noise message: {}", e);
+                    return Err(NetworkError::MessageSendError(format!(
+                        "failed to write noise message: {}",
+                        e
+                    )));
+                }
+            };
+            offsets.push((len, len + chunk_len));
+            len += chunk_len;
+        }
+        Ok((len, offsets))
     }
 
     async fn handle_read_stream(
@@ -584,9 +617,8 @@ impl Worker {
         sender: mpsc::Sender<NetworkMessage>,
         pong_sender: mpsc::Sender<i64>,
     ) -> Result<(), NetworkError> {
-        let max: usize = u32::MAX.try_into().unwrap();
-        let mut buf = vec![0u8; max].into_boxed_slice();
-        let mut decrypted_buf = vec![0u8; max].into_boxed_slice();
+        let mut buf = vec![0u8; MAX_MSG_SIZE].into_boxed_slice();
+        let mut decrypted_buf = vec![0u8; MAX_MSG_SIZE].into_boxed_slice();
         loop {
             let Ok(l) = stream.read_u32_le().await else {
                 warn!("failed to receive message size");
@@ -626,28 +658,10 @@ impl Worker {
                 continue;
             }
 
-            let mut read = 0;
-            let mut offset = 0;
-            let mut s = state.lock().await;
-            let ok = loop {
-                let end = if read + 116 > len { len } else { read + 116 };
-                let l = match s.read_message(&buf[read..end], &mut decrypted_buf[offset..]) {
-                    Ok(l) => l,
-                    Err(e) => {
-                        warn!("noise failed to read message: {}", e);
-                        break false;
-                    }
-                };
-                offset += l;
-                read += l + 16;
-                if end == len {
-                    break true;
-                }
-            };
-            drop(s);
-            if !ok {
+            let Ok(offset) = Self::decrypt_bytes(&state, &buf[..len], &mut decrypted_buf).await
+            else {
                 continue;
-            }
+            };
             match bincode::deserialize::<NetworkMessage>(&decrypted_buf[..offset]) {
                 Ok(message) => {
                     sender.send(message).await.map_err(|e| {
@@ -658,6 +672,40 @@ impl Worker {
                     warn!("failed to deserialize: {}", err);
                     return Err(NetworkError::FailedToDeserialize(err.to_string()));
                 }
+            }
+        }
+    }
+
+    async fn decrypt_bytes(
+        state: &Arc<Mutex<TransportState>>,
+        buf: &[u8],
+        decrypted: &mut [u8],
+    ) -> Result<usize, NetworkError> {
+        const AUTH_TAG: usize = 16;
+        let total_len = buf.len();
+        let mut bytes_read = 0;
+        let mut offset = 0;
+        let mut s = state.lock().await;
+        loop {
+            let end = if bytes_read + MAX_NOISE_PAYLOAD_SIZE + AUTH_TAG > total_len {
+                total_len
+            } else {
+                bytes_read + MAX_NOISE_PAYLOAD_SIZE + AUTH_TAG
+            };
+            let l = match s.read_message(&buf[bytes_read..end], &mut decrypted[offset..]) {
+                Ok(l) => l,
+                Err(e) => {
+                    warn!("noise failed to read message: {}", e);
+                    return Err(NetworkError::MessageReceiveError(format!(
+                        "noise failed to read message: {}",
+                        e
+                    )));
+                }
+            };
+            offset += l;
+            bytes_read += l + AUTH_TAG;
+            if end == total_len {
+                return Ok(offset);
             }
         }
     }
@@ -737,15 +785,24 @@ async fn send<W: AsyncWriteExt + Unpin>(
 }
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    };
 
     use crate::derive_peer_id;
 
-    use super::Transport;
-    use futures::future::join_all;
+    use super::{Server, Transport, Worker};
+    use crate::network::transport::{recv, send};
+    use async_lock::Mutex;
+    use futures::future::{join, join_all};
     use libp2p_identity::PeerId;
     use multisig::PublicKey;
     use timeboost_utils::unsafe_zero_keypair;
+    use tokio::{
+        io::AsyncWriteExt,
+        net::{TcpListener, TcpSocket},
+    };
 
     #[tokio::test]
     async fn network_connect_test() {
@@ -787,5 +844,63 @@ mod test {
         });
         let networks = join_all(networks).await;
         (networks, addresses.into_values().collect())
+    }
+
+    #[tokio::test]
+    async fn large_message_test() {
+        let client_keys = unsafe_zero_keypair(0_u64);
+        let server_keys: multisig::Keypair = unsafe_zero_keypair(1_u64);
+        let mut write_buf = vec![0u8; u32::MAX as usize];
+        let mut read_buf = vec![0u8; u32::MAX as usize];
+
+        // First connect client and server
+        let client = TcpSocket::new_v4().unwrap();
+        let server = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("unable to bind to socket");
+        let addr = server.local_addr().unwrap();
+        let (c, s) = join(client.connect(addr), server.accept()).await;
+        let client_stream = &mut c.unwrap();
+        let (server_stream, _) = &mut s.unwrap();
+
+        // Next noise handshake between the pair
+        let client_id = derive_peer_id::<PublicKey>(&client_keys.secret_key()).unwrap();
+        let remote_pk = &server_keys.public_key();
+        let (c, s) = join(
+            Worker::noise_client_handshake(client_stream, &client_keys, remote_pk, &client_id),
+            Server::noise_server_handshake(server_stream, &server_keys),
+        )
+        .await;
+        let c = Arc::new(Mutex::new(c.unwrap()));
+        let s = Arc::new(Mutex::new(s.unwrap().0));
+
+        // Encryption and send large payload
+        let msg = "abc".repeat(u16::MAX.into());
+        let bytes = msg.as_bytes();
+        assert!(
+            bytes.len() > u16::MAX.into(),
+            "Test msg needs more than u16::MAX bytes: {}",
+            bytes.len()
+        );
+
+        let (l, o) = Worker::encrypt_bytes(&c, bytes, &mut write_buf)
+            .await
+            .unwrap();
+        let mut len = Some(l);
+        for (s, e) in o {
+            let _ = send(client_stream, &write_buf[s..e], len).await;
+            len = None;
+        }
+
+        // Receive and decrypt large payload
+        let buf = &recv(server_stream).await.unwrap();
+        let o = Worker::decrypt_bytes(&s, &buf[..buf.len()], &mut read_buf)
+            .await
+            .unwrap();
+        let decoded_msg = std::str::from_utf8(&read_buf[..o]).unwrap();
+        assert_eq!(msg, decoded_msg);
+
+        let _ = client_stream.shutdown().await;
+        let _ = server_stream.shutdown().await;
     }
 }
