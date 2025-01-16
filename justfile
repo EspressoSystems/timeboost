@@ -1,9 +1,6 @@
 set export
 
-original_rustflags := env_var_or_default('RUSTFLAGS', '')
-
-export RUSTDOCFLAGS := '-D warnings --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
-export RUSTFLAGS := original_rustflags + ' --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
+export RUSTDOCFLAGS := '-D warnings'
 
 build *ARGS:
   cargo build {{ARGS}}
