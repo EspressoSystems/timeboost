@@ -459,7 +459,7 @@ impl Worker {
         debug!("connected to {}", remote_id);
         let (reader, writer) = stream.into_split();
         let writer_state = Arc::new(Mutex::new(state));
-        let reader_state = Arc::clone(&writer_state);
+        let reader_state = writer_state.clone();
         let (pong_sender, pong_receiver) = mpsc::channel(PING_BUFFER_SIZE);
         let write_fut = Self::handle_write_stream(
             writer_state,
@@ -471,7 +471,7 @@ impl Worker {
         .boxed();
         let read_fut = Self::handle_read_stream(reader_state, reader, sender, pong_sender).boxed();
         let (r, _, _) = select_all([write_fut, read_fut]).await;
-        debug!("disconnected from {}", remote_id);
+        debug!("disconnected from {}, reason: {:?}", remote_id, r);
         r
     }
 
@@ -483,7 +483,7 @@ impl Worker {
     ) -> Result<(), NetworkError> {
         let start = Instant::now();
         let mut ping_deadline = start + PING_INTERVAL;
-        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
+        let mut buf = vec![0u8; u32::MAX.try_into().unwrap()].into_boxed_slice();
         loop {
             tokio::select! {
                 // TODO: Measure latency (rtt) through embedded ping-pong protocol
@@ -584,8 +584,9 @@ impl Worker {
         sender: mpsc::Sender<NetworkMessage>,
         pong_sender: mpsc::Sender<i64>,
     ) -> Result<(), NetworkError> {
-        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
-        let mut decrypted_buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
+        let max: usize = u32::MAX.try_into().unwrap();
+        let mut buf = vec![0u8; max].into_boxed_slice();
+        let mut decrypted_buf = vec![0u8; max].into_boxed_slice();
         loop {
             let Ok(l) = stream.read_u32_le().await else {
                 warn!("failed to receive message size");
@@ -596,12 +597,12 @@ impl Worker {
                 continue;
             };
             if len == 0 {
-                let b = &mut buf[..PING_SIZE - LENGTH_SIZE];
-                if let Err(err) = stream.read_exact(b).await {
+                let end = PING_SIZE - LENGTH_SIZE;
+                if let Err(err) = stream.read_exact(&mut buf[..end]).await {
                     error!("failed to read ping into buffer: {}", err);
                     continue;
                 }
-                let ping = decode_ping(b);
+                let ping = decode_ping(&buf[..end]);
                 let permit = pong_sender.try_reserve();
                 match permit {
                     Err(TrySendError::Full(_)) => {
@@ -620,8 +621,7 @@ impl Worker {
             }
 
             // Read inbound traffic and send on channel
-            let b = &mut buf[..len];
-            if let Err(err) = stream.read_exact(b).await {
+            if let Err(err) = stream.read_exact(&mut buf[..len]).await {
                 error!("failed to read message into buffer: {}", err);
                 continue;
             }
@@ -706,7 +706,9 @@ async fn recv(stream: &mut TcpStream) -> Result<Vec<u8>, NetworkError> {
     let len = stream.read_u32_le().await.map_err(|e| {
         NetworkError::MessageReceiveError(format!("failed to receive the message size: {}", e))
     })?;
-    let msg_len = usize::try_from(len).map_err(|_| NetworkError::NotReadyYet)?;
+    let msg_len = usize::try_from(len).map_err(|e| {
+        NetworkError::MessageReceiveError(format!("failed to convert u32 to usize: {}", e))
+    })?;
     let mut msg = vec![0u8; msg_len];
     stream.read_exact(&mut msg[..]).await.map_err(|e| {
         NetworkError::MessageReceiveError(format!("failed receiving message: {}", e))
@@ -714,24 +716,21 @@ async fn recv(stream: &mut TcpStream) -> Result<Vec<u8>, NetworkError> {
     Ok(msg)
 }
 
-async fn send<W>(writer: &mut W, buf: &[u8], len: Option<usize>) -> Result<(), NetworkError>
-where
-    W: AsyncWriteExt + Unpin,
-{
-    if let Some(len) = len {
+async fn send<W: AsyncWriteExt + Unpin>(
+    w: &mut W,
+    buf: &[u8],
+    l: Option<usize>,
+) -> Result<(), NetworkError> {
+    if let Some(len) = l {
         let len = u32::try_from(len).map_err(|e| {
-            NetworkError::MessageSendError(format!(
-                "message size is too large for noise protocol: {}",
-                e
-            ))
+            NetworkError::MessageSendError(format!("failed to convert usize to 32: {}", e))
         })?;
-        writer.write_u32_le(len).await.map_err(|e| {
+        w.write_u32_le(len).await.map_err(|e| {
             NetworkError::MessageSendError(format!("failed to send the message size: {}", e))
         })?;
     }
 
-    writer
-        .write_all(buf)
+    w.write_all(buf)
         .await
         .map_err(|e| NetworkError::MessageSendError(format!("failed to send payload: {}", e)))?;
     Ok(())
