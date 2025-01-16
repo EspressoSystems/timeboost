@@ -483,6 +483,7 @@ impl Worker {
     ) -> Result<(), NetworkError> {
         let start = Instant::now();
         let mut ping_deadline = start + PING_INTERVAL;
+        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
         loop {
             tokio::select! {
                 // TODO: Measure latency (rtt) through embedded ping-pong protocol
@@ -557,7 +558,6 @@ impl Worker {
                     })?;
                     let mut len = 0;
                     let chunks = m.chunks(100);
-                    let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
                     let mut offsets = Vec::new();
                     let mut s = state.lock().await;
                     for chunk in chunks {
@@ -566,7 +566,6 @@ impl Worker {
                         })?;
                         offsets.push((len, len + chunk_len));
                         len += chunk_len;
-
                     }
                     drop(s);
                     let mut t = Some(len);
@@ -585,24 +584,24 @@ impl Worker {
         sender: mpsc::Sender<NetworkMessage>,
         pong_sender: mpsc::Sender<i64>,
     ) -> Result<(), NetworkError> {
-        let mut buffer = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
+        let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
+        let mut decrypted_buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE].into_boxed_slice();
         loop {
-            let size = stream.read_u32_le().await.map_err(|e| {
-                NetworkError::MessageReceiveError(format!("failed to receive message size: {}", e))
-            })?;
-            if size as usize > MAX_NOISE_MESSAGE_SIZE {
-                error!("invalid size: {size}");
-                return Err(NetworkError::MessageReceiveError(
-                    "message size is greater than supported in noise.".into(),
-                ));
-            }
-            if size == 0 {
-                let buf = &mut buffer[..PING_SIZE - LENGTH_SIZE];
-                if let Err(err) = stream.read_exact(buf).await {
+            let Ok(l) = stream.read_u32_le().await else {
+                warn!("failed to receive message size");
+                continue;
+            };
+            let Ok(len) = usize::try_from(l) else {
+                warn!("failed to convert u32 to usize!");
+                continue;
+            };
+            if len == 0 {
+                let b = &mut buf[..PING_SIZE - LENGTH_SIZE];
+                if let Err(err) = stream.read_exact(b).await {
                     error!("failed to read ping into buffer: {}", err);
                     continue;
                 }
-                let ping = decode_ping(buf);
+                let ping = decode_ping(b);
                 let permit = pong_sender.try_reserve();
                 match permit {
                     Err(TrySendError::Full(_)) => {
@@ -621,38 +620,35 @@ impl Worker {
             }
 
             // Read inbound traffic and send on channel
-            let mut decrypted_buf = vec![0u8; size as usize];
-            let buf = &mut buffer[..size as usize];
-            if let Err(err) = stream.read_exact(buf).await {
+            let b = &mut buf[..len];
+            if let Err(err) = stream.read_exact(b).await {
                 error!("failed to read message into buffer: {}", err);
                 continue;
             }
 
-            let mut count: usize = 0;
-            let mut start = 0;
+            let mut read = 0;
+            let mut offset = 0;
             let mut s = state.lock().await;
-            while count < size as usize {
-                let til = if count + 116 > size as usize {
-                    size as usize
-                } else {
-                    count + 116
-                };
-                let len = match s.read_message(&buf[count..til], &mut decrypted_buf[start..]) {
+            let ok = loop {
+                let end = if read + 116 > len { len } else { read + 116 };
+                let l = match s.read_message(&buf[read..end], &mut decrypted_buf[offset..]) {
                     Ok(l) => l,
                     Err(e) => {
-                        tracing::error!("e: {}", e);
-                        break;
-                    } // drop(s);
-                      // error!("noise failed to read message");
-                      // break;
+                        warn!("noise failed to read message: {}", e);
+                        break false;
+                    }
                 };
-
-                count += len + 16;
-                start += len;
-            }
+                offset += l;
+                read += l + 16;
+                if end == len {
+                    break true;
+                }
+            };
             drop(s);
-
-            match bincode::deserialize::<NetworkMessage>(&decrypted_buf) {
+            if !ok {
+                continue;
+            }
+            match bincode::deserialize::<NetworkMessage>(&decrypted_buf[..offset]) {
                 Ok(message) => {
                     sender.send(message).await.map_err(|e| {
                         NetworkError::ChannelSendError(format!("error sending on channel: {}", e))
