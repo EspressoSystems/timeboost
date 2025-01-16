@@ -40,7 +40,7 @@ impl Dag {
         m.insert(*s, v);
     }
 
-    /// Removes all rounds up to (and including) the specified round number from the DAG
+    /// Removes all rounds up to the specified round number from the DAG
     pub fn remove(&mut self, r: RoundNumber) {
         self.elements = self.elements.split_off(&r);
     }

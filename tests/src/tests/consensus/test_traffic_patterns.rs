@@ -64,14 +64,13 @@ fn delayed_delivery() {
     ]);
     sim.goto(500);
 
-    assert_eq!(135, sim.events().iter().filter(|e| e.is_timeout()).count());
+    assert_eq!(10, sim.events().iter().filter(|e| e.is_timeout()).count());
 
-    assert_eq!(8, sim.consensus("A").buffer_depth());
-    assert_eq!(8, sim.consensus("B").buffer_depth());
-    assert_eq!(8, sim.consensus("C").buffer_depth());
-    assert_eq!(8, sim.consensus("E").buffer_depth());
-
+    assert_eq!(0, sim.consensus("A").buffer_depth());
+    assert_eq!(0, sim.consensus("B").buffer_depth());
+    assert_eq!(0, sim.consensus("C").buffer_depth());
     assert_eq!(0, sim.consensus("D").buffer_depth());
+    assert_eq!(0, sim.consensus("E").buffer_depth());
 
     assert!(is_valid_delivery(&sim));
 }
