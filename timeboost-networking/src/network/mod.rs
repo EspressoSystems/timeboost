@@ -264,6 +264,7 @@ impl Network {
             self.network_sender.send(msg.clone()).await.map_err(|_| {
                 NetworkError::ChannelSendError("error sending message to self".to_string())
             })?;
+            return Ok(());
         }
         if let Some((peer_id, _)) = self.nodes.get(&recipient) {
             if let Some(connection) = self.connections.read().await.get(peer_id) {
