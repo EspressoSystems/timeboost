@@ -253,6 +253,7 @@ impl Network {
             self.network_sender.send(msg.clone()).await.map_err(|_| {
                 NetworkError::ChannelSendError("error sending message to self".to_string())
             })?;
+            return Ok(());
         }
         let connections = self.connections.read().await;
         let (network_sender, _) = connections.get(&recipient).ok_or_else(|| {

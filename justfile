@@ -1,9 +1,6 @@
 set export
 
-original_rustflags := env_var_or_default('RUSTFLAGS', '')
-
-export RUSTDOCFLAGS := '-D warnings --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
-export RUSTFLAGS := original_rustflags + ' --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
+export RUSTDOCFLAGS := '-D warnings'
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -15,11 +12,11 @@ bench:
   cargo bench --benches -- --nocapture
 
 test *ARGS:
-  cargo nextest run --test-threads $(nproc) {{ARGS}}
+  cargo nextest run {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --test-threads $(nproc) {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 {{ARGS}}
   RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
 
 run *ARGS:
