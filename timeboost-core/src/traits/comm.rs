@@ -4,8 +4,7 @@ use crate::types::message::Message;
 
 use async_trait::async_trait;
 use multisig::{Committee, PublicKey, Unchecked, Validated};
-use timeboost_networking::network::Network;
-use timeboost_networking::NetworkError;
+use timeboost_networking::{Network, NetworkError};
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
@@ -85,19 +84,19 @@ impl RawComm for Network {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.broadcast_message(msg).await
+        self.multicast(msg).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
-        self.direct_message(to, msg).await
+        self.unicast(to, msg).await
     }
 
     async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
-        self.recv_message().await
+        let (_, m) = self.receive().await?;
+        Ok(m)
     }
 
     async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.shut_down().await?;
         Ok(())
     }
 }

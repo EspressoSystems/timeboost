@@ -124,9 +124,9 @@ impl TryFrom<crate::PublicKey> for PublicKey {
 impl TryFrom<&[u8]> for PublicKey {
     type Error = InvalidPublicKey;
 
-    fn try_from(val: &[u8]) -> Result<Self, Self::Error> {
-        Ok(Self {
-            key: x25519::PublicKey::from_slice(val).map_err(|_| InvalidPublicKey(()))?,
-        })
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let k = x25519::PublicKey::from_slice(value).map_err(|_| InvalidPublicKey(()))?;
+        Ok(Self { key: k })
     }
 }
+

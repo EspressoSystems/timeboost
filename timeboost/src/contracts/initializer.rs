@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use anyhow::Result;
 use multisig::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -12,7 +14,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub ip_addr: String,
+    pub addr: SocketAddr,
     pub public_key: Vec<u8>,
 }
 
@@ -62,7 +64,10 @@ pub async fn submit_ready(
 
 pub async fn wait_for_committee(
     url: reqwest::Url,
-) -> Result<(HashMap<PublicKey, String>, Vec<PeerConfig<PublicKey>>)> {
+) -> Result<(
+    HashMap<PublicKey, SocketAddr>,
+    Vec<PeerConfig<PublicKey>>,
+)> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {
@@ -90,13 +95,13 @@ pub async fn wait_for_committee(
     let mut bootstrap_nodes = HashMap::new();
     let mut staked_nodes = vec![];
     for c in committee_data.committee.into_iter() {
-        info!("{}", c.ip_addr);
+        info!("{}", c.addr);
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
-            c.ip_addr,
+            c.addr
         );
         staked_nodes.push(cfg.public_config());
     }

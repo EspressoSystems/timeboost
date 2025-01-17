@@ -1,78 +1,435 @@
-use thiserror::Error;
-pub mod network;
+mod error;
 
-/// Errors that can occur in the network
-#[derive(Debug, Error)]
-pub enum NetworkError {
-    /// Multiple errors. Allows us to roll up multiple errors into one.
-    #[error("Multiple errors: {0:?}")]
-    Multiple(Vec<NetworkError>),
+use std::{collections::HashMap, net::SocketAddr};
+use std::iter::repeat;
+use std::future::pending;
+use std::sync::Arc;
+use std::time::Duration;
 
-    /// A configuration error
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
+use bimap::BiHashMap;
+use multisig::{x25519, Keypair, PublicKey};
+use parking_lot::Mutex;
+use snow::{Builder, HandshakeState, TransportState};
+use tokio::{spawn, task::{AbortHandle, JoinHandle, JoinSet}};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{self, Sender, Receiver};
+use tokio::time::sleep;
+use tracing::{debug, error, trace, warn};
 
-    /// An error occurred while sending a message
-    #[error("Failed to send message: {0}")]
-    MessageSendError(String),
+pub use error::{Empty, NetworkError};
 
-    /// An error occurred while receiving a message
-    #[error("Failed to receive message: {0}")]
-    MessageReceiveError(String),
+type Result<T> = std::result::Result<T, NetworkError>;
 
-    /// The feature is unimplemented
-    #[error("Unimplemented")]
-    Unimplemented,
+/// Max message size using noise protocol
+const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
-    /// An error occurred while attempting to listen
-    #[error("Listen error: {0}")]
-    ListenError(String),
+/// Number of bytes for payload data.
+const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 
-    /// Failed to send over a channel
-    #[error("Channel send error: {0}")]
-    ChannelSendError(String),
+/// Noise parameters to initialize the builders
+const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
-    /// Failed to receive over a channel
-    #[error("Channel receive error: {0}")]
-    ChannelReceiveError(String),
+#[derive(Debug)]
+pub struct Network {
+    tx: Sender<(Option<PublicKey>, Vec<u8>)>,
+    rx: Receiver<(PublicKey, Vec<u8>)>,
+    srv: JoinHandle<Result<Empty>>
+}
 
-    /// The network has been shut down and can no longer be used
-    #[error("Network has been shut down")]
-    ShutDown,
+impl Drop for Network {
+    fn drop(&mut self) {
+        self.srv.abort()
+    }
+}
 
-    /// Failed to serialize
-    #[error("Failed to serialize: {0}")]
-    FailedToSerialize(String),
+#[derive(Debug)]
+struct Server {
+    key: PublicKey,
+    keypair: x25519::Keypair,
+    ibound: Sender<(PublicKey, Vec<u8>)>,
+    obound: Receiver<(Option<PublicKey>, Vec<u8>)>,
+    peers: HashMap<PublicKey, SocketAddr>,
+    index: BiHashMap<PublicKey, x25519::PublicKey>,
+    task2key: HashMap<tokio::task::Id, PublicKey>,
+    active: HashMap<PublicKey, IoTask>,
+    handshake_tasks: JoinSet<Result<(TcpStream, TransportState)>>,
+    connect_tasks: JoinSet<(TcpStream, TransportState)>,
+    io_tasks: JoinSet<Result<()>>
+}
 
-    /// Failed to deserialize
-    #[error("Failed to deserialize: {0}")]
-    FailedToDeserialize(String),
+#[derive(Debug)]
+struct IoTask {
+    rh: AbortHandle,
+    wh: AbortHandle,
+    tx: mpsc::Sender<Vec<u8>>
+}
 
-    /// Failed to complete the noise handshake
-    #[error("Failed to complete noise handshake: {0}")]
-    FailedToCompleteNoiseHandshake(String),
+impl Drop for IoTask {
+    fn drop(&mut self) {
+        self.rh.abort();
+        self.wh.abort();
+    }
+}
 
-    /// Failed to convert
-    #[error("Failed to convert to public key: {0}")]
-    FailedToConvertToPublicKey(String),
+impl Network {
+    pub async fn create<P>(bind_to: SocketAddr, kp: Keypair, group: P) -> Result<Self>
+    where
+        P: IntoIterator<Item = (PublicKey, SocketAddr)>
+    {
+        let label = kp.public_key();
+        let keys = x25519::Keypair::try_from(kp).expect("ed25519 -> x25519");
 
-    /// Timed out performing an operation
-    #[error("Timeout: {0}")]
-    Timeout(String),
+        let listener = TcpListener::bind(bind_to).await?;
 
-    /// The network request had been cancelled before it could be fulfilled
-    #[error("The request was cancelled before it could be fulfilled")]
-    RequestCancelled,
+        debug!(n = %label, a = %listener.local_addr()?, "listening");
 
-    /// The network was not ready yet
-    #[error("The network was not ready yet")]
-    NotReadyYet,
+        let (otx, orx) = mpsc::channel(10_000);
+        let (itx, irx) = mpsc::channel(10_000);
 
-    /// The node cannot set no delay on TCP stream
-    #[error("The stream was not able to set no delay")]
-    SetNoDelayFailure,
+        let mut peers = HashMap::new();
+        let mut index = BiHashMap::new();
 
-    /// Failed to look up a node on the network
-    #[error("Node lookup failed: {0}")]
-    LookupError(String),
+        for (k, a) in group {
+            index.insert(k, x25519::PublicKey::try_from(k)?);
+            peers.insert(k, a);
+        }
+
+        let server = Server {
+            keypair: keys,
+            key: label,
+            ibound: itx,
+            obound: orx,
+            peers,
+            index,
+            active: HashMap::new(),
+            task2key: HashMap::new(),
+            handshake_tasks: JoinSet::new(),
+            connect_tasks: JoinSet::new(),
+            io_tasks: JoinSet::new()
+        };
+
+        Ok(Self {
+            rx: irx,
+            tx: otx,
+            srv: spawn(server.run(listener))
+        })
+    }
+
+    pub async fn unicast(&self, to: PublicKey, msg: Vec<u8>) -> Result<()> {
+        self.tx.send((Some(to), msg)).await.map_err(|_| NetworkError::ChannelClosed)
+    }
+
+    pub async fn multicast(&self, msg: Vec<u8>) -> Result<()> {
+        self.tx.send((None, msg)).await.map_err(|_| NetworkError::ChannelClosed)
+    }
+
+    pub async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>)> {
+        self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
+    }
+}
+
+impl Server {
+    async fn run(mut self, listener: TcpListener) -> Result<Empty> {
+        self.handshake_tasks.spawn(pending());
+        self.io_tasks.spawn(pending());
+
+        for (k, a) in &self.peers {
+            if *k == self.key {
+                continue
+            }
+            let x = self.index.get_by_left(k).expect("known public key");
+            self.connect_tasks.spawn(connect(self.keypair.clone(), *x, *a));
+        }
+
+        loop {
+            trace!(n = %self.key, a = %self.active.len(), t = %self.task2key.len());
+
+            tokio::select! {
+                i = listener.accept() => match i {
+                    Ok((s, a)) => {
+                        debug!(n = %self.key, %a, "accepted connection");
+                        self.spawn_handshake(s)
+                    }
+                    Err(e) => {
+                        warn!(n = %self.key, %e, "error accepting connection")
+                    }
+                },
+                Some(h) = self.handshake_tasks.join_next() => match h {
+                    Ok(Ok((s, t))) => {
+                        let Some(k) = self.lookup_peer(&t) else {
+                            continue
+                        };
+                        if k > self.key || !self.active.contains_key(&k) {
+                            self.spawn_io(s, t)
+                        } else {
+                            warn!(n = %self.key, %k, "dropping accepted connection");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        warn!(n = %self.key, %e, "handshake failed")
+                    }
+                    Err(e) => {
+                        if !e.is_cancelled() {
+                            error!(n = %self.key, %e, "handshake task panic");
+                        }
+                    }
+                },
+                Some(tt) = self.connect_tasks.join_next() => match tt {
+                    Ok((s, t)) => {
+                        let Some(k) = self.lookup_peer(&t) else {
+                            continue
+                        };
+                        if k < self.key || !self.active.contains_key(&k) {
+                            self.spawn_io(s, t)
+                        } else {
+                            warn!(n = %self.key, %k, "dropping new connection");
+                        }
+                    }
+                    Err(e) => {
+                        if !e.is_cancelled() {
+                            error!(n = %self.key, %e, "connect task panic");
+                        }
+                    }
+                },
+                Some(io) = self.io_tasks.join_next_with_id() => {
+                    match io {
+                        Ok((id, r)) => {
+                            if let Err(e) = r {
+                                warn!(n = %self.key, %e, "i/o error")
+                            }
+                            let Some(k) = self.task2key.remove(&id) else {
+                                error!(n = %self.key, "no key for task");
+                                continue
+                            };
+                            if let Some(task) = self.active.get(&k) {
+                                if task.rh.id() == id {
+                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
+                                    self.active.remove(&k);
+                                    self.spawn_connect(k)
+                                } else if task.wh.id() == id {
+                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
+                                    self.active.remove(&k);
+                                    self.spawn_connect(k)
+                                } else {
+                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            if e.is_cancelled() {
+                                continue
+                            }
+                            error!(n = %self.key, %e, "i/o task panic");
+                            let Some(k) = self.task2key.remove(&e.id()) else {
+                                error!(n = %self.key, "no key for task");
+                                continue
+                            };
+                            if let Some(task) = self.active.get(&k) {
+                                if task.rh.id() == e.id() {
+                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
+                                    self.active.remove(&k);
+                                    self.spawn_connect(k)
+                                } else if task.wh.id() == e.id() {
+                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
+                                    self.active.remove(&k);
+                                    self.spawn_connect(k)
+                                } else {
+                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
+                                }
+                            }
+                        }
+                    };
+                },
+                msg = self.obound.recv() => match msg {
+                    Some((Some(to), m)) => {
+                        if to == self.key {
+                            let _ = self.ibound.try_send((self.key, m));
+                            continue
+                        }
+                        if let Some(task) = self.active.get_mut(&to) {
+                            if task.tx.try_send(m).is_err() {
+                                warn!(n = %self.key, k = %to, "channel full => reconnecting");
+                                self.spawn_connect(to)
+                            }
+                        }
+                    }
+                    Some((None, m)) => {
+                        let _ = self.ibound.try_send((self.key, m.clone()));
+                        let mut reconnect = Vec::new();
+                        for (k, task) in &mut self.active {
+                            if task.tx.try_send(m.clone()).is_err() {
+                                warn!(n = %self.key, %k, "channel full => reconnecting");
+                                reconnect.push(*k);
+                            }
+                        }
+                        for k in reconnect {
+                            self.spawn_connect(k)
+                        }
+                    }
+                    None => {
+                        return Err(NetworkError::ChannelClosed)
+                    }
+                }
+            }
+        }
+    }
+
+    fn spawn_connect(&mut self, k: PublicKey) {
+        let x = self.index.get_by_left(&k).expect("known public key");
+        let a = self.peers.get(&k).expect("known address");
+        self.connect_tasks.spawn(connect(self.keypair.clone(), *x, *a));
+    }
+
+    fn spawn_handshake(&mut self, s: TcpStream) {
+        let h = Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
+            .local_private_key(&self.keypair.secret_key().as_bytes())
+            .build_responder()
+            .expect("valid noise params yield valid handshake state");
+        self.handshake_tasks.spawn(on_handshake(h, s));
+    }
+
+    fn spawn_io(&mut self, s: TcpStream, t: TransportState) {
+        let Some(k) = self.lookup_peer(&t) else {
+            debug!(n = %self.key, a = ?s.peer_addr().ok(), "unknown peer");
+            return
+        };
+        debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");
+        let (to_remote, from_remote) = mpsc::channel(256);
+        let (r, w) = s.into_split();
+        let t1 = Arc::new(Mutex::new(t));
+        let t2 = t1.clone();
+        let ibound = self.ibound.clone();
+        let rh = self.io_tasks.spawn(recv_loop(k, r, t1, ibound));
+        let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
+        assert!(self.task2key.insert(rh.id(), k).is_none());
+        assert!(self.task2key.insert(wh.id(), k).is_none());
+        self.active.insert(k, IoTask { rh, wh, tx: to_remote });
+    }
+
+    fn lookup_peer(&self, t: &TransportState) -> Option<PublicKey> {
+        let k = t.get_remote_static()?;
+        let k = x25519::PublicKey::try_from(k).ok()?;
+        self.index.get_by_right(&k).copied()
+    }
+}
+
+async fn connect(this: x25519::Keypair, to: x25519::PublicKey, addr: SocketAddr) -> (TcpStream, TransportState) {
+    use rand::prelude::*;
+
+    let new_handshake_state = || {
+        Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
+            .local_private_key(this.secret_key().as_slice())
+            .remote_public_key(to.as_slice())
+            .build_initiator()
+            .expect("valid noise params yield valid handshake state")
+    };
+
+    let i = rand::thread_rng().gen_range(0 ..= 1000);
+
+    for d in [i, 1000, 3000, 6000, 10_000, 15_000].into_iter().chain(repeat(30_000)) {
+        sleep(Duration::from_millis(d)).await;
+        debug!(%to, a = %addr, "connecting");
+        match TcpStream::connect(addr).await {
+            Ok(s) => {
+                if let Err(e) = s.set_nodelay(true) {
+                    error!(%e, "failed to set NO_DELAY socket option");
+                    continue
+                }
+                match handshake(new_handshake_state(), s).await {
+                    Ok(x) => {
+                        debug!(%to, a = %addr, "connection established");
+                        return x
+                    }
+                    Err(e) => {
+                        warn!(%e, %addr, "handshake failure");
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(%e, %addr, "failed to connect");
+            }
+        }
+    }
+
+    unreachable!("for loop repeats forever")
+}
+
+async fn handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
+    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    let n = hs.write_message(&[], &mut b)?;
+    send_frame(&mut stream, &b[..n]).await?;
+    let m = recv_frame(&mut stream).await?;
+    hs.read_message(&m, &mut b)?;
+    Ok((stream, hs.into_transport_mode()?))
+}
+
+async fn on_handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
+    stream.set_nodelay(true)?;
+    let m = recv_frame(&mut stream).await?;
+    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    hs.read_message(&m, &mut b)?;
+    let n = hs.write_message(&[], &mut b)?;
+    send_frame(&mut stream, &b[..n]).await?;
+    Ok((stream, hs.into_transport_mode()?))
+}
+
+async fn recv_loop<R>(k: PublicKey, mut r: R, t: Arc<Mutex<TransportState>>, tx: Sender<(PublicKey, Vec<u8>)>) -> Result<()>
+where
+    R: AsyncRead + Unpin
+{
+    let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    loop {
+        let mut msg = Vec::new();
+        loop {
+            let f = recv_frame(&mut r).await?;
+            let n = t.lock().read_message(&f, &mut buf)?;
+            if buf[..n].is_empty() {
+                break
+            }
+            msg.extend_from_slice(&buf[..n])
+        }
+        if tx.send((k, msg)).await.is_err() {
+            break
+        }
+    }
+    Ok(())
+}
+
+async fn send_loop<W>(mut w: W, t: Arc<Mutex<TransportState>>, mut rx: Receiver<Vec<u8>>) -> Result<()>
+where
+    W: AsyncWrite + Unpin
+{
+    let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    while let Some(msg) = rx.recv().await {
+        for m in msg.chunks(MAX_PAYLOAD_SIZE).filter(|m| !m.is_empty()) {
+            let n = t.lock().write_message(m, &mut buf)?;
+            send_frame(&mut w, &buf[..n]).await?
+        }
+        let n = t.lock().write_message(&[], &mut buf)?;
+        send_frame(&mut w, &buf[..n]).await?
+    }
+    Ok(())
+}
+
+async fn recv_frame<R>(r: &mut R) -> Result<Vec<u8>>
+where
+    R: AsyncRead + Unpin
+{
+    let n = r.read_u16().await?;
+    let mut v = vec![0; n.into()];
+    r.read_exact(&mut v).await?;
+    Ok(v)
+}
+
+async fn send_frame<W>(w: &mut W, msg: &[u8]) -> Result<()>
+where
+    W: AsyncWrite + Unpin
+{
+    if msg.len() > u16::MAX.into() {
+        return Err(NetworkError::FrameTooLarge(msg.len()))
+    }
+    w.write_u16(msg.len() as u16).await?;
+    w.write_all(msg).await?;
+    Ok(())
 }

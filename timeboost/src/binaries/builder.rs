@@ -1,3 +1,4 @@
+use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::Result;
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
@@ -89,7 +90,7 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let bind_address = &format!("0.0.0.0:{}", cli.port);
+    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
     #[cfg(feature = "until")]
     let handle = {
@@ -123,7 +124,7 @@ async fn main() -> Result<()> {
         bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
         staked_nodes: committee.staked_nodes(),
         keypair,
-        bind_address: bind_address.clone(),
+        bind_address,
         shutdown_rx,
     };
 
