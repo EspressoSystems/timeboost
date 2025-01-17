@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_lock::Mutex;
+use bimap::BiBTreeMap;
 use futures::future::select_all;
 use futures::FutureExt;
-use libp2p_identity::PeerId;
 use multisig::{x25519, Keypair, PublicKey};
 use rand::rngs::ThreadRng;
 use rand::Rng;
@@ -59,7 +59,7 @@ impl From<Vec<u8>> for NetworkMessage {
 /// A connection represents an established connection to another node.
 pub struct Connection {
     /// The Id of the connected peer
-    pub remote_id: PeerId,
+    pub remote_pk: PublicKey,
     /// Channel for sending outbound messages
     pub tx: Sender<NetworkMessage>,
     /// Channel for receiving inbound message
@@ -86,9 +86,8 @@ impl Transport {
     /// When the server has accepted a connection the resulting stream
     /// is forwarded to the dedicated `Worker`.
     pub async fn run(
-        local_id: PeerId,
         local_addr: String,
-        bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+        bootstrap_nodes: HashMap<PublicKey, String>,
         kp: &Keypair,
     ) -> Self {
         let local_socket = local_addr
@@ -97,6 +96,13 @@ impl Transport {
 
         // Channels for sending streams to dedicated workers after accepted connection
         let mut worker_senders = HashMap::new();
+        let key_map: BiBTreeMap<_, _> = bootstrap_nodes
+            .keys()
+            .map(|pk| {
+                let curve = x25519::PublicKey::try_from(*pk).expect("public key to be derived");
+                (*pk, curve)
+            })
+            .collect();
 
         let server = TcpListener::bind(local_socket)
             .await
@@ -104,8 +110,8 @@ impl Transport {
         let (tx_connection, rx_connection) = mpsc::channel(CONNECTION_BUFFER_SIZE);
 
         // Spawn a worker for each node we want a connection to
-        for (remote_pk, (remote_id, addr)) in bootstrap_nodes.into_iter() {
-            if remote_id == local_id {
+        for (remote_pk, addr) in bootstrap_nodes.into_iter() {
+            if remote_pk == kp.public_key() {
                 continue;
             }
             // Channel for the TcpStream going from the Server to the Worker
@@ -115,16 +121,14 @@ impl Transport {
                 .parse::<std::net::SocketAddr>()
                 .expect("invalid socket address");
             assert!(
-                worker_senders.insert(remote_id, sender).is_none(),
+                worker_senders.insert(remote_pk, sender).is_none(),
                 "duplicated peer {} in list",
-                remote_id
+                remote_pk
             );
             spawn(
                 Worker {
-                    local_id,
-                    remote_id,
                     remote_addr: socket,
-                    active: remote_id.to_base58() < local_id.to_base58(),
+                    active: remote_pk.as_bytes() < kp.public_key().as_bytes(),
                     tx_connection: tx_connection.clone(),
                     keypair: kp.clone(),
                     remote_pk,
@@ -137,10 +141,10 @@ impl Transport {
         let keypair = kp.clone();
         let server_handle = spawn(async move {
             Server {
-                local_id,
                 server,
                 worker_senders,
                 keypair,
+                key_map,
             }
             .run(rx_stop)
             .await
@@ -170,18 +174,18 @@ impl Transport {
 
 #[derive(Debug)]
 struct Server {
-    /// Local id of the node
-    local_id: PeerId,
     /// Socket for accepting connections
     server: TcpListener,
     /// Channel for fowarding accepted connections
-    worker_senders: HashMap<PeerId, mpsc::Sender<(TcpStream, TransportState)>>,
+    worker_senders: HashMap<PublicKey, mpsc::Sender<(TcpStream, TransportState)>>,
+    /// Bidirectional mapping for ed25519 and x25519 public keys
+    key_map: BiBTreeMap<PublicKey, x25519::PublicKey>,
     /// The public and private key of this node.
     keypair: Keypair,
 }
 
 impl Server {
-    #[instrument(level = "trace", skip_all, fields(node = %self.local_id))]
+    #[instrument(level = "trace", skip_all, fields(node = %self.keypair.public_key()))]
     async fn run(self, mut stop: Receiver<()>) {
         loop {
             tokio::select! {
@@ -190,7 +194,7 @@ impl Server {
                         warn!("failed to accept connection!");
                         continue;
                     };
-                    let (state, peer_id) = match self.noise_server_handshake(&mut stream).await {
+                    let (state, remote_pk) = match Self::noise_server_handshake(&mut stream, &self.keypair, &self.key_map).await {
                         Ok(val) => val,
                         Err(e) => {
                             let _ = stream.shutdown().await;
@@ -200,8 +204,8 @@ impl Server {
                         }
                     };
                     // Send the stream to the dedicated worker
-                    if let Some(sender) = self.worker_senders.get(&peer_id) {
-                        debug!("accepted connection from bootstrap node: {}", peer_id);
+                    if let Some(sender) = self.worker_senders.get(&remote_pk) {
+                        debug!("accepted connection from bootstrap node: {}", remote_pk);
                         sender.send((stream, state)).await.ok();
                     }
                     // TODO: For now we dont accept connections from non-bootstrap nodes
@@ -224,19 +228,20 @@ impl Server {
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a client who we will try authenticate with
+    /// * `key_map` - Bidirectional mapping for ed25519 and x25519 public keys
     ///
     /// # Panics
     ///
     /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
     async fn noise_server_handshake(
-        &self,
         stream: &mut TcpStream,
-    ) -> Result<(TransportState, PeerId), NetworkError> {
+        kp: &Keypair,
+        key_map: &BiBTreeMap<PublicKey, x25519::PublicKey>,
+    ) -> Result<(TransportState, PublicKey), NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
         // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
-        let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("secret key to be derived");
+        let sk = x25519::SecretKey::try_from(kp.secret_key()).expect("secret key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes()) // first 32 bytes is the secret key
@@ -248,15 +253,9 @@ impl Server {
         let m = recv(stream).await?;
 
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-        let len = handshake.read_message(&m, &mut buf).map_err(|e| {
+        handshake.read_message(&m, &mut buf).map_err(|e| {
             NetworkError::FailedToCompleteNoiseHandshake(format!(
                 "failed to read noise message during handshake: {}",
-                e
-            ))
-        })?;
-        let peer_id = PeerId::from_bytes(&buf[..len]).map_err(|e| {
-            NetworkError::FailedToDeserialize(format!(
-                "peer id could not be derived from bytes: {}",
                 e
             ))
         })?;
@@ -275,16 +274,22 @@ impl Server {
                 e
             ))
         })?;
-        Ok((state, peer_id))
+        let pk_bytes = state.get_remote_static().expect("static key to be present");
+        let pk = x25519::PublicKey::try_from(pk_bytes).map_err(|e| {
+            NetworkError::FailedToConvertToPublicKey(format!(
+                "could not convert remote static key bytes to x25519: {}",
+                e
+            ))
+        })?;
+        let remote_pk = key_map
+            .get_by_right(&pk)
+            .ok_or_else(|| NetworkError::LookupError("Failed to find ed25519 mapping!".into()))?;
+        Ok((state, *remote_pk))
     }
 }
 
 /// A worker is responsible for establishing a single connection
 struct Worker {
-    /// The local Id
-    local_id: PeerId,
-    /// The remote peer for the connection
-    remote_id: PeerId,
     /// The remote address
     remote_addr: SocketAddr,
     /// True if we should make outbound connection
@@ -301,7 +306,7 @@ struct Worker {
 struct WorkerConnection {
     sender: mpsc::Sender<NetworkMessage>,
     receiver: mpsc::Receiver<NetworkMessage>,
-    remote_id: PeerId,
+    remote_pk: PublicKey,
 }
 
 impl Worker {
@@ -325,7 +330,7 @@ impl Worker {
                 }
                 received = receiver.recv() => {
                     if let Some((stream, state)) = received {
-                        debug!("replaced connection for {}", self.remote_id);
+                        debug!("replaced connection for {}", self.remote_pk);
                         work = self.passive_connect(stream, state).boxed();
                     } else {
                         // Channel closed, server is terminated
@@ -362,15 +367,16 @@ impl Worker {
             .set_nodelay(true)
             .map_err(|_e| NetworkError::SetNoDelayFailure)?;
 
-        let state = match self.noise_client_handshake(&mut stream).await {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = stream.shutdown().await;
-                drop(stream);
-                warn!("error during noise handshake: {}", e);
-                return Err(e);
-            }
-        };
+        let state =
+            match Self::noise_client_handshake(&mut stream, &self.keypair, &self.remote_pk).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = stream.shutdown().await;
+                    drop(stream);
+                    warn!("error during noise handshake: {}", e);
+                    return Err(e);
+                }
+            };
         let connection = self.make_connection().await?;
 
         Self::handle_stream(state, stream, connection).await
@@ -383,20 +389,23 @@ impl Worker {
     /// # Arguments
     ///
     /// * `stream` - A tcp connection to a server who we will try authenticate with
+    /// * `kp` - Private and public key of the node
+    /// * `remote_pk` - Public key of the remote node we are trying to authentic with
+    /// * `local_id - Id of this node
     ///
     /// # Panics
     ///
     /// Panics if we cant parse the NOISE_PARAMS or our derived ed25519 keypair cannot be mapped to curve25519 (this is needed for the noise protocol)
     async fn noise_client_handshake(
-        &self,
         stream: &mut TcpStream,
+        kp: &Keypair,
+        remote_pk: &PublicKey,
     ) -> Result<TransportState, NetworkError> {
         let builder = Builder::new(NOISE_PARAMS.parse().expect("noise parameters to be parsed"));
 
         // TODO: Add new curve25519 keys instead of converting our ed25519 signing keys
-        let sk = x25519::SecretKey::try_from(self.keypair.secret_key())
-            .expect("secret key to be derived");
-        let pk = x25519::PublicKey::try_from(self.remote_pk).expect("public key to be derived");
+        let sk = x25519::SecretKey::try_from(kp.secret_key()).expect("secret key to be derived");
+        let pk = x25519::PublicKey::try_from(*remote_pk).expect("public key to be derived");
 
         let mut handshake = builder
             .local_private_key(&sk.as_bytes())
@@ -406,14 +415,12 @@ impl Worker {
                 NetworkError::ConfigError(format!("failed to initialize noise builder: {}", e))
             })?;
         let mut buf = vec![0u8; MAX_NOISE_MESSAGE_SIZE];
-        let len = handshake
-            .write_message(&self.local_id.to_bytes(), &mut buf)
-            .map_err(|e| {
-                NetworkError::FailedToCompleteNoiseHandshake(format!(
-                    "initiator failed to write noise message during handshake: {}",
-                    e
-                ))
-            })?;
+        let len = handshake.write_message(&[], &mut buf).map_err(|e| {
+            NetworkError::FailedToCompleteNoiseHandshake(format!(
+                "initiator failed to write noise message during handshake: {}",
+                e
+            ))
+        })?;
         send(stream, &buf[..len]).await?;
 
         let m = recv(stream).await?;
@@ -454,9 +461,9 @@ impl Worker {
         let WorkerConnection {
             sender,
             receiver,
-            remote_id,
+            remote_pk,
         } = connection;
-        debug!("connected to {}", remote_id);
+        debug!("connected to {}", remote_pk);
         let (reader, writer) = stream.into_split();
         let writer_state = Arc::new(Mutex::new(state));
         let reader_state = Arc::clone(&writer_state);
@@ -471,7 +478,7 @@ impl Worker {
         .boxed();
         let read_fut = Self::handle_read_stream(reader_state, reader, sender, pong_sender).boxed();
         let (r, _, _) = select_all([write_fut, read_fut]).await;
-        debug!("disconnected from {}", remote_id);
+        debug!("disconnected from {}, reason: {:?}", remote_pk, r);
         r
     }
 
@@ -640,7 +647,7 @@ impl Worker {
         let (network_in_sender, network_in_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
         let (network_out_sender, network_out_receiver) = mpsc::channel(NETWORK_BUFFER_SIZE);
         let connection = Connection {
-            remote_id: self.remote_id,
+            remote_pk: self.remote_pk,
             tx: network_out_sender,
             rx: network_in_receiver,
             // TODO: Ship latency through ping
@@ -652,7 +659,7 @@ impl Worker {
         Ok(WorkerConnection {
             sender: network_in_sender,
             receiver: network_out_receiver,
-            remote_id: self.remote_id,
+            remote_pk: self.remote_pk,
         })
     }
 }
@@ -709,13 +716,10 @@ where
 }
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, HashSet};
-
-    use crate::derive_peer_id;
+    use std::collections::HashMap;
 
     use super::Transport;
     use futures::future::join_all;
-    use libp2p_identity::PeerId;
     use multisig::PublicKey;
     use timeboost_utils::unsafe_zero_keypair;
 
@@ -723,14 +727,10 @@ mod test {
     async fn network_connect_test() {
         let (networks, addresses) = networks_and_addresses(5usize).await;
         for (mut network, address) in networks.into_iter().zip(addresses.iter()) {
-            let mut waiting_peers: HashSet<_> = HashSet::from_iter(addresses.iter().cloned());
-            waiting_peers.remove(address);
+            let mut waiting_peers = addresses.clone();
+            waiting_peers.remove(address.0);
             while let Some(connection) = network.rx_connection.recv().await {
-                let (_, addr) = addresses
-                    .iter()
-                    .find(|(pid, _)| *pid == connection.remote_id)
-                    .expect("peer not found");
-                waiting_peers.retain(|(_, a)| a != addr);
+                waiting_peers.remove(&connection.remote_pk);
                 if waiting_peers.is_empty() {
                     break;
                 }
@@ -740,24 +740,20 @@ mod test {
 
     async fn networks_and_addresses(
         num_of_nodes: usize,
-    ) -> (Vec<Transport>, Vec<(PeerId, String)>) {
+    ) -> (Vec<Transport>, HashMap<PublicKey, String>) {
         let mut kps = HashMap::new();
-        let addresses: HashMap<PublicKey, (PeerId, String)> = (0..num_of_nodes)
+        let addresses: HashMap<PublicKey, String> = (0..num_of_nodes)
             .map(|i| {
                 let keypair = unsafe_zero_keypair(i as u64);
                 kps.insert(keypair.public_key(), keypair.clone());
-                let peer_id = derive_peer_id::<PublicKey>(&keypair.secret_key()).unwrap();
-                (
-                    keypair.public_key(),
-                    (peer_id, format!("127.0.0.1:{}", 5500 + i)),
-                )
+                (keypair.public_key(), format!("127.0.0.1:{}", 5500 + i))
             })
             .collect();
-        let networks = addresses.iter().map(|(pk, (pid, addr))| {
+        let networks = addresses.iter().map(|(pk, addr)| {
             let kp = kps.get(pk).unwrap();
-            Transport::run(*pid, addr.clone(), addresses.clone(), kp)
+            Transport::run(addr.clone(), addresses.clone(), kp)
         });
         let networks = join_all(networks).await;
-        (networks, addresses.into_values().collect())
+        (networks, addresses)
     }
 }

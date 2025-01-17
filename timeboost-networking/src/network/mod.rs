@@ -4,7 +4,6 @@ use std::{
 };
 
 use futures::{stream::FuturesOrdered, StreamExt};
-use libp2p_identity::PeerId;
 use multisig::{Keypair, PublicKey};
 use timeboost_crypto::traits::signature_key::SignatureKey;
 use timeboost_utils::PeerConfig;
@@ -25,11 +24,8 @@ pub mod transport;
 
 /// The initializer for the network.
 pub struct NetworkInitializer<K: SignatureKey + 'static> {
-    /// The local peer id
-    pub local_id: PeerId,
-
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, String>,
 
     /// The staked nodes to connect to.
     pub staked_nodes: Vec<PeerConfig<K>>,
@@ -43,14 +39,12 @@ pub struct NetworkInitializer<K: SignatureKey + 'static> {
 
 impl<K: SignatureKey + 'static> NetworkInitializer<K> {
     pub fn new(
-        local_id: PeerId,
         keypair: Keypair,
         staked_nodes: Vec<PeerConfig<K>>,
-        bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+        bootstrap_nodes: HashMap<PublicKey, String>,
         bind_address: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            local_id,
             bootstrap_nodes,
             staked_nodes,
             keypair,
@@ -60,7 +54,6 @@ impl<K: SignatureKey + 'static> NetworkInitializer<K> {
 
     pub async fn into_network(self, tx_ready: mpsc::Sender<()>) -> anyhow::Result<Network> {
         let net_fut = Network::start(
-            self.local_id,
             self.bind_address,
             self.keypair,
             self.bootstrap_nodes,
@@ -78,9 +71,7 @@ pub struct Network {
     /// Keypair of this node
     keypair: Keypair,
     /// Connections received from the transport layer
-    connections: Arc<RwLock<HashMap<PeerId, PeerComm>>>,
-    /// Mapping from public keys to peer Id
-    nodes: HashMap<PublicKey, (PeerId, String)>,
+    connections: Arc<RwLock<HashMap<PublicKey, PeerComm>>>,
     /// Channel for consuming messages from the network
     network_receiver: mpsc::Receiver<NetworkMessage>,
     /// Channel for sending messages from this node
@@ -91,20 +82,19 @@ pub struct Network {
 
 impl Network {
     pub async fn start(
-        local_id: PeerId,
         local_addr: String,
         keypair: Keypair,
-        to_connect: HashMap<PublicKey, (PeerId, String)>,
+        to_connect: HashMap<PublicKey, String>,
         ready_sender: mpsc::Sender<()>,
     ) -> Self {
-        let transport = Transport::run(local_id, local_addr, to_connect.clone(), &keypair).await;
+        let transport = Transport::run(local_addr, to_connect.clone(), &keypair).await;
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let (network_sender, network_receiver) = mpsc::channel(10000);
         let remote_nodes: HashSet<_> = to_connect
             .iter()
-            .filter_map(|(_, node)| {
-                if node.0 != local_id {
-                    Some(node.0)
+            .filter_map(|(pk, _)| {
+                if keypair.public_key() != *pk {
+                    Some(*pk)
                 } else {
                     None
                 }
@@ -112,8 +102,8 @@ impl Network {
             .collect();
         let (network_shutdown_sender, network_shutdown_receiver) = mpsc::channel(1);
         spawn(Self::run(
-            local_id,
             transport,
+            keypair.public_key(),
             Arc::clone(&connections),
             remote_nodes,
             network_sender.clone(),
@@ -123,7 +113,6 @@ impl Network {
         Self {
             keypair,
             connections,
-            nodes: to_connect,
             network_receiver,
             network_sender,
             network_shutdown_sender,
@@ -132,12 +121,12 @@ impl Network {
 
     /// Make sure that connections are made by the transport and
     /// set the network as ready when all connections are established
-    #[instrument(level = "trace", skip_all, fields(id = %local_id))]
+    #[instrument(level = "trace", skip_all, fields(id = %pk))]
     pub async fn run(
-        local_id: PeerId,
         mut transport: Transport,
-        connections: Arc<RwLock<HashMap<PeerId, PeerComm>>>,
-        to_connect: HashSet<PeerId>,
+        pk: PublicKey,
+        connections: Arc<RwLock<HashMap<PublicKey, PeerComm>>>,
+        to_connect: HashSet<PublicKey>,
         network_sender: Sender<NetworkMessage>,
         ready_sender: mpsc::Sender<()>,
         mut network_shutdown_receiver: mpsc::Receiver<()>,
@@ -147,7 +136,7 @@ impl Network {
         loop {
             tokio::select! {
                 Some(connection) = connection_receiver.recv() => {
-                    let remote_id = connection.remote_id;
+                    let remote_id = connection.remote_pk;
                     trace!("received connection from: {}", remote_id);
                     let sender = connection.tx.clone();
                     // Channel for sending outbound communication on the connection
@@ -156,7 +145,7 @@ impl Network {
                     connections
                         .write()
                         .await
-                        .insert(connection.remote_id, (outbound_sender, shutdown_sender));
+                        .insert(connection.remote_pk, (outbound_sender, shutdown_sender));
                     let task = spawn(Self::connection_task(
                         connection,
                         sender.clone(),
@@ -217,7 +206,7 @@ impl Network {
                     }
                 }
                 _ = shutdown_receiver.recv() => {
-                    trace!("shutting down connection to peer: {}", connection.remote_id);
+                    trace!("shutting down connection to peer: {}", connection.remote_pk);
                     break;
                 }
             }
@@ -265,20 +254,17 @@ impl Network {
                 NetworkError::ChannelSendError("error sending message to self".to_string())
             })?;
         }
-        if let Some((peer_id, _)) = self.nodes.get(&recipient) {
-            if let Some(connection) = self.connections.read().await.get(peer_id) {
-                connection.0.send(msg).await.map_err(|_| {
-                    NetworkError::ChannelSendError("error sending message".to_string())
-                })?;
-                return Ok(());
-            }
-            return Err(NetworkError::MessageSendError(
-                "connection not found".to_string(),
-            ));
-        }
-        Err(NetworkError::LookupError(
-            "unable to find the pid connected to the public key".to_string(),
-        ))
+        let connections = self.connections.read().await;
+        let (network_sender, _) = connections.get(&recipient).ok_or_else(|| {
+            NetworkError::LookupError(
+                "unable to find the connection for the public key".to_string(),
+            )
+        })?;
+        network_sender
+            .send(msg)
+            .await
+            .map_err(|_| NetworkError::ChannelSendError("error sending message".to_string()))?;
+        Ok(())
     }
 
     pub async fn recv_message(&mut self) -> Result<Vec<u8>, NetworkError> {

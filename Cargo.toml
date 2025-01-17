@@ -61,7 +61,6 @@ jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf
     "bls",
 ] }
 jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
-libp2p-identity = { version = "0.2.9", features = ["ed25519", "serde"] }
 multiaddr = "0.18.2"
 nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"

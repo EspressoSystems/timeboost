@@ -3,7 +3,6 @@ use std::{collections::HashMap, fs};
 use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
-use libp2p_identity::PeerId;
 use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::metrics::SailfishMetrics;
@@ -20,7 +19,7 @@ struct Cli {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    to_connect_addrs: HashMap<PublicKey, (PeerId, String)>,
+    to_connect_addrs: HashMap<PublicKey, String>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     id: NodeId,
     port: u16,

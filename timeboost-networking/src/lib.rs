@@ -1,36 +1,5 @@
-use libp2p_identity::{
-    ed25519::{self, SecretKey},
-    Keypair, PeerId,
-};
 use thiserror::Error;
-use timeboost_crypto::traits::signature_key::{PrivateSignatureKey, SignatureKey};
 pub mod network;
-
-/// Derive a Libp2p keypair from a given private key
-///
-/// # Errors
-/// If we are unable to derive a new `SecretKey` from the `blake3`-derived
-/// bytes.
-pub fn derive_keypair<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<Keypair> {
-    // Derive a secondary key from our primary private key
-    let derived_key = blake3::derive_key("libp2p key", &private_key.to_bytes());
-    let derived_key = SecretKey::try_from_bytes(derived_key)?;
-
-    // Create an `ed25519` keypair from the derived key
-    Ok(ed25519::Keypair::from(derived_key).into())
-}
-
-/// Derive a Libp2p Peer ID from a given private key
-///
-/// # Errors
-/// If we are unable to derive a Libp2p keypair
-pub fn derive_peer_id<K: SignatureKey>(private_key: &K::PrivateKey) -> anyhow::Result<PeerId> {
-    // Get the derived keypair
-    let keypair = derive_keypair::<K>(private_key)?;
-
-    // Return the PeerID derived from the public key
-    Ok(PeerId::from_public_key(&keypair.public()))
-}
 
 /// Errors that can occur in the network
 #[derive(Debug, Error)]
@@ -80,8 +49,12 @@ pub enum NetworkError {
     FailedToDeserialize(String),
 
     /// Failed to complete the noise handshake
-    #[error("Failed to serialize: {0}")]
+    #[error("Failed to complete noise handshake: {0}")]
     FailedToCompleteNoiseHandshake(String),
+
+    /// Failed to convert
+    #[error("Failed to convert to public key: {0}")]
+    FailedToConvertToPublicKey(String),
 
     /// Timed out performing an operation
     #[error("Timeout: {0}")]
