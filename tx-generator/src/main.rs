@@ -138,7 +138,6 @@ async fn main() {
 
                 let mut hosts = com_map
                     .into_values()
-                    .map(|v| v.1)
                     .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
                     .collect::<Vec<_>>();
 
