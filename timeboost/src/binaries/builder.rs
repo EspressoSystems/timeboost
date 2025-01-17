@@ -97,7 +97,6 @@ async fn main() -> Result<()> {
         let mut host = committee
             .bootstrap_nodes()
             .get(&keypair.public_key())
-            .map(|v| v.1.clone())
             .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
             .expect("host to be present");
 

@@ -49,10 +49,8 @@ impl TestableNetwork for BasicNetworkTest {
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i].clone();
-            let peer_id = self.group.peer_ids[i];
             let (ready_sender, mut ready_receiver) = mpsc::channel(1);
             let net_fut = NetworkInitializer::new(
-                peer_id,
                 kpr.clone(),
                 staked.clone(),
                 self.group.bootstrap_nodes.clone(),
@@ -81,7 +79,6 @@ impl TestableNetwork for BasicNetworkTest {
                     .bind_address(addr)
                     .network(test_net)
                     .committee(committee_clone)
-                    .peer_id(peer_id)
                     .metrics(SailfishMetrics::default())
                     .build()
                     .unwrap();

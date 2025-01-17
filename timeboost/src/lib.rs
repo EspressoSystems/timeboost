@@ -15,7 +15,6 @@ use sequencer::{
 use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_networking::derive_peer_id;
 use timeboost_networking::network::NetworkInitializer;
 use timeboost_utils::PeerConfig;
 use tokio::sync::mpsc;
@@ -25,7 +24,6 @@ use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
 
-use multiaddr::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
@@ -58,7 +56,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, String>,
 
     /// The staked nodes to join the committee with.
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
@@ -117,9 +115,7 @@ impl HasInitializer for Timeboost {
         let (tb_app_tx, tb_app_rx) = channel(100);
 
         let (tx_ready, mut rx_ready) = mpsc::channel(1);
-        let peer_id = derive_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
         let network_init = NetworkInitializer::new(
-            peer_id,
             initializer.keypair.clone(),
             initializer.staked_nodes.clone(),
             initializer.bootstrap_nodes,
@@ -150,7 +146,6 @@ impl HasInitializer for Timeboost {
             .network(rbc)
             .committee(committee.clone())
             .metrics(sf_metrics)
-            .peer_id(peer_id)
             .build()
             .expect("sailfish initializer to be built");
         let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();

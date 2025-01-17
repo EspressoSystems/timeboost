@@ -18,9 +18,6 @@ class CommitteeEntry:
     # Public key as bytes
     public_key: list[int]
 
-    # Peer Id as bytes
-    peer_id: list[int]
-
     # The ip address of the sender (for the bind addr)
     ip_addr: str
 
@@ -28,7 +25,6 @@ class CommitteeEntry:
         return {
             "node_id": self.node_id,
             "ip_addr": self.ip_addr,
-            "peer_id": self.peer_id,
             "public_key": self.public_key,
         }
 
@@ -36,7 +32,6 @@ class CommitteeEntry:
 class ReadyPayload(BaseModel):
     node_id: int
     public_key: list[int]
-    peer_id: list[int]
     node_port: int
 
 
@@ -62,7 +57,6 @@ def ready(request: Request, payload: ReadyPayload):
     e = CommitteeEntry(
         payload.node_id,
         payload.public_key,
-        payload.peer_id,
         f"{request.client[0]}:{payload.node_port}",
     )
     COMMITTEE.append(e)
