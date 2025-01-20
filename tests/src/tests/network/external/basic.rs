@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
+use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
 use sailfish::sailfish::Sailfish;
 use sailfish::sailfish::SailfishInitializerBuilder;
 use timeboost_core::traits::has_initializer::HasInitializer;
-use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_networking::Network;
