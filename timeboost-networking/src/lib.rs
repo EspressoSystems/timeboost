@@ -1,4 +1,5 @@
 mod error;
+mod frame;
 
 use std::{collections::HashMap, net::SocketAddr};
 use std::iter::repeat;
@@ -16,6 +17,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tokio::time::sleep;
 use tracing::{debug, error, trace, warn};
+
+use frame::Header;
 
 pub use error::{Empty, NetworkError};
 
@@ -358,19 +361,25 @@ async fn connect(this: x25519::Keypair, to: x25519::PublicKey, addr: SocketAddr)
 async fn handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
     let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
     let n = hs.write_message(&[], &mut b)?;
-    send_frame(&mut stream, &b[..n]).await?;
-    let m = recv_frame(&mut stream).await?;
+    send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
+    let (h, m) = recv_frame(&mut stream).await?;
+    if !h.is_data() || h.is_partial() {
+        return Err(NetworkError::InvalidHandshakeMessage)
+    }
     hs.read_message(&m, &mut b)?;
     Ok((stream, hs.into_transport_mode()?))
 }
 
 async fn on_handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
     stream.set_nodelay(true)?;
-    let m = recv_frame(&mut stream).await?;
+    let (h, m) = recv_frame(&mut stream).await?;
+    if !h.is_data() || h.is_partial() {
+        return Err(NetworkError::InvalidHandshakeMessage)
+    }
     let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
     hs.read_message(&m, &mut b)?;
     let n = hs.write_message(&[], &mut b)?;
-    send_frame(&mut stream, &b[..n]).await?;
+    send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
     Ok((stream, hs.into_transport_mode()?))
 }
 
@@ -382,12 +391,18 @@ where
     loop {
         let mut msg = Vec::new();
         loop {
-            let f = recv_frame(&mut r).await?;
+            let (h, f) = recv_frame(&mut r).await?;
+            if !h.is_data() {
+                continue
+            }
             let n = t.lock().read_message(&f, &mut buf)?;
-            if buf[..n].is_empty() {
+            msg.extend_from_slice(&buf[..n]);
+            if !h.is_partial() {
                 break
             }
-            msg.extend_from_slice(&buf[..n])
+            if msg.len() > MAX_PAYLOAD_SIZE {
+                return Err(NetworkError::MessageTooLarge)
+            }
         }
         if tx.send((k, msg)).await.is_err() {
             break
@@ -402,34 +417,37 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     while let Some(msg) = rx.recv().await {
-        for m in msg.chunks(MAX_PAYLOAD_SIZE).filter(|m| !m.is_empty()) {
+        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
+        while let Some(m) = it.next() {
             let n = t.lock().write_message(m, &mut buf)?;
-            send_frame(&mut w, &buf[..n]).await?
+            let h = if it.peek().is_some() {
+                Header::data(n as u16).partial()
+            } else {
+                Header::data(n as u16)
+            };
+            send_frame(&mut w, h, &buf[..n]).await?
         }
-        let n = t.lock().write_message(&[], &mut buf)?;
-        send_frame(&mut w, &buf[..n]).await?
     }
     Ok(())
 }
 
-async fn recv_frame<R>(r: &mut R) -> Result<Vec<u8>>
+async fn recv_frame<R>(r: &mut R) -> Result<(Header, Vec<u8>)>
 where
     R: AsyncRead + Unpin
 {
-    let n = r.read_u16().await?;
-    let mut v = vec![0; n.into()];
+    let b = r.read_u32().await?;
+    let h = Header::try_from(b.to_be_bytes())?;
+    let mut v = vec![0; h.len().into()];
     r.read_exact(&mut v).await?;
-    Ok(v)
+    Ok((h, v))
 }
 
-async fn send_frame<W>(w: &mut W, msg: &[u8]) -> Result<()>
+async fn send_frame<W>(w: &mut W, hdr: Header, msg: &[u8]) -> Result<()>
 where
     W: AsyncWrite + Unpin
 {
-    if msg.len() > u16::MAX.into() {
-        return Err(NetworkError::FrameTooLarge(msg.len()))
-    }
-    w.write_u16(msg.len() as u16).await?;
+    debug_assert_eq!(usize::from(hdr.len()), msg.len());
+    w.write_all(&hdr.to_bytes()[..]).await?;
     w.write_all(msg).await?;
     Ok(())
 }
