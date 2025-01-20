@@ -83,7 +83,6 @@ impl TestableNetwork for MemoryNetworkTest {
                 .bind_address(self.group.addrs[i].clone())
                 .network(test_net)
                 .committee(self.group.committee.clone())
-                .peer_id(self.group.peer_ids[i])
                 .metrics(SailfishMetrics::default())
                 .build()
                 .unwrap();

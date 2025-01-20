@@ -1,9 +1,7 @@
 use anyhow::Result;
-use libp2p_identity::PeerId;
 use multisig::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
-use timeboost_networking::derive_peer_id;
 use timeboost_utils::{PeerConfig, ValidatorConfig};
 use tokio::time::sleep;
 use tracing::{error, info};
@@ -15,7 +13,6 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 pub struct ReadyResponse {
     pub node_id: u64,
     pub ip_addr: String,
-    pub peer_id: Vec<u8>,
     pub public_key: Vec<u8>,
 }
 
@@ -35,12 +32,8 @@ pub async fn submit_ready(
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
-    let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key())
-        .expect("peer id to be generated successfully");
-    let peer_id_bytes = bincode::serialize(&peer_id).expect("peer id to serialize successfully");
-
     let registration = serde_json::to_string(
-        &serde_json::json!({ "node_id": node_id, "public_key": kpr.public_key().as_bytes(), "node_port": node_port,  "peer_id": peer_id_bytes }),
+        &serde_json::json!({ "node_id": node_id, "public_key": kpr.public_key().as_bytes(), "node_port": node_port }),
     )?;
 
     loop {
@@ -69,10 +62,7 @@ pub async fn submit_ready(
 
 pub async fn wait_for_committee(
     url: reqwest::Url,
-) -> Result<(
-    HashMap<PublicKey, (PeerId, String)>,
-    Vec<PeerConfig<PublicKey>>,
-)> {
+) -> Result<(HashMap<PublicKey, String>, Vec<PeerConfig<PublicKey>>)> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {
@@ -106,11 +96,7 @@ pub async fn wait_for_committee(
         bootstrap_nodes.insert(
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
-            (
-                bincode::deserialize::<PeerId>(&c.peer_id)
-                    .expect("peer id to deserialize successfully"),
-                c.ip_addr,
-            ),
+            c.ip_addr,
         );
         staked_nodes.push(cfg.public_config());
     }
