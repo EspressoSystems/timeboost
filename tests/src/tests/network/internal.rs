@@ -5,13 +5,13 @@ use crate::{tests::network::TestOutcome, Group};
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use sailfish::{
     coordinator::Coordinator,
+    metrics::SailfishMetrics,
     sailfish::{Sailfish, SailfishInitializerBuilder},
 };
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
     types::{
         message::Message,
-        metrics::SailfishMetrics,
         test::{
             message_interceptor::NetworkMessageInterceptor,
             net::{Conn, Star},

@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use metrics::TimeboostMetrics;
+use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
 use sailfish::{
     coordinator::Coordinator,
@@ -16,6 +18,7 @@ use sequencer::{
 };
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
+use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
@@ -27,7 +30,6 @@ use timeboost_core::{
     traits::has_initializer::HasInitializer,
     types::{
         event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
-        metrics::{prometheus::PrometheusMetrics, SailfishMetrics, TimeboostMetrics},
         NodeId,
     },
 };
@@ -41,6 +43,7 @@ pub mod api;
 pub mod config;
 pub mod contracts;
 mod mempool;
+pub mod metrics;
 mod producer;
 pub mod sequencer;
 

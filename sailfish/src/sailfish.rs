@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
-
+use crate::metrics::SailfishMetrics;
 use crate::rbc::{self, Rbc};
 use crate::{consensus::Consensus, coordinator::Coordinator};
+use std::net::SocketAddr;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,10 +9,7 @@ use derive_builder::Builder;
 use multisig::{Committee, Keypair, PublicKey};
 use std::collections::HashMap;
 use timeboost_core::traits::has_initializer::HasInitializer;
-use timeboost_core::{
-    traits::comm::Comm,
-    types::{metrics::SailfishMetrics, NodeId},
-};
+use timeboost_core::{traits::comm::Comm, types::NodeId};
 use timeboost_networking::Network;
 use timeboost_utils::PeerConfig;
 

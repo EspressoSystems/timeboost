@@ -4,10 +4,12 @@ use committable::Committable;
 use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
-use sailfish::consensus::{Consensus, Dag};
+use sailfish::{
+    consensus::{Consensus, Dag},
+    metrics::SailfishMetrics,
+};
 use timeboost_core::types::{
     message::{Evidence, Message, Timeout, TimeoutMessage},
-    metrics::SailfishMetrics,
     vertex::Vertex,
     NodeId,
 };

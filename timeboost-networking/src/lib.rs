@@ -1,5 +1,6 @@
 mod error;
 mod frame;
+pub mod metrics;
 
 use std::future::pending;
 use std::iter::repeat;
