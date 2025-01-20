@@ -3,6 +3,7 @@ use std::error::Error;
 use crate::types::message::Message;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use multisig::{Committee, PublicKey, Unchecked, Validated};
 use timeboost_networking::{Network, NetworkError};
 
@@ -28,11 +29,11 @@ pub trait Comm {
 pub trait RawComm {
     type Err: Error + Send + Sync + 'static;
 
-    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err>;
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err>;
 
-    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err>;
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err>;
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err>;
+    async fn receive(&mut self) -> Result<Bytes, Self::Err>;
 
     async fn shutdown(&mut self) -> Result<(), Self::Err>;
 }
@@ -62,15 +63,15 @@ impl<T: Comm + Send> Comm for Box<T> {
 impl<T: RawComm + Send> RawComm for Box<T> {
     type Err = T::Err;
 
-    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
         (**self).broadcast(msg).await
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
         (**self).send(to, msg).await
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+    async fn receive(&mut self) -> Result<Bytes, Self::Err> {
         (**self).receive().await
     }
 
@@ -83,15 +84,15 @@ impl<T: RawComm + Send> RawComm for Box<T> {
 impl RawComm for Network {
     type Err = NetworkError;
 
-    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
         self.multicast(msg).await
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
         self.unicast(to, msg).await
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+    async fn receive(&mut self) -> Result<Bytes, Self::Err> {
         let (_, m) = self.receive().await?;
         Ok(m)
     }
@@ -119,13 +120,13 @@ impl<R: RawComm + Send> Comm for CheckedComm<R> {
     type Err = CommError<R::Err>;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes = bincode::serialize(&msg)?;
+        let bytes = Bytes::from(bincode::serialize(&msg)?);
         self.net.broadcast(bytes).await.map_err(CommError::Net)?;
         Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes = bincode::serialize(&msg)?;
+        let bytes = Bytes::from(bincode::serialize(&msg)?);
         self.net.send(to, bytes).await.map_err(CommError::Net)?;
         Ok(())
     }

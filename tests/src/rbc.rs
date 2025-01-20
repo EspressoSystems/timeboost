@@ -23,8 +23,8 @@ type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 
 #[derive(Debug)]
 pub struct TurmoilComm {
-    tx: UnboundedSender<(Option<PublicKey>, Vec<u8>)>,
-    rx: UnboundedReceiver<Vec<u8>>,
+    tx: UnboundedSender<(Option<PublicKey>, Bytes)>,
+    rx: UnboundedReceiver<Bytes>,
     jh: JoinHandle<()>,
 }
 
@@ -67,21 +67,21 @@ impl TurmoilComm {
 impl RawComm for TurmoilComm {
     type Err = io::Error;
 
-    async fn broadcast(&mut self, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
         self.tx
             .send((None, msg))
             .map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
         Ok(())
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
         self.tx
             .send((Some(to), msg))
             .map_err(|_| io::Error::from(ErrorKind::WriteZero))?;
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+    async fn receive(&mut self) -> Result<Bytes, Self::Err> {
         if let Some(msg) = self.rx.recv().await {
             return Ok(msg);
         } else {
@@ -96,8 +96,8 @@ impl RawComm for TurmoilComm {
 
 struct Worker {
     config: HashMap<PublicKey, (String, u16)>,
-    tx: UnboundedSender<Vec<u8>>,
-    rx: UnboundedReceiver<(Option<PublicKey>, Vec<u8>)>,
+    tx: UnboundedSender<Bytes>,
+    rx: UnboundedReceiver<(Option<PublicKey>, Bytes)>,
     listener: TcpListener,
     reader_tasks: JoinSet<io::Result<()>>,
     connect_tasks: JoinSet<io::Result<(Reader, Writer)>>,
@@ -144,9 +144,8 @@ impl Worker {
                 },
                 Some(o) = self.rx.recv() => {
                     match o {
-                        (None, msg) => {
+                        (None, bytes) => {
                             trace!("broadcasting message");
-                            let bytes = Bytes::from(msg);
                             for &k in self.config.keys() {
                                 debug!("establishing connection");
                                 let bytes = bytes.clone();
@@ -158,9 +157,8 @@ impl Worker {
                                 });
                             }
                         }
-                        (Some(to), msg) => {
+                        (Some(to), bytes) => {
                             trace!("sending message");
-                            let bytes = Bytes::from(msg);
                             let addr = self.resolve(&to);
                             self.connect_tasks.spawn(async move {
                                 let (r, mut w) = connect(addr).await?;
@@ -197,11 +195,11 @@ fn codec(sock: TcpStream) -> (Reader, Writer) {
     (r, w)
 }
 
-async fn read_loop(mut r: Reader, tx: UnboundedSender<Vec<u8>>) -> io::Result<()> {
+async fn read_loop(mut r: Reader, tx: UnboundedSender<Bytes>) -> io::Result<()> {
     loop {
         match r.try_next().await {
             Ok(Some(x)) => {
-                if tx.send(x.to_vec()).is_err() {
+                if tx.send(x.into()).is_err() {
                     return Ok(());
                 }
             }

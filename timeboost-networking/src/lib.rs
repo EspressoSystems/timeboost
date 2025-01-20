@@ -8,6 +8,7 @@ use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
+use bytes::{Bytes, BytesMut};
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
@@ -43,12 +44,12 @@ pub struct Network {
     ///
     /// If a public key is present, it will result in a uni-cast,
     /// otherwise the message will be sent to all parties.
-    tx: Sender<(Option<PublicKey>, Vec<u8>)>,
+    tx: Sender<(Option<PublicKey>, Bytes)>,
 
     /// MPSC receiver of messages from a remote party.
     ///
     /// The public key identifies the remote.
-    rx: Receiver<(PublicKey, Vec<u8>)>,
+    rx: Receiver<(PublicKey, Bytes)>,
 
     /// Handle of the server task that has been spawned by `Network`.
     srv: JoinHandle<Result<Empty>>,
@@ -73,12 +74,12 @@ struct Server {
     /// MPSC sender for messages received over a connection to a party.
     ///
     /// (see `Network` for the accompanying receiver).
-    ibound: Sender<(PublicKey, Vec<u8>)>,
+    ibound: Sender<(PublicKey, Bytes)>,
 
     /// MPSC receiver for messages to be sent to remote parties.
     ///
     /// (see `Network` for the accompanying sender).
-    obound: Receiver<(Option<PublicKey>, Vec<u8>)>,
+    obound: Receiver<(Option<PublicKey>, Bytes)>,
 
     /// All parties of the network and their addresses.
     peers: HashMap<PublicKey, SocketAddr>,
@@ -113,7 +114,7 @@ struct IoTask {
     wh: AbortHandle,
 
     /// MPSC sender of incoming messages from the remote.
-    tx: Sender<Vec<u8>>,
+    tx: Sender<Bytes>,
 }
 
 // Make sure all tasks are stopped when `IoTask` is dropped.
@@ -169,7 +170,7 @@ impl Network {
     }
 
     /// Send a message to a party, identified by the given public key.
-    pub async fn unicast(&self, to: PublicKey, msg: Vec<u8>) -> Result<()> {
+    pub async fn unicast(&self, to: PublicKey, msg: Bytes) -> Result<()> {
         self.tx
             .send((Some(to), msg))
             .await
@@ -177,7 +178,7 @@ impl Network {
     }
 
     /// Send a message to all parties.
-    pub async fn multicast(&self, msg: Vec<u8>) -> Result<()> {
+    pub async fn multicast(&self, msg: Bytes) -> Result<()> {
         self.tx
             .send((None, msg))
             .await
@@ -185,7 +186,7 @@ impl Network {
     }
 
     /// Receive a message from a remote party.
-    pub async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>)> {
+    pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
         self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
     }
 }
@@ -492,14 +493,14 @@ async fn recv_loop<R>(
     k: PublicKey,
     mut r: R,
     t: Arc<Mutex<TransportState>>,
-    tx: Sender<(PublicKey, Vec<u8>)>,
+    tx: Sender<(PublicKey, Bytes)>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
-        let mut msg = Vec::new();
+        let mut msg = BytesMut::new();
         loop {
             let (h, f) = recv_frame(&mut r).await?;
             if !h.is_data() {
@@ -515,7 +516,7 @@ where
                 return Err(NetworkError::MessageTooLarge);
             }
         }
-        if tx.send((k, msg)).await.is_err() {
+        if tx.send((k, msg.into())).await.is_err() {
             break;
         }
     }
@@ -529,7 +530,7 @@ where
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
-    mut rx: Receiver<Vec<u8>>,
+    mut rx: Receiver<Bytes>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,

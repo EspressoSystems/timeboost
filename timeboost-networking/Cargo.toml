@@ -4,8 +4,14 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[[bench]]
+name = "network_bytes"
+harness = false
+
 [dependencies]
 bimap = { workspace = true }
+bytes = { workspace = true }
+criterion = "0.5"
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rand = { workspace = true }
