@@ -17,17 +17,6 @@ build_docker:
   docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
   docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
-bench:
-  cargo bench --benches -- --nocapture
-
-test *ARGS:
-  cargo nextest run {{ARGS}}
-  @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
-
-test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 {{ARGS}}
-  RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
-
 ####################
 ###CHECK COMMANDS###
 ####################
