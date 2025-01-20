@@ -1,5 +1,6 @@
+
 global:
-  scrape_interval: 15s
+  scrape_interval: 5s
 
 scrape_configs:
 - job_name: status
@@ -10,4 +11,14 @@ scrape_configs:
       - 172.20.0.4:9002
       - 172.20.0.5:9003
       - 172.20.0.6:9004
+  metrics_path: /v0/status/metrics
+- job_name: cloud_status
+  static_configs:
+    - targets:
+      
+      - 52.15.143.173:9000
+      - 52.15.66.81:9000
+      - 52.14.48.134:9000
+      - 13.58.105.45:9000
+      - 18.118.164.251:9000
   metrics_path: /v0/status/metrics

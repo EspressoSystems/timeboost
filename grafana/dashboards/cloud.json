@@ -84,7 +84,10 @@
       "type": "gauge"
     },
     {
-      "datasource": "prom1",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PABF2E7BD7AE7B0F4"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -138,38 +141,13 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "{__name__=\"committed_round\", instance=\"172.20.0.4:9002\", job=\"status\"}"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 0
       },
       "id": 1,
       "options": {
@@ -184,13 +162,13 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "11.3.0",
+      "pluginVersion": "11.4.0",
       "targets": [
         {
           "datasource": "prom1",
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "committed_round{instance=\"172.20.0.2:9000\"}",
+          "expr": "committed_round{instance=\"52.15.143.173:9000\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "__auto",
@@ -202,11 +180,9 @@
           "datasource": "prom1",
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "committed_round{instance=\"172.20.0.3:9001\"}",
+          "expr": "committed_round{instance=\"52.15.66.81:9000\"}",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": true,
-          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "B",
@@ -216,11 +192,9 @@
           "datasource": "prom1",
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "committed_round{instance=\"172.20.0.4:9002\"}",
+          "expr": "committed_round{instance=\"52.14.48.134:9000\"}",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": true,
-          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "C",
@@ -230,11 +204,9 @@
           "datasource": "prom1",
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "committed_round{instance=\"172.20.0.5:9003\"}",
+          "expr": "committed_round{instance=\"13.58.105.45:9000\"}",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": true,
-          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "D",
@@ -244,11 +216,9 @@
           "datasource": "prom1",
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "committed_round{instance=\"172.20.0.6:9004\"}",
+          "expr": "committed_round{instance=\"18.118.164.251:9000\"}",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": true,
-          "instant": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "E",
@@ -272,8 +242,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Committed Round And Average Round Time",
-  "uid": "bea3gveiqnls0c",
-  "version": 2,
+  "title": "Cloud Dashboard",
+  "uid": "fea3obtksxqf4f",
+  "version": 4,
   "weekStart": ""
 }
