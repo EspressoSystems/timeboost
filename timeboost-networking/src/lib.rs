@@ -36,10 +36,21 @@ const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 /// Noise parameters to initialize the builders
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
+/// `Network` is the API facade of this crate.
 #[derive(Debug)]
 pub struct Network {
+    /// MPSC sender of messages to be sent to remote parties.
+    ///
+    /// If a public key is present, it will result in a uni-cast,
+    /// otherwise the message will be sent to all parties.
     tx: Sender<(Option<PublicKey>, Vec<u8>)>,
+
+    /// MPSC receiver of messages from a remote party.
+    ///
+    /// The public key identifies the remote.
     rx: Receiver<(PublicKey, Vec<u8>)>,
+
+    /// Handle of the server task that has been spawned by `Network`.
     srv: JoinHandle<Result<Empty>>,
 }
 
@@ -49,28 +60,63 @@ impl Drop for Network {
     }
 }
 
+/// The `Server` is accepting connections and also establishing and
+/// maintaining connections with all parties.
 #[derive(Debug)]
 struct Server {
+    /// This server's public key.
     key: PublicKey,
+
+    /// The X25519 keypair, used with Noise.
     keypair: x25519::Keypair,
+
+    /// MPSC sender for messages received over a connection to a party.
+    ///
+    /// (see `Network` for the accompanying receiver).
     ibound: Sender<(PublicKey, Vec<u8>)>,
+
+    /// MPSC receiver for messages to be sent to remote parties.
+    ///
+    /// (see `Network` for the accompanying sender).
     obound: Receiver<(Option<PublicKey>, Vec<u8>)>,
+
+    /// All parties of the network and their addresses.
     peers: HashMap<PublicKey, SocketAddr>,
+
+    /// Bi-directional mapping of Ed25519 and X25519 keys to identify
+    /// remote parties.
     index: BiHashMap<PublicKey, x25519::PublicKey>,
+
+    /// Find the public key given a tokio task ID.
     task2key: HashMap<tokio::task::Id, PublicKey>,
+
+    /// Currently active connections (post handshake).
     active: HashMap<PublicKey, IoTask>,
+
+    /// Tasks performing a handshake with a remote party.
     handshake_tasks: JoinSet<Result<(TcpStream, TransportState)>>,
+
+    /// Tasks connecting to a remote party and performing a handshake.
     connect_tasks: JoinSet<(TcpStream, TransportState)>,
+
+    /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
 }
 
+/// An I/O task, reading data from and writing data to a remote party.
 #[derive(Debug)]
 struct IoTask {
+    /// Abort handle of the read-half of the connection.
     rh: AbortHandle,
+
+    /// Abort handle of the write-half of the connection.
     wh: AbortHandle,
-    tx: mpsc::Sender<Vec<u8>>,
+
+    /// MPSC sender of incoming messages from the remote.
+    tx: Sender<Vec<u8>>,
 }
 
+// Make sure all tasks are stopped when `IoTask` is dropped.
 impl Drop for IoTask {
     fn drop(&mut self) {
         self.rh.abort();
@@ -122,6 +168,7 @@ impl Network {
         })
     }
 
+    /// Send a message to a party, identified by the given public key.
     pub async fn unicast(&self, to: PublicKey, msg: Vec<u8>) -> Result<()> {
         self.tx
             .send((Some(to), msg))
@@ -129,6 +176,7 @@ impl Network {
             .map_err(|_| NetworkError::ChannelClosed)
     }
 
+    /// Send a message to all parties.
     pub async fn multicast(&self, msg: Vec<u8>) -> Result<()> {
         self.tx
             .send((None, msg))
@@ -136,6 +184,7 @@ impl Network {
             .map_err(|_| NetworkError::ChannelClosed)
     }
 
+    /// Receive a message from a remote party.
     pub async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>)> {
         self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
     }
@@ -159,6 +208,7 @@ impl Server {
             trace!(n = %self.key, a = %self.active.len(), t = %self.task2key.len());
 
             tokio::select! {
+                // Accepted a new connection.
                 i = listener.accept() => match i {
                     Ok((s, a)) => {
                         debug!(n = %self.key, %a, "accepted connection");
@@ -168,11 +218,15 @@ impl Server {
                         warn!(n = %self.key, %e, "error accepting connection")
                     }
                 },
+                // The handshake of an inbound connection completed.
                 Some(h) = self.handshake_tasks.join_next() => match h {
                     Ok(Ok((s, t))) => {
                         let Some(k) = self.lookup_peer(&t) else {
                             continue
                         };
+                        // We only accept connections whose party has a public key that
+                        // is larger than ours, or if we do not have a connection for
+                        // that key at the moment.
                         if k > self.key || !self.active.contains_key(&k) {
                             self.spawn_io(s, t)
                         } else {
@@ -188,11 +242,14 @@ impl Server {
                         }
                     }
                 },
+                // One of our connection attempts completed.
                 Some(tt) = self.connect_tasks.join_next() => match tt {
                     Ok((s, t)) => {
                         let Some(k) = self.lookup_peer(&t) else {
                             continue
                         };
+                        // We only keep the connection if our key is larger than the remote,
+                        // or if we do not have a connection for that key at the moment.
                         if k < self.key || !self.active.contains_key(&k) {
                             self.spawn_io(s, t)
                         } else {
@@ -205,6 +262,7 @@ impl Server {
                         }
                     }
                 },
+                // A read or write task completed.
                 Some(io) = self.io_tasks.join_next_with_id() => {
                     match io {
                         Ok((id, r)) => {
@@ -215,6 +273,7 @@ impl Server {
                                 error!(n = %self.key, "no key for task");
                                 continue
                             };
+                            // Try to re-connect to the party:
                             if let Some(task) = self.active.get(&k) {
                                 if task.rh.id() == id {
                                     debug!(n = %self.key, %k, "read-half closed => dropping connection");
@@ -231,13 +290,17 @@ impl Server {
                         }
                         Err(e) => {
                             if e.is_cancelled() {
+                                // If one half completes we cancel the other, so there is
+                                // nothing else to do here.
                                 continue
                             }
+                            // If the task has not been cancelled, it must have panicked.
                             error!(n = %self.key, %e, "i/o task panic");
                             let Some(k) = self.task2key.remove(&e.id()) else {
                                 error!(n = %self.key, "no key for task");
                                 continue
                             };
+                            // Try to re-connect to the party:
                             if let Some(task) = self.active.get(&k) {
                                 if task.rh.id() == e.id() {
                                     debug!(n = %self.key, %k, "read-half closed => dropping connection");
@@ -254,7 +317,9 @@ impl Server {
                         }
                     };
                 },
+                // A new message to send out has been given to us:
                 msg = self.obound.recv() => match msg {
+                    // Uni-cast
                     Some((Some(to), m)) => {
                         if to == self.key {
                             let _ = self.ibound.try_send((self.key, m));
@@ -267,6 +332,7 @@ impl Server {
                             }
                         }
                     }
+                    // Multi-cast
                     Some((None, m)) => {
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
@@ -326,6 +392,7 @@ impl Server {
         self.active.insert(k, io);
     }
 
+    /// Get the public key of a party by their static X25519 public key.
     fn lookup_peer(&self, t: &TransportState) -> Option<PublicKey> {
         let k = t.get_remote_static()?;
         let k = x25519::PublicKey::try_from(k).ok()?;
@@ -333,6 +400,10 @@ impl Server {
     }
 }
 
+/// Connect to the given socket address.
+///
+/// This function will only return, when a connection has been established and the handshake
+/// has been completed.
 async fn connect(
     this: x25519::Keypair,
     to: x25519::PublicKey,
@@ -381,6 +452,7 @@ async fn connect(
     unreachable!("for loop repeats forever")
 }
 
+/// Perform a noise handshake as initiator with the remote party.
 async fn handshake(
     mut hs: HandshakeState,
     mut stream: TcpStream,
@@ -396,6 +468,7 @@ async fn handshake(
     Ok((stream, hs.into_transport_mode()?))
 }
 
+/// Perform a noise handshake as responder with a remote party.
 async fn on_handshake(
     mut hs: HandshakeState,
     mut stream: TcpStream,
@@ -412,6 +485,9 @@ async fn on_handshake(
     Ok((stream, hs.into_transport_mode()?))
 }
 
+/// Read messages from the remote by assembling frames together.
+///
+/// Once complete the message will be handed over to the given MPSC sender.
 async fn recv_loop<R>(
     k: PublicKey,
     mut r: R,
@@ -427,6 +503,7 @@ where
         loop {
             let (h, f) = recv_frame(&mut r).await?;
             if !h.is_data() {
+                // TODO: Ping handling.
                 continue;
             }
             let n = t.lock().read_message(&f, &mut buf)?;
@@ -445,6 +522,10 @@ where
     Ok(())
 }
 
+/// Consume messages to be delivered to remote parties and send them.
+///
+/// The function automatically splits large messages into chunks that fit into
+/// a noise package.
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
@@ -469,6 +550,7 @@ where
     Ok(())
 }
 
+/// Read a single frame (header + payload) from the remote.
 async fn recv_frame<R>(r: &mut R) -> Result<(Header, Vec<u8>)>
 where
     R: AsyncRead + Unpin,
@@ -480,6 +562,7 @@ where
     Ok((h, v))
 }
 
+/// Write a single frame (header + payload) to the remote.
 async fn send_frame<W>(w: &mut W, hdr: Header, msg: &[u8]) -> Result<()>
 where
     W: AsyncWrite + Unpin,

@@ -1,3 +1,5 @@
+/// The header of a frame.
+//
 //  0                   1                   2                   3
 //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -15,47 +17,56 @@
 // - Partial (1 bit)
 // - Reserved (8 bits)
 // - Payload length (16 bits)
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Header(u32);
 
 impl Header {
+    /// Create a data header with the given payload length.
     pub fn data(len: u16) -> Self {
         Self(len as u32)
     }
 
+    /// Create a ping header with the given payload length.
     pub fn ping(len: u16) -> Self {
         Self(0x1000000 | len as u32)
     }
 
+    /// Create a pong header with the given payload length.
     pub fn pong(len: u16) -> Self {
         Self(0x2000000 | len as u32)
     }
 
+    /// Set the partial flag to indicate that more frames follow.
     pub fn partial(self) -> Self {
         Self(self.0 | 0x800000)
     }
 
+    /// Is this a data frame header?
     pub fn is_data(self) -> bool {
         self.0 & 0xF000000 == 0
     }
 
+    /// Is this a ping frame header?
     pub fn is_ping(self) -> bool {
         self.0 & 0xF000000 == 0x1000000
     }
 
+    /// Is this a pong frame header?
     pub fn is_pong(self) -> bool {
         self.0 & 0xF000000 == 0x2000000
     }
 
+    /// Is this a partial frame?
     pub fn is_partial(self) -> bool {
         self.0 & 0x800000 == 0x800000
     }
 
+    /// Get the payload length.
     pub fn len(self) -> u16 {
         (self.0 & 0xFFFF) as u16
     }
 
+    /// Convert this header into a byte array.
     pub fn to_bytes(self) -> [u8; 4] {
         self.into()
     }

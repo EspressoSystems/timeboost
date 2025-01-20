@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::frame::InvalidHeader;
 
+/// The empty type has no values.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Empty {}
 
