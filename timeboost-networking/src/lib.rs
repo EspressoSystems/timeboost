@@ -1,21 +1,24 @@
 mod error;
 mod frame;
 
-use std::{collections::HashMap, net::SocketAddr};
-use std::iter::repeat;
 use std::future::pending;
+use std::iter::repeat;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
-use tokio::{spawn, task::{AbortHandle, JoinHandle, JoinSet}};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, Sender, Receiver};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
+use tokio::{
+    spawn,
+    task::{AbortHandle, JoinHandle, JoinSet},
+};
 use tracing::{debug, error, trace, warn};
 
 use frame::Header;
@@ -37,7 +40,7 @@ const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 pub struct Network {
     tx: Sender<(Option<PublicKey>, Vec<u8>)>,
     rx: Receiver<(PublicKey, Vec<u8>)>,
-    srv: JoinHandle<Result<Empty>>
+    srv: JoinHandle<Result<Empty>>,
 }
 
 impl Drop for Network {
@@ -58,14 +61,14 @@ struct Server {
     active: HashMap<PublicKey, IoTask>,
     handshake_tasks: JoinSet<Result<(TcpStream, TransportState)>>,
     connect_tasks: JoinSet<(TcpStream, TransportState)>,
-    io_tasks: JoinSet<Result<()>>
+    io_tasks: JoinSet<Result<()>>,
 }
 
 #[derive(Debug)]
 struct IoTask {
     rh: AbortHandle,
     wh: AbortHandle,
-    tx: mpsc::Sender<Vec<u8>>
+    tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl Drop for IoTask {
@@ -78,7 +81,7 @@ impl Drop for IoTask {
 impl Network {
     pub async fn create<P>(bind_to: SocketAddr, kp: Keypair, group: P) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>
+        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
     {
         let label = kp.public_key();
         let keys = x25519::Keypair::try_from(kp).expect("ed25519 -> x25519");
@@ -109,22 +112,28 @@ impl Network {
             task2key: HashMap::new(),
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
-            io_tasks: JoinSet::new()
+            io_tasks: JoinSet::new(),
         };
 
         Ok(Self {
             rx: irx,
             tx: otx,
-            srv: spawn(server.run(listener))
+            srv: spawn(server.run(listener)),
         })
     }
 
     pub async fn unicast(&self, to: PublicKey, msg: Vec<u8>) -> Result<()> {
-        self.tx.send((Some(to), msg)).await.map_err(|_| NetworkError::ChannelClosed)
+        self.tx
+            .send((Some(to), msg))
+            .await
+            .map_err(|_| NetworkError::ChannelClosed)
     }
 
     pub async fn multicast(&self, msg: Vec<u8>) -> Result<()> {
-        self.tx.send((None, msg)).await.map_err(|_| NetworkError::ChannelClosed)
+        self.tx
+            .send((None, msg))
+            .await
+            .map_err(|_| NetworkError::ChannelClosed)
     }
 
     pub async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>)> {
@@ -139,10 +148,11 @@ impl Server {
 
         for (k, a) in &self.peers {
             if *k == self.key {
-                continue
+                continue;
             }
             let x = self.index.get_by_left(k).expect("known public key");
-            self.connect_tasks.spawn(connect(self.keypair.clone(), *x, *a));
+            self.connect_tasks
+                .spawn(connect(self.keypair.clone(), *x, *a));
         }
 
         loop {
@@ -281,7 +291,8 @@ impl Server {
     fn spawn_connect(&mut self, k: PublicKey) {
         let x = self.index.get_by_left(&k).expect("known public key");
         let a = self.peers.get(&k).expect("known address");
-        self.connect_tasks.spawn(connect(self.keypair.clone(), *x, *a));
+        self.connect_tasks
+            .spawn(connect(self.keypair.clone(), *x, *a));
     }
 
     fn spawn_handshake(&mut self, s: TcpStream) {
@@ -295,7 +306,7 @@ impl Server {
     fn spawn_io(&mut self, s: TcpStream, t: TransportState) {
         let Some(k) = self.lookup_peer(&t) else {
             debug!(n = %self.key, a = ?s.peer_addr().ok(), "unknown peer");
-            return
+            return;
         };
         debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");
         let (to_remote, from_remote) = mpsc::channel(256);
@@ -307,7 +318,12 @@ impl Server {
         let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
-        self.active.insert(k, IoTask { rh, wh, tx: to_remote });
+        let io = IoTask {
+            rh,
+            wh,
+            tx: to_remote,
+        };
+        self.active.insert(k, io);
     }
 
     fn lookup_peer(&self, t: &TransportState) -> Option<PublicKey> {
@@ -317,7 +333,11 @@ impl Server {
     }
 }
 
-async fn connect(this: x25519::Keypair, to: x25519::PublicKey, addr: SocketAddr) -> (TcpStream, TransportState) {
+async fn connect(
+    this: x25519::Keypair,
+    to: x25519::PublicKey,
+    addr: SocketAddr,
+) -> (TcpStream, TransportState) {
     use rand::prelude::*;
 
     let new_handshake_state = || {
@@ -328,21 +348,24 @@ async fn connect(this: x25519::Keypair, to: x25519::PublicKey, addr: SocketAddr)
             .expect("valid noise params yield valid handshake state")
     };
 
-    let i = rand::thread_rng().gen_range(0 ..= 1000);
+    let i = rand::thread_rng().gen_range(0..=1000);
 
-    for d in [i, 1000, 3000, 6000, 10_000, 15_000].into_iter().chain(repeat(30_000)) {
+    for d in [i, 1000, 3000, 6000, 10_000, 15_000]
+        .into_iter()
+        .chain(repeat(30_000))
+    {
         sleep(Duration::from_millis(d)).await;
         debug!(%to, a = %addr, "connecting");
         match TcpStream::connect(addr).await {
             Ok(s) => {
                 if let Err(e) = s.set_nodelay(true) {
                     error!(%e, "failed to set NO_DELAY socket option");
-                    continue
+                    continue;
                 }
                 match handshake(new_handshake_state(), s).await {
                     Ok(x) => {
                         debug!(%to, a = %addr, "connection established");
-                        return x
+                        return x;
                     }
                     Err(e) => {
                         warn!(%e, %addr, "handshake failure");
@@ -358,23 +381,29 @@ async fn connect(this: x25519::Keypair, to: x25519::PublicKey, addr: SocketAddr)
     unreachable!("for loop repeats forever")
 }
 
-async fn handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
+async fn handshake(
+    mut hs: HandshakeState,
+    mut stream: TcpStream,
+) -> Result<(TcpStream, TransportState)> {
     let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
     let (h, m) = recv_frame(&mut stream).await?;
     if !h.is_data() || h.is_partial() {
-        return Err(NetworkError::InvalidHandshakeMessage)
+        return Err(NetworkError::InvalidHandshakeMessage);
     }
     hs.read_message(&m, &mut b)?;
     Ok((stream, hs.into_transport_mode()?))
 }
 
-async fn on_handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(TcpStream, TransportState)> {
+async fn on_handshake(
+    mut hs: HandshakeState,
+    mut stream: TcpStream,
+) -> Result<(TcpStream, TransportState)> {
     stream.set_nodelay(true)?;
     let (h, m) = recv_frame(&mut stream).await?;
     if !h.is_data() || h.is_partial() {
-        return Err(NetworkError::InvalidHandshakeMessage)
+        return Err(NetworkError::InvalidHandshakeMessage);
     }
     let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
     hs.read_message(&m, &mut b)?;
@@ -383,9 +412,14 @@ async fn on_handshake(mut hs: HandshakeState, mut stream: TcpStream) -> Result<(
     Ok((stream, hs.into_transport_mode()?))
 }
 
-async fn recv_loop<R>(k: PublicKey, mut r: R, t: Arc<Mutex<TransportState>>, tx: Sender<(PublicKey, Vec<u8>)>) -> Result<()>
+async fn recv_loop<R>(
+    k: PublicKey,
+    mut r: R,
+    t: Arc<Mutex<TransportState>>,
+    tx: Sender<(PublicKey, Vec<u8>)>,
+) -> Result<()>
 where
-    R: AsyncRead + Unpin
+    R: AsyncRead + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     loop {
@@ -393,27 +427,31 @@ where
         loop {
             let (h, f) = recv_frame(&mut r).await?;
             if !h.is_data() {
-                continue
+                continue;
             }
             let n = t.lock().read_message(&f, &mut buf)?;
             msg.extend_from_slice(&buf[..n]);
             if !h.is_partial() {
-                break
+                break;
             }
             if msg.len() > MAX_PAYLOAD_SIZE {
-                return Err(NetworkError::MessageTooLarge)
+                return Err(NetworkError::MessageTooLarge);
             }
         }
         if tx.send((k, msg)).await.is_err() {
-            break
+            break;
         }
     }
     Ok(())
 }
 
-async fn send_loop<W>(mut w: W, t: Arc<Mutex<TransportState>>, mut rx: Receiver<Vec<u8>>) -> Result<()>
+async fn send_loop<W>(
+    mut w: W,
+    t: Arc<Mutex<TransportState>>,
+    mut rx: Receiver<Vec<u8>>,
+) -> Result<()>
 where
-    W: AsyncWrite + Unpin
+    W: AsyncWrite + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     while let Some(msg) = rx.recv().await {
@@ -433,7 +471,7 @@ where
 
 async fn recv_frame<R>(r: &mut R) -> Result<(Header, Vec<u8>)>
 where
-    R: AsyncRead + Unpin
+    R: AsyncRead + Unpin,
 {
     let b = r.read_u32().await?;
     let h = Header::try_from(b.to_be_bytes())?;
@@ -444,7 +482,7 @@ where
 
 async fn send_frame<W>(w: &mut W, hdr: Header, msg: &[u8]) -> Result<()>
 where
-    W: AsyncWrite + Unpin
+    W: AsyncWrite + Unpin,
 {
     debug_assert_eq!(usize::from(hdr.len()), msg.len());
     w.write_all(&hdr.to_bytes()[..]).await?;

@@ -129,4 +129,3 @@ impl TryFrom<&[u8]> for PublicKey {
         Ok(Self { key: k })
     }
 }
-

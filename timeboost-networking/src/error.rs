@@ -29,4 +29,3 @@ pub enum NetworkError {
     #[error("channel closed")]
     ChannelClosed,
 }
-

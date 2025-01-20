@@ -1,5 +1,5 @@
-use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::Result;
+use std::net::{Ipv4Addr, SocketAddr};
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
     Timeboost, TimeboostInitializer,

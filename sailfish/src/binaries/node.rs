@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fs, net::{Ipv4Addr, SocketAddr}};
+use std::{
+    collections::HashMap,
+    fs,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;

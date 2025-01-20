@@ -116,7 +116,7 @@ impl HasInitializer for Timeboost {
         let (tb_app_tx, tb_app_rx) = channel(100);
 
         let network = Network::create(
-            initializer.bind_address.clone(),
+            initializer.bind_address,
             initializer.keypair.clone(),
             initializer.bootstrap_nodes,
         )

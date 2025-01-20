@@ -1,9 +1,10 @@
 //  0                   1                   2                   3
 //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |       |       |F|             |                               |
-// |Version|  Type |i|  Reserved   |        Payload length         |
-// |       |       |n|             |                               |
+// |       |       |P|             |                               |
+// |Version|  Type |a|  Reserved   |        Payload length         |
+// |       |       |r|             |                               |
+// |       |       |t|             |                               |
 // +-------+-------+-+-------------+-------------------------------+
 //
 // - Version (4 bits)
@@ -11,7 +12,7 @@
 //    - Data (0)
 //    - Ping (1)
 //    - Pong (2)
-// - Fin (1 bit)
+// - Partial (1 bit)
 // - Reserved (8 bits)
 // - Payload length (16 bits)
 
@@ -89,8 +90,8 @@ pub struct InvalidHeader(&'static str);
 
 #[cfg(test)]
 mod tests {
-    use quickcheck::quickcheck;
     use super::Header;
+    use quickcheck::quickcheck;
 
     quickcheck! {
         fn data(len: u16) -> bool {
@@ -133,4 +134,3 @@ mod tests {
         }
     }
 }
-

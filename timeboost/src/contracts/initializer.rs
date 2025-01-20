@@ -64,10 +64,7 @@ pub async fn submit_ready(
 
 pub async fn wait_for_committee(
     url: reqwest::Url,
-) -> Result<(
-    HashMap<PublicKey, SocketAddr>,
-    Vec<PeerConfig<PublicKey>>,
-)> {
+) -> Result<(HashMap<PublicKey, SocketAddr>, Vec<PeerConfig<PublicKey>>)> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {
@@ -101,7 +98,7 @@ pub async fn wait_for_committee(
         bootstrap_nodes.insert(
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
-            c.addr
+            c.addr,
         );
         staked_nodes.push(cfg.public_config());
     }

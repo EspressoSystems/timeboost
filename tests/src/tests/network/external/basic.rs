@@ -46,14 +46,10 @@ impl TestableNetwork for BasicNetworkTest {
         let committee = self.group.committee.clone();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
-            let addr = self.group.addrs[i].clone();
-            let net = Network::create(
-                addr,
-                kpr.clone(),
-                self.group.bootstrap_nodes.clone(),
-            )
-            .await
-            .expect("failed to make network");
+            let addr = self.group.addrs[i];
+            let net = Network::create(addr, kpr.clone(), self.group.bootstrap_nodes.clone())
+                .await
+                .expect("failed to make network");
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {

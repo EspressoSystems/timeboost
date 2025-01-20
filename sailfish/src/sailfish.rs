@@ -122,7 +122,9 @@ pub async fn sailfish_coordinator(
     bind_address: SocketAddr,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes).await.unwrap();
+    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes)
+        .await
+        .unwrap();
     let committee = Committee::new(
         staked_nodes
             .iter()
