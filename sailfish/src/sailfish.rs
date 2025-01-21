@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use crate::rbc::{self, Rbc};
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
@@ -11,9 +13,8 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
-use timeboost_networking::network::NetworkInitializer;
+use timeboost_networking::Network;
 use timeboost_utils::PeerConfig;
-use tokio::sync::mpsc;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -28,7 +29,7 @@ pub struct SailfishInitializer<N: Comm + Send + 'static> {
     pub keypair: Keypair,
 
     /// The bind address of the node.
-    pub bind_address: String,
+    pub bind_address: SocketAddr,
 
     /// The metrics of the node.
     pub metrics: SailfishMetrics,
@@ -44,7 +45,7 @@ pub struct Sailfish<N: Comm + Send + 'static> {
     keypair: Keypair,
 
     /// The Libp2p multiaddr of the sailfish node.
-    bind_address: String,
+    bind_address: SocketAddr,
 
     /// The metrics of the sailfish node.
     metrics: SailfishMetrics,
@@ -82,8 +83,8 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
         self.keypair.public_key()
     }
 
-    pub fn bind_addr(&self) -> &String {
-        &self.bind_address
+    pub fn bind_addr(&self) -> SocketAddr {
+        self.bind_address
     }
 
     #[cfg(feature = "test")]
@@ -115,26 +116,15 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashMap<PublicKey, String>,
+    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
-    bind_address: String,
+    bind_address: SocketAddr,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let (tx_ready, mut rx_ready) = mpsc::channel(1);
-    let network_init = NetworkInitializer::new(
-        keypair.clone(),
-        staked_nodes.clone(),
-        bootstrap_nodes,
-        bind_address.clone(),
-    )
-    .expect("creating network initializer");
-    let network = network_init
-        .into_network(tx_ready)
+    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes)
         .await
-        .expect("starting network");
-
-    rx_ready.recv().await;
+        .unwrap();
     let committee = Committee::new(
         staked_nodes
             .iter()

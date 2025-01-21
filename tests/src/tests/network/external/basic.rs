@@ -9,8 +9,7 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::network::NetworkInitializer;
-use tokio::sync::mpsc;
+use timeboost_networking::Network;
 use tokio::{sync::watch, task::JoinSet};
 
 pub struct BasicNetworkTest {
@@ -44,31 +43,18 @@ impl TestableNetwork for BasicNetworkTest {
 
     async fn init(&mut self) -> Vec<Self::Node> {
         let mut handles = JoinSet::new();
-        let staked = self.group.staked_nodes.clone();
         let committee = self.group.committee.clone();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
-            let addr = self.group.addrs[i].clone();
-            let (ready_sender, mut ready_receiver) = mpsc::channel(1);
-            let net_fut = NetworkInitializer::new(
-                kpr.clone(),
-                staked.clone(),
-                self.group.bootstrap_nodes.clone(),
-                addr.clone(),
-            )
-            .expect("failed to make libp2p initializer")
-            .into_network(ready_sender);
+            let addr = self.group.addrs[i];
+            let net = Network::create(addr, kpr.clone(), self.group.bootstrap_nodes.clone())
+                .await
+                .expect("failed to make network");
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {
-                let net_inner = net_fut.await.expect("failed to make network");
-                tracing::debug!(%i, "network created, waiting for ready");
-                ready_receiver
-                    .recv()
-                    .await
-                    .expect("failed to connect to remote nodes");
                 let cfg = rbc::Config::new(kpr.clone(), committee_clone.clone());
-                let net = Rbc::new(net_inner, cfg);
+                let net = Rbc::new(net, cfg);
                 tracing::debug!(%i, "created rbc");
                 let test_net = TestNet::new(net, i as u64, interceptor);
                 tracing::debug!(%i, "created testnet");

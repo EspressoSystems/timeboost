@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use anyhow::Result;
 use multisig::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -12,7 +14,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub ip_addr: String,
+    pub ip_addr: SocketAddr,
     pub public_key: Vec<u8>,
 }
 
@@ -62,7 +64,7 @@ pub async fn submit_ready(
 
 pub async fn wait_for_committee(
     url: reqwest::Url,
-) -> Result<(HashMap<PublicKey, String>, Vec<PeerConfig<PublicKey>>)> {
+) -> Result<(HashMap<PublicKey, SocketAddr>, Vec<PeerConfig<PublicKey>>)> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {

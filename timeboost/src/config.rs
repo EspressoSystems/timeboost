@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    pub bootstrap_nodes: Vec<(PublicKey, Multiaddr)>,
+    pub bootstrap_nodes: Vec<Multiaddr>,
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 

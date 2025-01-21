@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::PublicKey;
 use timeboost_core::types::NodeId;
@@ -20,7 +21,7 @@ pub enum CommitteeBase {
 #[derive(Debug, Clone)]
 pub struct CommitteeContract {
     /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
-    bootstrap_nodes: HashMap<PublicKey, String>,
+    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 
@@ -50,7 +51,7 @@ impl CommitteeContract {
             );
             let kpr = unsafe_zero_keypair(i as u64);
             let bind_addr = match base {
-                CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
+                CommitteeBase::Local => SocketAddr::from((Ipv4Addr::LOCALHOST, 8000 + i)),
                 _ => {
                     // If we get here that's a mistake
                     unreachable!();
@@ -96,7 +97,7 @@ impl CommitteeContract {
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, String> {
+    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, SocketAddr> {
         self.bootstrap_nodes.clone()
     }
 }
