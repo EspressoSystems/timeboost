@@ -126,11 +126,4 @@ where
             }
         }
     }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        if let Err(e) = self.comm.shutdown().await {
-            return Err(TestNetError::ShutdownError(e));
-        }
-        Ok(())
-    }
 }

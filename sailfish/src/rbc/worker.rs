@@ -197,7 +197,6 @@ impl<C: RawComm> Worker<C> {
                         Ok(()) => {}
                         Err(RbcError::Shutdown) => {
                             debug!(n = %self.label, "rbc shutdown detected");
-                            let _ = self.comm.shutdown().await;
                             return;
                         }
                         Err(e) => {
@@ -207,12 +206,11 @@ impl<C: RawComm> Worker<C> {
                 },
                 val = self.comm.receive() => {
                     match val {
-                        Ok(bytes) => {
-                            match self.on_inbound(bytes).await {
+                        Ok((key, bytes)) => {
+                            match self.on_inbound(key, bytes).await {
                                 Ok(()) => {}
                                 Err(RbcError::Shutdown) => {
                                     debug!(n = %self.label, "rbc shutdown detected");
-                                    let _ = self.comm.shutdown().await;
                                     return;
                                 }
                                 Err(e) => {
@@ -250,14 +248,8 @@ impl<C: RawComm> Worker<C> {
                                 Err(e) => warn!(n = %self.label, %e, "error broadcasting message")
                             }
                         }
-                        // Terminate operation.
-                        Some(Command::Shutdown) => {
-                            let _ = self.comm.shutdown().await;
-                            return
-                        }
                         None => {
                             debug!(n = %self.label, "rbc shutdown detected");
-                            let _ = self.comm.shutdown().await;
                             return
                         }
                     }
@@ -356,10 +348,10 @@ impl<C: RawComm> Worker<C> {
 
     /// We received a message from the network.
     #[instrument(level = "trace", skip_all, fields(n = %self.label))]
-    async fn on_inbound(&mut self, bytes: Vec<u8>) -> Result<()> {
+    async fn on_inbound(&mut self, src: PublicKey, bytes: Vec<u8>) -> Result<()> {
         match bincode::deserialize(&bytes)? {
-            Protocol::Fire(msg) => self.on_message(msg.into_owned(), false).await?,
-            Protocol::Send(msg) => self.on_message(msg.into_owned(), true).await?,
+            Protocol::Fire(msg) => self.on_message(src, msg.into_owned(), false).await?,
+            Protocol::Send(msg) => self.on_message(src, msg.into_owned(), true).await?,
             Protocol::Ack(env) => self.on_ack(env).await?,
             Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
@@ -372,8 +364,13 @@ impl<C: RawComm> Worker<C> {
     /// A non-RBC message has been received which we deliver directly to the application.
     ///
     /// If indicated, we also send back an ack so the sender knows we received the message.
-    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
-    async fn on_message(&mut self, msg: Message<Unchecked>, ack_required: bool) -> Result<()> {
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, f = %src, m = %msg))]
+    async fn on_message(
+        &mut self,
+        src: PublicKey,
+        msg: Message<Unchecked>,
+        ack_required: bool,
+    ) -> Result<()> {
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
@@ -381,7 +378,6 @@ impl<C: RawComm> Worker<C> {
             self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
             return Ok(());
         }
-        let src = *msg.signer();
         let dig = Digest::new(&msg);
         let env = Envelope::signed(dig, &self.config.keypair, false);
         let ack = Protocol::Ack(env);

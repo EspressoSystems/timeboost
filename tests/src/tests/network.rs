@@ -157,7 +157,6 @@ pub trait TestableNetwork {
                         if all_evaluated {
                             // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                             sleep(Duration::from_secs(1)).await;
-                            coordinator.shutdown().await.expect("Network to be shutdown");
                             return TaskHandleResult::new(node_id, outcome);
                         }
                     }
@@ -166,7 +165,6 @@ pub trait TestableNetwork {
                     }
                 },
                 shutdown_result = shutdown_rx.changed() => {
-                    coordinator.shutdown().await.expect("Network to be shutdown");
                     // Unwrap the potential error with receiving the shutdown token.
                     shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
                     return TaskHandleResult::new(node_id, TestOutcome::Timeout);

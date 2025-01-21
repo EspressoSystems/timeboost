@@ -24,7 +24,7 @@ type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 #[derive(Debug)]
 pub struct TurmoilComm {
     tx: UnboundedSender<(Option<PublicKey>, Vec<u8>)>,
-    rx: UnboundedReceiver<Vec<u8>>,
+    rx: UnboundedReceiver<(PublicKey, Vec<u8>)>,
     jh: JoinHandle<()>,
 }
 
@@ -81,22 +81,18 @@ impl RawComm for TurmoilComm {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+    async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>), Self::Err> {
         if let Some(msg) = self.rx.recv().await {
             return Ok(msg);
         } else {
             Err(io::ErrorKind::UnexpectedEof.into())
         }
     }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        Ok(())
-    }
 }
 
 struct Worker {
     config: HashMap<PublicKey, (String, u16)>,
-    tx: UnboundedSender<Vec<u8>>,
+    tx: UnboundedSender<(PublicKey, Vec<u8>)>,
     rx: UnboundedReceiver<(Option<PublicKey>, Vec<u8>)>,
     listener: TcpListener,
     reader_tasks: JoinSet<io::Result<()>>,
@@ -152,7 +148,7 @@ impl Worker {
                                 let bytes = bytes.clone();
                                 let addr = self.resolve(&k);
                                 self.connect_tasks.spawn(async move {
-                                    let (r, mut w) = connect(addr).await?;
+                                    let (r, mut w) = connect(k, addr).await?;
                                     w.send(bytes).await?;
                                     Ok((r, w))
                                 });
@@ -163,7 +159,7 @@ impl Worker {
                             let bytes = Bytes::from(msg);
                             let addr = self.resolve(&to);
                             self.connect_tasks.spawn(async move {
-                                let (r, mut w) = connect(addr).await?;
+                                let (r, mut w) = connect(to, addr).await?;
                                 w.send(bytes).await?;
                                 Ok((r, w))
                             });
@@ -183,10 +179,12 @@ impl Worker {
     }
 }
 
-async fn connect(a: SocketAddr) -> io::Result<(Reader, Writer)> {
+async fn connect(k: PublicKey, a: SocketAddr) -> io::Result<(Reader, Writer)> {
     let s = TcpStream::connect(a).await?;
     trace!(addr = %a, "connected to");
-    Ok(codec(s))
+    let (r, mut w) = codec(s);
+    w.send(Bytes::copy_from_slice(k.as_slice())).await?;
+    Ok((r, w))
 }
 
 fn codec(sock: TcpStream) -> (Reader, Writer) {
@@ -197,11 +195,16 @@ fn codec(sock: TcpStream) -> (Reader, Writer) {
     (r, w)
 }
 
-async fn read_loop(mut r: Reader, tx: UnboundedSender<Vec<u8>>) -> io::Result<()> {
+async fn read_loop(mut r: Reader, tx: UnboundedSender<(PublicKey, Vec<u8>)>) -> io::Result<()> {
+    let k = if let Some(b) = r.try_next().await? {
+        PublicKey::try_from(&b[..]).map_err(io::Error::other)?
+    } else {
+        return Ok(());
+    };
     loop {
         match r.try_next().await {
             Ok(Some(x)) => {
-                if tx.send(x.to_vec()).is_err() {
+                if tx.send((k, x.to_vec())).is_err() {
                     return Ok(());
                 }
             }

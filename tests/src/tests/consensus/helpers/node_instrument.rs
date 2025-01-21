@@ -109,12 +109,12 @@ impl TestNodeInstrument {
     pub(crate) fn expected_timeout_certificate(
         &self,
         signers: Vec<Envelope<Timeout, Validated>>,
-    ) -> Envelope<Certificate<Timeout>, Validated> {
+    ) -> Certificate<Timeout> {
         let mut va = VoteAccumulator::new(self.committee().clone());
         for e in signers {
             va.add(e.into_signed()).unwrap();
         }
-        self.node.sign(va.certificate().cloned().unwrap())
+        va.certificate().cloned().unwrap()
     }
 
     pub(crate) fn expected_no_vote(

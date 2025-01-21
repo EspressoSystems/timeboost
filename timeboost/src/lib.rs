@@ -285,9 +285,6 @@ impl Timeboost {
                     warn!("shutting down sequencer");
                     sequencer_handle.abort();
 
-                    warn!("shutting down coordinator");
-                    self.coordinator.shutdown().await.expect("shutdown coordinator");
-
                     result.expect("the shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());
                 }

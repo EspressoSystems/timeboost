@@ -16,8 +16,6 @@ pub trait Comm {
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err>;
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err>;
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err>;
 }
 
 /// Types that provide broadcast and 1:1 message communication.
@@ -32,9 +30,7 @@ pub trait RawComm {
 
     async fn send(&mut self, to: PublicKey, msg: Vec<u8>) -> Result<(), Self::Err>;
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err>;
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err>;
+    async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>), Self::Err>;
 }
 
 #[async_trait]
@@ -52,10 +48,6 @@ impl<T: Comm + Send> Comm for Box<T> {
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         (**self).receive().await
     }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        (**self).shutdown().await
-    }
 }
 
 #[async_trait]
@@ -70,12 +62,8 @@ impl<T: RawComm + Send> RawComm for Box<T> {
         (**self).send(to, msg).await
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
+    async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>), Self::Err> {
         (**self).receive().await
-    }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        (**self).shutdown().await
     }
 }
 
@@ -91,13 +79,8 @@ impl RawComm for Network {
         self.unicast(to, msg).await
     }
 
-    async fn receive(&mut self) -> Result<Vec<u8>, Self::Err> {
-        let (_, m) = self.receive().await?;
-        Ok(m)
-    }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        Ok(())
+    async fn receive(&mut self) -> Result<(PublicKey, Vec<u8>), Self::Err> {
+        self.receive().await
     }
 }
 
@@ -131,17 +114,12 @@ impl<R: RawComm + Send> Comm for CheckedComm<R> {
     }
 
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
-        let bytes = self.net.receive().await.map_err(CommError::Net)?;
+        let (_, bytes) = self.net.receive().await.map_err(CommError::Net)?;
         let msg: Message<Unchecked> = bincode::deserialize(&bytes)?;
         let Some(msg) = msg.validated(&self.committee) else {
             return Err(CommError::Invalid);
         };
         Ok(msg)
-    }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        self.net.shutdown().await.map_err(CommError::Net)?;
-        Ok(())
     }
 }
 

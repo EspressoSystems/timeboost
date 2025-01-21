@@ -93,9 +93,9 @@ impl<C: Comm> Coordinator<C> {
             Action::SendTimeout(e) => {
                 self.comm.broadcast(Message::Timeout(e)).await?;
             }
-            Action::SendTimeoutCert(e) => {
-                let round = e.data().data().round();
-                self.comm.broadcast(Message::TimeoutCert(e)).await?;
+            Action::SendTimeoutCert(c) => {
+                let round = c.data().round();
+                self.comm.broadcast(Message::TimeoutCert(c)).await?;
                 return Ok(Some(SailfishStatusEvent {
                     round,
                     event: SailfishEventType::Timeout { round },
@@ -106,9 +106,5 @@ impl<C: Comm> Coordinator<C> {
             }
         }
         Ok(None)
-    }
-
-    pub async fn shutdown(&mut self) -> Result<(), C::Err> {
-        self.comm.shutdown().await
     }
 }
