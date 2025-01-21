@@ -15,6 +15,7 @@ bincode = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
+futures = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
 reqwest = { workspace = true, optional = true }
