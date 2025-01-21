@@ -115,7 +115,8 @@ async fn main() {
             .expect("failed to wait for the committee");
 
         let mut hosts = com_map
-            .into_values()
+            .into_iter()
+            .map(|c| c.1)
             .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
             .collect::<Vec<_>>();
 

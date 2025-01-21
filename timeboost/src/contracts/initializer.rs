@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use multisig::{Keypair, PublicKey};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio::time::sleep;
 use tracing::error;
 
@@ -61,7 +61,7 @@ pub async fn submit_ready(
     Ok(())
 }
 
-pub async fn wait_for_committee(url: reqwest::Url) -> Result<HashMap<PublicKey, SocketAddr>> {
+pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, SocketAddr)>> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {
@@ -86,13 +86,13 @@ pub async fn wait_for_committee(url: reqwest::Url) -> Result<HashMap<PublicKey, 
         }
     };
 
-    let mut bootstrap_nodes = HashMap::new();
+    let mut bootstrap_nodes = Vec::new();
     for c in committee_data.committee.into_iter() {
-        bootstrap_nodes.insert(
+        bootstrap_nodes.push((
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
             c.ip_addr,
-        );
+        ));
     }
 
     Ok(bootstrap_nodes)

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use multisig::PublicKey;
@@ -9,7 +8,7 @@ use timeboost_utils::unsafe_zero_keypair;
 #[derive(Debug, Clone)]
 pub struct CommitteeContract {
     /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
-    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
+    bootstrap_nodes: Vec<(PublicKey, SocketAddr)>,
 }
 
 impl CommitteeContract {
@@ -34,7 +33,7 @@ impl CommitteeContract {
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, SocketAddr> {
+    pub fn bootstrap_nodes(&self) -> Vec<(PublicKey, SocketAddr)> {
         self.bootstrap_nodes.clone()
     }
 }

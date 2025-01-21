@@ -14,7 +14,6 @@ use sequencer::{
     },
     protocol::Sequencer,
 };
-use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
@@ -56,7 +55,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
+    pub bootstrap_nodes: Vec<(PublicKey, SocketAddr)>,
 
     /// The keypair for the node.
     pub keypair: Keypair,
@@ -114,9 +113,10 @@ impl HasInitializer for Timeboost {
         let committee = Committee::new(
             initializer
                 .bootstrap_nodes
-                .keys()
+                .iter()
+                .map(|b| b.0)
                 .enumerate()
-                .map(|(i, key)| (i as u8, *key)),
+                .map(|(i, key)| (i as u8, key)),
         );
         let network = Network::create(
             initializer.bind_address,
