@@ -19,7 +19,7 @@ use tokio::{
     spawn,
     task::{self, AbortHandle, JoinHandle, JoinSet},
 };
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use frame::Header;
 
@@ -225,8 +225,18 @@ impl Server {
                 Some(h) = self.handshake_tasks.join_next() => match h {
                     Ok(Ok((s, t))) => {
                         let Some(k) = self.lookup_peer(&t) else {
+                            info!(
+                                n = %self.key,
+                                k = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
+                                a = ?s.peer_addr().ok(),
+                                "unknown peer"
+                            );
                             continue
                         };
+                        if !self.is_valid_ip(&k, &s) {
+                            warn!(n = %self.key, %k, a = ?s.peer_addr().ok(), "invalid peer ip addr");
+                            continue
+                        }
                         // We only accept connections whose party has a public key that
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
@@ -383,6 +393,11 @@ impl Server {
         let k = t.get_remote_static()?;
         let k = x25519::PublicKey::try_from(k).ok()?;
         self.index.get_by_right(&k).copied()
+    }
+
+    /// Check if the socket's peer IP address corresponds to the configured one.
+    fn is_valid_ip(&self, k: &PublicKey, s: &TcpStream) -> bool {
+        self.peers.get(k).map(|a| a.ip()) == s.peer_addr().ok().map(|a| a.ip())
     }
 }
 
