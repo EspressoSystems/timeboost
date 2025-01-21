@@ -3,7 +3,7 @@ use std::error::Error;
 use crate::types::message::Message;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use multisig::{Committee, PublicKey, Unchecked, Validated};
 use timeboost_networking::{Network, NetworkError};
 
@@ -120,14 +120,22 @@ impl<R: RawComm + Send> Comm for CheckedComm<R> {
     type Err = CommError<R::Err>;
 
     async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes = Bytes::from(bincode::serialize(&msg)?);
-        self.net.broadcast(bytes).await.map_err(CommError::Net)?;
+        let mut bytes = BytesMut::new().writer();
+        bincode::serialize_into(&mut bytes, &msg)?;
+        self.net
+            .broadcast(bytes.into_inner().freeze())
+            .await
+            .map_err(CommError::Net)?;
         Ok(())
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
-        let bytes = Bytes::from(bincode::serialize(&msg)?);
-        self.net.send(to, bytes).await.map_err(CommError::Net)?;
+        let mut bytes = BytesMut::new().writer();
+        bincode::serialize_into(&mut bytes, &msg)?;
+        self.net
+            .send(to, bytes.into_inner().freeze())
+            .await
+            .map_err(CommError::Net)?;
         Ok(())
     }
 
