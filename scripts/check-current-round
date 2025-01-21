@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-./scripts/get-task-ips timeboost timeboost | sed 's|$|:9000/status/metrics|' | while read -r url; do echo "$url:" && curl -s -L "$url" | grep '^round ' | awk '{print $2}'; done
+./scripts/get-task-ips timeboost timeboost | sed 's|$|:9000/v0/status/metrics|' | while read -r url; do echo "$url:" && curl -s -L "$url" | grep '^round ' | awk '{print $2}'; done

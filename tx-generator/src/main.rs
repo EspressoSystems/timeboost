@@ -179,7 +179,7 @@ async fn main() {
                 // node, it doesn't block the execution.
                 for host in &hosts {
                     // timeout before creating new tasks
-                    spawn(create_and_send_tx(host.clone(), client, cli.interval_ms-10));
+                    spawn(create_and_send_tx(host.clone(), client, 500));
                 }
             }
             _ = shutdown_rx.changed() => {
