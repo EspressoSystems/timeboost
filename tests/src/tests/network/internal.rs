@@ -77,7 +77,11 @@ impl TestableNetwork for MemoryNetworkTest {
             );
             let messages = test_net.messages();
             let kpr = self.group.keypairs[i].clone();
-            let addr = self.group.peers.get(&kpr.public_key()).expect("own public key to be present").clone();
+            let addr = *self
+                .group
+                .peers
+                .get(&kpr.public_key())
+                .expect("own public key to be present");
             let initializer = SailfishInitializerBuilder::default()
                 .id((i as u64).into())
                 .keypair(kpr)

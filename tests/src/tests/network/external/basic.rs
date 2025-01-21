@@ -46,7 +46,11 @@ impl TestableNetwork for BasicNetworkTest {
         let committee = self.group.committee.clone();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
-            let addr = self.group.peers.get(&kpr.public_key()).expect("own public key to be present").clone();
+            let addr = *self
+                .group
+                .peers
+                .get(&kpr.public_key())
+                .expect("own public key to be present");
             let net = Network::create(addr, kpr.clone(), self.group.peers.clone())
                 .await
                 .expect("failed to make network");
