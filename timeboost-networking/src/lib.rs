@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{
     spawn,
-    task::{AbortHandle, JoinHandle, JoinSet},
+    task::{self, AbortHandle, JoinHandle, JoinSet},
 };
 use tracing::{debug, error, trace, warn};
 
@@ -27,7 +27,10 @@ pub use error::{Empty, NetworkError};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
-/// Max message size using noise protocol
+/// Max message size using noise handshake.
+const MAX_NOISE_HANDSHAKE_SIZE: usize = 1024;
+
+/// Max message size using noise protocol.
 const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
 /// Number of bytes for payload data.
@@ -88,7 +91,7 @@ struct Server {
     index: BiHashMap<PublicKey, x25519::PublicKey>,
 
     /// Find the public key given a tokio task ID.
-    task2key: HashMap<tokio::task::Id, PublicKey>,
+    task2key: HashMap<task::Id, PublicKey>,
 
     /// Currently active connections (post handshake).
     active: HashMap<PublicKey, IoTask>,
@@ -269,24 +272,7 @@ impl Server {
                             if let Err(e) = r {
                                 warn!(n = %self.key, %e, "i/o error")
                             }
-                            let Some(k) = self.task2key.remove(&id) else {
-                                error!(n = %self.key, "no key for task");
-                                continue
-                            };
-                            // Try to re-connect to the party:
-                            if let Some(task) = self.active.get(&k) {
-                                if task.rh.id() == id {
-                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else if task.wh.id() == id {
-                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else {
-                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
-                                }
-                            }
+                            self.on_io_task_end(id);
                         }
                         Err(e) => {
                             if e.is_cancelled() {
@@ -296,24 +282,7 @@ impl Server {
                             }
                             // If the task has not been cancelled, it must have panicked.
                             error!(n = %self.key, %e, "i/o task panic");
-                            let Some(k) = self.task2key.remove(&e.id()) else {
-                                error!(n = %self.key, "no key for task");
-                                continue
-                            };
-                            // Try to re-connect to the party:
-                            if let Some(task) = self.active.get(&k) {
-                                if task.rh.id() == e.id() {
-                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else if task.wh.id() == e.id() {
-                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else {
-                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
-                                }
-                            }
+                            self.on_io_task_end(e.id())
                         }
                     };
                 },
@@ -351,6 +320,27 @@ impl Server {
                     }
                 }
             }
+        }
+    }
+
+    fn on_io_task_end(&mut self, id: task::Id) {
+        let Some(k) = self.task2key.remove(&id) else {
+            error!(n = %self.key, "no key for task");
+            return;
+        };
+        let Some(task) = self.active.get(&k) else {
+            return;
+        };
+        if task.rh.id() == id {
+            debug!(n = %self.key, %k, "read-half closed => dropping connection");
+            self.active.remove(&k);
+            self.spawn_connect(k)
+        } else if task.wh.id() == id {
+            debug!(n = %self.key, %k, "write-half closed => dropping connection");
+            self.active.remove(&k);
+            self.spawn_connect(k)
+        } else {
+            debug!(n = %self.key, %k, "i/o task was previously replaced");
         }
     }
 
@@ -457,7 +447,7 @@ async fn handshake(
     mut hs: HandshakeState,
     mut stream: TcpStream,
 ) -> Result<(TcpStream, TransportState)> {
-    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    let mut b = vec![0; MAX_NOISE_HANDSHAKE_SIZE];
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
     let (h, m) = recv_frame(&mut stream).await?;
@@ -478,7 +468,7 @@ async fn on_handshake(
     if !h.is_data() || h.is_partial() {
         return Err(NetworkError::InvalidHandshakeMessage);
     }
-    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    let mut b = vec![0; MAX_NOISE_HANDSHAKE_SIZE];
     hs.read_message(&m, &mut b)?;
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
@@ -568,7 +558,7 @@ where
     W: AsyncWrite + Unpin,
 {
     debug_assert_eq!(usize::from(hdr.len()), msg.len());
-    w.write_all(&hdr.to_bytes()[..]).await?;
+    w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
 }
