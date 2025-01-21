@@ -47,8 +47,8 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
-# echo "starting tx generator"
-# RUST_LOG=debug,hyper=error,reqwest=error ./target/release/tx-generator --until 300 --watchdog-timeout 300
+echo "starting tx generator"
+RUST_LOG=debug,hyper=error,reqwest=error ./target/release/tx-generator --until 300 --watchdog-timeout 300
 
 for pid in "${pids[@]}"; do
     wait $pid
