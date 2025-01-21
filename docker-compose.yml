@@ -152,7 +152,7 @@ services:
       - "9004:9004"
   tx-generator:
     image: tx-generator:latest
-    command: ["/app/tx-generator", "--committee-size", "5", "--startup-url", "http://172.20.0.10:7200"]
+    command: ["/app/tx-generator", "--committee-size", "5", "--startup-url", "http://172.20.0.10:7200", "--base", "network"]
     depends_on:
       - node0
       - node1
