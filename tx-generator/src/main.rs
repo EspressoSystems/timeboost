@@ -147,12 +147,18 @@ async fn main() {
     let client = Box::leak(Box::new(Client::new()));
 
     #[cfg(feature = "until")]
-    tokio::spawn(run_until(
-        cli.until,
-        cli.watchdog_timeout,
-        hosts[0].clone(),
-        shutdown_tx.clone(),
-    ));
+    {
+        let mut host = hosts[0].clone();
+
+        // HACK: Submit port is 800 + SAILFISH_PORT, metrics is 200 more than that...
+        host.set_port(Some(host.port().unwrap() + 200)).unwrap();
+        tokio::spawn(run_until(
+            cli.until,
+            cli.watchdog_timeout,
+            host,
+            shutdown_tx.clone(),
+        ));
+    }
 
     loop {
         tokio::select! {
