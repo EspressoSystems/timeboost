@@ -35,7 +35,6 @@ pub async fn run_until(
                 req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
                 if let Ok(resp) = reqwest::get(host.join("v0/status/metrics").expect("valid url")).await {
                     if let Ok(text) = resp.text().await {
-                        tracing::debug!(%text);
                         let committed_round = text
                             .lines()
                             .find(|line| line.starts_with("committed_round"))
