@@ -82,9 +82,8 @@ async fn main() -> Result<()> {
         let mut host = committee
             .bootstrap_nodes()
             .iter()
-            .map(|b| b.0)
-            .find(|k| *k == keypair.public_key())
-            .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
+            .find(|b| b.0 == keypair.public_key())
+            .map(|b| format!("http://{}", b.1).parse::<reqwest::Url>().unwrap())
             .expect("host to be present");
 
         // HACK: The port is always 9000 + i in the local setup
