@@ -81,7 +81,9 @@ async fn main() -> Result<()> {
         // Get a host for the public key
         let mut host = committee
             .bootstrap_nodes()
-            .get(&keypair.public_key())
+            .iter()
+            .map(|b| b.0)
+            .find(|k| *k == keypair.public_key())
             .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
             .expect("host to be present");
 
