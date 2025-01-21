@@ -19,7 +19,7 @@ const SIZE_512_B: usize = 512;
 #[derive(Parser, Debug)]
 struct Cli {
     /// How oftern to generate a transaction.
-    #[clap(long, default_value = "5000")]
+    #[clap(long, default_value = "1000")]
     interval_ms: u64,
 
     /// The contract endpoint to fetch the current keyset
