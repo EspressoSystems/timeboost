@@ -12,8 +12,6 @@ services:
         "8800",
         "--metrics-port",
         "9000",
-        "--base",
-        "network",
         "--startup-url",
         "http://172.20.0.10:7200"
       ]
@@ -42,8 +40,6 @@ services:
         "8801",
         "--metrics-port",
         "9001",
-        "--base",
-        "network",
         "--startup-url",
         "http://172.20.0.10:7200"
       ]
@@ -72,8 +68,6 @@ services:
         "8802",
         "--metrics-port",
         "9002",
-        "--base",
-        "network",
         "--startup-url",
         "http://172.20.0.10:7200"
       ]
@@ -102,8 +96,6 @@ services:
         "8803",
         "--metrics-port",
         "9003",
-        "--base",
-        "network",
         "--startup-url",
         "http://172.20.0.10:7200"
       ]
@@ -133,8 +125,6 @@ services:
         "8804",
         "--metrics-port",
         "9004",
-        "--base",
-        "network",
         "--startup-url",
         "http://172.20.0.10:7200"
       ]
@@ -152,7 +142,7 @@ services:
       - "9004:9004"
   tx-generator:
     image: tx-generator:latest
-    command: ["/app/tx-generator", "--committee-size", "5", "--startup-url", "http://172.20.0.10:7200", "--base", "network"]
+    command: ["/app/tx-generator", "--startup-url", "http://172.20.0.10:7200"]
     depends_on:
       - node0
       - node1
