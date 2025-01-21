@@ -14,7 +14,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub addr: SocketAddr,
+    pub ip_addr: SocketAddr,
     pub public_key: Vec<u8>,
 }
 
@@ -92,13 +92,13 @@ pub async fn wait_for_committee(
     let mut bootstrap_nodes = HashMap::new();
     let mut staked_nodes = vec![];
     for c in committee_data.committee.into_iter() {
-        info!("{}", c.addr);
+        info!("{}", c.ip_addr);
         let cfg =
             ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
         bootstrap_nodes.insert(
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
-            c.addr,
+            c.ip_addr,
         );
         staked_nodes.push(cfg.public_config());
     }
