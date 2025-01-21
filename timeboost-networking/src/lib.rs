@@ -18,9 +18,9 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
 use tokio::{
     spawn,
-    task::{AbortHandle, JoinHandle, JoinSet},
+    task::{self, AbortHandle, JoinHandle, JoinSet},
 };
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use frame::Header;
 
@@ -28,7 +28,10 @@ pub use error::{Empty, NetworkError};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
-/// Max message size using noise protocol
+/// Max message size using noise handshake.
+const MAX_NOISE_HANDSHAKE_SIZE: usize = 1024;
+
+/// Max message size using noise protocol.
 const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
 /// Number of bytes for payload data.
@@ -89,7 +92,7 @@ struct Server {
     index: BiHashMap<PublicKey, x25519::PublicKey>,
 
     /// Find the public key given a tokio task ID.
-    task2key: HashMap<tokio::task::Id, PublicKey>,
+    task2key: HashMap<task::Id, PublicKey>,
 
     /// Currently active connections (post handshake).
     active: HashMap<PublicKey, IoTask>,
@@ -113,7 +116,7 @@ struct IoTask {
     /// Abort handle of the write-half of the connection.
     wh: AbortHandle,
 
-    /// MPSC sender of incoming messages from the remote.
+    /// MPSC sender of outgoing messages to the remote.
     tx: Sender<Bytes>,
 }
 
@@ -223,13 +226,23 @@ impl Server {
                 Some(h) = self.handshake_tasks.join_next() => match h {
                     Ok(Ok((s, t))) => {
                         let Some(k) = self.lookup_peer(&t) else {
+                            info!(
+                                n = %self.key,
+                                k = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
+                                a = ?s.peer_addr().ok(),
+                                "unknown peer"
+                            );
                             continue
                         };
+                        if !self.is_valid_ip(&k, &s) {
+                            warn!(n = %self.key, %k, a = ?s.peer_addr().ok(), "invalid peer ip addr");
+                            continue
+                        }
                         // We only accept connections whose party has a public key that
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
                         if k > self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(s, t)
+                            self.spawn_io(k, s, t)
                         } else {
                             warn!(n = %self.key, %k, "dropping accepted connection");
                         }
@@ -252,7 +265,7 @@ impl Server {
                         // We only keep the connection if our key is larger than the remote,
                         // or if we do not have a connection for that key at the moment.
                         if k < self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(s, t)
+                            self.spawn_io(k, s, t)
                         } else {
                             warn!(n = %self.key, %k, "dropping new connection");
                         }
@@ -270,24 +283,7 @@ impl Server {
                             if let Err(e) = r {
                                 warn!(n = %self.key, %e, "i/o error")
                             }
-                            let Some(k) = self.task2key.remove(&id) else {
-                                error!(n = %self.key, "no key for task");
-                                continue
-                            };
-                            // Try to re-connect to the party:
-                            if let Some(task) = self.active.get(&k) {
-                                if task.rh.id() == id {
-                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else if task.wh.id() == id {
-                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else {
-                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
-                                }
-                            }
+                            self.on_io_task_end(id);
                         }
                         Err(e) => {
                             if e.is_cancelled() {
@@ -297,24 +293,7 @@ impl Server {
                             }
                             // If the task has not been cancelled, it must have panicked.
                             error!(n = %self.key, %e, "i/o task panic");
-                            let Some(k) = self.task2key.remove(&e.id()) else {
-                                error!(n = %self.key, "no key for task");
-                                continue
-                            };
-                            // Try to re-connect to the party:
-                            if let Some(task) = self.active.get(&k) {
-                                if task.rh.id() == e.id() {
-                                    debug!(n = %self.key, %k, "read-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else if task.wh.id() == e.id() {
-                                    debug!(n = %self.key, %k, "write-half closed => dropping connection");
-                                    self.active.remove(&k);
-                                    self.spawn_connect(k)
-                                } else {
-                                    debug!(n = %self.key, %k, "i/o task was previously replaced");
-                                }
-                            }
+                            self.on_io_task_end(e.id())
                         }
                     };
                 },
@@ -355,6 +334,27 @@ impl Server {
         }
     }
 
+    fn on_io_task_end(&mut self, id: task::Id) {
+        let Some(k) = self.task2key.remove(&id) else {
+            error!(n = %self.key, "no key for task");
+            return;
+        };
+        let Some(task) = self.active.get(&k) else {
+            return;
+        };
+        if task.rh.id() == id {
+            debug!(n = %self.key, %k, "read-half closed => dropping connection");
+            self.active.remove(&k);
+            self.spawn_connect(k)
+        } else if task.wh.id() == id {
+            debug!(n = %self.key, %k, "write-half closed => dropping connection");
+            self.active.remove(&k);
+            self.spawn_connect(k)
+        } else {
+            debug!(n = %self.key, %k, "i/o task was previously replaced");
+        }
+    }
+
     fn spawn_connect(&mut self, k: PublicKey) {
         let x = self.index.get_by_left(&k).expect("known public key");
         let a = self.peers.get(&k).expect("known address");
@@ -370,11 +370,7 @@ impl Server {
         self.handshake_tasks.spawn(on_handshake(h, s));
     }
 
-    fn spawn_io(&mut self, s: TcpStream, t: TransportState) {
-        let Some(k) = self.lookup_peer(&t) else {
-            debug!(n = %self.key, a = ?s.peer_addr().ok(), "unknown peer");
-            return;
-        };
+    fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState) {
         debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");
         let (to_remote, from_remote) = mpsc::channel(256);
         let (r, w) = s.into_split();
@@ -398,6 +394,11 @@ impl Server {
         let k = t.get_remote_static()?;
         let k = x25519::PublicKey::try_from(k).ok()?;
         self.index.get_by_right(&k).copied()
+    }
+
+    /// Check if the socket's peer IP address corresponds to the configured one.
+    fn is_valid_ip(&self, k: &PublicKey, s: &TcpStream) -> bool {
+        self.peers.get(k).map(|a| a.ip()) == s.peer_addr().ok().map(|a| a.ip())
     }
 }
 
@@ -458,7 +459,7 @@ async fn handshake(
     mut hs: HandshakeState,
     mut stream: TcpStream,
 ) -> Result<(TcpStream, TransportState)> {
-    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    let mut b = vec![0; MAX_NOISE_HANDSHAKE_SIZE];
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
     let (h, m) = recv_frame(&mut stream).await?;
@@ -479,7 +480,7 @@ async fn on_handshake(
     if !h.is_data() || h.is_partial() {
         return Err(NetworkError::InvalidHandshakeMessage);
     }
-    let mut b = vec![0; MAX_NOISE_MESSAGE_SIZE];
+    let mut b = vec![0; MAX_NOISE_HANDSHAKE_SIZE];
     hs.read_message(&m, &mut b)?;
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
@@ -516,7 +517,7 @@ where
                 return Err(NetworkError::MessageTooLarge);
             }
         }
-        if tx.send((k, msg.into())).await.is_err() {
+        if tx.send((k, msg.freeze())).await.is_err() {
             break;
         }
     }
@@ -569,7 +570,7 @@ where
     W: AsyncWrite + Unpin,
 {
     debug_assert_eq!(usize::from(hdr.len()), msg.len());
-    w.write_all(&hdr.to_bytes()[..]).await?;
+    w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
 }

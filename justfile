@@ -46,7 +46,7 @@ bacon: clippy check fmt
 ####RUN COMMANDS####
 ####################
 run_integration: build_docker
-  docker network create --subnet=172.20.0.0/16 timeboost
+  -docker network create --subnet=172.20.0.0/16 timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
 stop_integration:

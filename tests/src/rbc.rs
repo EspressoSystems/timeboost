@@ -199,7 +199,7 @@ async fn read_loop(mut r: Reader, tx: UnboundedSender<Bytes>) -> io::Result<()> 
     loop {
         match r.try_next().await {
             Ok(Some(x)) => {
-                if tx.send(x.into()).is_err() {
+                if tx.send(x.freeze()).is_err() {
                     return Ok(());
                 }
             }
