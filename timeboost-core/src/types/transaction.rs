@@ -145,7 +145,11 @@ impl TransactionsQueue {
     }
 
     pub fn take(&mut self) -> Vec<Transaction> {
-        mem::take(&mut self.txns)
+        let limit = self.txns.len().min(100);
+        let mut txns = mem::take(&mut self.txns);
+        let taken = txns.drain(..limit).collect::<Vec<_>>();
+        self.txns = txns;
+        taken
     }
 
     pub fn remove_if<F>(&mut self, pred: F)
