@@ -6,8 +6,8 @@ use timeboost_core::types::NodeId;
 /// A contract for managing the committee of nodes, this is a placeholder for now.
 #[derive(Debug, Clone)]
 pub struct CommitteeContract {
-    /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
-    bootstrap_nodes: Vec<(PublicKey, SocketAddr)>,
+    /// The peers that this node is connected to.
+    peers: Vec<(PublicKey, SocketAddr)>,
 }
 
 impl CommitteeContract {
@@ -28,14 +28,14 @@ impl CommitteeContract {
         .expect("ready submission to succeed");
 
         // Then, wait for the rest of the committee to be ready.
-        let bootstrap_nodes = crate::contracts::initializer::wait_for_committee(url)
+        let peers = crate::contracts::initializer::wait_for_committee(url)
             .await
             .expect("committee to be ready");
-        Self { bootstrap_nodes }
+        Self { peers }
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> Vec<(PublicKey, SocketAddr)> {
-        self.bootstrap_nodes.clone()
+    pub fn peers(&self) -> Vec<(PublicKey, SocketAddr)> {
+        self.peers.clone()
     }
 }

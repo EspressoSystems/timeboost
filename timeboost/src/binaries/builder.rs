@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
     let handle = {
         // Get a host for the public key
         let mut host = committee
-            .bootstrap_nodes()
+            .peers()
             .iter()
             .find(|b| b.0 == keypair.public_key())
             .map(|b| format!("http://{}", b.1).parse::<reqwest::Url>().unwrap())
@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
         id,
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
-        bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
+        peers: committee.peers().into_iter().collect(),
         keypair,
         bind_address,
         shutdown_rx,
@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
     let timeboost = Timeboost::initialize(init).await?;
 
     tokio::select! {
-        _ = timeboost.go(committee.bootstrap_nodes().len()) => {
+        _ = timeboost.go(committee.peers().len()) => {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");

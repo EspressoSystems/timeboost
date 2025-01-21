@@ -54,8 +54,8 @@ pub struct TimeboostInitializer {
     /// The port to bind the metrics API server to.
     pub metrics_port: u16,
 
-    /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: Vec<(PublicKey, SocketAddr)>,
+    /// The peers that this node will connect to.
+    pub peers: Vec<(PublicKey, SocketAddr)>,
 
     /// The keypair for the node.
     pub keypair: Keypair,
@@ -112,7 +112,7 @@ impl HasInitializer for Timeboost {
 
         let committee = Committee::new(
             initializer
-                .bootstrap_nodes
+                .peers
                 .iter()
                 .map(|b| b.0)
                 .enumerate()
@@ -121,7 +121,7 @@ impl HasInitializer for Timeboost {
         let network = Network::create(
             initializer.bind_address,
             initializer.keypair.clone(),
-            initializer.bootstrap_nodes,
+            initializer.peers,
         )
         .await
         .expect("failed to connect to remote nodes");
