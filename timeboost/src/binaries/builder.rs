@@ -67,10 +67,11 @@ async fn main() -> Result<()> {
 
     let id = NodeId::from(cli.id as u64);
 
-    // Make a new committee contract instance to read the committee config from.
-    let committee = CommitteeContract::new(id, cli.port, cli.startup_url).await;
-
     let keypair = unsafe_zero_keypair(id);
+
+    // Make a new committee contract instance to read the committee config from.
+    let committee =
+        CommitteeContract::new(id, keypair.public_key(), cli.port, cli.startup_url).await;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 

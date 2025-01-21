@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use multisig::PublicKey;
 use timeboost_core::types::NodeId;
-use timeboost_utils::unsafe_zero_keypair;
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
 #[derive(Debug, Clone)]
@@ -12,14 +11,17 @@ pub struct CommitteeContract {
 }
 
 impl CommitteeContract {
-    pub async fn new(node_id: NodeId, node_port: u16, url: reqwest::Url) -> Self {
-        let kpr = unsafe_zero_keypair(u64::from(node_id));
-
+    pub async fn new(
+        node_id: NodeId,
+        public_key: PublicKey,
+        node_port: u16,
+        url: reqwest::Url,
+    ) -> Self {
         // First, submit that we're ready
         crate::contracts::initializer::submit_ready(
             u64::from(node_id),
             node_port,
-            kpr,
+            public_key,
             url.clone(),
         )
         .await
