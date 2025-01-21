@@ -2,7 +2,14 @@
 
 set -euox pipefail
 
+if ! command -v uv &> /dev/null; then
+  echo "Error: uv command not found. Install it with 'curl -LsSf https://astral.sh/uv/install.sh | sh'" >&2
+  exit 1
+fi
+
 just build_release --features until
+
+uv run fake-contract/main.py --timeout 30 &
 
 if [ -z "${1:-}" ]; then
     nodes=5
@@ -24,14 +31,13 @@ SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-    cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    # cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    cmd="RUST_LOG=error \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
-        --committee-size $nodes \
-        --base local \
         --until 300 \
         --watchdog-timeout 300"
     if $late_start; then
@@ -41,6 +47,9 @@ for i in $(seq 0 $((nodes - 1))); do
     eval $cmd &
     pids+=($!)
 done
+
+echo "starting tx generator"
+RUST_LOG=debug,hyper=error,reqwest=error ./target/release/tx-generator --until 300 --watchdog-timeout 300
 
 for pid in "${pids[@]}"; do
     wait $pid

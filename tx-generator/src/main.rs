@@ -3,7 +3,6 @@ use clap::Parser;
 use futures::FutureExt;
 use rand::Rng;
 use reqwest::Client;
-use timeboost::contracts::committee::CommitteeBase;
 use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
@@ -19,10 +18,6 @@ const SIZE_512_B: usize = 512;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The committee size.
-    #[clap(long)]
-    committee_size: usize,
-
     /// How oftern to generate a transaction.
     #[clap(long, default_value = "5000")]
     interval_ms: u64,
@@ -35,10 +30,6 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
     until: u64,
-
-    /// The base to use for the committee config.
-    #[clap(long, value_enum, default_value_t = CommitteeBase::Local)]
-    base: CommitteeBase,
 
     /// The watchdog timeout.
     #[cfg(feature = "until")]
@@ -64,11 +55,8 @@ fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
 fn make_tx() -> Transaction {
     // 10% chance of being a priority tx
     if rand::thread_rng().gen_bool(0.1) {
-        // Generate some random number of transactions in the bundle
-        let num_txns = rand::thread_rng().gen_range(1..1000);
-
         // Get the txns
-        let txns = make_tx_data(num_txns, SIZE_512_B);
+        let txns = make_tx_data(1, SIZE_512_B);
         Transaction::Priority {
             nonce: Nonce::now(SeqNo::from(0)),
             to: Address::zero(),
@@ -122,36 +110,31 @@ async fn main() {
     let cli = Cli::parse();
 
     let hosts = {
-        match cli.base {
-            CommitteeBase::Local => (0..cli.committee_size)
-                .map(|i| {
-                    format!("http://localhost:{}", 8800 + i)
-                        .parse::<reqwest::Url>()
-                        .unwrap()
-                })
-                .collect::<Vec<_>>(),
-            CommitteeBase::Network => {
-                let (com_map, _) =
-                    timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
-                        .await
-                        .expect("failed to wait for the committee");
+        let com_map = timeboost::contracts::initializer::wait_for_committee(cli.startup_url)
+            .await
+            .expect("failed to wait for the committee");
 
-                let mut hosts = com_map
-                    .into_values()
-                    .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
-                    .collect::<Vec<_>>();
+        let mut hosts = com_map
+            .into_values()
+            .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
+            .collect::<Vec<_>>();
 
-                // HACK: Our local port scheme is always 800 + SAILFISH_PORT
-                hosts
-                    .iter_mut()
-                    .for_each(|h| h.set_port(Some(h.port().unwrap() + 800)).unwrap());
+        // HACK: Our local port scheme is always 800 + SAILFISH_PORT
+        hosts
+            .iter_mut()
+            .for_each(|h| h.set_port(Some(h.port().unwrap() + 800)).unwrap());
 
-                hosts
-            }
-        }
+        hosts
     };
 
-    debug!("hostlist {:?}", hosts);
+    debug!(
+        "hostlist {}",
+        hosts
+            .iter()
+            .map(|h| format!("{h}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 
     // Generate a transaction every interval.
     let mut timer = sleep(std::time::Duration::from_millis(cli.interval_ms))

@@ -17,7 +17,6 @@ use sequencer::{
 use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_utils::PeerConfig;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
@@ -58,9 +57,6 @@ pub struct TimeboostInitializer {
 
     /// The bootstrap nodes to connect to.
     pub bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
-
-    /// The staked nodes to join the committee with.
-    pub staked_nodes: Vec<PeerConfig<PublicKey>>,
 
     /// The keypair for the node.
     pub keypair: Keypair,
@@ -115,6 +111,13 @@ impl HasInitializer for Timeboost {
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
+        let committee = Committee::new(
+            initializer
+                .bootstrap_nodes
+                .keys()
+                .enumerate()
+                .map(|(i, key)| (i as u8, *key)),
+        );
         let network = Network::create(
             initializer.bind_address,
             initializer.keypair.clone(),
@@ -123,13 +126,6 @@ impl HasInitializer for Timeboost {
         .await
         .expect("failed to connect to remote nodes");
 
-        let committee = Committee::new(
-            initializer
-                .staked_nodes
-                .iter()
-                .enumerate()
-                .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
-        );
         let cfg = rbc::Config::new(initializer.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, cfg);
 

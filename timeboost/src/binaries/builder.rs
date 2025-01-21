@@ -1,9 +1,6 @@
 use anyhow::Result;
 use std::net::{Ipv4Addr, SocketAddr};
-use timeboost::{
-    contracts::committee::{CommitteeBase, CommitteeContract},
-    Timeboost, TimeboostInitializer,
-};
+use timeboost::{contracts::committee::CommitteeContract, Timeboost, TimeboostInitializer};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
 
@@ -35,14 +32,6 @@ struct Cli {
     /// The port of the metrics server.
     #[clap(long)]
     metrics_port: u16,
-
-    /// The base to use for the committee config.
-    #[clap(long, value_enum, default_value_t = CommitteeBase::Local)]
-    base: CommitteeBase,
-
-    /// The committee size
-    #[clap(long, default_value_t = 5)]
-    committee_size: u16,
 
     /// The ip address of the startup coordinator
     #[clap(long, default_value = "http://localhost:7200/")]
@@ -79,12 +68,7 @@ async fn main() -> Result<()> {
     let id = NodeId::from(cli.id as u64);
 
     // Make a new committee contract instance to read the committee config from.
-    let committee = match cli.base {
-        CommitteeBase::Network => {
-            CommitteeContract::new_from_network(id, cli.port, cli.startup_url).await
-        }
-        _ => CommitteeContract::new(cli.base, cli.committee_size),
-    };
+    let committee = CommitteeContract::new(id, cli.port, cli.startup_url).await;
 
     let keypair = unsafe_zero_keypair(id);
 
@@ -122,7 +106,6 @@ async fn main() -> Result<()> {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
         bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
-        staked_nodes: committee.staked_nodes(),
         keypair,
         bind_address,
         shutdown_rx,
@@ -131,7 +114,7 @@ async fn main() -> Result<()> {
     let timeboost = Timeboost::initialize(init).await?;
 
     tokio::select! {
-        _ = timeboost.go(committee.staked_nodes().len()) => {
+        _ = timeboost.go(committee.bootstrap_nodes().len()) => {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");
