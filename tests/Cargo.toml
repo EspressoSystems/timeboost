@@ -9,7 +9,6 @@ async-trait = { workspace = true }
 committable = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
-libp2p-identity = { workspace = true }
 multisig = { path = "../multisig" }
 portpicker = { workspace = true }
 rand = { workspace = true }

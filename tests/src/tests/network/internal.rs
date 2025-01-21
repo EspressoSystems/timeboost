@@ -80,10 +80,9 @@ impl TestableNetwork for MemoryNetworkTest {
             let initializer = SailfishInitializerBuilder::default()
                 .id((i as u64).into())
                 .keypair(self.group.keypairs[i].clone())
-                .bind_address(self.group.addrs[i].clone())
+                .bind_address(self.group.addrs[i])
                 .network(test_net)
                 .committee(self.group.committee.clone())
-                .peer_id(self.group.peer_ids[i])
                 .metrics(SailfishMetrics::default())
                 .build()
                 .unwrap();

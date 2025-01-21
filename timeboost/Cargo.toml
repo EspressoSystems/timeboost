@@ -15,7 +15,6 @@ bincode = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 futures = { workspace = true }
-libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 parking_lot = { workspace = true }
 multisig = { path = "../multisig" }

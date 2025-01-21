@@ -1,9 +1,10 @@
 set export
 
-original_rustflags := env_var_or_default('RUSTFLAGS', '')
+export RUSTDOCFLAGS := '-D warnings'
 
-export RUSTDOCFLAGS := '-D warnings --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
-export RUSTFLAGS := original_rustflags + ' --cfg async_executor_impl="tokio" --cfg async_channel_impl="tokio"'
+####################
+###BUILD COMMANDS###
+####################
 
 build *ARGS:
   cargo build {{ARGS}}
@@ -11,20 +12,14 @@ build *ARGS:
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
-bench:
-  cargo bench --benches -- --nocapture
+build_docker:
+  docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
+  docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
+  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
-test *ARGS:
-  cargo nextest run --test-threads $(nproc) {{ARGS}}
-  @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
-
-test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 --test-threads $(nproc) {{ARGS}}
-  RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
-
-run *ARGS:
-  cargo run {{ARGS}}
-
+####################
+###CHECK COMMANDS###
+####################
 clippy:
   cargo clippy --workspace --lib --tests --benches -- -D warnings
 
@@ -42,13 +37,27 @@ lint: clippy fmt_check
 fix:
   cargo fix --allow-dirty --allow-staged
 
-build_docker:
-  docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
-  docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
-  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
+ci_local:
+  just build && just lint && just test_ci --release && just run_demo && just build_docker
 
+bacon: clippy check fmt
+
+####################
+####RUN COMMANDS####
+####################
 run_integration: build_docker
-  docker compose up --abort-on-container-exit
+  -docker network create --subnet=172.20.0.0/16 timeboost
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+
+stop_integration:
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml down
+
+run_monitoring:
+  -docker network create --subnet=172.20.0.0/16 timeboost
+  docker compose -f docker-compose.metrics.yml up -d
+
+stop_monitoring:
+  docker compose -f docker-compose.metrics.yml down
 
 run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
@@ -62,7 +71,20 @@ run_tx_generator *ARGS:
 run_fake_contract *ARGS:
   cd fake-contract && uv run main.py {{ARGS}}
 
-ci_local:
-  just build && just lint && just test_ci --release && just run_demo && just build_docker
+run *ARGS:
+  cargo run {{ARGS}}
 
-bacon: clippy check fmt
+bench:
+  cargo bench --benches -- --nocapture
+
+####################
+####TEST COMMANDS###
+####################
+test *ARGS:
+  cargo nextest run {{ARGS}}
+  @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
+
+test_ci *ARGS:
+  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 {{ARGS}}
+  RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
+

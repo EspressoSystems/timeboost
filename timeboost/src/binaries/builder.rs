@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::net::{Ipv4Addr, SocketAddr};
 use timeboost::{
     contracts::committee::{CommitteeBase, CommitteeContract},
     Timeboost, TimeboostInitializer,
@@ -89,18 +90,16 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let bind_address = &format!("0.0.0.0:{}", cli.port);
+    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
     #[cfg(feature = "until")]
     let handle = {
-        // Get a random host. These are always run on the same box, so it doesn't matter.
+        // Get a host for the public key
         let mut host = committee
             .bootstrap_nodes()
-            .into_values()
-            .map(|v| v.1)
+            .get(&keypair.public_key())
             .map(|url_str| format!("http://{url_str}").parse::<reqwest::Url>().unwrap())
-            .nth(0)
-            .expect("first host to be present");
+            .expect("host to be present");
 
         // HACK: The port is always 9000 + i in the local setup
         host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
@@ -125,7 +124,7 @@ async fn main() -> Result<()> {
         bootstrap_nodes: committee.bootstrap_nodes().into_iter().collect(),
         staked_nodes: committee.staked_nodes(),
         keypair,
-        bind_address: bind_address.clone(),
+        bind_address,
         shutdown_rx,
     };
 

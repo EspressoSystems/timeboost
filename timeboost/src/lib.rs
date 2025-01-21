@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use sailfish::rbc::{self, Rbc};
@@ -15,17 +17,13 @@ use sequencer::{
 use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
-use timeboost_networking::derive_peer_id;
-use timeboost_networking::network::NetworkInitializer;
 use timeboost_utils::PeerConfig;
-use tokio::sync::mpsc;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
 
-use multiaddr::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
@@ -35,6 +33,7 @@ use timeboost_core::{
         NodeId,
     },
 };
+use timeboost_networking::Network;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     watch,
@@ -58,7 +57,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The bootstrap nodes to connect to.
-    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    pub bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
 
     /// The staked nodes to join the committee with.
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
@@ -67,7 +66,7 @@ pub struct TimeboostInitializer {
     pub keypair: Keypair,
 
     /// The bind address for the node.
-    pub bind_address: String,
+    pub bind_address: SocketAddr,
 
     /// The receiver for the shutdown signal.
     pub shutdown_rx: watch::Receiver<()>,
@@ -116,22 +115,13 @@ impl HasInitializer for Timeboost {
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
-        let (tx_ready, mut rx_ready) = mpsc::channel(1);
-        let peer_id = derive_peer_id::<PublicKey>(&initializer.keypair.secret_key())?;
-        let network_init = NetworkInitializer::new(
-            peer_id,
+        let network = Network::create(
+            initializer.bind_address,
             initializer.keypair.clone(),
-            initializer.staked_nodes.clone(),
             initializer.bootstrap_nodes,
-            initializer.bind_address.clone(),
         )
-        .expect("failed to make initializer")
-        .into_network(tx_ready);
-        let network = network_init.await.expect("failed to make network");
-        rx_ready
-            .recv()
-            .await
-            .expect("failed to connect to remote nodes");
+        .await
+        .expect("failed to connect to remote nodes");
 
         let committee = Committee::new(
             initializer
@@ -150,7 +140,6 @@ impl HasInitializer for Timeboost {
             .network(rbc)
             .committee(committee.clone())
             .metrics(sf_metrics)
-            .peer_id(peer_id)
             .build()
             .expect("sailfish initializer to be built");
         let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();

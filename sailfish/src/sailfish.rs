@@ -1,10 +1,11 @@
+use std::net::SocketAddr;
+
 use crate::rbc::{self, Rbc};
 use crate::{consensus::Consensus, coordinator::Coordinator};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use derive_builder::Builder;
-use libp2p_identity::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
 use std::collections::HashMap;
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -12,13 +13,8 @@ use timeboost_core::{
     traits::comm::Comm,
     types::{metrics::SailfishMetrics, NodeId},
 };
-use timeboost_networking::derive_peer_id;
-use timeboost_networking::network::NetworkInitializer;
+use timeboost_networking::Network;
 use timeboost_utils::PeerConfig;
-use tokio::sync::mpsc;
-
-#[cfg(feature = "test")]
-use timeboost_networking::derive_keypair;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -33,16 +29,13 @@ pub struct SailfishInitializer<N: Comm + Send + 'static> {
     pub keypair: Keypair,
 
     /// The bind address of the node.
-    pub bind_address: String,
+    pub bind_address: SocketAddr,
 
     /// The metrics of the node.
     pub metrics: SailfishMetrics,
 
     /// The committee of the node.
     pub committee: Committee,
-
-    /// The peer id of the node.
-    pub peer_id: PeerId,
 }
 
 pub struct Sailfish<N: Comm + Send + 'static> {
@@ -51,11 +44,8 @@ pub struct Sailfish<N: Comm + Send + 'static> {
 
     keypair: Keypair,
 
-    /// The Libp2p PeerId of the sailfish node.
-    peer_id: PeerId,
-
     /// The Libp2p multiaddr of the sailfish node.
-    bind_address: String,
+    bind_address: SocketAddr,
 
     /// The metrics of the sailfish node.
     metrics: SailfishMetrics,
@@ -76,7 +66,6 @@ impl<N: Comm + Send + 'static> HasInitializer for Sailfish<N> {
         Ok(Sailfish {
             id: initializer.id,
             keypair: initializer.keypair,
-            peer_id: initializer.peer_id,
             bind_address: initializer.bind_address,
             metrics: initializer.metrics,
             committee: initializer.committee,
@@ -94,17 +83,8 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
         self.keypair.public_key()
     }
 
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
-    }
-
-    pub fn bind_addr(&self) -> &String {
-        &self.bind_address
-    }
-
-    #[cfg(feature = "test")]
-    pub fn derive_libp2p_keypair(&self) -> Result<libp2p_identity::Keypair> {
-        derive_keypair::<PublicKey>(&self.keypair.secret_key())
+    pub fn bind_addr(&self) -> SocketAddr {
+        self.bind_address
     }
 
     #[cfg(feature = "test")]
@@ -136,29 +116,15 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
-    bind_address: String,
+    bind_address: SocketAddr,
     metrics: SailfishMetrics,
 ) -> Coordinator<Rbc> {
-    let peer_id =
-        derive_peer_id::<PublicKey>(&keypair.secret_key()).expect("derive peer id from key pair");
-    let (tx_ready, mut rx_ready) = mpsc::channel(1);
-    let network_init = NetworkInitializer::new(
-        peer_id,
-        keypair.clone(),
-        staked_nodes.clone(),
-        bootstrap_nodes,
-        bind_address.clone(),
-    )
-    .expect("creating network initializer");
-    let network = network_init
-        .into_network(tx_ready)
+    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes)
         .await
-        .expect("starting network");
-
-    rx_ready.recv().await;
+        .unwrap();
     let committee = Committee::new(
         staked_nodes
             .iter()
@@ -170,8 +136,6 @@ pub async fn sailfish_coordinator(
         network,
         rbc::Config::new(keypair.clone(), committee.clone()),
     );
-    let peer_id =
-        derive_peer_id::<PublicKey>(&keypair.secret_key()).expect("peer id to be derived");
 
     let initializer = SailfishInitializerBuilder::default()
         .id(id)
@@ -180,7 +144,6 @@ pub async fn sailfish_coordinator(
         .network(rbc)
         .committee(committee.clone())
         .metrics(metrics)
-        .peer_id(peer_id)
         .build()
         .expect("sailfish initializer to be built");
 

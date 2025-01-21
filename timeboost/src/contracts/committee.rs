@@ -1,9 +1,8 @@
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr};
 
-use libp2p_identity::PeerId;
 use multisig::PublicKey;
 use timeboost_core::types::NodeId;
-use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 /// The `CommitteeBase` defines which underlying commitee basis is used when
@@ -22,7 +21,7 @@ pub enum CommitteeBase {
 #[derive(Debug, Clone)]
 pub struct CommitteeContract {
     /// A bootstrap node is a map from its public key to its peer-id/bind address combo.
-    bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
 }
 
@@ -51,16 +50,15 @@ impl CommitteeContract {
                 [0; 32], i as u64, 1, false,
             );
             let kpr = unsafe_zero_keypair(i as u64);
-            let peer_id = derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap();
             let bind_addr = match base {
-                CommitteeBase::Local => format!("127.0.0.1:{}", 8000 + i),
+                CommitteeBase::Local => SocketAddr::from((Ipv4Addr::LOCALHOST, 8000 + i)),
                 _ => {
                     // If we get here that's a mistake
                     unreachable!();
                 }
             };
             staked_nodes.push(cfg.public_config());
-            bootstrap_nodes.insert(kpr.public_key(), (peer_id, bind_addr));
+            bootstrap_nodes.insert(kpr.public_key(), bind_addr);
         }
 
         Self {
@@ -99,7 +97,7 @@ impl CommitteeContract {
     }
 
     /// Fetch the current bootstrap nodes from the contract, also a placeholder for now.
-    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, (PeerId, String)> {
+    pub fn bootstrap_nodes(&self) -> HashMap<PublicKey, SocketAddr> {
         self.bootstrap_nodes.clone()
     }
 }

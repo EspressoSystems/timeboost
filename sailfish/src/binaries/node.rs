@@ -1,9 +1,12 @@
-use std::{collections::HashMap, fs};
+use std::{
+    collections::HashMap,
+    fs,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
-use libp2p_identity::PeerId;
 use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::metrics::SailfishMetrics;
@@ -20,7 +23,7 @@ struct Cli {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    to_connect_addrs: HashMap<PublicKey, (PeerId, String)>,
+    to_connect_addrs: HashMap<PublicKey, SocketAddr>,
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     id: NodeId,
     port: u16,
@@ -32,7 +35,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg: Config = toml::from_str(&fs::read_to_string(cli.config_path)?)?;
     let keypair = unsafe_zero_keypair(cfg.id);
-    let bind_address = &format!("0.0.0.0:{}", cfg.port);
+    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cfg.port));
 
     let metrics = SailfishMetrics::default();
     let mut coordinator = sailfish_coordinator(
@@ -40,7 +43,7 @@ async fn main() -> Result<()> {
         cfg.to_connect_addrs,
         cfg.staked_nodes,
         keypair,
-        bind_address.to_string(),
+        bind_address,
         metrics,
     )
     .await;

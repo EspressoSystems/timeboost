@@ -1,8 +1,7 @@
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr};
 
-use libp2p_identity::PeerId;
 use multisig::{Committee, Keypair, PublicKey};
-use timeboost_networking::derive_peer_id;
 use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
 
 #[cfg(test)]
@@ -13,11 +12,10 @@ mod rbc;
 
 pub struct Group {
     pub size: usize,
-    pub addrs: Vec<String>,
-    pub bootstrap_nodes: HashMap<PublicKey, (PeerId, String)>,
+    pub addrs: Vec<SocketAddr>,
+    pub bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
     pub staked_nodes: Vec<PeerConfig<PublicKey>>,
     pub committee: Committee,
-    pub peer_ids: Vec<PeerId>,
     pub keypairs: Vec<Keypair>,
 }
 
@@ -27,26 +25,21 @@ impl Group {
             .map(unsafe_zero_keypair)
             .collect::<Vec<_>>();
         let mut addrs = vec![];
-        let mut peer_ids = vec![];
         let mut vcgfs = vec![];
         let mut pubks = vec![];
 
         for (i, kpr) in keypairs.iter().enumerate() {
             let cfg = ValidatorConfig::generated_from_seed_indexed([0; 32], i as u64, 1, false);
             pubks.push((i as u8, kpr.public_key()));
-            addrs.push(format!(
-                "127.0.0.1:{}",
-                portpicker::pick_unused_port().expect("Could not find an open port")
-            ));
+            let port = portpicker::pick_unused_port().expect("Could not find an open port");
+            addrs.push(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
             vcgfs.push(cfg);
-            peer_ids.push(derive_peer_id::<PublicKey>(&kpr.secret_key()).unwrap());
         }
 
-        let bootstrap_nodes: HashMap<PublicKey, (PeerId, String)> = pubks
+        let bootstrap_nodes: HashMap<PublicKey, SocketAddr> = pubks
             .iter()
-            .zip(peer_ids.clone())
             .zip(addrs.clone())
-            .map(|((pk, pid), addr)| (pk.1, (pid, addr)))
+            .map(|(pk, addr)| (pk.1, addr))
             .collect();
 
         let staked_nodes: Vec<PeerConfig<PublicKey>> =
@@ -54,7 +47,6 @@ impl Group {
 
         Self {
             size,
-            peer_ids,
             bootstrap_nodes,
             staked_nodes,
             committee: Committee::new(pubks),

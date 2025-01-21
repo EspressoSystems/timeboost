@@ -758,7 +758,7 @@ impl Consensus {
                 self.delivered.insert((r, s));
             }
         }
-        self.gc();
+        self.cleanup();
         actions
     }
 
@@ -768,15 +768,28 @@ impl Consensus {
         r = %self.round,
         c = %self.committed_round)
     )]
-    fn gc(&mut self) {
-        if *self.committed_round < self.committee.size().get() as u64 {
+    fn cleanup(&mut self) {
+        let len = self.committee.size().get() as u64;
+
+        if *self.committed_round < len {
             return;
         }
 
-        let r = self.committed_round - self.committee.size().get() as u64;
+        let r = self.committed_round - len;
+
         self.dag.remove(r);
         self.buffer.remove(r);
         self.delivered.retain(|(x, _)| *x >= r);
+
+        // Now add buffered vertices of the lowest round to the DAG. This is assumed to be safe
+        // because we are at this point at least `len` rounds ahead of `r` and in each round we
+        // have > 2f vertices in our DAG.
+
+        debug_assert!(self.buffer.vertex_count(r) <= self.committee.threshold().get());
+
+        for v in self.buffer.drain_round(r) {
+            self.dag.add(v)
+        }
 
         self.metrics.dag_depth.set(self.dag.depth());
         self.metrics.vertex_buffer.set(self.buffer.depth());
