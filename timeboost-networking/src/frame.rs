@@ -15,7 +15,7 @@
 //    - Ping (1)
 //    - Pong (2)
 // - Partial (1 bit)
-// - Reserved (8 bits)
+// - Reserved (7 bits)
 // - Payload length (16 bits)
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Header(u32);

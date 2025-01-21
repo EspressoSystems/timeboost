@@ -115,7 +115,7 @@ struct IoTask {
     /// Abort handle of the write-half of the connection.
     wh: AbortHandle,
 
-    /// MPSC sender of incoming messages from the remote.
+    /// MPSC sender of outgoing messages to the remote.
     tx: Sender<Vec<u8>>,
 }
 
@@ -231,7 +231,7 @@ impl Server {
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
                         if k > self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(s, t)
+                            self.spawn_io(k, s, t)
                         } else {
                             warn!(n = %self.key, %k, "dropping accepted connection");
                         }
@@ -254,7 +254,7 @@ impl Server {
                         // We only keep the connection if our key is larger than the remote,
                         // or if we do not have a connection for that key at the moment.
                         if k < self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(s, t)
+                            self.spawn_io(k, s, t)
                         } else {
                             warn!(n = %self.key, %k, "dropping new connection");
                         }
@@ -359,11 +359,7 @@ impl Server {
         self.handshake_tasks.spawn(on_handshake(h, s));
     }
 
-    fn spawn_io(&mut self, s: TcpStream, t: TransportState) {
-        let Some(k) = self.lookup_peer(&t) else {
-            debug!(n = %self.key, a = ?s.peer_addr().ok(), "unknown peer");
-            return;
-        };
+    fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState) {
         debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");
         let (to_remote, from_remote) = mpsc::channel(256);
         let (r, w) = s.into_split();
