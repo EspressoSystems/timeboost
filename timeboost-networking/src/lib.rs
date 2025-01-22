@@ -17,14 +17,14 @@ use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::time::sleep;
+use tokio::time::{sleep, Instant};
 use tokio::{
     spawn,
     task::{self, AbortHandle, JoinHandle, JoinSet},
 };
 use tracing::{debug, error, info, trace, warn};
 
-use frame::Header;
+use frame::{Header, Type};
 
 pub use error::{Empty, NetworkError};
 
@@ -42,8 +42,14 @@ const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 /// Max. number of bytes for a message (potentially consisting of several frames).
 const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
-/// Noise parameters to initialize the builders
+/// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
+
+/// Size of the ping protocol payload.
+const PING_SIZE: usize = 8;
+
+/// Interval between ping protocol.
+const PING_INTERVAL: Duration = Duration::from_secs(2);
 
 /// `Network` is the API facade of this crate.
 #[derive(Debug)]
@@ -125,7 +131,7 @@ struct IoTask {
     wh: AbortHandle,
 
     /// MPSC sender of outgoing messages to the remote.
-    tx: Sender<Bytes>,
+    tx: Sender<Type>,
 }
 
 // Make sure all tasks are stopped when `IoTask` is dropped.
@@ -212,6 +218,7 @@ impl Server {
     async fn run(mut self, listener: TcpListener) -> Result<Empty> {
         self.handshake_tasks.spawn(pending());
         self.io_tasks.spawn(pending());
+        let (mtx, mut mrx) = mpsc::channel(256);
 
         for (k, a) in &self.peers {
             if *k == self.key {
@@ -256,7 +263,7 @@ impl Server {
                         // is larger than ours, or if we do not have a connection for
                         // that key at the moment.
                         if k > self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(k, s, t)
+                            self.spawn_io(k, s, t, mtx.clone())
                         } else {
                             warn!(n = %self.key, %k, "dropping accepted connection");
                         }
@@ -279,7 +286,7 @@ impl Server {
                         // We only keep the connection if our key is larger than the remote,
                         // or if we do not have a connection for that key at the moment.
                         if k < self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(k, s, t)
+                            self.spawn_io(k, s, t, mtx.clone())
                         } else {
                             warn!(n = %self.key, %k, "dropping new connection");
                         }
@@ -320,7 +327,7 @@ impl Server {
                             continue
                         }
                         if let Some(task) = self.active.get_mut(&to) {
-                            if task.tx.try_send(m).is_err() {
+                            if task.tx.try_send((Type::Data, m)).is_err() {
                                 warn!(n = %self.key, k = %to, "channel full => reconnecting");
                                 self.spawn_connect(to)
                             }
@@ -331,7 +338,7 @@ impl Server {
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
                         for (k, task) in &mut self.active {
-                            if task.tx.try_send(m.clone()).is_err() {
+                            if task.tx.try_send((Type::Data, m.clone())).is_err() {
                                 warn!(n = %self.key, %k, "channel full => reconnecting");
                                 reconnect.push(*k);
                             }
@@ -343,6 +350,10 @@ impl Server {
                     None => {
                         return Err(NetworkError::ChannelClosed)
                     }
+                },
+                // Received metrics update from io task.
+                Some(update) = mrx.recv() => {
+                    self.metrics.latency.add_point(update as f64 / 1000.0);
                 }
             }
         }
@@ -384,21 +395,22 @@ impl Server {
         self.handshake_tasks.spawn(on_handshake(h, s));
     }
 
-    fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState) {
+    fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState, mtx: Sender<u64>) {
         debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");
         let (to_remote, from_remote) = mpsc::channel(256);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
         let ibound = self.ibound.clone();
-        let rh = self.io_tasks.spawn(recv_loop(k, r, t1, ibound));
-        let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
+        let to_write = to_remote.clone();
+        let rh = self.io_tasks.spawn(recv_loop(k, r, t1, ibound, to_write));
+        let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote, mtx));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
             rh,
             wh,
-            tx: to_remote,
+            tx: to_remote.clone(),
         };
         self.active.insert(k, io);
         self.metrics.connections.set(self.active.len());
@@ -510,6 +522,7 @@ async fn recv_loop<R>(
     mut r: R,
     t: Arc<Mutex<TransportState>>,
     tx: Sender<(PublicKey, Bytes)>,
+    to_write: Sender<(Type, Vec<u8>)>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -519,10 +532,18 @@ where
         let mut msg = BytesMut::new();
         loop {
             let (h, f) = recv_frame(&mut r).await?;
+
+            // Received ping protocol message
             if !h.is_data() {
-                // TODO: Ping handling.
+                let mut ping = Vec::new();
+                let n = t.lock().read_message(&f, &mut buf)?;
+                ping.extend_from_slice(&buf[..n]);
+                let _ = to_write
+                    .send((if h.is_ping() { Type::Ping } else { Type::Pong }, ping))
+                    .await;
                 continue;
             }
+            // Received data message
             let n = t.lock().read_message(&f, &mut buf)?;
             msg.extend_from_slice(&buf[..n]);
             if !h.is_partial() {
@@ -546,25 +567,62 @@ where
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
-    mut rx: Receiver<Bytes>,
+    mut rx: Receiver<(Type, Bytes)>,
+    mtx: Sender<u64>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
-    while let Some(msg) = rx.recv().await {
-        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
-        while let Some(m) = it.next() {
-            let n = t.lock().write_message(m, &mut buf)?;
-            let h = if it.peek().is_some() {
-                Header::data(n as u16).partial()
-            } else {
-                Header::data(n as u16)
-            };
-            send_frame(&mut w, h, &buf[..n]).await?
+    let start = Instant::now();
+    let mut ping_deadline = start + PING_INTERVAL;
+
+    loop {
+        tokio::select! {
+            // Sending ping message after deadline
+            _deadline = tokio::time::sleep_until(ping_deadline) => {
+                ping_deadline += PING_INTERVAL;
+                let time = start.elapsed().as_micros() as u64;
+                let n = t.lock().write_message(&time.to_be_bytes(), &mut buf)?;
+                let h = Header::ping(n as u16);
+                send_frame(&mut w, h, &buf[..n]).await?;
+            }
+            Some((typ, msg)) = rx.recv() => {
+                match typ {
+                    // Sending pong message
+                    Type::Ping => {
+                        let n = t.lock().write_message(&msg, &mut buf)?;
+                        let h = Header::pong(n as u16);
+                        send_frame(&mut w, h, &buf[..n]).await?;
+                        continue;
+                    }
+                    // Ping protocol succeeded; measure elapsed time
+                    Type::Pong => {
+                        let mut pong_buf: [u8; 8] = [0; PING_SIZE];
+                        let time = start.elapsed().as_micros() as u64;
+                        pong_buf.copy_from_slice(&msg[..PING_SIZE]);
+                        let our_ping = u64::from_be_bytes(pong_buf);
+                        if let Some(delay) = time.checked_sub(our_ping) {
+                                let _ = mtx.send(delay).await;
+                        };
+                        continue;
+                    }
+                    Type::Data => {
+                        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
+                        while let Some(m) = it.next() {
+                            let n = t.lock().write_message(m, &mut buf)?;
+                            let h = if it.peek().is_some() {
+                                Header::data(n as u16).partial()
+                            } else {
+                                Header::data(n as u16)
+                            };
+                            send_frame(&mut w, h, &buf[..n]).await?
+                        }
+                    }
+                }
+            }
         }
     }
-    Ok(())
 }
 
 /// Read a single frame (header + payload) from the remote.
