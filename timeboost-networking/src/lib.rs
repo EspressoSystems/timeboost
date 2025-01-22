@@ -131,7 +131,7 @@ struct IoTask {
     wh: AbortHandle,
 
     /// MPSC sender of outgoing messages to the remote.
-    tx: Sender<Type>,
+    tx: Sender<Message>,
 }
 
 // Make sure all tasks are stopped when `IoTask` is dropped.
@@ -326,7 +326,7 @@ impl Server {
                             continue
                         }
                         if let Some(task) = self.active.get_mut(&to) {
-                            if task.tx.try_send(Type::Data(m)).is_err() {
+                            if task.tx.try_send(Message::Data(m)).is_err() {
                                 warn!(n = %self.key, k = %to, "channel full => reconnecting");
                                 self.spawn_connect(to)
                             }
@@ -337,7 +337,7 @@ impl Server {
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
                         for (k, task) in &mut self.active {
-                            if task.tx.try_send(Type::Data(m.clone())).is_err() {
+                            if task.tx.try_send(Message::Data(m.clone())).is_err() {
                                 warn!(n = %self.key, %k, "channel full => reconnecting");
                                 reconnect.push(*k);
                             }
@@ -519,7 +519,7 @@ async fn recv_loop<R>(
     mut r: R,
     t: Arc<Mutex<TransportState>>,
     tx: Sender<(PublicKey, Bytes)>,
-    to_write: Sender<Type>,
+    to_write: Sender<Message>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -537,9 +537,9 @@ where
                 p.copy_from_slice(&buf[..n]);
                 if to_write
                     .try_send(if h.is_ping() {
-                        Type::Ping(p)
+                        Message::Ping(p)
                     } else {
-                        Type::Pong(p)
+                        Message::Pong(p)
                     })
                     .is_err()
                 {
@@ -571,7 +571,7 @@ where
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
-    mut rx: Receiver<Type>,
+    mut rx: Receiver<Message>,
     nm: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
@@ -594,15 +594,15 @@ where
             Some(typ) = rx.recv() => {
                 match typ {
                     // Sending pong message
-                    Type::Ping(ping) => {
+                    Message::Ping(ping) => {
                         let n = t.lock().write_message(&ping, &mut buf)?;
                         let h = Header::pong(n as u16);
                         send_frame(&mut w, h, &buf[..n]).await?;
                         continue;
                     }
                     // Ping protocol succeeded; measure elapsed time
-                    Type::Pong(pong) => {
-                        let mut pong_buf = [0u8; PING_SIZE];
+                    Message::Pong(pong) => {
+                        let mut pong_buf = [0; PING_SIZE];
                         let time = start.elapsed().as_micros() as u64;
                         pong_buf.copy_from_slice(&pong[..PING_SIZE]);
                         let our_ping = u64::from_be_bytes(pong_buf);
@@ -611,7 +611,7 @@ where
                         };
                         continue;
                     }
-                    Type::Data(msg) => {
+                    Message::Data(msg) => {
                         let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
                         while let Some(m) = it.next() {
                             let n = t.lock().write_message(m, &mut buf)?;
@@ -627,6 +627,13 @@ where
             }
         }
     }
+}
+
+#[derive(PartialEq)]
+pub enum Message {
+    Data(Bytes),
+    Ping([u8; PING_SIZE]),
+    Pong([u8; PING_SIZE]),
 }
 
 /// Read a single frame (header + payload) from the remote.
