@@ -601,7 +601,7 @@ where
                     }
                     // Ping protocol succeeded; measure elapsed time
                     Type::Pong(pong) => {
-                        let mut pong_buf: [u8; 8] = [0; PING_SIZE];
+                        let mut pong_buf = [0u8; PING_SIZE];
                         let time = start.elapsed().as_micros() as u64;
                         pong_buf.copy_from_slice(&pong[..PING_SIZE]);
                         let our_ping = u64::from_be_bytes(pong_buf);
