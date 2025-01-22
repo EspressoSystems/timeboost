@@ -21,4 +21,5 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+portpicker = { workspace = true }
 quickcheck = { workspace = true }
