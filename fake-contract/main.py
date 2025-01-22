@@ -5,6 +5,8 @@ import typer
 from typing import Optional, Dict
 import uvicorn
 from typing_extensions import Annotated
+import threading
+import time
 
 app = FastAPI()
 cli = typer.Typer()
@@ -54,14 +56,16 @@ def ready(request: Request, payload: ReadyPayload):
                 detail=f"key '{payload.public_key}' was already registered",
             )
 
-    e = CommitteeEntry(
-        payload.node_id,
-        payload.public_key,
-        f"{request.client[0]}:{payload.node_port}",
-    )
-    COMMITTEE.append(e)
-
-    return e
+    if request.client:
+        e = CommitteeEntry(
+            payload.node_id,
+            payload.public_key,
+            f"{request.client[0]}:{payload.node_port}",
+        )
+        COMMITTEE.append(e)
+        return e
+    else:
+        return "invalid client"
 
 
 @app.get("/start/")
@@ -81,9 +85,20 @@ def main(
         Optional[int],
         typer.Argument(help="How many nodes to wait for before starting"),
     ] = 5,
+    timeout: Optional[int] = typer.Option(help="Timeout for the server", default=None)
 ):
     # Store the committee_size in the app state
     app.state.committee_size = committee_size
+
+    if timeout:
+        def shutdown_server_after_timeout():
+            time.sleep(timeout)
+            print("Timeout reached. Shutting down the server.")
+            import os
+            import signal
+            os.kill(os.getpid(), signal.SIGINT)
+
+        threading.Thread(target=shutdown_server_after_timeout, daemon=True).start()
 
     uvicorn.run(app, host="0.0.0.0", port=7200)
 

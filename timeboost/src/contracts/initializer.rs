@@ -1,12 +1,11 @@
 use std::net::SocketAddr;
 
 use anyhow::Result;
-use multisig::{Keypair, PublicKey};
+use multisig::PublicKey;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, time::Duration};
-use timeboost_utils::{PeerConfig, ValidatorConfig};
+use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::error;
 
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -28,14 +27,14 @@ pub struct StartResponse {
 pub async fn submit_ready(
     node_id: u64,
     node_port: u16,
-    kpr: Keypair,
+    public_key: PublicKey,
     url: reqwest::Url,
 ) -> Result<()> {
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
     let registration = serde_json::to_string(
-        &serde_json::json!({ "node_id": node_id, "public_key": kpr.public_key().as_bytes(), "node_port": node_port }),
+        &serde_json::json!({ "node_id": node_id, "public_key": public_key.as_bytes(), "node_port": node_port }),
     )?;
 
     loop {
@@ -62,9 +61,7 @@ pub async fn submit_ready(
     Ok(())
 }
 
-pub async fn wait_for_committee(
-    url: reqwest::Url,
-) -> Result<(HashMap<PublicKey, SocketAddr>, Vec<PeerConfig<PublicKey>>)> {
+pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, SocketAddr)>> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
         match reqwest::get(url.clone().join("start/").expect("valid url")).await {
@@ -89,19 +86,14 @@ pub async fn wait_for_committee(
         }
     };
 
-    let mut bootstrap_nodes = HashMap::new();
-    let mut staked_nodes = vec![];
+    let mut bootstrap_nodes = Vec::new();
     for c in committee_data.committee.into_iter() {
-        info!("{}", c.ip_addr);
-        let cfg =
-            ValidatorConfig::<PublicKey>::generated_from_seed_indexed([0; 32], c.node_id, 1, false);
-        bootstrap_nodes.insert(
+        bootstrap_nodes.push((
             PublicKey::try_from(c.public_key.as_slice())
                 .expect("public key to deserialize successfully"),
             c.ip_addr,
-        );
-        staked_nodes.push(cfg.public_config());
+        ));
     }
 
-    Ok((bootstrap_nodes, staked_nodes))
+    Ok(bootstrap_nodes)
 }
