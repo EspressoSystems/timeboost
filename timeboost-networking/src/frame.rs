@@ -95,6 +95,13 @@ impl TryFrom<[u8; 4]> for Header {
     }
 }
 
+#[derive(PartialEq)]
+pub enum Type {
+    Data,
+    Ping,
+    Pong,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("invalid header: {0}")]
 pub struct InvalidHeader(&'static str);
