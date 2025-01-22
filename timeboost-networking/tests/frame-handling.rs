@@ -1,5 +1,6 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
+use bytes::Bytes;
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
@@ -38,18 +39,18 @@ async fn multiple_frames() {
 }
 
 /// Generate a vector with random data and random length (within bounds).
-fn gen_message() -> Vec<u8> {
+fn gen_message() -> Bytes {
     let mut g = rand::thread_rng();
     let mut v = vec![0; g.gen_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
-    v
+    v.into()
 }
 
 /// Multicast a message and receive them in both networks.
 ///
 /// Since `Network` is essentially unreliable, this will retry multicasting
 /// until the expected message has been received by both parties.
-async fn send_recv(sender: PublicKey, net_a: &mut Network, net_b: &mut Network, data: Vec<u8>) {
+async fn send_recv(sender: PublicKey, net_a: &mut Network, net_b: &mut Network, data: Bytes) {
     'main: loop {
         net_a.multicast(data.clone()).await.unwrap();
 
