@@ -4,9 +4,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
+use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
+use serde::Serialize;
 use timeboost_core::traits::comm::RawComm;
 use timeboost_core::types::message::Message;
 use timeboost_utils::types::round_number::RoundNumber;
@@ -255,7 +257,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_broadcast(&mut self, msg: &Message<Validated>) -> Result<()> {
         let proto = Protocol::Bypass(Cow::Borrowed(msg));
-        let bytes = bincode::serialize(&proto)?;
+        let bytes = serialize(&proto)?;
         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
         Ok(())
     }
@@ -270,7 +272,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_outbound(&mut self, msg: Message<Validated>) -> Result<()> {
         let proto = Protocol::Propose(Cow::Borrowed(&msg));
-        let bytes = bincode::serialize(&proto)?;
+        let bytes = serialize(&proto)?;
         let digest = Digest::new(&msg);
 
         // We track the max. round number to know when it is safe to remove
@@ -313,7 +315,7 @@ impl<C: RawComm> Worker<C> {
 
     /// We received a message from the network.
     #[instrument(level = "trace", skip_all, fields(n = %self.label))]
-    async fn on_inbound(&mut self, bytes: Vec<u8>) -> Result<()> {
+    async fn on_inbound(&mut self, bytes: Bytes) -> Result<()> {
         match bincode::deserialize(&bytes)? {
             Protocol::Bypass(msg) => self.on_bypass(msg.into_owned()).await?,
             Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
@@ -363,7 +365,7 @@ impl<C: RawComm> Worker<C> {
                 tracker.status = Status::ReceivedMsg;
                 let env = Envelope::signed(digest, &self.config.keypair, false);
                 let vote = Protocol::Vote(env, false);
-                let bytes = bincode::serialize(&vote)?;
+                let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
             }
@@ -373,7 +375,7 @@ impl<C: RawComm> Worker<C> {
                 debug_assert!(tracker.message.item.is_some());
                 let env = Envelope::signed(digest, &self.config.keypair, false);
                 let vote = Protocol::Vote(env, false);
-                let bytes = bincode::serialize(&vote)?;
+                let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
             }
@@ -384,7 +386,7 @@ impl<C: RawComm> Worker<C> {
                     tracker.message = Item::some(msg);
                     let env = Envelope::signed(digest, &self.config.keypair, false);
                     let vote = Protocol::Vote(env, false);
-                    let bytes = bincode::serialize(&vote)?;
+                    let bytes = serialize(&vote)?;
                     self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                     tracker.status = Status::SentVote
                 }
@@ -488,7 +490,7 @@ impl<C: RawComm> Worker<C> {
                     if let Some(msg) = &tracker.message.item {
                         let e = Envelope::signed(cert.clone(), &self.config.keypair, false);
                         let m = Protocol::Cert(e);
-                        let b = bincode::serialize(&m)?;
+                        let b = serialize(&m)?;
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         if !tracker.message.early {
                             self.tx
@@ -501,7 +503,7 @@ impl<C: RawComm> Worker<C> {
                     } else {
                         let e = Envelope::signed(digest, &self.config.keypair, false);
                         let m = Protocol::Get(e);
-                        let b = bincode::serialize(&m)?;
+                        let b = serialize(&m)?;
                         let s = tracker.choose_voter(&commit).expect("certificate => voter");
                         self.comm.send(s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg;
@@ -520,7 +522,7 @@ impl<C: RawComm> Worker<C> {
             // the still missing message. We use this additional vote to try again.
             Status::ReachedQuorum if tracker.message.item.is_none() => {
                 let m = Protocol::Get(Envelope::signed(digest, &self.config.keypair, false));
-                let b = bincode::serialize(&m)?;
+                let b = serialize(&m)?;
                 let s = tracker.choose_voter(&commit).expect("quorum => voter");
                 self.comm.send(s, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg;
@@ -537,7 +539,7 @@ impl<C: RawComm> Worker<C> {
                     );
                     let env = Envelope::signed(digest, &self.config.keypair, false);
                     let vote = Protocol::Vote(env, true);
-                    let bytes = bincode::serialize(&vote)?;
+                    let bytes = serialize(&vote)?;
                     self.comm.send(source, bytes).await.map_err(RbcError::net)?;
                 }
             }
@@ -596,7 +598,7 @@ impl<C: RawComm> Worker<C> {
                 if let Some(msg) = &tracker.message.item {
                     let e = Envelope::signed(env.into_data(), &self.config.keypair, false);
                     let m = Protocol::Cert(e);
-                    let b = bincode::serialize(&m)?;
+                    let b = serialize(&m)?;
                     self.comm.broadcast(b).await.map_err(RbcError::net)?;
                     if !tracker.message.early {
                         self.tx
@@ -608,7 +610,7 @@ impl<C: RawComm> Worker<C> {
                     tracker.status = Status::Delivered
                 } else {
                     let m = Protocol::Get(Envelope::signed(digest, &self.config.keypair, false));
-                    let b = bincode::serialize(&m)?;
+                    let b = serialize(&m)?;
                     let s = tracker.choose_voter(&commit).expect("certificate => voter");
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
                     tracker.status = Status::RequestedMsg;
@@ -619,7 +621,7 @@ impl<C: RawComm> Worker<C> {
             Status::ReachedQuorum if tracker.message.item.is_none() => {
                 let e = Envelope::signed(digest, &self.config.keypair, false);
                 let m = Protocol::Get(e);
-                let b = bincode::serialize(&m)?;
+                let b = serialize(&m)?;
                 let s = tracker.choose_voter(&commit).expect("quorum => voter");
                 self.comm.send(s, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg;
@@ -708,7 +710,7 @@ impl<C: RawComm> Worker<C> {
                         .expect("message was sent => set in tracker");
                     debug!(n = %self.label, d = %digest, m = %messg, "re-broadcasting message");
                     let proto = Protocol::Propose(Cow::Borrowed(messg));
-                    let bytes = bincode::serialize(&proto).expect("idempotent serialization");
+                    let bytes = serialize(&proto).expect("idempotent serialization");
                     tracker.start = now;
                     tracker.retries = tracker.retries.saturating_add(1);
                     if let Err(e) = self.comm.broadcast(bytes).await {
@@ -729,13 +731,13 @@ impl<C: RawComm> Worker<C> {
                         if tracker.ours {
                             debug!(n = %self.label, d = %digest, "sending our message (again)");
                             let proto = Protocol::Propose(Cow::Borrowed(msg));
-                            let bytes = bincode::serialize(&proto)?;
+                            let bytes = serialize(&proto)?;
                             self.comm.broadcast(bytes).await.map_err(RbcError::net)?
                         }
                         debug!(n = %self.label, d = %digest, "sending our vote (again)");
                         let env = Envelope::signed(*digest, &self.config.keypair, false);
                         let vote = Protocol::Vote(env, false);
-                        let bytes = bincode::serialize(&vote).expect("idempotent serialization");
+                        let bytes = serialize(&vote).expect("idempotent serialization");
                         tracker.start = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
@@ -755,7 +757,7 @@ impl<C: RawComm> Worker<C> {
                     }
                     debug!(n = %self.label, d = %digest, "requesting message again");
                     let m = Protocol::Get(Envelope::signed(*digest, &self.config.keypair, false));
-                    let b = bincode::serialize(&m).expect("idempotent serialization");
+                    let b = serialize(&m).expect("idempotent serialization");
                     let c = digest.commit();
                     let s = tracker.choose_voter(&c).expect("req-msg => voter");
                     tracker.start = now;
@@ -781,7 +783,7 @@ impl<C: RawComm> Worker<C> {
                         debug!(n = %self.label, d = %digest, m = %msg, "sending certificate");
                         let e = Envelope::signed(c.clone(), &self.config.keypair, false);
                         let m = Protocol::Cert(e);
-                        let b = bincode::serialize(&m).expect("idempotent serialization");
+                        let b = serialize(&m).expect("idempotent serialization");
                         tracker.start = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
@@ -797,7 +799,7 @@ impl<C: RawComm> Worker<C> {
                         debug!(n = %self.label, d = %digest, "requesting message");
                         let e = Envelope::signed(*digest, &self.config.keypair, false);
                         let m = Protocol::Get(e);
-                        let b = bincode::serialize(&m).expect("idempotent serialization");
+                        let b = serialize(&m).expect("idempotent serialization");
                         let c = digest.commit();
                         let s = tracker.choose_voter(&c).expect("quorum => voter");
                         tracker.start = now;
@@ -815,9 +817,16 @@ impl<C: RawComm> Worker<C> {
 /// Factored out of `Worker` to help with borrowing.
 async fn send<C: RawComm>(net: &mut C, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
     let proto = Protocol::Bypass(Cow::Borrowed(msg));
-    let bytes = bincode::serialize(&proto)?;
+    let bytes = serialize(&proto)?;
     net.send(to, bytes).await.map_err(RbcError::net)?;
     Ok(())
+}
+
+/// Serialize a given data type into `Bytes`
+fn serialize<T: Serialize>(d: &T) -> Result<Bytes> {
+    let mut b = BytesMut::new().writer();
+    bincode::serialize_into(&mut b, d)?;
+    Ok(b.into_inner().freeze())
 }
 
 #[derive(Debug, thiserror::Error)]

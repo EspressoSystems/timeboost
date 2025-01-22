@@ -74,8 +74,8 @@ run_fake_contract *ARGS:
 run *ARGS:
   cargo run {{ARGS}}
 
-bench:
-  cargo bench --benches -- --nocapture
+bench *ARGS:
+  cargo bench --benches {{ARGS}} -- --nocapture
 
 ####################
 ####TEST COMMANDS###

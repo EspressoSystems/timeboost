@@ -76,11 +76,16 @@ impl TestableNetwork for MemoryNetworkTest {
                 self.interceptor.clone(),
             );
             let messages = test_net.messages();
-
+            let kpr = self.group.keypairs[i].clone();
+            let addr = *self
+                .group
+                .peers
+                .get(&kpr.public_key())
+                .expect("own public key to be present");
             let initializer = SailfishInitializerBuilder::default()
                 .id((i as u64).into())
-                .keypair(self.group.keypairs[i].clone())
-                .bind_address(self.group.addrs[i])
+                .keypair(kpr)
+                .bind_address(addr)
                 .network(test_net)
                 .committee(self.group.committee.clone())
                 .metrics(SailfishMetrics::default())

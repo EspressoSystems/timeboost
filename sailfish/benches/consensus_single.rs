@@ -121,7 +121,7 @@ fn action_to_msg(action: Action) -> Option<Message> {
 pub fn criterion_benchmark(c: &mut Criterion) {
     logging::init_logging();
 
-    let mut group = c.benchmark_group("multi-round consensus");
+    let mut group = c.benchmark_group("multi_round_consensus");
     for s in [
         MultiRoundTestSpec {
             nodes: 1,
