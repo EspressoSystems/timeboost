@@ -27,14 +27,17 @@ pub use error::{Empty, NetworkError};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
-/// Max message size using noise handshake.
+/// Max. message size using noise handshake.
 const MAX_NOISE_HANDSHAKE_SIZE: usize = 1024;
 
-/// Max message size using noise protocol.
+/// Max. message size using noise protocol.
 const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
-/// Number of bytes for payload data.
+/// Max. number of bytes for payload data.
 const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
+
+/// Max. number of bytes for a message (potentially consisting of several frames).
+const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
 /// Noise parameters to initialize the builders
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
@@ -512,7 +515,7 @@ where
             if !h.is_partial() {
                 break;
             }
-            if msg.len() > MAX_PAYLOAD_SIZE {
+            if msg.len() > MAX_TOTAL_SIZE {
                 return Err(NetworkError::MessageTooLarge);
             }
         }
