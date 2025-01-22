@@ -1,3 +1,7 @@
+use bytes::Bytes;
+
+use crate::PING_SIZE;
+
 /// The header of a frame.
 //
 //  0                   1                   2                   3
@@ -97,9 +101,9 @@ impl TryFrom<[u8; 4]> for Header {
 
 #[derive(PartialEq)]
 pub enum Type {
-    Data,
-    Ping,
-    Pong,
+    Data(Bytes),
+    Ping([u8; PING_SIZE]),
+    Pong([u8; PING_SIZE]),
 }
 
 #[derive(Debug, thiserror::Error)]
