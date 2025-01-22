@@ -579,6 +579,7 @@ where
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     let mut interval = time::interval(PING_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let start = time::Instant::now();
 
     loop {
