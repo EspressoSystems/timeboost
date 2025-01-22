@@ -354,7 +354,7 @@ impl<C: RawComm> Worker<C> {
         match bincode::deserialize(&bytes)? {
             Protocol::Fire(msg) => self.on_message(src, msg.into_owned(), false).await?,
             Protocol::Send(msg) => self.on_message(src, msg.into_owned(), true).await?,
-            Protocol::Ack(env) => self.on_ack(env).await?,
+            Protocol::Ack(env) => self.on_ack(src, env).await?,
             Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::Get(env) => self.on_get(env).await?,
@@ -392,13 +392,18 @@ impl<C: RawComm> Worker<C> {
     /// A message acknowledgement has been received.
     #[instrument(level = "trace", skip_all, fields(
         n = %self.label,
-        s = %env.signing_key(),
+        s = %src,
         d = %env.data())
     )]
-    async fn on_ack(&mut self, env: Envelope<Digest, Unchecked>) -> Result<()> {
+    async fn on_ack(&mut self, src: PublicKey, env: Envelope<Digest, Unchecked>) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
+
+        if src != *env.signing_key() {
+            warn!(n = %self.label, s = %src, k = %env.signing_key(), "ack signer != sender");
+            return Err(RbcError::InvalidSender);
+        }
 
         let digest = env.data();
 
@@ -412,7 +417,7 @@ impl<C: RawComm> Worker<C> {
             return Ok(());
         };
 
-        acks.rem.retain(|k| k != env.signing_key());
+        acks.rem.retain(|k| *k != src);
 
         if acks.rem.is_empty() {
             msgs.acks.remove(digest);
@@ -943,6 +948,9 @@ pub enum RbcError {
 
     #[error("invalid message")]
     InvalidMessage,
+
+    #[error("invalid sender")]
+    InvalidSender,
 
     #[error("rbc has shut down")]
     Shutdown,
