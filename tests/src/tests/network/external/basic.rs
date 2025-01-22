@@ -9,6 +9,7 @@ use sailfish::sailfish::SailfishInitializerBuilder;
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
+use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_networking::Network;
 use tokio::{sync::watch, task::JoinSet};
 
@@ -47,9 +48,14 @@ impl TestableNetwork for BasicNetworkTest {
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
             let addr = self.group.addrs[i];
-            let net = Network::create(addr, kpr.clone(), self.group.bootstrap_nodes.clone())
-                .await
-                .expect("failed to make network");
+            let net = Network::create(
+                addr,
+                kpr.clone(),
+                self.group.bootstrap_nodes.clone(),
+                NetworkMetrics::default(),
+            )
+            .await
+            .expect("failed to make network");
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {

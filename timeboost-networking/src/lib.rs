@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
+use metrics::NetworkMetrics;
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
@@ -105,6 +106,9 @@ struct Server {
 
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
+
+    /// For gathering network metrics.
+    metrics: NetworkMetrics,
 }
 
 /// An I/O task, reading data from and writing data to a remote party.
@@ -129,7 +133,12 @@ impl Drop for IoTask {
 }
 
 impl Network {
-    pub async fn create<P>(bind_to: SocketAddr, kp: Keypair, group: P) -> Result<Self>
+    pub async fn create<P>(
+        bind_to: SocketAddr,
+        kp: Keypair,
+        group: P,
+        metrics: NetworkMetrics,
+    ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, SocketAddr)>,
     {
@@ -163,6 +172,7 @@ impl Network {
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
+            metrics,
         };
 
         Ok(Self {
@@ -387,6 +397,7 @@ impl Server {
             tx: to_remote,
         };
         self.active.insert(k, io);
+        self.metrics.connections.set(self.active.len());
     }
 
     /// Get the public key of a party by their static X25519 public key.

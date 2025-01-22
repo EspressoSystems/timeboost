@@ -18,6 +18,7 @@ use sequencer::{
 };
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
+use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
 use tracing::{debug, error, instrument, warn};
@@ -110,6 +111,7 @@ impl HasInitializer for Timeboost {
     async fn initialize(initializer: Self::Initializer) -> Result<Self> {
         let prom = Arc::new(PrometheusMetrics::default());
         let sf_metrics = SailfishMetrics::new(prom.as_ref());
+        let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
 
@@ -125,6 +127,7 @@ impl HasInitializer for Timeboost {
             initializer.bind_address,
             initializer.keypair.clone(),
             initializer.peers,
+            net_metrics,
         )
         .await
         .expect("failed to connect to remote nodes");
