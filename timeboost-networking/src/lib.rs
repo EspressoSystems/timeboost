@@ -543,7 +543,7 @@ where
                     })
                     .is_err()
                 {
-                    error!(n = %k, "failed to send ping message to writer");
+                    debug!(n = %k, "failed to send ping message to writer");
                 }
                 continue;
             }
