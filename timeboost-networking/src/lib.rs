@@ -603,7 +603,7 @@ where
                         pong_buf.copy_from_slice(&msg[..PING_SIZE]);
                         let our_ping = u64::from_be_bytes(pong_buf);
                         if let Some(delay) = time.checked_sub(our_ping) {
-                                let _ = mtx.send(delay).await;
+                            let _ = mtx.send(delay).await;
                         };
                         continue;
                     }
