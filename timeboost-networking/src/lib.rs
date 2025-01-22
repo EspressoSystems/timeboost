@@ -514,6 +514,7 @@ async fn on_handshake(
 /// Read messages from the remote by assembling frames together.
 ///
 /// Once complete the message will be handed over to the given MPSC sender.
+/// Ping and pong messages are immediately transferred to the writer
 async fn recv_loop<R>(
     k: PublicKey,
     mut r: R,
@@ -568,6 +569,8 @@ where
 ///
 /// The function automatically splits large messages into chunks that fit into
 /// a noise package.
+/// Ping protocol messages received from the reader will be handled either by
+/// writing pong message as a response to ping or estimating the rtt.
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
@@ -585,8 +588,8 @@ where
     loop {
         tokio::select! {
             // Sending ping message after deadline
-            _deadline = interval.tick() => {
-                let time = start.elapsed().as_micros() as u64;
+            tick = interval.tick() => {
+                let time = tick.duration_since(start).as_micros() as u64;
                 let n = t.lock().write_message(&time.to_be_bytes(), &mut buf)?;
                 let h = Header::ping(n as u16);
                 send_frame(&mut w, h, &buf[..n]).await?;
