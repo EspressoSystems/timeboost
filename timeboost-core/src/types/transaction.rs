@@ -1,5 +1,3 @@
-use std::mem;
-
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
@@ -146,10 +144,7 @@ impl TransactionsQueue {
 
     pub fn take(&mut self) -> Vec<Transaction> {
         let limit = self.txns.len().min(100);
-        let mut txns = mem::take(&mut self.txns);
-        let taken = txns.drain(..limit).collect::<Vec<_>>();
-        self.txns = txns;
-        taken
+        self.txns.drain(..limit).collect()
     }
 
     pub fn remove_if<F>(&mut self, pred: F)
