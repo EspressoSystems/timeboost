@@ -430,7 +430,7 @@ async fn connect(
         .chain(repeat(30_000))
     {
         sleep(Duration::from_millis(d)).await;
-        debug!(%to, a = %addr, "connecting");
+        debug!(a = %addr, "connecting");
         match TcpStream::connect(addr).await {
             Ok(s) => {
                 if let Err(e) = s.set_nodelay(true) {
