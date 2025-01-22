@@ -1,7 +1,3 @@
-use bytes::Bytes;
-
-use crate::PING_SIZE;
-
 /// The header of a frame.
 //
 //  0                   1                   2                   3

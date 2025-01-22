@@ -24,7 +24,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use frame::{Header, Type};
+use frame::Header;
 
 pub use error::{Empty, NetworkError};
 
