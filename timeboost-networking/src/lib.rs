@@ -5,7 +5,7 @@ pub mod metrics;
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
@@ -398,10 +398,10 @@ impl Server {
         let t2 = t1.clone();
         let ibound = self.ibound.clone();
         let to_write = to_remote.clone();
-        let rh = self.io_tasks.spawn(recv_loop(k, r, t1, ibound, to_write));
-        let wh = self
+        let rh = self
             .io_tasks
-            .spawn(send_loop(w, t2, from_remote, self.metrics.clone()));
+            .spawn(recv_loop(k, r, t1, ibound, to_write, self.metrics.clone()));
+        let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -514,13 +514,13 @@ async fn on_handshake(
 /// Read messages from the remote by assembling frames together.
 ///
 /// Once complete the message will be handed over to the given MPSC sender.
-/// Ping and pong messages are immediately transferred to the writer
 async fn recv_loop<R>(
     k: PublicKey,
     mut r: R,
     t: Arc<Mutex<TransportState>>,
     tx: Sender<(PublicKey, Bytes)>,
     to_write: Sender<Message>,
+    nm: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -531,23 +531,40 @@ where
         loop {
             let (h, f) = recv_frame(&mut r).await?;
 
-            // Received ping protocol message
-            if !h.is_data() {
-                let mut p = [0; PING_SIZE];
-                let n = t.lock().read_message(&f, &mut buf)?;
-                p.copy_from_slice(&buf[..n]);
-                if to_write
-                    .try_send(if h.is_ping() {
-                        Message::Ping(p)
-                    } else {
-                        Message::Pong(p)
-                    })
-                    .is_err()
+            // Received ping message; sending pong to writer
+            if h.is_ping() {
+                let mut ping_buf = [0; PING_SIZE];
+                if t.lock()
+                    .read_message(&f, &mut buf)
+                    .map(|n| n == PING_SIZE)
+                    .unwrap_or(false)
                 {
-                    debug!(n = %k, "failed to send ping message to writer");
+                    ping_buf.copy_from_slice(&buf[..PING_SIZE]);
+                    if to_write.try_send(Message::Pong(ping_buf)).is_err() {
+                        debug!(n = %k, "failed to send pong to writer");
+                    }
                 }
                 continue;
             }
+
+            // Received pong message; measure elapsed time
+            if h.is_pong() {
+                let mut pong_buf = [0; PING_SIZE];
+                if t.lock()
+                    .read_message(&f, &mut buf)
+                    .map(|n| n == PING_SIZE)
+                    .unwrap_or(false)
+                {
+                    pong_buf.copy_from_slice(&buf[..PING_SIZE]);
+                    let our_ping = u64::from_be_bytes(pong_buf);
+                    let time = unix_time();
+                    if let Some(delay) = time.checked_sub(our_ping) {
+                        nm.latency.add_point(delay as f64 / 1000.0);
+                    };
+                }
+                continue;
+            }
+
             // Received data message
             let n = t.lock().read_message(&f, &mut buf)?;
             msg.extend_from_slice(&buf[..n]);
@@ -569,13 +586,10 @@ where
 ///
 /// The function automatically splits large messages into chunks that fit into
 /// a noise package.
-/// Ping protocol messages received from the reader will be handled either by
-/// writing pong message as a response to ping or estimating the rtt.
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
     mut rx: Receiver<Message>,
-    nm: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -583,13 +597,12 @@ where
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
     let mut interval = time::interval(PING_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let start = time::Instant::now();
 
     loop {
         tokio::select! {
             // Sending ping message after deadline
-            tick = interval.tick() => {
-                let time = tick.duration_since(start).as_micros() as u64;
+            _ = interval.tick() => {
+                let time = unix_time();
                 let n = t.lock().write_message(&time.to_be_bytes(), &mut buf)?;
                 let h = Header::ping(n as u16);
                 send_frame(&mut w, h, &buf[..n]).await?;
@@ -597,21 +610,10 @@ where
             Some(typ) = rx.recv() => {
                 match typ {
                     // Sending pong message
-                    Message::Ping(ping) => {
-                        let n = t.lock().write_message(&ping, &mut buf)?;
+                    Message::Pong(pong) => {
+                        let n = t.lock().write_message(&pong, &mut buf)?;
                         let h = Header::pong(n as u16);
                         send_frame(&mut w, h, &buf[..n]).await?;
-                        continue;
-                    }
-                    // Ping protocol succeeded; measure elapsed time
-                    Message::Pong(pong) => {
-                        let mut pong_buf = [0; PING_SIZE];
-                        let time = start.elapsed().as_micros() as u64;
-                        pong_buf.copy_from_slice(&pong[..PING_SIZE]);
-                        let our_ping = u64::from_be_bytes(pong_buf);
-                        if let Some(delay) = time.checked_sub(our_ping) {
-                            nm.latency.add_point(delay as f64 / 1000.0);
-                        };
                         continue;
                     }
                     Message::Data(msg) => {
@@ -626,6 +628,7 @@ where
                             send_frame(&mut w, h, &buf[..n]).await?
                         }
                     }
+                    _ => {} // No ping messages
                 }
             }
         }
@@ -660,4 +663,11 @@ where
     w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
+}
+
+pub fn unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
 }
