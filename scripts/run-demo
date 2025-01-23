@@ -9,8 +9,6 @@ fi
 
 just build_release --features until
 
-uv run fake-contract/main.py --timeout 30 &
-
 if [ -z "${1:-}" ]; then
     nodes=5
 else
@@ -20,6 +18,8 @@ else
     fi
     nodes=$1
 fi
+
+uv run fake-contract/main.py "$nodes" --timeout 30 &
 
 late_start=false
 
