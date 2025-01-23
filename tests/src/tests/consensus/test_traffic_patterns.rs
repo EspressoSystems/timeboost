@@ -165,8 +165,10 @@ fn delay_vertices_to_leader() {
             .plus(edge("E", "D"))
             .plus(edge("E", "E").delay_fn(|m| if m.is_vertex() { 15 } else { 0 })),
     ]);
-    sim.goto(20);
+    sim.goto(50);
+
     assert!(is_valid_delivery(&sim));
+    assert!(matches!(sim.events().last(), Some(Event::Deliver(..))))
 }
 
 /// Check that delivery properties hold true.
