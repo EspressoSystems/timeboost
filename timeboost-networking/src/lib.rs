@@ -611,7 +611,12 @@ where
             }
             Some(typ) = rx.recv() => {
                 match typ {
-                    // Sending pong message
+                    Message::Ping(ping) => {
+                        let n = t.lock().write_message(&ping, &mut buf)?;
+                        let h = Header::ping(n as u16);
+                        send_frame(&mut w, h, &buf[..n]).await?;
+                        continue;
+                    }
                     Message::Pong(pong) => {
                         let n = t.lock().write_message(&pong, &mut buf)?;
                         let h = Header::pong(n as u16);
@@ -630,7 +635,6 @@ where
                             send_frame(&mut w, h, &buf[..n]).await?
                         }
                     }
-                    _ => {} // No ping messages
                 }
             }
         }
