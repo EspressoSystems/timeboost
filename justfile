@@ -13,9 +13,9 @@ build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
 build_docker:
-  docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
-  docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
-  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
+  sudo docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
+  sudo docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
+  sudo docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
 ####################
 ###CHECK COMMANDS###

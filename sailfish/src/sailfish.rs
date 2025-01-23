@@ -7,12 +7,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use derive_builder::Builder;
 use multisig::{Committee, Keypair, PublicKey};
-use std::collections::HashMap;
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::{traits::comm::Comm, types::NodeId};
 use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_networking::Network;
-use timeboost_utils::PeerConfig;
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -103,8 +101,7 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// # Arguments
 ///
 /// * `id` - Node identifier.
-/// * `bootstrap_nodes` - Libp2p bootstrap nodes.
-/// * `staked_nodes` - Configurations of staked nodes.
+/// * `peers` - Libp2p bootstrap nodes.
 /// * `keypair` - Libp2p keypair.
 /// * `bind_address` - Addresses to bind to.
 /// * `metrics` - Sailfish metrics
@@ -114,21 +111,21 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// Panics if any configuration or initialization step fails.
 pub async fn sailfish_coordinator(
     id: NodeId,
-    bootstrap_nodes: HashMap<PublicKey, SocketAddr>,
-    staked_nodes: Vec<PeerConfig<PublicKey>>,
+    peers: Vec<(PublicKey, SocketAddr)>,
     keypair: Keypair,
     bind_address: SocketAddr,
     sf_metrics: SailfishMetrics,
     net_metrics: NetworkMetrics,
 ) -> Coordinator<Rbc> {
-    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes, net_metrics)
+    let network = Network::create(bind_address, keypair.clone(), peers.clone(), net_metrics)
         .await
         .unwrap();
     let committee = Committee::new(
-        staked_nodes
+        peers
             .iter()
+            .map(|b| b.0)
             .enumerate()
-            .map(|(i, cfg)| (i as u8, cfg.stake_table_entry.stake_key)),
+            .map(|(i, key)| (i as u8, key)),
     );
 
     let rbc = Rbc::new(
