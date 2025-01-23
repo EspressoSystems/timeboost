@@ -117,6 +117,58 @@ fn progress_after_random_prefix() {
     )
 }
 
+/// This test triggers a timeout by delaying the leader vertex in round 1.
+/// In addition, the vertex proposals of round 1 to the leader of round 2
+/// are delayed, to ensure no-vote messages arrive first and cause it to
+/// advance to round 2.
+#[test]
+fn delay_vertices_to_leader() {
+    timeboost_utils::types::logging::init_logging();
+
+    let all = ["A", "B", "C", "D", "E"];
+
+    let mut sim = Simulator::new(all);
+    sim.set_rules([
+        Rule::new("immediate fanout")
+            .with(edges("A", all))
+            .with(edges("B", all))
+            .with(edges("C", all))
+            .with(edges("D", all))
+            .with(edges("E", all)),
+        Rule::new("trigger timeout of leader vertex")
+            .precondition(|sim| {
+                sim.round() == Some(1) && sim.leader(1) == Some("C") && sim.leader(2) == Some("E")
+            })
+            .plus(edge("A", "A"))
+            .plus(edge("A", "B"))
+            .plus(edge("A", "C"))
+            .plus(edge("A", "D"))
+            .plus(edge("A", "E").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
+            .plus(edge("B", "A"))
+            .plus(edge("B", "B"))
+            .plus(edge("B", "C"))
+            .plus(edge("B", "D"))
+            .plus(edge("B", "E").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
+            .plus(edge("C", "A").delay(15))
+            .plus(edge("C", "B").delay(15))
+            .plus(edge("C", "C").delay(15))
+            .plus(edge("C", "D").delay(15))
+            .plus(edge("C", "E").delay(15))
+            .plus(edge("D", "A"))
+            .plus(edge("D", "B"))
+            .plus(edge("D", "C"))
+            .plus(edge("D", "D"))
+            .plus(edge("D", "E").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
+            .plus(edge("E", "A"))
+            .plus(edge("E", "B"))
+            .plus(edge("E", "C"))
+            .plus(edge("E", "D"))
+            .plus(edge("E", "E").delay_fn(|m| if m.is_vertex() { 15 } else { 0 })),
+    ]);
+    sim.goto(20);
+    assert!(is_valid_delivery(&sim));
+}
+
 /// Check that delivery properties hold true.
 ///
 /// 1. All parties deliver the same sequence of deliver events.

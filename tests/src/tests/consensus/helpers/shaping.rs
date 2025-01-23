@@ -389,10 +389,25 @@ impl Simulator {
         &self.committee
     }
 
+    pub fn round(&self) -> Option<usize> {
+        let mut it = self.parties.values().map(|p| p.logic.round());
+        let r = it.clone().next()?;
+        it.all(|x| r == x).then_some(*r as usize)
+    }
+
+    pub fn leader(&self, round: usize) -> Option<Name> {
+        let k = self.committee.leader(round);
+        self.resolve.get(&k).map(|n| &**n)
+    }
+
     pub fn pending_messages(&self) -> usize {
         self.parties.values().fold(0, |acc, p| {
             acc + p.buffer.items.values().map(|v| v.len()).sum::<usize>()
         })
+    }
+
+    pub fn parties(&self) -> impl Iterator<Item = (PublicKey, Name)> + '_ {
+        self.resolve.iter().map(|(k, n)| (*k, *n))
     }
 
     pub fn goto(&mut self, timeout: Time) {
