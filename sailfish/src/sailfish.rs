@@ -101,8 +101,8 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// # Arguments
 ///
 /// * `id` - Node identifier.
-/// * `peers` - Libp2p bootstrap nodes.
-/// * `keypair` - Libp2p keypair.
+/// * `peers` - Remote peers who we need to connect to
+/// * `keypair` - Nodes Keypair.
 /// * `bind_address` - Addresses to bind to.
 /// * `metrics` - Sailfish metrics
 ///
