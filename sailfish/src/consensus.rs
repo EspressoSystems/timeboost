@@ -348,8 +348,14 @@ impl Consensus {
             Ok(None) => {}
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
-                let nc = nc.clone();
-                actions.extend(self.advance_leader_with_no_vote_certificate(timeout_round, tc, nc));
+                if self.dag.vertex_count(timeout_round) >= self.committee.quorum_size().get() {
+                    let nc = nc.clone();
+                    actions.extend(self.advance_leader_with_no_vote_certificate(
+                        timeout_round,
+                        tc,
+                        nc,
+                    ));
+                }
             }
             Err(e) => {
                 warn!(t = %timeout_round, %e, "could not add no-vote to vote accumulator");
