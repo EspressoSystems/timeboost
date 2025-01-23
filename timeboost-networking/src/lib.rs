@@ -533,12 +533,12 @@ where
 
             // Received ping message; sending pong to writer
             if h.is_ping() {
-                let mut ping_buf = [0; PING_SIZE];
                 if t.lock()
                     .read_message(&f, &mut buf)
                     .map(|n| n == PING_SIZE)
                     .unwrap_or(false)
                 {
+                    let mut ping_buf = [0; PING_SIZE];
                     ping_buf.copy_from_slice(&buf[..PING_SIZE]);
                     if to_write.try_send(Message::Pong(ping_buf)).is_err() {
                         debug!(n = %k, "failed to send pong to writer");
@@ -549,12 +549,12 @@ where
 
             // Received pong message; measure elapsed time
             if h.is_pong() {
-                let mut pong_buf = [0; PING_SIZE];
                 if t.lock()
                     .read_message(&f, &mut buf)
                     .map(|n| n == PING_SIZE)
                     .unwrap_or(false)
                 {
+                    let mut pong_buf = [0; PING_SIZE];
                     pong_buf.copy_from_slice(&buf[..PING_SIZE]);
                     let our_ping = u64::from_be_bytes(pong_buf);
                     let time = unix_time();
