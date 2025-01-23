@@ -566,13 +566,15 @@ where
             }
 
             // Received data message
-            let n = t.lock().read_message(&f, &mut buf)?;
-            msg.extend_from_slice(&buf[..n]);
-            if !h.is_partial() {
-                break;
-            }
-            if msg.len() > MAX_TOTAL_SIZE {
-                return Err(NetworkError::MessageTooLarge);
+            if h.is_data() {
+                let n = t.lock().read_message(&f, &mut buf)?;
+                msg.extend_from_slice(&buf[..n]);
+                if !h.is_partial() {
+                    break;
+                }
+                if msg.len() > MAX_TOTAL_SIZE {
+                    return Err(NetworkError::MessageTooLarge);
+                }
             }
         }
         if tx.send((k, msg.freeze())).await.is_err() {
