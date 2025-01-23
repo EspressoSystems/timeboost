@@ -6,7 +6,6 @@ use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, 
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
     message::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage},
-    metrics::SailfishMetrics,
     time::Timestamp,
     transaction::Transaction,
     transaction::TransactionsQueue,
@@ -19,6 +18,8 @@ use tracing::{debug, error, info, instrument, trace, warn};
 mod dag;
 
 pub use dag::Dag;
+
+use crate::metrics::SailfishMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);

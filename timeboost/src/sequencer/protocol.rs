@@ -11,7 +11,6 @@ use futures::{future::BoxFuture, FutureExt};
 use timeboost_core::types::{
     block::timeboost::TimeboostBlock,
     event::{TimeboostEventType, TimeboostStatusEvent},
-    metrics::TimeboostMetrics,
     seqno::SeqNo,
     time::Timestamp,
     transaction::Transaction,
@@ -25,6 +24,7 @@ use tracing::{error, info, instrument};
 
 use crate::{
     mempool::{self, Mempool},
+    metrics::TimeboostMetrics,
     sequencer::phase::inclusion::CandidateList,
 };
 

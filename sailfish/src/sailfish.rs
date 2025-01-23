@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
-
+use crate::metrics::SailfishMetrics;
 use crate::rbc::{self, Rbc};
 use crate::{consensus::Consensus, coordinator::Coordinator};
+use std::net::SocketAddr;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,10 +9,8 @@ use derive_builder::Builder;
 use multisig::{Committee, Keypair, PublicKey};
 use std::collections::HashMap;
 use timeboost_core::traits::has_initializer::HasInitializer;
-use timeboost_core::{
-    traits::comm::Comm,
-    types::{metrics::SailfishMetrics, NodeId},
-};
+use timeboost_core::{traits::comm::Comm, types::NodeId};
+use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_networking::Network;
 use timeboost_utils::PeerConfig;
 
@@ -120,9 +118,10 @@ pub async fn sailfish_coordinator(
     staked_nodes: Vec<PeerConfig<PublicKey>>,
     keypair: Keypair,
     bind_address: SocketAddr,
-    metrics: SailfishMetrics,
+    sf_metrics: SailfishMetrics,
+    net_metrics: NetworkMetrics,
 ) -> Coordinator<Rbc> {
-    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes)
+    let network = Network::create(bind_address, keypair.clone(), bootstrap_nodes, net_metrics)
         .await
         .unwrap();
     let committee = Committee::new(
@@ -143,7 +142,7 @@ pub async fn sailfish_coordinator(
         .bind_address(bind_address)
         .network(rbc)
         .committee(committee.clone())
-        .metrics(metrics)
+        .metrics(sf_metrics)
         .build()
         .expect("sailfish initializer to be built");
 

@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
 use crate::Group;
+use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
 use sailfish::sailfish::Sailfish;
 use sailfish::sailfish::SailfishInitializerBuilder;
 use timeboost_core::traits::has_initializer::HasInitializer;
-use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
+use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_networking::Network;
 use tokio::{sync::watch, task::JoinSet};
 
@@ -51,9 +52,14 @@ impl TestableNetwork for BasicNetworkTest {
                 .peers
                 .get(&kpr.public_key())
                 .expect("own public key to be present");
-            let net = Network::create(addr, kpr.clone(), self.group.peers.clone())
-                .await
-                .expect("failed to make network");
+            let net = Network::create(
+                addr,
+                kpr.clone(),
+                self.group.peers.clone(),
+                NetworkMetrics::default(),
+            )
+            .await
+            .expect("failed to make network");
             let interceptor = self.interceptor.clone();
             let committee_clone = committee.clone();
             handles.spawn(async move {

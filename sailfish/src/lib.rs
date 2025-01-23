@@ -1,5 +1,6 @@
 pub mod consensus;
 pub mod coordinator;
+pub mod metrics;
 pub mod rbc;
 pub mod sailfish;
 

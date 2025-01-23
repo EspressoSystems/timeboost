@@ -1,21 +1,23 @@
 mod error;
 mod frame;
+pub mod metrics;
 
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
 use bytes::{Bytes, BytesMut};
+use metrics::NetworkMetrics;
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::time::sleep;
+use tokio::time::{self, sleep};
 use tokio::{
     spawn,
     task::{self, AbortHandle, JoinHandle, JoinSet},
@@ -40,8 +42,14 @@ const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 /// Max. number of bytes for a message (potentially consisting of several frames).
 const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
-/// Noise parameters to initialize the builders
+/// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
+
+/// Size of the ping protocol payload.
+const PING_SIZE: usize = 8;
+
+/// Interval between ping protocol.
+const PING_INTERVAL: Duration = Duration::from_secs(30);
 
 /// `Network` is the API facade of this crate.
 #[derive(Debug)]
@@ -108,6 +116,9 @@ struct Server {
 
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
+
+    /// For gathering network metrics.
+    metrics: Arc<NetworkMetrics>,
 }
 
 /// An I/O task, reading data from and writing data to a remote party.
@@ -120,7 +131,7 @@ struct IoTask {
     wh: AbortHandle,
 
     /// MPSC sender of outgoing messages to the remote.
-    tx: Sender<Bytes>,
+    tx: Sender<Message>,
 }
 
 // Make sure all tasks are stopped when `IoTask` is dropped.
@@ -132,7 +143,12 @@ impl Drop for IoTask {
 }
 
 impl Network {
-    pub async fn create<P>(bind_to: SocketAddr, kp: Keypair, group: P) -> Result<Self>
+    pub async fn create<P>(
+        bind_to: SocketAddr,
+        kp: Keypair,
+        group: P,
+        metrics: NetworkMetrics,
+    ) -> Result<Self>
     where
         P: IntoIterator<Item = (PublicKey, SocketAddr)>,
     {
@@ -166,6 +182,7 @@ impl Network {
             handshake_tasks: JoinSet::new(),
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
+            metrics: Arc::new(metrics),
         };
 
         Ok(Self {
@@ -309,7 +326,7 @@ impl Server {
                             continue
                         }
                         if let Some(task) = self.active.get_mut(&to) {
-                            if task.tx.try_send(m).is_err() {
+                            if task.tx.try_send(Message::Data(m)).is_err() {
                                 warn!(n = %self.key, k = %to, "channel full => reconnecting");
                                 self.spawn_connect(to)
                             }
@@ -320,7 +337,7 @@ impl Server {
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
                         for (k, task) in &mut self.active {
-                            if task.tx.try_send(m.clone()).is_err() {
+                            if task.tx.try_send(Message::Data(m.clone())).is_err() {
                                 warn!(n = %self.key, %k, "channel full => reconnecting");
                                 reconnect.push(*k);
                             }
@@ -332,7 +349,7 @@ impl Server {
                     None => {
                         return Err(NetworkError::ChannelClosed)
                     }
-                }
+                },
             }
         }
     }
@@ -380,16 +397,20 @@ impl Server {
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
         let ibound = self.ibound.clone();
-        let rh = self.io_tasks.spawn(recv_loop(k, r, t1, ibound));
+        let to_write = to_remote.clone();
+        let rh = self
+            .io_tasks
+            .spawn(recv_loop(k, r, t1, ibound, to_write, self.metrics.clone()));
         let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
             rh,
             wh,
-            tx: to_remote,
+            tx: to_remote.clone(),
         };
         self.active.insert(k, io);
+        self.metrics.connections.set(self.active.len());
     }
 
     /// Get the public key of a party by their static X25519 public key.
@@ -498,6 +519,8 @@ async fn recv_loop<R>(
     mut r: R,
     t: Arc<Mutex<TransportState>>,
     tx: Sender<(PublicKey, Bytes)>,
+    to_write: Sender<Message>,
+    nm: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -507,17 +530,51 @@ where
         let mut msg = BytesMut::new();
         loop {
             let (h, f) = recv_frame(&mut r).await?;
-            if !h.is_data() {
-                // TODO: Ping handling.
+
+            // Received ping message; sending pong to writer
+            if h.is_ping() {
+                if t.lock()
+                    .read_message(&f, &mut buf)
+                    .map(|n| n == PING_SIZE)
+                    .unwrap_or(false)
+                {
+                    let mut ping_buf = [0; PING_SIZE];
+                    ping_buf.copy_from_slice(&buf[..PING_SIZE]);
+                    if to_write.try_send(Message::Pong(ping_buf)).is_err() {
+                        debug!(n = %k, "failed to send pong to writer");
+                    }
+                }
                 continue;
             }
-            let n = t.lock().read_message(&f, &mut buf)?;
-            msg.extend_from_slice(&buf[..n]);
-            if !h.is_partial() {
-                break;
+
+            // Received pong message; measure elapsed time
+            if h.is_pong() {
+                if t.lock()
+                    .read_message(&f, &mut buf)
+                    .map(|n| n == PING_SIZE)
+                    .unwrap_or(false)
+                {
+                    let mut pong_buf = [0; PING_SIZE];
+                    pong_buf.copy_from_slice(&buf[..PING_SIZE]);
+                    let our_ping = u64::from_be_bytes(pong_buf);
+                    let time = unix_time();
+                    if let Some(delay) = time.checked_sub(our_ping) {
+                        nm.latency.add_point(delay as f64 / 1000.0);
+                    };
+                }
+                continue;
             }
-            if msg.len() > MAX_TOTAL_SIZE {
-                return Err(NetworkError::MessageTooLarge);
+
+            // Received data message
+            if h.is_data() {
+                let n = t.lock().read_message(&f, &mut buf)?;
+                msg.extend_from_slice(&buf[..n]);
+                if !h.is_partial() {
+                    break;
+                }
+                if msg.len() > MAX_TOTAL_SIZE {
+                    return Err(NetworkError::MessageTooLarge);
+                }
             }
         }
         if tx.send((k, msg.freeze())).await.is_err() {
@@ -534,25 +591,61 @@ where
 async fn send_loop<W>(
     mut w: W,
     t: Arc<Mutex<TransportState>>,
-    mut rx: Receiver<Bytes>,
+    mut rx: Receiver<Message>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
-    while let Some(msg) = rx.recv().await {
-        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
-        while let Some(m) = it.next() {
-            let n = t.lock().write_message(m, &mut buf)?;
-            let h = if it.peek().is_some() {
-                Header::data(n as u16).partial()
-            } else {
-                Header::data(n as u16)
-            };
-            send_frame(&mut w, h, &buf[..n]).await?
+    let mut interval = time::interval(PING_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            // Sending ping message after deadline
+            _ = interval.tick() => {
+                let time = unix_time();
+                let n = t.lock().write_message(&time.to_be_bytes(), &mut buf)?;
+                let h = Header::ping(n as u16);
+                send_frame(&mut w, h, &buf[..n]).await?;
+            }
+            Some(typ) = rx.recv() => {
+                match typ {
+                    Message::Ping(ping) => {
+                        let n = t.lock().write_message(&ping, &mut buf)?;
+                        let h = Header::ping(n as u16);
+                        send_frame(&mut w, h, &buf[..n]).await?;
+                        continue;
+                    }
+                    Message::Pong(pong) => {
+                        let n = t.lock().write_message(&pong, &mut buf)?;
+                        let h = Header::pong(n as u16);
+                        send_frame(&mut w, h, &buf[..n]).await?;
+                        continue;
+                    }
+                    Message::Data(msg) => {
+                        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
+                        while let Some(m) = it.next() {
+                            let n = t.lock().write_message(m, &mut buf)?;
+                            let h = if it.peek().is_some() {
+                                Header::data(n as u16).partial()
+                            } else {
+                                Header::data(n as u16)
+                            };
+                            send_frame(&mut w, h, &buf[..n]).await?
+                        }
+                    }
+                }
+            }
         }
     }
-    Ok(())
+}
+
+#[derive(PartialEq)]
+pub enum Message {
+    Data(Bytes),
+    Ping([u8; PING_SIZE]),
+    Pong([u8; PING_SIZE]),
 }
 
 /// Read a single frame (header + payload) from the remote.
@@ -576,4 +669,11 @@ where
     w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
+}
+
+pub fn unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
 }

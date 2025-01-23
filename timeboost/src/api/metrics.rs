@@ -2,7 +2,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use futures::FutureExt;
 use tide_disco::{error::ServerError, App};
-use timeboost_core::types::metrics::prometheus::PrometheusMetrics;
+use timeboost_utils::types::prometheus::PrometheusMetrics;
 use toml::toml;
 use vbs::version::StaticVersionType;
 
