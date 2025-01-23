@@ -6,7 +6,6 @@ use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, 
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
     message::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage},
-    metrics::SailfishMetrics,
     time::Timestamp,
     transaction::Transaction,
     transaction::TransactionsQueue,
@@ -19,6 +18,8 @@ use tracing::{debug, error, info, instrument, trace, warn};
 mod dag;
 
 pub use dag::Dag;
+
+use crate::metrics::SailfishMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
@@ -347,8 +348,14 @@ impl Consensus {
             Ok(None) => {}
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
-                let nc = nc.clone();
-                actions.extend(self.advance_leader_with_no_vote_certificate(timeout_round, tc, nc));
+                if self.dag.vertex_count(timeout_round) >= self.committee.quorum_size().get() {
+                    let nc = nc.clone();
+                    actions.extend(self.advance_leader_with_no_vote_certificate(
+                        timeout_round,
+                        tc,
+                        nc,
+                    ));
+                }
             }
             Err(e) => {
                 warn!(t = %timeout_round, %e, "could not add no-vote to vote accumulator");

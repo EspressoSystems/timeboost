@@ -4,7 +4,7 @@ use bytes::Bytes;
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
-use timeboost_networking::Network;
+use timeboost_networking::{metrics::NetworkMetrics, Network};
 use tokio::time::{timeout, Duration};
 
 /// Send and receive messages of various sizes between 1 byte and 5 MiB.
@@ -24,12 +24,22 @@ async fn multiple_frames() {
         ),
     ];
 
-    let mut net_a = Network::create(all_parties[0].1, party_a, all_parties)
-        .await
-        .unwrap();
-    let mut net_b = Network::create(all_parties[1].1, party_b, all_parties)
-        .await
-        .unwrap();
+    let mut net_a = Network::create(
+        all_parties[0].1,
+        party_a,
+        all_parties,
+        NetworkMetrics::default(),
+    )
+    .await
+    .unwrap();
+    let mut net_b = Network::create(
+        all_parties[1].1,
+        party_b,
+        all_parties,
+        NetworkMetrics::default(),
+    )
+    .await
+    .unwrap();
 
     let sender = all_parties[0].0;
 

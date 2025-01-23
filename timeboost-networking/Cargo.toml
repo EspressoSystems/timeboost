@@ -17,6 +17,7 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 snow = { workspace = true }
 thiserror = { workspace = true }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

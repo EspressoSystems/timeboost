@@ -8,9 +8,10 @@ use ::sailfish::sailfish::sailfish_coordinator;
 use anyhow::Result;
 use clap::Parser;
 use multisig::PublicKey;
+use sailfish::metrics::SailfishMetrics;
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::metrics::SailfishMetrics;
 use timeboost_core::types::NodeId;
+use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_utils::{types::logging, unsafe_zero_keypair, PeerConfig};
 use tokio::signal;
 use tracing::warn;
@@ -37,14 +38,16 @@ async fn main() -> Result<()> {
     let keypair = unsafe_zero_keypair(cfg.id);
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cfg.port));
 
-    let metrics = SailfishMetrics::default();
+    let sf_metrics = SailfishMetrics::default();
+    let net_metrics = NetworkMetrics::default();
     let mut coordinator = sailfish_coordinator(
         cfg.id,
         cfg.to_connect_addrs,
         cfg.staked_nodes,
         keypair,
         bind_address,
-        metrics,
+        sf_metrics,
+        net_metrics,
     )
     .await;
     tokio::select! {
