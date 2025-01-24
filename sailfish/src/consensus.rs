@@ -903,7 +903,8 @@ impl Consensus {
 
         rounds.sort_unstable_by(|x, y| y.cmp(x));
 
-        rounds.get(self.committee.quorum_size().get() - 1)
+        rounds
+            .get(self.committee.quorum_size().get() - 1)
             .copied()
             .unwrap_or_default()
     }
