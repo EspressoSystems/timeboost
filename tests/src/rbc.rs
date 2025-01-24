@@ -147,8 +147,10 @@ impl Worker {
                                 let bytes = bytes.clone();
                                 let addr = self.resolve(&k);
                                 self.connect_tasks.spawn(async move {
-                                    let (r, mut w) = connect(k, addr).await?;
-                                    w.send(bytes).await?;
+                                    let (r, mut w) = connect(addr).await?;
+                                    w.feed(Bytes::copy_from_slice(k.as_slice())).await?;
+                                    w.feed(bytes).await?;
+                                    w.flush().await?;
                                     Ok((r, w))
                                 });
                             }
@@ -157,8 +159,10 @@ impl Worker {
                             trace!("sending message");
                             let addr = self.resolve(&to);
                             self.connect_tasks.spawn(async move {
-                                let (r, mut w) = connect(to, addr).await?;
-                                w.send(bytes).await?;
+                                let (r, mut w) = connect(addr).await?;
+                                w.feed(Bytes::copy_from_slice(to.as_slice())).await?;
+                                w.feed(bytes).await?;
+                                w.flush().await?;
                                 Ok((r, w))
                             });
                         }
@@ -177,12 +181,10 @@ impl Worker {
     }
 }
 
-async fn connect(k: PublicKey, a: SocketAddr) -> io::Result<(Reader, Writer)> {
+async fn connect(a: SocketAddr) -> io::Result<(Reader, Writer)> {
     let s = TcpStream::connect(a).await?;
     trace!(addr = %a, "connected to");
-    let (r, mut w) = codec(s);
-    w.send(Bytes::copy_from_slice(k.as_slice())).await?;
-    Ok((r, w))
+    Ok(codec(s))
 }
 
 fn codec(sock: TcpStream) -> (Reader, Writer) {
