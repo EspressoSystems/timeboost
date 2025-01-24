@@ -24,6 +24,12 @@ use crate::metrics::SailfishMetrics;
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
 struct NewVertex(Vertex);
 
+/// Information about a committee party.
+#[derive(Default)]
+struct PeerInfo {
+    committed_round: RoundNumber,
+}
+
 pub struct Consensus {
     /// The ID of the node running this consensus instance.
     id: NodeId,
@@ -42,6 +48,9 @@ pub struct Consensus {
 
     /// The last committed round number.
     committed_round: RoundNumber,
+
+    /// Information to keep per peer.
+    peers: BTreeMap<PublicKey, PeerInfo>,
 
     /// The set of vertices that we've received so far.
     buffer: Dag,
@@ -85,6 +94,10 @@ impl Consensus {
         Self {
             id: id.into(),
             keypair,
+            peers: committee
+                .parties()
+                .map(|k| (*k, PeerInfo::default()))
+                .collect(),
             dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
@@ -241,6 +254,12 @@ impl Consensus {
                 self.rounds.remove(v.round().data());
             }
             return actions;
+        }
+
+        if let Some(info) = self.peers.get_mut(v.source()) {
+            info.committed_round = v.committed_round()
+        } else {
+            error!(n = %self.public_key(), k = %v.source(), "peer information not found")
         }
 
         let quorum = self.committee.quorum_size().get();
@@ -602,15 +621,14 @@ impl Consensus {
         v = %r)
     )]
     fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex {
-        let previous = self.dag.vertices(r - 1);
-
-        let now = Timestamp::now();
-        let block = SailfishBlock::empty(r, now, self.delayed_inbox_index)
+        let block = SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
             .with_transactions(self.transactions.take());
 
         let mut new = Vertex::new(r, e, &self.keypair, self.deterministic);
-        new.set_block(block);
-        new.add_edges(previous.map(Vertex::source).cloned());
+
+        new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
+            .set_committed_round(self.committed_round)
+            .set_block(block);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() >= self.committee.quorum_size().get());
@@ -771,13 +789,13 @@ impl Consensus {
         c = %self.committed_round)
     )]
     fn cleanup(&mut self) {
-        let len = self.committee.size().get() as u64;
+        let r = self.committed_round_quorum().saturating_sub(2).into();
 
-        if *self.committed_round < len {
+        if self.committed_round < r {
             return;
         }
 
-        let r = self.committed_round - len;
+        debug!(n = %self.public_key(), %r, "cleaning up to round");
 
         self.dag.remove(r);
         self.buffer.remove(r);
@@ -874,6 +892,20 @@ impl Consensus {
             .get(&r)
             .map(|a| a.certificate().is_some())
             .unwrap_or(false)
+    }
+
+    fn committed_round_quorum(&self) -> RoundNumber {
+        let mut rounds = self
+            .peers
+            .values()
+            .map(|info| info.committed_round)
+            .collect::<Vec<_>>();
+
+        rounds.sort_unstable_by(|x, y| y.cmp(x));
+
+        rounds.get(self.committee.quorum_size().get() - 1)
+            .copied()
+            .unwrap_or_default()
     }
 }
 

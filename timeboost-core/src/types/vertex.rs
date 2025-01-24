@@ -16,6 +16,7 @@ pub struct Vertex {
     edges: BTreeSet<PublicKey>,
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
+    committed: RoundNumber,
     block: SailfishBlock,
 }
 
@@ -34,6 +35,7 @@ impl Vertex {
             edges: BTreeSet::new(),
             evidence: e,
             no_vote: None,
+            committed: RoundNumber::genesis(),
             block: SailfishBlock::empty(r, Timestamp::now(), 0),
         }
     }
@@ -53,6 +55,10 @@ impl Vertex {
 
     pub fn round(&self) -> &Signed<RoundNumber> {
         &self.round
+    }
+
+    pub fn committed_round(&self) -> RoundNumber {
+        self.committed
     }
 
     pub fn evidence(&self) -> &Evidence {
@@ -81,6 +87,11 @@ impl Vertex {
 
     pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
         self.block = b;
+        self
+    }
+
+    pub fn set_committed_round<N: Into<RoundNumber>>(&mut self, n: N) -> &mut Self {
+        self.committed = n.into();
         self
     }
 
