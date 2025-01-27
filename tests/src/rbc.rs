@@ -24,7 +24,7 @@ type Writer = FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>;
 #[derive(Debug)]
 pub struct TurmoilComm {
     tx: UnboundedSender<(Option<PublicKey>, Bytes)>,
-    rx: UnboundedReceiver<Bytes>,
+    rx: UnboundedReceiver<(PublicKey, Bytes)>,
     jh: JoinHandle<()>,
 }
 
@@ -81,22 +81,18 @@ impl RawComm for TurmoilComm {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Bytes, Self::Err> {
+    async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err> {
         if let Some(msg) = self.rx.recv().await {
             return Ok(msg);
         } else {
             Err(io::ErrorKind::UnexpectedEof.into())
         }
     }
-
-    async fn shutdown(&mut self) -> Result<(), Self::Err> {
-        Ok(())
-    }
 }
 
 struct Worker {
     config: HashMap<PublicKey, (String, u16)>,
-    tx: UnboundedSender<Bytes>,
+    tx: UnboundedSender<(PublicKey, Bytes)>,
     rx: UnboundedReceiver<(Option<PublicKey>, Bytes)>,
     listener: TcpListener,
     reader_tasks: JoinSet<io::Result<()>>,
@@ -152,7 +148,9 @@ impl Worker {
                                 let addr = self.resolve(&k);
                                 self.connect_tasks.spawn(async move {
                                     let (r, mut w) = connect(addr).await?;
-                                    w.send(bytes).await?;
+                                    w.feed(Bytes::copy_from_slice(k.as_slice())).await?;
+                                    w.feed(bytes).await?;
+                                    w.flush().await?;
                                     Ok((r, w))
                                 });
                             }
@@ -162,7 +160,9 @@ impl Worker {
                             let addr = self.resolve(&to);
                             self.connect_tasks.spawn(async move {
                                 let (r, mut w) = connect(addr).await?;
-                                w.send(bytes).await?;
+                                w.feed(Bytes::copy_from_slice(to.as_slice())).await?;
+                                w.feed(bytes).await?;
+                                w.flush().await?;
                                 Ok((r, w))
                             });
                         }
@@ -195,11 +195,16 @@ fn codec(sock: TcpStream) -> (Reader, Writer) {
     (r, w)
 }
 
-async fn read_loop(mut r: Reader, tx: UnboundedSender<Bytes>) -> io::Result<()> {
+async fn read_loop(mut r: Reader, tx: UnboundedSender<(PublicKey, Bytes)>) -> io::Result<()> {
+    let k = if let Some(b) = r.try_next().await? {
+        PublicKey::try_from(&b[..]).map_err(io::Error::other)?
+    } else {
+        return Ok(());
+    };
     loop {
         match r.try_next().await {
             Ok(Some(x)) => {
-                if tx.send(x.freeze()).is_err() {
+                if tx.send((k, x.freeze())).is_err() {
                     return Ok(());
                 }
             }

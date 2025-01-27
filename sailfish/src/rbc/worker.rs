@@ -43,6 +43,36 @@ pub struct Worker<C> {
     timer: Interval,
 }
 
+/// Messages of a single round.
+#[derive(Default)]
+struct Messages {
+    /// Did we deliver the messages early?
+    ///
+    /// Early delivery means that as soon as we receive 2f + 1 messages in a
+    /// round, we deliver the messages. Afterwards this flag is set to true
+    /// to avoid repeated calculations. The rationale behind this is that with
+    /// 2f + 1 messages we know that at least f + 1 messages will eventually
+    /// be delivered.
+    early: bool,
+    /// Tracking info per message.
+    map: BTreeMap<Digest, Tracker>,
+    /// For non-RBC proposals this tracks the remaining number of ACKs we still
+    /// expect for the given message digest.
+    acks: BTreeMap<Digest, Acks>,
+}
+
+/// Tracks remaining expected ACKs of a message.
+struct Acks {
+    /// The message we sent and await ACKs for.
+    msg: Message<Validated>,
+    /// The time when the message was last sent.
+    time: Instant,
+    /// The number of delivery retries.
+    retries: usize,
+    /// The number of parties that still have to send an ACK back.
+    rem: Vec<PublicKey>,
+}
+
 /// Tracking information about a message and its status.
 struct Tracker {
     /// Are we the original producer of this message?
@@ -70,21 +100,6 @@ impl Tracker {
             .choose(&mut rand::thread_rng())
             .copied()
     }
-}
-
-/// Messages of a single round.
-#[derive(Default)]
-struct Messages {
-    /// Did we deliver the messages early?
-    ///
-    /// Early delivery means that as soon as we receive 2f + 1 messages in a
-    /// round, we deliver the messages. Afterwards this flag is set to true
-    /// to avoid repeated calculations. The rationale behind this is that with
-    /// 2f + 1 messages we know that at least f + 1 messages will eventually
-    /// be delivered.
-    early: bool,
-    /// Tracking info per message.
-    map: BTreeMap<Digest, Tracker>,
 }
 
 /// A message item.
@@ -184,7 +199,6 @@ impl<C: RawComm> Worker<C> {
                         Ok(()) => {}
                         Err(RbcError::Shutdown) => {
                             debug!(n = %self.label, "rbc shutdown detected");
-                            let _ = self.comm.shutdown().await;
                             return;
                         }
                         Err(e) => {
@@ -194,12 +208,11 @@ impl<C: RawComm> Worker<C> {
                 },
                 val = self.comm.receive() => {
                     match val {
-                        Ok(bytes) => {
-                            match self.on_inbound(bytes).await {
+                        Ok((key, bytes)) => {
+                            match self.on_inbound(key, bytes).await {
                                 Ok(()) => {}
                                 Err(RbcError::Shutdown) => {
                                     debug!(n = %self.label, "rbc shutdown detected");
-                                    let _ = self.comm.shutdown().await;
                                     return;
                                 }
                                 Err(e) => {
@@ -225,26 +238,20 @@ impl<C: RawComm> Worker<C> {
                         }
                         // Best-effort sending to a peer without RBC properties.
                         Some(Command::Send(to, msg)) => {
-                            match self.on_send(to, &msg).await {
+                            match self.on_send(to, msg).await {
                                 Ok(()) => {}
                                 Err(e) => warn!(n = %self.label, %e, "error sending message")
                             }
                         }
                         // Best-effort broadcast without RBC properties.
                         Some(Command::Broadcast(msg)) => {
-                            match self.on_broadcast(&msg).await {
+                            match self.on_broadcast(msg).await {
                                 Ok(()) => {}
                                 Err(e) => warn!(n = %self.label, %e, "error broadcasting message")
                             }
                         }
-                        // Terminate operation.
-                        Some(Command::Shutdown) => {
-                            let _ = self.comm.shutdown().await;
-                            return
-                        }
                         None => {
                             debug!(n = %self.label, "rbc shutdown detected");
-                            let _ = self.comm.shutdown().await;
                             return
                         }
                     }
@@ -255,17 +262,45 @@ impl<C: RawComm> Worker<C> {
 
     /// Best effort broadcast.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
-    async fn on_broadcast(&mut self, msg: &Message<Validated>) -> Result<()> {
-        let proto = Protocol::Bypass(Cow::Borrowed(msg));
+    async fn on_broadcast(&mut self, msg: Message<Validated>) -> Result<()> {
+        let proto = Protocol::Send(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
+        let digest = Digest::new(&msg);
+        // Expect an ACK from each party:
+        self.buffer
+            .entry(digest.round())
+            .or_default()
+            .acks
+            .entry(digest)
+            .or_insert_with(|| Acks {
+                msg,
+                time: Instant::now(),
+                retries: 0,
+                rem: self.config.committee.parties().copied().collect(),
+            });
         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
         Ok(())
     }
 
     /// 1:1 communication.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
-    async fn on_send(&mut self, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
-        send(&mut self.comm, to, msg).await
+    async fn on_send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<()> {
+        let proto = Protocol::Send(Cow::Borrowed(&msg));
+        let bytes = serialize(&proto)?;
+        let digest = Digest::new(&msg);
+        // Expect an ACK from `to`:
+        self.buffer
+            .entry(digest.round())
+            .or_default()
+            .acks
+            .entry(digest)
+            .or_insert_with(|| Acks {
+                msg,
+                time: Instant::now(),
+                retries: 0,
+                rem: vec![to],
+            });
+        self.comm.send(to, bytes).await.map_err(RbcError::net)
     }
 
     /// Start RBC broadcast.
@@ -315,9 +350,11 @@ impl<C: RawComm> Worker<C> {
 
     /// We received a message from the network.
     #[instrument(level = "trace", skip_all, fields(n = %self.label))]
-    async fn on_inbound(&mut self, bytes: Bytes) -> Result<()> {
+    async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<()> {
         match bincode::deserialize(&bytes)? {
-            Protocol::Bypass(msg) => self.on_bypass(msg.into_owned()).await?,
+            Protocol::Fire(msg) => self.on_message(src, msg.into_owned(), false).await?,
+            Protocol::Send(msg) => self.on_message(src, msg.into_owned(), true).await?,
+            Protocol::Ack(env) => self.on_ack(src, env).await?,
             Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::Get(env) => self.on_get(env).await?,
@@ -327,12 +364,65 @@ impl<C: RawComm> Worker<C> {
     }
 
     /// A non-RBC message has been received which we deliver directly to the application.
-    #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
-    async fn on_bypass(&mut self, msg: Message<Unchecked>) -> Result<()> {
+    ///
+    /// If indicated, we also send back an ack so the sender knows we received the message.
+    #[instrument(level = "trace", skip_all, fields(n = %self.label, f = %src, m = %msg))]
+    async fn on_message(
+        &mut self,
+        src: PublicKey,
+        msg: Message<Unchecked>,
+        ack_required: bool,
+    ) -> Result<()> {
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
+        if !ack_required {
+            self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
+            return Ok(());
+        }
+        let dig = Digest::new(&msg);
+        let env = Envelope::signed(dig, &self.config.keypair, false);
+        let ack = Protocol::Ack(env);
+        let bytes = serialize(&ack)?;
         self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
+        debug!(n = %self.label, d = %dig, s = %src, "sending ack");
+        self.comm.send(src, bytes).await.map_err(RbcError::net)
+    }
+
+    /// A message acknowledgement has been received.
+    #[instrument(level = "trace", skip_all, fields(
+        n = %self.label,
+        s = %src,
+        d = %env.data())
+    )]
+    async fn on_ack(&mut self, src: PublicKey, env: Envelope<Digest, Unchecked>) -> Result<()> {
+        let Some(env) = env.validated(&self.config.committee) else {
+            return Err(RbcError::InvalidMessage);
+        };
+
+        if src != *env.signing_key() {
+            warn!(n = %self.label, s = %src, k = %env.signing_key(), "ack signer != sender");
+            return Err(RbcError::InvalidSender);
+        }
+
+        let digest = env.data();
+
+        let Some(msgs) = self.buffer.get_mut(&digest.round()) else {
+            debug!(n = %self.label, d = %env.data(), "no ack expected for digest round");
+            return Ok(());
+        };
+
+        let Some(acks) = msgs.acks.get_mut(digest) else {
+            debug!(n = %self.label, d = %env.data(), "no ack expected for digest");
+            return Ok(());
+        };
+
+        acks.rem.retain(|k| *k != src);
+
+        if acks.rem.is_empty() {
+            msgs.acks.remove(digest);
+        }
+
         Ok(())
     }
 
@@ -439,7 +529,7 @@ impl<C: RawComm> Worker<C> {
     #[instrument(level = "trace", skip_all, fields(
         n = %self.label,
         s = %env.signing_key(),
-        r = %env.data().round())
+        r = %env.data())
     )]
     async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
@@ -669,7 +759,7 @@ impl<C: RawComm> Worker<C> {
             // Here, we may have the message and if so, we gladly share it.
             Status::SentVote | Status::ReceivedVotes | Status::ReachedQuorum => {
                 if let Some(msg) = &tracker.message.item {
-                    send(&mut self.comm, *env.signing_key(), msg).await?;
+                    fire(&mut self.comm, *env.signing_key(), msg).await?;
                 }
             }
             // In these states we must have the message and send to the peer.
@@ -679,7 +769,7 @@ impl<C: RawComm> Worker<C> {
                     .item
                     .as_ref()
                     .expect("message item is present in these status");
-                send(&mut self.comm, *env.signing_key(), msg).await?;
+                fire(&mut self.comm, *env.signing_key(), msg).await?;
             }
         }
 
@@ -689,6 +779,7 @@ impl<C: RawComm> Worker<C> {
     /// Periodically we go over message status and retry incomplete items.
     #[instrument(level = "trace", skip_all, fields(n = %self.label))]
     async fn retry(&mut self, now: Instant) -> Result<()> {
+        // Go over RBC messages and check status:
         for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
             debug!(n = %self.label, d = %digest, s = %tracker.status, r = %tracker.retries, "revisiting");
             match tracker.status {
@@ -810,13 +901,30 @@ impl<C: RawComm> Worker<C> {
                 }
             }
         }
+
+        // Go over outstanding ACKs and re-transmit:
+        for (digest, acks) in self.buffer.values_mut().flat_map(|m| m.acks.iter_mut()) {
+            let timeout = [3, 6, 10, 15, 30].get(acks.retries).copied().unwrap_or(30);
+            if acks.time.elapsed() < Duration::from_millis(timeout) {
+                continue;
+            }
+            for party in &acks.rem {
+                debug!(n = %self.label, d = %digest, s = %party, "re-sending message");
+                let proto = Protocol::Send(Cow::Borrowed(&acks.msg));
+                let bytes = serialize(&proto)?;
+                self.comm.send(*party, bytes).await.map_err(RbcError::net)?
+            }
+            acks.retries = acks.retries.saturating_add(1);
+            acks.time = now
+        }
+
         Ok(())
     }
 }
 
 /// Factored out of `Worker` to help with borrowing.
-async fn send<C: RawComm>(net: &mut C, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
-    let proto = Protocol::Bypass(Cow::Borrowed(msg));
+async fn fire<C: RawComm>(net: &mut C, to: PublicKey, msg: &Message<Validated>) -> Result<()> {
+    let proto = Protocol::Fire(Cow::Borrowed(msg));
     let bytes = serialize(&proto)?;
     net.send(to, bytes).await.map_err(RbcError::net)?;
     Ok(())
@@ -840,6 +948,9 @@ pub enum RbcError {
 
     #[error("invalid message")]
     InvalidMessage,
+
+    #[error("invalid sender")]
+    InvalidSender,
 
     #[error("rbc has shut down")]
     Shutdown,

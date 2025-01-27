@@ -107,8 +107,4 @@ impl<C: Comm> Coordinator<C> {
         }
         Ok(None)
     }
-
-    pub async fn shutdown(&mut self) -> Result<(), C::Err> {
-        self.comm.shutdown().await
-    }
 }
