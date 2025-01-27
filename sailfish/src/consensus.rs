@@ -1,5 +1,6 @@
 use anyhow::{ensure, Result};
 use std::collections::{BTreeMap, HashSet};
+use std::cmp::max;
 use std::num::NonZeroUsize;
 
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
@@ -257,7 +258,7 @@ impl Consensus {
         }
 
         if let Some(info) = self.peers.get_mut(v.source()) {
-            info.committed_round = v.committed_round()
+            info.committed_round = max(info.committed_round, v.committed_round())
         } else {
             error!(n = %self.public_key(), k = %v.source(), "peer information not found")
         }
