@@ -2,22 +2,28 @@
 
 set -euox pipefail
 
+if ! command -v uv &> /dev/null; then
+  echo "Error: uv command not found. Install it with 'curl -LsSf https://astral.sh/uv/install.sh | sh'" >&2
+  exit 1
+fi
+
 if [ "${1:-debug}" = "release" ]; then
     just build_release
 else
     just build
 fi
 
+uv run fake-contract/main.py --timeout 30 &
+
 for i in {0..4}; do
     echo "Starting node $i"
 
-    RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=warn \
+    RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=info \
     ./target/${1:-debug}/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
-        --metrics-port $((9000 + i)) \
-        --base local &
+        --metrics-port $((9000 + i)) &
 done
 
 wait

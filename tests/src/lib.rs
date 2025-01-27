@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey};
-use timeboost_utils::{unsafe_zero_keypair, PeerConfig, ValidatorConfig};
+use timeboost_utils::unsafe_zero_keypair;
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +13,6 @@ mod rbc;
 pub struct Group {
     pub size: usize,
     pub peers: HashMap<PublicKey, SocketAddr>,
-    pub staked_nodes: Vec<PeerConfig<PublicKey>>,
     pub committee: Committee,
     pub keypairs: Vec<Keypair>,
 }
@@ -24,15 +23,12 @@ impl Group {
             .map(unsafe_zero_keypair)
             .collect::<Vec<_>>();
         let mut addrs = vec![];
-        let mut vcgfs = vec![];
         let mut pubks = vec![];
 
         for (i, kpr) in keypairs.iter().enumerate() {
-            let cfg = ValidatorConfig::generated_from_seed_indexed([0; 32], i as u64, 1, false);
             pubks.push((i as u8, kpr.public_key()));
             let port = portpicker::pick_unused_port().expect("could not find an open port");
             addrs.push(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
-            vcgfs.push(cfg);
         }
 
         let peers: HashMap<PublicKey, SocketAddr> = pubks
@@ -41,13 +37,9 @@ impl Group {
             .map(|(pk, addr)| (pk.1, addr))
             .collect();
 
-        let staked_nodes: Vec<PeerConfig<PublicKey>> =
-            vcgfs.iter().map(|c| c.public_config()).collect();
-
         Self {
             size,
             peers,
-            staked_nodes,
             committee: Committee::new(pubks),
             keypairs,
         }
