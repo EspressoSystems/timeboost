@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
-use std::collections::{BTreeMap, HashSet};
 use std::cmp::max;
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
