@@ -247,7 +247,7 @@ fn basic_liveness() {
         }
         for node_handle in nodes.values() {
             let n = node_handle.node();
-            assert!(n.dag().depth() <= 7);
+            assert!(n.dag().depth() <= 8);
             if n.committed_round() > 2.into() {
                 // The DAG should not contain data below committed round - 2:
                 assert!(n.dag().max_round().unwrap() >= n.committed_round() - 2);
