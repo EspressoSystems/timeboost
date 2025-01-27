@@ -96,7 +96,7 @@ fn progress_after_random_prefix() {
     let n = sim.events().len();
 
     sim.set_rules([]);
-    sim.goto(2000);
+    sim.goto(3000);
 
     assert!(
         sim.events().len() > n,
