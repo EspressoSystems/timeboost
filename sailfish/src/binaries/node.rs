@@ -60,7 +60,6 @@ async fn main() -> Result<()> {
         },
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
-            coordinator.shutdown().await.expect("Coordinator comm shutdown");
             return Ok(());
         }
     }
