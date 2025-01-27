@@ -41,7 +41,6 @@ use tokio::sync::{
 };
 
 pub mod api;
-pub mod config;
 pub mod contracts;
 mod mempool;
 pub mod metrics;

@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     net::{Ipv4Addr, SocketAddr},
 };
@@ -12,7 +11,7 @@ use sailfish::metrics::SailfishMetrics;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::NodeId;
 use timeboost_networking::metrics::NetworkMetrics;
-use timeboost_utils::{types::logging, unsafe_zero_keypair, PeerConfig};
+use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::signal;
 use tracing::warn;
 
@@ -24,8 +23,7 @@ struct Cli {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    to_connect_addrs: HashMap<PublicKey, SocketAddr>,
-    staked_nodes: Vec<PeerConfig<PublicKey>>,
+    to_connect_addrs: Vec<(PublicKey, SocketAddr)>,
     id: NodeId,
     port: u16,
 }
@@ -43,7 +41,6 @@ async fn main() -> Result<()> {
     let mut coordinator = sailfish_coordinator(
         cfg.id,
         cfg.to_connect_addrs,
-        cfg.staked_nodes,
         keypair,
         bind_address,
         sf_metrics,
