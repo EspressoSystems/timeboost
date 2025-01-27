@@ -789,7 +789,10 @@ impl Consensus {
         c = %self.committed_round)
     )]
     fn cleanup(&mut self) {
-        let r = self.committed_round_quorum().saturating_sub(2).into();
+        let r = self
+            .committed_round_quorum()
+            .saturating_sub(self.committee.size().get() as u64)
+            .into();
 
         if self.committed_round < r {
             return;
