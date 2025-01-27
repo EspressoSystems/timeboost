@@ -852,6 +852,16 @@ impl Consensus {
             return false;
         }
 
+        if *v.round().data() < v.committed_round() {
+            warn!(
+                n = %self.public_key(),
+                r = %self.round,
+                %v,
+                "vertex round is less than committed round"
+            );
+            return false;
+        }
+
         if v.has_edge(&self.committee.leader(**v.round().data() as usize - 1)) {
             return true;
         }
