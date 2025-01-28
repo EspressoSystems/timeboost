@@ -23,6 +23,7 @@ use tokio::{
 use tracing::{error, info, instrument};
 
 use crate::{
+    api::gas_estimator::GasEstimator,
     mempool::{self, Mempool},
     metrics::TimeboostMetrics,
     sequencer::phase::inclusion::CandidateList,
@@ -100,6 +101,8 @@ where
 
     /// The transactions/bundles seen at some point in the previous 8 rounds.
     prior_tx_hashes: BTreeMap<RoundNumber, HashSet<Commitment<Transaction>>>,
+
+    estimator: GasEstimator,
 }
 
 impl<I, D, O, B> Sequencer<I, D, O, B>
@@ -128,6 +131,7 @@ where
             round: RoundNumber::genesis(),
             mempool,
             prior_tx_hashes: BTreeMap::new(),
+            estimator: GasEstimator::new(),
         }
     }
 
@@ -152,6 +156,8 @@ where
 
                     // Drain the snapshot
                     let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
+                    // TODO: Probably move this into the drain_to_limit
+                    let _ = self.estimator.estimate(&mempool_snapshot).await;
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,
