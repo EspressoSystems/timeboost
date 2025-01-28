@@ -41,8 +41,13 @@ pub async fn submit_ready(
     }))?;
 
     loop {
+        let Ok(ready_url) = url.clone().join("ready/") else {
+            error!("URL {url} could not join with `ready/`");
+            panic!("invalid url");
+        };
+
         match client
-            .post(url.clone().join("ready/").expect("valid url"))
+            .post(ready_url.clone())
             .body(registration.clone())
             .send()
             .await
@@ -55,7 +60,7 @@ pub async fn submit_ready(
                 }
             },
             Err(e) => {
-                error!(%e, "http request failed");
+                error!(%e, "http request to {ready_url} failed");
                 sleep(RETRY_INTERVAL).await;
             }
         }
@@ -67,7 +72,11 @@ pub async fn submit_ready(
 pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, SocketAddr)>> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
-        match reqwest::get(url.clone().join("start/").expect("valid url")).await {
+        let Ok(start_url) = url.clone().join("start/") else {
+            error!("URL {url} could not join with `start/`");
+            panic!("invalid url");
+        };
+        match reqwest::get(start_url.clone()).await {
             Ok(response) => match response.json::<StartResponse>().await {
                 Ok(payload) => {
                     if payload.started {
@@ -83,7 +92,7 @@ pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, Soc
                 }
             },
             Err(e) => {
-                error!(%e, "http request failed");
+                error!(%e, "http request to {start_url} failed");
                 sleep(RETRY_INTERVAL).await;
             }
         }
