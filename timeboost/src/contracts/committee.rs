@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use multisig::PublicKey;
+use reqwest::Url;
 use timeboost_core::types::NodeId;
 
 /// A contract for managing the committee of nodes, this is a placeholder for now.
@@ -13,14 +14,14 @@ pub struct CommitteeContract {
 impl CommitteeContract {
     pub async fn new(
         node_id: NodeId,
+        node_ip: SocketAddr,
         public_key: PublicKey,
-        node_port: u16,
-        url: reqwest::Url,
+        url: Url,
     ) -> Self {
         // First, submit that we're ready
         crate::contracts::initializer::submit_ready(
             u64::from(node_id),
-            node_port,
+            node_ip,
             public_key,
             url.clone(),
         )
