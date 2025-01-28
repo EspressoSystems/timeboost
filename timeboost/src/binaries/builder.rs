@@ -8,6 +8,7 @@ use timeboost_core::types::NodeId;
 use timeboost_core::until::run_until;
 
 use clap::Parser;
+use local_ip_address::local_ip;
 use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::{signal, sync::watch};
 use tracing::warn;
@@ -36,6 +37,10 @@ struct Cli {
     /// The ip address of the startup coordinator
     #[clap(long, default_value = "http://localhost:7200/")]
     startup_url: reqwest::Url,
+
+    /// The broadcasted ip of this node, if unset, it defaults to [`local_ip`].
+    #[clap(long)]
+    broadcast_ip: Option<SocketAddr>,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -69,9 +74,15 @@ async fn main() -> Result<()> {
 
     let keypair = unsafe_zero_keypair(id);
 
+    // The self-reported host of this machine
+    let broadcast_ip = match cli.broadcast_ip {
+        Some(host) => host,
+        None => format!("{}:{}", local_ip()?.to_string(), cli.port).parse()?,
+    };
+
     // Make a new committee contract instance to read the committee config from.
     let committee =
-        CommitteeContract::new(id, keypair.public_key(), cli.port, cli.startup_url).await;
+        CommitteeContract::new(id, broadcast_ip, keypair.public_key(), cli.startup_url).await;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
