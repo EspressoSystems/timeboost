@@ -43,7 +43,7 @@ pub async fn submit_ready(
     loop {
         let Ok(ready_url) = url.clone().join("ready/") else {
             error!("URL {url} could not join with `ready/`");
-            continue;
+            panic!("invalid url");
         };
 
         match client
@@ -74,7 +74,7 @@ pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, Soc
     let committee_data = loop {
         let Ok(start_url) = url.clone().join("start/") else {
             error!("URL {url} could not join with `start/`");
-            continue;
+            panic!("invalid url");
         };
         match reqwest::get(start_url.clone()).await {
             Ok(response) => match response.json::<StartResponse>().await {
