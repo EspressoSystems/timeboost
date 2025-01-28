@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use multisig::PublicKey;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -13,8 +14,8 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub ip_addr: SocketAddr,
     pub public_key: Vec<u8>,
+    pub ip_addr: SocketAddr,
 }
 
 /// The response payload for the network startup.
@@ -26,16 +27,18 @@ pub struct StartResponse {
 
 pub async fn submit_ready(
     node_id: u64,
-    node_port: u16,
+    node_ip: SocketAddr,
     public_key: PublicKey,
-    url: reqwest::Url,
+    url: Url,
 ) -> Result<()> {
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
-    let registration = serde_json::to_string(
-        &serde_json::json!({ "node_id": node_id, "public_key": public_key.as_bytes(), "node_port": node_port }),
-    )?;
+    let registration = serde_json::to_string(&serde_json::json!({
+        "node_id": node_id,
+        "node_host": node_ip,
+        "public_key": public_key.as_bytes(),
+    }))?;
 
     loop {
         match client

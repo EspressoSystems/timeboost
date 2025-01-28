@@ -33,8 +33,8 @@ class CommitteeEntry:
 
 class ReadyPayload(BaseModel):
     node_id: int
+    node_host: str
     public_key: list[int]
-    node_port: int
 
 
 COMMITTEE: list[CommitteeEntry] = []
@@ -60,7 +60,7 @@ def ready(request: Request, payload: ReadyPayload):
         e = CommitteeEntry(
             payload.node_id,
             payload.public_key,
-            f"{request.client[0]}:{payload.node_port}",
+            f"{payload.node_host}",
         )
         COMMITTEE.append(e)
         return e
