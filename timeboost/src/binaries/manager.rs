@@ -66,7 +66,7 @@ async fn ready(
     State(state): State<ReadyState>,
     Json(payload): Json<ReadyRequest>,
 ) -> (StatusCode, Json<ReadyResponse>) {
-    let mut ip_addr = addr.clone();
+    let mut ip_addr = addr;
     ip_addr.set_port(payload.node_port);
     let entry = ReadyResponse {
         node_id: payload.node_id,
