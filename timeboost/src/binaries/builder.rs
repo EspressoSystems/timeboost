@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     // The self-reported host of this machine
     let broadcast_ip = match cli.broadcast_ip {
         Some(host) => host,
-        None => format!("{}:{}", local_ip()?.to_string(), cli.port).parse()?,
+        None => format!("{}:{}", local_ip()?, cli.port).parse()?,
     };
 
     // Make a new committee contract instance to read the committee config from.
