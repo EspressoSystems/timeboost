@@ -45,6 +45,10 @@ impl Dag {
         self.elements = self.elements.split_off(&r);
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
     /// Returns the total number of rounds present in the DAG
     pub fn depth(&self) -> usize {
         self.elements.len()
