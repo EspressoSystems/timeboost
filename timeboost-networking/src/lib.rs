@@ -24,7 +24,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use frame::Header;
+use frame::{Header, Type};
 
 pub use error::{Empty, NetworkError};
 
@@ -140,6 +140,13 @@ impl Drop for IoTask {
         self.rh.abort();
         self.wh.abort();
     }
+}
+
+#[derive(PartialEq)]
+pub enum Message {
+    Data(Bytes),
+    Ping([u8; PING_SIZE]),
+    Pong([u8; PING_SIZE]),
 }
 
 impl Network {
@@ -531,50 +538,50 @@ where
         loop {
             let (h, f) = recv_frame(&mut r).await?;
 
-            // Received ping message; sending pong to writer
-            if h.is_ping() {
-                if t.lock()
-                    .read_message(&f, &mut buf)
-                    .map(|n| n == PING_SIZE)
-                    .unwrap_or(false)
-                {
-                    let mut ping_buf = [0; PING_SIZE];
-                    ping_buf.copy_from_slice(&buf[..PING_SIZE]);
-                    if to_write.try_send(Message::Pong(ping_buf)).is_err() {
-                        debug!(n = %k, "failed to send pong to writer");
+            match h.frame_type() {
+                Ok(Type::Ping) => {
+                    // Received ping message; sending pong to writer
+                    if t.lock()
+                        .read_message(&f, &mut buf)
+                        .map(|n| n == PING_SIZE)
+                        .unwrap_or(false)
+                    {
+                        let mut ping_buf = [0; PING_SIZE];
+                        ping_buf.copy_from_slice(&buf[..PING_SIZE]);
+                        if to_write.try_send(Message::Pong(ping_buf)).is_err() {
+                            debug!(n = %k, "failed to send pong to writer");
+                        }
+                    }
+                    continue;
+                }
+                Ok(Type::Pong) => {
+                    // Received pong message; measure elapsed time
+                    if t.lock()
+                        .read_message(&f, &mut buf)
+                        .map(|n| n == PING_SIZE)
+                        .unwrap_or(false)
+                    {
+                        let mut pong_buf = [0; PING_SIZE];
+                        pong_buf.copy_from_slice(&buf[..PING_SIZE]);
+                        let our_ping = u64::from_be_bytes(pong_buf);
+                        let time = unix_time();
+                        if let Some(delay) = time.checked_sub(our_ping) {
+                            nm.latency.add_point(delay as f64 / 1000.0);
+                        };
+                    }
+                    continue;
+                }
+                Ok(Type::Data) => {
+                    let n = t.lock().read_message(&f, &mut buf)?;
+                    msg.extend_from_slice(&buf[..n]);
+                    if !h.is_partial() {
+                        break;
+                    }
+                    if msg.len() > MAX_TOTAL_SIZE {
+                        return Err(NetworkError::MessageTooLarge);
                     }
                 }
-                continue;
-            }
-
-            // Received pong message; measure elapsed time
-            if h.is_pong() {
-                if t.lock()
-                    .read_message(&f, &mut buf)
-                    .map(|n| n == PING_SIZE)
-                    .unwrap_or(false)
-                {
-                    let mut pong_buf = [0; PING_SIZE];
-                    pong_buf.copy_from_slice(&buf[..PING_SIZE]);
-                    let our_ping = u64::from_be_bytes(pong_buf);
-                    let time = unix_time();
-                    if let Some(delay) = time.checked_sub(our_ping) {
-                        nm.latency.add_point(delay as f64 / 1000.0);
-                    };
-                }
-                continue;
-            }
-
-            // Received data message
-            if h.is_data() {
-                let n = t.lock().read_message(&f, &mut buf)?;
-                msg.extend_from_slice(&buf[..n]);
-                if !h.is_partial() {
-                    break;
-                }
-                if msg.len() > MAX_TOTAL_SIZE {
-                    return Err(NetworkError::MessageTooLarge);
-                }
+                Err(t) => return Err(NetworkError::UnknownFrameType(t)),
             }
         }
         if tx.send((k, msg.freeze())).await.is_err() {
@@ -639,13 +646,6 @@ where
             }
         }
     }
-}
-
-#[derive(PartialEq)]
-pub enum Message {
-    Data(Bytes),
-    Ping([u8; PING_SIZE]),
-    Pong([u8; PING_SIZE]),
 }
 
 /// Read a single frame (header + payload) from the remote.
