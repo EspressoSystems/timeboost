@@ -191,6 +191,7 @@ impl Timeboost {
         let millis = tps_to_millis(tps);
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(millis));
+            #[allow(clippy::redundant_pattern_matching)]
             while let Some(_) = interval.tick().await.into() {
                 let tx = make_tx();
                 match app_tx
