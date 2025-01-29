@@ -1,14 +1,19 @@
+use futures::future::join_all;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use tracing::{error, warn};
 
-/// The mempool limit in bytes is 500mb.
-pub const MEMPOOL_LIMIT_BYTES: usize = 500 * 1024 * 1024;
+use crate::api::gas_estimator::GasEstimator;
+
+/// Max gas limit for transaction in a block (32M)
+const MAX_GAS_LIMIT: u64 = 32_000_000;
 
 /// The Timeboost mempool.
 pub struct Mempool {
     /// The set of bundles in the mempool.
     bundles: RwLock<VecDeque<SailfishBlock>>,
+    estimator: GasEstimator,
 }
 
 impl Mempool {
@@ -16,6 +21,7 @@ impl Mempool {
     pub fn new() -> Self {
         Self {
             bundles: RwLock::new(VecDeque::new()),
+            estimator: GasEstimator::default(),
         }
     }
 
@@ -23,20 +29,36 @@ impl Mempool {
         self.bundles.write().push_back(block);
     }
 
-    /// Drains blocks from the mempool until the total size reaches `limit_bytes`.
-    pub fn drain_to_limit(&self, limit_bytes: usize) -> Vec<SailfishBlock> {
-        let mut total_size = 0;
-        self.bundles
-            .write()
-            .drain(..)
-            .take_while(|block| {
-                let should_take = total_size + block.size_bytes() <= limit_bytes;
-                if should_take {
-                    total_size += block.size_bytes();
+    /// Drains blocks from the mempool until we reach our gas limit for block
+    pub async fn drain_to_limit(&self) -> Vec<SailfishBlock> {
+        let mut total_gas = 0;
+        let mut drained = Vec::new();
+        let mut keep = VecDeque::new();
+        let bundles: Vec<_> = self.bundles.write().drain(..).collect();
+        let estimates = join_all(bundles.into_iter().map(|b| self.estimator.estimate(b)))
+            .await
+            .into_iter();
+        for r in estimates {
+            match r {
+                Ok((g, b)) => {
+                    if total_gas + g <= MAX_GAS_LIMIT {
+                        total_gas += g;
+                        drained.push(b);
+                    } else {
+                        warn!("estimate hit: {}", total_gas);
+                        keep.push_back(b);
+                    }
                 }
-                should_take
-            })
-            .collect()
+                Err((e, block)) => {
+                    error!("error getting block estimate: {}", e);
+                    keep.push_back(block);
+                }
+            }
+        }
+        if !keep.is_empty() {
+            self.bundles.write().extend(keep);
+        }
+        drained
     }
 }
 

@@ -79,6 +79,10 @@ impl SailfishBlock {
         self.payload
     }
 
+    pub fn transactions_ref(&self) -> &Vec<Transaction> {
+        &self.payload
+    }
+
     pub fn delayed_inbox_index(&self) -> u64 {
         self.delayed_inbox_index
     }
