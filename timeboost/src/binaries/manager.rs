@@ -9,7 +9,8 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use timeboost::contracts::initializer::{ReadyRequest, ReadyResponse, StartResponse};
 use timeboost_utils::types::logging;
 use tokio::signal;
