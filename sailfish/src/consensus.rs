@@ -144,10 +144,10 @@ impl Consensus {
     }
 
     pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
-        ensure! {
+        ensure!(
             index >= self.delayed_inbox_index,
             "delayed inbox index must be >= than the current delayed inbox index"
-        }
+        );
         self.delayed_inbox_index = index;
 
         Ok(())
@@ -779,7 +779,7 @@ impl Consensus {
                     self.dag.add(v)
                 }
             }
-        } else if self.committed_round >= r + self.history_margin() {
+        } else if self.committed_round >= self.nodes.committed_round_quorum() {
             for v in self.buffer.drain_round(r) {
                 self.dag.add(v)
             }
@@ -827,7 +827,7 @@ impl Consensus {
                 node   = %self.public_key(),
                 round  = %self.round,
                 vertex = %v,
-                "vertex round lies before dag"
+                "vertex round is too old"
             );
             return false;
         }
@@ -837,16 +837,6 @@ impl Consensus {
                 node   = %self.public_key(),
                 vertex = %v,
                 "vertex round is less than committed round"
-            );
-            return false;
-        }
-
-        if *v.round().data() < self.lower_round_bound() {
-            debug!(
-                node   = %self.public_key(),
-                quorum = %self.nodes.committed_round_quorum(),
-                vertex = %v,
-                "vertex round too far behind"
             );
             return false;
         }
@@ -901,12 +891,8 @@ impl Consensus {
     fn lower_round_bound(&self) -> RoundNumber {
         self.nodes
             .committed_round_quorum()
-            .saturating_sub(self.history_margin())
+            .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
-    }
-
-    fn history_margin(&self) -> u64 {
-        self.committee.quorum_size().get() as u64
     }
 }
 
