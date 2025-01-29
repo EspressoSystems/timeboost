@@ -65,8 +65,15 @@ pub struct KeyShare<C: CurveGroup> {
     share: C::ScalarField,
     index: u32,
 }
+
 #[derive(Debug)]
 pub struct Plaintext(Vec<u8>);
+
+impl Plaintext {
+    pub fn new(data: Vec<u8>) -> Self {
+        Plaintext(data)
+    }
+}
 
 pub struct Ciphertext<C: CurveGroup> {
     v: C,
@@ -353,21 +360,20 @@ mod test {
         sg_encryption::{Committee, DecShare, Plaintext, ShoupGennaro},
         traits::threshold_enc::ThresholdEncScheme,
     };
-    use ark_bn254::G1Projective;
 
     use ark_std::test_rng;
     use nimue::hash::legacy::DigestBridge;
     use rand::seq::SliceRandom;
     use sha2::Sha256;
 
-    type G = G1Projective;
+    type G = ark_secp256k1::Projective;
     type H = Sha256;
     type D = DigestBridge<H>;
 
     #[test]
     fn test_correctness() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Committee { size: 20, id: 0 };
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes

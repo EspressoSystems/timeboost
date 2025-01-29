@@ -19,7 +19,7 @@ bytes = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
-criterion = "0.5"
+criterion = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
