@@ -1,20 +1,13 @@
-use bytes::Bytes;
 use clap::Parser;
 use futures::FutureExt;
-use rand::Rng;
 use reqwest::Client;
-use timeboost_core::types::{
-    seqno::SeqNo,
-    transaction::{Address, Nonce, Transaction, TransactionData},
-};
+use timeboost_core::load_generation::make_tx;
 use timeboost_utils::types::logging;
 use tokio::{signal, spawn, sync::watch, time::sleep};
 use tracing::debug;
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
-
-const SIZE_512_B: usize = 512;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -35,39 +28,6 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
-}
-
-fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
-    // Make sz bytes of random data
-    let data: Bytes = (0..sz).map(|_| rand::thread_rng().gen()).collect();
-
-    (0..n)
-        .map(|i| {
-            TransactionData::new(
-                Nonce::now(SeqNo::from(i as u128)),
-                Address::zero(),
-                data.clone(),
-            )
-        })
-        .collect()
-}
-
-fn make_tx() -> Transaction {
-    // 10% chance of being a priority tx
-    if rand::thread_rng().gen_bool(0.1) {
-        // Get the txns
-        let txns = make_tx_data(1, SIZE_512_B);
-        Transaction::Priority {
-            nonce: Nonce::now(SeqNo::from(0)),
-            to: Address::zero(),
-            txns,
-        }
-    } else {
-        Transaction::Regular {
-            // The index here is safe since we always generate a single txn.
-            txn: make_tx_data(1, SIZE_512_B).remove(0),
-        }
-    }
 }
 
 /// Creates a transaction and sends it to all the nodes in the committee.

@@ -61,6 +61,11 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, short, action = clap::ArgAction::SetTrue)]
     late_start: bool,
+
+    /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
+    /// Set this to 0 for no load generation.
+    #[clap(long, short, default_value_t = 100)]
+    tps: u32,
 }
 
 #[tokio::main]
@@ -121,13 +126,13 @@ async fn main() -> Result<()> {
         peers: committee.peers().into_iter().collect(),
         keypair,
         bind_address,
-        shutdown_rx,
+        shutdown_rx: shutdown_rx.clone(),
     };
 
     let timeboost = Timeboost::initialize(init).await?;
 
     tokio::select! {
-        _ = timeboost.go(committee.peers().len()) => {
+        _ = timeboost.go(committee.peers().len(), cli.tps) => {
             #[cfg(feature = "until")]
             {
                 tracing::info!("watchdog completed");
