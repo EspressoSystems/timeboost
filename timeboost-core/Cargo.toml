@@ -18,6 +18,7 @@ crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 thiserror = { workspace = true }
 timeboost-networking = { path = "../timeboost-networking" }

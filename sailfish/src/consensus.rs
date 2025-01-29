@@ -755,7 +755,12 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(n = %self.public_key(), v = %to_deliver, "deliver");
+                debug!(n = %self.public_key(), v = %to_deliver, "deliver");
+                info!(
+                    num_txns = b.len(),
+                    block_size_bytes = b.size_bytes(),
+                    "deliver"
+                );
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }

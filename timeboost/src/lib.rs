@@ -18,10 +18,12 @@ use sequencer::{
 };
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
+use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
+use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, instrument, trace, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
@@ -167,7 +169,7 @@ impl HasInitializer for Timeboost {
 }
 
 impl Timeboost {
-    async fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
+    fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
         tokio::spawn(async move {
             let api = TimeboostApiState::new(app_tx);
             if let Err(e) = api
@@ -179,20 +181,50 @@ impl Timeboost {
         })
     }
 
-    async fn start_metrics_api(
-        metrics: Arc<PrometheusMetrics>,
-        metrics_port: u16,
-    ) -> JoinHandle<()> {
+    fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
         tokio::spawn(async move {
             serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
         })
     }
 
+    fn start_load_generator(tps: u32, app_tx: Sender<TimeboostStatusEvent>) -> JoinHandle<()> {
+        let millis = tps_to_millis(tps);
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_millis(millis));
+            while let Some(_) = interval.tick().await.into() {
+                let tx = make_tx();
+                match app_tx
+                    .send(TimeboostStatusEvent {
+                        event: TimeboostEventType::Transactions {
+                            transactions: vec![tx],
+                        },
+                    })
+                    .await
+                {
+                    Ok(_) => {
+                        trace!("tranaction sent successfully");
+                    }
+                    Err(e) => {
+                        error!(%e, "failed to send transaction");
+                    }
+                }
+            }
+        })
+    }
+
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
-    pub async fn go(mut self, committee_size: usize) -> Result<()> {
+    pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
-        let rpc_handle = Self::start_rpc_api(app_tx, self.rpc_port).await;
-        let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port).await;
+        let rpc_handle = Self::start_rpc_api(app_tx.clone(), self.rpc_port);
+        let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port);
+
+        // Start the load generator.
+        let load_gen_handle = if tps > 0 {
+            Some(Self::start_load_generator(tps, app_tx))
+        } else {
+            warn!("running without load generator");
+            None
+        };
 
         let sequencer = Sequencer::new(
             NoOpInclusionPhase,
@@ -212,6 +244,7 @@ impl Timeboost {
 
         // Start the block producer.
         let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
+
         tokio::spawn(producer.run());
 
         // Kickstart the network.
@@ -285,6 +318,11 @@ impl Timeboost {
 
                     warn!("shutting down sequencer");
                     sequencer_handle.abort();
+
+                    warn!("shutting down load generator");
+                    if let Some(handle) = load_gen_handle {
+                        handle.abort();
+                    }
 
                     result.expect("the shutdown sender was dropped before the receiver could receive the token");
                     return Ok(());

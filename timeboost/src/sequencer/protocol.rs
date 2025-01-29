@@ -145,6 +145,7 @@ where
                 }
                 round = &mut self.consensus_interval_clock => {
                     info!(%round, "starting timeboost consensus");
+                    self.round = round.into();
                     self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL)
                         .map(move |_| round + 1)
                         .fuse()
