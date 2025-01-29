@@ -7,11 +7,8 @@ description.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-bincode = { workspace = true }
 blake3 = { workspace = true }
 committable = { workspace = true }
-derive_more = { workspace = true, features = ["debug"] }
-displaydoc = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
@@ -19,7 +16,4 @@ parking_lot = { workspace = true }
 prometheus = { workspace = true }
 serde = { workspace = true }
 tide-disco = { workspace = true }
-timeboost-crypto = { path = "../timeboost-crypto" }
-tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-url = { workspace = true }
