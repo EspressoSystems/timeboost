@@ -1,5 +1,3 @@
-use std::cmp::max;
-
 use multisig::{Committee, PublicKey};
 use timeboost_utils::types::round_number::RoundNumber;
 
@@ -25,13 +23,11 @@ impl NodeInfo {
             return false;
         };
 
-        if new == self.nodes[i].1 {
+        if new <= self.nodes[i].1 {
             return true;
         }
 
-        let (k, old) = self.nodes.remove(i);
-
-        let new = max(new, old);
+        self.nodes.remove(i);
 
         let i = self
             .nodes
@@ -39,7 +35,7 @@ impl NodeInfo {
             .position(|(_, r)| new >= *r)
             .unwrap_or(self.nodes.len());
 
-        self.nodes.insert(i, (k, new));
+        self.nodes.insert(i, (*k, new));
 
         debug_assert!({
             let it = self.nodes.iter().map(|(_, r)| *r);
