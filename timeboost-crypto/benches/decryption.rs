@@ -22,7 +22,7 @@ where
     G::ScalarField: PrimeField,
 {
     let committee_sizes = [5, 10, 15, 20];
-    let byte_lens = [100 * KB, 200 * KB, 500 * KB, 1 * MB];
+    let byte_lens = [100 * KB, 200 * KB, 500 * KB, MB];
 
     let rng = &mut test_rng();
     for len in byte_lens {
@@ -44,9 +44,7 @@ where
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    let c = ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
-                        .unwrap();
-                    return c;
+                    ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
                 });
             });
         }
