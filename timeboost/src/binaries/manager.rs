@@ -82,7 +82,7 @@ async fn ready(
 async fn start(state: State<ReadyState>, size: u16) -> (StatusCode, Json<StartResponse>) {
     let ready_responses = state.lock().unwrap();
     let response = StartResponse {
-        started: ready_responses.len() as u16 == size,
+        started: ready_responses.len() == usize::from(size),
         committee: if ready_responses.len() as u16 == size {
             ready_responses.to_vec()
         } else {
