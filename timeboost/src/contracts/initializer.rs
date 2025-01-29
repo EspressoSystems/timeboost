@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use multisig::PublicKey;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -13,8 +14,8 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub ip_addr: SocketAddr,
     pub public_key: Vec<u8>,
+    pub ip_addr: SocketAddr,
 }
 
 /// The response payload for the network startup.
@@ -26,20 +27,27 @@ pub struct StartResponse {
 
 pub async fn submit_ready(
     node_id: u64,
-    node_port: u16,
+    node_ip: SocketAddr,
     public_key: PublicKey,
-    url: reqwest::Url,
+    url: Url,
 ) -> Result<()> {
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
-    let registration = serde_json::to_string(
-        &serde_json::json!({ "node_id": node_id, "public_key": public_key.as_bytes(), "node_port": node_port }),
-    )?;
+    let registration = serde_json::to_string(&serde_json::json!({
+        "node_id": node_id,
+        "node_host": node_ip,
+        "public_key": public_key.as_bytes(),
+    }))?;
 
     loop {
+        let Ok(ready_url) = url.clone().join("ready/") else {
+            error!("URL {url} could not join with `ready/`");
+            panic!("invalid url");
+        };
+
         match client
-            .post(url.clone().join("ready/").expect("valid url"))
+            .post(ready_url.clone())
             .body(registration.clone())
             .send()
             .await
@@ -52,7 +60,7 @@ pub async fn submit_ready(
                 }
             },
             Err(e) => {
-                error!(%e, "http request failed");
+                error!(%e, "http request to {ready_url} failed");
                 sleep(RETRY_INTERVAL).await;
             }
         }
@@ -64,7 +72,11 @@ pub async fn submit_ready(
 pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, SocketAddr)>> {
     // Run the timeout again, except waiting for the full system startup
     let committee_data = loop {
-        match reqwest::get(url.clone().join("start/").expect("valid url")).await {
+        let Ok(start_url) = url.clone().join("start/") else {
+            error!("URL {url} could not join with `start/`");
+            panic!("invalid url");
+        };
+        match reqwest::get(start_url.clone()).await {
             Ok(response) => match response.json::<StartResponse>().await {
                 Ok(payload) => {
                     if payload.started {
@@ -80,7 +92,7 @@ pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, Soc
                 }
             },
             Err(e) => {
-                error!(%e, "http request failed");
+                error!(%e, "http request to {start_url} failed");
                 sleep(RETRY_INTERVAL).await;
             }
         }
