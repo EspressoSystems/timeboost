@@ -13,10 +13,8 @@ harness = false
 
 [dependencies]
 anyhow = { workspace = true }
-async-lock = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-bitvec = { workspace = true }
 bytes = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
@@ -24,14 +22,11 @@ committable = { workspace = true }
 criterion = "0.5"
 derive_builder = { workspace = true }
 futures = { workspace = true }
-multiaddr = { workspace = true }
 multisig = { path = "../multisig" }
-primitive-types = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
-timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
