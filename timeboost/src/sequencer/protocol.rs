@@ -231,7 +231,7 @@ where
             bail!("failed to build block")
         };
 
-        info!(%self.round, "built block");
+        tracing::debug!(%self.round, "built block");
 
         Ok(block)
     }
