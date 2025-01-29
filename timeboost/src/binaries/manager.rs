@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
         .route("/ready/", post(ready))
         .with_state(state);
     let url = format!("0.0.0.0:{}", cli.port.unwrap_or(7200));
-    let listener = tokio::net::TcpListener::bind(url).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(url).await?;
 
     axum::serve(
         listener,
