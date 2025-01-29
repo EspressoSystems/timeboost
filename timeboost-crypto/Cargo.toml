@@ -7,8 +7,8 @@ description.workspace = true
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
-ark-bn254 = { workspace = true }
 ark-ec = { workspace = true }
+ark-secp256k1 = { workspace = true }
 ark-ff = { workspace = true }
 ark-poly = { workspace = true }
 ark-std = { workspace = true }
@@ -17,3 +17,11 @@ nimue = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+ark-bn254 = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "decryption"
+harness = false

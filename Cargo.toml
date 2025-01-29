@@ -27,7 +27,8 @@ aes-gcm = { version = "0.10.3" }
 anyhow = "1.0.89"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
-ark-ed-on-bn254 = "0.5"
+ark-ed25519 = "0.5"
+ark-secp256k1 = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
 ark-serialize = "0.5"
@@ -46,6 +47,7 @@ bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
+criterion = "0.5"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
 derivative = "2.2.0"
