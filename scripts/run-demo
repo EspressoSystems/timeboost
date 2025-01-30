@@ -31,7 +31,7 @@ SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-  cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+  cmd="RUST_LOG=timeboost=error,sailfish=error,timeboost_networking=error \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \

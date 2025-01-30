@@ -1,90 +1,58 @@
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use timeboost_core::types::{block::sailfish::SailfishBlock, transaction::Transaction};
-
-#[derive(Serialize, Deserialize)]
-struct RpcRequest {
-    jsonrpc: String,
-    method: String,
-    params: Vec<serde_json::Value>,
-    id: u32,
-}
-
-#[derive(Deserialize, Serialize)]
-struct RpcResponse {
-    jsonrpc: String,
-    result: String,
-    id: u64,
-}
+use alloy::{
+    primitives::Address,
+    providers::{Provider, ProviderBuilder},
+    rpc::types::TransactionRequest,
+};
+use futures::future::join_all;
+use timeboost_core::types::block::sailfish::SailfishBlock;
 
 pub struct GasEstimator {
-    client: Client,
-    arb_url: &'static str,
+    nitro_url: &'static str,
 }
 
-impl Default for GasEstimator {
-    fn default() -> Self {
-        Self {
-            client: Client::new(),
-            // TODO: Get a different URL this is getting rate limited
-            // probably this https://docs.alchemy.com/reference/eth-estimategas
-            arb_url: "https://arb1.arbitrum.io/rpc",
-        }
-    }
-}
-
-/// Arbitrum gas estimator https://docs.arbitrum.io/build-decentralized-apps/how-to-estimate-gas
+/// Arbitrum gas estimator
 impl GasEstimator {
-    pub async fn estimate(
-        &self,
-        b: SailfishBlock,
-    ) -> Result<(u64, SailfishBlock), (reqwest::Error, SailfishBlock)> {
-        if b.is_empty() {
-            return Ok((0, b));
-        }
-        match self.estimate_l2_gas_limit(b.transactions_ref()).await {
-            Ok(estimate) => Ok((estimate, b)),
-            Err(e) => Err((e, b)),
-        }
+    pub fn new(nitro_url: &'static str) -> Self {
+        Self { nitro_url }
     }
+    pub async fn estimate(&self, b: SailfishBlock) -> Result<(u64, SailfishBlock), EstimatorError> {
+        let from = "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E"
+            .parse::<Address>()
+            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+        let to = "0x388A954C6b7282427AA2E8AF504504Fa6bA89432"
+            .parse::<Address>()
+            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
 
-    // Estimate Gas Limit
-    async fn estimate_l2_gas_limit(&self, txns: &[Transaction]) -> Result<u64, reqwest::Error> {
-        // TODO: Real transactions + data
-        let mut req = vec![];
-        for (i, _tx) in txns.iter().enumerate() {
-            let request = RpcRequest {
-                jsonrpc: "2.0".to_string(),
-                method: "eth_estimateGas".to_string(),
-                params: vec![
-                    json!({
-                        "from": "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E",
-                        "to": "0x388A954C6b7282427AA2E8AF504504Fa6bA89432",
-                    }),
-                    json!("latest"),
-                ],
-                id: i as u32 + 1,
+        let p = ProviderBuilder::new().on_http(self.nitro_url.parse().expect("valid url"));
+
+        let futs = b.transactions_ref().iter().map(|_tx| async {
+            //TODO: real transactions
+            let tx = TransactionRequest {
+                from: Some(from),
+                to: Some(to.into()),
+                ..Default::default()
             };
-            req.push(request);
-        }
-
-        let response = self.client.post(self.arb_url).json(&req).send().await?;
-        let json: Result<Vec<RpcResponse>, reqwest::Error> = response.json().await;
-
-        match json {
-            Ok(responses) => {
-                let mut estimated = 0;
-                for r in responses {
-                    estimated += u64::from_str_radix(r.result.trim_start_matches("0x"), 16)
-                        .expect("valid response from api");
+            match p.estimate_gas(&tx).await {
+                Ok(gas) => Some(gas),
+                Err(e) => {
+                    tracing::error!("failed to estimate gas for transaction: {:?}", e);
+                    None
                 }
-                Ok(estimated)
             }
-            Err(e) => {
-                tracing::error!("error: {:?}", e);
-                Err(e)
-            }
+        });
+        let estimates = join_all(futs)
+            .await
+            .iter()
+            .try_fold(0u64, |acc, est| est.map(|v| acc + v));
+        match estimates {
+            Some(est) => Ok((est, b)),
+            None => Err(EstimatorError::FailedToEstimateTxn(b)),
         }
     }
+}
+
+#[derive(Debug)]
+pub enum EstimatorError {
+    FailedToEstimateTxn(SailfishBlock),
+    FailedToParseWalletAddress,
 }
