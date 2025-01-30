@@ -57,5 +57,6 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
+
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
