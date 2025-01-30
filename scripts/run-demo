@@ -19,8 +19,7 @@ else
     nodes=$1
 fi
 
-RUST_LOG=info ./target/release/manager --committee-size ${nodes} &
-mpid=$!
+uv run fake-contract/main.py "$nodes" --timeout 30 &
 
 late_start=false
 
@@ -58,7 +57,6 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
-kill ${mpid}
-echo "Manager process $mpid completed successfully with exit code $?"
+
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."

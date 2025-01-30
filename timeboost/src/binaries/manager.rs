@@ -63,24 +63,22 @@ async fn health() -> StatusCode {
 }
 
 async fn ready(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ConnectInfo(ip_addr): ConnectInfo<SocketAddr>,
     State(state): State<ReadyState>,
     Json(payload): Json<ReadyRequest>,
 ) -> (StatusCode, Json<ReadyResponse>) {
-    let mut ip_addr = addr;
-    ip_addr.set_port(payload.node_port);
     let entry = ReadyResponse {
         node_id: payload.node_id,
         ip_addr,
         public_key: payload.public_key,
     };
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     state.push(entry.clone());
     (StatusCode::OK, Json(entry))
 }
 
 async fn start(state: State<ReadyState>, size: u16) -> (StatusCode, Json<StartResponse>) {
-    let ready_responses = state.lock().unwrap();
+    let ready_responses = state.lock();
     let response = StartResponse {
         started: ready_responses.len() == usize::from(size),
         committee: if ready_responses.len() == usize::from(size) {
