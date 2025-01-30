@@ -1,4 +1,4 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
 use anyhow::Result;
 use multisig::PublicKey;
@@ -14,7 +14,7 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReadyRequest {
     pub node_id: u64,
-    pub node_ip: IpAddr,
+    pub node_host: SocketAddr,
     pub public_key: PublicKey,
 }
 
@@ -22,7 +22,7 @@ pub struct ReadyRequest {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReadyResponse {
     pub node_id: u64,
-    pub public_key: Vec<u8>,
+    pub public_key: PublicKey,
     pub ip_addr: SocketAddr,
 }
 
@@ -35,23 +35,17 @@ pub struct StartResponse {
 
 pub async fn submit_ready(
     node_id: u64,
-    node_ip: SocketAddr,
+    node_host: SocketAddr,
     public_key: PublicKey,
     url: Url,
 ) -> Result<()> {
     // First, submit our public key (generated deterministically).
     let client = reqwest::Client::new();
 
-    // let registration = serde_json::to_string(&serde_json::json!({
-    //     "node_id": node_id,
-    //     "node_host": node_ip,
-    //     "public_key": public_key.as_bytes(),
-    // }))?;
-
     let req = ReadyRequest {
         node_id,
         public_key,
-        node_ip,
+        node_host,
     };
     loop {
         let Ok(ready_url) = url.clone().join("ready/") else {
@@ -59,14 +53,7 @@ pub async fn submit_ready(
             panic!("invalid url");
         };
 
-        match client
-            // .post(ready_url.clone())
-            // .body(registration.clone())
-            .post(url.clone().join("ready/").expect("valid url"))
-            .json(&req)
-            .send()
-            .await
-        {
+        match client.post(ready_url.clone()).json(&req).send().await {
             Ok(response) => match response.json::<ReadyResponse>().await {
                 Ok(_) => break,
                 Err(e) => {
@@ -115,11 +102,7 @@ pub async fn wait_for_committee(url: reqwest::Url) -> Result<Vec<(PublicKey, Soc
 
     let mut bootstrap_nodes = Vec::new();
     for c in committee_data.committee.into_iter() {
-        bootstrap_nodes.push((
-            PublicKey::try_from(c.public_key.as_slice())
-                .expect("public key to deserialize successfully"),
-            c.ip_addr,
-        ));
+        bootstrap_nodes.push((c.public_key, c.ip_addr));
     }
 
     Ok(bootstrap_nodes)

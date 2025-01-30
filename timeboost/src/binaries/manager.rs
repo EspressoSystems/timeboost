@@ -1,7 +1,4 @@
-use std::net::SocketAddr;
-
 use anyhow::Result;
-use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
 use axum::{
     extract::State,
@@ -9,8 +6,8 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 use timeboost::contracts::initializer::{ReadyRequest, ReadyResponse, StartResponse};
 use timeboost_utils::types::logging;
 use tokio::signal;
@@ -49,12 +46,9 @@ async fn main() -> Result<()> {
     let url = format!("0.0.0.0:{}", cli.port.unwrap_or(7200));
     let listener = tokio::net::TcpListener::bind(url).await?;
 
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     Ok(())
 }
 
@@ -63,13 +57,12 @@ async fn health() -> StatusCode {
 }
 
 async fn ready(
-    ConnectInfo(ip_addr): ConnectInfo<SocketAddr>,
     State(state): State<ReadyState>,
     Json(payload): Json<ReadyRequest>,
 ) -> (StatusCode, Json<ReadyResponse>) {
     let entry = ReadyResponse {
         node_id: payload.node_id,
-        ip_addr,
+        ip_addr: payload.node_host,
         public_key: payload.public_key,
     };
     let mut state = state.lock();
