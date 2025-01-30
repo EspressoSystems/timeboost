@@ -16,6 +16,7 @@ impl GasEstimator {
         Self { nitro_url }
     }
     pub async fn estimate(&self, b: SailfishBlock) -> Result<(u64, SailfishBlock), EstimatorError> {
+        // TODO: This will be pulled from transaction data in the block
         let from = "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E"
             .parse::<Address>()
             .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
@@ -26,7 +27,7 @@ impl GasEstimator {
         let p = ProviderBuilder::new().on_http(self.nitro_url.parse().expect("valid url"));
 
         let futs = b.transactions_ref().iter().map(|_tx| async {
-            //TODO: real transactions
+            //TODO: Use the real transactions populate more fields
             let tx = TransactionRequest {
                 from: Some(from),
                 to: Some(to.into()),
