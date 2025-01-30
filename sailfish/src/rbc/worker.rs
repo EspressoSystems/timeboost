@@ -95,10 +95,7 @@ impl Tracker {
     /// Randomly select a voter of the given commitment.
     fn choose_voter(&self, d: &Commitment<Digest>) -> Option<PublicKey> {
         use rand::seq::IteratorRandom;
-        self.votes
-            .voters(d)
-            .choose(&mut rand::thread_rng())
-            .copied()
+        self.votes.voters(d).choose(&mut rand::rng()).copied()
     }
 }
 

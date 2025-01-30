@@ -1,5 +1,5 @@
+use ark_std::rand::Rng;
 use nimue::{IOPatternError, ProofError};
-use rand::Rng;
 use thiserror::Error;
 
 pub trait DleqProofScheme {

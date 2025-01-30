@@ -9,7 +9,7 @@ pub const SIZE_512_B: usize = 512;
 
 pub fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
     // Make sz bytes of random data
-    let data: Bytes = (0..sz).map(|_| rand::thread_rng().gen()).collect();
+    let data: Bytes = (0..sz).map(|_| rand::rng().random()).collect();
 
     (0..n)
         .map(|i| {
@@ -24,7 +24,7 @@ pub fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
 
 pub fn make_tx() -> Transaction {
     // 10% chance of being a priority tx
-    if rand::thread_rng().gen_bool(0.1) {
+    if rand::rng().random_bool(0.1) {
         // Get the txns
         let txns = make_tx_data(1, SIZE_512_B);
         Transaction::Priority {

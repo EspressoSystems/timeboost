@@ -10,6 +10,7 @@ until = ["timeboost-core/until"]
 [dependencies]
 alloy = { version = "0.9.2", features = ["full"] }
 anyhow = { workspace = true }
+axum = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
@@ -34,3 +35,7 @@ local-ip-address = "0.6.3"
 [[bin]]
 name = "timeboost"
 path = "src/binaries/builder.rs"
+
+[[bin]]
+name = "manager"
+path = "src/binaries/manager.rs"

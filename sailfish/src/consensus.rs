@@ -757,6 +757,7 @@ impl Consensus {
                 let b = to_deliver.block().clone();
                 debug!(n = %self.public_key(), v = %to_deliver, "deliver");
                 info!(
+                    round_number = *b.round_number(),
                     num_txns = b.len(),
                     block_size_bytes = b.size_bytes(),
                     "deliver"

@@ -8,9 +8,9 @@ use ark_ff::{
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+use ark_std::rand::rngs::OsRng;
 use ark_std::rand::Rng;
 use nimue::DuplexHash;
-use rand::rngs::OsRng;
 use sha2::{
     digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
     Digest,
@@ -361,9 +361,9 @@ mod test {
         traits::threshold_enc::ThresholdEncScheme,
     };
 
+    use ark_std::rand::seq::SliceRandom;
     use ark_std::test_rng;
     use nimue::hash::legacy::DigestBridge;
-    use rand::seq::SliceRandom;
     use sha2::Sha256;
 
     type G = ark_secp256k1::Projective;
