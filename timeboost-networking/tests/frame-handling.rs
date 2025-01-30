@@ -50,8 +50,8 @@ async fn multiple_frames() {
 
 /// Generate a vector with random data and random length (within bounds).
 fn gen_message() -> Bytes {
-    let mut g = rand::thread_rng();
-    let mut v = vec![0; g.gen_range(1..5 * 1024 * 1024)];
+    let mut g = rand::rng();
+    let mut v = vec![0; g.random_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
     v.into()
 }

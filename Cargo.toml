@@ -28,20 +28,15 @@ anyhow = "1.0.89"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
 ark-ed25519 = "0.5"
-ark-secp256k1 = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
+ark-secp256k1 = "0.5"
 ark-serialize = "0.5"
 ark-std = { version = "0.5", default-features = false }
 async-lock = "3.3"
 async-trait = "0.1"
 bimap = "0.6.3"
 bincode = "1"
-bitvec = { version = "1", default-features = false, features = [
-    "alloc",
-    "atomic",
-    "serde",
-] }
 blake3 = "1.5"
 bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
@@ -50,30 +45,19 @@ committable = "0.2"
 criterion = "0.5"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
-derivative = "2.2.0"
 derive_builder = "0.20"
-derive_more = { version = "1.0" }
 digest = "0.10"
-displaydoc = { version = "0.2.5", default-features = false }
 dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
 either = "1.13.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
-jf-signature = { git = "https://github.com/EspressoSystems/jellyfish", tag = "jf-signature-v0.2.0", features = [
-    "bls",
-] }
-jf-utils = { version = "0.4.4", git = "https://github.com/espressosystems/jellyfish", tag = "0.4.5" }
 multiaddr = "0.18.2"
 nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"
-primitive-types = { version = "0.13.1", default-features = false, features = [
-    "serde",
-] }
 portpicker = "0.1.1"
 prometheus = "0.13"
 quickcheck = "1.0.3"
-rand = { version = "0.8", features = ["small_rng"] }
-rand_chacha = "0.3.1"
+rand = "0.9"
 rayon = "1.10"
 reqwest = { version = "0.12" }
 serde = { version = "1", features = ["derive"] }
@@ -83,6 +67,7 @@ sha2 = { version = "0.10", default-features = false }
 snow = "0.9.6"
 tagged-base64 = "0.4"
 thiserror = "2.0"
+tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.16"
 tokio-util = { version = "0.7.12", features = ["codec"] }
@@ -90,7 +75,5 @@ toml = "0.8.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
-typenum = "1.17.0"
-vbs = "0.1"
-tide-disco = "0.9.3"
 url = { version = "2", features = ["serde"] }
+vbs = "0.1"

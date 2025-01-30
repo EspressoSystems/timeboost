@@ -114,7 +114,7 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
     type Scalar = C::ScalarField;
     type Proof = Proof;
 
-    fn setup<R: rand::Rng>(rng: &mut R) -> Result<Self::Parameters, DleqProofError> {
+    fn setup<R: ark_std::rand::Rng>(rng: &mut R) -> Result<Self::Parameters, DleqProofError> {
         let generator: C = C::rand(rng);
         Ok(CPParameters::new(generator))
     }
@@ -176,13 +176,13 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
 #[cfg(test)]
 mod tests {
     use ark_ec::PrimeGroup;
+    use ark_std::rand::Rng;
     use ark_std::{test_rng, UniformRand};
     use nimue::{
         hash::Keccak,
         plugins::ark::{FieldChallenges, FieldWriter, GroupPublic, GroupWriter},
         Merlin,
     };
-    use rand::Rng;
 
     use crate::{
         cp_proof::{ChaumPedersen, DleqTuple, Proof},

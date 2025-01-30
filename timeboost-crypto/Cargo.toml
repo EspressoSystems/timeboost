@@ -14,7 +14,6 @@ ark-poly = { workspace = true }
 ark-std = { workspace = true }
 digest = { workspace = true }
 nimue = { workspace = true }
-rand = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 

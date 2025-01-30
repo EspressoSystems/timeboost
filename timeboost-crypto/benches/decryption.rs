@@ -1,10 +1,10 @@
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
+use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use digest::{DynDigest, FixedOutputReset};
 use nimue::{DigestBridge, DuplexHash};
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 use timeboost_crypto::{
     sg_encryption::{Committee, Plaintext, ShoupGennaro},
