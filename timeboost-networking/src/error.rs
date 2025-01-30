@@ -12,8 +12,11 @@ pub enum NetworkError {
     #[error("i/o error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("invalid frame: {0}")]
-    InvalidFrame(#[from] InvalidHeader),
+    #[error("invalid frame header: {0}")]
+    InvalidFrameHeader(#[from] InvalidHeader),
+
+    #[error("unknown frame type: {0}")]
+    UnknownFrameType(u8),
 
     #[error("invalid handshake message")]
     InvalidHandshakeMessage,

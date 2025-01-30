@@ -145,6 +145,7 @@ where
                 }
                 round = &mut self.consensus_interval_clock => {
                     info!(%round, "starting timeboost consensus");
+                    self.round = round.into();
                     self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL)
                         .map(move |_| round + 1)
                         .fuse()
@@ -230,7 +231,7 @@ where
             bail!("failed to build block")
         };
 
-        info!(%self.round, "built block");
+        tracing::debug!(%self.round, "built block");
 
         Ok(block)
     }

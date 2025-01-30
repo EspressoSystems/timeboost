@@ -36,6 +36,16 @@ impl Header {
         Self(0x2000000 | len as u32)
     }
 
+    /// The type of the frame following this header.
+    pub fn frame_type(self) -> Result<Type, u8> {
+        match (self.0 & 0xF000000) >> 24 {
+            0 => Ok(Type::Data),
+            1 => Ok(Type::Ping),
+            2 => Ok(Type::Pong),
+            t => Err(t as u8),
+        }
+    }
+
     /// Set the partial flag to indicate that more frames follow.
     pub fn partial(self) -> Self {
         Self(self.0 | 0x800000)
@@ -72,6 +82,14 @@ impl Header {
     }
 }
 
+/// The type of a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Data,
+    Ping,
+    Pong,
+}
+
 impl From<Header> for [u8; 4] {
     fn from(val: Header) -> Self {
         val.0.to_be_bytes()
@@ -101,23 +119,23 @@ pub struct InvalidHeader(&'static str);
 
 #[cfg(test)]
 mod tests {
-    use super::Header;
+    use super::{Header, Type};
     use quickcheck::quickcheck;
 
     quickcheck! {
         fn data(len: u16) -> bool {
             let hdr = Header::data(len);
-            hdr.is_data() && !hdr.is_partial()
+            hdr.is_data() && !hdr.is_partial() && hdr.frame_type() == Ok(Type::Data)
         }
 
         fn ping(len: u16) -> bool {
             let hdr = Header::ping(len);
-            hdr.is_ping() && !hdr.is_partial()
+            hdr.is_ping() && !hdr.is_partial() && hdr.frame_type() == Ok(Type::Ping)
         }
 
         fn pong(len: u16) -> bool {
             let hdr = Header::pong(len);
-            hdr.is_pong() && !hdr.is_partial()
+            hdr.is_pong() && !hdr.is_partial() && hdr.frame_type() == Ok(Type::Pong)
         }
 
         fn partial_data(len: u16) -> bool {

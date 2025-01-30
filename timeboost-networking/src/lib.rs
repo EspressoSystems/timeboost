@@ -1,11 +1,12 @@
 mod error;
 mod frame;
 pub mod metrics;
+mod time;
 
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
@@ -14,17 +15,18 @@ use metrics::NetworkMetrics;
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
+use time::Timestamp;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::time::{self, sleep};
+use tokio::time::{sleep, Interval, MissedTickBehavior};
 use tokio::{
     spawn,
     task::{self, AbortHandle, JoinHandle, JoinSet},
 };
 use tracing::{debug, error, info, trace, warn};
 
-use frame::Header;
+use frame::{Header, Type};
 
 pub use error::{Empty, NetworkError};
 
@@ -44,9 +46,6 @@ const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
 /// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
-
-/// Size of the ping protocol payload.
-const PING_SIZE: usize = 8;
 
 /// Interval between ping protocol.
 const PING_INTERVAL: Duration = Duration::from_secs(30);
@@ -119,6 +118,9 @@ struct Server {
 
     /// For gathering network metrics.
     metrics: Arc<NetworkMetrics>,
+
+    /// Interval at which to ping peers.
+    ping_interval: Interval,
 }
 
 /// An I/O task, reading data from and writing data to a remote party.
@@ -140,6 +142,13 @@ impl Drop for IoTask {
         self.rh.abort();
         self.wh.abort();
     }
+}
+
+/// Unify the various data types we want to send to the writer task.
+enum Message {
+    Data(Bytes),
+    Ping(Timestamp),
+    Pong(Timestamp),
 }
 
 impl Network {
@@ -170,6 +179,9 @@ impl Network {
             peers.insert(k, a);
         }
 
+        let mut interval = tokio::time::interval(PING_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
         let server = Server {
             keypair: keys,
             key: label,
@@ -183,6 +195,7 @@ impl Network {
             connect_tasks: JoinSet::new(),
             io_tasks: JoinSet::new(),
             metrics: Arc::new(metrics),
+            ping_interval: interval,
         };
 
         Ok(Self {
@@ -325,7 +338,7 @@ impl Server {
                             let _ = self.ibound.try_send((self.key, m));
                             continue
                         }
-                        if let Some(task) = self.active.get_mut(&to) {
+                        if let Some(task) = self.active.get(&to) {
                             if task.tx.try_send(Message::Data(m)).is_err() {
                                 warn!(n = %self.key, k = %to, "channel full => reconnecting");
                                 self.spawn_connect(to)
@@ -336,7 +349,7 @@ impl Server {
                     Some((None, m)) => {
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
-                        for (k, task) in &mut self.active {
+                        for (k, task) in &self.active {
                             if task.tx.try_send(Message::Data(m.clone())).is_err() {
                                 warn!(n = %self.key, %k, "channel full => reconnecting");
                                 reconnect.push(*k);
@@ -350,6 +363,12 @@ impl Server {
                         return Err(NetworkError::ChannelClosed)
                     }
                 },
+                _ = self.ping_interval.tick() => {
+                    let now = Timestamp::now();
+                    for task in self.active.values() {
+                        let _ = task.tx.try_send(Message::Ping(now));
+                    }
+                }
             }
         }
     }
@@ -515,12 +534,12 @@ async fn on_handshake(
 ///
 /// Once complete the message will be handed over to the given MPSC sender.
 async fn recv_loop<R>(
-    k: PublicKey,
-    mut r: R,
-    t: Arc<Mutex<TransportState>>,
-    tx: Sender<(PublicKey, Bytes)>,
-    to_write: Sender<Message>,
-    nm: Arc<NetworkMetrics>,
+    id: PublicKey,
+    mut reader: R,
+    state: Arc<Mutex<TransportState>>,
+    to_deliver: Sender<(PublicKey, Bytes)>,
+    to_writer: Sender<Message>,
+    metrics: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -529,55 +548,39 @@ where
     loop {
         let mut msg = BytesMut::new();
         loop {
-            let (h, f) = recv_frame(&mut r).await?;
+            let (h, f) = recv_frame(&mut reader).await?;
 
-            // Received ping message; sending pong to writer
-            if h.is_ping() {
-                if t.lock()
-                    .read_message(&f, &mut buf)
-                    .map(|n| n == PING_SIZE)
-                    .unwrap_or(false)
-                {
-                    let mut ping_buf = [0; PING_SIZE];
-                    ping_buf.copy_from_slice(&buf[..PING_SIZE]);
-                    if to_write.try_send(Message::Pong(ping_buf)).is_err() {
-                        debug!(n = %k, "failed to send pong to writer");
+            match h.frame_type() {
+                Ok(Type::Ping) => {
+                    // Received ping message; sending pong to writer
+                    let n = state.lock().read_message(&f, &mut buf)?;
+                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                        let _ = to_writer.try_send(Message::Pong(ping));
                     }
                 }
-                continue;
-            }
-
-            // Received pong message; measure elapsed time
-            if h.is_pong() {
-                if t.lock()
-                    .read_message(&f, &mut buf)
-                    .map(|n| n == PING_SIZE)
-                    .unwrap_or(false)
-                {
-                    let mut pong_buf = [0; PING_SIZE];
-                    pong_buf.copy_from_slice(&buf[..PING_SIZE]);
-                    let our_ping = u64::from_be_bytes(pong_buf);
-                    let time = unix_time();
-                    if let Some(delay) = time.checked_sub(our_ping) {
-                        nm.latency.add_point(delay as f64 / 1000.0);
-                    };
+                Ok(Type::Pong) => {
+                    // Received pong message; measure elapsed time
+                    let n = state.lock().read_message(&f, &mut buf)?;
+                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                        if let Some(delay) = Timestamp::now().diff(ping) {
+                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+                        }
+                    }
                 }
-                continue;
-            }
-
-            // Received data message
-            if h.is_data() {
-                let n = t.lock().read_message(&f, &mut buf)?;
-                msg.extend_from_slice(&buf[..n]);
-                if !h.is_partial() {
-                    break;
+                Ok(Type::Data) => {
+                    let n = state.lock().read_message(&f, &mut buf)?;
+                    msg.extend_from_slice(&buf[..n]);
+                    if !h.is_partial() {
+                        break;
+                    }
+                    if msg.len() > MAX_TOTAL_SIZE {
+                        return Err(NetworkError::MessageTooLarge);
+                    }
                 }
-                if msg.len() > MAX_TOTAL_SIZE {
-                    return Err(NetworkError::MessageTooLarge);
-                }
+                Err(t) => return Err(NetworkError::UnknownFrameType(t)),
             }
         }
-        if tx.send((k, msg.freeze())).await.is_err() {
+        if to_deliver.send((id, msg.freeze())).await.is_err() {
             break;
         }
     }
@@ -589,63 +592,42 @@ where
 /// The function automatically splits large messages into chunks that fit into
 /// a noise package.
 async fn send_loop<W>(
-    mut w: W,
-    t: Arc<Mutex<TransportState>>,
+    mut writer: W,
+    state: Arc<Mutex<TransportState>>,
     mut rx: Receiver<Message>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
     let mut buf = vec![0; MAX_NOISE_MESSAGE_SIZE];
-    let mut interval = time::interval(PING_INTERVAL);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    loop {
-        tokio::select! {
-            // Sending ping message after deadline
-            _ = interval.tick() => {
-                let time = unix_time();
-                let n = t.lock().write_message(&time.to_be_bytes(), &mut buf)?;
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            Message::Ping(ping) => {
+                let n = state.lock().write_message(&ping.to_bytes()[..], &mut buf)?;
                 let h = Header::ping(n as u16);
-                send_frame(&mut w, h, &buf[..n]).await?;
+                send_frame(&mut writer, h, &buf[..n]).await?;
             }
-            Some(typ) = rx.recv() => {
-                match typ {
-                    Message::Ping(ping) => {
-                        let n = t.lock().write_message(&ping, &mut buf)?;
-                        let h = Header::ping(n as u16);
-                        send_frame(&mut w, h, &buf[..n]).await?;
-                        continue;
-                    }
-                    Message::Pong(pong) => {
-                        let n = t.lock().write_message(&pong, &mut buf)?;
-                        let h = Header::pong(n as u16);
-                        send_frame(&mut w, h, &buf[..n]).await?;
-                        continue;
-                    }
-                    Message::Data(msg) => {
-                        let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
-                        while let Some(m) = it.next() {
-                            let n = t.lock().write_message(m, &mut buf)?;
-                            let h = if it.peek().is_some() {
-                                Header::data(n as u16).partial()
-                            } else {
-                                Header::data(n as u16)
-                            };
-                            send_frame(&mut w, h, &buf[..n]).await?
-                        }
-                    }
+            Message::Pong(pong) => {
+                let n = state.lock().write_message(&pong.to_bytes()[..], &mut buf)?;
+                let h = Header::pong(n as u16);
+                send_frame(&mut writer, h, &buf[..n]).await?;
+            }
+            Message::Data(msg) => {
+                let mut it = msg.chunks(MAX_PAYLOAD_SIZE).peekable();
+                while let Some(m) = it.next() {
+                    let n = state.lock().write_message(m, &mut buf)?;
+                    let h = if it.peek().is_some() {
+                        Header::data(n as u16).partial()
+                    } else {
+                        Header::data(n as u16)
+                    };
+                    send_frame(&mut writer, h, &buf[..n]).await?
                 }
             }
         }
     }
-}
-
-#[derive(PartialEq)]
-pub enum Message {
-    Data(Bytes),
-    Ping([u8; PING_SIZE]),
-    Pong([u8; PING_SIZE]),
+    Ok(())
 }
 
 /// Read a single frame (header + payload) from the remote.
@@ -669,11 +651,4 @@ where
     w.write_all(&hdr.to_bytes()).await?;
     w.write_all(msg).await?;
     Ok(())
-}
-
-pub fn unix_time() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
 }

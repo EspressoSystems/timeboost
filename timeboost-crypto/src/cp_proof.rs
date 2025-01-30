@@ -175,8 +175,7 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::G1Projective;
-    use ark_ec::{bn::BnConfig, short_weierstrass::Projective, PrimeGroup};
+    use ark_ec::PrimeGroup;
     use ark_std::{test_rng, UniformRand};
     use nimue::{
         hash::Keccak,
@@ -192,9 +191,9 @@ mod tests {
 
     use super::CPParameters;
 
-    type G = G1Projective;
+    type G = ark_secp256k1::Projective;
     type D = Keccak;
-    type S = <Projective<<ark_bn254::Config as BnConfig>::G1Config> as PrimeGroup>::ScalarField;
+    type S = <ark_secp256k1::Projective as PrimeGroup>::ScalarField;
 
     #[test]
     fn proof_correctness() {
@@ -298,7 +297,7 @@ mod tests {
         // Generate tuple (g, g_hat, h, h_hat)
         let g = params.generator;
         let g_hat = g * x;
-        let h = G1Projective::rand(&mut rng);
+        let h = ark_secp256k1::Projective::rand(&mut rng);
         let h_hat = h * x;
         let tuple = DleqTuple::new(g, g_hat, h, h_hat);
         (params, x, tuple)

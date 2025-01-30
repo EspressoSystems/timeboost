@@ -740,7 +740,12 @@ impl Consensus {
                     continue;
                 }
                 let b = to_deliver.block().clone();
-                info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
+                debug!(node = %self.public_key(), vertex = %to_deliver, "deliver");
+                info!(
+                    num_txns = b.len(),
+                    block_size_bytes = b.size_bytes(),
+                    "deliver"
+                );
                 actions.push(Action::Deliver(b, r, s));
                 self.delivered.insert((r, s));
             }
