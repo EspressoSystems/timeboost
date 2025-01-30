@@ -73,7 +73,7 @@ portpicker = "0.1.1"
 prometheus = "0.13"
 quickcheck = "1.0.3"
 rand = { version = "0.8", features = ["small_rng"] }
-rand_chacha = "0.3.1"
+rand_chacha = "0.9.0"
 rayon = "1.10"
 reqwest = { version = "0.12" }
 serde = { version = "1", features = ["derive"] }
