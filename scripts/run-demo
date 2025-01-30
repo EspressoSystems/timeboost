@@ -19,6 +19,9 @@ else
     nodes=$1
 fi
 
+curl -LsSf https://raw.githubusercontent.com/OffchainLabs/nitro-devnode/main/run-dev-node.sh | sudo bash || true
+timeout 5 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
+
 uv run fake-contract/main.py "$nodes" --timeout 30 &
 
 late_start=false
@@ -57,6 +60,7 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
+sudo pkill -9 nitro
 
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."

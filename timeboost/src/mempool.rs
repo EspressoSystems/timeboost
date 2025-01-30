@@ -8,6 +8,7 @@ use crate::gas::gas_estimator::{EstimatorError, GasEstimator};
 
 /// Max gas limit for transaction in a block (32M)
 const MAX_GAS_LIMIT: u64 = 32_000_000 * 64;
+const DRAIN_BUNDLE_SIZE: usize = 10;
 
 /// The Timeboost mempool.
 pub struct Mempool {
@@ -75,14 +76,14 @@ impl Mempool {
 
     fn next_bundles(&self) -> Vec<SailfishBlock> {
         let len = self.bundles.read().len();
-        let mut count = 0;
+        let mut c = 0;
         self.bundles
             .write()
             .drain(..)
             .filter(|b| !b.is_empty())
             .take_while(|_b| {
-                count += 1;
-                count <= len.min(10)
+                c += 1;
+                c <= len.min(DRAIN_BUNDLE_SIZE)
             })
             .collect()
     }

@@ -89,14 +89,6 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Install UV
       run: curl -LsSf https://astral.sh/uv/install.sh | sh
-    - name: Clone and Setup Arbitrum Nitro Dev Node
-      run: |
-        git clone --depth 1 https://github.com/OffchainLabs/nitro-devnode.git
-        cd nitro-devnode
-        sudo ./run-dev-node.sh || true
-    - name: Wait for Node to Start
-      run: |
-        timeout 15 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
     - name: Run tests
       run: just run_demo 4
     - name: Run tests with late-start node

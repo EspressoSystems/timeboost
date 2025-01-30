@@ -13,6 +13,9 @@ else
     just build
 fi
 
+curl -LsSf https://raw.githubusercontent.com/OffchainLabs/nitro-devnode/main/run-dev-node.sh | sudo bash || true
+timeout 5 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
+
 uv run fake-contract/main.py --timeout 30 &
 
 for i in {0..4}; do
@@ -27,4 +30,5 @@ for i in {0..4}; do
 done
 
 wait
+sudo pkill -9 nitro
 
