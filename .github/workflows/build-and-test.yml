@@ -96,8 +96,8 @@ jobs:
         sudo ./run-dev-node.sh || true
     - name: Wait for Node to Start
       run: |
-        timeout 60 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
+        timeout 15 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
     - name: Run tests
-      run: just run_demo
+      run: just run_demo 4
     - name: Run tests with late-start node
-      run: just run_demo 5 true
+      run: just run_demo 4 true

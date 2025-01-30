@@ -12,7 +12,7 @@ just build_release --features until
 if [ -z "${1:-}" ]; then
     nodes=5
 else
-    if ! [[ $1 =~ ^[5-9]+$ ]]; then
+    if ! [[ $1 =~ ^[4-9]+$ ]]; then
         echo "Error: The number of nodes must be a positive integer greater than 4."
         exit 1
     fi
@@ -31,7 +31,7 @@ SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-  cmd="RUST_LOG=timeboost=error,sailfish=error,timeboost_networking=error \
+  cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \

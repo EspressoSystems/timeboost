@@ -2,7 +2,7 @@ use futures::future::join_all;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use tracing::{error, warn};
+use tracing::warn;
 
 use crate::api::gas_estimator::{EstimatorError, GasEstimator};
 
@@ -32,7 +32,6 @@ impl Mempool {
     /// Drains blocks from the mempool until we reach our gas limit for block
     pub async fn drain_to_limit(&self) -> Vec<SailfishBlock> {
         let len = self.bundles.read().len();
-        error!("start: {}", len);
         let mut count = 0;
         let bundles: Vec<_> = self
             .bundles
@@ -41,7 +40,7 @@ impl Mempool {
             .filter(|b| !b.is_empty())
             .take_while(|_b| {
                 count += 1;
-                count <= len.min(15)
+                count <= len.min(10)
             })
             .collect();
         let estimates = join_all(bundles.into_iter().map(|b| self.estimator.estimate(b)))
@@ -63,7 +62,7 @@ impl Mempool {
                     }
                 }
                 Err(e) => {
-                    error!("error getting block estimate: {:?}", e);
+                    warn!("error getting block estimate: {:?}", e);
                     if let EstimatorError::FailedToEstimateTxn(b) = e {
                         keep.push_back(b);
                     }
@@ -76,7 +75,6 @@ impl Mempool {
                 b.push_front(k);
             }
         }
-        error!("done: {}", self.bundles.read().len());
         drained
     }
 }
