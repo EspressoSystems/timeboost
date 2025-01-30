@@ -464,7 +464,7 @@ async fn connect(
             .expect("valid noise params yield valid handshake state")
     };
 
-    let i = rand::thread_rng().gen_range(0..=1000);
+    let i = rand::rng().random_range(0..=1000);
 
     for d in [i, 1000, 3000, 6000, 10_000, 15_000]
         .into_iter()

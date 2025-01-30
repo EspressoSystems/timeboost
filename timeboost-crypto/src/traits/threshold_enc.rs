@@ -1,4 +1,4 @@
-use rand::Rng;
+use ark_std::rand::Rng;
 use thiserror::Error;
 
 pub trait ThresholdEncScheme {

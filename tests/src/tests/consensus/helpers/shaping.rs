@@ -206,11 +206,11 @@ impl RuleGen {
                         .parties
                         .choose(&mut self.rgen)
                         .expect("parties not empty");
-                    let del = self.rgen.gen_range(0..self.max_delay);
+                    let del = self.rgen.random_range(0..self.max_delay);
                     rule = rule.plus(edge(src, dst).delay(del))
                 }
             }
-            rules.push(rule.repeat(self.rgen.gen_range(0..self.max_repeat)))
+            rules.push(rule.repeat(self.rgen.random_range(0..self.max_repeat)))
         }
 
         rules
