@@ -16,7 +16,7 @@ pub struct GasEstimator {
 
 /// Arbitrum gas estimator
 impl GasEstimator {
-    pub fn new(nitro_url: &'static str) -> Self {
+    pub fn new(nitro_url: &str) -> Self {
         Self {
             provider: ProviderBuilder::new().on_http(nitro_url.parse().expect("valid url")),
         }
