@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+just build_release --features="until"
+
+nodes=5
+rounds=1000
+late_start=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -l|--late)
+            late_start=true
+            shift
+            ;;
+        -n|--nodes)
+            nodes="$2"
+            shift 2
+            ;;
+        -r|--rounds)
+            rounds="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown: $1"
+            echo "Usage: $0 [-l|--late] [-r|--rounds <NUMBER>] [-n|--nodes <NUMBER>]"
+            exit 1
+            ;;
+    esac
+done
+
+uv run fake-contract/main.py "$nodes" --timeout 10 &
+
+for (( i=0; i<$nodes; i++ )); do
+    cmd=(target/release/timeboost
+        --id $i
+        --port $((8000 + $i))
+        --rpc-port $((8800 + $i))
+        --metrics-port $((9000 + $i))
+        --until $rounds
+        --watchdog-timeout $rounds)
+
+    if $late_start; then
+        cmd+=(--late-start --late-start-node-id 0)
+    fi
+
+    echo "${cmd[@]}"
+    "${cmd[@]}" &
+done
+
+wait
+
