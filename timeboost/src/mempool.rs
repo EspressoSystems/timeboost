@@ -3,8 +3,8 @@ use committable::{Commitment, Committable};
 use dashmap::DashMap;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::warn;
+use tokio::{sync::RwLock, task::JoinHandle, time::timeout};
+use tracing::{info, warn};
 
 use crate::gas::gas_estimator::GasEstimator;
 
@@ -40,11 +40,22 @@ impl Mempool {
                 );
                 loop {
                     for block in bundles.read().await.iter() {
-                        if let Ok(est) = estimator.estimate(block).await {
-                            estimates.insert(block.commit(), est);
+                        if let Ok(est) =
+                            timeout(Duration::from_millis(500), estimator.estimate(block)).await
+                        {
+                            if let Ok(est) = est {
+                                estimates.insert(block.commit(), est);
+                            } else {
+                                warn!("Failed to estimate gas: {:?}", est);
+                            }
+                        } else {
+                            warn!(
+                                "gas estimation for block {:?} timed out after 500ms",
+                                block.round_number()
+                            );
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    tokio::time::sleep(Duration::from_millis(250)).await;
                 }
             }
         })
@@ -61,23 +72,24 @@ impl Mempool {
         let mut drained = Vec::new();
         let mut keep = VecDeque::new();
 
-        for block in bundles {
-            if let Some(est) = self.estimates.get(&block.commit()) {
+        for b in bundles {
+            let c = b.commit();
+            if let Some(est) = self.estimates.get(&c) {
                 if accum + *est <= MAX_GAS_LIMIT {
                     accum += *est;
-                    self.estimates.remove(&block.commit());
-                    drained.push(block);
+                    self.estimates.remove(&c);
+                    drained.push(b);
                 } else {
                     warn!("estimate hit: {} {}", accum, *est);
-                    keep.push_back(block);
+                    keep.push_back(b);
                 }
             } else {
-                warn!("no gas estimate available for block: {:?}", block);
-                keep.push_back(block);
+                warn!("no gas estimate available for block: {}", b.round_number());
+                keep.push_back(b);
             }
         }
 
-        tracing::error!(
+        info!(
             "mempool drained {} blocks and kept {} blocks",
             drained.len(),
             keep.len()
@@ -93,16 +105,11 @@ impl Mempool {
     }
 
     async fn next_bundles(&self) -> Vec<SailfishBlock> {
-        let mut c = 0;
         let len = self.bundles.read().await.len();
         self.bundles
             .write()
             .await
-            .drain(..)
-            .take_while(|_b| {
-                c += 1;
-                c <= len.min(DRAIN_BUNDLE_SIZE)
-            })
+            .drain(..len.min(DRAIN_BUNDLE_SIZE))
             .collect()
     }
 }
