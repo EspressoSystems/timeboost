@@ -26,22 +26,30 @@ impl fmt::Display for MultiRoundTestSpec {
 
 struct Net {
     /// Mapping of public key to the corresponding cx node.
-    pub nodes: HashMap<PublicKey, Consensus>,
+    nodes: HashMap<PublicKey, Consensus>,
 
-    /// How many rounds to run until
-    pub rounds: u64,
+    /// How many rounds to run until.
+    rounds: u64,
+
+    /// Number of times `Net::run` was invoked.
+    iteration: u64,
+
+    /// Message buffer.
+    messages: Vec<Message>,
 }
 
 impl Net {
     pub fn new(spec: MultiRoundTestSpec) -> Self {
         let MultiRoundTestSpec { nodes, rounds } = spec;
         let kps = (0..nodes).map(|_| Keypair::generate()).collect::<Vec<_>>();
+
         let com = Committee::new(
             kps.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
-        let nodes = kps
+
+        let mut nodes = kps
             .into_iter()
             .enumerate()
             .map(|(i, kp)| {
@@ -51,23 +59,28 @@ impl Net {
                 )
             })
             .collect::<HashMap<_, _>>();
-        Self { nodes, rounds }
+
+        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
+
+        let mut messages = Vec::new();
+
+        for node in nodes.values_mut() {
+            let actions = node.go(dag.clone(), Evidence::Genesis);
+            messages.extend(actions.into_iter().filter_map(action_to_msg));
+        }
+
+        Self {
+            nodes,
+            rounds,
+            messages,
+            iteration: 0,
+        }
     }
 
     pub fn run(&mut self) {
-        let d = Dag::new(NonZeroUsize::new(self.nodes.len()).unwrap());
-
-        let mut actions = Vec::new();
-
-        for node in self.nodes.values_mut() {
-            actions.extend(node.go(d.clone(), Evidence::Genesis));
-        }
-
-        let mut messages: Vec<Message> = actions.drain(..).filter_map(action_to_msg).collect();
-
+        self.iteration += 1;
         for _ in 0..self.rounds {
-            messages = self
-                .send(&messages)
+            self.messages = send(&mut self.nodes, &self.messages)
                 .drain(..)
                 .filter_map(action_to_msg)
                 .collect();
@@ -75,36 +88,36 @@ impl Net {
 
         // Check that all nodes did indeed make progress:
         for node in self.nodes.values() {
-            assert_eq!(*node.round(), self.rounds);
+            assert_eq!(*node.round(), self.iteration * self.rounds);
         }
     }
+}
 
-    /// Many-to-many broadcast of a message stack.
-    fn send(&mut self, msgs: &[Message]) -> Vec<Action> {
-        use rayon::prelude::*;
+/// Many-to-many broadcast of a message stack.
+fn send(nodes: &mut HashMap<PublicKey, Consensus>, msgs: &[Message]) -> Vec<Action> {
+    use rayon::prelude::*;
 
-        if self.nodes.len() == 1 {
-            let mut actions = Vec::new();
-            for n in self.nodes.values_mut() {
-                for m in msgs {
-                    actions.extend(n.handle_message(m.clone()))
-                }
+    if nodes.len() == 1 {
+        let mut actions = Vec::new();
+        for n in nodes.values_mut() {
+            for m in msgs {
+                actions.extend(n.handle_message(m.clone()))
             }
-            return actions;
         }
-
-        self.nodes
-            .par_iter_mut()
-            .map(|(_, node)| {
-                let mut actions = Vec::new();
-                for m in msgs {
-                    actions.extend(node.handle_message(m.clone()))
-                }
-                actions
-            })
-            .flatten()
-            .collect()
+        return actions;
     }
+
+    nodes
+        .par_iter_mut()
+        .map(|(_, node)| {
+            let mut actions = Vec::new();
+            for m in msgs {
+                actions.extend(node.handle_message(m.clone()))
+            }
+            actions
+        })
+        .flatten()
+        .collect()
 }
 
 fn action_to_msg(action: Action) -> Option<Message> {
