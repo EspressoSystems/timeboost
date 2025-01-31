@@ -1,19 +1,25 @@
+use std::fmt;
+
 use alloy::{
     primitives::Address,
-    providers::{Provider, ProviderBuilder},
+    providers::{Provider, ProviderBuilder, RootProvider},
     rpc::types::TransactionRequest,
+    transports::http::Http,
 };
 use futures::future::join_all;
+use reqwest::Client;
 use timeboost_core::types::block::sailfish::SailfishBlock;
 
 pub struct GasEstimator {
-    nitro_url: &'static str,
+    provider: RootProvider<Http<Client>>,
 }
 
 /// Arbitrum gas estimator
 impl GasEstimator {
     pub fn new(nitro_url: &'static str) -> Self {
-        Self { nitro_url }
+        Self {
+            provider: ProviderBuilder::new().on_http(nitro_url.parse().expect("valid url")),
+        }
     }
     pub async fn estimate(&self, b: SailfishBlock) -> Result<(u64, SailfishBlock), EstimatorError> {
         // TODO: This will be pulled from transaction data in the block
@@ -24,8 +30,6 @@ impl GasEstimator {
             .parse::<Address>()
             .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
 
-        let p = ProviderBuilder::new().on_http(self.nitro_url.parse().expect("valid url"));
-
         let futs = b.transactions_ref().iter().map(|_tx| async {
             //TODO: Use the real transactions populate more fields
             let tx = TransactionRequest {
@@ -33,7 +37,7 @@ impl GasEstimator {
                 to: Some(to.into()),
                 ..Default::default()
             };
-            match p.estimate_gas(&tx).await {
+            match self.provider.estimate_gas(&tx).await {
                 Ok(gas) => Some(gas),
                 Err(e) => {
                     tracing::error!("failed to estimate gas for transaction: {:?}", e);
@@ -56,4 +60,21 @@ impl GasEstimator {
 pub enum EstimatorError {
     FailedToEstimateTxn(SailfishBlock),
     FailedToParseWalletAddress,
+}
+
+impl fmt::Display for EstimatorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EstimatorError::FailedToEstimateTxn(block) => {
+                write!(
+                    f,
+                    "failed to estimate gas for transaction, block len: {:?}",
+                    block.len()
+                )
+            }
+            EstimatorError::FailedToParseWalletAddress => {
+                write!(f, "failed to parse wallet address")
+            }
+        }
+    }
 }
