@@ -2,6 +2,7 @@ use futures::future::join_all;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use tracing::{info, warn};
 
 use crate::gas::gas_estimator::{EstimatorError, GasEstimator};
 
@@ -46,32 +47,30 @@ impl Mempool {
                         accum += est;
                         drained.push(b);
                     } else {
-                        tracing::error!("estimate hit: {} {}", accum, est);
+                        warn!("estimate hit: {} {}", accum, est);
                         keep.push_back(b);
                     }
                 }
                 Err(e) => {
-                    tracing::error!("error getting block estimate: {}", e);
+                    warn!("error getting block estimate: {:?}", e);
                     if let EstimatorError::FailedToEstimateTxn(b) = e {
                         keep.push_back(b);
                     }
                 }
             }
         }
-        let l = keep.len();
+
+        info!(
+            "mempool drained {} blocks and kept {} blocks",
+            drained.len(),
+            keep.len()
+        );
         if !keep.is_empty() {
             let mut b = self.bundles.write();
             for k in keep {
                 b.push_front(k);
             }
         }
-
-        tracing::error!(
-            "mempool drained {} blocks and kept {} blocks. len: {}",
-            drained.len(),
-            l,
-            self.bundles.read().len()
-        );
 
         drained
     }
