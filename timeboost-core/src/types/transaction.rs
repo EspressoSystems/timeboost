@@ -144,7 +144,9 @@ impl TransactionsQueue {
 
     pub fn take(&mut self) -> Vec<Transaction> {
         let limit = self.txns.len().min(50);
-        self.txns.drain(..limit).collect()
+        let mut part = self.txns.split_off(limit);
+        std::mem::swap(&mut part, &mut self.txns);
+        part
     }
 
     pub fn remove_if<F>(&mut self, pred: F)
