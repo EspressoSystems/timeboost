@@ -75,11 +75,11 @@ impl SailfishBlock {
         self.header.timestamp()
     }
 
-    pub fn transactions(self) -> Vec<Transaction> {
+    pub fn into_transactions(self) -> Vec<Transaction> {
         self.payload
     }
 
-    pub fn transactions_ref(&self) -> &Vec<Transaction> {
+    pub fn transactions(&self) -> &[Transaction] {
         &self.payload
     }
 

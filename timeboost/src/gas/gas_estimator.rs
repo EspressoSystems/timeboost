@@ -1,27 +1,27 @@
 use std::fmt;
 
 use alloy::{
-    primitives::Address,
-    providers::{Provider, ProviderBuilder, RootProvider},
-    rpc::types::TransactionRequest,
-    transports::http::Http,
+    network::Ethereum,
+    providers::fillers::{FillProvider, TxFiller},
 };
+use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
 use futures::future::join_all;
-use reqwest::Client;
 use timeboost_core::types::block::sailfish::SailfishBlock;
 
-pub struct GasEstimator {
-    provider: RootProvider<Http<Client>>,
+pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
+    provider: FillProvider<F, P, Ethereum>,
 }
 
 /// Arbitrum gas estimator
-impl GasEstimator {
-    pub fn new(nitro_url: &'static str) -> Self {
-        Self {
-            provider: ProviderBuilder::new().on_http(nitro_url.parse().expect("valid url")),
-        }
+impl<F, P> GasEstimator<F, P>
+where
+    F: TxFiller<Ethereum>,
+    P: Provider<Ethereum>,
+{
+    pub fn new(p: FillProvider<F, P, Ethereum>) -> Self {
+        Self { provider: p }
     }
-    pub async fn estimate(&self, b: SailfishBlock) -> Result<(u64, SailfishBlock), EstimatorError> {
+    pub async fn estimate(&self, b: &SailfishBlock) -> Result<u64, EstimatorError> {
         // TODO: This will be pulled from transaction data in the block
         let from = "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E"
             .parse::<Address>()
@@ -29,8 +29,7 @@ impl GasEstimator {
         let to = "0x388A954C6b7282427AA2E8AF504504Fa6bA89432"
             .parse::<Address>()
             .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
-
-        let futs = b.transactions_ref().iter().map(|_tx| async {
+        let futs = b.transactions().iter().map(|_tx| async {
             //TODO: Use the real transactions populate more fields
             let tx = TransactionRequest {
                 from: Some(from),
@@ -50,27 +49,23 @@ impl GasEstimator {
             .iter()
             .try_fold(0u64, |acc, est| est.map(|v| acc + v));
         match estimates {
-            Some(est) => Ok((est, b)),
-            None => Err(EstimatorError::FailedToEstimateTxn(b)),
+            Some(est) => Ok(est),
+            None => Err(EstimatorError::FailedToEstimateTxn),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum EstimatorError {
-    FailedToEstimateTxn(SailfishBlock),
+    FailedToEstimateTxn,
     FailedToParseWalletAddress,
 }
 
 impl fmt::Display for EstimatorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EstimatorError::FailedToEstimateTxn(block) => {
-                write!(
-                    f,
-                    "failed to estimate gas for transaction, block len: {:?}",
-                    block.len()
-                )
+            EstimatorError::FailedToEstimateTxn => {
+                write!(f, "failed to estimate gas for transaction")
             }
             EstimatorError::FailedToParseWalletAddress => {
                 write!(f, "failed to parse wallet address")

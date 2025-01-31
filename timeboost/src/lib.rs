@@ -278,7 +278,9 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.insert(block);
+                                        if !block.is_empty() {
+                                            self.mempool.insert(block).await;
+                                        }
                                     },
                                 }
                             }
