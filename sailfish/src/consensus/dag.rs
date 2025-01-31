@@ -12,6 +12,7 @@ pub struct Dag {
 }
 
 impl Dag {
+    /// Create a new empty DAG.
     pub fn new(max_keys: NonZeroUsize) -> Self {
         Self {
             elements: BTreeMap::new(),
@@ -19,6 +20,7 @@ impl Dag {
         }
     }
 
+    /// Create a new DAG from a sequence of `Vertex` values.
     pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
     where
         I: IntoIterator<Item = Vertex>,
@@ -43,6 +45,11 @@ impl Dag {
     /// Removes all rounds up to the specified round number from the DAG
     pub fn remove(&mut self, r: RoundNumber) {
         self.elements = self.elements.split_off(&r);
+    }
+
+    /// Is this DAG empty?
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
     }
 
     /// Returns the total number of rounds present in the DAG
