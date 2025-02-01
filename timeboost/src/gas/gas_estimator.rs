@@ -5,6 +5,7 @@ use alloy::{
     providers::fillers::{FillProvider, TxFiller},
 };
 use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
+use committable::{Commitment, Committable};
 use futures::future::join_all;
 use timeboost_core::types::block::sailfish::SailfishBlock;
 
@@ -21,7 +22,10 @@ where
     pub fn new(p: FillProvider<F, P, Ethereum>) -> Self {
         Self { provider: p }
     }
-    pub async fn estimate(&self, b: &SailfishBlock) -> Result<u64, EstimatorError> {
+    pub async fn estimate(
+        &self,
+        b: &SailfishBlock,
+    ) -> Result<(Commitment<SailfishBlock>, u64), EstimatorError> {
         // TODO: This will be pulled from transaction data in the block
         let from = "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E"
             .parse::<Address>()
@@ -49,7 +53,7 @@ where
             .iter()
             .try_fold(0u64, |acc, est| est.map(|v| acc + v));
         match estimates {
-            Some(est) => Ok(est),
+            Some(est) => Ok((b.commit(), est)),
             None => Err(EstimatorError::FailedToEstimateTxn),
         }
     }

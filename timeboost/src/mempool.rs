@@ -1,6 +1,7 @@
 use alloy::providers::ProviderBuilder;
 use committable::{Commitment, Committable};
 use dashmap::DashMap;
+use futures::future::join_all;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use tokio::{
@@ -21,6 +22,13 @@ pub struct Mempool {
     /// The set of bundles in the mempool.
     bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
     estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
+    jh: JoinHandle<()>,
+}
+
+impl Drop for Mempool {
+    fn drop(&mut self) {
+        self.jh.abort();
+    }
 }
 
 impl Mempool {
@@ -28,8 +36,12 @@ impl Mempool {
     pub fn new() -> Self {
         let bundles = Arc::new(RwLock::new(VecDeque::new()));
         let estimates = Arc::new(DashMap::new());
-        Self::run_estimation_task(bundles.clone(), estimates.clone());
-        Self { bundles, estimates }
+        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone());
+        Self {
+            bundles,
+            estimates,
+            jh,
+        }
     }
 
     fn run_estimation_task(
@@ -47,13 +59,17 @@ impl Mempool {
                 loop {
                     tokio::select! {
                         _ = timer.tick() => {
-                            for block in bundles.read().await.iter() {
-                                if let Ok(est) = estimator.estimate(block).await {
-                                    estimates.insert(block.commit(), est);
+                            let res = join_all(bundles.read().await
+                                .iter()
+                                .take(DRAIN_BUNDLE_SIZE*3)
+                                .map(|b| estimator.estimate(b)))
+                                .await;
+                            for r in res.into_iter() {
+                                if let Ok((c, est)) = r {
+                                    estimates.insert(c, est);
                                 } else {
                                     warn!(
-                                        "failed to get gas estimation for block {:?}",
-                                        block.round_number()
+                                        "failed to get gas estimation for block"
                                     );
                                 }
                             }
