@@ -3,7 +3,11 @@ use committable::{Commitment, Committable};
 use dashmap::DashMap;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{
+    sync::RwLock,
+    task::JoinHandle,
+    time::{interval, MissedTickBehavior},
+};
 use tracing::{info, warn};
 
 use crate::gas::gas_estimator::GasEstimator;
@@ -38,18 +42,23 @@ impl Mempool {
                     ProviderBuilder::new()
                         .on_http("http://localhost:8547".parse().expect("valid url")),
                 );
+                let mut timer = interval(Duration::from_millis(300));
+                timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 loop {
-                    for block in bundles.read().await.iter() {
-                        if let Ok(est) = estimator.estimate(block).await {
-                            estimates.insert(block.commit(), est);
-                        } else {
-                            warn!(
-                                "gas estimation for block {:?} timed out after 150ms",
-                                block.round_number()
-                            );
+                    tokio::select! {
+                        _ = timer.tick() => {
+                            for block in bundles.read().await.iter() {
+                                if let Ok(est) = estimator.estimate(block).await {
+                                    estimates.insert(block.commit(), est);
+                                } else {
+                                    warn!(
+                                        "failed to get gas estimation for block {:?}",
+                                        block.round_number()
+                                    );
+                                }
+                            }
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(150)).await;
                 }
             }
         })
