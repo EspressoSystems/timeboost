@@ -44,7 +44,7 @@ impl Mempool {
                             estimates.insert(block.commit(), est);
                         } else {
                             warn!(
-                                "gas estimation for block {:?} timed out after 500ms",
+                                "gas estimation for block {:?} timed out after 150ms",
                                 block.round_number()
                             );
                         }
@@ -68,9 +68,10 @@ impl Mempool {
 
         for b in bundles {
             let c = b.commit();
-            let removed = false;
+            let mut removed = false;
             if let Some(est) = self.estimates.get(&c) {
                 if accum + *est <= MAX_GAS_LIMIT {
+                    removed = true;
                     accum += *est;
                     drained.push(b);
                 } else {
