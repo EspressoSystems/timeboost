@@ -54,14 +54,14 @@ impl Mempool {
                     ProviderBuilder::new()
                         .on_http("http://localhost:8547".parse().expect("valid url")),
                 );
-                let mut timer = interval(Duration::from_millis(300));
+                let mut timer = interval(Duration::from_millis(220));
                 timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {
                         _ = timer.tick() => {
                             let res = join_all(bundles.read().await
                                 .iter()
-                                .take(DRAIN_BUNDLE_SIZE*3)
+                                .take(DRAIN_BUNDLE_SIZE*2)
                                 .map(|b| estimator.estimate(b)))
                                 .await;
                             for r in res.into_iter() {
@@ -93,10 +93,8 @@ impl Mempool {
 
         for b in bundles {
             let c = b.commit();
-            let mut removed = false;
             if let Some(est) = self.estimates.get(&c) {
                 if accum + *est <= MAX_GAS_LIMIT {
-                    removed = true;
                     accum += *est;
                     drained.push(b);
                 } else {
@@ -106,9 +104,6 @@ impl Mempool {
             } else {
                 warn!("no gas estimate available for block: {}", b.round_number());
                 keep.push_back(b);
-            }
-            if removed {
-                self.estimates.remove(&c);
             }
         }
 
