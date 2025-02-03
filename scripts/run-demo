@@ -19,7 +19,7 @@ else
     nodes=$1
 fi
 
-./scripts/run-dev-node.sh || true
+sudo ./scripts/run-dev-node.sh || true
 timeout 5 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
 
 uv run fake-contract/main.py "$nodes" --timeout 30 &
@@ -41,7 +41,6 @@ for i in $(seq 0 $((nodes - 1))); do
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
         --until 300 \
-        --tps 100 \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
@@ -61,7 +60,7 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
-pkill -9 nitro
+sudo pkill -9 nitro
 
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
