@@ -41,10 +41,10 @@ impl Drop for Mempool {
 
 impl Mempool {
     // TODO: Restart behavior.
-    pub fn new() -> Self {
+    pub fn new(nitro_url: reqwest::Url) -> Self {
         let bundles = Arc::new(RwLock::new(VecDeque::new()));
         let estimates = Arc::new(DashMap::new());
-        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone());
+        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone(), nitro_url);
         Self {
             bundles,
             estimates,
@@ -56,13 +56,14 @@ impl Mempool {
     fn run_estimation_task(
         bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
         estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
+        nitro_url: reqwest::Url,
     ) -> JoinHandle<()> {
         tokio::spawn({
             async move {
                 let estimator = GasEstimator::new(
                     ProviderBuilder::new()
                         .with_chain(NamedChain::ArbitrumSepolia)
-                        .on_http("http://localhost:8547".parse().expect("valid url")),
+                        .on_http(nitro_url),
                 );
                 let mut timer = interval(Duration::from_millis(ESTIMATION_INTERVAL_MS));
                 timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -148,11 +149,5 @@ impl Mempool {
                 c <= DRAIN_BUNDLE_SIZE
             })
             .collect()
-    }
-}
-
-impl Default for Mempool {
-    fn default() -> Self {
-        Self::new()
     }
 }

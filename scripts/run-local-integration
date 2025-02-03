@@ -26,6 +26,7 @@ for i in {0..4}; do
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
+        --nitro-node-url http://localhost:8547 \
         --metrics-port $((9000 + i)) &
 done
 
