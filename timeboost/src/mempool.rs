@@ -54,7 +54,7 @@ impl Mempool {
                     ProviderBuilder::new()
                         .on_http("http://localhost:8547".parse().expect("valid url")),
                 );
-                let mut timer = interval(Duration::from_millis(220));
+                let mut timer = interval(Duration::from_millis(1000));
                 timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {
