@@ -1,4 +1,5 @@
 use alloy::providers::ProviderBuilder;
+use alloy_chains::NamedChain;
 use committable::{Commitment, Committable};
 use dashmap::DashMap;
 use futures::future::join_all;
@@ -9,13 +10,16 @@ use tokio::{
     task::JoinHandle,
     time::{interval, MissedTickBehavior},
 };
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::gas::gas_estimator::GasEstimator;
 
 /// Max gas limit for transaction in a block (32M)
 const MAX_GAS_LIMIT: u64 = 32_000_000 * 64;
+/// Max number of bundles we want to try and drain at a time
 const DRAIN_BUNDLE_SIZE: usize = 10;
+/// How often we run gas estimation
+const ESTIMATION_INTERVAL_MS: u64 = 225;
 
 /// The Timeboost mempool.
 pub struct Mempool {
@@ -52,9 +56,10 @@ impl Mempool {
             async move {
                 let estimator = GasEstimator::new(
                     ProviderBuilder::new()
+                        .with_chain(NamedChain::ArbitrumSepolia)
                         .on_http("http://localhost:8547".parse().expect("valid url")),
                 );
-                let mut timer = interval(Duration::from_millis(1000));
+                let mut timer = interval(Duration::from_millis(ESTIMATION_INTERVAL_MS));
                 timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {
@@ -93,10 +98,12 @@ impl Mempool {
 
         for b in bundles {
             let c = b.commit();
+            let mut remove = false;
             if let Some(est) = self.estimates.get(&c) {
                 if accum + *est <= MAX_GAS_LIMIT {
                     accum += *est;
                     drained.push(b);
+                    remove = true;
                 } else {
                     warn!("estimate hit: {} {}", accum, *est);
                     keep.push_back(b);
@@ -105,17 +112,21 @@ impl Mempool {
                 warn!("no gas estimate available for block: {}", b.round_number());
                 keep.push_back(b);
             }
+
+            if remove {
+                self.estimates.remove(&c);
+            }
         }
 
-        info!(
+        debug!(
             "mempool drained {} blocks and kept {} blocks",
             drained.len(),
             keep.len()
         );
         if !keep.is_empty() {
             let mut b = self.bundles.write().await;
-            for k in keep {
-                b.push_front(k);
+            for block in keep {
+                b.push_front(block);
             }
         }
 
@@ -123,15 +134,9 @@ impl Mempool {
     }
 
     async fn next_bundles(&self) -> Vec<SailfishBlock> {
-        let mut c = 0;
-        self.bundles
-            .write()
-            .await
-            .drain(..)
-            .take_while(|_| {
-                c += 1;
-                c <= DRAIN_BUNDLE_SIZE
-            })
+        let mut b = self.bundles.write().await;
+        (0..DRAIN_BUNDLE_SIZE)
+            .map_while(|_| b.pop_front())
             .collect()
     }
 }

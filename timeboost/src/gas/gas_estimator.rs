@@ -27,14 +27,14 @@ where
         b: &SailfishBlock,
     ) -> Result<(Commitment<SailfishBlock>, u64), EstimatorError> {
         // TODO: This will be pulled from transaction data in the block
-        let from = "0xC0958d9EB0077bf6f7c1a5483AD332a81477d15E"
+        let from = "0x593C4e4F4a0dCCf84A9C4f819BED466780c1d516"
             .parse::<Address>()
             .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
-        let to = "0x388A954C6b7282427AA2E8AF504504Fa6bA89432"
+        let to = "0x0d5B8b79577aC3Bc5Fe47Cf82F5d0146BDCeBd9f"
             .parse::<Address>()
             .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
         let futs = b.transactions().iter().map(|_tx| async {
-            //TODO: Use the real transactions populate more fields
+            // TODO: Use the real transactions and populate more fields such as data
             let tx = TransactionRequest {
                 from: Some(from),
                 to: Some(to.into()),

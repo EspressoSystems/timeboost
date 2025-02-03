@@ -64,7 +64,7 @@ struct Cli {
 
     /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
     /// Set this to 0 for no load generation.
-    #[clap(long, short, default_value_t = 50)]
+    #[clap(long, short, default_value_t = 100)]
     tps: u32,
 }
 

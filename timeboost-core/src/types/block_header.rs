@@ -30,6 +30,9 @@ impl BlockHeader {
 
 impl Committable for BlockHeader {
     fn commit(&self) -> committable::Commitment<Self> {
-        committable::RawCommitmentBuilder::new("BlockHeader").finalize()
+        committable::RawCommitmentBuilder::new("BlockHeader")
+            .field("round", self.round.commit())
+            .u64_field("timestamp", *self.timestamp)
+            .finalize()
     }
 }
