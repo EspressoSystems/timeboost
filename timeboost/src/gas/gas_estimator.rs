@@ -8,6 +8,7 @@ use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionReq
 use committable::{Commitment, Committable};
 use futures::future::join_all;
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use tracing::warn;
 
 pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
     provider: FillProvider<F, P, Ethereum>,
@@ -43,7 +44,7 @@ where
             match self.provider.estimate_gas(&tx).await {
                 Ok(gas) => Some(gas),
                 Err(e) => {
-                    tracing::error!("failed to estimate gas for transaction: {:?}", e);
+                    warn!("failed to estimate gas for transaction: {:?}", e);
                     None
                 }
             }
