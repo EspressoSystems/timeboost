@@ -62,7 +62,7 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
-sudo pkill -9 nitro
+pkill -f nitro
 
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."

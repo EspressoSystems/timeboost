@@ -100,7 +100,7 @@ impl Mempool {
         let bundles = self.next_bundles().await;
         let mut accum = 0;
         let mut drained = Vec::new();
-        let mut keep = VecDeque::new();
+        let mut keep = Vec::new();
 
         for b in bundles {
             let c = b.commit();
@@ -112,11 +112,11 @@ impl Mempool {
                     remove = true;
                 } else {
                     warn!("estimate hit: {} {}", accum, *est);
-                    keep.push_back(b);
+                    keep.push(b);
                 }
             } else {
                 warn!("no gas estimate available for block: {}", b.round_number());
-                keep.push_back(b);
+                keep.push(b);
             }
 
             if remove {
@@ -129,10 +129,8 @@ impl Mempool {
             drained.len(),
             keep.len()
         );
-        if !keep.is_empty() {
-            for block in keep {
-                self.bundles.write().await.push_front(block);
-            }
+        for b in keep {
+            self.bundles.write().await.push_front(b);
         }
 
         drained

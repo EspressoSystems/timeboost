@@ -31,5 +31,5 @@ for i in {0..4}; do
 done
 
 wait
-sudo pkill -9 nitro
+pkill -f nitro
 
