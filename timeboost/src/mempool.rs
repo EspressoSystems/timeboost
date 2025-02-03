@@ -14,6 +14,8 @@ use tracing::{debug, warn};
 
 use crate::gas::gas_estimator::GasEstimator;
 
+/// TODO: Sometimes a block may exceed gas limit and as a result we dont drain it
+/// So we set the gas limit high enough to prevent this
 /// Max gas limit for transaction in a block (32M)
 const MAX_GAS_LIMIT: u64 = 32_000_000 * 64;
 /// Max number of bundles we want to try and drain at a time
@@ -25,7 +27,9 @@ const ESTIMATION_INTERVAL_MS: u64 = 225;
 pub struct Mempool {
     /// The set of bundles in the mempool.
     bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
+    /// Gas estimates for a block that is updated every `ESTIMATION_INTERVAL_MS`
     estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
+    /// Handle for the estimation task
     jh: JoinHandle<()>,
 }
 
@@ -48,6 +52,7 @@ impl Mempool {
         }
     }
 
+    /// Spawn a task that will continuously get gas estimates for transactions in sailfish blocks
     fn run_estimation_task(
         bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
         estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
@@ -124,9 +129,8 @@ impl Mempool {
             keep.len()
         );
         if !keep.is_empty() {
-            let mut b = self.bundles.write().await;
             for block in keep {
-                b.push_front(block);
+                self.bundles.write().await.push_front(block);
             }
         }
 
@@ -134,9 +138,15 @@ impl Mempool {
     }
 
     async fn next_bundles(&self) -> Vec<SailfishBlock> {
-        let mut b = self.bundles.write().await;
-        (0..DRAIN_BUNDLE_SIZE)
-            .map_while(|_| b.pop_front())
+        let mut c = 0;
+        self.bundles
+            .write()
+            .await
+            .drain(..)
+            .take_while(|_| {
+                c += 1;
+                c <= DRAIN_BUNDLE_SIZE
+            })
             .collect()
     }
 }

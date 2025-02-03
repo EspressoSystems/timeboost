@@ -14,7 +14,7 @@ pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
     provider: FillProvider<F, P, Ethereum>,
 }
 
-/// Arbitrum gas estimator
+/// Gas estimator
 impl<F, P> GasEstimator<F, P>
 where
     F: TxFiller<Ethereum>,
@@ -23,6 +23,8 @@ where
     pub fn new(p: FillProvider<F, P, Ethereum>) -> Self {
         Self { provider: p }
     }
+
+    /// Iterate over all transactions in a block and get the gas estimate for each transaction
     pub async fn estimate(
         &self,
         b: &SailfishBlock,
