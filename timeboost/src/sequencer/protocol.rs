@@ -23,9 +23,7 @@ use tokio::{
 use tracing::{error, info, instrument};
 
 use crate::{
-    mempool::{self, Mempool},
-    metrics::TimeboostMetrics,
-    sequencer::phase::inclusion::CandidateList,
+    mempool::Mempool, metrics::TimeboostMetrics, sequencer::phase::inclusion::CandidateList,
 };
 
 use super::phase::{
@@ -152,7 +150,7 @@ where
                         .boxed();
 
                     // Drain the snapshot
-                    let mempool_snapshot = self.mempool.drain_to_limit(mempool::MEMPOOL_LIMIT_BYTES);
+                    let mempool_snapshot = self.mempool.drain_to_limit().await;
 
                     let candidate_list = CandidateList::from_mempool_snapshot(
                         self.round_state.delayed_inbox_index,

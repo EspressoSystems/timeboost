@@ -12,12 +12,15 @@ just build_release --features until
 if [ -z "${1:-}" ]; then
     nodes=5
 else
-    if ! [[ $1 =~ ^[5-9]+$ ]]; then
+    if ! [[ $1 =~ ^[4-9]+$ ]]; then
         echo "Error: The number of nodes must be a positive integer greater than 4."
         exit 1
     fi
     nodes=$1
 fi
+
+docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
+timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
 
 uv run fake-contract/main.py "$nodes" --timeout 30 &
 
@@ -38,6 +41,8 @@ for i in $(seq 0 $((nodes - 1))); do
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
         --until 300 \
+        --tps 10 \
+        --nitro-node-url http://localhost:8547 \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
@@ -57,6 +62,7 @@ for pid in "${pids[@]}"; do
         echo "Process $pid failed with exit code $exit_code."
     fi
 done
+pkill -f nitro
 
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."

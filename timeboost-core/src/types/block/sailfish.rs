@@ -75,8 +75,12 @@ impl SailfishBlock {
         self.header.timestamp()
     }
 
-    pub fn transactions(self) -> Vec<Transaction> {
+    pub fn into_transactions(self) -> Vec<Transaction> {
         self.payload
+    }
+
+    pub fn transactions(&self) -> &[Transaction] {
+        &self.payload
     }
 
     pub fn delayed_inbox_index(&self) -> u64 {

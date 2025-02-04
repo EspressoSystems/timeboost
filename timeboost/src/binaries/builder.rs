@@ -66,6 +66,10 @@ struct Cli {
     /// Set this to 0 for no load generation.
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
+
+    /// The ip address of the nitro node for gas estimations
+    #[clap(long, default_value = "http://172.20.0.12:8547")]
+    nitro_node_url: reqwest::Url,
 }
 
 #[tokio::main]
@@ -127,6 +131,7 @@ async fn main() -> Result<()> {
         keypair,
         bind_address,
         shutdown_rx: shutdown_rx.clone(),
+        nitro_url: cli.nitro_node_url,
     };
 
     let timeboost = Timeboost::initialize(init).await?;

@@ -1,11 +1,12 @@
-use std::mem;
-
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::types::seqno::SeqNo;
 use crate::types::time::Epoch;
+
+/// Cap on transactions in a given sailfish block
+const MAX_TXNS: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Nonce {
@@ -145,7 +146,10 @@ impl TransactionsQueue {
     }
 
     pub fn take(&mut self) -> Vec<Transaction> {
-        mem::take(&mut self.txns)
+        let limit = self.txns.len().min(MAX_TXNS);
+        let mut part = self.txns.split_off(limit);
+        std::mem::swap(&mut part, &mut self.txns);
+        part
     }
 
     pub fn remove_if<F>(&mut self, pred: F)

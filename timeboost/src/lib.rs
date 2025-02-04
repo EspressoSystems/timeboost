@@ -44,6 +44,7 @@ use tokio::sync::{
 
 pub mod api;
 pub mod contracts;
+pub mod gas;
 mod mempool;
 pub mod metrics;
 mod producer;
@@ -70,6 +71,9 @@ pub struct TimeboostInitializer {
 
     /// The receiver for the shutdown signal.
     pub shutdown_rx: watch::Receiver<()>,
+
+    /// The url for arbitrum nitro node for gas calculations
+    pub nitro_url: reqwest::Url,
 }
 
 pub struct Timeboost {
@@ -148,7 +152,7 @@ impl HasInitializer for Timeboost {
         let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();
         let coordinator = sailfish.into_coordinator();
 
-        let mempool = Arc::new(Mempool::new());
+        let mempool = Arc::new(Mempool::new(initializer.nitro_url));
 
         // Then, initialize and run the timeboost node.
         let timeboost = Timeboost {
@@ -277,7 +281,9 @@ impl Timeboost {
                                         debug!("timeout");
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
-                                        self.mempool.insert(block);
+                                        if !block.is_empty() {
+                                            self.mempool.insert(block).await;
+                                        }
                                     },
                                 }
                             }

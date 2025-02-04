@@ -68,7 +68,7 @@ impl CandidateList {
         // Only take the transactions that exist in at least threshold blocks in the mempool snapshot.
         let mut counts = HashMap::new();
         for block in mempool_snapshot {
-            for txn in block.transactions() {
+            for txn in block.into_transactions() {
                 *counts.entry(txn).or_insert(0) += 1;
             }
         }
