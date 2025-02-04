@@ -6,7 +6,7 @@ use futures::future::join_all;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use tokio::{
-    sync::RwLock,
+    sync::{mpsc::Receiver, RwLock},
     task::JoinHandle,
     time::{interval, MissedTickBehavior},
 };
@@ -19,9 +19,9 @@ use crate::gas::gas_estimator::GasEstimator;
 /// Max gas limit for transaction in a block (32M)
 const MAX_GAS_LIMIT: u64 = 32_000_000 * 64;
 /// Max number of bundles we want to try and drain at a time
-const DRAIN_BUNDLE_SIZE: usize = 10;
+const DRAIN_BUNDLE_SIZE: usize = 75;
 /// How often we run gas estimation
-const ESTIMATION_INTERVAL_MS: u64 = 225;
+const ESTIMATION_INTERVAL_MS: u64 = 1000;
 
 /// The Timeboost mempool.
 pub struct Mempool {
@@ -41,10 +41,10 @@ impl Drop for Mempool {
 
 impl Mempool {
     // TODO: Restart behavior.
-    pub fn new(nitro_url: reqwest::Url) -> Self {
+    pub fn new(nitro_url: reqwest::Url, block_rx: Receiver<SailfishBlock>) -> Self {
         let bundles = Arc::new(RwLock::new(VecDeque::new()));
         let estimates = Arc::new(DashMap::new());
-        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone(), nitro_url);
+        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone(), nitro_url, block_rx);
         Self {
             bundles,
             estimates,
@@ -57,6 +57,7 @@ impl Mempool {
         bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
         estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
         nitro_url: reqwest::Url,
+        mut block_rx: Receiver<SailfishBlock>,
     ) -> JoinHandle<()> {
         tokio::spawn({
             async move {
@@ -69,6 +70,25 @@ impl Mempool {
                 timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
                 loop {
                     tokio::select! {
+                        b = block_rx.recv() => {
+                            match b {
+                                Some(b) => {
+                                    match estimator.estimate(&b).await {
+                                        Ok((c, e)) => {
+                                            estimates.insert(c, e);
+                                        }
+                                        Err(e) => {
+                                            warn!("failed to estimate for block: {}, error: {}", b.round_number(), e);
+                                        }
+                                    }
+                                    bundles.write().await.push_back(b);
+                                }
+                                None => {
+                                    warn!("block channel is closed");
+                                    return;
+                                }
+                            }
+                        },
                         _ = timer.tick() => {
                             let res = join_all(bundles.read().await
                                 .iter()
@@ -137,15 +157,11 @@ impl Mempool {
     }
 
     async fn next_bundles(&self) -> Vec<SailfishBlock> {
-        let mut c = 0;
+        let len = self.bundles.read().await.len();
         self.bundles
             .write()
             .await
-            .drain(..)
-            .take_while(|_| {
-                c += 1;
-                c <= DRAIN_BUNDLE_SIZE
-            })
+            .drain(..len.min(DRAIN_BUNDLE_SIZE))
             .collect()
     }
 }

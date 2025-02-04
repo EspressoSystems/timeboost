@@ -19,6 +19,7 @@ use sequencer::{
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
+use timeboost_core::types::block::sailfish::SailfishBlock;
 use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
@@ -106,6 +107,8 @@ pub struct Timeboost {
 
     /// The timeboost metrics layer.
     tb_metrics: TimeboostMetrics,
+
+    block_tx: Sender<SailfishBlock>,
 }
 
 #[async_trait::async_trait]
@@ -119,6 +122,7 @@ impl HasInitializer for Timeboost {
         let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
+        let (block_tx, block_rx) = channel(10000);
 
         let committee = Committee::new(
             initializer
@@ -152,7 +156,7 @@ impl HasInitializer for Timeboost {
         let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();
         let coordinator = sailfish.into_coordinator();
 
-        let mempool = Arc::new(Mempool::new(initializer.nitro_url));
+        let mempool = Arc::new(Mempool::new(initializer.nitro_url, block_rx));
 
         // Then, initialize and run the timeboost node.
         let timeboost = Timeboost {
@@ -166,6 +170,7 @@ impl HasInitializer for Timeboost {
             coordinator,
             metrics: prom,
             tb_metrics,
+            block_tx,
         };
 
         Ok(timeboost)
@@ -282,7 +287,9 @@ impl Timeboost {
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
                                         if !block.is_empty() {
-                                            self.mempool.insert(block).await;
+                                            if let Err(e) = self.block_tx.try_send(block) {
+                                                warn!("failed to send block: {:?}", e);
+                                            }
                                         }
                                     },
                                 }
