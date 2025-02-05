@@ -21,7 +21,7 @@ const MAX_GAS_LIMIT: u64 = 32_000_000 * 64;
 /// Max number of bundles we want to try and drain at a time
 const DRAIN_BUNDLE_SIZE: usize = 75;
 /// How often we run gas estimation
-const ESTIMATION_INTERVAL_MS: u64 = 1000;
+const ESTIMATION_INTERVAL_MS: u64 = 1500;
 
 /// The Timeboost mempool.
 pub struct Mempool {
@@ -156,12 +156,13 @@ impl Mempool {
         drained
     }
 
-    async fn next_bundles(&self) -> Vec<SailfishBlock> {
-        let len = self.bundles.read().await.len();
-        self.bundles
-            .write()
-            .await
-            .drain(..len.min(DRAIN_BUNDLE_SIZE))
-            .collect()
+    /// Drain the mempool `DRAIN_BUNDLE_SIZE`
+    /// Some of these may get added back in `drain_to_limit` if gas price is too high
+    async fn next_bundles(&self) -> VecDeque<SailfishBlock> {
+        let mut bundles = self.bundles.write().await;
+        let limit = bundles.len().min(DRAIN_BUNDLE_SIZE);
+        let mut next = bundles.split_off(limit);
+        std::mem::swap(&mut next, &mut bundles);
+        next
     }
 }

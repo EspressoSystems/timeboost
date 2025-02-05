@@ -141,7 +141,7 @@ impl HasInitializer for Timeboost {
         let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
-        let (block_tx, block_rx) = channel(10000);
+        let (block_tx, block_rx) = channel(100);
 
         let committee = Committee::new(
             initializer
@@ -318,9 +318,9 @@ impl Timeboost {
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
                                         if !block.is_empty() {
-                                            if let Err(e) = self.block_tx.try_send(block) {
-                                                warn!("failed to send block: {:?}", e);
-                                            }
+                                            // Send to the estimation task
+                                            // There we will estimate transactions and insert block into mempool
+                                            let _ = self.block_tx.send(block).await;
                                         }
                                     },
                                 }
