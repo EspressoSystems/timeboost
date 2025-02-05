@@ -229,14 +229,14 @@ impl Network {
 
 impl Server {
     /// Handles the main loop for a the nodes network, this will last the lifetime of the app
-    /// 
+    ///
     /// This function:
     /// - Tries to connect to each remote peer in the committee
     /// - Handles tasks that have been completed or terminated
     /// - Processes new messages we received on the network
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if:
     /// - We are unable to get the x25519 public key from ed25519 public key
     async fn run(mut self, listener: TcpListener) -> Result<Empty> {
@@ -385,7 +385,7 @@ impl Server {
     }
 
     /// Handles when I/O task has been completed
-    /// 
+    ///
     /// This function will get the Public Key of the task that was terminated
     /// Then cleanly remove the active I/O task and call `spawn_connect` to recreate the connection
     fn on_io_task_end(&mut self, id: task::Id) {
@@ -410,9 +410,9 @@ impl Server {
     }
 
     /// Spawns a new connection task to a peer identified by public key
-    /// 
+    ///
     /// This function will look up the x25519 Public Key from ed25519 key and the remote address then spawn a connection task
-    /// 
+    ///
     /// # Panics
     ///
     /// This function will panic if:
@@ -426,10 +426,11 @@ impl Server {
     }
 
     /// Spawns a new `Noise` responder handshake task, this is using `Noise` IK Handshake
-    /// 
+    ///
     /// This function will create the responders handshake machine using its own private key
     /// Then spawn a task that listens for incoming initiator handshakes and responds
-    /// 
+    ///
+    ///
     /// # Panics
     ///
     /// This function will panic if:
@@ -445,7 +446,7 @@ impl Server {
 
     /// Spawns a new I/O task for handling communication with a remote peer over a TCP connection
     /// That is also using `Noise` for encryption and decryption
-    /// 
+    ///
     /// This function will split the TCP stream into read and write halves for a TCP connection and spawn a task for each
     fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState) {
         debug!(n = %self.key, a = ?s.peer_addr().ok(), "starting i/o tasks");

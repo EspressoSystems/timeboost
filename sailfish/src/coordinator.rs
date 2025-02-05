@@ -52,10 +52,10 @@ impl<C: Comm> Coordinator<C> {
     }
 
     /// Starts Sailfish consesnsus
-    /// 
+    ///
     /// This function creates `Evidence` for the Genesis round and starts consensus sending these out
     /// Then returning the list of actions that need to be executed
-    /// 
+    ///
     /// # Panics
     /// This function panics if:
     /// - We have called `start` twice in the same lifetime of the app.
@@ -70,11 +70,11 @@ impl<C: Comm> Coordinator<C> {
     }
 
     /// Handles the `next` event for Sailfish consensus
-    /// 
+    ///
     /// This function will either:
     /// - Timeout a sailfish round if no progress was made and multicast the timeout messages to members in the committee
     /// - Process a validated consensus `Message` received from a member in the committee
-    /// 
+    ///
     /// # Panics
     /// This function panics if:
     /// - We have called `start` twice in the same lifetime of the app.
@@ -93,7 +93,7 @@ impl<C: Comm> Coordinator<C> {
     }
 
     /// Handles a given consensus `Action`
-    /// 
+    ///
     /// This function will handle one of the following actions:
     /// - `ResetTimer` - Reset timeout timer
     /// - `Deliver` - Return a Sailfish consensus block to the caller
