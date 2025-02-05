@@ -228,7 +228,17 @@ impl Network {
 }
 
 impl Server {
-    /// Handles the main loop for 
+    /// Handles the main loop for a the nodes network, this will last the lifetime of the app
+    /// 
+    /// This function:
+    /// - Tries to connect to each remote peer in the committee
+    /// - Handles tasks that have been completed or terminated
+    /// - Processes new messages we received on the network
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if:
+    /// - We are unable to get the x25519 public key from ed25519 public key
     async fn run(mut self, listener: TcpListener) -> Result<Empty> {
         self.handshake_tasks.spawn(pending());
         self.io_tasks.spawn(pending());

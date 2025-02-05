@@ -26,8 +26,10 @@ pub struct Coordinator<C> {
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus,
 
+    /// The timeout timer for a sailfish consensus round
     timer: BoxFuture<'static, RoundNumber>,
 
+    /// Have we started consensus?
     init: bool,
 }
 
@@ -49,6 +51,14 @@ impl<C: Comm> Coordinator<C> {
         self.id
     }
 
+    /// Starts Sailfish consesnsus
+    /// 
+    /// This function creates `Evidence` for the Genesis round and starts consensus sending these out
+    /// Then returning the list of actions that need to be executed
+    /// 
+    /// # Panics
+    /// This function panics if:
+    /// - We have called `start` twice in the same lifetime of the app.
     pub async fn start(&mut self) -> Result<Vec<Action>, C::Err> {
         if !self.init {
             self.init = true;
@@ -59,6 +69,15 @@ impl<C: Comm> Coordinator<C> {
         panic!("Cannot call start twice");
     }
 
+    /// Handles the `next` event for Sailfish consensus
+    /// 
+    /// This function will either:
+    /// - Timeout a sailfish round if no progress was made and multicast the timeout messages to members in the committee
+    /// - Process a validated consensus `Message` received from a member in the committee
+    /// 
+    /// # Panics
+    /// This function panics if:
+    /// - We have called `start` twice in the same lifetime of the app.
     pub async fn next(&mut self) -> Result<Vec<Action>, C::Err> {
         tokio::select! { biased;
             r = &mut self.timer => Ok(self.consensus.timeout(r)),
@@ -66,12 +85,22 @@ impl<C: Comm> Coordinator<C> {
         }
     }
 
+    /// Appends a list of transactions to the consensus transaction queue
     pub fn handle_transactions(&mut self, transactions: Vec<Transaction>) {
         for t in transactions {
             self.consensus.enqueue_transaction(t);
         }
     }
 
+    /// Handles a given consensus `Action`
+    /// 
+    /// This function will handle one of the following actions:
+    /// - `ResetTimer` - Reset timeout timer
+    /// - `Deliver` - Return a Sailfish consensus block to the caller
+    /// - `SendProposal` - Reliable broadcast a vertex to the members in the committee
+    /// - `SendTimeout` - Multicast a timeout message to the members in the committee
+    /// - `SendTimeoutCert` - Multicast a timeout certificate upon receiving `2f + 1` timeouts for a given round
+    /// - `SendNoVote` - Send a no vote to the leader in `r + 1` for a timeout in round `r`
     pub async fn execute(&mut self, action: Action) -> Result<Option<SailfishStatusEvent>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
