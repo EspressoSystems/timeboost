@@ -46,7 +46,7 @@ impl NodeInfo {
         true
     }
 
-    /// Gets the highest committed round for the quorum of nodes
+    /// Gets the lowest committed round for the quorum of nodes
     pub fn committed_round_quorum(&self) -> RoundNumber {
         debug_assert!(self.quorum <= self.nodes.len());
         self.nodes[self.quorum - 1].1

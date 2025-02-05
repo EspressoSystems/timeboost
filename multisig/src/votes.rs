@@ -41,10 +41,12 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.votes.is_empty()
     }
 
+    /// Return the amount of signatures for a given commmitment
     pub fn votes(&self, c: &Commitment<D>) -> usize {
         self.votes.get(c).map(|e| e.sigs.len()).unwrap_or(0)
     }
 
+    /// Return iterator for each public key for a given committment
     pub fn voters(&self, c: &Commitment<D>) -> impl Iterator<Item = &PublicKey> {
         if let Some(e) = self.votes.get(c) {
             Either::Right(e.sigs.keys().filter_map(|i| self.committee.get_key(*i)))
@@ -53,14 +55,17 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         }
     }
 
+    /// Returns an optional reference to the certificate
     pub fn certificate(&self) -> Option<&Certificate<D>> {
         self.cert.as_ref()
     }
 
+    /// Returns an optional certificate
     pub fn into_certificate(self) -> Option<Certificate<D>> {
         self.cert
     }
 
+    /// Set the certificate
     pub fn set_certificate(&mut self, c: Certificate<D>) {
         self.clear();
         self.votes.insert(
@@ -78,6 +83,12 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.cert = None
     }
 
+    /// Adds a signed data into the vote accumulator
+    ///
+    /// This function will:
+    /// - Validate the public key of sender
+    /// - Add the signature into the accumulator if we have not seen it yet
+    /// - Create a certificate if we have 2f + 1 signatures
     pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
         let Some(ix) = self.committee.get_index(signed.signing_key()) else {
             return Err(Error::UnknownSigningKey);

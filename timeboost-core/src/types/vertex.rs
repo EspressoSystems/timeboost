@@ -40,6 +40,7 @@ impl Vertex {
         }
     }
 
+    /// Is the vertex from genesis round
     pub fn is_genesis(&self) -> bool {
         *self.round.data() == RoundNumber::genesis()
             && *self.round.data() == self.evidence.round()

@@ -543,6 +543,10 @@ impl Consensus {
         actions
     }
 
+    /// Advances the leader from timeout round r
+    ///
+    /// This function advances a leader by createing a vertex and attaches a timeout certicate and no vote certificate for a round
+    /// The leader is for round r + 1 where r is the round we timed out in
     fn advance_leader_with_no_vote_certificate(
         &mut self,
         round: RoundNumber,

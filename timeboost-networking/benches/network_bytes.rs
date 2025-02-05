@@ -27,7 +27,7 @@ fn bench_clone_single_vec_u8(c: &mut Criterion) {
 }
 
 fn bench_clone_vec_of_bytes(c: &mut Criterion) {
-    // Clone 1KB - 64KB
+    // Clone 1KB -> 64KB
     let data: Vec<Bytes> = (1..MAX_NUM_KB)
         .map(|i| Bytes::from(vec![0u8; i * ONE_KB]))
         .collect();
@@ -42,7 +42,7 @@ fn bench_clone_vec_of_bytes(c: &mut Criterion) {
 }
 
 fn bench_clone_vec_of_vec_u8(c: &mut Criterion) {
-    // Clone 1KB - 64KB
+    // Clone 1KB -> 64KB
     let data: Vec<Vec<u8>> = (1..MAX_NUM_KB).map(|i| vec![0u8; i * ONE_KB]).collect();
     c.bench_function("clone_vec_of_vec_u8", |b| {
         b.iter(|| {

@@ -56,7 +56,7 @@ async fn test_timeout_round_and_no_vote() {
                             .committee()
                             .leader(**v.data().round().data() as usize)
                 {
-                    let timeout_msgs = manager.create_timeout_vote_msgs(timeout_at_round);
+                    let timeout_msgs = manager.create_timeout_msgs(timeout_at_round.into());
                     node_handle.add_msgs(timeout_msgs);
                     return vec![];
                 }
