@@ -129,6 +129,13 @@ where
         }
     }
 
+    /// Runs the main loop of the Timeboost node, handling consensus rounds until shutdown.
+    ///
+    /// This method:
+    /// - Manages a consensus loop where each iteration represents a round of consensus.
+    /// - Processes transactions from the mempool, builds blocks, and updates state.
+    /// - Communicates status updates to an application via a channel.
+    /// - Handles shutdown signals to gracefully exit the loop.
     pub async fn go(
         mut self,
         mut shutdown_rx: watch::Receiver<()>,
@@ -190,6 +197,13 @@ where
         }
     }
 
+    /// Constructs a `TimeboostBlock` from a `CandidateList` through multiple phases of processing.
+    ///
+    /// This method goes through four distinct phases to build a block:
+    /// 1. **Inclusion**: Selects transactions to include from the candidate list.
+    /// 2. **Decryption**: Decrypts the selected transactions.
+    /// 3. **Ordering**: Orders the decrypted transactions.
+    /// 4. **Block Building**: Assembles the final block from the ordered transactions.
     #[instrument(
         level = "debug",
         skip_all,

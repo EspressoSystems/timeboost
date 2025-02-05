@@ -24,7 +24,12 @@ where
         Self { provider: p }
     }
 
-    /// Iterate over all transactions in a block and get the gas estimate for each transaction
+    /// Estimates the gas required for all transactions within a given block.
+    ///
+    /// This function:
+    /// - Iterates over each transaction in the provided `SailfishBlock`.
+    /// - Generates a gas estimate for each transaction using a placeholder `TransactionRequest`.
+    /// - Aggregates these estimates to return a total gas estimation for the block.
     pub async fn estimate(
         &self,
         b: &SailfishBlock,

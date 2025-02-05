@@ -18,6 +18,7 @@ impl NodeInfo {
         }
     }
 
+    /// Sets the committed round for the quorum of nodes
     pub fn set_committed_round(&mut self, k: &PublicKey, new: RoundNumber) -> bool {
         let Some(i) = self.nodes.iter().position(|(p, _)| p == k) else {
             return false;
@@ -45,6 +46,7 @@ impl NodeInfo {
         true
     }
 
+    /// Gets the lowest committed round for the quorum of nodes
     pub fn committed_round_quorum(&self) -> RoundNumber {
         debug_assert!(self.quorum <= self.nodes.len());
         self.nodes[self.quorum - 1].1

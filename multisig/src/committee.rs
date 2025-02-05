@@ -23,39 +23,65 @@ impl Committee {
         }
     }
 
+    /// Returns the size of the committee as a non-zero unsigned integer.
+    ///
+    /// # Panics
+    ///
+    /// - If the committee is empty, though this should be impossible due to the `new` method's check.
     pub fn size(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.parties.len()).expect("Committee is not empty")
+        NonZeroUsize::new(self.parties.len()).expect("committee is not empty")
     }
 
+    /// Calculates and returns the threshold for consensus, which is `ceil(n/3)` where `n` is the committee size.
+    ///
+    /// # Panics
+    ///
+    /// - If the calculation results in zero, which is theoretically impossible since `n > 0`.
     pub fn threshold(&self) -> NonZeroUsize {
         let t = self.parties.len().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
     }
+
+    /// Computes the quorum size
+    ///
+    /// # Panics
+    ///
+    /// - If the calculation results in zero, which is impossible since `n + 1 > 0`.
     pub fn quorum_size(&self) -> NonZeroUsize {
         let q = self.parties.len() * 2 / 3 + 1;
         NonZeroUsize::new(q).expect("n + 1 > 0")
     }
 
+    /// Retrieves the public key associated with the given key ID.
     pub fn get_key<T: Into<KeyId>>(&self, ix: T) -> Option<&PublicKey> {
         self.parties.get_by_left(&ix.into())
     }
 
+    /// Finds the key ID for a given public key.
     pub fn get_index(&self, k: &PublicKey) -> Option<KeyId> {
         self.parties.get_by_right(k).copied()
     }
 
+    /// Checks if a public key is part of the committee.
     pub fn contains_key(&self, k: &PublicKey) -> bool {
         self.parties.contains_right(k)
     }
 
+    /// Returns an iterator over all entries in the committee, providing both key IDs and public keys.
     pub fn entries(&self) -> impl Iterator<Item = (KeyId, &PublicKey)> {
         self.parties.iter().map(|e| (*e.0, e.1))
     }
 
+    /// Provides an iterator over all public keys in the committee.
     pub fn parties(&self) -> impl Iterator<Item = &PublicKey> {
         self.parties.right_values()
     }
 
+    /// Determines the leader for a given round number using a round-robin method.
+    ///
+    /// # Panics
+    ///
+    /// - If the calculation results in an index out of bounds, which should not occur if `parties` is not empty.
     pub fn leader(&self, round: usize) -> PublicKey {
         let i = round % self.parties.len();
         self.parties
@@ -65,6 +91,10 @@ impl Committee {
             .expect("round % len < len")
     }
 
+    /// Returns the key ID of the leader for a given round number.
+    /// /// # Panics
+    ///
+    /// - If the calculation results in an index out of bounds, which should not occur if `parties` is not empty.
     pub fn leader_index(&self, round: usize) -> KeyId {
         let i = round % self.parties.len();
         self.parties

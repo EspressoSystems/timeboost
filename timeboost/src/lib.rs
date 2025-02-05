@@ -108,6 +108,25 @@ pub struct Timeboost {
     tb_metrics: TimeboostMetrics,
 }
 
+/// Asynchronously initializes and constructs a `Timeboost` instance from the provided initializer.
+///
+/// This method:
+/// - Sets up various metrics collectors using Prometheus.
+/// - Creates communication channels for application messages.
+/// - Constructs a `Committee` from peer information.
+/// - Initializes a network layer with the given configuration.
+/// - Configures and initializes an RBC (Reliable Broadcast) protocol.
+/// - Builds a `Sailfish` instance using the `SailfishInitializer`.
+/// - Converts the `Sailfish` into a coordinator for managing consensus.
+/// - Sets up a mempool for transaction handling.
+/// - Finally, it assembles all components into a `Timeboost` node.
+///
+/// # Panics
+///
+/// - This method uses `expect` and `unwrap`, which will panic if their conditions are not met. This includes:
+///   - Network creation failure.
+///   - Failure in building the `SailfishInitializer`.
+///   - Any errors during `Sailfish::initialize`.
 #[async_trait::async_trait]
 impl HasInitializer for Timeboost {
     type Initializer = TimeboostInitializer;
@@ -185,12 +204,14 @@ impl Timeboost {
         })
     }
 
+    /// Start out metrics api with given port
     fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
         tokio::spawn(async move {
             serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
         })
     }
 
+    /// Spawns a task that will continuously send transactions to the timeboost app layer
     fn start_load_generator(tps: u32, app_tx: Sender<TimeboostStatusEvent>) -> JoinHandle<()> {
         let millis = tps_to_millis(tps);
         tokio::spawn(async move {
@@ -217,6 +238,16 @@ impl Timeboost {
         })
     }
 
+    /// Run the timeboost app
+    ///
+    /// This function will:
+    /// - Start the metrics and rpc api to query data and get post transactions
+    /// - Start load generation if there is transactions per second defined
+    /// - Start the sequencer with its phases and run it in its own task
+    /// - Start block producer and run it in its own task
+    /// - Start and run the `Sailfish Coordinator` to retrieve network messages by calling `next` and executing actions after message is processed
+    /// - Runs a channel to receive `TimeboostEventType` this will receive transactions and send completed blocks to the producer
+    /// - Will continuously run until there is a shutdown signal received
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
     pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
