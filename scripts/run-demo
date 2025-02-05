@@ -42,6 +42,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --until 300 \
         --nitro-node-url http://localhost:8547 \
+        --tps 50 \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"

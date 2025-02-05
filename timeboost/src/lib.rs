@@ -108,6 +108,7 @@ pub struct Timeboost {
     /// The timeboost metrics layer.
     tb_metrics: TimeboostMetrics,
 
+    /// Sender for SailfishBlock to estimation task
     block_tx: Sender<SailfishBlock>,
 }
 
@@ -141,7 +142,7 @@ impl HasInitializer for Timeboost {
         let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = TimeboostMetrics::new(prom.as_ref());
         let (tb_app_tx, tb_app_rx) = channel(100);
-        let (block_tx, block_rx) = channel(100);
+        let (block_tx, block_rx) = channel(1000);
 
         let committee = Committee::new(
             initializer
