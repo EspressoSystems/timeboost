@@ -53,6 +53,32 @@ pub struct Sailfish<N: Comm + Send + 'static> {
     network: N,
 }
 
+/// Implementation of the `HasInitializer` trait for `Sailfish<N>`, defining how to initialize
+/// a `Sailfish` instance from an `SailfishInitializer`.
+///
+/// This trait provides an asynchronous method to construct a `Sailfish` from its initializer,
+/// allowing for setup and configuration before the main structure is used.
+///
+/// # Type Parameters
+///
+/// * `N` - Must implement `Comm` for communication, `Send` for safe sending across threads,
+///   and `'static` for lifetime requirements within async contexts.
+///
+/// # Associated Types
+///
+/// * `Initializer` - Set to `SailfishInitializer<N>`, which contains the initial configuration
+///   needed to create a `Sailfish`.
+/// * `Into` - Specifies that this method returns `Self`, meaning `Sailfish<N>`.
+///
+/// # Methods
+///
+/// ## `initialize`
+///
+/// Asynchronously initializes a new `Sailfish` instance from a given `SailfishInitializer`.
+///
+/// ### Arguments
+///
+/// * `initializer` - An instance of `SailfishInitializer<N>` containing the setup data.
 #[async_trait]
 impl<N: Comm + Send + 'static> HasInitializer for Sailfish<N> {
     type Initializer = SailfishInitializer<N>;
@@ -104,7 +130,8 @@ impl<N: Comm + Send + 'static> Sailfish<N> {
 /// * `peers` - Remote peers who we need to connect to
 /// * `keypair` - Nodes Keypair.
 /// * `bind_address` - Addresses to bind to.
-/// * `metrics` - Sailfish metrics
+/// * `sf_metrics` - Sailfish metrics
+/// * `net_metrics` - Network metrics
 ///
 /// # Panics
 ///
