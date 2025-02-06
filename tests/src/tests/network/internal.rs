@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{tests::network::TestOutcome, Group};
+use crate::Group;
 
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use sailfish::{
@@ -19,25 +19,22 @@ use timeboost_core::{
         },
     },
 };
-use tokio::{
-    sync::{
-        oneshot::{self, Receiver, Sender},
-        watch,
-    },
-    task::JoinSet,
-};
+use tokio::task::{JoinHandle, JoinSet};
 
 pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, watch::Sender<()>>,
-    shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
-    network_shutdown_tx: Sender<()>,
-    network_shutdown_rx: Option<Receiver<()>>,
     outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
     star_net: Star<Message>,
+    jh: JoinHandle<()>,
+}
+
+impl Drop for MemoryNetworkTest {
+    fn drop(&mut self) {
+        self.jh.abort();
+    }
 }
 
 impl TestableNetwork for MemoryNetworkTest {
@@ -49,18 +46,12 @@ impl TestableNetwork for MemoryNetworkTest {
         outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
-        let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
-            (0..group.size).map(|_| watch::channel(())).unzip();
-        let (network_shutdown_tx, network_shutdown_rx) = oneshot::channel();
         Self {
             group,
-            shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
-            shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
-            network_shutdown_tx,
-            network_shutdown_rx: Some(network_shutdown_rx),
             outcomes,
             interceptor,
             star_net: Star::new(),
+            jh: tokio::spawn(async {}),
         }
     }
 
@@ -112,54 +103,17 @@ impl TestableNetwork for MemoryNetworkTest {
         // There's always only one network for the memory network test.
         for (mut coordinator, msgs) in nodes.into_iter() {
             let id: u64 = coordinator.id().into();
-            let shutdown_rx = self
-                .shutdown_rxs
-                .remove(&(id as usize))
-                .unwrap_or_else(|| panic!("No shutdown receiver available for node {}", id));
             let mut conditions = self.outcomes.remove(&id).unwrap();
 
             co_handles.spawn(async move {
-                Self::run_coordinator(&mut coordinator, &mut conditions, msgs, shutdown_rx, id)
-                    .await
+                Self::run_coordinator(&mut coordinator, &mut conditions, msgs, id).await
             });
         }
 
-        let shutdown_rx = std::mem::take(&mut self.network_shutdown_rx);
-
         // We don't need to own the network anymore.
         let net = std::mem::take(&mut self.star_net);
-        tokio::spawn(async move { net.run(shutdown_rx.unwrap()).await });
+        self.jh = tokio::spawn(async move { net.run().await });
 
         co_handles
-    }
-
-    /// Shutdown any spawned tasks that are running
-    /// This will then be evaluated as failures in the test validation logic
-    async fn shutdown(
-        self,
-        handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<u64, TestOutcome>,
-    ) -> HashMap<u64, TestOutcome> {
-        // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
-        // Otherwise they were completed and dont need the shutdown signal
-        for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains_key(&(*id as u64)) {
-                send.send(()).expect(
-                    "The shutdown sender was dropped before the receiver could receive the token",
-                );
-            }
-        }
-
-        // Wait for all the coordinators to shutdown
-        let res: HashMap<u64, TestOutcome> = handles
-            .join_all()
-            .await
-            .into_iter()
-            .map(|r| (r.id, r.outcome))
-            .collect();
-
-        // Now shutdown the network
-        let _ = self.network_shutdown_tx.send(());
-        res
     }
 }

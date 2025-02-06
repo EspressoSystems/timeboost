@@ -7,7 +7,6 @@ use timeboost_core::types::message::{Action, Message};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::MsgQueues;
 use timeboost_utils::types::logging;
-use tokio::sync::watch::Receiver;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
@@ -105,18 +104,12 @@ pub trait TestableNetwork {
     ) -> Self;
     async fn init(&mut self) -> Vec<Self::Node>;
     async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult>;
-    async fn shutdown(
-        self,
-        handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<u64, TestOutcome>,
-    ) -> HashMap<u64, TestOutcome>;
 
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
         coordinator: &mut Coordinator<Self::Network>,
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues,
-        mut shutdown_rx: Receiver<()>,
         node_id: u64,
     ) -> TaskHandleResult {
         match coordinator.start().await {
@@ -130,44 +123,37 @@ pub trait TestableNetwork {
             }
         }
         loop {
-            tokio::select! {
-                res = coordinator.next() => match res {
-                    Ok(actions) => {
-                        for a in &actions {
-                            let _ = coordinator.execute(a.clone()).await;
-                        }
-                        // Evaluate if we have seen the specified conditions of the test
-                        // Go through every test condition and evaluate
-                        // Do not terminate loop early to ensure we evaluate all
-                        let mut outcome = TestOutcome::Passed;
-                        let mut all_evaluated = true;
-                        let msgs = msgs.drain_inbox();
-                        for c in conditions.iter_mut() {
-                            match c.evaluate(&msgs, &actions) {
-                                TestOutcome::Failed(reason) => {
-                                    // If any failed, the test has failed
-                                    outcome = TestOutcome::Failed(reason);
-                                }
-                                TestOutcome::Waiting => {
-                                    all_evaluated = false;
-                                }
-                                _ => {}
+            match coordinator.next().await {
+                Ok(actions) => {
+                    for a in &actions {
+                        let _ = coordinator.execute(a.clone()).await;
+                    }
+                    // Evaluate if we have seen the specified conditions of the test
+                    // Go through every test condition and evaluate
+                    // Do not terminate loop early to ensure we evaluate all
+                    let mut outcome = TestOutcome::Passed;
+                    let mut all_evaluated = true;
+                    let msgs = msgs.drain_inbox();
+                    for c in conditions.iter_mut() {
+                        match c.evaluate(&msgs, &actions) {
+                            TestOutcome::Failed(reason) => {
+                                // If any failed, the test has failed
+                                outcome = TestOutcome::Failed(reason);
                             }
-                        }
-                        if all_evaluated {
-                            // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
-                            sleep(Duration::from_secs(1)).await;
-                            return TaskHandleResult::new(node_id, outcome);
+                            TestOutcome::Waiting => {
+                                all_evaluated = false;
+                            }
+                            _ => {}
                         }
                     }
-                    Err(e) => {
-                        tracing::warn!("Coordinator Error: {}", e)
+                    if all_evaluated {
+                        // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                        sleep(Duration::from_secs(1)).await;
+                        return TaskHandleResult::new(node_id, outcome);
                     }
-                },
-                shutdown_result = shutdown_rx.changed() => {
-                    // Unwrap the potential error with receiving the shutdown token.
-                    shutdown_result.expect("The shutdown sender was dropped before the receiver could receive the token");
-                    return TaskHandleResult::new(node_id, TestOutcome::Timeout);
+                }
+                Err(e) => {
+                    tracing::warn!("Coordinator Error: {}", e)
                 }
             }
         }
@@ -196,8 +182,16 @@ impl<N: TestableNetwork> NetworkTest<N> {
         logging::init_logging();
 
         let nodes_and_networks = self.network.init().await;
+        let nodes_len = nodes_and_networks.len();
         let mut handles = self.network.start(nodes_and_networks).await;
         let mut results = HashMap::new();
+
+        // Default to timeout for each node
+        for id in 0..nodes_len {
+            let node_id = id as u64;
+            results.insert(node_id, TestOutcome::Timeout);
+        }
+
         let timeout = loop {
             tokio::select! {
                 next = handles.join_next() => {
@@ -212,7 +206,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                                 },
                             }
                         },
-                        None => break false, // we are done
+                        None => break false,
                     }
                 }
                 _ = sleep(self.duration) => {
@@ -221,11 +215,9 @@ impl<N: TestableNetwork> NetworkTest<N> {
             }
         };
 
-        // Now handle the test result
-        results.extend(self.network.shutdown(handles, &results).await);
         if timeout {
-            // Shutdown the network for the nodes that did not already complete (hence the timeout)
-            // This means that the test will fail
+            // Stop tasks and print results
+            handles.abort_all();
             for (node_id, result) in results {
                 if result != TestOutcome::Passed {
                     tracing::error!("Node {} had status: {:?}", node_id, result);

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::tests::network::{TaskHandleResult, TestCondition, TestOutcome, TestableNetwork};
+use crate::tests::network::{TaskHandleResult, TestCondition, TestableNetwork};
 use crate::Group;
 use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
@@ -11,12 +11,10 @@ use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
 use timeboost_networking::metrics::NetworkMetrics;
 use timeboost_networking::Network;
-use tokio::{sync::watch, task::JoinSet};
+use tokio::task::JoinSet;
 
 pub struct BasicNetworkTest {
     group: Group,
-    shutdown_txs: HashMap<usize, watch::Sender<()>>,
-    shutdown_rxs: HashMap<usize, watch::Receiver<()>>,
     outcomes: HashMap<u64, Vec<TestCondition>>,
     interceptor: NetworkMessageInterceptor,
 }
@@ -30,13 +28,8 @@ impl TestableNetwork for BasicNetworkTest {
         outcomes: HashMap<u64, Vec<TestCondition>>,
         interceptor: NetworkMessageInterceptor,
     ) -> Self {
-        let (shutdown_txs, shutdown_rxs): (Vec<watch::Sender<()>>, Vec<watch::Receiver<()>>) =
-            (0..group.size).map(|_| watch::channel(())).unzip();
-
         Self {
             group,
-            shutdown_txs: HashMap::from_iter(shutdown_txs.into_iter().enumerate()),
-            shutdown_rxs: HashMap::from_iter(shutdown_rxs.into_iter().enumerate()),
             outcomes,
             interceptor,
         }
@@ -93,40 +86,14 @@ impl TestableNetwork for BasicNetworkTest {
 
         for node in nodes.into_iter() {
             let id: u64 = node.id().into();
-            let shutdown_rx = self.shutdown_rxs.remove(&(id as usize)).unwrap();
             let mut conditions = self.outcomes.remove(&id).unwrap();
 
             handles.spawn(async move {
                 let msgs = node.network().messages().clone();
                 let coordinator = &mut node.into_coordinator();
-                Self::run_coordinator(coordinator, &mut conditions, msgs, shutdown_rx, id).await
+                Self::run_coordinator(coordinator, &mut conditions, msgs, id).await
             });
         }
         handles
-    }
-
-    /// Shutdown any spawned tasks that are running
-    /// This will then be evaluated as failures in the test validation logic
-    async fn shutdown(
-        self,
-        handles: JoinSet<TaskHandleResult>,
-        completed: &HashMap<u64, TestOutcome>,
-    ) -> HashMap<u64, TestOutcome> {
-        // Here we only send shutdown to the node ids that did not return and are still running in their respective task handles
-        // Otherwise they were completed and dont need the shutdown signal
-        for (id, send) in self.shutdown_txs.iter() {
-            if !completed.contains_key(&(*id as u64)) {
-                send.send(()).expect(
-                    "The shutdown sender was dropped before the receiver could receive the token",
-                );
-            }
-        }
-        // Wait for all the coordinators to shutdown
-        handles
-            .join_all()
-            .await
-            .into_iter()
-            .map(|r| (r.id, r.outcome))
-            .collect()
     }
 }
