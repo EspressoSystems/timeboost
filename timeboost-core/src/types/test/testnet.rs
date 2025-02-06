@@ -69,18 +69,16 @@ pub enum TestNetError<C: Comm> {
     RecvError(C::Err),
     SendError(C::Err),
     BroadcastError(C::Err),
-    ShutdownError(C::Err),
     InterceptError(String),
 }
 
 impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestNetError::RecvError(err) => write!(f, "Receive Error: {}", err),
-            TestNetError::SendError(err) => write!(f, "Send Error: {}", err),
-            TestNetError::BroadcastError(err) => write!(f, "Broadcast Error: {}", err),
-            TestNetError::ShutdownError(err) => write!(f, "Shutdown Error: {}", err),
-            TestNetError::InterceptError(err) => write!(f, "Intercept Error: {}", err),
+            TestNetError::RecvError(err) => write!(f, "receive Error: {}", err),
+            TestNetError::SendError(err) => write!(f, "send Error: {}", err),
+            TestNetError::BroadcastError(err) => write!(f, "broadcast Error: {}", err),
+            TestNetError::InterceptError(err) => write!(f, "intercept Error: {}", err),
         }
     }
 }
