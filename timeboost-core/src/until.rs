@@ -60,7 +60,7 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
                         }
 
                         if committed_round >= until {
-                            tracing::error!("watchdog completed successfully");
+                            tracing::info!("watchdog completed successfully");
                             break;
                         }
                     }
