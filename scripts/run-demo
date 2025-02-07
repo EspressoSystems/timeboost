@@ -50,7 +50,7 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
-failure_detected=false
+failed=false
 for pid in "${pids[@]}"; do
     wait $pid
     exit_code=$?
@@ -59,7 +59,7 @@ for pid in "${pids[@]}"; do
         echo "Process $pid completed successfully with exit code $exit_code."
     else
         echo "Process $pid failed with exit code $exit_code."
-        failure_detected=true
+        failed=true
     fi
 done
 
@@ -68,7 +68,7 @@ pkill -f nitro
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
 
-if $failure_detected; then
+if $failed; then
     exit 1
 else
     exit 0
