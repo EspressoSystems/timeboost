@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -euox pipefail
-
 if ! command -v uv &> /dev/null; then
   echo "Error: uv command not found. Install it with 'curl -LsSf https://astral.sh/uv/install.sh | sh'" >&2
   exit 1
@@ -20,7 +18,7 @@ else
 fi
 
 docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
-timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done'
+timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
 
 uv run fake-contract/main.py "$nodes" --timeout 30 &
 
@@ -52,6 +50,7 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
+failure_detected=false
 for pid in "${pids[@]}"; do
     wait $pid
     exit_code=$?
@@ -60,9 +59,17 @@ for pid in "${pids[@]}"; do
         echo "Process $pid completed successfully with exit code $exit_code."
     else
         echo "Process $pid failed with exit code $exit_code."
+        failure_detected=true
     fi
 done
-pkill -f nitro
 
+echo "Attempting to kill nitro..."
+pkill -f nitro
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
+
+if $failure_detected; then
+    exit 1
+else
+    exit 0
+fi

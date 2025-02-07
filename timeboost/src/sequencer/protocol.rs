@@ -16,10 +16,7 @@ use timeboost_core::types::{
     transaction::Transaction,
 };
 use timeboost_utils::types::round_number::RoundNumber;
-use tokio::{
-    sync::{mpsc::Sender, watch},
-    time::sleep,
-};
+use tokio::{sync::mpsc::Sender, time::sleep};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -82,7 +79,7 @@ where
     ordering_phase: O,
     block_builder: B,
     #[allow(unused)]
-    metrics: TimeboostMetrics,
+    metrics: Arc<TimeboostMetrics>,
 
     /// The round recovery state if a given node crashes and restarts.
     round_state: RoundState,
@@ -112,7 +109,7 @@ where
         decryption_phase: D,
         ordering_phase: O,
         block_builder: B,
-        metrics: TimeboostMetrics,
+        metrics: Arc<TimeboostMetrics>,
         mempool: Arc<Mempool>,
     ) -> Self {
         Self {
@@ -136,18 +133,10 @@ where
     /// - Processes transactions from the mempool, builds blocks, and updates state.
     /// - Communicates status updates to an application via a channel.
     /// - Handles shutdown signals to gracefully exit the loop.
-    pub async fn go(
-        mut self,
-        mut shutdown_rx: watch::Receiver<()>,
-        app_tx: Sender<TimeboostStatusEvent>,
-        committee_size: usize,
-    ) -> Result<()> {
+    pub async fn go(mut self, app_tx: Sender<TimeboostStatusEvent>, committee_size: usize) {
         self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL).map(|_| 0).fuse().boxed();
         loop {
             tokio::select! {
-                _ = shutdown_rx.changed() => {
-                    return Ok(());
-                }
                 round = &mut self.consensus_interval_clock => {
                     info!(%round, "starting timeboost consensus");
                     self.round = round.into();

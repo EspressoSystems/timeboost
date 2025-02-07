@@ -1,15 +1,10 @@
 use anyhow::Result;
 use std::time::{Duration, Instant};
-use tokio::{signal, sync::watch};
+use tokio::signal;
 const ROUND_TIMEOUT_SECS: u64 = 30;
 const MAX_ROUND_TIMEOUTS: u64 = 15;
 
-pub async fn run_until(
-    until: u64,
-    timeout: u64,
-    host: reqwest::Url,
-    shutdown_tx: watch::Sender<()>,
-) -> Result<()> {
+pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<()> {
     use futures::FutureExt;
     use tokio::time::sleep;
 
@@ -26,9 +21,6 @@ pub async fn run_until(
         tokio::select! {
             _ = &mut timer => {
                 tracing::error!("watchdog timed out, shutting down");
-                shutdown_tx.send(()).expect(
-                    "the shutdown sender was dropped before the receiver could receive the token",
-                );
                 anyhow::bail!("Watchdog timeout")
             }
             _ = &mut req_timer => {
@@ -50,9 +42,6 @@ pub async fn run_until(
                         if committed_round == last_committed
                             && now.saturating_duration_since(last_committed_time) > Duration::from_secs(ROUND_TIMEOUT_SECS)
                         {
-                            shutdown_tx
-                                .send(())
-                                .expect("the shutdown sender was dropped before the receiver could receive the token");
                             anyhow::bail!("Node stuck on round for more than {} seconds", ROUND_TIMEOUT_SECS)
                         } else if committed_round > last_committed {
                             last_committed = committed_round;
@@ -67,17 +56,11 @@ pub async fn run_until(
                             .unwrap_or(0);
 
                         if timeouts >= MAX_ROUND_TIMEOUTS {
-                            shutdown_tx.send(()).expect(
-                                "the shutdown sender was dropped before the receiver could receive the token",
-                            );
                             anyhow::bail!("Node timed out too many rounds")
                         }
 
                         if committed_round >= until {
-                            tracing::info!("watchdog completed successfully");
-                            shutdown_tx.send(()).expect(
-                                    "the shutdown sender was dropped before the receiver could receive the token",
-                                );
+                            tracing::error!("watchdog completed successfully");
                             break;
                         }
                     }
