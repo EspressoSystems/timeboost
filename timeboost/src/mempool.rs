@@ -12,7 +12,7 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use crate::gas::gas_estimator::GasEstimator;
+use crate::provider::nitro_provider::NitroProvider;
 
 /// TODO: Sometimes a block may exceed gas limit and as a result we dont drain it
 /// So we set the gas limit high enough to prevent this
@@ -61,7 +61,7 @@ impl Mempool {
     ) -> JoinHandle<()> {
         tokio::spawn({
             async move {
-                let estimator = GasEstimator::new(
+                let estimator = NitroProvider::new(
                     ProviderBuilder::new()
                         .with_chain(NamedChain::ArbitrumSepolia)
                         .on_http(nitro_url),

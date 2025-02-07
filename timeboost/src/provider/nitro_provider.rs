@@ -2,20 +2,24 @@ use std::fmt;
 
 use alloy::{
     network::Ethereum,
-    providers::fillers::{FillProvider, TxFiller},
+    primitives::TxKind,
+    providers::{
+        fillers::{FillProvider, TxFiller},
+        Provider,
+    },
 };
-use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
+use alloy::{primitives::Address, rpc::types::TransactionRequest};
 use committable::{Commitment, Committable};
 use futures::future::join_all;
-use timeboost_core::types::block::sailfish::SailfishBlock;
-use tracing::warn;
+use timeboost_core::types::{block::sailfish::SailfishBlock, transaction::Transaction};
+use tracing::{info, warn};
 
-pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
+pub struct NitroProvider<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
     provider: FillProvider<F, P, Ethereum>,
 }
 
-/// Gas estimator
-impl<F, P> GasEstimator<F, P>
+/// Alloy nitro provider
+impl<F, P> NitroProvider<F, P>
 where
     F: TxFiller<Ethereum>,
     P: Provider<Ethereum>,
@@ -64,6 +68,46 @@ where
             Some(est) => Ok((b.commit(), est)),
             None => Err(EstimatorError::FailedToEstimateTxn),
         }
+    }
+
+    /// Send the transactions to nitro
+    pub async fn send_txns(&self, txns: &[Transaction]) -> Result<(), EstimatorError> {
+        // TODO: Pull from transaction vec
+        let from = "0x593C4e4F4a0dCCf84A9C4f819BED466780c1d516"
+            .parse::<Address>()
+            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+        let to = "0x0d5B8b79577aC3Bc5Fe47Cf82F5d0146BDCeBd9f"
+            .parse::<Address>()
+            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+        let futs = txns.iter().map(|tx| async move {
+            // TODO: Proper fields
+            let t = match tx {
+                Transaction::Priority {
+                    nonce: _,
+                    to: _,
+                    txns: _,
+                } => TransactionRequest {
+                    from: Some(from),
+                    to: Some(TxKind::Call(to)),
+                    ..Default::default()
+                },
+                Transaction::Regular { txn: _ } => TransactionRequest {
+                    from: Some(from),
+                    to: Some(TxKind::Call(to)),
+                    ..Default::default()
+                },
+            };
+            match self.provider.send_transaction(t).await {
+                Ok(_) => {
+                    info!("sent tx")
+                }
+                Err(e) => {
+                    warn!("failed to send tx: {:?}", e)
+                }
+            }
+        });
+        let _ = join_all(futs).await.iter();
+        Ok(())
     }
 }
 

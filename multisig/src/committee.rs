@@ -92,7 +92,8 @@ impl Committee {
     }
 
     /// Returns the key ID of the leader for a given round number.
-    /// /// # Panics
+    ///
+    ///  # Panics
     ///
     /// - If the calculation results in an index out of bounds, which should not occur if `parties` is not empty.
     pub fn leader_index(&self, round: usize) -> KeyId {
