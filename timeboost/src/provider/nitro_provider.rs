@@ -37,14 +37,14 @@ where
     pub async fn estimate(
         &self,
         b: &SailfishBlock,
-    ) -> Result<(Commitment<SailfishBlock>, u64), EstimatorError> {
+    ) -> Result<(Commitment<SailfishBlock>, u64), ProviderError> {
         // TODO: This will be pulled from transaction data in the block
         let from = "0x593C4e4F4a0dCCf84A9C4f819BED466780c1d516"
             .parse::<Address>()
-            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+            .map_err(|_| ProviderError::FailedToParseWalletAddress)?;
         let to = "0x0d5B8b79577aC3Bc5Fe47Cf82F5d0146BDCeBd9f"
             .parse::<Address>()
-            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+            .map_err(|_| ProviderError::FailedToParseWalletAddress)?;
         let futs = b.transactions().iter().map(|_tx| async {
             // TODO: Use the real transactions and populate more fields such as data
             let tx = TransactionRequest {
@@ -66,19 +66,19 @@ where
             .try_fold(0u64, |acc, est| est.map(|v| acc + v));
         match estimates {
             Some(est) => Ok((b.commit(), est)),
-            None => Err(EstimatorError::FailedToEstimateTxn),
+            None => Err(ProviderError::FailedToEstimateTxn),
         }
     }
 
     /// Send the transactions to nitro
-    pub async fn send_txns(&self, txns: &[Transaction]) -> Result<(), EstimatorError> {
+    pub async fn send_txns(&self, txns: &[Transaction]) -> Result<(), ProviderError> {
         // TODO: Pull from transaction vec
         let from = "0x593C4e4F4a0dCCf84A9C4f819BED466780c1d516"
             .parse::<Address>()
-            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+            .map_err(|_| ProviderError::FailedToParseWalletAddress)?;
         let to = "0x0d5B8b79577aC3Bc5Fe47Cf82F5d0146BDCeBd9f"
             .parse::<Address>()
-            .map_err(|_| EstimatorError::FailedToParseWalletAddress)?;
+            .map_err(|_| ProviderError::FailedToParseWalletAddress)?;
         let futs = txns.iter().map(|tx| async move {
             // TODO: Proper fields
             let t = match tx {
@@ -106,24 +106,24 @@ where
                 }
             }
         });
-        let _ = join_all(futs).await.iter();
+        let _ = join_all(futs).await;
         Ok(())
     }
 }
 
 #[derive(Debug)]
-pub enum EstimatorError {
+pub enum ProviderError {
     FailedToEstimateTxn,
     FailedToParseWalletAddress,
 }
 
-impl fmt::Display for EstimatorError {
+impl fmt::Display for ProviderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EstimatorError::FailedToEstimateTxn => {
+            ProviderError::FailedToEstimateTxn => {
                 write!(f, "failed to estimate gas for transaction")
             }
-            EstimatorError::FailedToParseWalletAddress => {
+            ProviderError::FailedToParseWalletAddress => {
                 write!(f, "failed to parse wallet address")
             }
         }
