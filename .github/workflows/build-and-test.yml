@@ -90,6 +90,6 @@ jobs:
     - name: Install UV
       run: curl -LsSf https://astral.sh/uv/install.sh | sh
     - name: Run tests
-      run: just run_demo 5
+      run: just run_demo -url http://localhost:8547
     - name: Run tests with late-start node
-      run: just run_demo 5 true
+      run: just run_demo -l -url http://localhost:8547

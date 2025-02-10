@@ -68,7 +68,7 @@ pub struct TimeboostInitializer {
     pub bind_address: SocketAddr,
 
     /// The url for arbitrum nitro node for gas calculations
-    pub nitro_url: reqwest::Url,
+    pub nitro_url: Option<reqwest::Url>,
 }
 
 pub struct Timeboost {
@@ -323,9 +323,13 @@ impl Timeboost {
                                     },
                                     SailfishEventType::Committed { round: _, block } => {
                                         if !block.is_empty() {
-                                            // Send to the estimation task
-                                            // There we will estimate transactions and insert block into mempool
-                                            let _ = self.block_tx.send(block).await;
+                                            if self.mempool.run_estimator() {
+                                                // Send to the estimation task
+                                                // There we will estimate transactions and insert block into mempool
+                                                let _ = self.block_tx.send(block).await;
+                                            } else {
+                                                self.mempool.insert(block).await;
+                                            }
                                         }
                                     },
                                 }

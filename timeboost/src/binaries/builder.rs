@@ -52,7 +52,7 @@ struct Cli {
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
 
-    /// The id of a node that will start late
+    /// The id of a node that will start late.
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 0)]
     late_start_node_id: u16,
@@ -68,8 +68,8 @@ struct Cli {
     tps: u32,
 
     /// The ip address of the nitro node for gas estimations.
-    #[clap(long, default_value = "http://172.20.0.12:8547")]
-    nitro_node_url: reqwest::Url,
+    #[clap(long)]
+    nitro_node_url: Option<reqwest::Url>,
 }
 
 #[tokio::main]

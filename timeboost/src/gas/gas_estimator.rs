@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -8,7 +8,10 @@ use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionReq
 use committable::{Commitment, Committable};
 use futures::future::join_all;
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use tokio::time::timeout;
 use tracing::warn;
+
+const ESTIMATION_TIMEOUT_MS: u64 = 300;
 
 pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
     provider: FillProvider<F, P, Ethereum>,
@@ -48,10 +51,19 @@ where
                 to: Some(to.into()),
                 ..Default::default()
             };
-            match self.provider.estimate_gas(&tx).await {
-                Ok(gas) => Some(gas),
-                Err(e) => {
+            match timeout(
+                Duration::from_millis(ESTIMATION_TIMEOUT_MS),
+                self.provider.estimate_gas(&tx),
+            )
+            .await
+            {
+                Ok(Ok(gas)) => Some(gas),
+                Ok(Err(e)) => {
                     warn!("failed to estimate gas for transaction: {:?}", e);
+                    None
+                }
+                Err(_) => {
+                    warn!("gas estimation timed out");
                     None
                 }
             }
