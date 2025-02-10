@@ -166,7 +166,7 @@ impl Consensus {
         self.round = r;
 
         if r.is_genesis() {
-            let vtx = Vertex::new(r, Evidence::Genesis, &self.keypair, self.deterministic);
+            let vtx = Vertex::empty(r, Evidence::Genesis, &self.keypair, self.deterministic);
             let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
             vec![Action::SendProposal(env), Action::ResetTimer(r)]
         } else {
@@ -585,14 +585,16 @@ impl Consensus {
     fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex {
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
-        let block = SailfishBlock::empty(r, Timestamp::now(), self.delayed_inbox_index)
-            .with_transactions(self.transactions.take());
+        let block = SailfishBlock::new(
+            r,
+            Timestamp::now(),
+            self.transactions.take(),
+            self.delayed_inbox_index,
+        );
 
-        let mut new = Vertex::new(r, e, &self.keypair, self.deterministic);
-
+        let mut new = Vertex::new(r, e, &self.keypair, block, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
-            .set_committed_round(self.committed_round)
-            .set_block(block);
+            .set_committed_round(self.committed_round);
 
         // Every vertex in our DAG has > 2f edges to the previous round:
         debug_assert!(new.num_edges() >= self.committee.quorum_size().get());

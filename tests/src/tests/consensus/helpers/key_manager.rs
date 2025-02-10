@@ -65,7 +65,7 @@ impl KeyManager {
         edges: Vec<PublicKey>,
     ) -> Message {
         let kpair = &self.keys[&id];
-        let mut v = Vertex::new(round, self.gen_round_cert(round - 1), kpair, true);
+        let mut v = Vertex::empty(round, self.gen_round_cert(round - 1), kpair, true);
         v.add_edges(edges);
         let e = Envelope::signed(v, kpair, true);
         Message::Vertex(e)
@@ -128,7 +128,7 @@ impl KeyManager {
             .keys
             .values()
             .map(|kpair| {
-                let v = Vertex::new(round, self.gen_round_cert(round - 1), kpair, true);
+                let v = Vertex::empty(round, self.gen_round_cert(round - 1), kpair, true);
                 dag.add(v.clone());
                 *v.source()
             })
@@ -143,7 +143,7 @@ impl KeyManager {
         round: RoundNumber,
         kpair: &Keypair,
     ) -> Message {
-        let d = Vertex::new(round, self.gen_round_cert(round - 1), kpair, true);
+        let d = Vertex::empty(round, self.gen_round_cert(round - 1), kpair, true);
         let e = Envelope::signed(d, kpair, true);
         Message::Vertex(e)
     }

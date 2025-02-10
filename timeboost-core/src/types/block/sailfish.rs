@@ -4,101 +4,92 @@ use crate::types::{block_header::BlockHeader, time::Timestamp};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use timeboost_utils::types::round_number::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
-pub struct SailfishBlock {
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SailfishBlock(Arc<Inner>);
+
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename = "SailfishBlock")]
+struct Inner {
     header: BlockHeader,
     payload: Vec<Transaction>,
     delayed_inbox_index: u64,
 }
 
-impl Default for SailfishBlock {
-    fn default() -> Self {
-        Self::empty(RoundNumber::genesis(), Timestamp::now(), 0)
-    }
-}
-
 impl SailfishBlock {
-    pub fn new(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
-        Self::empty(round, timestamp, delayed_inbox_index)
+    pub fn new(
+        round: RoundNumber,
+        timestamp: Timestamp,
+        transactions: Vec<Transaction>,
+        delayed_inbox_index: u64,
+    ) -> Self {
+        Self(Arc::new(Inner {
+            header: BlockHeader::new(round, timestamp),
+            payload: transactions,
+            delayed_inbox_index,
+        }))
     }
 
     pub fn empty(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
-        Self {
-            header: BlockHeader::new(round, timestamp),
-            payload: Vec::new(),
-            delayed_inbox_index,
-        }
+        Self::new(round, timestamp, Vec::new(), delayed_inbox_index)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.payload.is_empty()
+        self.0.payload.is_empty()
     }
 
     pub fn has_priority_transactions(&self) -> bool {
-        self.payload.iter().any(|t| t.is_priority())
+        self.0.payload.iter().any(|t| t.is_priority())
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.header.timestamp().epoch()
+        self.0.header.timestamp().epoch()
     }
 
     pub fn len(&self) -> usize {
-        self.payload.len()
+        self.0.payload.len()
     }
 
     pub fn size_bytes(&self) -> usize {
-        self.header.size_bytes() + self.payload.iter().map(|t| t.size_bytes()).sum::<usize>()
-    }
-
-    pub fn with_transactions(mut self, ts: Vec<Transaction>) -> Self {
-        self.payload = ts;
-        self
-    }
-
-    pub fn add_transactions<I>(&mut self, it: I)
-    where
-        I: IntoIterator<Item = Transaction>,
-    {
-        for t in it {
-            self.payload.push(t)
-        }
+        self.0.header.size_bytes() + self.0.payload.iter().map(|t| t.size_bytes()).sum::<usize>()
     }
 
     pub fn round_number(&self) -> RoundNumber {
-        self.header.round()
+        self.0.header.round()
     }
 
     pub fn timestamp(&self) -> Timestamp {
-        self.header.timestamp()
+        self.0.header.timestamp()
     }
 
     pub fn into_transactions(self) -> Vec<Transaction> {
-        self.payload
+        match Arc::try_unwrap(self.0) {
+            Ok(inner) => inner.payload,
+            Err(arc) => arc.payload.clone(),
+        }
     }
 
     pub fn transactions(&self) -> &[Transaction] {
-        &self.payload
+        &self.0.payload
     }
 
     pub fn delayed_inbox_index(&self) -> u64 {
-        self.delayed_inbox_index
-    }
-
-    pub fn set_delayed_inbox_index(&mut self, index: u64) {
-        self.delayed_inbox_index = index;
+        self.0.delayed_inbox_index
     }
 }
 
 impl Committable for SailfishBlock {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Block")
-            .field("header", self.header.commit())
-            .u64_field("payload", self.payload.len() as u64);
+            .field("header", self.0.header.commit())
+            .u64_field("payload", self.0.payload.len() as u64);
 
-        self.payload
+        self.0
+            .payload
             .iter()
             .fold(builder, |b, t| b.var_size_bytes(t.commit().as_ref()))
             .finalize()
