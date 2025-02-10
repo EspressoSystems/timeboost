@@ -10,7 +10,7 @@ use timeboost_core::until::run_until;
 use clap::Parser;
 use local_ip_address::local_ip;
 use timeboost_utils::{types::logging, unsafe_zero_keypair};
-use tokio::{signal, sync::watch};
+use tokio::signal;
 use tracing::warn;
 
 #[cfg(feature = "until")]
@@ -67,7 +67,7 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
-    /// The ip address of the nitro node for gas estimations
+    /// The ip address of the nitro node for gas estimations.
     #[clap(long, default_value = "http://172.20.0.12:8547")]
     nitro_node_url: reqwest::Url,
 }
@@ -93,8 +93,6 @@ async fn main() -> Result<()> {
     let committee =
         CommitteeContract::new(id, broadcast_ip, keypair.public_key(), cli.startup_url).await;
 
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
-
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
     #[cfg(feature = "until")]
@@ -110,12 +108,7 @@ async fn main() -> Result<()> {
         // HACK: The port is always 9000 + i in the local setup
         host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
 
-        let task_handle = tokio::spawn(run_until(
-            cli.until,
-            cli.watchdog_timeout,
-            host,
-            shutdown_tx.clone(),
-        ));
+        let task_handle = tokio::spawn(run_until(cli.until, cli.watchdog_timeout, host));
         if cli.late_start && cli.id == cli.late_start_node_id {
             tracing::warn!("Adding delay before starting node: id: {}", id);
             tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
@@ -130,31 +123,36 @@ async fn main() -> Result<()> {
         peers: committee.peers().into_iter().collect(),
         keypair,
         bind_address,
-        shutdown_rx: shutdown_rx.clone(),
         nitro_url: cli.nitro_node_url,
     };
 
     let timeboost = Timeboost::initialize(init).await?;
 
+    #[cfg(feature = "until")]
     tokio::select! {
+        res = handle => {
+            tracing::info!("watchdog completed");
+            return match res {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(e),
+                Err(e) => anyhow::bail!("Error: {}", e),
+            };
+        },
         _ = timeboost.go(committee.peers().len(), cli.tps) => {
-            #[cfg(feature = "until")]
-            {
-                tracing::info!("watchdog completed");
-                return match handle.await {
-                    Ok(Ok(_)) => Ok(()),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => anyhow::bail!("Error: {}", e),
-                };
-            }
-
-            #[cfg(not(feature = "until"))]
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
-            shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
-            Ok(())
         }
     }
+    #[cfg(not(feature = "until"))]
+    tokio::select! {
+        _ = timeboost.go(committee.peers().len(), cli.tps) => {
+            anyhow::bail!("timeboost shutdown unexpectedly");
+        }
+        _ = signal::ctrl_c() => {
+            warn!("received ctrl-c; shutting down");
+        }
+    }
+    Ok(())
 }

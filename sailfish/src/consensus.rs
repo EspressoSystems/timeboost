@@ -289,13 +289,15 @@ impl Consensus {
         actions
     }
 
-    /// Handle a no vote message received
+    /// Handle a no-vote message received.
     ///
     /// Upon receiving a no vote message we:
-    /// - Verify that we are the leader for round `r + 1` from timeout round `r`
-    /// - Check if we have a timeout certificate for the round, or set it
-    /// - Add the `no_vote` to our `VoteAccumulator` upon  receiving `2f + 1` `no_votes` a certificate will be created
-    /// - Advance round by broadcasting the vertex with the attached `no_vote` and `timeout_certificate`
+    /// - Verify that we are the leader for round `r + 1` from timeout round `r`.
+    /// - Check if we have a timeout certificate for the round, or else set it.
+    /// - Add the `no_vote` to our `VoteAccumulator`. Upon receiving `2f + 1`
+    ///   `no_votes` a certificate will be created.
+    /// - If a no-vote certificate has been created, advance to the next round with
+    ///   the `no_vote` and `timeout_certificate`.
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action> {
         trace!(
             node    = %self.public_key(),
@@ -543,10 +545,11 @@ impl Consensus {
         actions
     }
 
-    /// Advances the leader from timeout round r
+    /// Advances the leader from timeout round `r`.
     ///
-    /// This function advances a leader by createing a vertex and attaches a timeout certicate and no vote certificate for a round
-    /// The leader is for round r + 1 where r is the round we timed out in
+    /// This function advances the leader of `r + 1`. The required timeout and
+    /// no-vote certificates will be attached to the newly created vertex this
+    /// node will broadcast.
     fn advance_leader_with_no_vote_certificate(
         &mut self,
         round: RoundNumber,
@@ -880,12 +883,12 @@ impl Consensus {
         true
     }
 
-    /// Retrieve leader vertex for a given round
+    /// Retrieve leader vertex for a given round.
     fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
         self.dag.vertex(r, &self.committee.leader(*r as usize))
     }
 
-    /// Do we have a `Evidence` that a message is valid for a given round
+    /// Do we have `Evidence` that a message is valid for a given round?
     fn evidence(&self, r: RoundNumber) -> Option<Evidence> {
         if let Some(cert) = self.rounds.get(&r).and_then(|a| a.certificate()) {
             return Some(Evidence::Regular(cert.clone()));
@@ -896,7 +899,7 @@ impl Consensus {
         None
     }
 
-    /// Do we have a given timeout certificate for a given round
+    /// Do we have a given timeout certificate for a given round?
     fn has_timeout_cert(&self, r: RoundNumber) -> bool {
         self.timeouts
             .get(&r)
@@ -904,14 +907,17 @@ impl Consensus {
             .unwrap_or(false)
     }
 
-    /// Find the first round in our buffer that we have a quorum of vertices for
+    /// Find the first round in our buffer that we have a quorum of vertices for.
     fn first_available_round(&self) -> Option<RoundNumber> {
         self.buffer
             .rounds()
             .find(|r| self.buffer.vertex_count(*r) >= self.committee.quorum_size().get())
     }
 
-    /// Lowest round that a quorum of nodes has committed
+    /// Cutoff round for cleanup and catch-up logic.
+    ///
+    /// It is defined as the quorum of committed round numbers of the committee
+    /// minus an extra margin to avoid overly aggressive cleanup.
     fn lower_round_bound(&self) -> RoundNumber {
         self.nodes
             .committed_round_quorum()
