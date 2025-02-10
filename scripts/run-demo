@@ -50,16 +50,16 @@ SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-  cmd="RUST_LOG=timeboost=warn,sailfish=info,timeboost_networking=warn \
+  cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
-        --until 300000 \
+        --until 300 \
         $nitro_node_url \
         --tps 20 \
-        --watchdog-timeout 30000"
+        --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
