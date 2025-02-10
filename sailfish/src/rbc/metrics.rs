@@ -1,0 +1,34 @@
+use std::time::Duration;
+use timeboost_utils::traits::metrics::{Histogram, Metrics, NoMetrics};
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct RbcMetrics {
+    /// The time it takes for a message to be RBC-delivered to the application.
+    pub delivery_duration: Box<dyn Histogram>,
+    /// The time it takes for a message to be acknowledged by all parties.
+    pub ack_duration: Box<dyn Histogram>,
+}
+
+impl Default for RbcMetrics {
+    fn default() -> Self {
+        Self::new(&NoMetrics)
+    }
+}
+
+impl RbcMetrics {
+    pub fn new<M: Metrics>(m: &M) -> Self {
+        Self {
+            delivery_duration: m.create_histogram("delivery_duration", Some("seconds")),
+            ack_duration: m.create_histogram("ack_duration", Some("seconds")),
+        }
+    }
+
+    pub fn add_delivery_duration(&self, d: Duration) {
+        self.delivery_duration.add_point(d.as_secs_f64())
+    }
+
+    pub fn add_ack_duration(&self, d: Duration) {
+        self.ack_duration.add_point(d.as_secs_f64())
+    }
+}
