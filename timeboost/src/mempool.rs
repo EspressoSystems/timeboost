@@ -165,7 +165,7 @@ impl Mempool {
                 }
             }
         } else {
-            drained.extend(bundles.into_iter());
+            return bundles.into_iter().collect();
         }
 
         debug!(
