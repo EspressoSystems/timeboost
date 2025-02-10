@@ -56,7 +56,7 @@ pub struct Sailfish<N: Comm + Send + 'static> {
 /// Implementation of the `HasInitializer` trait for `Sailfish<N>`, defining how to initialize
 /// a `Sailfish` instance from an `SailfishInitializer`.
 ///
-/// This trait provides an asynchronous method to construct a `Sailfish` from its initializer,
+/// This impl provides an asynchronous method to construct a `Sailfish` from its initializer,
 /// allowing for setup and configuration before the main structure is used.
 ///
 /// # Type Parameters

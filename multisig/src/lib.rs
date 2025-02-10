@@ -82,7 +82,7 @@ impl Keypair {
         this
     }
 
-    /// Generate keypair from a seed
+    /// Generate keypair from a seed.
     pub fn from_seed(seed: [u8; 32]) -> Self {
         let this = Self {
             pair: ed25519::KeyPair::from_seed(ed25519::Seed::new(seed)),
@@ -91,23 +91,19 @@ impl Keypair {
         this
     }
 
-    /// Returns ed25519 Public key
+    /// Returns ed25519 Public key.
     pub fn public_key(&self) -> PublicKey {
         PublicKey { key: self.pair.pk }
     }
 
-    /// Return ed25519 Secret key
-    ///
-    /// Note:
-    /// - This contains both private and public key
-    /// - The first 32 bytes being private key and the latter 32 bytes are public key
+    /// Return ed25519 secret key.
     pub fn secret_key(&self) -> SecretKey {
         SecretKey {
             key: self.pair.sk.clone(),
         }
     }
 
-    /// Sign data with our ed25519 private key
+    /// Sign data with our ed25519 secret key.
     pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
         Signature {
             sig: self
