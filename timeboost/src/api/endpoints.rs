@@ -27,7 +27,7 @@ impl TimeboostApiState {
         Self { app_tx }
     }
 
-    /// Run the timeboost api
+    /// Run the timeboost API.
     pub async fn run(self, url: Url) -> io::Result<()> {
         let api = define_api::<StaticVersion<0, 1>>()
             .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
@@ -41,7 +41,7 @@ impl TimeboostApiState {
 
 #[async_trait]
 impl TimeboostApi for TimeboostApiState {
-    /// Submit a transaction to timeboost layer
+    /// Submit a transaction to timeboost layer.
     async fn submit(&self, tx: Transaction) -> Result<(), ServerError> {
         let status = TimeboostStatusEvent {
             event: TimeboostEventType::Transactions {

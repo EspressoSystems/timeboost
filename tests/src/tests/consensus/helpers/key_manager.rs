@@ -24,7 +24,7 @@ pub struct KeyManager {
     committee: Committee,
 }
 
-/// Helper for all the keys in a committeee for testing purposes
+/// Helper for all the keys in a committeee for testing purposes.
 impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
         let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
@@ -35,7 +35,7 @@ impl KeyManager {
         }
     }
 
-    /// Create test helpers for all the nodes
+    /// Create test helpers for all the nodes.
     pub(crate) fn create_node_instruments(&self) -> Vec<TestNodeInstrument> {
         self.keys
             .iter()
@@ -49,7 +49,7 @@ impl KeyManager {
             .collect()
     }
 
-    /// For a given round create vertex message for each node in committee
+    /// For a given round create vertex message for each node in committee.
     pub(crate) fn create_vertex_msgs(&self, round: u64, edges: Vec<PublicKey>) -> Vec<Message> {
         self.keys
             .keys()
@@ -57,7 +57,8 @@ impl KeyManager {
             .collect()
     }
 
-    /// For a given round create vertex message for a given node in the committee, add the strong edges to public keys
+    /// For a given round create vertex message for a given node in the committee
+    /// and add the edges to public keys.
     pub(crate) fn create_vertex_msg_for_node_id(
         &self,
         id: u8,
@@ -71,7 +72,7 @@ impl KeyManager {
         Message::Vertex(e)
     }
 
-    /// For a given round, create a timeout message for all nodes in committee
+    /// For a given round, create a timeout message for all nodes in committee.
     pub(crate) fn create_timeout_msgs(&self, round: u64) -> Vec<Message> {
         self.keys
             .keys()
@@ -79,7 +80,7 @@ impl KeyManager {
             .collect()
     }
 
-    /// For a given round, create a timeout message for specified node id in committee
+    /// For a given round, create a timeout message for specified node id in committee.
     pub(crate) fn create_timeout_msg_for_node_id(&self, id: u8, round: u64) -> Message {
         let kpair = &self.keys[&id];
         let t = TimeoutMessage::new(self.gen_round_cert(round - 1).into(), kpair, true);
@@ -87,7 +88,7 @@ impl KeyManager {
         Message::Timeout(e)
     }
 
-    /// Get vertex edges for a round
+    /// Get vertex edges for a round.
     pub(crate) fn edges_for_round(
         &self,
         round: RoundNumber,
@@ -105,7 +106,7 @@ impl KeyManager {
             .collect()
     }
 
-    /// Create an envelope with signers for given type
+    /// Create an envelope with signers for given type.
     pub(crate) fn signers<T>(&self, value: T, count: usize) -> Vec<Envelope<T, Validated>>
     where
         T: Committable + Clone,
@@ -117,7 +118,7 @@ impl KeyManager {
         envs
     }
 
-    /// Setup dag for testing
+    /// Setup dag for testing.
     pub(crate) fn prepare_dag(
         &self,
         round: u64,
@@ -137,7 +138,7 @@ impl KeyManager {
         (dag, evidence, edges)
     }
 
-    /// Craft a vertex message for a given round and keypair
+    /// Craft a vertex message for a given round and keypair.
     pub(crate) fn create_vertex_proposal_msg(
         &self,
         round: RoundNumber,
@@ -148,7 +149,7 @@ impl KeyManager {
         Message::Vertex(e)
     }
 
-    /// Craft a timeout certificate with signers from committee
+    /// Craft a timeout certificate with signers from committee.
     pub(crate) fn gen_timeout_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<Timeout> {
         let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
@@ -158,7 +159,7 @@ impl KeyManager {
         va.into_certificate().unwrap()
     }
 
-    /// Craft a timeout certificate with signers from committee
+    /// Craft a timeout certificate with signers from committee.
     pub(crate) fn gen_round_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<RoundNumber> {
         let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
