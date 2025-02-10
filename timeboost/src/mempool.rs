@@ -29,6 +29,8 @@ pub struct Mempool {
     bundles: Arc<RwLock<VecDeque<SailfishBlock>>>,
     /// Gas estimates for a block that is updated every `ESTIMATION_INTERVAL_MS`
     estimates: Arc<DashMap<Commitment<SailfishBlock>, u64>>,
+    /// Run estimation task if nitro node url has been set
+    run_estimator: bool,
     /// Handle for the estimation task
     jh: JoinHandle<()>,
 }
@@ -41,14 +43,27 @@ impl Drop for Mempool {
 
 impl Mempool {
     // TODO: Restart behavior.
-    pub fn new(nitro_url: reqwest::Url, block_rx: Receiver<SailfishBlock>) -> Self {
+    pub fn new(nitro_url: Option<reqwest::Url>, block_rx: Receiver<SailfishBlock>) -> Self {
         let bundles = Arc::new(RwLock::new(VecDeque::new()));
         let estimates = Arc::new(DashMap::new());
-        let jh = Self::run_estimation_task(bundles.clone(), estimates.clone(), nitro_url, block_rx);
-        Self {
-            bundles,
-            estimates,
-            jh,
+        match nitro_url {
+            Some(url) => {
+                tracing::info!("starting estimation task in mempool. nitrol url: {}", url);
+                let jh =
+                    Self::run_estimation_task(bundles.clone(), estimates.clone(), url, block_rx);
+                Self {
+                    bundles,
+                    estimates,
+                    run_estimator: true,
+                    jh,
+                }
+            }
+            None => Self {
+                bundles,
+                estimates,
+                run_estimator: false,
+                jh: tokio::spawn(async {}),
+            },
         }
     }
 
@@ -115,6 +130,11 @@ impl Mempool {
         self.bundles.write().await.push_back(block);
     }
 
+    /// Run the estimator if we started timeboost with nitrol node url
+    pub fn run_estimator(&self) -> bool {
+        self.run_estimator
+    }
+
     /// Drains blocks from the mempool until we reach our gas limit for block
     pub async fn drain_to_limit(&self) -> Vec<SailfishBlock> {
         let bundles = self.next_bundles().await;
@@ -122,26 +142,30 @@ impl Mempool {
         let mut drained = Vec::new();
         let mut keep = Vec::new();
 
-        for b in bundles {
-            let c = b.commit();
-            let mut remove = false;
-            if let Some(est) = self.estimates.get(&c) {
-                if accum + *est <= MAX_GAS_LIMIT {
-                    accum += *est;
-                    drained.push(b);
-                    remove = true;
+        if self.run_estimator {
+            for b in bundles {
+                let c = b.commit();
+                let mut remove = false;
+                if let Some(est) = self.estimates.get(&c) {
+                    if accum + *est <= MAX_GAS_LIMIT {
+                        accum += *est;
+                        drained.push(b);
+                        remove = true;
+                    } else {
+                        warn!("estimate hit: {} {}", accum, *est);
+                        keep.push(b);
+                    }
                 } else {
-                    warn!("estimate hit: {} {}", accum, *est);
+                    warn!("no gas estimate available for block: {}", b.round_number());
                     keep.push(b);
                 }
-            } else {
-                warn!("no gas estimate available for block: {}", b.round_number());
-                keep.push(b);
-            }
 
-            if remove {
-                self.estimates.remove(&c);
+                if remove {
+                    self.estimates.remove(&c);
+                }
             }
+        } else {
+            drained.extend(bundles.into_iter());
         }
 
         debug!(

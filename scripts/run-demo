@@ -7,41 +7,59 @@ fi
 
 just build_release --features until
 
-if [ -z "${1:-}" ]; then
-    nodes=5
-else
-    if ! [[ $1 =~ ^[4-9]+$ ]]; then
-        echo "Error: The number of nodes must be a positive integer greater than 4."
-        exit 1
-    fi
-    nodes=$1
+nodes=5
+nitro_node_url=""
+late_start=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -l|--late)
+            late_start=true
+            shift
+            ;;
+        -n|--nodes)
+            if ! [[ $2 =~ ^[4-9]+$ ]]; then
+                echo "Error: The number of nodes must be a positive integer greater than 4."
+                exit 1
+            fi
+            nodes="$2"
+            shift 2
+            ;;
+        -url|--url)
+            nitro_node_url="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown: $1"
+            echo "Usage: $0 [-l|--late] [-url|--url <NITRO_URL>] [-n|--nodes <NUMBER>]"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -n "$nitro_node_url" ]; then
+    nitro_node_url="--nitro-node-url $nitro_node_url"
+    docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
+    timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
 fi
 
-docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
-timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
 
 uv run fake-contract/main.py "$nodes" --timeout 30 &
 
-late_start=false
-
-if [ "${2:-}" = "true" ]; then
-    late_start=true
-fi
 pids=()
 SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
 
-  cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+  cmd="RUST_LOG=timeboost=warn,sailfish=info,timeboost_networking=warn \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
-        --until 300 \
-        --nitro-node-url http://localhost:8547 \
+        --until 300000 \
+        $nitro_node_url \
         --tps 20 \
-        --watchdog-timeout 300"
+        --watchdog-timeout 30000"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
@@ -63,8 +81,10 @@ for pid in "${pids[@]}"; do
     fi
 done
 
-echo "Attempting to kill nitro..."
-pkill -f nitro
+if [ -n "$nitro_node_url" ]; then
+    echo "Attempting to kill nitro..."
+    pkill -f nitro
+fi
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
 

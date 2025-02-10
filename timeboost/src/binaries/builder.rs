@@ -68,8 +68,8 @@ struct Cli {
     tps: u32,
 
     /// The ip address of the nitro node for gas estimations
-    #[clap(long, default_value = "http://172.20.0.12:8547")]
-    nitro_node_url: reqwest::Url,
+    #[clap(long)]
+    nitro_node_url: Option<reqwest::Url>,
 }
 
 #[tokio::main]
