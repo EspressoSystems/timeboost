@@ -11,11 +11,13 @@ use tide_disco::method::ReadState;
 
 #[derive(Clone, Debug)]
 pub struct TimeboostCounter(prometheus::Counter);
+
 impl Counter for TimeboostCounter {
     fn add(&self, amount: usize) {
         self.0.inc_by(amount as f64);
     }
 }
+
 impl TimeboostCounter {
     pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
         let counter = prometheus::Counter::with_opts(opts).expect("failed to create counter");
@@ -28,11 +30,13 @@ impl TimeboostCounter {
 
 #[derive(Clone, Debug)]
 pub struct TimeboostHistogram(prometheus::Histogram);
+
 impl Histogram for TimeboostHistogram {
     fn add_point(&self, point: f64) {
         self.0.observe(point);
     }
 }
+
 impl TimeboostHistogram {
     pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
         let histogram =
@@ -46,6 +50,7 @@ impl TimeboostHistogram {
 
 #[derive(Clone, Debug)]
 pub struct TimeboostGauge(prometheus::Gauge);
+
 impl Gauge for TimeboostGauge {
     fn set(&self, amount: usize) {
         self.0.set(amount as f64);
@@ -55,6 +60,7 @@ impl Gauge for TimeboostGauge {
         self.0.add(delts as f64);
     }
 }
+
 impl TimeboostGauge {
     pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
         let gauge = prometheus::Gauge::with_opts(opts).expect("failed to create gauge");
@@ -67,16 +73,19 @@ impl TimeboostGauge {
 
 #[derive(Debug)]
 pub struct PrometheusError(anyhow::Error);
+
 impl std::fmt::Display for PrometheusError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
+
 impl std::error::Error for PrometheusError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.0.source()
     }
 }
+
 impl From<prometheus::Error> for PrometheusError {
     fn from(source: prometheus::Error) -> Self {
         Self(anyhow::anyhow!(source))
@@ -92,11 +101,12 @@ pub struct PrometheusMetrics {
 }
 
 impl PrometheusMetrics {
-    fn metric_opts(&self, name: String, unit_label: Option<String>) -> prometheus::Opts {
-        let help = unit_label.unwrap_or_else(|| name.clone());
+    fn metric_opts(&self, name: &str, unit_label: Option<&str>) -> prometheus::Opts {
+        let help = unit_label.unwrap_or(name);
         prometheus::Opts::new(name, help)
     }
 }
+
 impl tide_disco::metrics::Metrics for PrometheusMetrics {
     type Error = PrometheusError;
 
@@ -128,51 +138,53 @@ impl ReadState for PrometheusMetrics {
 }
 
 impl Metrics for PrometheusMetrics {
-    fn create_counter(&self, name: String, unit_label: Option<String>) -> Box<dyn Counter> {
-        let opts = self.metric_opts(name.clone(), unit_label);
+    fn create_counter(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Counter> {
+        let opts = self.metric_opts(name, unit_label);
         let counter = TimeboostCounter::new(&self.registry, opts);
-        self.counters.write().insert(name.clone(), counter.clone());
+        self.counters
+            .write()
+            .insert(name.to_string(), counter.clone());
         Box::new(counter)
     }
 
-    fn create_gauge(&self, name: String, unit_label: Option<String>) -> Box<dyn Gauge> {
-        let opts = self.metric_opts(name.clone(), unit_label);
+    fn create_gauge(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Gauge> {
+        let opts = self.metric_opts(name, unit_label);
         let gauge = TimeboostGauge::new(&self.registry, opts);
-        self.gauges.write().insert(name.clone(), gauge.clone());
+        self.gauges.write().insert(name.to_string(), gauge.clone());
         Box::new(gauge)
     }
 
-    fn create_histogram(&self, name: String, unit_label: Option<String>) -> Box<dyn Histogram> {
-        let opts = self.metric_opts(name.clone(), unit_label);
+    fn create_histogram(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Histogram> {
+        let opts = self.metric_opts(name, unit_label);
         let histogram = TimeboostHistogram::new(&self.registry, opts);
         self.historgrams
             .write()
-            .insert(name.clone(), histogram.clone());
+            .insert(name.to_string(), histogram.clone());
         Box::new(histogram)
     }
 
     /////////////// We don't care about the rest of these
-    fn create_text(&self, _name: String) {
+    fn create_text(&self, _name: &str) {
         todo!()
     }
 
-    fn counter_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn CounterFamily> {
+    fn counter_family(&self, _name: &str, _labels: &[&str]) -> Box<dyn CounterFamily> {
         todo!()
     }
 
-    fn gauge_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn GaugeFamily> {
+    fn gauge_family(&self, _name: &str, _labels: &[&str]) -> Box<dyn GaugeFamily> {
         todo!()
     }
 
-    fn histogram_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn HistogramFamily> {
+    fn histogram_family(&self, _name: &str, _labels: &[&str]) -> Box<dyn HistogramFamily> {
         todo!()
     }
 
-    fn text_family(&self, _name: String, _labels: Vec<String>) -> Box<dyn TextFamily> {
+    fn text_family(&self, _name: &str, _labels: &[&str]) -> Box<dyn TextFamily> {
         todo!()
     }
 
-    fn subgroup(&self, _subgroup_name: String) -> Box<dyn Metrics> {
+    fn subgroup(&self, _subgroup_name: &str) -> Box<dyn Metrics> {
         todo!()
     }
 }

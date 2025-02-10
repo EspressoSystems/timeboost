@@ -21,15 +21,15 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
     /// Create a [`Counter`] with an optional `unit_label`.
     ///
     /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
-    fn create_counter(&self, name: String, unit_label: Option<String>) -> Box<dyn Counter>;
+    fn create_counter(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Counter>;
     /// Create a [`Gauge`] with an optional `unit_label`.
     ///
     /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
-    fn create_gauge(&self, name: String, unit_label: Option<String>) -> Box<dyn Gauge>;
+    fn create_gauge(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Gauge>;
     /// Create a [`Histogram`] with an optional `unit_label`.
     ///
     /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
-    fn create_histogram(&self, name: String, unit_label: Option<String>) -> Box<dyn Histogram>;
+    fn create_histogram(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Histogram>;
 
     /// Create a text metric.
     ///
@@ -37,22 +37,22 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
     /// string in the collected metrics, and possibly to care other key-value pairs as part of a
     /// [`TextFamily`]. Thus, the act of creating the text itself is sufficient to populate the text
     /// in the collect metrics; no setter function needs to be called.
-    fn create_text(&self, name: String);
+    fn create_text(&self, name: &str);
 
     /// Create a family of related counters, partitioned by their label values.
-    fn counter_family(&self, name: String, labels: Vec<String>) -> Box<dyn CounterFamily>;
+    fn counter_family(&self, name: &str, labels: &[&str]) -> Box<dyn CounterFamily>;
 
     /// Create a family of related gauges, partitioned by their label values.
-    fn gauge_family(&self, name: String, labels: Vec<String>) -> Box<dyn GaugeFamily>;
+    fn gauge_family(&self, name: &str, labels: &[&str]) -> Box<dyn GaugeFamily>;
 
     /// Create a family of related histograms, partitioned by their label values.
-    fn histogram_family(&self, name: String, labels: Vec<String>) -> Box<dyn HistogramFamily>;
+    fn histogram_family(&self, name: &str, labels: &[&str]) -> Box<dyn HistogramFamily>;
 
     /// Create a family of related text metricx, partitioned by their label values.
-    fn text_family(&self, name: String, labels: Vec<String>) -> Box<dyn TextFamily>;
+    fn text_family(&self, name: &str, labels: &[&str]) -> Box<dyn TextFamily>;
 
     /// Create a subgroup with a specified prefix.
-    fn subgroup(&self, subgroup_name: String) -> Box<dyn Metrics>;
+    fn subgroup(&self, subgroup_name: &str) -> Box<dyn Metrics>;
 }
 
 /// A family of related metrics, partitioned by their label values.
@@ -73,9 +73,9 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
 /// # fn doc(_metrics: Box<dyn Metrics>) {
 /// let metrics: Box<dyn Metrics>;
 /// # metrics = _metrics;
-/// let http_count = metrics.counter_family("http".into(), vec!["method".into()]);
-/// let get_count = http_count.create(vec!["GET".into()]);
-/// let post_count = http_count.create(vec!["POST".into()]);
+/// let http_count = metrics.counter_family("http", &["method"]);
+/// let get_count = http_count.create(&["GET"]);
+/// let post_count = http_count.create(&["POST"]);
 ///
 /// get_count.add(1);
 /// post_count.add(2);
@@ -96,8 +96,8 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
 /// let metrics: Box<dyn Metrics>;
 /// # metrics = _metrics;
 /// metrics
-///     .text_family("version".into(), vec!["semver".into(), "rev".into()])
-///     .create(vec!["0.1.0".into(), "891c5baa5".into()]);
+///     .text_family("version", &["semver", "rev"])
+///     .create(&["0.1.0", "891c5baa5"]);
 /// # }
 /// ```
 ///
@@ -111,7 +111,7 @@ pub trait MetricsFamily<M>: Send + Sync + DynClone + Debug {
     /// The given values of `labels` are used to identify this metric within its family. It must
     /// contain exactly one value for each label name defined when the family was created, in the
     /// same order.
-    fn create(&self, labels: Vec<String>) -> M;
+    fn create(&self, labels: &[&str]) -> M;
 }
 
 /// A family of related counters, partitioned by their label values.
@@ -143,37 +143,37 @@ impl NoMetrics {
 }
 
 impl Metrics for NoMetrics {
-    fn create_counter(&self, _: String, _: Option<String>) -> Box<dyn Counter> {
+    fn create_counter(&self, _: &str, _: Option<&str>) -> Box<dyn Counter> {
         Box::new(NoMetrics)
     }
 
-    fn create_gauge(&self, _: String, _: Option<String>) -> Box<dyn Gauge> {
+    fn create_gauge(&self, _: &str, _: Option<&str>) -> Box<dyn Gauge> {
         Box::new(NoMetrics)
     }
 
-    fn create_histogram(&self, _: String, _: Option<String>) -> Box<dyn Histogram> {
+    fn create_histogram(&self, _: &str, _: Option<&str>) -> Box<dyn Histogram> {
         Box::new(NoMetrics)
     }
 
-    fn create_text(&self, _: String) {}
+    fn create_text(&self, _: &str) {}
 
-    fn counter_family(&self, _: String, _: Vec<String>) -> Box<dyn CounterFamily> {
+    fn counter_family(&self, _: &str, _: &[&str]) -> Box<dyn CounterFamily> {
         Box::new(NoMetrics)
     }
 
-    fn gauge_family(&self, _: String, _: Vec<String>) -> Box<dyn GaugeFamily> {
+    fn gauge_family(&self, _: &str, _: &[&str]) -> Box<dyn GaugeFamily> {
         Box::new(NoMetrics)
     }
 
-    fn histogram_family(&self, _: String, _: Vec<String>) -> Box<dyn HistogramFamily> {
+    fn histogram_family(&self, _: &str, _: &[&str]) -> Box<dyn HistogramFamily> {
         Box::new(NoMetrics)
     }
 
-    fn text_family(&self, _: String, _: Vec<String>) -> Box<dyn TextFamily> {
+    fn text_family(&self, _: &str, _: &[&str]) -> Box<dyn TextFamily> {
         Box::new(NoMetrics)
     }
 
-    fn subgroup(&self, _: String) -> Box<dyn Metrics> {
+    fn subgroup(&self, _: &str) -> Box<dyn Metrics> {
         Box::new(NoMetrics)
     }
 }
@@ -181,30 +181,36 @@ impl Metrics for NoMetrics {
 impl Counter for NoMetrics {
     fn add(&self, _: usize) {}
 }
+
 impl Gauge for NoMetrics {
     fn set(&self, _: usize) {}
     fn update(&self, _: i64) {}
 }
+
 impl Histogram for NoMetrics {
     fn add_point(&self, _: f64) {}
 }
+
 impl MetricsFamily<Box<dyn Counter>> for NoMetrics {
-    fn create(&self, _: Vec<String>) -> Box<dyn Counter> {
+    fn create(&self, _: &[&str]) -> Box<dyn Counter> {
         Box::new(NoMetrics)
     }
 }
+
 impl MetricsFamily<Box<dyn Gauge>> for NoMetrics {
-    fn create(&self, _: Vec<String>) -> Box<dyn Gauge> {
+    fn create(&self, _: &[&str]) -> Box<dyn Gauge> {
         Box::new(NoMetrics)
     }
 }
+
 impl MetricsFamily<Box<dyn Histogram>> for NoMetrics {
-    fn create(&self, _: Vec<String>) -> Box<dyn Histogram> {
+    fn create(&self, _: &[&str]) -> Box<dyn Histogram> {
         Box::new(NoMetrics)
     }
 }
+
 impl MetricsFamily<()> for NoMetrics {
-    fn create(&self, _: Vec<String>) {}
+    fn create(&self, _: &[&str]) {}
 }
 
 /// An ever-incrementing counter
@@ -212,6 +218,7 @@ pub trait Counter: Send + Sync + Debug + DynClone {
     /// Add a value to the counter
     fn add(&self, amount: usize);
 }
+
 /// A gauge that stores the latest value.
 pub trait Gauge: Send + Sync + Debug + DynClone {
     /// Set the gauge value
@@ -248,9 +255,9 @@ mod test {
     }
 
     impl TestMetrics {
-        fn sub(&self, name: String) -> Self {
+        fn sub(&self, name: &str) -> Self {
             let prefix = if self.prefix.is_empty() {
-                name
+                name.to_string()
             } else {
                 format!("{}-{name}", self.prefix)
             };
@@ -260,7 +267,7 @@ mod test {
             }
         }
 
-        fn family(&self, labels: Vec<String>) -> Self {
+        fn family(&self, labels: &[&str]) -> Self {
             let mut curr = self.clone();
             for label in labels {
                 curr = curr.sub(label);
@@ -270,47 +277,43 @@ mod test {
     }
 
     impl Metrics for TestMetrics {
-        fn create_counter(
-            &self,
-            name: String,
-            _unit_label: Option<String>,
-        ) -> Box<dyn super::Counter> {
+        fn create_counter(&self, name: &str, _unit_label: Option<&str>) -> Box<dyn super::Counter> {
             Box::new(self.sub(name))
         }
 
-        fn create_gauge(&self, name: String, _unit_label: Option<String>) -> Box<dyn super::Gauge> {
+        fn create_gauge(&self, name: &str, _unit_label: Option<&str>) -> Box<dyn super::Gauge> {
             Box::new(self.sub(name))
         }
 
         fn create_histogram(
             &self,
-            name: String,
-            _unit_label: Option<String>,
+            name: &str,
+            _unit_label: Option<&str>,
         ) -> Box<dyn super::Histogram> {
             Box::new(self.sub(name))
         }
 
-        fn create_text(&self, name: String) {
+        fn create_text(&self, name: &str) {
             self.create_gauge(name, None).set(1);
         }
 
-        fn counter_family(&self, name: String, _: Vec<String>) -> Box<dyn CounterFamily> {
+        fn counter_family(&self, name: &str, _: &[&str]) -> Box<dyn CounterFamily> {
             Box::new(self.sub(name))
         }
 
-        fn gauge_family(&self, name: String, _: Vec<String>) -> Box<dyn GaugeFamily> {
+        fn gauge_family(&self, name: &str, _: &[&str]) -> Box<dyn GaugeFamily> {
             Box::new(self.sub(name))
         }
 
-        fn histogram_family(&self, name: String, _: Vec<String>) -> Box<dyn HistogramFamily> {
+        fn histogram_family(&self, name: &str, _: &[&str]) -> Box<dyn HistogramFamily> {
             Box::new(self.sub(name))
         }
 
-        fn text_family(&self, name: String, _: Vec<String>) -> Box<dyn TextFamily> {
+        fn text_family(&self, name: &str, _: &[&str]) -> Box<dyn TextFamily> {
             Box::new(self.sub(name))
         }
 
-        fn subgroup(&self, subgroup_name: String) -> Box<dyn Metrics> {
+        fn subgroup(&self, subgroup_name: &str) -> Box<dyn Metrics> {
             Box::new(self.sub(subgroup_name))
         }
     }
@@ -358,25 +361,25 @@ mod test {
     }
 
     impl MetricsFamily<Box<dyn Counter>> for TestMetrics {
-        fn create(&self, labels: Vec<String>) -> Box<dyn Counter> {
+        fn create(&self, labels: &[&str]) -> Box<dyn Counter> {
             Box::new(self.family(labels))
         }
     }
 
     impl MetricsFamily<Box<dyn Gauge>> for TestMetrics {
-        fn create(&self, labels: Vec<String>) -> Box<dyn Gauge> {
+        fn create(&self, labels: &[&str]) -> Box<dyn Gauge> {
             Box::new(self.family(labels))
         }
     }
 
     impl MetricsFamily<Box<dyn Histogram>> for TestMetrics {
-        fn create(&self, labels: Vec<String>) -> Box<dyn Histogram> {
+        fn create(&self, labels: &[&str]) -> Box<dyn Histogram> {
             Box::new(self.family(labels))
         }
     }
 
     impl MetricsFamily<()> for TestMetrics {
-        fn create(&self, labels: Vec<String>) {
+        fn create(&self, labels: &[&str]) {
             self.family(labels).set(1);
         }
     }
@@ -398,9 +401,9 @@ mod test {
                 values: Arc::clone(&values),
             });
 
-            let gauge = metrics.create_gauge("foo".to_string(), None);
-            let counter = metrics.create_counter("bar".to_string(), None);
-            let histogram = metrics.create_histogram("baz".to_string(), None);
+            let gauge = metrics.create_gauge("foo", None);
+            let counter = metrics.create_counter("bar", None);
+            let histogram = metrics.create_histogram("baz", None);
 
             gauge.set(5);
             gauge.update(-2);
@@ -413,11 +416,11 @@ mod test {
                 histogram.add_point(f64::from(i));
             }
 
-            let sub = metrics.subgroup("child".to_string());
+            let sub = metrics.subgroup("child");
 
-            let sub_gauge = sub.create_gauge("foo".to_string(), None);
-            let sub_counter = sub.create_counter("bar".to_string(), None);
-            let sub_histogram = sub.create_histogram("baz".to_string(), None);
+            let sub_gauge = sub.create_gauge("foo", None);
+            let sub_counter = sub.create_counter("bar", None);
+            let sub_histogram = sub.create_histogram("baz", None);
 
             sub_gauge.set(10);
 
