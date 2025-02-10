@@ -3,7 +3,7 @@ use futures::FutureExt;
 use reqwest::Client;
 use timeboost_core::load_generation::make_tx;
 use timeboost_utils::types::logging;
-use tokio::{signal, spawn, sync::watch, time::sleep};
+use tokio::{signal, spawn, time::sleep};
 use tracing::debug;
 
 #[cfg(feature = "until")]
@@ -102,8 +102,6 @@ async fn main() {
         .fuse()
         .boxed();
 
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(());
-
     let client = Box::leak(Box::new(Client::new()));
 
     #[cfg(feature = "until")]
@@ -112,12 +110,7 @@ async fn main() {
 
         // HACK: Submit port is 800 + SAILFISH_PORT, metrics is 200 more than that...
         host.set_port(Some(host.port().unwrap() + 200)).unwrap();
-        tokio::spawn(run_until(
-            cli.until,
-            cli.watchdog_timeout,
-            host,
-            shutdown_tx.clone(),
-        ));
+        tokio::spawn(run_until(cli.until, cli.watchdog_timeout, host));
     }
 
     loop {
@@ -132,13 +125,8 @@ async fn main() {
                     spawn(create_and_send_tx(host.clone(), client, 500));
                 }
             }
-            _ = shutdown_rx.changed() => {
-                tracing::info!("shutting down tx generator");
-                break;
-            }
             _ = signal::ctrl_c() => {
                 tracing::info!("received ctrl-c; shutting down");
-                shutdown_tx.send(()).expect("the shutdown sender was dropped before the receiver could receive the token");
                 break;
             }
         }

@@ -38,10 +38,7 @@ use timeboost_core::{
     },
 };
 use timeboost_networking::Network;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    watch,
-};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
 pub mod contracts;
@@ -70,9 +67,6 @@ pub struct TimeboostInitializer {
     /// The bind address for the node.
     pub bind_address: SocketAddr,
 
-    /// The receiver for the shutdown signal.
-    pub shutdown_rx: watch::Receiver<()>,
-
     /// The url for arbitrum nitro node for gas calculations
     pub nitro_url: reqwest::Url,
 }
@@ -93,9 +87,6 @@ pub struct Timeboost {
     /// The receiver for events to the sailfish node.
     app_rx: Receiver<TimeboostStatusEvent>,
 
-    /// The receiver for the shutdown signal.
-    shutdown_rx: watch::Receiver<()>,
-
     /// The mempool for the timeboost node.
     mempool: Arc<Mempool>,
 
@@ -106,10 +97,13 @@ pub struct Timeboost {
     metrics: Arc<PrometheusMetrics>,
 
     /// The timeboost metrics layer.
-    tb_metrics: TimeboostMetrics,
+    tb_metrics: Arc<TimeboostMetrics>,
 
     /// Sender for SailfishBlock to estimation task
     block_tx: Sender<SailfishBlock>,
+
+    /// Task handles
+    handles: Vec<JoinHandle<()>>,
 }
 
 /// Asynchronously initializes and constructs a `Timeboost` instance from the provided initializer.
@@ -140,7 +134,7 @@ impl HasInitializer for Timeboost {
         let prom = Arc::new(PrometheusMetrics::default());
         let sf_metrics = SailfishMetrics::new(prom.as_ref());
         let net_metrics = NetworkMetrics::new(prom.as_ref());
-        let tb_metrics = TimeboostMetrics::new(prom.as_ref());
+        let tb_metrics = Arc::new(TimeboostMetrics::new(prom.as_ref()));
         let (tb_app_tx, tb_app_rx) = channel(100);
         let (block_tx, block_rx) = channel(1000);
 
@@ -185,15 +179,24 @@ impl HasInitializer for Timeboost {
             metrics_port: initializer.metrics_port,
             app_tx: tb_app_tx,
             app_rx: tb_app_rx,
-            shutdown_rx: initializer.shutdown_rx,
             mempool,
             coordinator,
             metrics: prom,
             tb_metrics,
             block_tx,
+            handles: vec![],
         };
 
         Ok(timeboost)
+    }
+}
+
+impl Drop for Timeboost {
+    fn drop(&mut self) {
+        warn!("shutting down timeboost.");
+        for h in self.handles.iter() {
+            h.abort();
+        }
     }
 }
 
@@ -257,37 +260,38 @@ impl Timeboost {
     #[instrument(level = "info", skip_all, fields(node = %self.id))]
     pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
-        let rpc_handle = Self::start_rpc_api(app_tx.clone(), self.rpc_port);
-        let metrics_handle = Self::start_metrics_api(self.metrics, self.metrics_port);
+        self.handles
+            .push(Self::start_rpc_api(app_tx.clone(), self.rpc_port));
+        self.handles.push(Self::start_metrics_api(
+            self.metrics.clone(),
+            self.metrics_port,
+        ));
 
         // Start the load generator.
-        let load_gen_handle = if tps > 0 {
-            Some(Self::start_load_generator(tps, app_tx))
+        if tps > 0 {
+            self.handles.push(Self::start_load_generator(tps, app_tx));
         } else {
             warn!("running without load generator");
-            None
-        };
+        }
 
         let sequencer = Sequencer::new(
             NoOpInclusionPhase,
             NoOpDecryptionPhase,
             NoOpOrderingPhase,
             NoOpBlockBuilder,
-            self.tb_metrics,
+            self.tb_metrics.clone(),
             self.mempool.clone(),
         );
 
         // Start the sequencer.
-        let sequencer_handle = tokio::spawn(sequencer.go(
-            self.shutdown_rx.clone(),
-            self.app_tx.clone(),
-            committee_size,
+        self.handles.push(tokio::spawn(
+            sequencer.go(self.app_tx.clone(), committee_size),
         ));
 
         // Start the block producer.
-        let (producer, p_tx) = producer::Producer::new(self.shutdown_rx.clone());
+        let (producer, p_tx) = producer::Producer::new();
 
-        tokio::spawn(producer.run());
+        self.handles.push(tokio::spawn(producer.run()));
 
         // Kickstart the network.
         match self.coordinator.start().await {
@@ -349,30 +353,6 @@ impl Timeboost {
                         bail!("Receiver disconnected while awaiting application layer messages.");
                     }
                 },
-                result = self.shutdown_rx.changed() => {
-                    warn!("received shutdown signal; shutting down.");
-
-                    // Timeout waiting for all the handles to shut down
-                    warn!("waiting for consensus handles to shut down");
-                    let _ = tokio::time::sleep(Duration::from_secs(4)).await;
-
-                    warn!("shutting down metrics handle");
-                    metrics_handle.abort();
-
-                    warn!("shutting down rpc handle");
-                    rpc_handle.abort();
-
-                    warn!("shutting down sequencer");
-                    sequencer_handle.abort();
-
-                    warn!("shutting down load generator");
-                    if let Some(handle) = load_gen_handle {
-                        handle.abort();
-                    }
-
-                    result.expect("the shutdown sender was dropped before the receiver could receive the token");
-                    return Ok(());
-                }
             }
         }
     }

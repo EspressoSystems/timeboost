@@ -128,7 +128,8 @@ impl<T: Clone> Star<T> {
                     }
                 },
                 None => {
-                    tracing::warn!("star channel closed")
+                    tracing::warn!("star channel closed");
+                    return;
                 }
             }
         }
