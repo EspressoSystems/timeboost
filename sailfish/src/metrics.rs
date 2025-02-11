@@ -24,17 +24,16 @@ impl Default for SailfishMetrics {
 impl SailfishMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
-            committed_round: m.create_gauge("committed_round".to_string(), None),
-            dag_depth: m.create_gauge("dag_depth".to_string(), None),
-            delivered: m.create_gauge("delivered_filter".to_string(), None),
-            round: m.create_gauge("round".to_string(), None),
-            round_duration: m
-                .create_histogram("round_duration".to_string(), Some("seconds".to_string())),
-            timeout_buffer: m.create_gauge("timeout_buffer".to_string(), None),
-            novote_buffer: m.create_gauge("novote_buffer".to_string(), None),
-            rounds_buffer: m.create_gauge("rounds_buffer".to_string(), None),
-            vertex_buffer: m.create_gauge("vertex_buffer".to_string(), None),
-            rounds_timed_out: m.create_gauge("rounds_timed_out".to_string(), None),
+            committed_round: m.create_gauge("committed_round", None),
+            dag_depth: m.create_gauge("dag_depth", None),
+            delivered: m.create_gauge("delivered_filter", None),
+            round: m.create_gauge("round", None),
+            round_duration: m.create_histogram("round_duration", Some("seconds")),
+            timeout_buffer: m.create_gauge("timeout_buffer", None),
+            novote_buffer: m.create_gauge("novote_buffer", None),
+            rounds_buffer: m.create_gauge("rounds_buffer", None),
+            vertex_buffer: m.create_gauge("vertex_buffer", None),
+            rounds_timed_out: m.create_gauge("rounds_timed_out", None),
         }
     }
 }

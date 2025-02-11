@@ -65,8 +65,10 @@ struct Messages {
 struct Acks {
     /// The message we sent and await ACKs for.
     msg: Message<Validated>,
+    /// The time when the message was first sent.
+    start: Instant,
     /// The time when the message was last sent.
-    time: Instant,
+    timestamp: Instant,
     /// The number of delivery retries.
     retries: usize,
     /// The number of parties that still have to send an ACK back.
@@ -77,8 +79,10 @@ struct Acks {
 struct Tracker {
     /// Are we the original producer of this message?
     ours: bool,
-    /// The time when this info was created or last updated.
+    /// The time when this info was created.
     start: Instant,
+    /// The time when this info was last updated.
+    timestamp: Instant,
     /// The number of delivery retries.
     retries: usize,
     /// The message, if any.
@@ -269,11 +273,15 @@ impl<C: RawComm> Worker<C> {
             .or_default()
             .acks
             .entry(digest)
-            .or_insert_with(|| Acks {
-                msg,
-                time: Instant::now(),
-                retries: 0,
-                rem: self.config.committee.parties().copied().collect(),
+            .or_insert_with(|| {
+                let now = Instant::now();
+                Acks {
+                    msg,
+                    start: now,
+                    timestamp: now,
+                    retries: 0,
+                    rem: self.config.committee.parties().copied().collect(),
+                }
             });
         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
         Ok(())
@@ -291,11 +299,15 @@ impl<C: RawComm> Worker<C> {
             .or_default()
             .acks
             .entry(digest)
-            .or_insert_with(|| Acks {
-                msg,
-                time: Instant::now(),
-                retries: 0,
-                rem: vec![to],
+            .or_insert_with(|| {
+                let now = Instant::now();
+                Acks {
+                    msg,
+                    start: now,
+                    timestamp: now,
+                    retries: 0,
+                    rem: vec![to],
+                }
             });
         self.comm.send(to, bytes).await.map_err(RbcError::net)
     }
@@ -318,9 +330,12 @@ impl<C: RawComm> Worker<C> {
             *r + n + t >= self.round
         });
 
+        let now = Instant::now();
+
         let tracker = Tracker {
             ours: true,
-            start: Instant::now(),
+            start: now,
+            timestamp: now,
             retries: 0,
             message: Item::some(msg),
             votes: VoteAccumulator::new(self.config.committee.clone()),
@@ -417,6 +432,7 @@ impl<C: RawComm> Worker<C> {
         acks.rem.retain(|k| *k != src);
 
         if acks.rem.is_empty() {
+            self.config.metrics.add_ack_duration(acks.start.elapsed());
             msgs.acks.remove(digest);
         }
 
@@ -434,13 +450,17 @@ impl<C: RawComm> Worker<C> {
 
         let messages = self.buffer.entry(digest.round()).or_default();
 
-        let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            ours: false,
-            start: Instant::now(),
-            retries: 0,
-            message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
-            status: Status::Init,
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                ours: false,
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Init,
+            }
         });
 
         debug!(n = %self.label, d = %digest, s = %tracker.status, "proposal received");
@@ -485,7 +505,10 @@ impl<C: RawComm> Worker<C> {
                 tracker.message = Item::some(msg.clone());
                 debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                 self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
-                tracker.status = Status::Delivered
+                tracker.status = Status::Delivered;
+                self.config
+                    .metrics
+                    .add_delivery_duration(tracker.start.elapsed())
             }
             // These states already have the message, so there is nothing to be done.
             Status::Delivered | Status::SentVote | Status::ReachedQuorum => {
@@ -512,6 +535,9 @@ impl<C: RawComm> Worker<C> {
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
                         tracker.message.early = true;
+                        self.config
+                            .metrics
+                            .add_delivery_duration(tracker.start.elapsed());
                         debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                     }
                 }
@@ -543,13 +569,17 @@ impl<C: RawComm> Worker<C> {
             .or_default()
             .map
             .entry(digest)
-            .or_insert_with(|| Tracker {
-                ours: false,
-                start: Instant::now(),
-                retries: 0,
-                message: Item::none(),
-                votes: VoteAccumulator::new(self.config.committee.clone()),
-                status: Status::Init,
+            .or_insert_with(|| {
+                let now = Instant::now();
+                Tracker {
+                    ours: false,
+                    start: now,
+                    timestamp: now,
+                    retries: 0,
+                    message: Item::none(),
+                    votes: VoteAccumulator::new(self.config.committee.clone()),
+                    status: Status::Init,
+                }
             });
 
         debug!(
@@ -584,6 +614,9 @@ impl<C: RawComm> Worker<C> {
                                 .send(msg.clone())
                                 .await
                                 .map_err(|_| RbcError::Shutdown)?;
+                            self.config
+                                .metrics
+                                .add_delivery_duration(tracker.start.elapsed());
                             debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                         }
                         tracker.status = Status::Delivered
@@ -659,13 +692,17 @@ impl<C: RawComm> Worker<C> {
             .or_default()
             .map
             .entry(digest)
-            .or_insert_with(|| Tracker {
-                ours: false,
-                start: Instant::now(),
-                retries: 0,
-                message: Item::none(),
-                votes: VoteAccumulator::new(self.config.committee.clone()),
-                status: Status::Init,
+            .or_insert_with(|| {
+                let now = Instant::now();
+                Tracker {
+                    ours: false,
+                    start: now,
+                    timestamp: now,
+                    retries: 0,
+                    message: Item::none(),
+                    votes: VoteAccumulator::new(self.config.committee.clone()),
+                    status: Status::Init,
+                }
             });
 
         debug!(n = %self.label, d = %digest, s = %tracker.status, "certificate received");
@@ -692,6 +729,9 @@ impl<C: RawComm> Worker<C> {
                             .send(msg.clone())
                             .await
                             .map_err(|_| RbcError::Shutdown)?;
+                        self.config
+                            .metrics
+                            .add_delivery_duration(tracker.start.elapsed());
                         debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                     }
                     tracker.status = Status::Delivered
@@ -788,7 +828,7 @@ impl<C: RawComm> Worker<C> {
                         .get(tracker.retries)
                         .copied()
                         .unwrap_or(30);
-                    if tracker.start.elapsed() < Duration::from_secs(timeout) {
+                    if tracker.timestamp.elapsed() < Duration::from_secs(timeout) {
                         continue;
                     }
                     let messg = tracker
@@ -799,7 +839,7 @@ impl<C: RawComm> Worker<C> {
                     debug!(n = %self.label, d = %digest, m = %messg, "re-broadcasting message");
                     let proto = Protocol::Propose(Cow::Borrowed(messg));
                     let bytes = serialize(&proto).expect("idempotent serialization");
-                    tracker.start = now;
+                    tracker.timestamp = now;
                     tracker.retries = tracker.retries.saturating_add(1);
                     if let Err(e) = self.comm.broadcast(bytes).await {
                         debug!(n = %self.label, %e, "network error");
@@ -813,7 +853,7 @@ impl<C: RawComm> Worker<C> {
                             .get(tracker.retries)
                             .copied()
                             .unwrap_or(30);
-                        if tracker.start.elapsed() < Duration::from_millis(timeout) {
+                        if tracker.timestamp.elapsed() < Duration::from_millis(timeout) {
                             continue;
                         }
                         if tracker.ours {
@@ -826,7 +866,7 @@ impl<C: RawComm> Worker<C> {
                         let env = Envelope::signed(*digest, &self.config.keypair, false);
                         let vote = Protocol::Vote(env, false);
                         let bytes = serialize(&vote).expect("idempotent serialization");
-                        tracker.start = now;
+                        tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                         tracker.status = Status::SentVote
@@ -840,7 +880,7 @@ impl<C: RawComm> Worker<C> {
                         .get(tracker.retries)
                         .copied()
                         .unwrap_or(30);
-                    if tracker.start.elapsed() < Duration::from_millis(timeout) {
+                    if tracker.timestamp.elapsed() < Duration::from_millis(timeout) {
                         continue;
                     }
                     debug!(n = %self.label, d = %digest, "requesting message again");
@@ -848,7 +888,7 @@ impl<C: RawComm> Worker<C> {
                     let b = serialize(&m).expect("idempotent serialization");
                     let c = digest.commit();
                     let s = tracker.choose_voter(&c).expect("req-msg => voter");
-                    tracker.start = now;
+                    tracker.timestamp = now;
                     tracker.retries = tracker.retries.saturating_add(1);
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
                 }
@@ -860,7 +900,7 @@ impl<C: RawComm> Worker<C> {
                         .get(tracker.retries)
                         .copied()
                         .unwrap_or(30);
-                    if tracker.start.elapsed() < Duration::from_millis(timeout) {
+                    if tracker.timestamp.elapsed() < Duration::from_millis(timeout) {
                         continue;
                     }
                     if let Some(msg) = &tracker.message.item {
@@ -872,7 +912,7 @@ impl<C: RawComm> Worker<C> {
                         let e = Envelope::signed(c.clone(), &self.config.keypair, false);
                         let m = Protocol::Cert(e);
                         let b = serialize(&m).expect("idempotent serialization");
-                        tracker.start = now;
+                        tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         if !tracker.message.early {
@@ -880,6 +920,9 @@ impl<C: RawComm> Worker<C> {
                                 .send(msg.clone())
                                 .await
                                 .map_err(|_| RbcError::Shutdown)?;
+                            self.config
+                                .metrics
+                                .add_delivery_duration(tracker.start.elapsed());
                             debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                         }
                         tracker.status = Status::Delivered
@@ -890,7 +933,7 @@ impl<C: RawComm> Worker<C> {
                         let b = serialize(&m).expect("idempotent serialization");
                         let c = digest.commit();
                         let s = tracker.choose_voter(&c).expect("quorum => voter");
-                        tracker.start = now;
+                        tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.comm.send(s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg;
@@ -902,7 +945,7 @@ impl<C: RawComm> Worker<C> {
         // Go over outstanding ACKs and re-transmit:
         for (digest, acks) in self.buffer.values_mut().flat_map(|m| m.acks.iter_mut()) {
             let timeout = [3, 6, 10, 15, 30].get(acks.retries).copied().unwrap_or(30);
-            if acks.time.elapsed() < Duration::from_millis(timeout) {
+            if acks.timestamp.elapsed() < Duration::from_millis(timeout) {
                 continue;
             }
             for party in &acks.rem {
@@ -912,7 +955,7 @@ impl<C: RawComm> Worker<C> {
                 self.comm.send(*party, bytes).await.map_err(RbcError::net)?
             }
             acks.retries = acks.retries.saturating_add(1);
-            acks.time = now
+            acks.timestamp = now
         }
 
         Ok(())

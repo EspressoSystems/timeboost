@@ -81,9 +81,9 @@ impl TestNodeInstrument {
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
-            Vertex::new(round, tc, &self.kpair, true)
+            Vertex::empty(round, tc, &self.kpair, true)
         } else {
-            Vertex::new(
+            Vertex::empty(
                 round,
                 self.manager.gen_round_cert(round - 1),
                 &self.kpair,

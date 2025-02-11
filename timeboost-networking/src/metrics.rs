@@ -16,8 +16,8 @@ impl Default for NetworkMetrics {
 impl NetworkMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
-            latency: m.create_histogram("latency".to_string(), Some("ms".to_string())),
-            connections: m.create_gauge("connections".to_string(), None),
+            latency: m.create_histogram("latency", Some("ms")),
+            connections: m.create_gauge("connections", None),
         }
     }
 }

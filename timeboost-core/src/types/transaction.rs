@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -51,11 +50,11 @@ impl Address {
 pub struct TransactionData {
     nonce: Nonce,
     to: Address,
-    data: Bytes,
+    data: Vec<u8>,
 }
 
 impl TransactionData {
-    pub fn new(nonce: Nonce, to: Address, data: Bytes) -> Self {
+    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
         Self { nonce, to, data }
     }
 
@@ -108,7 +107,7 @@ impl Transaction {
         }
     }
 
-    pub fn data(&self) -> Option<&Bytes> {
+    pub fn data(&self) -> Option<&[u8]> {
         match self {
             // Priority transactions don't have a clean data representation.
             Self::Priority { .. } => None,
@@ -117,7 +116,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionsQueue {
     txns: Vec<Transaction>,
 }
