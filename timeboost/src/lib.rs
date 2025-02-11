@@ -7,6 +7,7 @@ use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
 use sailfish::{
     coordinator::Coordinator,
+    rbc::RbcMetrics,
     sailfish::{Sailfish, SailfishInitializerBuilder},
 };
 use sequencer::{
@@ -135,6 +136,8 @@ impl HasInitializer for Timeboost {
         let sf_metrics = SailfishMetrics::new(prom.as_ref());
         let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = Arc::new(TimeboostMetrics::new(prom.as_ref()));
+        let rbc_metrics = RbcMetrics::new(prom.as_ref());
+
         let (tb_app_tx, tb_app_rx) = channel(100);
         let (block_tx, block_rx) = channel(1000);
 
@@ -156,7 +159,7 @@ impl HasInitializer for Timeboost {
         .expect("failed to connect to remote nodes");
 
         let cfg = rbc::Config::new(initializer.keypair.clone(), committee.clone());
-        let rbc = Rbc::new(network, cfg);
+        let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
         let sailfish_initializer = SailfishInitializerBuilder::default()
             .id(initializer.id)

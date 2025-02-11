@@ -9,10 +9,13 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 mod digest;
+mod metrics;
 mod worker;
 
 use digest::Digest;
 use worker::{RbcError, Worker};
+
+pub use metrics::RbcMetrics;
 
 /// The message type exchanged during RBC.
 #[derive(Debug, Serialize, Deserialize)]
@@ -60,11 +63,12 @@ enum Command {
 }
 
 /// RBC configuration
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Config {
     keypair: Keypair,
     committee: Committee,
     early_delivery: bool,
+    metrics: RbcMetrics,
 }
 
 impl Config {
@@ -73,6 +77,7 @@ impl Config {
             keypair: k,
             committee: c,
             early_delivery: true,
+            metrics: RbcMetrics::default(),
         }
     }
 
@@ -80,6 +85,12 @@ impl Config {
     /// have been received in a round?
     pub fn with_early_delivery(mut self, val: bool) -> Self {
         self.early_delivery = val;
+        self
+    }
+
+    /// Set the RBC metrics value to use.
+    pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
+        self.metrics = m;
         self
     }
 }
