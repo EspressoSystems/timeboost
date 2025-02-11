@@ -1,10 +1,5 @@
 #!/bin/bash
 
-if ! command -v uv &> /dev/null; then
-  echo "Error: uv command not found. Install it with 'curl -LsSf https://astral.sh/uv/install.sh | sh'" >&2
-  exit 1
-fi
-
 just build_release --features until
 
 nodes=5
@@ -43,8 +38,6 @@ if [ -n "$nitro_node_url" ]; then
 fi
 
 
-uv run fake-contract/main.py "$nodes" --timeout 30 &
-
 pids=()
 SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
@@ -59,6 +52,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --until 300 \
         $nitro_node_url \
         --tps 20 \
+        --keyfile test-configs/local.json \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"

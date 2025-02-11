@@ -37,7 +37,3 @@ local-ip-address = "0.6.3"
 [[bin]]
 name = "timeboost"
 path = "src/binaries/builder.rs"
-
-[[bin]]
-name = "manager"
-path = "src/binaries/manager.rs"

@@ -42,7 +42,6 @@ use timeboost_networking::Network;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
-pub mod contracts;
 pub mod gas;
 mod mempool;
 pub mod metrics;

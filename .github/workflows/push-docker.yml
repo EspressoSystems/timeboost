@@ -20,11 +20,6 @@ jobs:
         registry: ghcr.io
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
     - name: Set tag
       id: set-tag
       run: |
@@ -35,30 +30,18 @@ jobs:
         else
           echo "TAG=$(date +%Y%m%d)" >> $GITHUB_ENV
         fi
+    # Need this to build containers in CI
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    # Build and push the images
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Build and push Timeboost Docker image
-      env:
-        TAG: ${{ env.TAG }}
-      run: |
-        docker buildx build \
-          --platform linux/amd64 \
-          --file ./docker/timeboost.Dockerfile \
-          --tag ghcr.io/espressosystems/timeboost:${TAG} \
-          --push .
-    - name: Build and push Contract Docker image
-      env:
-        TAG: ${{ env.TAG }}
-      run: |
-        docker buildx build \
-          --platform linux/amd64 \
-          --file ./docker/fake-contract.Dockerfile \
-          --tag ghcr.io/espressosystems/fake-contract:${TAG} \
-          --push .
-    - name: Build and push Tx Generator Docker image
-      env:
-        TAG: ${{ env.TAG }}
-      run: |
-        docker buildx build \
-          --platform linux/amd64 \
-          --file ./docker/tx-generator.Dockerfile \
-          --tag ghcr.io/espressosystems/tx-generator:${TAG} \
-          --push .
+      uses: docker/build-push-action@v6
+      with:
+        push: true
+        platforms: linux/amd64
+        file: ./docker/timeboost.Dockerfile
+        tags: ghcr.io/espressosystems/timeboost:${{ env.TAG }}

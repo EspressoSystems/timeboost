@@ -14,8 +14,6 @@ build_release *ARGS:
 
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
-  docker build . -f ./docker/tx-generator.Dockerfile -t tx-generator:latest
-  docker build . -f ./docker/fake-contract.Dockerfile -t fake-contract:latest
 
 ####################
 ###CHECK COMMANDS###
