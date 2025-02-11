@@ -11,6 +11,8 @@ use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polyn
 use ark_std::rand::rngs::OsRng;
 use ark_std::rand::Rng;
 use nimue::DuplexHash;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use sha2::{
     digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
     Digest,
@@ -21,8 +23,8 @@ use std::marker::PhantomData;
 use crate::{
     cp_proof::{CPParameters, ChaumPedersen, DleqTuple, Proof},
     traits::{
-        dleq_proof::DleqProofScheme,
-        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+        encryption::{ThresholdEncError, ThresholdEncScheme},
+        proof::DleqProofScheme,
     },
 };
 
@@ -44,24 +46,35 @@ where
 }
 
 #[derive(Clone)]
-pub struct Committee {
+pub struct Keyset {
     pub id: u32,
     pub size: u32,
+}
+impl Keyset {
+    pub fn new(id: u32, size: u32) -> Self {
+        Keyset { id, size }
+    }
 }
 
 pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
     _hash: PhantomData<H>,
-    pub committee: Committee,
+    pub keyset: Keyset,
     pub generator: C,
     pub cp_params: CPParameters<C, D>,
 }
-
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicKey<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
     pub pk: C,
+    #[serde_as(as = "crate::SerdeAs")]
     pub pk_comb: Vec<C>,
 }
-#[derive(Clone)]
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct KeyShare<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
     index: u32,
 }
@@ -96,7 +109,7 @@ where
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
-    type Committee = Committee;
+    type Committee = Keyset;
     type Parameters = Parameters<C, H, D>;
     type PublicKey = PublicKey<C>;
     type KeyShare = KeyShare<C>;
@@ -106,13 +119,13 @@ where
 
     fn setup<R: Rng>(
         rng: &mut R,
-        committee: Committee,
+        committee: Keyset,
     ) -> Result<Self::Parameters, ThresholdEncError> {
         let generator: C = C::rand(rng);
         Ok(Parameters {
             _hash: PhantomData::<H>,
             generator,
-            committee,
+            keyset: committee,
             cp_params: CPParameters::new(generator),
         })
     }
@@ -121,7 +134,7 @@ where
         rng: &mut R,
         pp: &Self::Parameters,
     ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = pp.committee.size as usize;
+        let committee_size = pp.keyset.size as usize;
         let degree = committee_size / CORR_RATIO;
         let gen = pp.generator;
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
@@ -234,7 +247,7 @@ where
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = pp.committee.size as usize;
+        let committee_size: usize = pp.keyset.size as usize;
         let threshold = committee_size / CORR_RATIO + 1;
 
         if dec_shares.len() < threshold {
@@ -357,8 +370,8 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
 mod test {
     use crate::{
         cp_proof::Proof,
-        sg_encryption::{Committee, DecShare, Plaintext, ShoupGennaro},
-        traits::threshold_enc::ThresholdEncScheme,
+        sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
+        traits::encryption::ThresholdEncScheme,
     };
 
     use ark_std::rand::seq::SliceRandom;
@@ -373,7 +386,7 @@ mod test {
     #[test]
     fn test_correctness() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 20, id: 0 };
+        let committee = Keyset { size: 20, id: 0 };
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes
@@ -404,7 +417,7 @@ mod test {
     #[test]
     fn test_not_enough_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset { size: 10, id: 0 };
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes
@@ -435,7 +448,7 @@ mod test {
     #[test]
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset { size: 10, id: 0 };
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes

@@ -10,7 +10,7 @@ use nimue::{
 };
 use std::marker::PhantomData;
 
-use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
+use crate::traits::proof::{DleqProofError, DleqProofScheme};
 
 /// Chaum-Pedersen proof of discrete log equality.
 ///
@@ -186,7 +186,7 @@ mod tests {
 
     use crate::{
         cp_proof::{ChaumPedersen, DleqTuple, Proof},
-        traits::dleq_proof::DleqProofScheme,
+        traits::proof::DleqProofScheme,
     };
 
     use super::CPParameters;

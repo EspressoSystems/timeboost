@@ -42,6 +42,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
 pub mod contracts;
+pub mod decryption;
 pub mod gas;
 mod mempool;
 pub mod metrics;

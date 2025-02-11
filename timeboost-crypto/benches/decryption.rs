@@ -7,8 +7,8 @@ use digest::{DynDigest, FixedOutputReset};
 use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
 use timeboost_crypto::{
-    sg_encryption::{Committee, Plaintext, ShoupGennaro},
-    traits::threshold_enc::ThresholdEncScheme,
+    sg_encryption::{Keyset, Plaintext, ShoupGennaro},
+    traits::encryption::ThresholdEncScheme,
 };
 
 const KB: usize = 1 << 10;
@@ -37,7 +37,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("encrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
             let (pk, _) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -54,7 +54,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("decrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
             let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -73,7 +73,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("combine"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
             let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());

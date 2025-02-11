@@ -1,4 +1,5 @@
 use anyhow::Result;
+use ark_std::rand::rngs::OsRng;
 use axum::http::StatusCode;
 use axum::{
     extract::State,
@@ -9,9 +10,11 @@ use clap::Parser;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use timeboost::contracts::initializer::{ReadyRequest, ReadyResponse, StartResponse};
+use timeboost::decryption::{DecryptionScheme, Keyset, TrustedKeygenResult};
+use timeboost_crypto::traits::encryption::ThresholdEncScheme;
 use timeboost_utils::types::logging;
 use tokio::signal;
-
+use tracing::info;
 type ReadyState = Arc<Mutex<Vec<ReadyResponse>>>;
 
 #[derive(Parser, Debug)]
@@ -27,7 +30,7 @@ struct Cli {
 /// Manager binary emulates the role of the Key Manager in Decentralized Timeboost
 ///
 /// 1. Gather public (signing) key information from nodes in the next keyset.
-/// 2. Produce a public (encryption) key and corresponding decryption keys (TODO).
+/// 2. Produce a public (encryption) key and corresponding decryption keys.
 /// 3. Update the Key Management contract with signing and decryption keys (TODO).
 /// 4. Serve peer information (out-of-band) on its API (TODO).
 #[tokio::main]
@@ -35,13 +38,19 @@ async fn main() -> Result<()> {
     logging::init_logging();
     let cli = Cli::parse();
     let state = ReadyState::default();
+
+    let keygen_result = trusted_keygen(cli.committee_size as usize);
+
     let app = Router::new()
         .route("/health", get(health))
         .route(
             "/start/",
             get(move |state| start(state, cli.committee_size)),
         )
-        .route("/ready/", post(ready))
+        .route(
+            "/ready/",
+            post(move |state, payload| ready(state, payload, keygen_result)),
+        )
         .with_state(state);
     let url = format!("0.0.0.0:{}", cli.port.unwrap_or(7200));
     let listener = tokio::net::TcpListener::bind(url).await?;
@@ -52,6 +61,15 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn trusted_keygen(committee_size: usize) -> TrustedKeygenResult {
+    // TODO: modify keyset id when introducing dynamic keysets
+    let keyset = Keyset::new(0, committee_size as u32);
+    let parameters = DecryptionScheme::setup(&mut OsRng, keyset).unwrap();
+    let (public_key, key_shares) = DecryptionScheme::keygen(&mut OsRng, &parameters).unwrap();
+    info!("encryption key: {:?}", public_key.pk);
+    TrustedKeygenResult::new(public_key, key_shares)
+}
+
 async fn health() -> StatusCode {
     StatusCode::OK
 }
@@ -59,11 +77,16 @@ async fn health() -> StatusCode {
 async fn ready(
     State(state): State<ReadyState>,
     Json(payload): Json<ReadyRequest>,
+    keygen_result: TrustedKeygenResult,
 ) -> (StatusCode, Json<ReadyResponse>) {
+    let node_id = payload.node_id;
     let entry = ReadyResponse {
-        node_id: payload.node_id,
+        node_id,
         ip_addr: payload.node_host,
         public_key: payload.public_key,
+        dec_share: keygen_result.key_shares
+            [usize::try_from(node_id).expect("unable to get node_id")]
+        .clone(),
     };
     let mut state = state.lock();
     state.push(entry.clone());

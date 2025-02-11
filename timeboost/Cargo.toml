@@ -12,20 +12,27 @@ alloy = { version = "0.11.0", features = ["full"] }
 alloy-chains = "0.1.58"
 anyhow = { workspace = true }
 axum = { workspace = true }
+ark-std = { workspace = true }
+ark-secp256k1 = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 committable = { workspace = true }
 dashmap = "6.1.0"
+digest = { workspace = true }
+nimue = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 multisig = { path = "../multisig" }
 reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
+rand = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }

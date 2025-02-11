@@ -8,6 +8,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::error;
 
+use crate::decryption::DecShare;
+
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The request payload for the registrant.
@@ -24,6 +26,7 @@ pub struct ReadyResponse {
     pub node_id: u64,
     pub public_key: PublicKey,
     pub ip_addr: SocketAddr,
+    pub dec_share: DecShare,
 }
 
 /// The response payload for the network startup.

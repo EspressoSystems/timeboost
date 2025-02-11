@@ -1,2 +1,2 @@
-pub mod dleq_proof;
-pub mod threshold_enc;
+pub mod encryption;
+pub mod proof;

@@ -31,7 +31,7 @@ ark-ed25519 = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
 ark-secp256k1 = "0.5"
-ark-serialize = "0.5"
+ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 async-lock = "3.3"
 async-trait = "0.1"
@@ -58,12 +58,13 @@ parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.13"
 quickcheck = "1.0.3"
-rand = "0.9"
+rand = { version = "0.9", features = ["os_rng"] }
 rayon = "1.10"
 reqwest = { version = "0.12" }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
+serde_with = "1.10.0"
 sha2 = { version = "0.10", default-features = false }
 snow = "0.9.6"
 thiserror = "2.0"
