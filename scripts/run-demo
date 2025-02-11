@@ -43,7 +43,8 @@ if [ -n "$nitro_node_url" ]; then
 fi
 
 
-uv run fake-contract/main.py "$nodes" --timeout 30 &
+RUST_LOG=INFO ./target/release/manager --committee-size ${nodes} &
+mpid=$!
 
 pids=()
 SECONDS=0
@@ -85,6 +86,9 @@ if [ -n "$nitro_node_url" ]; then
     echo "Attempting to kill nitro..."
     pkill -f nitro
 fi
+echo "Attempting to kill manager..."
+kill "${mpid}"
+
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
 
