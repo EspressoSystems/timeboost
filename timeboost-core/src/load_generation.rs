@@ -2,14 +2,13 @@ use crate::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, Transaction, TransactionData},
 };
-use bytes::Bytes;
-use rand::Rng;
+use rand::{Rng, RngCore};
 
 pub const SIZE_512_B: usize = 512;
 
 pub fn make_tx_data(n: usize, sz: usize) -> Vec<TransactionData> {
-    // Make sz bytes of random data
-    let data: Bytes = (0..sz).map(|_| rand::rng().random()).collect();
+    let mut data = vec![0; sz];
+    rand::rng().fill_bytes(&mut data);
 
     (0..n)
         .map(|i| {

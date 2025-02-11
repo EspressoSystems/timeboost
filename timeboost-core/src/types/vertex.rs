@@ -21,14 +21,17 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    pub fn new<N, E>(r: N, e: E, k: &Keypair, deterministic: bool) -> Self
+    pub fn new<N, E>(r: N, e: E, k: &Keypair, b: SailfishBlock, deterministic: bool) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
     {
         let r = r.into();
         let e = e.into();
+
         debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        debug_assert_eq!(r, b.round_number());
+
         Self {
             source: k.public_key(),
             round: Signed::new(r, k, deterministic),
@@ -36,8 +39,24 @@ impl Vertex {
             evidence: e,
             no_vote: None,
             committed: RoundNumber::genesis(),
-            block: SailfishBlock::empty(r, Timestamp::now(), 0),
+            block: b,
         }
+    }
+
+    /// Create a vertex with an empty block.
+    pub fn empty<N, E>(r: N, e: E, k: &Keypair, deterministic: bool) -> Self
+    where
+        N: Into<RoundNumber>,
+        E: Into<Evidence>,
+    {
+        let r = r.into();
+        Self::new(
+            r,
+            e,
+            k,
+            SailfishBlock::empty(r, Timestamp::now(), 0),
+            deterministic,
+        )
     }
 
     /// Is this vertex from the genesis round?
@@ -84,11 +103,6 @@ impl Vertex {
 
     pub fn block(&self) -> &SailfishBlock {
         &self.block
-    }
-
-    pub fn set_block(&mut self, b: SailfishBlock) -> &mut Self {
-        self.block = b;
-        self
     }
 
     pub fn set_committed_round<N: Into<RoundNumber>>(&mut self, n: N) -> &mut Self {
