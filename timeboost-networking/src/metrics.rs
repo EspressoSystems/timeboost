@@ -31,7 +31,7 @@ impl NetworkMetrics {
             received: m.create_counter("messages_received", None),
             connects: parties
                 .into_iter()
-                .map(|k| (k, m.create_counter(&format!("{k}"), None)))
+                .map(|k| (k, m.create_counter(&format!("peer_id_{k}"), None)))
                 .collect(),
         }
     }
