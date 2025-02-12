@@ -37,7 +37,8 @@ for (( i=0; i<$nodes; i++ )); do
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds
-        --watchdog-timeout $rounds)
+        --watchdog-timeout $rounds
+        --keyfile test-configs/local.json)
 
     if $late_start; then
         cmd+=(--late-start --late-start-node-id 0)
