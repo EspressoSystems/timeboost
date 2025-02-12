@@ -1,6 +1,7 @@
 mod error;
 mod frame;
 mod metrics;
+mod tcp;
 mod time;
 
 use std::future::pending;
@@ -16,7 +17,6 @@ use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use time::{Countdown, Timestamp};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::{sleep, timeout, Interval, MissedTickBehavior};
 use tokio::{
@@ -26,6 +26,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use frame::{Header, Type};
+use tcp::Stream;
 
 pub use error::{Empty, NetworkError};
 pub use metrics::NetworkMetrics;
@@ -90,7 +91,7 @@ impl Drop for Network {
 /// The `Server` is accepting connections and also establishing and
 /// maintaining connections with all parties.
 #[derive(Debug)]
-struct Server {
+struct Server<T: tcp::Listener> {
     /// This server's public key.
     key: PublicKey,
 
@@ -121,10 +122,10 @@ struct Server {
     active: HashMap<PublicKey, IoTask>,
 
     /// Tasks performing a handshake with a remote party.
-    handshake_tasks: JoinSet<Result<(TcpStream, TransportState)>>,
+    handshake_tasks: JoinSet<Result<(T::Stream, TransportState)>>,
 
     /// Tasks connecting to a remote party and performing a handshake.
-    connect_tasks: JoinSet<(TcpStream, TransportState)>,
+    connect_tasks: JoinSet<(T::Stream, TransportState)>,
 
     /// Active I/O tasks, exchanging data with remote parties.
     io_tasks: JoinSet<Result<()>>,
@@ -174,10 +175,37 @@ impl Network {
     where
         P: IntoIterator<Item = (PublicKey, SocketAddr)>,
     {
+        Self::generic_create::<tokio::net::TcpListener, _>(bind_to, kp, group, metrics).await
+    }
+
+    #[cfg(feature = "turmoil")]
+    pub async fn create_turmoil<P>(
+        bind_to: SocketAddr,
+        kp: Keypair,
+        group: P,
+        metrics: NetworkMetrics,
+    ) -> Result<Self>
+    where
+        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+    {
+        Self::generic_create::<turmoil::net::TcpListener, _>(bind_to, kp, group, metrics).await
+    }
+
+    async fn generic_create<T, P>(
+        bind_to: SocketAddr,
+        kp: Keypair,
+        group: P,
+        metrics: NetworkMetrics,
+    ) -> Result<Self>
+    where
+        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        T: tcp::Listener + Send + 'static,
+        T::Stream: Unpin + Send,
+    {
         let label = kp.public_key();
         let keys = x25519::Keypair::try_from(kp).expect("ed25519 -> x25519");
 
-        let listener = TcpListener::bind(bind_to).await?;
+        let listener = T::bind(bind_to).await?;
 
         debug!(n = %label, a = %listener.local_addr()?, "listening");
 
@@ -240,7 +268,11 @@ impl Network {
     }
 }
 
-impl Server {
+impl<T> Server<T>
+where
+    T: tcp::Listener + Send + 'static,
+    T::Stream: Unpin + Send,
+{
     /// Runs the main loop of this network node.
     ///
     /// This function:
@@ -248,7 +280,7 @@ impl Server {
     /// - Tries to connect to each remote peer in the committee.
     /// - Handles tasks that have been completed or terminated.
     /// - Processes new messages we received on the network.
-    async fn run(mut self, listener: TcpListener) -> Result<Empty> {
+    async fn run(mut self, listener: T) -> Result<Empty> {
         self.handshake_tasks.spawn(pending());
         self.io_tasks.spawn(pending());
 
@@ -452,7 +484,7 @@ impl Server {
     /// This function will create the responder handshake machine using its
     /// own private key and then spawn a task that awaits an initiator handshake
     /// to which it will respond.
-    fn spawn_handshake(&mut self, s: TcpStream) {
+    fn spawn_handshake(&mut self, s: T::Stream) {
         let h = Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
             .local_private_key(&self.keypair.secret_key().as_bytes())
             .build_responder()
@@ -467,7 +499,7 @@ impl Server {
     /// Spawns a new I/O task for handling communication with a remote peer over
     /// a TCP connection using the noise framework to create an authenticated
     /// secure link.
-    fn spawn_io(&mut self, k: PublicKey, s: TcpStream, t: TransportState) {
+    fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState) {
         debug!(node = %self.key, peer = %k, addr = ?s.peer_addr().ok(), "starting i/o tasks");
         let (to_remote, from_remote) = mpsc::channel(256);
         let (r, w) = s.into_split();
@@ -511,7 +543,7 @@ impl Server {
     }
 
     /// Check if the socket's peer IP address corresponds to the configured one.
-    fn is_valid_ip(&self, k: &PublicKey, s: &TcpStream) -> bool {
+    fn is_valid_ip(&self, k: &PublicKey, s: &T::Stream) -> bool {
         self.peers.get(k).map(|a| a.ip()) == s.peer_addr().ok().map(|a| a.ip())
     }
 }
@@ -520,12 +552,12 @@ impl Server {
 ///
 /// This function will only return, when a connection has been established and the handshake
 /// has been completed.
-async fn connect(
+async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
     addr: SocketAddr,
     metrics: Arc<NetworkMetrics>,
-) -> (TcpStream, TransportState) {
+) -> (T, TransportState) {
     use rand::prelude::*;
 
     let new_handshake_state = || {
@@ -545,7 +577,7 @@ async fn connect(
         sleep(Duration::from_millis(d)).await;
         debug!(node = %this.0, peer = %to.0, %addr, "connecting");
         metrics.add_connect_attempt(&to.0);
-        match timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
+        match timeout(CONNECT_TIMEOUT, T::connect(addr)).await {
             Ok(Ok(s)) => {
                 if let Err(err) = s.set_nodelay(true) {
                     error!(node = %this.0, %err, "failed to set NO_DELAY socket option");
@@ -577,10 +609,10 @@ async fn connect(
 }
 
 /// Perform a noise handshake as initiator with the remote party.
-async fn handshake(
+async fn handshake<T: tcp::Stream + Unpin>(
     mut hs: HandshakeState,
-    mut stream: TcpStream,
-) -> Result<(TcpStream, TransportState)> {
+    mut stream: T,
+) -> Result<(T, TransportState)> {
     let mut b = vec![0; MAX_NOISE_HANDSHAKE_SIZE];
     let n = hs.write_message(&[], &mut b)?;
     send_frame(&mut stream, Header::data(n as u16), &b[..n]).await?;
@@ -593,10 +625,10 @@ async fn handshake(
 }
 
 /// Perform a noise handshake as responder with a remote party.
-async fn on_handshake(
+async fn on_handshake<T: tcp::Stream + Unpin>(
     mut hs: HandshakeState,
-    mut stream: TcpStream,
-) -> Result<(TcpStream, TransportState)> {
+    mut stream: T,
+) -> Result<(T, TransportState)> {
     stream.set_nodelay(true)?;
     let (h, m) = recv_frame(&mut stream).await?;
     if !h.is_data() || h.is_partial() {
