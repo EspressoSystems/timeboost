@@ -250,8 +250,12 @@ impl Server {
                 continue;
             }
             let x = self.index.get_by_left(k).expect("known public key");
-            self.connect_tasks
-                .spawn(connect(self.keypair.clone(), *x, *a));
+            self.connect_tasks.spawn(connect(
+                (self.key, self.keypair.clone()),
+                (*k, *x),
+                *a,
+                self.metrics.clone(),
+            ));
         }
 
         loop {
@@ -419,8 +423,12 @@ impl Server {
     fn spawn_connect(&mut self, k: PublicKey) {
         let x = self.index.get_by_left(&k).expect("known public key");
         let a = self.peers.get(&k).expect("known address");
-        self.connect_tasks
-            .spawn(connect(self.keypair.clone(), *x, *a));
+        self.connect_tasks.spawn(connect(
+            (self.key, self.keypair.clone()),
+            (k, *x),
+            *a,
+            self.metrics.clone(),
+        ));
     }
 
     /// Spawns a new `Noise` responder handshake task using the IK pattern.
@@ -454,7 +462,9 @@ impl Server {
         let rh = self
             .io_tasks
             .spawn(recv_loop(k, r, t1, ibound, to_write, self.metrics.clone()));
-        let wh = self.io_tasks.spawn(send_loop(w, t2, from_remote));
+        let wh = self
+            .io_tasks
+            .spawn(send_loop(w, t2, from_remote, self.metrics.clone()));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -484,16 +494,17 @@ impl Server {
 /// This function will only return, when a connection has been established and the handshake
 /// has been completed.
 async fn connect(
-    this: x25519::Keypair,
-    to: x25519::PublicKey,
+    this: (PublicKey, x25519::Keypair),
+    to: (PublicKey, x25519::PublicKey),
     addr: SocketAddr,
+    metrics: Arc<NetworkMetrics>,
 ) -> (TcpStream, TransportState) {
     use rand::prelude::*;
 
     let new_handshake_state = || {
         Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
-            .local_private_key(this.secret_key().as_slice())
-            .remote_public_key(to.as_slice())
+            .local_private_key(this.1.secret_key().as_slice())
+            .remote_public_key(to.1.as_slice())
             .build_initiator()
             .expect("valid noise params yield valid handshake state")
     };
@@ -505,31 +516,32 @@ async fn connect(
         .chain(repeat(30_000))
     {
         sleep(Duration::from_millis(d)).await;
-        debug!(a = %addr, "connecting");
+        debug!(node = %this.0, peer = %to.0, %addr, "connecting");
+        metrics.add_connect_attempt(&to.0);
         match timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(s)) => {
                 if let Err(err) = s.set_nodelay(true) {
-                    error!(%err, "failed to set NO_DELAY socket option");
+                    error!(node = %this.0, %err, "failed to set NO_DELAY socket option");
                     continue;
                 }
                 match timeout(HANDSHAKE_TIMEOUT, handshake(new_handshake_state(), s)).await {
                     Ok(Ok(x)) => {
-                        debug!(%to, %addr, "connection established");
+                        debug!(node = %this.0, peer = %to.0, %addr, "connection established");
                         return x;
                     }
-                    Ok(Err(e)) => {
-                        warn!(%e, %addr, "handshake failure");
+                    Ok(Err(err)) => {
+                        warn!(node = %this.0, peer = %to.0, %addr, %err, "handshake failure");
                     }
                     Err(_) => {
-                        warn!(%addr, "handshake timeout");
+                        warn!(node = %this.0, peer = %to.0, %addr, "handshake timeout");
                     }
                 }
             }
-            Ok(Err(e)) => {
-                warn!(%e, %addr, "failed to connect");
+            Ok(Err(err)) => {
+                warn!(node = %this.0, peer = %to.0, %addr, %err, "failed to connect");
             }
             Err(_) => {
-                warn!(%addr, "connect timeout");
+                warn!(node = %this.0, peer = %to.0, %addr, "connect timeout");
             }
         }
     }
@@ -623,6 +635,7 @@ where
         if to_deliver.send((id, msg.freeze())).await.is_err() {
             break;
         }
+        metrics.received.add(1);
     }
     Ok(())
 }
@@ -635,6 +648,7 @@ async fn send_loop<W>(
     mut writer: W,
     state: Arc<Mutex<TransportState>>,
     mut rx: Receiver<Message>,
+    metrics: Arc<NetworkMetrics>,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -664,6 +678,7 @@ where
                     };
                     send_frame(&mut writer, h, &buf[..n]).await?
                 }
+                metrics.sent.add(1);
             }
         }
     }

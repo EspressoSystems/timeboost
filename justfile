@@ -63,12 +63,6 @@ run_integration_local *ARGS:
 run_demo *ARGS:
   ./scripts/run-demo {{ARGS}}
 
-run_tx_generator *ARGS:
-  cargo run --release --bin tx-generator {{ARGS}}
-
-run_fake_contract *ARGS:
-  cd fake-contract && uv run main.py {{ARGS}}
-
 run *ARGS:
   cargo run {{ARGS}}
 
