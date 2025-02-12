@@ -9,8 +9,7 @@ use sailfish::sailfish::SailfishInitializerBuilder;
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::metrics::NetworkMetrics;
-use timeboost_networking::Network;
+use timeboost_networking::{Network, NetworkMetrics};
 use tokio::task::JoinSet;
 
 pub struct BasicNetworkTest {

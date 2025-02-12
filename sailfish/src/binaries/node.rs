@@ -10,7 +10,7 @@ use multisig::PublicKey;
 use sailfish::metrics::SailfishMetrics;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::NodeId;
-use timeboost_networking::metrics::NetworkMetrics;
+use timeboost_networking::NetworkMetrics;
 use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::signal;
 use tracing::warn;

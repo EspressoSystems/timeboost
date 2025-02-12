@@ -21,7 +21,7 @@ use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use timeboost_networking::metrics::NetworkMetrics;
+use timeboost_networking::NetworkMetrics;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
