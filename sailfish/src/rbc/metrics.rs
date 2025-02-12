@@ -1,5 +1,5 @@
 use std::time::Duration;
-use timeboost_utils::traits::metrics::{Histogram, Metrics, NoMetrics};
+use timeboost_utils::traits::metrics::{Counter, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -8,6 +8,8 @@ pub struct RbcMetrics {
     pub delivery_duration: Box<dyn Histogram>,
     /// The time it takes for a message to be acknowledged by all parties.
     pub ack_duration: Box<dyn Histogram>,
+    /// The number of retries when sending messages or acks.
+    pub retries: Box<dyn Counter>,
 }
 
 impl Default for RbcMetrics {
@@ -21,6 +23,7 @@ impl RbcMetrics {
         Self {
             delivery_duration: m.create_histogram("delivery_duration", Some("seconds")),
             ack_duration: m.create_histogram("ack_duration", Some("seconds")),
+            retries: m.create_counter("counter", None),
         }
     }
 

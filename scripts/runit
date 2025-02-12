@@ -7,9 +7,14 @@ just build_release --features="until"
 nodes=5
 rounds=1000
 late_start=false
+keyfile="test-configs/local.json"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -k|--keyfile)
+            keyfile="$2"
+            shift 2
+            ;;
         -l|--late)
             late_start=true
             shift
@@ -30,8 +35,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-uv run fake-contract/main.py "$nodes" --timeout 10 &
-
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/timeboost
         --id $i
@@ -39,6 +42,7 @@ for (( i=0; i<$nodes; i++ )); do
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds
+        --keyfile $keyfile
         --watchdog-timeout $rounds)
 
     if $late_start; then
