@@ -1,0 +1,7 @@
+[
+    "node.timeboost.0.timeboost.espresso.private:8000",
+    "node.timeboost.1.timeboost.espresso.private:8000",
+    "node.timeboost.2.timeboost.espresso.private:8000",
+    "node.timeboost.3.timeboost.espresso.private:8000",
+    "node.timeboost.4.timeboost.espresso.private:8000"
+]
