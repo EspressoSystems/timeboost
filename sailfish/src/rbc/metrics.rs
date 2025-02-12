@@ -23,7 +23,7 @@ impl RbcMetrics {
         Self {
             delivery_duration: m.create_histogram("delivery_duration", Some("seconds")),
             ack_duration: m.create_histogram("ack_duration", Some("seconds")),
-            retries: m.create_counter("counter", None),
+            retries: m.create_counter("retries", None),
         }
     }
 
