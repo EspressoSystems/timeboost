@@ -133,9 +133,10 @@ impl HasInitializer for Timeboost {
     async fn initialize(initializer: Self::Initializer) -> Result<Self> {
         let prom = Arc::new(PrometheusMetrics::default());
         let sf_metrics = SailfishMetrics::new(prom.as_ref());
-        let net_metrics = NetworkMetrics::new(prom.as_ref());
         let tb_metrics = Arc::new(TimeboostMetrics::new(prom.as_ref()));
         let rbc_metrics = RbcMetrics::new(prom.as_ref());
+        let net_metrics =
+            NetworkMetrics::new(prom.as_ref(), initializer.peers.iter().map(|(k, _)| *k));
 
         let (tb_app_tx, tb_app_rx) = channel(100);
         let (block_tx, block_rx) = channel(1000);
