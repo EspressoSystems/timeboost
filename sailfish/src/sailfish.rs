@@ -9,8 +9,7 @@ use derive_builder::Builder;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::{traits::comm::Comm, types::NodeId};
-use timeboost_networking::metrics::NetworkMetrics;
-use timeboost_networking::Network;
+use timeboost_networking::{Network, NetworkMetrics};
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
