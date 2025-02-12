@@ -19,5 +19,3 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }
-tagged-base64 = { workspace = true, optional = true }
-

@@ -279,54 +279,6 @@ pub struct InvalidPublicKey(());
 #[error("invalid signature")]
 pub struct InvalidSignature(());
 
-#[cfg(feature = "tagged-base64")]
-impl TryFrom<&tagged_base64::TaggedBase64> for SecretKey {
-    type Error = InvalidSecretKey;
-
-    fn try_from(value: &tagged_base64::TaggedBase64) -> Result<Self, Self::Error> {
-        Self::try_from(&value.value()[..])
-    }
-}
-
-#[cfg(feature = "tagged-base64")]
-impl TryFrom<&tagged_base64::TaggedBase64> for PublicKey {
-    type Error = InvalidPublicKey;
-
-    fn try_from(value: &tagged_base64::TaggedBase64) -> Result<Self, Self::Error> {
-        Self::try_from(&value.value()[..])
-    }
-}
-
-#[cfg(feature = "tagged-base64")]
-impl TryFrom<&tagged_base64::TaggedBase64> for Signature {
-    type Error = InvalidSignature;
-
-    fn try_from(value: &tagged_base64::TaggedBase64) -> Result<Self, Self::Error> {
-        Self::try_from(&value.value()[..])
-    }
-}
-
-#[cfg(feature = "tagged-base64")]
-impl From<&SecretKey> for tagged_base64::TaggedBase64 {
-    fn from(value: &SecretKey) -> Self {
-        Self::new("SecretKey", value.as_slice()).expect("valid tag")
-    }
-}
-
-#[cfg(feature = "tagged-base64")]
-impl From<PublicKey> for tagged_base64::TaggedBase64 {
-    fn from(value: PublicKey) -> Self {
-        Self::new("PublicKey", value.as_slice()).expect("valid tag")
-    }
-}
-
-#[cfg(feature = "tagged-base64")]
-impl From<Signature> for tagged_base64::TaggedBase64 {
-    fn from(value: Signature) -> Self {
-        Self::new("Signature", value.as_slice()).expect("valid tag")
-    }
-}
-
 /// Taken from Table 6b of "Taming the many EdDSAs" (https://eprint.iacr.org/2020/1244.pdf)
 ///
 /// These are small order public keys that may lead to repudiation attacks
