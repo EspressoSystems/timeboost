@@ -27,8 +27,8 @@ impl NetworkMetrics {
         Self {
             latency: m.create_histogram("latency", Some("ms")),
             connections: m.create_gauge("connections", None),
-            sent: m.create_counter("messages sent", None),
-            received: m.create_counter("messages received", None),
+            sent: m.create_counter("messages_sent", None),
+            received: m.create_counter("messages_received", None),
             connects: parties
                 .into_iter()
                 .map(|k| (k, m.create_counter(&format!("{k}"), None)))
