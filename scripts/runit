@@ -30,8 +30,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-uv run fake-contract/main.py "$nodes" --timeout 10 &
-
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/timeboost
         --id $i
