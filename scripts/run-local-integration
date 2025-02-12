@@ -2,10 +2,6 @@
 
 set -euox pipefail
 
-if ! command -v uv &> /dev/null; then
-  echo "Error: uv command not found. Install it with 'curl -LsSf https://astral.sh/uv/install.sh | sh'" >&2
-  exit 1
-fi
 
 if [ "${1:-debug}" = "release" ]; then
     just build_release
@@ -16,8 +12,6 @@ fi
 docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
 timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
 
-uv run fake-contract/main.py --timeout 30 &
-
 for i in {0..4}; do
     echo "Starting node $i"
 
@@ -27,7 +21,8 @@ for i in {0..4}; do
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --nitro-node-url http://localhost:8547 \
-        --metrics-port $((9000 + i)) &
+        --metrics-port $((9000 + i)) \
+        --keyfile test-configs/local.json &
 done
 
 wait
