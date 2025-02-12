@@ -36,7 +36,7 @@ ENTRY_TEMPLATE = r"""
 """
 PROM_FILE = r"""
 global:
-  scrape_interval: 5s
+  scrape_interval: 1s
 
 scrape_configs:
 - job_name: status

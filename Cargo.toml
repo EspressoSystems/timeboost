@@ -8,7 +8,6 @@ members = [
     "timeboost-crypto",
     "timeboost-networking",
     "timeboost-utils",
-    "tx-generator",
 ]
 resolver = "2"
 

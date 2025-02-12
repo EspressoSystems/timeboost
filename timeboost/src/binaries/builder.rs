@@ -1,6 +1,12 @@
-use anyhow::Result;
-use std::net::{Ipv4Addr, SocketAddr};
-use timeboost::{contracts::committee::CommitteeContract, Timeboost, TimeboostInitializer};
+use anyhow::{ensure, Context, Result};
+use multisig::PublicKey;
+use serde_json::from_str;
+use std::fs;
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+};
+use timeboost::{Timeboost, TimeboostInitializer};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
 
@@ -8,7 +14,6 @@ use timeboost_core::types::NodeId;
 use timeboost_core::until::run_until;
 
 use clap::Parser;
-use local_ip_address::local_ip;
 use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::signal;
 use tracing::warn;
@@ -33,14 +38,6 @@ struct Cli {
     /// The port of the metrics server.
     #[clap(long)]
     metrics_port: u16,
-
-    /// The ip address of the startup coordinator
-    #[clap(long, default_value = "http://localhost:7200/")]
-    startup_url: reqwest::Url,
-
-    /// The broadcasted ip of this node, if unset, it defaults to [`local_ip`].
-    #[clap(long)]
-    broadcast_ip: Option<SocketAddr>,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -67,9 +64,29 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
+    /// NON PRODUCTION: A deterministic key generator is used for local/cloud testing. The format
+    /// will just be a list of addresses since keys are deterministic. So if we have 5 nodes like in
+    /// docker it'll just be
+    /// [
+    ///     "172.20.0.2",
+    ///     "172.20.0.3",
+    ///     "172.20.0.4",
+    ///     "172.20.0.5",
+    ///     "172.20.0.6"
+    /// ]
+    #[clap(long)]
+    keyfile: PathBuf,
+
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
+}
+
+pub fn read_test_config(path: PathBuf) -> Result<Vec<String>> {
+    ensure!(path.exists(), "File not found: {:?}", path);
+    let data = fs::read_to_string(&path).context("Failed to read file")?;
+    let vec: Vec<String> = from_str(&data).context("Failed to parse JSON")?;
+    Ok(vec)
 }
 
 #[tokio::main]
@@ -83,27 +100,31 @@ async fn main() -> Result<()> {
 
     let keypair = unsafe_zero_keypair(id);
 
-    // The self-reported host of this machine
-    let broadcast_ip = match cli.broadcast_ip {
-        Some(host) => host,
-        None => format!("{}:{}", local_ip()?, cli.port).parse()?,
-    };
+    let peer_hosts = read_test_config(cli.keyfile).expect("keyfile to exist and be valid");
 
-    // Make a new committee contract instance to read the committee config from.
-    let committee =
-        CommitteeContract::new(id, broadcast_ip, keypair.public_key(), cli.startup_url).await;
+    #[cfg(feature = "until")]
+    let peer_urls: Vec<reqwest::Url> = peer_hosts
+        .iter()
+        .map(|ph| format!("http://{}", ph).parse().unwrap())
+        .collect();
+
+    let peer_hosts_and_keys = peer_hosts
+        .into_iter()
+        .enumerate()
+        .map(|(peer_id, peer_host)| {
+            (
+                unsafe_zero_keypair(peer_id as u64).public_key(),
+                peer_host.parse().expect("valid socket addr"),
+            )
+        })
+        .collect::<Vec<(PublicKey, SocketAddr)>>();
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
     #[cfg(feature = "until")]
     let handle = {
-        // Get a host for the public key
-        let mut host = committee
-            .peers()
-            .iter()
-            .find(|b| b.0 == keypair.public_key())
-            .map(|b| format!("http://{}", b.1).parse::<reqwest::Url>().unwrap())
-            .expect("host to be present");
+        ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
+        let mut host = peer_urls[usize::from(cli.id)].clone();
 
         // HACK: The port is always 9000 + i in the local setup
         host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
@@ -116,11 +137,12 @@ async fn main() -> Result<()> {
         task_handle
     };
 
+    let committee_size = peer_hosts_and_keys.len();
     let init = TimeboostInitializer {
         id,
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
-        peers: committee.peers().into_iter().collect(),
+        peers: peer_hosts_and_keys,
         keypair,
         bind_address,
         nitro_url: cli.nitro_node_url,
@@ -138,7 +160,7 @@ async fn main() -> Result<()> {
                 Err(e) => anyhow::bail!("Error: {}", e),
             };
         },
-        _ = timeboost.go(committee.peers().len(), cli.tps) => {
+        _ = timeboost.go(committee_size, cli.tps) => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
@@ -147,7 +169,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "until"))]
     tokio::select! {
-        _ = timeboost.go(committee.peers().len(), cli.tps) => {
+        _ = timeboost.go(committee_size, cli.tps) => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {

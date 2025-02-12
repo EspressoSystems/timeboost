@@ -12,8 +12,8 @@ services:
         "8800",
         "--metrics-port",
         "9000",
-        "--startup-url",
-        "http://172.20.0.10:7200"
+        "--keyfile",
+        "docker.json",
       ]
     networks:
       timeboost:
@@ -40,8 +40,8 @@ services:
         "8801",
         "--metrics-port",
         "9001",
-        "--startup-url",
-        "http://172.20.0.10:7200"
+        "--keyfile",
+        "docker.json",
       ]
     networks:
       timeboost:
@@ -68,8 +68,8 @@ services:
         "8802",
         "--metrics-port",
         "9002",
-        "--startup-url",
-        "http://172.20.0.10:7200"
+        "--keyfile",
+        "docker.json",
       ]
     networks:
       timeboost:
@@ -96,8 +96,8 @@ services:
         "8803",
         "--metrics-port",
         "9003",
-        "--startup-url",
-        "http://172.20.0.10:7200"
+        "--keyfile",
+        "docker.json",
       ]
     networks:
       timeboost:
@@ -125,8 +125,8 @@ services:
         "8804",
         "--metrics-port",
         "9004",
-        "--startup-url",
-        "http://172.20.0.10:7200"
+        "--keyfile",
+        "docker.json",
       ]
     networks:
       timeboost:
@@ -140,27 +140,6 @@ services:
       - "8004:8004"
       - "8804:8804"
       - "9004:9004"
-  tx-generator:
-    image: tx-generator:latest
-    command: ["/app/tx-generator", "--startup-url", "http://172.20.0.10:7200"]
-    depends_on:
-      - node0
-      - node1
-      - node2
-      - node3
-      - node4
-    networks:
-      timeboost:
-        ipv4_address: 172.20.0.7
-    environment:
-      - RUST_LOG=info
-  fake-contract:
-    image: fake-contract:latest
-    command: ["uv", "run", "main.py"]
-    networks:
-      timeboost:
-        ipv4_address:
-          172.20.0.10
   nitro-dev:
     image: offchainlabs/nitro-node:v3.2.1-d81324d
     ports:

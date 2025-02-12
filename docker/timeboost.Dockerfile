@@ -19,6 +19,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
 # Copy binary and just
 COPY --from=builder /app/target/release/timeboost .
+COPY --from=builder /app/test-configs .
 
 # Set ownership of application files and make binary executable
 RUN chown -R timeboostuser:appgroup /app && chmod +x /app/timeboost
@@ -34,4 +35,4 @@ EXPOSE ${TIMEBOOST_RPC_PORT}
 EXPOSE ${TIMEBOOST_METRICS_PORT}
 
 # Run the timeboost binary
-CMD ["timeboost"]
+CMD ["/app/timeboost"]
