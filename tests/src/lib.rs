@@ -7,9 +7,6 @@ use timeboost_utils::unsafe_zero_keypair;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod rbc;
-
 pub struct Group {
     pub size: usize,
     pub peers: HashMap<PublicKey, SocketAddr>,
