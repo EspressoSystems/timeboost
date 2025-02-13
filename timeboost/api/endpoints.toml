@@ -8,7 +8,7 @@ PATH = ["/submit"]
 METHOD = "POST"
 DOC = "Submit transaction to Timeboost"
 
-[route.metrics]
-PATH = ["/metrics"]
+[route.healthz]
+PATH = ["/healthz"]
 METHOD = "GET"
-DOC = "Get metrics from Timeboost"
+DOC = "Healthcheck"

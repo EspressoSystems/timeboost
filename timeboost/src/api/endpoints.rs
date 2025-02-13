@@ -76,5 +76,7 @@ fn define_api<ApiVer: StaticVersionType + 'static>(
         .boxed()
     })?;
 
+    api.get("healthz", |_, _| async move { Ok("running") }.boxed())?;
+
     Ok(api)
 }
