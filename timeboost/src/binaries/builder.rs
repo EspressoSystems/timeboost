@@ -1,7 +1,7 @@
 use anyhow::{ensure, Context, Result};
-use multisig::PublicKey;
 use serde_json::from_str;
 use std::fs;
+use std::time::Duration;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
@@ -9,6 +9,8 @@ use std::{
 use timeboost::{Timeboost, TimeboostInitializer};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
+use tokio::net::lookup_host;
+use tokio::time::sleep;
 
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
@@ -89,6 +91,18 @@ pub fn read_test_config(path: PathBuf) -> Result<Vec<String>> {
     Ok(vec)
 }
 
+async fn resolve_with_retries(host: &str) -> SocketAddr {
+    loop {
+        if let Ok(mut addresses) = lookup_host(host).await {
+            if let Some(addr) = addresses.next() {
+                break addr;
+            }
+        }
+        sleep(Duration::from_secs(2)).await;
+        tracing::error!(%host, "looking up peer host");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::init_logging();
@@ -108,16 +122,19 @@ async fn main() -> Result<()> {
         .map(|ph| format!("http://{}", ph).parse().unwrap())
         .collect();
 
-    let peer_hosts_and_keys = peer_hosts
-        .into_iter()
-        .enumerate()
-        .map(|(peer_id, peer_host)| {
-            (
-                unsafe_zero_keypair(peer_id as u64).public_key(),
-                peer_host.parse().expect("valid socket addr"),
-            )
-        })
-        .collect::<Vec<(PublicKey, SocketAddr)>>();
+    let mut peer_hosts_and_keys = Vec::new();
+
+    for (peer_id, peer_host) in peer_hosts.into_iter().enumerate() {
+        let resolved_addr = match peer_host.parse::<SocketAddr>() {
+            Ok(addr) => addr, // It's already an IP address with a port
+            Err(_) => resolve_with_retries(&peer_host).await,
+        };
+
+        peer_hosts_and_keys.push((
+            unsafe_zero_keypair(peer_id as u64).public_key(),
+            resolved_addr,
+        ));
+    }
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
