@@ -1,6 +1,7 @@
 use std::error::Error;
 
-use crate::types::message::Message;
+use crate::types::cache::NoCache;
+use crate::types::message::{Evidence, Message};
 
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -90,11 +91,16 @@ impl RawComm for Network {
 pub struct CheckedComm<R> {
     net: R,
     committee: Committee,
+    cache: NoCache<Evidence>,
 }
 
 impl<R> CheckedComm<R> {
     pub fn new(net: R, c: Committee) -> Self {
-        Self { net, committee: c }
+        Self {
+            net,
+            committee: c,
+            cache: NoCache::new(),
+        }
     }
 }
 
@@ -125,7 +131,7 @@ impl<R: RawComm + Send> Comm for CheckedComm<R> {
     async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
         let (_, bytes) = self.net.receive().await.map_err(CommError::Net)?;
         let msg: Message<Unchecked> = bincode::deserialize(&bytes)?;
-        let Some(msg) = msg.validated(&self.committee) else {
+        let Some(msg) = msg.validated(&self.committee, &mut self.cache) else {
             return Err(CommError::Invalid);
         };
         Ok(msg)

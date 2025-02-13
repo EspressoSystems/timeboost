@@ -17,9 +17,10 @@ committable = { workspace = true }
 crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
-serde = { workspace = true }
+quick_cache = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-networking = { path = "../timeboost-networking" }
 timeboost-utils = { path = "../timeboost-utils" }

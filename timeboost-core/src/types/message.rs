@@ -9,6 +9,7 @@ use timeboost_utils::types::round_number::RoundNumber;
 use tracing::warn;
 
 use crate::types::block::sailfish::SailfishBlock;
+use crate::types::cache::Cache;
 use crate::types::vertex::Vertex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -54,7 +55,10 @@ impl<S> Message<S> {
 }
 
 impl Message<Unchecked> {
-    pub fn validated(self, c: &Committee) -> Option<Message<Validated>> {
+    pub fn validated<C>(self, c: &Committee, cache: &mut C) -> Option<Message<Validated>>
+    where
+        C: Cache<Evidence>,
+    {
         match self {
             Self::Vertex(e) => {
                 // Validate the envelope's signature:
@@ -90,10 +94,13 @@ impl Message<Unchecked> {
 
                 // The following checks do not apply to the genesis round:
                 if *e.data().round().data() != RoundNumber::genesis() {
-                    // Validate the signature of the previous round evidence:
-                    if !e.data().evidence().is_valid(c) {
-                        warn!(%signer, "invalid evidence in vertex");
-                        return None;
+                    if !cache.contains(e.data().evidence()) {
+                        // Validate the signature of the previous round evidence:
+                        if !e.data().evidence().is_valid(c) {
+                            warn!(%signer, "invalid evidence in vertex");
+                            return None;
+                        }
+                        cache.add(e.data().evidence().clone())
                     }
 
                     // The evidence should apply to the immediate predecessor of the

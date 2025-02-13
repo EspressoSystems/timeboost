@@ -10,7 +10,8 @@ use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use serde::Serialize;
 use timeboost_core::traits::comm::RawComm;
-use timeboost_core::types::message::Message;
+use timeboost_core::types::cache::QuickCache;
+use timeboost_core::types::message::{Evidence, Message};
 use timeboost_utils::types::round_number::RoundNumber;
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
@@ -41,6 +42,7 @@ pub struct Worker<C> {
     buffer: BTreeMap<RoundNumber, Messages>,
     /// A timer to retry messages.
     timer: Interval,
+    cache: QuickCache<[u8; 32], Vec<Evidence>>,
 }
 
 /// Messages of a single round.
@@ -171,6 +173,7 @@ impl fmt::Display for Status {
 
 impl<C: RawComm> Worker<C> {
     pub fn new(tx: Sender, rx: Receiver, cfg: Config, nt: C) -> Self {
+        let cache = QuickCache::new(cfg.committee.size().get() * 10);
         Self {
             label: cfg.keypair.public_key(),
             config: cfg,
@@ -184,6 +187,7 @@ impl<C: RawComm> Worker<C> {
                 i.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
                 i
             },
+            cache,
         }
     }
 
@@ -385,7 +389,7 @@ impl<C: RawComm> Worker<C> {
         msg: Message<Unchecked>,
         ack_required: bool,
     ) -> Result<()> {
-        let Some(msg) = msg.validated(&self.config.committee) else {
+        let Some(msg) = msg.validated(&self.config.committee, &mut self.cache) else {
             return Err(RbcError::InvalidMessage);
         };
         if !ack_required {
@@ -442,10 +446,6 @@ impl<C: RawComm> Worker<C> {
     /// An RBC message proposal has been received.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
     async fn on_propose(&mut self, msg: Message<Unchecked>) -> Result<()> {
-        let Some(msg) = msg.validated(&self.config.committee) else {
-            return Err(RbcError::InvalidMessage);
-        };
-
         let digest = Digest::new(&msg);
 
         let messages = self.buffer.entry(digest.round()).or_default();
@@ -462,6 +462,16 @@ impl<C: RawComm> Worker<C> {
                 status: Status::Init,
             }
         });
+
+        let msg = match &tracker.message.item {
+            None => {
+                let Some(msg) = msg.validated(&self.config.committee, &mut self.cache) else {
+                    return Err(RbcError::InvalidMessage);
+                };
+                msg
+            }
+            Some(msg) => msg.clone(),
+        };
 
         debug!(n = %self.label, d = %digest, s = %tracker.status, "proposal received");
 
