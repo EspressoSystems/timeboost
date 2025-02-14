@@ -3,10 +3,11 @@ use alloy_chains::NamedChain;
 use committable::{Commitment, Committable};
 use dashmap::DashMap;
 use futures::future::join_all;
+use parking_lot::RwLock;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use tokio::{
-    sync::{mpsc::Receiver, RwLock},
+    sync::mpsc::Receiver,
     task::JoinHandle,
     time::{interval, MissedTickBehavior},
 };
@@ -96,7 +97,7 @@ impl Mempool {
                                             warn!("failed to estimate for block: {}, error: {}", b.round_number(), e);
                                         }
                                     }
-                                    bundles.write().await.push_back(b);
+                                    bundles.write().push_back(b);
                                 }
                                 None => {
                                     warn!("block channel is closed");
@@ -105,11 +106,11 @@ impl Mempool {
                             }
                         },
                         _ = timer.tick() => {
-                            let res = join_all(bundles.read().await
-                                .iter()
-                                .take(DRAIN_BUNDLE_SIZE*2)
-                                .map(|b| estimator.estimate(b)))
-                                .await;
+                            let blocks: Vec<_> = {
+                                let b = bundles.read();
+                                b.iter().take(DRAIN_BUNDLE_SIZE * 2).cloned().collect()
+                            };
+                            let res = join_all(blocks.iter().map(|b| estimator.estimate(b))).await;
                             for r in res.into_iter() {
                                 if let Ok((c, est)) = r {
                                     estimates.insert(c, est);
@@ -126,8 +127,8 @@ impl Mempool {
         })
     }
 
-    pub async fn insert(&self, block: SailfishBlock) {
-        self.bundles.write().await.push_back(block);
+    pub fn insert(&self, block: SailfishBlock) {
+        self.bundles.write().push_back(block);
     }
 
     /// Run the estimator if we started timeboost with nitrol node url
@@ -136,8 +137,8 @@ impl Mempool {
     }
 
     /// Drains blocks from the mempool until we reach our gas limit for block
-    pub async fn drain_to_limit(&self) -> Vec<SailfishBlock> {
-        let bundles = self.next_bundles().await;
+    pub fn drain_to_limit(&self) -> Vec<SailfishBlock> {
+        let bundles = self.next_bundles();
         let mut accum = 0;
         let mut drained = Vec::new();
         let mut keep = Vec::new();
@@ -174,7 +175,7 @@ impl Mempool {
             keep.len()
         );
         for b in keep {
-            self.bundles.write().await.push_front(b);
+            self.bundles.write().push_front(b);
         }
 
         drained
@@ -182,8 +183,8 @@ impl Mempool {
 
     /// Drain the mempool `DRAIN_BUNDLE_SIZE`
     /// Some of these may get added back in `drain_to_limit` if gas price is too high
-    async fn next_bundles(&self) -> VecDeque<SailfishBlock> {
-        let mut bundles = self.bundles.write().await;
+    fn next_bundles(&self) -> VecDeque<SailfishBlock> {
+        let mut bundles = self.bundles.write();
         let limit = bundles.len().min(DRAIN_BUNDLE_SIZE);
         let mut next = bundles.split_off(limit);
         std::mem::swap(&mut next, &mut bundles);

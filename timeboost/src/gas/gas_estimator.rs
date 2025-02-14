@@ -11,7 +11,7 @@ use timeboost_core::types::block::sailfish::SailfishBlock;
 use tokio::time::timeout;
 use tracing::warn;
 
-const ESTIMATION_TIMEOUT_MS: u64 = 300;
+const ESTIMATION_TIMEOUT_MS: u64 = 500;
 
 pub struct GasEstimator<F: TxFiller<Ethereum>, P: Provider<Ethereum>> {
     provider: FillProvider<F, P, Ethereum>,

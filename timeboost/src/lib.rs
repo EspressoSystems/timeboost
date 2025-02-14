@@ -331,7 +331,7 @@ impl Timeboost {
                                                 // There we will estimate transactions and insert block into mempool
                                                 let _ = self.block_tx.send(block).await;
                                             } else {
-                                                self.mempool.insert(block).await;
+                                                self.mempool.insert(block);
                                             }
                                         }
                                     },
