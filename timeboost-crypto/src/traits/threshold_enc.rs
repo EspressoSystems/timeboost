@@ -16,6 +16,7 @@ pub trait ThresholdEncScheme {
         committee: Self::Committee,
     ) -> Result<Self::Parameters, ThresholdEncError>;
 
+    #[allow(clippy::type_complexity)]
     fn keygen<R: Rng>(
         rng: &mut R,
         pp: &Self::Parameters,

@@ -26,7 +26,6 @@ pub fn thres_enc_keygen(size: u32) -> (PublicKey<G>, CombKey<G>, Vec<KeyShare<G>
     // TODO: fix committee id when dynamic keysets
     let mut rng = ark_std::rand::thread_rng();
     let committee = Committee { id: 0, size };
-
     let parameters = ShoupGennaro::<G, H, D>::setup(&mut rng, committee).unwrap();
     ShoupGennaro::<G, H, D>::keygen(&mut rng, &parameters).unwrap()
 }
