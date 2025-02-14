@@ -5,6 +5,7 @@ pub trait ThresholdEncScheme {
     type Committee;
     type Parameters;
     type PublicKey;
+    type CombKey;
     type KeyShare;
     type Plaintext;
     type Ciphertext;
@@ -18,7 +19,7 @@ pub trait ThresholdEncScheme {
     fn keygen<R: Rng>(
         rng: &mut R,
         pp: &Self::Parameters,
-    ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError>;
+    ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
     fn encrypt<R: Rng>(
         rng: &mut R,
@@ -35,7 +36,7 @@ pub trait ThresholdEncScheme {
 
     fn combine(
         pp: &Self::Parameters,
-        pub_key: &Self::PublicKey,
+        comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError>;

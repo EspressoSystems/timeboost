@@ -39,7 +39,7 @@ where
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, _) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let (pk, _, _) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
@@ -56,7 +56,7 @@ where
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let (pk, _, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let ciphertext =
                 ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
@@ -75,7 +75,8 @@ where
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
             let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let (pk, comb_key, key_shares) =
+                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let ciphertext =
                 ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
@@ -89,7 +90,7 @@ where
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::combine(
                         &parameters,
-                        &pk,
+                        &comb_key,
                         dec_shares_refs.clone(),
                         &ciphertext,
                     )

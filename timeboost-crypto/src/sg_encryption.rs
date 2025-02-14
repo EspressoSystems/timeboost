@@ -11,6 +11,8 @@ use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polyn
 use ark_std::rand::rngs::OsRng;
 use ark_std::rand::Rng;
 use nimue::DuplexHash;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use sha2::{
     digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
     Digest,
@@ -55,13 +57,22 @@ pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
     pub generator: C,
     pub cp_params: CPParameters<C, D>,
 }
-
-pub struct PublicKey<C: CurveGroup> {
-    pub pk: C,
-    pub pk_comb: Vec<C>,
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombKey<C: CurveGroup> {
+    #[serde_as(as = "Vec<crate::SerdeAs>")]
+    pub key: Vec<C>,
 }
-#[derive(Clone)]
+#[serde_as]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublicKey<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
+    key: C,
+}
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyShare<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
     index: u32,
 }
@@ -99,6 +110,7 @@ where
     type Committee = Committee;
     type Parameters = Parameters<C, H, D>;
     type PublicKey = PublicKey<C>;
+    type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
     type Plaintext = Plaintext;
     type Ciphertext = Ciphertext<C>;
@@ -120,7 +132,7 @@ where
     fn keygen<R: Rng>(
         rng: &mut R,
         pp: &Self::Parameters,
-    ) -> Result<(Self::PublicKey, Vec<Self::KeyShare>), ThresholdEncError> {
+    ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = pp.committee.size as usize;
         let degree = committee_size / CORR_RATIO;
         let gen = pp.generator;
@@ -141,9 +153,9 @@ where
             .collect();
 
         let u_0 = gen * alpha_0;
-        let pub_key = PublicKey {
-            pk: u_0,
-            pk_comb: evals.iter().map(|alpha| gen * alpha).collect(),
+        let pub_key = PublicKey { key: u_0 };
+        let comb_key = CombKey {
+            key: evals.iter().map(|alpha| gen * alpha).collect(),
         };
 
         let key_shares = evals
@@ -155,7 +167,7 @@ where
             })
             .collect();
 
-        Ok((pub_key, key_shares))
+        Ok((pub_key, comb_key, key_shares))
     }
 
     fn encrypt<R: Rng>(
@@ -166,7 +178,7 @@ where
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
         let beta = C::ScalarField::rand(rng);
         let v = pp.generator * beta;
-        let w = pub_key.pk * beta;
+        let w = pub_key.key * beta;
 
         // hash to symmetric key `k`
         let key = hash_to_key::<C, H>(v, w).unwrap();
@@ -230,7 +242,7 @@ where
 
     fn combine(
         pp: &Self::Parameters,
-        pub_key: &Self::PublicKey,
+        comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
@@ -253,7 +265,7 @@ where
             ciphertext.nonce.as_slice(),
             ciphertext.e.clone(),
         );
-        let pk_comb = pub_key.pk_comb.clone();
+        let pk_comb = comb_key.key.clone();
 
         // Verify DLEQ proofs
         let valid_shares: Vec<_> = dec_shares
@@ -377,7 +389,7 @@ mod test {
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes
-        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
@@ -392,7 +404,7 @@ mod test {
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
         let check_message =
-            ShoupGennaro::<G, H, D>::combine(&parameters, &pk, dec_shares_refs, &ciphertext)
+            ShoupGennaro::<G, H, D>::combine(&parameters, &comb_key, dec_shares_refs, &ciphertext)
                 .unwrap();
         assert_eq!(
             message, check_message.0,
@@ -408,7 +420,7 @@ mod test {
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes
-        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
@@ -425,7 +437,7 @@ mod test {
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
         let result =
-            ShoupGennaro::<G, H, D>::combine(&parameters, &pk, dec_shares_refs, &ciphertext);
+            ShoupGennaro::<G, H, D>::combine(&parameters, &comb_key, dec_shares_refs, &ciphertext);
         assert!(
             result.is_err(),
             "Should fail to combine; insufficient amount of shares"
@@ -439,7 +451,7 @@ mod test {
 
         let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes
-        let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
@@ -456,7 +468,7 @@ mod test {
 
         let check_message = ShoupGennaro::<G, H, D>::combine(
             &parameters,
-            &pk,
+            &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
         )
@@ -478,7 +490,7 @@ mod test {
         });
         let result = ShoupGennaro::<G, H, D>::combine(
             &parameters,
-            &pk,
+            &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
         );
@@ -491,7 +503,7 @@ mod test {
         dec_shares[0] = first_correct_share;
         let result = ShoupGennaro::<G, H, D>::combine(
             &parameters,
-            &pk,
+            &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
         );
