@@ -79,6 +79,10 @@ struct Cli {
     #[clap(long)]
     keyfile: PathBuf,
 
+    /// NON PRODUCTION: Specify the number of nodes to run.
+    #[clap(long)]
+    nodes: Option<usize>,
+
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
@@ -114,7 +118,13 @@ async fn main() -> Result<()> {
 
     let keypair = unsafe_zero_keypair(id);
 
-    let peer_hosts = read_test_config(cli.keyfile).expect("keyfile to exist and be valid");
+    let peer_hosts = {
+        let mut hosts = read_test_config(cli.keyfile).expect("keyfile to exist and be valid");
+        if let Some(nodes) = cli.nodes {
+            hosts.truncate(nodes)
+        }
+        hosts
+    };
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = peer_hosts

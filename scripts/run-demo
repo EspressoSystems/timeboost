@@ -52,6 +52,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --until 300 \
         $nitro_node_url \
         --tps 20 \
+        --nodes $nodes \
         --keyfile test-configs/local.json \
         --watchdog-timeout 300"
     if $late_start; then
