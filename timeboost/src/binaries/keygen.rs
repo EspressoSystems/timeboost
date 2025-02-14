@@ -12,6 +12,7 @@ use clap::{Parser, ValueEnum};
 use alloy::hex;
 
 use rand::Rng;
+use timeboost_crypto::{sg_encryption::KeyShare, G};
 use timeboost_utils::{sig_keypair_from_seed_indexed, thres_enc_keygen, types::logging};
 use tracing::info_span;
 
@@ -72,8 +73,10 @@ impl Scheme {
                 for index in 0..num {
                     let span = info_span!("gen", index);
                     let _enter = span.enter();
-                    let key_share =
-                        bs58::encode(bincode::serialize(&key_shares.get(index))?).into_string();
+                    let key_share = bs58::encode(bincode::serialize::<KeyShare<G>>(
+                        &key_shares.get(index).unwrap(),
+                    )?)
+                    .into_string();
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options()
                         .write(true)

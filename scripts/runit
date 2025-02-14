@@ -50,13 +50,7 @@ done
 just build_release --features="until"
 
 for (( i=0; i<$nodes; i++ )); do
-    SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
-    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
-
-    cmd=(
-    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
-    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
-    target/release/timeboost
+    cmd=(target/release/timeboost
         --id $i
         --port $((8000 + $i))
         --rpc-port $((8800 + $i))

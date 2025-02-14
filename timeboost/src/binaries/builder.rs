@@ -155,8 +155,10 @@ async fn main() -> Result<()> {
 
     let keyset = read_keyset(cli.keyfile).expect("keyfile to exist and be valid");
     let dec_key = PrivDecInfo {
-        pubkey: keyset.dec_keyset.pubkey,
-        combkey: keyset.dec_keyset.combkey,
+        pubkey: bincode::deserialize(&bs58::decode(keyset.dec_keyset.pubkey).into_vec().unwrap())
+            .expect("deserialize enc key"),
+        combkey: bincode::deserialize(&bs58::decode(keyset.dec_keyset.combkey).into_vec().unwrap())
+            .expect("deserialize comb key"),
         privkey: dec_priv_key,
     };
 
@@ -259,7 +261,11 @@ fn private_keys(cli: &Cli) -> anyhow::Result<(SecretKey, KeyShare<G>)> {
         cli.private_decryption_key.clone(),
     ) {
         let sig_key = multisig::SecretKey::try_from(bs58::decode(sig_key).into_vec()?.as_slice())?;
-        let dec_key = bincode::deserialize(&bs58::decode(dec_key).into_vec()?)?;
+        let bytes = &bs58::decode(dec_key)
+            .into_vec()
+            .expect("unable to decode bs58");
+        let dec_key =
+            bincode::deserialize::<KeyShare<G>>(bytes).expect("unable to read bytes into keyshare");
 
         Ok((sig_key, dec_key))
     } else {

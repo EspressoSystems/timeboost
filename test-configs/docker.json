@@ -1,28 +1,26 @@
 {
-    "keyset": {
-        "backends": [
-            {
-                "url": "172.20.0.2:8000",
-                "pubkey": "727sfU2mamPWPbi6iSM4oA9qpaag16TD5mEfZqVLeDqv"
-            },
-            {
-                "url": "172.20.0.3:8001",
-                "pubkey": "FiJ9W3Ufk5Joapc7yfsZe6Se4XXAeDJDfdnAaq3LpjDZ"
-            },
-            {
-                "url": "172.20.0.4:8002",
-                "pubkey": "DCVbFxQwkSdvwDt5EDS9vxMBePSRVYSuVC8uSfT2EZzM"
-            },
-            {
-                "url": "172.20.0.5:8003",
-                "pubkey": "uaEk7yBh7gMaSmBZq9ZqWQCF1VmKXx3Fw6dBKWHh5PN"
-            },
-            {
-                "url": "172.20.0.6:8004",
-                "pubkey": "XffLzmK42j37nSR8kSyYFk41ur7ScpzZgZrrM8Zz8yp"
-            }
-        ]
-    },
+    "keyset": [
+        {
+            "url": "172.20.0.2:8000",
+            "pubkey": "727sfU2mamPWPbi6iSM4oA9qpaag16TD5mEfZqVLeDqv"
+        },
+        {
+            "url": "172.20.0.3:8001",
+            "pubkey": "FiJ9W3Ufk5Joapc7yfsZe6Se4XXAeDJDfdnAaq3LpjDZ"
+        },
+        {
+            "url": "172.20.0.4:8002",
+            "pubkey": "DCVbFxQwkSdvwDt5EDS9vxMBePSRVYSuVC8uSfT2EZzM"
+        },
+        {
+            "url": "172.20.0.5:8003",
+            "pubkey": "uaEk7yBh7gMaSmBZq9ZqWQCF1VmKXx3Fw6dBKWHh5PN"
+        },
+        {
+            "url": "172.20.0.6:8004",
+            "pubkey": "XffLzmK42j37nSR8kSyYFk41ur7ScpzZgZrrM8Zz8yp"
+        }
+    ],
     "dec_keyset": {
         "pubkey": "8Em59bmMevKFGriygxMAJ7Msu1A5GLJChYhTWh8mZb2MQLpuUJUaaxG7",
         "combkey": "iE1JC4ss2ucJWQAGJvXq1zDJqqduGaWCdcA19aPFAvzcVeEczBUXS3ZstoSoPriNfEGvoxgDYSSmbkwyLZK2VN9U3HhZM4xH8yU8veHdXZVXVWgw8KrvPsTU6prut1gJomVoZWB6p5yEDAAreiqUQ9yEaYMxAvppdRQ1dn1qPizMhvAUHmAhx6kfqXUeFH8eedNAccqV1CetRUzMXfitAmP4YctWYyBWPi69ptNtkfmk2qsuaeSGPu725JAAKJVvw18yvgGXWrDcrwgEiaXaibKExLqBbYS4gf"

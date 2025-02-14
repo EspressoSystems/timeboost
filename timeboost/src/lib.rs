@@ -65,8 +65,8 @@ pub struct PublicNodeInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct PublicDecInfo {
-    pub pubkey: EncKey<G>,
-    pub combkey: CombKey<G>,
+    pub pubkey: String,
+    pub combkey: String,
 }
 
 pub struct PrivDecInfo {

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euox pipefail
+set -a; source .env; set +a;
 
 
 if [ "${1:-debug}" = "release" ]; then

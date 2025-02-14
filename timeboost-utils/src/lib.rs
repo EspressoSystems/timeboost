@@ -19,9 +19,9 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
 }
 
 /// Trusted Keygen Outputs
-/// - One distinct private key (one group element) per node for partial decryption.
 /// - A single public key for clients to encrypt their transaction bundles.
-/// - The same combination key to all node for combining partial decrypted ciphertexts.
+/// - The same combination key to all nodes for combining partially decrypted ciphertexts.
+/// - One distinct private key share per node for partial decryption.
 pub fn thres_enc_keygen(size: u32) -> (PublicKey<G>, CombKey<G>, Vec<KeyShare<G>>) {
     // TODO: fix committee id when dynamic keysets
     let mut rng = ark_std::rand::thread_rng();
