@@ -7,9 +7,14 @@ just build_release --features="until"
 nodes=5
 rounds=1000
 late_start=false
+keyfile="test-configs/local.json"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -k|--keyfile)
+            keyfile="$2"
+            shift 2
+            ;;
         -l|--late)
             late_start=true
             shift
@@ -37,8 +42,8 @@ for (( i=0; i<$nodes; i++ )); do
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds
-        --watchdog-timeout $rounds
-        --keyfile test-configs/local.json)
+        --keyfile $keyfile
+        --watchdog-timeout $rounds)
 
     if $late_start; then
         cmd+=(--late-start --late-start-node-id 0)

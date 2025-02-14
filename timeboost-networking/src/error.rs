@@ -32,4 +32,7 @@ pub enum NetworkError {
 
     #[error("channel closed")]
     ChannelClosed,
+
+    #[error("timeout")]
+    Timeout,
 }

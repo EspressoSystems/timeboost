@@ -841,6 +841,7 @@ impl<C: RawComm> Worker<C> {
                     let bytes = serialize(&proto).expect("idempotent serialization");
                     tracker.timestamp = now;
                     tracker.retries = tracker.retries.saturating_add(1);
+                    self.config.metrics.retries.add(1);
                     if let Err(e) = self.comm.broadcast(bytes).await {
                         debug!(n = %self.label, %e, "network error");
                     }
@@ -868,6 +869,7 @@ impl<C: RawComm> Worker<C> {
                         let bytes = serialize(&vote).expect("idempotent serialization");
                         tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
+                        self.config.metrics.retries.add(1);
                         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                         tracker.status = Status::SentVote
                     }
@@ -890,6 +892,7 @@ impl<C: RawComm> Worker<C> {
                     let s = tracker.choose_voter(&c).expect("req-msg => voter");
                     tracker.timestamp = now;
                     tracker.retries = tracker.retries.saturating_add(1);
+                    self.config.metrics.retries.add(1);
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
                 }
                 // We have reached a quorum of votes. We may either already have the message,
@@ -914,6 +917,7 @@ impl<C: RawComm> Worker<C> {
                         let b = serialize(&m).expect("idempotent serialization");
                         tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
+                        self.config.metrics.retries.add(1);
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         if !tracker.message.early {
                             self.tx
@@ -935,6 +939,7 @@ impl<C: RawComm> Worker<C> {
                         let s = tracker.choose_voter(&c).expect("quorum => voter");
                         tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
+                        self.config.metrics.retries.add(1);
                         self.comm.send(s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg;
                     }
@@ -955,6 +960,7 @@ impl<C: RawComm> Worker<C> {
                 self.comm.send(*party, bytes).await.map_err(RbcError::net)?
             }
             acks.retries = acks.retries.saturating_add(1);
+            self.config.metrics.retries.add(1);
             acks.timestamp = now
         }
 

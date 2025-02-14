@@ -1,0 +1,7 @@
+[
+    "timeboost0.timeboost.espresso.private:8000",
+    "timeboost1.timeboost.espresso.private:8000",
+    "timeboost2.timeboost.espresso.private:8000",
+    "timeboost3.timeboost.espresso.private:8000",
+    "timeboost4.timeboost.espresso.private:8000"
+]
