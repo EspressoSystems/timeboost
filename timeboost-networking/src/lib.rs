@@ -259,7 +259,14 @@ impl Server {
         }
 
         loop {
-            trace!(node = %self.key, active = %self.active.len(), tasks = %self.task2key.len());
+            trace!(
+                node       = %self.key,
+                active     = %self.active.len(),
+                connects   = %self.connect_tasks.len(),
+                handshakes = %self.handshake_tasks.len().saturating_sub(1), // -1 for `pending()`
+                io_tasks   = %self.io_tasks.len().saturating_sub(1), // -1 for `pending()`
+                tasks_ids  = %self.task2key.len()
+            );
 
             tokio::select! {
                 // Accepted a new connection.
@@ -338,7 +345,9 @@ impl Server {
                         Err(e) => {
                             if e.is_cancelled() {
                                 // If one half completes we cancel the other, so there is
-                                // nothing else to do here.
+                                // nothing else to do here, except to remove the cancelled
+                                // tasks's ID.
+                                self.task2key.remove(&e.id());
                                 continue
                             }
                             // If the task has not been cancelled, it must have panicked.
