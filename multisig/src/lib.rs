@@ -91,6 +91,14 @@ impl Keypair {
         this
     }
 
+    pub fn from_private_key(priv_key: SecretKey) -> Self {
+        let pair = ed25519::KeyPair {
+            pk: priv_key.public_key().key,
+            sk: priv_key.key,
+        };
+        Self { pair }
+    }
+
     /// Returns ed25519 Public key.
     pub fn public_key(&self) -> PublicKey {
         PublicKey { key: self.pair.pk }

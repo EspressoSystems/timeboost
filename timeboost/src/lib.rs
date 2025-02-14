@@ -17,10 +17,13 @@ use sequencer::{
     },
     protocol::Sequencer,
 };
+use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use timeboost_crypto::sg_encryption::{CombKey, KeyShare, PublicKey as EncKey};
+use timeboost_crypto::G;
 use timeboost_networking::NetworkMetrics;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
@@ -48,6 +51,30 @@ pub mod metrics;
 mod producer;
 pub mod sequencer;
 
+#[derive(Debug, Deserialize)]
+pub struct Keyset {
+    pub keyset: Vec<PublicNodeInfo>,
+    pub dec_keyset: PublicDecInfo,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublicNodeInfo {
+    pub url: String,
+    pub pubkey: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublicDecInfo {
+    pub pubkey: EncKey<G>,
+    pub combkey: CombKey<G>,
+}
+
+pub struct PrivDecInfo {
+    pub pubkey: EncKey<G>,
+    pub combkey: CombKey<G>,
+    pub privkey: KeyShare<G>,
+}
+
 pub struct TimeboostInitializer {
     /// The ID of the node.
     pub id: NodeId,
@@ -63,6 +90,9 @@ pub struct TimeboostInitializer {
 
     /// The keypair for the node.
     pub keypair: Keypair,
+
+    /// The decryption key material for the node.
+    pub dec_key: crate::PrivDecInfo,
 
     /// The bind address for the node.
     pub bind_address: SocketAddr,

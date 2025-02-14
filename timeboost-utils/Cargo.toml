@@ -6,6 +6,7 @@ description.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+ark-std = { workspace = true }
 async-trait = { workspace = true }
 blake3 = { workspace = true }
 committable = { workspace = true }
@@ -16,4 +17,5 @@ parking_lot = { workspace = true }
 prometheus = { workspace = true }
 serde = { workspace = true }
 tide-disco = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
 tracing-subscriber = { workspace = true }

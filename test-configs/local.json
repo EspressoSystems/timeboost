@@ -1,22 +1,88 @@
-[
-    "127.0.0.1:8000",
-    "127.0.0.1:8001",
-    "127.0.0.1:8002",
-    "127.0.0.1:8003",
-    "127.0.0.1:8004",
-    "127.0.0.1:8005",
-    "127.0.0.1:8006",
-    "127.0.0.1:8007",
-    "127.0.0.1:8008",
-    "127.0.0.1:8009",
-    "127.0.0.1:8010",
-    "127.0.0.1:8011",
-    "127.0.0.1:8012",
-    "127.0.0.1:8013",
-    "127.0.0.1:8014",
-    "127.0.0.1:8015",
-    "127.0.0.1:8016",
-    "127.0.0.1:8017",
-    "127.0.0.1:8018",
-    "127.0.0.1:8019"
-]
+{
+    "keyset": [
+        {
+            "url": "127.0.0.1:8000",
+            "pubkey": "727sfU2mamPWPbi6iSM4oA9qpaag16TD5mEfZqVLeDqv"
+        },
+        {
+            "url": "127.0.0.1:8001",
+            "pubkey": "FiJ9W3Ufk5Joapc7yfsZe6Se4XXAeDJDfdnAaq3LpjDZ"
+        },
+        {
+            "url": "127.0.0.1:8002",
+            "pubkey": "DCVbFxQwkSdvwDt5EDS9vxMBePSRVYSuVC8uSfT2EZzM"
+        },
+        {
+            "url": "127.0.0.1:8003",
+            "pubkey": "uaEk7yBh7gMaSmBZq9ZqWQCF1VmKXx3Fw6dBKWHh5PN"
+        },
+        {
+            "url": "127.0.0.1:8004",
+            "pubkey": "XffLzmK42j37nSR8kSyYFk41ur7ScpzZgZrrM8Zz8yp"
+        },
+        {
+            "url": "127.0.0.1:8005",
+            "pubkey": "pubkey_for_8005"
+        },
+        {
+            "url": "127.0.0.1:8006",
+            "pubkey": "pubkey_for_8006"
+        },
+        {
+            "url": "127.0.0.1:8007",
+            "pubkey": "pubkey_for_8007"
+        },
+        {
+            "url": "127.0.0.1:8008",
+            "pubkey": "pubkey_for_8008"
+        },
+        {
+            "url": "127.0.0.1:8009",
+            "pubkey": "pubkey_for_8009"
+        },
+        {
+            "url": "127.0.0.1:8010",
+            "pubkey": "pubkey_for_8010"
+        },
+        {
+            "url": "127.0.0.1:8011",
+            "pubkey": "pubkey_for_8011"
+        },
+        {
+            "url": "127.0.0.1:8012",
+            "pubkey": "pubkey_for_8012"
+        },
+        {
+            "url": "127.0.0.1:8013",
+            "pubkey": "pubkey_for_8013"
+        },
+        {
+            "url": "127.0.0.1:8014",
+            "pubkey": "pubkey_for_8014"
+        },
+        {
+            "url": "127.0.0.1:8015",
+            "pubkey": "pubkey_for_8015"
+        },
+        {
+            "url": "127.0.0.1:8016",
+            "pubkey": "pubkey_for_8016"
+        },
+        {
+            "url": "127.0.0.1:8017",
+            "pubkey": "pubkey_for_8017"
+        },
+        {
+            "url": "127.0.0.1:8018",
+            "pubkey": "pubkey_for_8018"
+        },
+        {
+            "url": "127.0.0.1:8019",
+            "pubkey": "pubkey_for_8019"
+        }
+    ],
+    "dec_keyset": {
+        "pubkey": "8Em59bmMevKFGriygxMAJ7Msu1A5GLJChYhTWh8mZb2MQLpuUJUaaxG7",
+        "combkey": "iE1JC4ss2ucJWQAGJvXq1zDJqqduGaWCdcA19aPFAvzcVeEczBUXS3ZstoSoPriNfEGvoxgDYSSmbkwyLZK2VN9U3HhZM4xH8yU8veHdXZVXVWgw8KrvPsTU6prut1gJomVoZWB6p5yEDAAreiqUQ9yEaYMxAvppdRQ1dn1qPizMhvAUHmAhx6kfqXUeFH8eedNAccqV1CetRUzMXfitAmP4YctWYyBWPi69ptNtkfmk2qsuaeSGPu725JAAKJVvw18yvgGXWrDcrwgEiaXaibKExLqBbYS4gf"
+    }
+}
