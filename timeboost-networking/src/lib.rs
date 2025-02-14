@@ -14,7 +14,7 @@ use bytes::{Bytes, BytesMut};
 use multisig::{x25519, Keypair, PublicKey};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
-use time::Timestamp;
+use time::{Countdown, Timestamp};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -48,13 +48,20 @@ const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 /// Interval between ping protocol.
-const PING_INTERVAL: Duration = Duration::from_secs(30);
+const PING_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Max. allowed duration of a single TCP connect attempt.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Max. allowed duration of a Noise handshake.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Max. allowed duration to wait for a peer to answer.
+///
+/// This is started when we have sent a ping. Unless we receive
+/// some data back within this duration, the connection times
+/// out and is dropped.
+const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// `Network` is the API facade of this crate.
 #[derive(Debug)]
@@ -468,12 +475,23 @@ impl Server {
         let t2 = t1.clone();
         let ibound = self.ibound.clone();
         let to_write = to_remote.clone();
-        let rh = self
-            .io_tasks
-            .spawn(recv_loop(k, r, t1, ibound, to_write, self.metrics.clone()));
-        let wh = self
-            .io_tasks
-            .spawn(send_loop(w, t2, from_remote, self.metrics.clone()));
+        let countdown = Countdown::new();
+        let rh = self.io_tasks.spawn(recv_loop(
+            k,
+            r,
+            t1,
+            ibound,
+            to_write,
+            self.metrics.clone(),
+            countdown.clone(),
+        ));
+        let wh = self.io_tasks.spawn(send_loop(
+            w,
+            t2,
+            from_remote,
+            self.metrics.clone(),
+            countdown,
+        ));
         assert!(self.task2key.insert(rh.id(), k).is_none());
         assert!(self.task2key.insert(wh.id(), k).is_none());
         let io = IoTask {
@@ -601,6 +619,7 @@ async fn recv_loop<R>(
     to_deliver: Sender<(PublicKey, Bytes)>,
     to_writer: Sender<Message>,
     metrics: Arc<NetworkMetrics>,
+    mut countdown: Countdown,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -609,36 +628,48 @@ where
     loop {
         let mut msg = BytesMut::new();
         loop {
-            let (h, f) = recv_frame(&mut reader).await?;
-
-            match h.frame_type() {
-                Ok(Type::Ping) => {
-                    // Received ping message; sending pong to writer
-                    let n = state.lock().read_message(&f, &mut buf)?;
-                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
-                        let _ = to_writer.try_send(Message::Pong(ping));
-                    }
-                }
-                Ok(Type::Pong) => {
-                    // Received pong message; measure elapsed time
-                    let n = state.lock().read_message(&f, &mut buf)?;
-                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
-                        if let Some(delay) = Timestamp::now().diff(ping) {
-                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+            tokio::select! {
+                val = recv_frame(&mut reader) => {
+                    countdown.stop();
+                    match val {
+                        Ok((h, f)) => {
+                            match h.frame_type() {
+                                Ok(Type::Ping) => {
+                                    // Received ping message; sending pong to writer
+                                    let n = state.lock().read_message(&f, &mut buf)?;
+                                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                                        let _ = to_writer.try_send(Message::Pong(ping));
+                                    }
+                                }
+                                Ok(Type::Pong) => {
+                                    // Received pong message; measure elapsed time
+                                    let n = state.lock().read_message(&f, &mut buf)?;
+                                    if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
+                                        if let Some(delay) = Timestamp::now().diff(ping) {
+                                            metrics.latency.add_point(delay.as_secs_f64() * 1000.0);
+                                        }
+                                    }
+                                }
+                                Ok(Type::Data) => {
+                                    let n = state.lock().read_message(&f, &mut buf)?;
+                                    msg.extend_from_slice(&buf[..n]);
+                                    if !h.is_partial() {
+                                        break;
+                                    }
+                                    if msg.len() > MAX_TOTAL_SIZE {
+                                        return Err(NetworkError::MessageTooLarge);
+                                    }
+                                }
+                                Err(t) => return Err(NetworkError::UnknownFrameType(t)),
+                            }
                         }
+                        Err(e) => return Err(e)
                     }
+                },
+                () = &mut countdown => {
+                    warn!(node = %id, "timeout waiting for peer");
+                    return Err(NetworkError::Timeout)
                 }
-                Ok(Type::Data) => {
-                    let n = state.lock().read_message(&f, &mut buf)?;
-                    msg.extend_from_slice(&buf[..n]);
-                    if !h.is_partial() {
-                        break;
-                    }
-                    if msg.len() > MAX_TOTAL_SIZE {
-                        return Err(NetworkError::MessageTooLarge);
-                    }
-                }
-                Err(t) => return Err(NetworkError::UnknownFrameType(t)),
             }
         }
         if to_deliver.send((id, msg.freeze())).await.is_err() {
@@ -658,6 +689,7 @@ async fn send_loop<W>(
     state: Arc<Mutex<TransportState>>,
     mut rx: Receiver<Message>,
     metrics: Arc<NetworkMetrics>,
+    countdown: Countdown,
 ) -> Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -670,6 +702,7 @@ where
                 let n = state.lock().write_message(&ping.to_bytes()[..], &mut buf)?;
                 let h = Header::ping(n as u16);
                 send_frame(&mut writer, h, &buf[..n]).await?;
+                countdown.start(REPLY_TIMEOUT)
             }
             Message::Pong(pong) => {
                 let n = state.lock().write_message(&pong.to_bytes()[..], &mut buf)?;
