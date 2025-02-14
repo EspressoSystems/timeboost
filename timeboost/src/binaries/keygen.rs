@@ -74,7 +74,7 @@ impl Scheme {
                     let span = info_span!("gen", index);
                     let _enter = span.enter();
                     let key_share = bs58::encode(bincode::serialize::<KeyShare<G>>(
-                        &key_shares.get(index).unwrap(),
+                        key_shares.get(index).unwrap(),
                     )?)
                     .into_string();
                     let path = out.join(format!("{index}.env"));
