@@ -23,6 +23,12 @@ fn fresh_keys(n: usize) -> (Vec<Keypair>, Committee) {
     (ks, co)
 }
 
+fn ports(n: usize) -> Vec<u16> {
+    (0..n)
+        .map(|_| portpicker::pick_unused_port().expect("open port"))
+        .collect()
+}
+
 /// Adds a sailfish host to the simulation.
 ///
 /// The host consists of `Coordinator` and `Consensus` with
@@ -33,17 +39,18 @@ fn mk_host<T, const N: usize>(
     sim: &mut turmoil::Sim,
     k: Keypair,
     c: Committee,
-    addr: &'static str,
+    addr: String,
     peers: Peers<N>,
 ) where
     T: Into<NodeId>,
 {
     let id = id.into();
     sim.host(name, move || {
+        let addr = addr.clone();
         let k = k.clone();
         let c = c.clone();
         async move {
-            let comm = TurmoilComm::create(addr, peers).await?;
+            let comm = TurmoilComm::create(addr.as_str(), peers).await?;
             let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
             let cons = Consensus::new(id, k, c);
             let mut coor = Coordinator::new(id, rbc, cons);
@@ -72,22 +79,24 @@ fn small_committee() {
         .simulation_duration(Duration::from_secs(500))
         .build();
 
-    let (ks, committee) = fresh_keys(3);
+    let n = 3;
+    let (ks, committee) = fresh_keys(n);
+    let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", 9000)),
-        (ks[1].public_key(), ("B", 9001)),
-        (ks[2].public_key(), ("C", 9002)),
+        (ks[0].public_key(), ("A", ports[0])),
+        (ks[1].public_key(), ("B", ports[1])),
+        (ks[2].public_key(), ("C", ports[2])),
     ];
 
-    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
-    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), "0.0.0.0:9001", peers);
+    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), format!("0.0.0.0:{}", ports[0]), peers);
+    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), format!("0.0.0.0:{}", ports[1]), peers);
 
     let k = ks[2].clone();
     let c = committee.clone();
 
     sim.client("C", async move {
-        let comm = TurmoilComm::create("0.0.0.0:9002", peers).await?;
+        let comm = TurmoilComm::create(format!("0.0.0.0:{}", ports[2]), peers).await?;
         let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(3, k, c);
         let mut coor = Coordinator::new(3, rbc, cons);
@@ -123,26 +132,28 @@ fn medium_committee() {
         .simulation_duration(Duration::from_secs(500))
         .build();
 
-    let (ks, committee) = fresh_keys(5);
+    let n = 5;
+    let (ks, committee) = fresh_keys(n);
+    let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", 9000)),
-        (ks[1].public_key(), ("B", 9001)),
-        (ks[2].public_key(), ("C", 9002)),
-        (ks[3].public_key(), ("D", 9003)),
-        (ks[4].public_key(), ("E", 9004)),
+        (ks[0].public_key(), ("A", ports[0])),
+        (ks[1].public_key(), ("B", ports[1])),
+        (ks[2].public_key(), ("C", ports[2])),
+        (ks[3].public_key(), ("D", ports[3])),
+        (ks[4].public_key(), ("E", ports[4])),
     ];
 
-    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
-    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), "0.0.0.0:9001", peers);
-    mk_host(3, "C", &mut sim, ks[2].clone(), committee.clone(), "0.0.0.0:9002", peers);
-    mk_host(4, "D", &mut sim, ks[3].clone(), committee.clone(), "0.0.0.0:9003", peers);
+    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), format!("0.0.0.0:{}", ports[0]), peers);
+    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), format!("0.0.0.0:{}", ports[1]), peers);
+    mk_host(3, "C", &mut sim, ks[2].clone(), committee.clone(), format!("0.0.0.0:{}", ports[2]), peers);
+    mk_host(4, "D", &mut sim, ks[3].clone(), committee.clone(), format!("0.0.0.0:{}", ports[3]), peers);
 
     let k = ks[4].clone();
     let c = committee.clone();
 
     sim.client("E", async move {
-        let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
+        let comm = TurmoilComm::create(format!("0.0.0.0:{}", ports[4]), peers).await?;
         let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
@@ -174,26 +185,28 @@ fn medium_committee_partition_network() {
         .simulation_duration(Duration::from_secs(500))
         .build();
 
-    let (ks, committee) = fresh_keys(5);
+    let n = 5;
+    let (ks, committee) = fresh_keys(n);
+    let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", 9000)),
-        (ks[1].public_key(), ("B", 9001)),
-        (ks[2].public_key(), ("C", 9002)),
-        (ks[3].public_key(), ("D", 9003)),
-        (ks[4].public_key(), ("E", 9004)),
+        (ks[0].public_key(), ("A", ports[0])),
+        (ks[1].public_key(), ("B", ports[1])),
+        (ks[2].public_key(), ("C", ports[2])),
+        (ks[3].public_key(), ("D", ports[3])),
+        (ks[4].public_key(), ("E", ports[4])),
     ];
 
-    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), "0.0.0.0:9000", peers);
-    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), "0.0.0.0:9001", peers);
-    mk_host(3, "C", &mut sim, ks[2].clone(), committee.clone(), "0.0.0.0:9002", peers);
-    mk_host(4, "D", &mut sim, ks[3].clone(), committee.clone(), "0.0.0.0:9003", peers);
+    mk_host(1, "A", &mut sim, ks[0].clone(), committee.clone(), format!("0.0.0.0:{}", ports[0]), peers);
+    mk_host(2, "B", &mut sim, ks[1].clone(), committee.clone(), format!("0.0.0.0:{}", ports[1]), peers);
+    mk_host(3, "C", &mut sim, ks[2].clone(), committee.clone(), format!("0.0.0.0:{}", ports[2]), peers);
+    mk_host(4, "D", &mut sim, ks[3].clone(), committee.clone(), format!("0.0.0.0:{}", ports[3]), peers);
 
     let k = ks[4].clone();
     let c = committee.clone();
 
     sim.client("E", async move {
-        let comm = TurmoilComm::create("0.0.0.0:9004", peers).await?;
+        let comm = TurmoilComm::create(format!("0.0.0.0:{}", ports[4]), peers).await?;
         let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
         let cons = Consensus::new(5, k, c);
         let mut coor = Coordinator::new(5, rbc, cons);
