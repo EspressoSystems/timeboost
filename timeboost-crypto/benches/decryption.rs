@@ -7,8 +7,7 @@ use digest::{DynDigest, FixedOutputReset};
 use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
 use timeboost_crypto::{
-    sg_encryption::{Committee, Plaintext, ShoupGennaro},
-    traits::threshold_enc::ThresholdEncScheme,
+    sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme, Committee, Plaintext,
 };
 
 const KB: usize = 1 << 10;

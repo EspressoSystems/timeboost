@@ -59,7 +59,7 @@ for i in $(seq 0 $((nodes - 1))); do
         $nitro_node_url \
         --tps 20 \
         --nodes $nodes \
-        --keyfile test-configs/local.json \
+        --keyset-file test-configs/local.json \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"

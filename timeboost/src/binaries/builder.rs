@@ -1,21 +1,18 @@
-use anyhow::{bail, ensure, Context, Result};
-use multisig::{Keypair, PublicKey, SecretKey};
-use serde_json::from_str;
-use std::collections::HashMap;
-use std::fs;
-use std::time::Duration;
+use anyhow::Result;
+use multisig::{Keypair, PublicKey};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use timeboost::{Keyset, PrivDecInfo, Timeboost, TimeboostInitializer};
+use timeboost::{
+    keyset::{build_decryption_material, private_keys, read_keyset, resolve_with_retries},
+    Timeboost, TimeboostInitializer,
+};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
-use timeboost_crypto::sg_encryption::KeyShare;
-use timeboost_crypto::G;
-use tokio::net::lookup_host;
-use tokio::time::sleep;
 
+#[cfg(feature = "until")]
+use anyhow::ensure;
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
@@ -28,7 +25,7 @@ use tracing::warn;
 const LATE_START_DELAY_SECS: u64 = 15;
 
 #[derive(Parser, Debug)]
-struct Cli {
+pub struct Cli {
     /// The ID of the node to build.
     #[clap(long)]
     id: u16,
@@ -70,18 +67,11 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
-    /// NON PRODUCTION: A deterministic key generator is used for local/cloud testing. The format
-    /// will just be a list of addresses since keys are deterministic. So if we have 5 nodes like in
-    /// docker it'll just be
-    /// [
-    ///     "172.20.0.2",
-    ///     "172.20.0.3",
-    ///     "172.20.0.4",
-    ///     "172.20.0.5",
-    ///     "172.20.0.6"
-    /// ]
+    /// Path to file containing the keyset description.
+    ///
+    /// The file contains backend urls and public key material.
     #[clap(long)]
-    keyfile: PathBuf,
+    keyset_file: PathBuf,
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
@@ -94,8 +84,8 @@ struct Cli {
     /// * TIMEBOOST_DECRYPTION_PRIVATE_KEY
     ///
     /// Appropriate key files can be generated with the `keygen` utility program.
-    #[clap(long, name = "KEY_FILE", env = "ESPRESSO_SEQUENCER_KEY_FILE")]
-    pub key_file: Option<PathBuf>,
+    #[clap(long, name = "KEY_FILE", env = "TIMEBOOST_KEY_FILE")]
+    key_file: Option<PathBuf>,
 
     /// Private signature key.
     ///
@@ -105,7 +95,7 @@ struct Cli {
         env = "TIMEBOOST_SIGNATURE_PRIVATE_KEY",
         conflicts_with = "KEY_FILE"
     )]
-    pub private_signature_key: Option<String>,
+    private_signature_key: Option<String>,
 
     /// Private decryption key.
     ///
@@ -115,30 +105,11 @@ struct Cli {
         env = "TIMEBOOST_DECRYPTION_PRIVATE_KEY",
         conflicts_with = "KEY_FILE"
     )]
-    pub private_decryption_key: Option<String>,
+    private_decryption_key: Option<String>,
 
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
-}
-
-fn read_keyset(path: PathBuf) -> Result<Keyset> {
-    ensure!(path.exists(), "File not found: {:?}", path);
-    let data = fs::read_to_string(&path).context("Failed to read file")?;
-    let keyset: Keyset = from_str(&data).context("Failed to parse JSON")?;
-    Ok(keyset)
-}
-
-async fn resolve_with_retries(host: &str) -> SocketAddr {
-    loop {
-        if let Ok(mut addresses) = lookup_host(host).await {
-            if let Some(addr) = addresses.next() {
-                break addr;
-            }
-        }
-        sleep(Duration::from_secs(2)).await;
-        tracing::error!(%host, "looking up peer host");
-    }
 }
 
 #[tokio::main]
@@ -149,18 +120,21 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let num = cli.nodes.unwrap_or(5);
 
+    // TODO: Remove Node Id from Timeboost
     let id = NodeId::from(cli.id as u64);
-    let (sig_priv_key, dec_priv_key) = private_keys(&cli)?;
-    let keypair = Keypair::from_private_key(sig_priv_key);
 
-    let keyset = read_keyset(cli.keyfile).expect("keyfile to exist and be valid");
-    let dec_key = PrivDecInfo {
-        pubkey: bincode::deserialize(&bs58::decode(keyset.dec_keyset.pubkey).into_vec().unwrap())
-            .expect("deserialize enc key"),
-        combkey: bincode::deserialize(&bs58::decode(keyset.dec_keyset.combkey).into_vec().unwrap())
-            .expect("deserialize comb key"),
-        privkey: dec_priv_key,
-    };
+    // Read private key material
+    let (sig_key, dec_key) = private_keys(
+        cli.key_file,
+        cli.private_signature_key,
+        cli.private_decryption_key,
+    )?;
+
+    // Read public key material
+    let keyset = read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+
+    let keypair = Keypair::from_private_key(sig_key);
+    let deckey = build_decryption_material(dec_key, keyset.clone()).expect("parse keyset");
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -177,9 +151,8 @@ async fn main() -> Result<()> {
             Ok(addr) => addr, // It's already an IP address with a port
             Err(_) => resolve_with_retries(&peer_host.url).await,
         };
-        let pub_key: PublicKey =
-            PublicKey::try_from(&peer_host.pubkey).expect("derive public key from bytes");
-        peer_hosts_and_keys.push((pub_key, resolved_addr));
+        let pubkey = PublicKey::try_from(&peer_host.pubkey).expect("derive public signature key");
+        peer_hosts_and_keys.push((pubkey, resolved_addr));
     }
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
@@ -206,7 +179,7 @@ async fn main() -> Result<()> {
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
-        dec_key,
+        deckey,
         bind_address,
         nitro_url: cli.nitro_node_url,
     };
@@ -240,35 +213,4 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn private_keys(cli: &Cli) -> anyhow::Result<(SecretKey, KeyShare<G>)> {
-    if let Some(path) = &cli.key_file {
-        let vars = dotenvy::from_path_iter(path)?.collect::<Result<HashMap<_, _>, _>>()?;
-        let sig_key_string = vars
-            .get("TIMEBOOST_PRIVATE_SIGNATURE_KEY")
-            .context("key file missing ESPRESSO_SEQUENCER_PRIVATE_STAKING_KEY")?;
-        let sig_key =
-            multisig::SecretKey::try_from(bs58::decode(sig_key_string).into_vec()?.as_slice())?;
-        let dec_key_string = vars
-            .get("ESPRESSO_SEQUENCER_PRIVATE_STATE_KEY")
-            .context("key file missing ESPRESSO_SEQUENCER_PRIVATE_STATE_KEY")?;
-        let dec_key: KeyShare<G> = bincode::deserialize(&bs58::decode(dec_key_string).into_vec()?)?;
-
-        Ok((sig_key, dec_key))
-    } else if let (Some(sig_key), Some(dec_key)) = (
-        cli.private_signature_key.clone(),
-        cli.private_decryption_key.clone(),
-    ) {
-        let sig_key = multisig::SecretKey::try_from(bs58::decode(sig_key).into_vec()?.as_slice())?;
-        let bytes = &bs58::decode(dec_key)
-            .into_vec()
-            .expect("unable to decode bs58");
-        let dec_key =
-            bincode::deserialize::<KeyShare<G>>(bytes).expect("unable to read bytes into keyshare");
-
-        Ok((sig_key, dec_key))
-    } else {
-        bail!("neither key file nor full set of private keys was provided")
-    }
 }

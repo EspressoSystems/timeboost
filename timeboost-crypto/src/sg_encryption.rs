@@ -10,22 +10,16 @@ use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use ark_std::rand::rngs::OsRng;
 use ark_std::rand::Rng;
+use digest::{generic_array::GenericArray, Digest, DynDigest, FixedOutputReset};
 use nimue::DuplexHash;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-use sha2::{
-    digest::{generic_array::GenericArray, DynDigest, FixedOutputReset},
-    Digest,
-};
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
 use crate::{
-    cp_proof::{CPParameters, ChaumPedersen, DleqTuple, Proof},
-    traits::{
-        dleq_proof::DleqProofScheme,
-        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
-    },
+    cp_proof::{CPParameters, ChaumPedersen, DleqTuple},
+    traits::dleq_proof::DleqProofScheme,
+    traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+    Ciphertext, CombKey, Committee, DecShare, KeyShare, Parameters, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -43,61 +37,6 @@ where
     _group: PhantomData<C>,
     _hash: PhantomData<H>,
     _duplex: PhantomData<D>,
-}
-
-#[derive(Clone)]
-pub struct Committee {
-    pub id: u32,
-    pub size: u32,
-}
-
-pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
-    _hash: PhantomData<H>,
-    pub committee: Committee,
-    pub generator: C,
-    pub cp_params: CPParameters<C, D>,
-}
-#[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CombKey<C: CurveGroup> {
-    #[serde_as(as = "Vec<crate::SerdeAs>")]
-    pub key: Vec<C>,
-}
-#[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublicKey<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
-    key: C,
-}
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KeyShare<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
-    share: C::ScalarField,
-    index: u32,
-}
-
-#[derive(Debug)]
-pub struct Plaintext(Vec<u8>);
-
-impl Plaintext {
-    pub fn new(data: Vec<u8>) -> Self {
-        Plaintext(data)
-    }
-}
-
-pub struct Ciphertext<C: CurveGroup> {
-    v: C,
-    w_hat: C,
-    e: Vec<u8>,
-    nonce: Vec<u8>,
-    pi: Proof,
-}
-#[derive(Clone)]
-pub struct DecShare<C: CurveGroup> {
-    w: C,
-    index: u32,
-    phi: Proof,
 }
 
 impl<C, H, D> ThresholdEncScheme for ShoupGennaro<C, H, D>

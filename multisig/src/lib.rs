@@ -179,6 +179,17 @@ impl TryFrom<&[u8]> for SecretKey {
     }
 }
 
+impl TryFrom<&String> for SecretKey {
+    type Error = InvalidSecretKey;
+
+    fn try_from(s: &String) -> Result<Self, Self::Error> {
+        bs58::decode(s)
+            .into_vec()
+            .map_err(|_| InvalidSecretKey(()))
+            .and_then(|v| SecretKey::try_from(v.as_slice()))
+    }
+}
+
 impl TryFrom<&[u8]> for PublicKey {
     type Error = InvalidPublicKey;
 
@@ -188,6 +199,17 @@ impl TryFrom<&[u8]> for PublicKey {
             return Err(InvalidPublicKey(()));
         }
         Ok(Self { key: k })
+    }
+}
+
+impl TryFrom<&String> for PublicKey {
+    type Error = InvalidPublicKey;
+
+    fn try_from(s: &String) -> Result<Self, Self::Error> {
+        bs58::decode(s)
+            .into_vec()
+            .map_err(|_| InvalidPublicKey(()))
+            .and_then(|v| PublicKey::try_from(v.as_slice()))
     }
 }
 

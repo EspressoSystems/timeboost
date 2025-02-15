@@ -1,8 +1,3 @@
-use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
-use timeboost_crypto::{
-    sg_encryption::{CombKey, Committee, KeyShare, PublicKey, ShoupGennaro},
-    D, G, H,
-};
 pub mod traits;
 pub mod types;
 
@@ -16,16 +11,4 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
     hasher.update(&index.to_le_bytes());
     let new_seed = *hasher.finalize().as_bytes();
     multisig::Keypair::from_seed(new_seed)
-}
-
-/// Trusted Keygen Outputs
-/// - A single public key for clients to encrypt their transaction bundles.
-/// - The same combination key to all nodes for combining partially decrypted ciphertexts.
-/// - One distinct private key share per node for partial decryption.
-pub fn thres_enc_keygen(size: u32) -> (PublicKey<G>, CombKey<G>, Vec<KeyShare<G>>) {
-    // TODO: fix committee id when dynamic keysets
-    let mut rng = ark_std::rand::thread_rng();
-    let committee = Committee { id: 0, size };
-    let parameters = ShoupGennaro::<G, H, D>::setup(&mut rng, committee).unwrap();
-    ShoupGennaro::<G, H, D>::keygen(&mut rng, &parameters).unwrap()
 }

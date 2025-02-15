@@ -1,20 +1,17 @@
 //! Utility program to generate keypairs
 
+use alloy::hex;
+use anyhow::anyhow;
+use clap::{Parser, ValueEnum};
+use rand::Rng;
 use std::{
     fs::{self, File},
     io::Write,
     path::PathBuf,
 };
-
-use anyhow::anyhow;
-use clap::{Parser, ValueEnum};
-
-use alloy::hex;
-
-use rand::Rng;
-use timeboost_crypto::{sg_encryption::KeyShare, G};
-use timeboost_utils::{sig_keypair_from_seed_indexed, thres_enc_keygen, types::logging};
-use tracing::info_span;
+use timeboost_crypto::DecryptionScheme;
+use timeboost_utils::{sig_keypair_from_seed_indexed, types::logging};
+use tracing::{debug, info, info_span};
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum Scheme {
@@ -35,7 +32,7 @@ impl Scheme {
                 for index in 0..num {
                     let span = info_span!("gen", index);
                     let _enter = span.enter();
-                    tracing::info!("generating new signature key pair");
+                    debug!("generating new signature key pair");
 
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options()
@@ -48,7 +45,7 @@ impl Scheme {
                     let pub_key_bytes = keypair.public_key().as_bytes();
                     writeln!(
                         env_file,
-                        "TIMEBOOST_PUBLIC_SIGNATURE_KEY={}",
+                        "TIMEBOOST_SIGNATURE_KEY={}",
                         bs58::encode(&pub_key_bytes).into_string()
                     )?;
                     writeln!(
@@ -56,27 +53,27 @@ impl Scheme {
                         "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}",
                         bs58::encode(&priv_key_bytes).into_string()
                     )?;
-                    tracing::info!(
+                    info!(
                         "generated signature keypair: {}",
                         bs58::encode(&pub_key_bytes).into_string()
                     );
-
-                    tracing::info!("private signature key written to {}", path.display());
+                    debug!("private signature key written to {}", path.display());
                 }
             }
             Self::Decryption => {
-                let (pub_key, comb_key, key_shares) = thres_enc_keygen(num as u32);
-                tracing::info!("generating new threshold encryption keyset");
-                let pub_key = bs58::encode(bincode::serialize(&pub_key)?).into_string();
-                let comb_key = bs58::encode(bincode::serialize(&comb_key)?).into_string();
+                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num as u32);
+                debug!("generating new threshold encryption keyset");
+                let pub_key = bs58::encode(pub_key.as_bytes()).into_string();
+                let comb_key = bs58::encode(comb_key.as_bytes()).into_string();
 
                 for index in 0..num {
                     let span = info_span!("gen", index);
                     let _enter = span.enter();
-                    let key_share = bs58::encode(bincode::serialize::<KeyShare<G>>(
-                        key_shares.get(index).unwrap(),
-                    )?)
-                    .into_string();
+
+                    let key_share = key_shares
+                        .get(index)
+                        .expect("key share should exist in generated material");
+                    let key_share = bs58::encode(key_share.as_bytes()).into_string();
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options()
                         .write(true)
@@ -86,12 +83,13 @@ impl Scheme {
                     writeln!(env_file, "TIMEBOOST_ENCRYPTION_KEY={}", pub_key)?;
                     writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
                     writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
-                    tracing::info!("private decryption key written to {}", path.display());
+                    debug!("private decryption key written to {}", path.display());
                 }
-                tracing::info!(
-                    "generated threshold encryption keyset with encryption key: {} and comb_key: {}",
-                    pub_key,
-                    comb_key
+                info!(
+                    "generated threshold encryption keyset with:\n 
+                    TIMEBOOST_ENCRYPTION_KEY={}\n
+                    TIMEBOOST_COMBINATION_KEY={}",
+                    pub_key, comb_key
                 );
             }
         }
@@ -99,7 +97,7 @@ impl Scheme {
     }
 }
 
-/// Utility program to generate keys
+/// Utility program for generating keys
 ///
 /// With no options, this program generates the keys needed to run a single Timeboost node.
 /// Options can be given to control the number or type of keys generated.
@@ -114,12 +112,12 @@ struct Cli {
     #[clap(long, short = 's', value_parser = parse_seed)]
     seed: Option<[u8; 32]>,
 
-    /// Signature scheme to generate.
+    /// Cryptographic scheme subject to key generation.
     ///
-    /// Sequencer nodes require both a BLS key (called the staking key) and a Schnorr key (called
-    /// the state key). By default, this program generates these keys in pairs, to make it easy to
-    /// configure sequencer nodes, but this option can be specified to generate keys for only one of
-    /// the signature schemes.
+    /// Timeboost nodes require both a signature key and a decryption key.
+    /// By default, this program generates these keys in pairs, to make it easy to
+    /// configure Timeboost nodes, but this option can be specified to generate keys
+    /// for only one of the schemes.
     #[clap(long, default_value = "all")]
     scheme: Scheme,
 
@@ -131,7 +129,7 @@ struct Cli {
 
     /// Write private keys to .env files under DIR.
     ///
-    /// DIR must be a directory. If it does not exist, one will be created. Private key setups will
+    /// DIR must be a directory. If it does not exist, one will be created. Private keys will
     /// be written to files immediately under DIR, with names like 0.env, 1.env, etc. for 0 through
     /// N - 1. The random seed used to generate the keys will also be written to a file in DIR
     /// called .seed.
@@ -158,17 +156,16 @@ fn main() -> anyhow::Result<()> {
     logging::init_logging();
 
     let cli = Cli::parse();
-    tracing::debug!(
+    debug!(
         "Generating {} keypairs for {:?} scheme",
-        cli.num,
-        cli.scheme
+        cli.num, cli.scheme
     );
 
     // Create output dir if necessary.
     fs::create_dir_all(&cli.out)?;
 
     let seed = cli.seed.unwrap_or_else(|| {
-        tracing::debug!("No seed provided, generating a random seed");
+        debug!("No seed provided, generating a random seed");
         gen_default_seed()
     });
     let out = cli.out;
