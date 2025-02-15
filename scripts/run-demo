@@ -13,8 +13,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -n|--nodes)
-            if ! [[ $2 =~ ^[4-9]+$ ]]; then
-                echo "Error: The number of nodes must be a positive integer greater than 4."
+            if !((4 < $2 && $2 <= 20)); then
+                echo "Error: The number of nodes must be greater than 4 and no more than 20"
                 exit 1
             fi
             nodes="$2"
