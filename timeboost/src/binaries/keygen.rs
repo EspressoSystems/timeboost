@@ -35,11 +35,7 @@ impl Scheme {
                     debug!("generating new signature key pair");
 
                     let path = out.join(format!("{index}.env"));
-                    let mut env_file = File::options()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(&path)?;
+                    let mut env_file = File::options().append(true).create(true).open(&path)?;
                     let keypair = sig_keypair_from_seed_indexed(seed, index as u64);
                     let priv_key_bytes = keypair.secret_key().as_bytes();
                     let pub_key_bytes = keypair.public_key().as_bytes();
@@ -75,19 +71,15 @@ impl Scheme {
                         .expect("key share should exist in generated material");
                     let key_share = bs58::encode(key_share.as_bytes()).into_string();
                     let path = out.join(format!("{index}.env"));
-                    let mut env_file = File::options()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(&path)?;
+                    let mut env_file = File::options().append(true).create(true).open(&path)?;
+                    writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
                     writeln!(env_file, "TIMEBOOST_ENCRYPTION_KEY={}", pub_key)?;
                     writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
-                    writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
                     debug!("private decryption key written to {}", path.display());
                 }
                 info!(
-                    "generated threshold encryption keyset with:\n 
-                    TIMEBOOST_ENCRYPTION_KEY={}\n
+                    "generated threshold encryption keyset with:
+                    TIMEBOOST_ENCRYPTION_KEY={}
                     TIMEBOOST_COMBINATION_KEY={}",
                     pub_key, comb_key
                 );
@@ -169,7 +161,12 @@ fn main() -> anyhow::Result<()> {
         gen_default_seed()
     });
     let out = cli.out;
-    fs::write(out.join(".seed"), hex::encode(seed))?;
+    let mut env_file = File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(out.join(".seed"))?;
+    writeln!(env_file, "TIMEBOOST_SIGNATURE_SEED={}", hex::encode(seed))?;
     let _ = cli.scheme.gen(seed, cli.num, &out);
 
     Ok(())
