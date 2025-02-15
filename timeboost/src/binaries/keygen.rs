@@ -11,7 +11,7 @@ use std::{
 };
 use timeboost_crypto::DecryptionScheme;
 use timeboost_utils::{sig_keypair_from_seed_indexed, types::logging};
-use tracing::{debug, info, info_span};
+use tracing::{debug, info};
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum Scheme {
@@ -30,10 +30,6 @@ impl Scheme {
             }
             Self::Signature => {
                 for index in 0..num {
-                    let span = info_span!("gen", index);
-                    let _enter = span.enter();
-                    debug!("generating new signature key pair");
-
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options().append(true).create(true).open(&path)?;
                     let keypair = sig_keypair_from_seed_indexed(seed, index as u64);
@@ -63,9 +59,6 @@ impl Scheme {
                 let comb_key = bs58::encode(comb_key.as_bytes()).into_string();
 
                 for index in 0..num {
-                    let span = info_span!("gen", index);
-                    let _enter = span.enter();
-
                     let key_share = key_shares
                         .get(index)
                         .expect("key share should exist in generated material");
