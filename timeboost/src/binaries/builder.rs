@@ -1,11 +1,8 @@
-use anyhow::{ensure, Context, Result};
-use serde_json::from_str;
-use std::fs;
+use anyhow::{ensure, Result};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-};
 use timeboost::{Timeboost, TimeboostInitializer};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
@@ -18,10 +15,22 @@ use timeboost_core::until::run_until;
 use clap::Parser;
 use timeboost_utils::{types::logging, unsafe_zero_keypair};
 use tokio::signal;
-use tracing::warn;
+use tracing::{info, warn};
 
 #[cfg(feature = "until")]
 const LATE_START_DELAY_SECS: u64 = 15;
+
+#[derive(Clone, Deserialize, Serialize)]
+struct Node {
+    id: u32,
+    ip: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct Response {
+    ready: bool,
+    nodes: Vec<Node>,
+}
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -77,7 +86,7 @@ struct Cli {
     ///     "172.20.0.6"
     /// ]
     #[clap(long)]
-    keyfile: PathBuf,
+    keyfile: String,
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
@@ -88,11 +97,39 @@ struct Cli {
     nitro_node_url: Option<reqwest::Url>,
 }
 
-pub fn read_test_config(path: PathBuf) -> Result<Vec<String>> {
-    ensure!(path.exists(), "File not found: {:?}", path);
-    let data = fs::read_to_string(&path).context("Failed to read file")?;
-    let vec: Vec<String> = from_str(&data).context("Failed to parse JSON")?;
-    Ok(vec)
+pub async fn read_test_config(id: u16, path: String) -> Result<Vec<String>> {
+    let client = Client::new();
+    let node = Node {
+        id: id as u32,
+        ip: format!("{}:8000", local_ip_address::local_ip()?),
+    };
+
+    // Post to /ready
+    let res = client
+        .post(format!("{path}/ready/"))
+        .json(&node)
+        .send()
+        .await?;
+
+    ensure!(
+        res.status() == 200,
+        "Failed to post to /ready, status: {}",
+        res.status()
+    );
+
+    // Poll /start every second until ready
+    loop {
+        let res = client.get(format!("{path}/start/")).send().await?;
+        if res.status() == 200 {
+            let body: Response = res.json().await?;
+            if body.ready {
+                let mut ips: Vec<_> = body.nodes.into_iter().map(|n| (n.id, n.ip)).collect();
+                ips.sort_by_key(|&(id, _)| id);
+                return Ok(ips.into_iter().map(|(_, ip)| ip).collect());
+            }
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
 }
 
 async fn resolve_with_retries(host: &str) -> SocketAddr {
@@ -119,12 +156,15 @@ async fn main() -> Result<()> {
     let keypair = unsafe_zero_keypair(id);
 
     let peer_hosts = {
-        let mut hosts = read_test_config(cli.keyfile).expect("keyfile to exist and be valid");
+        let mut hosts = read_test_config(cli.id, cli.keyfile)
+            .await
+            .expect("keyfile to exist and be valid");
         if let Some(nodes) = cli.nodes {
             hosts.truncate(nodes)
         }
         hosts
     };
+    info!("got peer hosts {peer_hosts:?}");
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = peer_hosts

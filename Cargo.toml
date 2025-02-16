@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "multisig",
+    "multisig", "orchestrator",
     "sailfish",
     "tests",
     "timeboost",
