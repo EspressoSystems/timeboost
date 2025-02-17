@@ -28,7 +28,6 @@ reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_with = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-core = { path = "../timeboost-core" }
 timeboost-crypto = { path = "../timeboost-crypto" }

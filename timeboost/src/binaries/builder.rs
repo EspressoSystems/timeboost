@@ -25,7 +25,7 @@ use tracing::warn;
 const LATE_START_DELAY_SECS: u64 = 15;
 
 #[derive(Parser, Debug)]
-pub struct Cli {
+struct Cli {
     /// The ID of the node to build.
     #[clap(long)]
     id: u16,

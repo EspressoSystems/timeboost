@@ -10,7 +10,7 @@ use std::{
     path::PathBuf,
 };
 use timeboost_crypto::DecryptionScheme;
-use timeboost_utils::{sig_keypair_from_seed_indexed, types::logging};
+use timeboost_utils::{bs58_encode, sig_keypair_from_seed_indexed, types::logging};
 use tracing::{debug, info};
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -33,36 +33,25 @@ impl Scheme {
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options().append(true).create(true).open(&path)?;
                     let keypair = sig_keypair_from_seed_indexed(seed, index as u64);
-                    let priv_key_bytes = keypair.secret_key().as_bytes();
-                    let pub_key_bytes = keypair.public_key().as_bytes();
-                    writeln!(
-                        env_file,
-                        "TIMEBOOST_SIGNATURE_KEY={}",
-                        bs58::encode(&pub_key_bytes).into_string()
-                    )?;
-                    writeln!(
-                        env_file,
-                        "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}",
-                        bs58::encode(&priv_key_bytes).into_string()
-                    )?;
-                    info!(
-                        "generated signature keypair: {}",
-                        bs58::encode(&pub_key_bytes).into_string()
-                    );
+                    let privkey = bs58_encode(&keypair.secret_key().as_bytes());
+                    let pubkey = bs58_encode(&keypair.public_key().as_bytes());
+                    writeln!(env_file, "TIMEBOOST_SIGNATURE_KEY={}", pubkey)?;
+                    writeln!(env_file, "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}", privkey)?;
+                    info!("generated signature keypair: {}", pubkey);
                     debug!("private signature key written to {}", path.display());
                 }
             }
             Self::Decryption => {
-                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num as u32);
+                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num as u64);
                 debug!("generating new threshold encryption keyset");
-                let pub_key = bs58::encode(pub_key.as_bytes()).into_string();
-                let comb_key = bs58::encode(comb_key.as_bytes()).into_string();
+                let pub_key = bs58_encode(&pub_key.as_bytes());
+                let comb_key = bs58_encode(&comb_key.as_bytes());
 
                 for index in 0..num {
                     let key_share = key_shares
                         .get(index)
                         .expect("key share should exist in generated material");
-                    let key_share = bs58::encode(key_share.as_bytes()).into_string();
+                    let key_share = bs58_encode(&key_share.as_bytes());
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options().append(true).create(true).open(&path)?;
                     writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
@@ -70,12 +59,8 @@ impl Scheme {
                     writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
                     debug!("private decryption key written to {}", path.display());
                 }
-                info!(
-                    "generated threshold encryption keyset with:
-                    TIMEBOOST_ENCRYPTION_KEY={}
-                    TIMEBOOST_COMBINATION_KEY={}",
-                    pub_key, comb_key
-                );
+                info!("generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
+                      pub_key, comb_key);
             }
         }
         Ok(())
@@ -84,8 +69,11 @@ impl Scheme {
 
 /// Utility program for generating keys
 ///
-/// With no options, this program generates the keys needed to run a single Timeboost node.
+/// With no options, this program generates the keys needed for a committee of 5 Timeboost nodes.
 /// Options can be given to control the number or type of keys generated.
+///
+/// Note that signature keys can be generated independently of other keys but
+/// decryption keys of a committee can only be derived from the same trusted setup.
 ///
 /// Generated secret keys are written to a file in .env format, which can directly be used to
 /// configure a Timeboost node. Public information about the generated keys is printed to stdout.
@@ -99,17 +87,17 @@ struct Cli {
 
     /// Cryptographic scheme subject to key generation.
     ///
-    /// Timeboost nodes require both a signature key and a decryption key.
+    /// Timeboost nodes require both a signature key and a decryption key share.
     /// By default, this program generates these keys in pairs, to make it easy to
     /// configure Timeboost nodes, but this option can be specified to generate keys
     /// for only one of the schemes.
     #[clap(long, default_value = "all")]
     scheme: Scheme,
 
-    /// Number of setups to generate.
+    /// Size of the committee to generate keys for.
     ///
-    /// Default is 1.
-    #[clap(long, short = 'n', name = "N", default_value = "1")]
+    /// Default is 5.
+    #[clap(long, short = 'n', name = "N", default_value = "5")]
     num: usize,
 
     /// Write private keys to .env files under DIR.

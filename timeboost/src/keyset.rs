@@ -4,7 +4,6 @@ use anyhow::{bail, ensure, Context, Result};
 use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;
-use serde_with::serde_as;
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
 use tokio::{net::lookup_host, time::sleep};
 
@@ -18,14 +17,12 @@ pub struct Keyset {
     pub dec_keyset: PublicDecInfo,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicNodeInfo {
     pub url: String,
     pub pubkey: String,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicDecInfo {
     pub pubkey: String,
@@ -91,8 +88,7 @@ pub fn private_keys(
         let bytes = &bs58::decode(dec_key)
             .into_vec()
             .context("unable to decode bs58")?;
-        let dec_key =
-            bincode::deserialize::<KeyShare>(bytes).expect("unable to read bytes into keyshare");
+        let dec_key = bincode::deserialize(bytes).expect("unable to read bytes into keyshare");
 
         Ok((sig_key, dec_key))
     } else {

@@ -28,7 +28,7 @@ for i in {0..4}; do
         --rpc-port $((8800 + i)) \
         --nitro-node-url http://localhost:8547 \
         --metrics-port $((9000 + i)) \
-        --keyfile test-configs/local.json &
+        --keyset-file test-configs/local.json &
 done
 
 wait

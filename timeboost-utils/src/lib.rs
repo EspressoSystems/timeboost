@@ -12,3 +12,7 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
     let new_seed = *hasher.finalize().as_bytes();
     multisig::Keypair::from_seed(new_seed)
 }
+
+pub fn bs58_encode(b: &[u8]) -> String {
+    bs58::encode(b).into_string()
+}

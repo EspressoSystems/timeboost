@@ -17,7 +17,7 @@ use traits::threshold_enc::ThresholdEncScheme;
 #[derive(Clone)]
 pub struct Committee {
     pub id: u32,
-    pub size: u32,
+    pub size: u64,
 }
 
 pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
@@ -33,62 +33,11 @@ pub struct CombKey<C: CurveGroup> {
     pub key: Vec<C>,
 }
 
-impl<C: CurveGroup> CombKey<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serialization of combkey")
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&String> for CombKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&[u8]> for CombKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
-    }
-}
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublicKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     key: C,
-}
-
-impl<C: CurveGroup> PublicKey<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serialization of public key")
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&String> for PublicKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&[u8]> for PublicKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
-    }
 }
 
 #[serde_as]
@@ -97,32 +46,6 @@ pub struct KeyShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
     index: u32,
-}
-
-impl<C: CurveGroup> KeyShare<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serialization of key share")
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&String> for KeyShare<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
-    }
-}
-
-impl<C: CurveGroup> TryFrom<&[u8]> for KeyShare<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
-    }
 }
 
 #[derive(Debug)]
@@ -149,6 +72,84 @@ pub struct DecShare<C: CurveGroup> {
     phi: Proof,
 }
 
+impl<C: CurveGroup> CombKey<C> {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).expect("serializing combkey")
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&String> for CombKey<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        let v = bs58::decode(value)
+            .into_vec()
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
+        let b = v.as_slice();
+        Self::try_from(b)
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&[u8]> for CombKey<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+    }
+}
+
+impl<C: CurveGroup> PublicKey<C> {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).expect("serializing public key")
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&String> for PublicKey<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        let v = bs58::decode(value)
+            .into_vec()
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
+        let b = v.as_slice();
+        Self::try_from(b)
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&[u8]> for PublicKey<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+    }
+}
+
+impl<C: CurveGroup> KeyShare<C> {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).expect("serializing key share")
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&String> for KeyShare<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        let v = bs58::decode(value)
+            .into_vec()
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
+        let b = v.as_slice();
+        Self::try_from(b)
+    }
+}
+
+impl<C: CurveGroup> TryFrom<&[u8]> for KeyShare<C> {
+    type Error = ark_serialize::SerializationError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+    }
+}
+
 // Type initialization for decryption scheme
 type G = ark_secp256k1::Projective;
 type H = Sha256;
@@ -166,7 +167,7 @@ impl DecryptionScheme {
     /// - A single public key for clients to encrypt their transaction bundles.
     /// - A single combination key to all nodes for combining partially decrypted ciphertexts.
     /// - One distinct private key share per node for partial decryption.
-    pub fn trusted_keygen(size: u32) -> TrustedKeyMaterial {
+    pub fn trusted_keygen(size: u64) -> TrustedKeyMaterial {
         // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
         let committee = Committee { id: 0, size };
