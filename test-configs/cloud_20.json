@@ -1,22 +1,88 @@
-[
-    "timeboost0.timeboost.espresso.private:8000",
-    "timeboost1.timeboost.espresso.private:8000",
-    "timeboost2.timeboost.espresso.private:8000",
-    "timeboost3.timeboost.espresso.private:8000",
-    "timeboost4.timeboost.espresso.private:8000",
-    "timeboost5.timeboost.espresso.private:8000",
-    "timeboost6.timeboost.espresso.private:8000",
-    "timeboost7.timeboost.espresso.private:8000",
-    "timeboost8.timeboost.espresso.private:8000",
-    "timeboost9.timeboost.espresso.private:8000",
-    "timeboost10.timeboost.espresso.private:8000",
-    "timeboost11.timeboost.espresso.private:8000",
-    "timeboost12.timeboost.espresso.private:8000",
-    "timeboost13.timeboost.espresso.private:8000",
-    "timeboost14.timeboost.espresso.private:8000",
-    "timeboost15.timeboost.espresso.private:8000",
-    "timeboost16.timeboost.espresso.private:8000",
-    "timeboost17.timeboost.espresso.private:8000",
-    "timeboost18.timeboost.espresso.private:8000",
-    "timeboost19.timeboost.espresso.privat:8000e"
-]
+{
+    "keyset": [
+        {
+            "url": "timeboost0.timeboost.espresso.private:8000",
+            "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE"
+        },
+        {
+            "url": "timeboost1.timeboost.espresso.private:8000",
+            "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn"
+        },
+        {
+            "url": "timeboost2.timeboost.espresso.private:8000",
+            "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni"
+        },
+        {
+            "url": "timeboost3.timeboost.espresso.private:8000",
+            "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4"
+        },
+        {
+            "url": "timeboost4.timeboost.espresso.private:8000",
+            "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD"
+        },
+        {
+            "url": "timeboost5.timeboost.espresso.private:8000",
+            "pubkey": "24pdM4mDRSHnk5d7uzztwmCT3e8jzYTafGMTVUmsYvEU"
+        },
+        {
+            "url": "timeboost6.timeboost.espresso.private:8000",
+            "pubkey": "HTuCvHG1CADdKsuLSZ1TWBL9QmFAXGWdgzmbBtYMWM2G"
+        },
+        {
+            "url": "timeboost7.timeboost.espresso.private:8000",
+            "pubkey": "G9SsebpexnFLMqWkzCBDVKhPHHn8JdsFq6PgQAFBTXfP"
+        },
+        {
+            "url": "timeboost8.timeboost.espresso.private:8000",
+            "pubkey": "47P5dRX6aHpw17zjkXPXWVyy5aaUBc1CCT2ukM1RSAcy"
+        },
+        {
+            "url": "timeboost9.timeboost.espresso.private:8000",
+            "pubkey": "DNFTMMt6CCAponjhLdHJMdEhPteVXTXPbT1gC125Vfg6"
+        },
+        {
+            "url": "timeboost10.timeboost.espresso.private:8000",
+            "pubkey": "2TpRWBrURjjCDEMTdoF2hicyhKUT7M39W6oxNzp99chd"
+        },
+        {
+            "url": "timeboost11.timeboost.espresso.private:8000",
+            "pubkey": "DGbaGsY2THd4oHxTKBRJBEurGKb9KgQeLFY13eMapinC"
+        },
+        {
+            "url": "timeboost12.timeboost.espresso.private:8000",
+            "pubkey": "2x23JLWVwNbjNxM8snwKYUdKtoHgj7zN1gyPHbgsUazd"
+        },
+        {
+            "url": "timeboost13.timeboost.espresso.private:8000",
+            "pubkey": "CX51n5zs2kuQteiNRUVR25KZF9kA27UeWccFodfbLMWS"
+        },
+        {
+            "url": "timeboost14.timeboost.espresso.private:8000",
+            "pubkey": "9owjFAaWhFcT9GqJ9c3idqndxHXcfyVPQrNnEvxG72Hs"
+        },
+        {
+            "url": "timeboost15.timeboost.espresso.private:8000",
+            "pubkey": "8jTeAaPGTxkPwrFkqTUj5fMP57BLLdeuLmwx2ZxvHdPt"
+        },
+        {
+            "url": "timeboost16.timeboost.espresso.private:8000",
+            "pubkey": "D4WziQyUH5TFGhu5f33wvRzhTatRFb5v9x1H58NWmRVJ"
+        },
+        {
+            "url": "timeboost17.timeboost.espresso.private:8000",
+            "pubkey": "2iHXCZwkerF3JtWG4Q633dfjHnmruJ23hgKNATTsFFkZ"
+        },
+        {
+            "url": "timeboost18.timeboost.espresso.private:8000",
+            "pubkey": "5qP4wyDetRcVzQZs3qcxyafxXYowBTdcSVQJbHXcZsji"
+        },
+        {
+            "url": "timeboost19.timeboost.espresso.private:8000",
+            "pubkey": "8ajJBphKsQHeWBLm1dzySBJPJcdt7aFS77sFDVUK5vE4"
+        }
+    ],
+    "dec_keyset": {
+        "pubkey": "8Em59bmMevJuHtXQapwh6Pick9s5ySBWyCb8ATE2SePMySmQs8EKz7nF",
+        "combkey": "2kDu7SYApgXdKjzVpqPh8Yttyntk8KuydSrd9nrXhgQGZdE3j22wdsJLnogzV4MzMfJpHuQQt792GdMw8nkfsZPcqcCiGuRHuXh7xm9riQ1wL8CGo1VtoL4jaFSnhMYRY5igZughohYyxFUyQbgyg9CgAqVkK1Vv1XgzhUjbFUedwSTrr9H8ukMUmDdgYB5UXQzgtvyTVeu2XcNt44ajqtFXCFLLhuzUpjthVVrKCBEsrMsn5xkYT6aUXokv2yRh3hwv6oWc2LjtPjoTn3JLQ5BVtoyprTxrN4PuU6PXhRvWfmNpHYXGJJMKjCGAbvEkFQvQz2rEzpWjzWq3ZMbsspeZMLx9bQdTgTHtnAC9WKdyxtcpLAJzA2kCD8RUAAJLAo7H5WoDZAa7fbeoruRu3cjpxaUPKJXjwZMSuEWxBVRogZdwXMp96uiQSySSB5kP7jfK2WmwYgua7wrSf1SLSndwMiSyZPt1srFZam4zYwzjKAdcFb6efojifH25BmrWWYVEAkD71Ef99YDvyMqppiv9F3XvTFfYLLa2NsbE5jqgs1yWW9Yo6eds6ETY2eV4vN2JvqMrkrHJJnb82aoXWXJuhmuqjKmhj3fW3bCLYrxB3P7oGiPbw42XR9xytp7Ae1MzZq68a3cAqLM92FcTyBRtVjSSiiDzKzrEY9pg1rZybbBNZSiatHVF5dnkHjYunW6tp2gUSPrwU2ACR4rceVhj26n9DM539Lb9kehFoJCKKSswyUNjFXt8KY3baqyDUmaTp8rWemnnhnoz8ACDPyykuhwYuJGy2tHargD62oipGky8zu9QPDH785vvjiXAomeaercnyqcrnjLrtg1eqD1xMgAyZYfXBLQyquJiU2tejSdrwUQ6F61sdkNyn3ksa1GSkdc5Q4vPR2MobcMNYmazVBYPVTGKbP58jTfhPMF6SZbAXDCmpLF2rQq1k1yTgZTnAkdxCECYTw4HRiwiPtbGuKJzq13asD2rbCjyHkfWTaZ8DBQ5WQ68ELB8LNUyLRtjzrA1vSosiFnzuNg5D1upehjh2bpaLr5YBiUNLRsf3wveQGePALgDXN7GQc1wpfbW8M4VnA96NNS8uSUHoWCV4BJa9o83SjUwnKk9K19"
+    }
+}

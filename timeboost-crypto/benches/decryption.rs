@@ -7,8 +7,7 @@ use digest::{DynDigest, FixedOutputReset};
 use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
 use timeboost_crypto::{
-    sg_encryption::{Committee, Plaintext, ShoupGennaro},
-    traits::threshold_enc::ThresholdEncScheme,
+    sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme, Committee, Plaintext,
 };
 
 const KB: usize = 1 << 10;
@@ -38,13 +37,16 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, _) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let parameters =
+                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
+            let (pk, _, _) =
+                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+                    ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+                        .expect("encrypt message");
                 });
             });
         }
@@ -55,15 +57,17 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let parameters =
+                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
+            let (pk, _, key_shares) =
+                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext =
-                ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+                .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::decrypt(&parameters, &key_shares[0], &ciphertext)
-                        .unwrap();
+                        .expect("generate partial decryption share");
                 });
             });
         }
@@ -74,11 +78,13 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
-            let (pk, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+            let parameters =
+                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
+            let (pk, comb_key, key_shares) =
+                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext =
-                ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+                .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
                 .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
@@ -89,11 +95,11 @@ where
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::combine(
                         &parameters,
-                        &pk,
+                        &comb_key,
                         dec_shares_refs.clone(),
                         &ciphertext,
                     )
-                    .unwrap();
+                    .expect("combine decryption shares");
                 });
             });
         }

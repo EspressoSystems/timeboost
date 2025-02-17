@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -a; source .env; set +a;
 just build_release --features until
 
 nodes=5
@@ -12,8 +13,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -n|--nodes)
-            if ! [[ $2 =~ ^[4-9]+$ ]]; then
-                echo "Error: The number of nodes must be a positive integer greater than 4."
+            if !((4 < $2 && $2 <= 20)); then
+                echo "Error: The number of nodes must be greater than 4 and no more than 20"
                 exit 1
             fi
             nodes="$2"
@@ -42,8 +43,13 @@ pids=()
 SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
+    
+    SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
+    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"    
 
-  cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
+    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
+    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
     ./target/release/timeboost \
         --id $i \
         --port $((8000 + $i)) \
@@ -53,7 +59,7 @@ for i in $(seq 0 $((nodes - 1))); do
         $nitro_node_url \
         --tps 20 \
         --nodes $nodes \
-        --keyfile test-configs/local.json \
+        --keyset-file test-configs/local.json \
         --watchdog-timeout 300"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"

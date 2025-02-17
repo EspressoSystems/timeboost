@@ -1,7 +1,88 @@
-[
-    "172.20.0.2:8000",
-    "172.20.0.3:8001",
-    "172.20.0.4:8002",
-    "172.20.0.5:8003",
-    "172.20.0.6:8004"
-]
+{
+    "keyset": [
+        {
+            "url": "172.20.0.2:8000",
+            "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE"
+        },
+        {
+            "url": "172.20.0.3:8001",
+            "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn"
+        },
+        {
+            "url": "172.20.0.4:8002",
+            "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni"
+        },
+        {
+            "url": "172.20.0.5:8003",
+            "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4"
+        },
+        {
+            "url": "172.20.0.6:8004",
+            "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD"
+        },
+        {
+            "url": "172.20.0.7:8005",
+            "pubkey": "24pdM4mDRSHnk5d7uzztwmCT3e8jzYTafGMTVUmsYvEU"
+        },
+        {
+            "url": "172.20.0.8:8006",
+            "pubkey": "HTuCvHG1CADdKsuLSZ1TWBL9QmFAXGWdgzmbBtYMWM2G"
+        },
+        {
+            "url": "172.20.0.9:8007",
+            "pubkey": "G9SsebpexnFLMqWkzCBDVKhPHHn8JdsFq6PgQAFBTXfP"
+        },
+        {
+            "url": "172.20.0.10:8008",
+            "pubkey": "47P5dRX6aHpw17zjkXPXWVyy5aaUBc1CCT2ukM1RSAcy"
+        },
+        {
+            "url": "172.20.0.11:8009",
+            "pubkey": "DNFTMMt6CCAponjhLdHJMdEhPteVXTXPbT1gC125Vfg6"
+        },
+        {
+            "url": "172.20.0.12:8010",
+            "pubkey": "2TpRWBrURjjCDEMTdoF2hicyhKUT7M39W6oxNzp99chd"
+        },
+        {
+            "url": "172.20.0.13:8011",
+            "pubkey": "DGbaGsY2THd4oHxTKBRJBEurGKb9KgQeLFY13eMapinC"
+        },
+        {
+            "url": "172.20.0.14:8012",
+            "pubkey": "2x23JLWVwNbjNxM8snwKYUdKtoHgj7zN1gyPHbgsUazd"
+        },
+        {
+            "url": "172.20.0.15:8013",
+            "pubkey": "CX51n5zs2kuQteiNRUVR25KZF9kA27UeWccFodfbLMWS"
+        },
+        {
+            "url": "172.20.0.16:8014",
+            "pubkey": "9owjFAaWhFcT9GqJ9c3idqndxHXcfyVPQrNnEvxG72Hs"
+        },
+        {
+            "url": "172.20.0.17:8015",
+            "pubkey": "8jTeAaPGTxkPwrFkqTUj5fMP57BLLdeuLmwx2ZxvHdPt"
+        },
+        {
+            "url": "172.20.0.18:8016",
+            "pubkey": "D4WziQyUH5TFGhu5f33wvRzhTatRFb5v9x1H58NWmRVJ"
+        },
+        {
+            "url": "172.20.0.19:8017",
+            "pubkey": "2iHXCZwkerF3JtWG4Q633dfjHnmruJ23hgKNATTsFFkZ"
+        },
+        {
+            "url": "172.20.0.20:8018",
+            "pubkey": "5qP4wyDetRcVzQZs3qcxyafxXYowBTdcSVQJbHXcZsji"
+        },
+        {
+            "url": "172.20.0.21:8019",
+            "pubkey": "8ajJBphKsQHeWBLm1dzySBJPJcdt7aFS77sFDVUK5vE4"
+        }
+    ],
+    "dec_keyset": {
+        "pubkey": "8Em59bmMevJuHtXQapwh6Pick9s5ySBWyCb8ATE2SePMySmQs8EKz7nF",
+        "combkey": "2kDu7SYApgXdKjzVpqPh8Yttyntk8KuydSrd9nrXhgQGZdE3j22wdsJLnogzV4MzMfJpHuQQt792GdMw8nkfsZPcqcCiGuRHuXh7xm9riQ1wL8CGo1VtoL4jaFSnhMYRY5igZughohYyxFUyQbgyg9CgAqVkK1Vv1XgzhUjbFUedwSTrr9H8ukMUmDdgYB5UXQzgtvyTVeu2XcNt44ajqtFXCFLLhuzUpjthVVrKCBEsrMsn5xkYT6aUXokv2yRh3hwv6oWc2LjtPjoTn3JLQ5BVtoyprTxrN4PuU6PXhRvWfmNpHYXGJJMKjCGAbvEkFQvQz2rEzpWjzWq3ZMbsspeZMLx9bQdTgTHtnAC9WKdyxtcpLAJzA2kCD8RUAAJLAo7H5WoDZAa7fbeoruRu3cjpxaUPKJXjwZMSuEWxBVRogZdwXMp96uiQSySSB5kP7jfK2WmwYgua7wrSf1SLSndwMiSyZPt1srFZam4zYwzjKAdcFb6efojifH25BmrWWYVEAkD71Ef99YDvyMqppiv9F3XvTFfYLLa2NsbE5jqgs1yWW9Yo6eds6ETY2eV4vN2JvqMrkrHJJnb82aoXWXJuhmuqjKmhj3fW3bCLYrxB3P7oGiPbw42XR9xytp7Ae1MzZq68a3cAqLM92FcTyBRtVjSSiiDzKzrEY9pg1rZybbBNZSiatHVF5dnkHjYunW6tp2gUSPrwU2ACR4rceVhj26n9DM539Lb9kehFoJCKKSswyUNjFXt8KY3baqyDUmaTp8rWemnnhnoz8ACDPyykuhwYuJGy2tHargD62oipGky8zu9QPDH785vvjiXAomeaercnyqcrnjLrtg1eqD1xMgAyZYfXBLQyquJiU2tejSdrwUQ6F61sdkNyn3ksa1GSkdc5Q4vPR2MobcMNYmazVBYPVTGKbP58jTfhPMF6SZbAXDCmpLF2rQq1k1yTgZTnAkdxCECYTw4HRiwiPtbGuKJzq13asD2rbCjyHkfWTaZ8DBQ5WQ68ELB8LNUyLRtjzrA1vSosiFnzuNg5D1upehjh2bpaLr5YBiUNLRsf3wveQGePALgDXN7GQc1wpfbW8M4VnA96NNS8uSUHoWCV4BJa9o83SjUwnKk9K19"
+    }
+}

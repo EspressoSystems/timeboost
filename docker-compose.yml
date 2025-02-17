@@ -1,20 +1,7 @@
 services:
   node0:
     image: timeboost:latest
-    command:
-      [
-        "/app/timeboost",
-        "--id",
-        "0",
-        "--port",
-        "8000",
-        "--rpc-port",
-        "8800",
-        "--metrics-port",
-        "9000",
-        "--keyfile",
-        "docker.json",
-      ]
+    command: [ "/app/timeboost", "--id", "0", "--port", "8000", "--rpc-port", "8800", "--metrics-port", "9000", "--keyset-file", "docker.json" ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.2
@@ -23,26 +10,15 @@ services:
       - TIMEBOOST_PORT=8000
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
+      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_0
+      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_0
     ports:
       - "8000:8000"
       - "8800:8800"
       - "9000:9000"
   node1:
     image: timeboost:latest
-    command:
-      [
-        "/app/timeboost",
-        "--id",
-        "1",
-        "--port",
-        "8001",
-        "--rpc-port",
-        "8801",
-        "--metrics-port",
-        "9001",
-        "--keyfile",
-        "docker.json",
-      ]
+    command: [ "/app/timeboost", "--id", "1", "--port", "8001", "--rpc-port", "8801", "--metrics-port", "9001", "--keyset-file", "docker.json" ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.3
@@ -51,26 +27,15 @@ services:
       - TIMEBOOST_PORT=8001
       - TIMEBOOST_RPC_PORT=8801
       - TIMEBOOST_METRICS_PORT=9001
+      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_1
+      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_1
     ports:
       - "8001:8001"
       - "8801:8801"
       - "9001:9001"
   node2:
     image: timeboost:latest
-    command:
-      [
-        "/app/timeboost",
-        "--id",
-        "2",
-        "--port",
-        "8002",
-        "--rpc-port",
-        "8802",
-        "--metrics-port",
-        "9002",
-        "--keyfile",
-        "docker.json",
-      ]
+    command: [ "/app/timeboost", "--id", "2", "--port", "8002", "--rpc-port", "8802", "--metrics-port", "9002", "--keyset-file", "docker.json" ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.4
@@ -79,26 +44,15 @@ services:
       - TIMEBOOST_PORT=8002
       - TIMEBOOST_RPC_PORT=8802
       - TIMEBOOST_METRICS_PORT=9002
+      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_2
+      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_2
     ports:
       - "8002:8002"
       - "8802:8802"
       - "9002:9002"
   node3:
     image: timeboost:latest
-    command:
-      [
-        "/app/timeboost",
-        "--id",
-        "3",
-        "--port",
-        "8003",
-        "--rpc-port",
-        "8803",
-        "--metrics-port",
-        "9003",
-        "--keyfile",
-        "docker.json",
-      ]
+    command: [ "/app/timeboost", "--id", "3", "--port", "8003", "--rpc-port", "8803", "--metrics-port", "9003", "--keyset-file", "docker.json" ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.5
@@ -107,6 +61,8 @@ services:
       - TIMEBOOST_PORT=8003
       - TIMEBOOST_RPC_PORT=8803
       - TIMEBOOST_METRICS_PORT=9003
+      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_3
+      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_3
     ports:
       - "8003:8003"
       - "8803:8803"
@@ -114,20 +70,7 @@ services:
 
   node4:
     image: timeboost:latest
-    command:
-      [
-        "/app/timeboost",
-        "--id",
-        "4",
-        "--port",
-        "8004",
-        "--rpc-port",
-        "8804",
-        "--metrics-port",
-        "9004",
-        "--keyfile",
-        "docker.json",
-      ]
+    command: [ "/app/timeboost", "--id", "4", "--port", "8004", "--rpc-port", "8804", "--metrics-port", "9004", "--keyset-file", "docker.json" ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.6
@@ -136,6 +79,9 @@ services:
       - TIMEBOOST_PORT=8004
       - TIMEBOOST_RPC_PORT=8804
       - TIMEBOOST_METRICS_PORT=9004
+      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_4
+      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_4
+
     ports:
       - "8004:8004"
       - "8804:8804"

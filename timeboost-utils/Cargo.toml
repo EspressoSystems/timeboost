@@ -7,6 +7,7 @@ description.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+bs58 = { workspace = true }
 blake3 = { workspace = true }
 committable = { workspace = true }
 dyn-clone = { workspace = true }

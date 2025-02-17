@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -euox pipefail
+set -a; source .env; set +a;
 
 
 if [ "${1:-debug}" = "release" ]; then
@@ -15,14 +16,19 @@ timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep
 for i in {0..4}; do
     echo "Starting node $i"
 
+    SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
+    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
+
     RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=info \
+    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
+    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
     ./target/${1:-debug}/timeboost \
         --id $i \
         --port $((8000 + i)) \
         --rpc-port $((8800 + i)) \
         --nitro-node-url http://localhost:8547 \
         --metrics-port $((9000 + i)) \
-        --keyfile test-configs/local.json &
+        --keyset-file test-configs/local.json &
 done
 
 wait
