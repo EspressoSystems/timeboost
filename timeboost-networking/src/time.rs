@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 use parking_lot::Mutex;
 use tokio::time::{sleep, Duration, Instant, Sleep};
@@ -55,6 +55,9 @@ struct Inner {
     // the opposite. However we would like to avoid the allocation every time
     // the countdown is (re-)started, hence this flag.
     stopped: bool,
+
+    /// Waker to call when a stopped `Countdown` should be polled again.
+    waker: Option<Waker>,
 }
 
 impl Default for Countdown {
@@ -72,6 +75,7 @@ impl Countdown {
             inner: Arc::new(Mutex::new(Inner {
                 sleep: None,
                 stopped: true,
+                waker: None,
             })),
         }
     }
@@ -92,6 +96,9 @@ impl Countdown {
         } else {
             inner.sleep = Some(Box::pin(sleep(timeout)))
         }
+        if let Some(w) = inner.waker.take() {
+            w.wake()
+        }
     }
 
     /// Stop this countdown.
@@ -106,13 +113,17 @@ impl Future for Countdown {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut inner = self.inner.lock();
         if inner.stopped {
+            if let Some(w) = inner.waker.as_mut() {
+                // Update existing waker:
+                w.clone_from(cx.waker())
+            } else {
+                inner.waker = Some(cx.waker().clone())
+            }
             return Poll::Pending;
         }
-        if let Some(sleep) = &mut inner.sleep {
-            sleep.as_mut().poll(cx)
-        } else {
-            Poll::Pending
-        }
+        debug_assert!(inner.waker.is_none());
+        let sleep = inner.sleep.as_mut().expect("!stopped => sleep future");
+        sleep.as_mut().poll(cx)
     }
 }
 
