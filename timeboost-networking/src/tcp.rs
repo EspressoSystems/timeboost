@@ -4,24 +4,36 @@ use std::net::SocketAddr;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
+/// A TCP listener type.
 pub trait Listener: Sized {
     type Stream: Stream;
 
+    /// Bind to the given socket address.
     fn bind(addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
+
+    /// Accept an inbound TCP connection.
     fn accept(&self) -> impl Future<Output = io::Result<(Self::Stream, SocketAddr)>> + Send;
+
+    /// Return the local listen address.
     fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
+/// TCP stream type.
 pub trait Stream: AsyncRead + AsyncWrite + Sized {
+    /// Create a new TCP stream by connecting to the given address.
     fn connect(addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
+
+    /// Set the `TCP_NODELAY` socket option (disables Nagle's algorithm).
+    ///
+    /// Segments are sent as soon as possible.
     fn set_nodelay(&self, val: bool) -> io::Result<()>;
+
+    /// Return this stream's peer address.
     fn peer_addr(&self) -> io::Result<SocketAddr>;
-    fn into_split(
-        self,
-    ) -> (
-        impl AsyncRead + Unpin + Send,
-        impl AsyncWrite + Unpin + Send,
-    );
+
+    /// Split this stream into a read and a write half.
+    #[rustfmt::skip]
+    fn into_split(self) -> (impl AsyncRead + Unpin + Send, impl AsyncWrite + Unpin + Send);
 }
 
 impl Listener for tokio::net::TcpListener {
@@ -70,12 +82,8 @@ impl Stream for tokio::net::TcpStream {
         self.peer_addr()
     }
 
-    fn into_split(
-        self,
-    ) -> (
-        impl AsyncRead + Unpin + Send,
-        impl AsyncWrite + Unpin + Send,
-    ) {
+    #[rustfmt::skip]
+    fn into_split(self) -> (impl AsyncRead + Unpin + Send, impl AsyncWrite + Unpin + Send) {
         self.into_split()
     }
 }
@@ -94,12 +102,8 @@ impl Stream for turmoil::net::TcpStream {
         self.peer_addr()
     }
 
-    fn into_split(
-        self,
-    ) -> (
-        impl AsyncRead + Unpin + Send,
-        impl AsyncWrite + Unpin + Send,
-    ) {
+    #[rustfmt::skip]
+    fn into_split(self) -> (impl AsyncRead + Unpin + Send, impl AsyncWrite + Unpin + Send) {
         self.into_split()
     }
 }
