@@ -1,24 +1,34 @@
 {
     "keyset": [
         {
-            "url": "timeboost0.timeboost.espresso.private:8000",
-            "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE"
+            "url": "timeboost-lb-188bc60af52cd124.elb.us-east-2.amazonaws.com:8000",
+            "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE",
+            "sig_pk": "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
+            "dec_pk": "BQTPUqY8FaL5DR5aLwjBq8zyDe7oQD3mDUPg2pWwhyTAunf9zuG7VhMp5HpB"
         },
         {
-            "url": "timeboost1.timeboost.espresso.private:8000",
-            "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn"
+            "url": "timeboost-lb-188bc60af52cd124.elb.us-east-2.amazonaws.com:8001",
+            "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn",
+            "sig_pk": "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
+            "dec_pk": "BQTPUqY8FaLYbzDhYyVbi3xFqzjALxBXVvYKbQZMathECHDMBk1eiKSd1waF"
         },
         {
-            "url": "timeboost2.timeboost.espresso.private:8000",
-            "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni"
+            "url": "timeboost-lb-188bc60af52cd124.elb.us-east-2.amazonaws.com:8002",
+            "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni",
+            "sig_pk": "4Y7yyg11MBYJaeD2UWCh5cto8wizJoUCqFm7YjMbY3hXyWSWVPgi7y1D9e7D78a1NcWdE4k59D6vK9f6eCpzVkbQ",
+            "dec_pk": "BQTPUqY8FaKmEPvCVqeMyK7PmsCFLjJPZL2Z82TwcZEBPgcYSzuFEdQX2n8o"
         },
         {
-            "url": "timeboost3.timeboost.espresso.private:8000",
-            "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4"
+            "url": "timeboost-lb-188bc60af52cd124.elb.us-east-2.amazonaws.com:8003",
+            "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4",
+            "sig_pk": "zrjZDknq9nPhiBXKeG2PeotwxAayYkv2UFmxc2UsCGHsdu5vCsjqxn8ko2Rh2fWts76u6eCJYjDgKEaveutVhjW",
+            "dec_pk": "BQTPUqY8FaLrkGimyeXKwBA6yksKsTHBstDuht8nVq7uQbpPXfMSy8mfnFV9"
         },
         {
-            "url": "timeboost4.timeboost.espresso.private:8000",
-            "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD"
+            "url": "timeboost-lb-188bc60af52cd124.elb.us-east-2.amazonaws.com:8004",
+            "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD",
+            "sig_pk": "jW98dJM94zuvhRCA1bGLiPjakePTc1CYPP2V5iCswfayZiYujGYdSoE1MYDa61dHCyzPdEvGNBDmnFHS6jf83Km",
+            "dec_pk": "BQTPUqY8FaL5NCEekubjcLvJDx3xyQYjAhfBZ81hT58hqeYJ12Cubyfv2zST"
         }
     ],
     "dec_keyset": {
