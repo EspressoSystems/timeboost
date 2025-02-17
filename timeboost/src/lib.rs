@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
 use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
@@ -43,6 +44,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
 pub mod gas;
+pub mod keyset;
 mod mempool;
 pub mod metrics;
 mod producer;
@@ -63,6 +65,9 @@ pub struct TimeboostInitializer {
 
     /// The keypair for the node.
     pub keypair: Keypair,
+
+    /// The decryption key material for the node.
+    pub deckey: DecryptionInfo,
 
     /// The bind address for the node.
     pub bind_address: SocketAddr,
@@ -149,6 +154,7 @@ impl HasInitializer for Timeboost {
                 .enumerate()
                 .map(|(i, key)| (i as u8, key)),
         );
+
         let network = Network::create(
             initializer.bind_address,
             initializer.keypair.clone(),

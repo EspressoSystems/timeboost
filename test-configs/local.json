@@ -1,22 +1,88 @@
-[
-    "127.0.0.1:8000",
-    "127.0.0.1:8001",
-    "127.0.0.1:8002",
-    "127.0.0.1:8003",
-    "127.0.0.1:8004",
-    "127.0.0.1:8005",
-    "127.0.0.1:8006",
-    "127.0.0.1:8007",
-    "127.0.0.1:8008",
-    "127.0.0.1:8009",
-    "127.0.0.1:8010",
-    "127.0.0.1:8011",
-    "127.0.0.1:8012",
-    "127.0.0.1:8013",
-    "127.0.0.1:8014",
-    "127.0.0.1:8015",
-    "127.0.0.1:8016",
-    "127.0.0.1:8017",
-    "127.0.0.1:8018",
-    "127.0.0.1:8019"
-]
+{
+    "keyset": [
+        {
+            "url": "127.0.0.1:8000",
+            "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE"
+        },
+        {
+            "url": "127.0.0.1:8001",
+            "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn"
+        },
+        {
+            "url": "127.0.0.1:8002",
+            "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni"
+        },
+        {
+            "url": "127.0.0.1:8003",
+            "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4"
+        },
+        {
+            "url": "127.0.0.1:8004",
+            "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD"
+        },
+        {
+            "url": "127.0.0.1:8005",
+            "pubkey": "24pdM4mDRSHnk5d7uzztwmCT3e8jzYTafGMTVUmsYvEU"
+        },
+        {
+            "url": "127.0.0.1:8006",
+            "pubkey": "HTuCvHG1CADdKsuLSZ1TWBL9QmFAXGWdgzmbBtYMWM2G"
+        },
+        {
+            "url": "127.0.0.1:8007",
+            "pubkey": "G9SsebpexnFLMqWkzCBDVKhPHHn8JdsFq6PgQAFBTXfP"
+        },
+        {
+            "url": "127.0.0.1:8008",
+            "pubkey": "47P5dRX6aHpw17zjkXPXWVyy5aaUBc1CCT2ukM1RSAcy"
+        },
+        {
+            "url": "127.0.0.1:8009",
+            "pubkey": "DNFTMMt6CCAponjhLdHJMdEhPteVXTXPbT1gC125Vfg6"
+        },
+        {
+            "url": "127.0.0.1:8010",
+            "pubkey": "2TpRWBrURjjCDEMTdoF2hicyhKUT7M39W6oxNzp99chd"
+        },
+        {
+            "url": "127.0.0.1:8011",
+            "pubkey": "DGbaGsY2THd4oHxTKBRJBEurGKb9KgQeLFY13eMapinC"
+        },
+        {
+            "url": "127.0.0.1:8012",
+            "pubkey": "2x23JLWVwNbjNxM8snwKYUdKtoHgj7zN1gyPHbgsUazd"
+        },
+        {
+            "url": "127.0.0.1:8013",
+            "pubkey": "CX51n5zs2kuQteiNRUVR25KZF9kA27UeWccFodfbLMWS"
+        },
+        {
+            "url": "127.0.0.1:8014",
+            "pubkey": "9owjFAaWhFcT9GqJ9c3idqndxHXcfyVPQrNnEvxG72Hs"
+        },
+        {
+            "url": "127.0.0.1:8015",
+            "pubkey": "8jTeAaPGTxkPwrFkqTUj5fMP57BLLdeuLmwx2ZxvHdPt"
+        },
+        {
+            "url": "127.0.0.1:8016",
+            "pubkey": "D4WziQyUH5TFGhu5f33wvRzhTatRFb5v9x1H58NWmRVJ"
+        },
+        {
+            "url": "127.0.0.1:8017",
+            "pubkey": "2iHXCZwkerF3JtWG4Q633dfjHnmruJ23hgKNATTsFFkZ"
+        },
+        {
+            "url": "127.0.0.1:8018",
+            "pubkey": "5qP4wyDetRcVzQZs3qcxyafxXYowBTdcSVQJbHXcZsji"
+        },
+        {
+            "url": "127.0.0.1:8019",
+            "pubkey": "8ajJBphKsQHeWBLm1dzySBJPJcdt7aFS77sFDVUK5vE4"
+        }
+    ],
+    "dec_keyset": {
+        "pubkey": "8Em59bmMevJuHtXQapwh6Pick9s5ySBWyCb8ATE2SePMySmQs8EKz7nF",
+        "combkey": "2kDu7SYApgXdKjzVpqPh8Yttyntk8KuydSrd9nrXhgQGZdE3j22wdsJLnogzV4MzMfJpHuQQt792GdMw8nkfsZPcqcCiGuRHuXh7xm9riQ1wL8CGo1VtoL4jaFSnhMYRY5igZughohYyxFUyQbgyg9CgAqVkK1Vv1XgzhUjbFUedwSTrr9H8ukMUmDdgYB5UXQzgtvyTVeu2XcNt44ajqtFXCFLLhuzUpjthVVrKCBEsrMsn5xkYT6aUXokv2yRh3hwv6oWc2LjtPjoTn3JLQ5BVtoyprTxrN4PuU6PXhRvWfmNpHYXGJJMKjCGAbvEkFQvQz2rEzpWjzWq3ZMbsspeZMLx9bQdTgTHtnAC9WKdyxtcpLAJzA2kCD8RUAAJLAo7H5WoDZAa7fbeoruRu3cjpxaUPKJXjwZMSuEWxBVRogZdwXMp96uiQSySSB5kP7jfK2WmwYgua7wrSf1SLSndwMiSyZPt1srFZam4zYwzjKAdcFb6efojifH25BmrWWYVEAkD71Ef99YDvyMqppiv9F3XvTFfYLLa2NsbE5jqgs1yWW9Yo6eds6ETY2eV4vN2JvqMrkrHJJnb82aoXWXJuhmuqjKmhj3fW3bCLYrxB3P7oGiPbw42XR9xytp7Ae1MzZq68a3cAqLM92FcTyBRtVjSSiiDzKzrEY9pg1rZybbBNZSiatHVF5dnkHjYunW6tp2gUSPrwU2ACR4rceVhj26n9DM539Lb9kehFoJCKKSswyUNjFXt8KY3baqyDUmaTp8rWemnnhnoz8ACDPyykuhwYuJGy2tHargD62oipGky8zu9QPDH785vvjiXAomeaercnyqcrnjLrtg1eqD1xMgAyZYfXBLQyquJiU2tejSdrwUQ6F61sdkNyn3ksa1GSkdc5Q4vPR2MobcMNYmazVBYPVTGKbP58jTfhPMF6SZbAXDCmpLF2rQq1k1yTgZTnAkdxCECYTw4HRiwiPtbGuKJzq13asD2rbCjyHkfWTaZ8DBQ5WQ68ELB8LNUyLRtjzrA1vSosiFnzuNg5D1upehjh2bpaLr5YBiUNLRsf3wveQGePALgDXN7GQc1wpfbW8M4VnA96NNS8uSUHoWCV4BJa9o83SjUwnKk9K19"
+    }
+}

@@ -1,22 +1,23 @@
-use anyhow::{ensure, Context, Result};
-use serde_json::from_str;
-use std::fs;
-use std::time::Duration;
+use anyhow::Result;
+use multisig::{Keypair, PublicKey};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use timeboost::{Timeboost, TimeboostInitializer};
+use timeboost::{
+    keyset::{private_keys, resolve_with_retries, Keyset},
+    Timeboost, TimeboostInitializer,
+};
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
-use tokio::net::lookup_host;
-use tokio::time::sleep;
 
+#[cfg(feature = "until")]
+use anyhow::ensure;
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
 use clap::Parser;
-use timeboost_utils::{types::logging, unsafe_zero_keypair};
+use timeboost_utils::types::logging;
 use tokio::signal;
 use tracing::warn;
 
@@ -66,45 +67,49 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
-    /// NON PRODUCTION: A deterministic key generator is used for local/cloud testing. The format
-    /// will just be a list of addresses since keys are deterministic. So if we have 5 nodes like in
-    /// docker it'll just be
-    /// [
-    ///     "172.20.0.2",
-    ///     "172.20.0.3",
-    ///     "172.20.0.4",
-    ///     "172.20.0.5",
-    ///     "172.20.0.6"
-    /// ]
+    /// Path to file containing the keyset description.
+    ///
+    /// The file contains backend urls and public key material.
     #[clap(long)]
-    keyfile: PathBuf,
+    keyset_file: PathBuf,
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
     nodes: Option<usize>,
 
+    /// Path to file containing private keys.
+    ///
+    /// The file should follow the .env format, with two keys:
+    /// * TIMEBOOST_SIGNATURE_PRIVATE_KEY
+    /// * TIMEBOOST_DECRYPTION_PRIVATE_KEY
+    ///
+    /// Appropriate key files can be generated with the `keygen` utility program.
+    #[clap(long, name = "KEY_FILE", env = "TIMEBOOST_KEY_FILE")]
+    key_file: Option<PathBuf>,
+
+    /// Private signature key.
+    ///
+    /// This can be used as an alternative to KEY_FILE.
+    #[clap(
+        long,
+        env = "TIMEBOOST_SIGNATURE_PRIVATE_KEY",
+        conflicts_with = "KEY_FILE"
+    )]
+    private_signature_key: Option<String>,
+
+    /// Private decryption key.
+    ///
+    /// This can be used as an alternative to KEY_FILE.
+    #[clap(
+        long,
+        env = "TIMEBOOST_DECRYPTION_PRIVATE_KEY",
+        conflicts_with = "KEY_FILE"
+    )]
+    private_decryption_key: Option<String>,
+
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
-}
-
-pub fn read_test_config(path: PathBuf) -> Result<Vec<String>> {
-    ensure!(path.exists(), "File not found: {:?}", path);
-    let data = fs::read_to_string(&path).context("Failed to read file")?;
-    let vec: Vec<String> = from_str(&data).context("Failed to parse JSON")?;
-    Ok(vec)
-}
-
-async fn resolve_with_retries(host: &str) -> SocketAddr {
-    loop {
-        if let Ok(mut addresses) = lookup_host(host).await {
-            if let Some(addr) = addresses.next() {
-                break addr;
-            }
-        }
-        sleep(Duration::from_secs(2)).await;
-        tracing::error!(%host, "looking up peer host");
-    }
 }
 
 #[tokio::main]
@@ -113,41 +118,47 @@ async fn main() -> Result<()> {
 
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
+    let num = cli.nodes.unwrap_or(5);
 
+    // TODO: Remove Node Id from Timeboost
     let id = NodeId::from(cli.id as u64);
 
-    let keypair = unsafe_zero_keypair(id);
+    // Read public key material
+    let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
-    let peer_hosts = {
-        let mut hosts = read_test_config(cli.keyfile).expect("keyfile to exist and be valid");
-        if let Some(nodes) = cli.nodes {
-            hosts.truncate(nodes)
-        }
-        hosts
-    };
+    // Read private key material
+    let (sig_key, dec_key) = private_keys(
+        cli.key_file,
+        cli.private_signature_key,
+        cli.private_decryption_key,
+    )?;
+
+    let keypair = Keypair::from(sig_key);
+    let deckey = keyset
+        .build_decryption_material(dec_key)
+        .expect("parse keyset");
 
     #[cfg(feature = "until")]
-    let peer_urls: Vec<reqwest::Url> = peer_hosts
+    let peer_urls: Vec<reqwest::Url> = keyset
+        .keyset()
         .iter()
-        .map(|ph| format!("http://{}", ph).parse().unwrap())
+        .take(num)
+        .map(|ph| format!("http://{}", ph.url).parse().unwrap())
         .collect();
 
     let mut peer_hosts_and_keys = Vec::new();
 
-    for (peer_id, peer_host) in peer_hosts.into_iter().enumerate() {
-        let resolved_addr = match peer_host.parse::<SocketAddr>() {
+    for peer_host in keyset.keyset().iter().take(num) {
+        let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
             Ok(addr) => addr, // It's already an IP address with a port
-            Err(_) => resolve_with_retries(&peer_host).await,
+            Err(_) => resolve_with_retries(&peer_host.url).await,
         };
-
-        peer_hosts_and_keys.push((
-            unsafe_zero_keypair(peer_id as u64).public_key(),
-            resolved_addr,
-        ));
+        let pubkey =
+            PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
+        peer_hosts_and_keys.push((pubkey, resolved_addr));
     }
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
-
     #[cfg(feature = "until")]
     let handle = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
@@ -171,6 +182,7 @@ async fn main() -> Result<()> {
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
+        deckey,
         bind_address,
         nitro_url: cli.nitro_node_url,
     };

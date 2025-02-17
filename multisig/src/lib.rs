@@ -162,12 +162,33 @@ impl Signature {
     }
 }
 
+impl From<SecretKey> for Keypair {
+    fn from(value: SecretKey) -> Self {
+        let pair = ed25519::KeyPair {
+            pk: value.public_key().key,
+            sk: value.key,
+        };
+        Self { pair }
+    }
+}
+
 impl TryFrom<&[u8]> for SecretKey {
     type Error = InvalidSecretKey;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let k = ed25519::SecretKey::from_slice(value).map_err(|_| InvalidSecretKey(()))?;
         Ok(Self { key: k })
+    }
+}
+
+impl TryFrom<&str> for SecretKey {
+    type Error = InvalidSecretKey;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        bs58::decode(s)
+            .into_vec()
+            .map_err(|_| InvalidSecretKey(()))
+            .and_then(|v| SecretKey::try_from(v.as_slice()))
     }
 }
 
@@ -180,6 +201,17 @@ impl TryFrom<&[u8]> for PublicKey {
             return Err(InvalidPublicKey(()));
         }
         Ok(Self { key: k })
+    }
+}
+
+impl TryFrom<&str> for PublicKey {
+    type Error = InvalidPublicKey;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        bs58::decode(s)
+            .into_vec()
+            .map_err(|_| InvalidPublicKey(()))
+            .and_then(|v| PublicKey::try_from(v.as_slice()))
     }
 }
 

@@ -17,7 +17,7 @@ use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
 /// Given a tuple (g, g_hat, h, h_hat) prove that DLOG_{g}(g_hat) == DLOG_{h}(h_hat).
 ///
 /// Protocol description (Section 5 in [Sigma.pdf](https://www.cs.au.dk/~ivan/Sigma.pdf)) with additional background on sigma protocols.
-pub struct ChaumPedersen<C, D>
+pub(crate) struct ChaumPedersen<C, D>
 where
     C: CurveGroup,
     D: DuplexHash,
@@ -47,7 +47,7 @@ impl<C: CurveGroup, D: DuplexHash> Clone for CPParameters<C, D> {
 }
 
 impl<C: CurveGroup, D: DuplexHash> CPParameters<C, D> {
-    pub fn new(generator: C) -> Self {
+    pub(crate) fn new(generator: C) -> Self {
         Self {
             _hash: PhantomData,
             generator,
@@ -62,7 +62,7 @@ impl<C: CurveGroup, D: DuplexHash> CPParameters<C, D> {
 ///
 /// subject to proving: DLOG_{g}(g_hat) == DLOG_{h}(h_hat)
 #[derive(Clone)]
-pub struct DleqTuple<C: CurveGroup>(C, C, C, C);
+pub(crate) struct DleqTuple<C: CurveGroup>(C, C, C, C);
 
 impl<C: CurveGroup> DleqTuple<C> {
     pub fn new(g: C, g_hat: C, h: C, h_hat: C) -> Self {
@@ -75,7 +75,7 @@ impl<C: CurveGroup> DleqTuple<C> {
 }
 
 #[derive(Clone)]
-pub struct Proof {
+pub(crate) struct Proof {
     pub(crate) transcript: Vec<u8>,
 }
 
