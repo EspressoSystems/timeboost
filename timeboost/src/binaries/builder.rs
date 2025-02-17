@@ -1,11 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use multisig::{Keypair, PublicKey};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, resolve_with_retries, Keyset},
+    keyset::{resolve_with_retries, Keyset},
     Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -126,12 +126,21 @@ async fn main() -> Result<()> {
     // Read public key material
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
-    // Read private key material
-    let (sig_key, dec_key) = private_keys(
-        cli.key_file,
-        cli.private_signature_key,
-        cli.private_decryption_key,
+    let sig_key = multisig::SecretKey::try_from(keyset.keyset()[cli.id as usize].sig_pk.as_str())
+        .context("converting key string to secret key")?;
+    let dec_key = bincode::deserialize(
+        &bs58::decode(keyset.keyset()[cli.id as usize].dec_pk.clone())
+            .into_vec()
+            .context("unable to decode bs58")?,
     )?;
+
+    // TODO: Restructure this to allow reading from .env
+    // Read private key material
+    // let (sig_key, dec_key) = private_keys(
+    //     cli.key_file,
+    //     cli.private_signature_key,
+    //     cli.private_decryption_key,
+    // )?;
 
     let keypair = Keypair::from(sig_key);
     let deckey = keyset
