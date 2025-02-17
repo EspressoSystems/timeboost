@@ -80,10 +80,10 @@ impl<C: CurveGroup> CombKey<C> {
     }
 }
 
-impl<C: CurveGroup> TryFrom<&String> for CombKey<C> {
+impl<C: CurveGroup> TryFrom<&str> for CombKey<C> {
     type Error = ark_serialize::SerializationError;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let v = bs58::decode(value)
             .into_vec()
             .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
@@ -106,10 +106,10 @@ impl<C: CurveGroup> PublicKey<C> {
     }
 }
 
-impl<C: CurveGroup> TryFrom<&String> for PublicKey<C> {
+impl<C: CurveGroup> TryFrom<&str> for PublicKey<C> {
     type Error = ark_serialize::SerializationError;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let v = bs58::decode(value)
             .into_vec()
             .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
@@ -132,10 +132,10 @@ impl<C: CurveGroup> KeyShare<C> {
     }
 }
 
-impl<C: CurveGroup> TryFrom<&String> for KeyShare<C> {
+impl<C: CurveGroup> TryFrom<&str> for KeyShare<C> {
     type Error = ark_serialize::SerializationError;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let v = bs58::decode(value)
             .into_vec()
             .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
