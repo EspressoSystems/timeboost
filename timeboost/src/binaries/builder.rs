@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, resolve_with_retries, Keyset},
+    keyset::{private_keys, resolve_with_retries, wait_for_live_peer, Keyset},
     Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -164,6 +164,8 @@ async fn main() -> Result<()> {
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in keyset.keyset().iter().take(num) {
+        wait_for_live_peer(&peer_host.url).await?;
+
         let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
             Ok(addr) => addr, // It's already an IP address with a port
             Err(_) => resolve_with_retries(&peer_host.url).await,

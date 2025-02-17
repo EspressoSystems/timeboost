@@ -104,3 +104,35 @@ pub async fn resolve_with_retries(host: &str) -> SocketAddr {
         tracing::error!(%host, "looking up peer host");
     }
 }
+
+/// NON PRODUCTION
+/// This function takes a host IP address and checks if it's an ip address. If it is, it moves on, if not, it
+/// loops until the DNS resolves to a 200 on the healthz endpoint.
+pub async fn wait_for_live_peer(host: &str) -> Result<()> {
+    if host.parse::<SocketAddr>().is_ok() {
+        return Ok(());
+    }
+
+    loop {
+        // This is hacky. First, split on the port `:` that we know is in the string so we can get port 8800 instead
+        let mut parts = host.split(':');
+        let ip = parts.next().context("getting ip from host string")?;
+
+        // The port will be 8000 + index, so we just add 800 to it
+        let port: u16 = parts
+            .next()
+            .context("getting port from host string")?
+            .parse()?;
+
+        let new_host = format!("{}:{}", ip, port + 800u16);
+
+        tracing::info!("establishing connection to load balancer at {new_host}");
+
+        // Check if the healthz endpoint returns a 200 on the new host, looping forever until it does
+        if reqwest::get(&new_host).await?.status() == 200 {
+            return Ok(());
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+}
