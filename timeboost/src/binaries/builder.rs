@@ -133,7 +133,7 @@ async fn main() -> Result<()> {
     // Read public key material
     let keyset = read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
-    let keypair = Keypair::from_private_key(sig_key);
+    let keypair = Keypair::from(sig_key);
     let deckey = build_decryption_material(dec_key, keyset.clone()).expect("parse keyset");
 
     #[cfg(feature = "until")]
@@ -151,7 +151,8 @@ async fn main() -> Result<()> {
             Ok(addr) => addr, // It's already an IP address with a port
             Err(_) => resolve_with_retries(&peer_host.url).await,
         };
-        let pubkey = PublicKey::try_from(&peer_host.pubkey).expect("derive public signature key");
+        let pubkey =
+            PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
         peer_hosts_and_keys.push((pubkey, resolved_addr));
     }
 
