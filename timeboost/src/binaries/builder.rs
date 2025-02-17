@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
 
     let mut peer_hosts_and_keys = Vec::new();
 
-    for peer_host in keyset.keyset().into_iter().take(num) {
+    for peer_host in keyset.keyset().iter().take(num) {
         let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
             Ok(addr) => addr, // It's already an IP address with a port
             Err(_) => resolve_with_retries(&peer_host.url).await,
