@@ -1,6 +1,7 @@
-use std::{fs, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, time::Duration};
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
@@ -62,35 +63,35 @@ impl Keyset {
     }
 }
 
-// pub fn private_keys(
-//     key_file: Option<PathBuf>,
-//     private_signature_key: Option<String>,
-//     private_decryption_key: Option<String>,
-// ) -> Result<(SecretKey, KeyShare)> {
-//     if let Some(path) = key_file {
-//         let vars = dotenvy::from_path_iter(path)?.collect::<Result<HashMap<_, _>, _>>()?;
-//         let sig_key_string: &str = vars
-//             .get("TIMEBOOST_PRIVATE_SIGNATURE_KEY")
-//             .context("key file missing TIMEBOOST_PRIVATE_SIGNATURE_KEY")?;
-//         let sig_key = multisig::SecretKey::try_from(sig_key_string)?;
-//         let dec_key_string = vars
-//             .get("TIMEBOOST_PRIVATE_DECRYPTION_KEY")
-//             .context("key file missing TIMEBOOST_PRIVATE_DECRYPTION_KEY")?;
-//         let dec_key: KeyShare = bincode::deserialize(&bs58::decode(dec_key_string).into_vec()?)?;
+pub fn private_keys(
+    key_file: Option<PathBuf>,
+    private_signature_key: Option<String>,
+    private_decryption_key: Option<String>,
+) -> Result<(SecretKey, KeyShare)> {
+    if let Some(path) = key_file {
+        let vars = dotenvy::from_path_iter(path)?.collect::<Result<HashMap<_, _>, _>>()?;
+        let sig_key_string: &str = vars
+            .get("TIMEBOOST_PRIVATE_SIGNATURE_KEY")
+            .context("key file missing TIMEBOOST_PRIVATE_SIGNATURE_KEY")?;
+        let sig_key = multisig::SecretKey::try_from(sig_key_string)?;
+        let dec_key_string = vars
+            .get("TIMEBOOST_PRIVATE_DECRYPTION_KEY")
+            .context("key file missing TIMEBOOST_PRIVATE_DECRYPTION_KEY")?;
+        let dec_key: KeyShare = bincode::deserialize(&bs58::decode(dec_key_string).into_vec()?)?;
 
-//         Ok((sig_key, dec_key))
-//     } else if let (Some(sig_key), Some(dec_key)) = (private_signature_key, private_decryption_key) {
-//         let sig_key = multisig::SecretKey::try_from(sig_key.as_str())?;
-//         let bytes = &bs58::decode(dec_key)
-//             .into_vec()
-//             .context("unable to decode bs58")?;
-//         let dec_key = bincode::deserialize(bytes).expect("unable to read bytes into keyshare");
+        Ok((sig_key, dec_key))
+    } else if let (Some(sig_key), Some(dec_key)) = (private_signature_key, private_decryption_key) {
+        let sig_key = multisig::SecretKey::try_from(sig_key.as_str())?;
+        let bytes = &bs58::decode(dec_key)
+            .into_vec()
+            .context("unable to decode bs58")?;
+        let dec_key = bincode::deserialize(bytes).expect("unable to read bytes into keyshare");
 
-//         Ok((sig_key, dec_key))
-//     } else {
-//         bail!("neither key file nor full set of private keys was provided")
-//     }
-// }
+        Ok((sig_key, dec_key))
+    } else {
+        bail!("neither key file nor full set of private keys was provided")
+    }
+}
 
 pub async fn resolve_with_retries(host: &str) -> SocketAddr {
     loop {
