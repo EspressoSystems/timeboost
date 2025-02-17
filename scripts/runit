@@ -10,7 +10,7 @@ keyset_file="test-configs/local.json"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -k|--keyset-file)
-            keyset-file="$2"
+            keyset_file="$2"
             shift 2
             ;;
         -l|--late)
@@ -34,7 +34,7 @@ Options:
     -l | --late
         Delayed startup of first node.
 
-    -k | --keyfile <PATH>
+    -k | --keyset-file <PATH>
         Use a JSON file for node keys (default \"test-configs/local.json\").
 
     -r | --rounds <NUMBER>
@@ -47,9 +47,15 @@ Options:
     esac
 done
 
+set -a;
+source .env;
+set +a;
+
 just build_release --features="until"
 
 for (( i=0; i<$nodes; i++ )); do
+    sig_priv_key="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
+    dec_priv_key="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
     cmd=(target/release/timeboost
         --id $i
         --port $((8000 + $i))
@@ -65,6 +71,8 @@ for (( i=0; i<$nodes; i++ )); do
     fi
 
     echo "${cmd[@]}"
+    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!sig_priv_key} \
+    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!dec_priv_key} \
     "${cmd[@]}" &
 done
 
