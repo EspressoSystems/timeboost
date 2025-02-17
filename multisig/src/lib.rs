@@ -91,14 +91,6 @@ impl Keypair {
         this
     }
 
-    pub fn from_private_key(priv_key: SecretKey) -> Self {
-        let pair = ed25519::KeyPair {
-            pk: priv_key.public_key().key,
-            sk: priv_key.key,
-        };
-        Self { pair }
-    }
-
     /// Returns ed25519 Public key.
     pub fn public_key(&self) -> PublicKey {
         PublicKey { key: self.pair.pk }
@@ -167,6 +159,16 @@ impl Signature {
 
     pub fn as_slice(&self) -> &[u8] {
         &self.sig[..]
+    }
+}
+
+impl From<SecretKey> for Keypair {
+    fn from(value: SecretKey) -> Self {
+        let pair = ed25519::KeyPair {
+            pk: value.public_key().key,
+            sk: value.key,
+        };
+        Self { pair }
     }
 }
 
