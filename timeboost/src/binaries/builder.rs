@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{build_decryption_material, private_keys, read_keyset, resolve_with_retries},
+    keyset::{private_keys, resolve_with_retries, Keyset},
     Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -123,6 +123,9 @@ async fn main() -> Result<()> {
     // TODO: Remove Node Id from Timeboost
     let id = NodeId::from(cli.id as u64);
 
+    // Read public key material
+    let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+
     // Read private key material
     let (sig_key, dec_key) = private_keys(
         cli.key_file,
@@ -130,15 +133,14 @@ async fn main() -> Result<()> {
         cli.private_decryption_key,
     )?;
 
-    // Read public key material
-    let keyset = read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
-
     let keypair = Keypair::from(sig_key);
-    let deckey = build_decryption_material(dec_key, keyset.clone()).expect("parse keyset");
+    let deckey = keyset
+        .build_decryption_material(dec_key)
+        .expect("parse keyset");
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
-        .keyset
+        .keyset()
         .iter()
         .take(num)
         .map(|ph| format!("http://{}", ph.url).parse().unwrap())
@@ -146,7 +148,7 @@ async fn main() -> Result<()> {
 
     let mut peer_hosts_and_keys = Vec::new();
 
-    for peer_host in keyset.keyset.into_iter().take(num) {
+    for peer_host in keyset.keyset().into_iter().take(num) {
         let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
             Ok(addr) => addr, // It's already an IP address with a port
             Err(_) => resolve_with_retries(&peer_host.url).await,

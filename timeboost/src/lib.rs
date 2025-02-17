@@ -154,6 +154,7 @@ impl HasInitializer for Timeboost {
                 .enumerate()
                 .map(|(i, key)| (i as u8, key)),
         );
+
         let network = Network::create(
             initializer.bind_address,
             initializer.keypair.clone(),

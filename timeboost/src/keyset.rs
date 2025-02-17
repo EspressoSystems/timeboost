@@ -11,10 +11,10 @@ type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct Keyset {
-    pub keyset: Vec<PublicNodeInfo>,
-    pub dec_keyset: PublicDecInfo,
+    keyset: Vec<PublicNodeInfo>,
+    dec_keyset: PublicDecInfo,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -25,45 +25,40 @@ pub struct PublicNodeInfo {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicDecInfo {
-    pub pubkey: String,
-    pub combkey: String,
+    pubkey: String,
+    combkey: String,
 }
+
+#[allow(dead_code)]
 pub struct DecryptionInfo {
     pub pubkey: PublicKey,
     pub combkey: CombKey,
     pub privkey: KeyShare,
 }
 
-// Helper methods for parsing keyset data
-pub async fn resolve_with_retries(host: &str) -> SocketAddr {
-    loop {
-        if let Ok(mut addresses) = lookup_host(host).await {
-            if let Some(addr) = addresses.next() {
-                break addr;
-            }
-        }
-        sleep(Duration::from_secs(2)).await;
-        tracing::error!(%host, "looking up peer host");
+impl Keyset {
+    pub fn read_keyset(path: PathBuf) -> Result<Self> {
+        ensure!(path.exists(), "File not found: {:?}", path);
+        let data = fs::read_to_string(&path).context("Failed to read file")?;
+        let keyset: Keyset = from_str(&data).context("Failed to parse JSON")?;
+        Ok(keyset)
     }
-}
 
-pub fn read_keyset(path: PathBuf) -> Result<Keyset> {
-    ensure!(path.exists(), "File not found: {:?}", path);
-    let data = fs::read_to_string(&path).context("Failed to read file")?;
-    let keyset: Keyset = from_str(&data).context("Failed to parse JSON")?;
-    Ok(keyset)
-}
+    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionInfo> {
+        let pubkey = PublicKey::try_from(&self.dec_keyset.pubkey)
+            .context("Failed to parse public key from keyset")?;
+        let combkey = CombKey::try_from(&self.dec_keyset.combkey)
+            .context("Failed to parse combination key from keyset")?;
+        Ok(DecryptionInfo {
+            pubkey,
+            combkey,
+            privkey: deckey,
+        })
+    }
 
-pub fn build_decryption_material(deckey: KeyShare, keyset: Keyset) -> Result<DecryptionInfo> {
-    let pubkey = PublicKey::try_from(&keyset.dec_keyset.pubkey)
-        .context("Failed to parse public key from keyset")?;
-    let combkey = CombKey::try_from(&keyset.dec_keyset.combkey)
-        .context("Failed to parse combination key from keyset")?;
-    Ok(DecryptionInfo {
-        pubkey,
-        combkey,
-        privkey: deckey,
-    })
+    pub fn keyset(&self) -> Vec<PublicNodeInfo> {
+        self.keyset.clone()
+    }
 }
 
 pub fn private_keys(
@@ -93,5 +88,17 @@ pub fn private_keys(
         Ok((sig_key, dec_key))
     } else {
         bail!("neither key file nor full set of private keys was provided")
+    }
+}
+
+pub async fn resolve_with_retries(host: &str) -> SocketAddr {
+    loop {
+        if let Ok(mut addresses) = lookup_host(host).await {
+            if let Some(addr) = addresses.next() {
+                break addr;
+            }
+        }
+        sleep(Duration::from_secs(2)).await;
+        tracing::error!(%host, "looking up peer host");
     }
 }

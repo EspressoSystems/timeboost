@@ -14,6 +14,7 @@ use sg_encryption::ShoupGennaro;
 use sha2::{Digest, Sha256};
 use std::convert::TryFrom;
 use traits::threshold_enc::ThresholdEncScheme;
+
 #[derive(Clone)]
 pub struct Committee {
     pub id: u32,
@@ -26,6 +27,7 @@ pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
     pub generator: C,
     pub cp_params: CPParameters<C, D>,
 }
+
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CombKey<C: CurveGroup> {
