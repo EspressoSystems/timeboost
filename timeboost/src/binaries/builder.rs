@@ -126,6 +126,7 @@ async fn main() -> Result<()> {
     // Read public key material
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
+    // Decode the sig and dec keys from the keyset type.
     let sig_key = multisig::SecretKey::try_from(keyset.keyset()[cli.id as usize].sig_pk.as_str())
         .context("converting key string to secret key")?;
     let dec_key = bincode::deserialize(
@@ -158,13 +159,9 @@ async fn main() -> Result<()> {
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in keyset.keyset().iter().take(num) {
-        let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
-            Ok(addr) => addr, // It's already an IP address with a port
-            Err(_) => resolve_with_retries(&peer_host.url).await,
-        };
         let pubkey =
             PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
-        peer_hosts_and_keys.push((pubkey, resolved_addr));
+        peer_hosts_and_keys.push((pubkey, peer_host.url));
     }
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));

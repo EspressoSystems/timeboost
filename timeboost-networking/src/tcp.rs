@@ -3,6 +3,7 @@ use std::io;
 use std::net::SocketAddr;
 
 use tokio::io::{AsyncRead, AsyncWrite};
+use url::Url;
 
 /// A TCP listener type.
 pub trait Listener: Sized {
@@ -21,7 +22,7 @@ pub trait Listener: Sized {
 /// TCP stream type.
 pub trait Stream: AsyncRead + AsyncWrite + Sized {
     /// Create a new TCP stream by connecting to the given address.
-    fn connect(addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
+    fn connect(addr: Url) -> impl Future<Output = io::Result<Self>> + Send;
 
     /// Set the `TCP_NODELAY` socket option (disables Nagle's algorithm).
     ///
@@ -70,8 +71,17 @@ impl Listener for turmoil::net::TcpListener {
 }
 
 impl Stream for tokio::net::TcpStream {
-    async fn connect(addr: SocketAddr) -> io::Result<Self> {
-        tokio::net::TcpStream::connect(addr).await
+    async fn connect(addr: Url) -> io::Result<Self> {
+        let sock_addr =
+            addr.socket_addrs(|| None)?
+                .iter()
+                .next()
+                .cloned()
+                .ok_or(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "could not resolve to any address",
+                ))?;
+        tokio::net::TcpStream::connect(sock_addr).await
     }
 
     fn set_nodelay(&self, val: bool) -> io::Result<()> {

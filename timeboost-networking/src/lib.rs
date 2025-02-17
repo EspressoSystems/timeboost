@@ -30,6 +30,7 @@ use tcp::Stream;
 
 pub use error::{Empty, NetworkError};
 pub use metrics::NetworkMetrics;
+use url::Url;
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -109,7 +110,7 @@ struct Server<T: tcp::Listener> {
     obound: Receiver<(Option<PublicKey>, Bytes)>,
 
     /// All parties of the network and their addresses.
-    peers: HashMap<PublicKey, SocketAddr>,
+    peers: HashMap<PublicKey, Url>,
 
     /// Bi-directional mapping of Ed25519 and X25519 keys to identify
     /// remote parties.
@@ -173,7 +174,7 @@ impl Network {
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        P: IntoIterator<Item = (PublicKey, Url)>,
     {
         Self::generic_create::<tokio::net::TcpListener, _>(bind_to, kp, group, metrics).await
     }
@@ -198,7 +199,7 @@ impl Network {
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        P: IntoIterator<Item = (PublicKey, Url)>,
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
@@ -292,7 +293,7 @@ where
             self.connect_tasks.spawn(connect(
                 (self.key, self.keypair.clone()),
                 (*k, *x),
-                *a,
+                a.clone(),
                 self.metrics.clone(),
             ));
         }
@@ -474,7 +475,7 @@ where
         self.connect_tasks.spawn(connect(
             (self.key, self.keypair.clone()),
             (k, *x),
-            *a,
+            a.clone(),
             self.metrics.clone(),
         ));
     }
@@ -555,7 +556,7 @@ where
 async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
-    addr: SocketAddr,
+    addr: Url,
     metrics: Arc<NetworkMetrics>,
 ) -> (T, TransportState) {
     use rand::prelude::*;
@@ -577,7 +578,7 @@ async fn connect<T: tcp::Stream + Unpin>(
         sleep(Duration::from_millis(d)).await;
         debug!(node = %this.0, peer = %to.0, %addr, "connecting");
         metrics.add_connect_attempt(&to.0);
-        match timeout(CONNECT_TIMEOUT, T::connect(addr)).await {
+        match timeout(CONNECT_TIMEOUT, T::connect(addr.clone())).await {
             Ok(Ok(s)) => {
                 if let Err(err) = s.set_nodelay(true) {
                     error!(node = %this.0, %err, "failed to set NO_DELAY socket option");

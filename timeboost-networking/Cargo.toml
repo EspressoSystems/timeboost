@@ -20,6 +20,7 @@ timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true, optional = true }
+url = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

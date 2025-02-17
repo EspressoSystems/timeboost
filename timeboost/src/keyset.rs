@@ -1,6 +1,7 @@
 use std::{fs, net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::{ensure, Context, Result};
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::from_str;
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
@@ -18,7 +19,7 @@ pub struct Keyset {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicNodeInfo {
-    pub url: String,
+    pub url: Url,
     pub pubkey: String,
     pub sig_pk: String,
     pub dec_pk: String,

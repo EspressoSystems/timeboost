@@ -61,7 +61,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The peers that this node will connect to.
-    pub peers: Vec<(PublicKey, SocketAddr)>,
+    pub peers: Vec<(PublicKey, Url)>,
 
     /// The keypair for the node.
     pub keypair: Keypair,
