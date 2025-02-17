@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-just build_release --features="until"
-
 nodes=5
 rounds=1000
 late_start=false
@@ -28,12 +26,28 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            echo "Unknown: $1"
-            echo "Usage: $0 [-l|--late] [-r|--rounds <NUMBER>] [-n|--nodes <NUMBER>]"
+            echo -e "Unknown: $1\n"
+            echo "Usage: $0 [Options] where
+
+Options:
+
+    -l | --late
+        Delayed startup of first node.
+
+    -k | --keyfile <PATH>
+        Use a JSON file for node keys (default \"test-configs/local.json\").
+
+    -r | --rounds <NUMBER>
+        Run for the given number of rounds (default = 1000).
+
+    -n | --nodes <NUMBER>
+        Run the given number of nodes (default = 5)."
             exit 1
             ;;
     esac
 done
+
+just build_release --features="until"
 
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/timeboost
@@ -43,6 +57,7 @@ for (( i=0; i<$nodes; i++ )); do
         --metrics-port $((9000 + $i))
         --until $rounds
         --keyfile $keyfile
+        --nodes $nodes
         --watchdog-timeout $rounds)
 
     if $late_start; then
