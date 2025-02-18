@@ -1,16 +1,17 @@
 #![doc = include_str!("../README.md")]
 
+mod addr;
 mod error;
 mod frame;
 mod metrics;
 mod tcp;
 mod time;
 
+use std::collections::HashMap;
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::HashMap, net::SocketAddr};
 
 use bimap::BiHashMap;
 use bytes::{Bytes, BytesMut};
@@ -32,6 +33,7 @@ use tcp::Stream;
 
 use error::Empty;
 
+pub use addr::{Address, InvalidAddress};
 pub use error::NetworkError;
 pub use metrics::NetworkMetrics;
 
@@ -113,7 +115,7 @@ struct Server<T: tcp::Listener> {
     obound: Receiver<(Option<PublicKey>, Bytes)>,
 
     /// All parties of the network and their addresses.
-    peers: HashMap<PublicKey, SocketAddr>,
+    peers: HashMap<PublicKey, Address>,
 
     /// Bi-directional mapping of Ed25519 and X25519 keys to identify
     /// remote parties.
@@ -171,49 +173,55 @@ enum Message {
 
 impl Network {
     /// Create a new `Network`.
-    pub async fn create<P>(
-        bind_to: SocketAddr,
+    pub async fn create<P, A1, A2>(
+        bind_to: A1,
         kp: Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        P: IntoIterator<Item = (PublicKey, A2)>,
+        A1: Into<Address>,
+        A2: Into<Address>,
     {
-        Self::generic_create::<tokio::net::TcpListener, _>(bind_to, kp, group, metrics).await
+        Self::generic_create::<tokio::net::TcpListener, _, _, _>(bind_to, kp, group, metrics).await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
     ///
     /// *Requires feature* `"turmoil"`.
     #[cfg(feature = "turmoil")]
-    pub async fn create_turmoil<P>(
-        bind_to: SocketAddr,
+    pub async fn create_turmoil<P, A1, A2>(
+        bind_to: A1,
         kp: Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        P: IntoIterator<Item = (PublicKey, A2)>,
+        A1: Into<Address>,
+        A2: Into<Address>,
     {
         Self::generic_create::<turmoil::net::TcpListener, _>(bind_to, kp, group, metrics).await
     }
 
-    async fn generic_create<T, P>(
-        bind_to: SocketAddr,
+    async fn generic_create<T, P, A1, A2>(
+        bind_to: A1,
         kp: Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, SocketAddr)>,
+        P: IntoIterator<Item = (PublicKey, A2)>,
+        A1: Into<Address>,
+        A2: Into<Address>,
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
         let label = kp.public_key();
         let keys = x25519::Keypair::try_from(kp).expect("ed25519 -> x25519");
 
-        let listener = T::bind(bind_to).await?;
+        let listener = T::bind(&bind_to.into()).await?;
 
         debug!(n = %label, a = %listener.local_addr()?, "listening");
 
@@ -225,7 +233,7 @@ impl Network {
 
         for (k, a) in group {
             index.insert(k, x25519::PublicKey::try_from(k)?);
-            peers.insert(k, a);
+            peers.insert(k, a.into());
         }
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
@@ -300,7 +308,7 @@ where
             self.connect_tasks.spawn(connect(
                 (self.key, self.keypair.clone()),
                 (*k, *x),
-                *a,
+                a.clone(),
                 self.metrics.clone(),
             ));
         }
@@ -482,7 +490,7 @@ where
         self.connect_tasks.spawn(connect(
             (self.key, self.keypair.clone()),
             (k, *x),
-            *a,
+            a.clone(),
             self.metrics.clone(),
         ));
     }
@@ -552,7 +560,13 @@ where
 
     /// Check if the socket's peer IP address corresponds to the configured one.
     fn is_valid_ip(&self, k: &PublicKey, s: &T::Stream) -> bool {
-        self.peers.get(k).map(|a| a.ip()) == s.peer_addr().ok().map(|a| a.ip())
+        self.peers
+            .get(k)
+            .map(|a| {
+                let Address::Inet(ip, _) = a else { return true };
+                Some(*ip) == s.peer_addr().ok().map(|a| a.ip())
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -563,7 +577,7 @@ where
 async fn connect<T: tcp::Stream + Unpin>(
     this: (PublicKey, x25519::Keypair),
     to: (PublicKey, x25519::PublicKey),
-    addr: SocketAddr,
+    addr: Address,
     metrics: Arc<NetworkMetrics>,
 ) -> (T, TransportState) {
     use rand::prelude::*;
@@ -585,7 +599,7 @@ async fn connect<T: tcp::Stream + Unpin>(
         sleep(Duration::from_millis(d)).await;
         debug!(node = %this.0, peer = %to.0, %addr, "connecting");
         metrics.add_connect_attempt(&to.0);
-        match timeout(CONNECT_TIMEOUT, T::connect(addr)).await {
+        match timeout(CONNECT_TIMEOUT, T::connect(&addr)).await {
             Ok(Ok(s)) => {
                 if let Err(err) = s.set_nodelay(true) {
                     error!(node = %this.0, %err, "failed to set NO_DELAY socket option");
