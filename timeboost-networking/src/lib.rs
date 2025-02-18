@@ -194,7 +194,8 @@ impl Network {
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<turmoil::net::TcpListener, _>(bind_to, kp, group, metrics).await
+        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(bind_to, kp, group, metrics)
+            .await
     }
 
     async fn generic_create<T, P, A1, A2>(
