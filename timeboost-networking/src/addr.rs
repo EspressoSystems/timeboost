@@ -22,7 +22,7 @@ impl Address {
     /// We need to be able to set the port to something else.
     pub fn set_port(&mut self, p: u16) {
         match self {
-            Self::Inet(ip, _) => *self = Self::Inet(ip.clone(), p),
+            Self::Inet(ip, _) => *self = Self::Inet(*ip, p),
             Self::Name(hn, _) => *self = Self::Name(hn.clone(), p),
         }
     }
