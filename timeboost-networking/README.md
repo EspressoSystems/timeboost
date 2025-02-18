@@ -86,7 +86,7 @@ The unit of data exchanged over the network is called a `Frame` and consists of
 a 4-byte header and a body of variable size. The header has the following
 structure:
 
-```
+```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
