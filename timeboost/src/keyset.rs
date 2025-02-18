@@ -33,8 +33,8 @@ pub struct PublicNodeInfo {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicDecInfo {
-    pub pubkey: String,
-    pub combkey: String,
+    pubkey: String,
+    combkey: String,
 }
 
 #[allow(dead_code)]

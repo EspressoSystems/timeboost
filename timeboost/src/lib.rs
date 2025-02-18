@@ -147,7 +147,6 @@ impl HasInitializer for Timeboost {
         let net_metrics =
             NetworkMetrics::new(prom.as_ref(), initializer.peers.iter().map(|(k, _)| *k));
 
-        // let (tb_app_tx, tb_app_rx) = channel(100);
         let (block_tx, block_rx) = channel(1000);
 
         let committee = Committee::new(
