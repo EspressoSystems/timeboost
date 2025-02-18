@@ -4,12 +4,14 @@ use std::net::SocketAddr;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use crate::Address;
+
 /// A TCP listener type.
 pub trait Listener: Sized {
     type Stream: Stream;
 
     /// Bind to the given socket address.
-    fn bind(addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
+    fn bind(addr: &Address) -> impl Future<Output = io::Result<Self>> + Send;
 
     /// Accept an inbound TCP connection.
     fn accept(&self) -> impl Future<Output = io::Result<(Self::Stream, SocketAddr)>> + Send;
@@ -21,7 +23,7 @@ pub trait Listener: Sized {
 /// TCP stream type.
 pub trait Stream: AsyncRead + AsyncWrite + Sized {
     /// Create a new TCP stream by connecting to the given address.
-    fn connect(addr: SocketAddr) -> impl Future<Output = io::Result<Self>> + Send;
+    fn connect(addr: &Address) -> impl Future<Output = io::Result<Self>> + Send;
 
     /// Set the `TCP_NODELAY` socket option (disables Nagle's algorithm).
     ///
@@ -39,8 +41,11 @@ pub trait Stream: AsyncRead + AsyncWrite + Sized {
 impl Listener for tokio::net::TcpListener {
     type Stream = tokio::net::TcpStream;
 
-    async fn bind(addr: SocketAddr) -> io::Result<Self> {
-        tokio::net::TcpListener::bind(addr).await
+    async fn bind(addr: &Address) -> io::Result<Self> {
+        match addr {
+            Address::Inet(a, p) => tokio::net::TcpListener::bind((*a, *p)).await,
+            Address::Name(h, p) => tokio::net::TcpListener::bind((&**h, *p)).await,
+        }
     }
 
     async fn accept(&self) -> io::Result<(Self::Stream, SocketAddr)> {
@@ -56,8 +61,11 @@ impl Listener for tokio::net::TcpListener {
 impl Listener for turmoil::net::TcpListener {
     type Stream = turmoil::net::TcpStream;
 
-    async fn bind(addr: SocketAddr) -> io::Result<Self> {
-        turmoil::net::TcpListener::bind(addr).await
+    async fn bind(addr: &Address) -> io::Result<Self> {
+        match addr {
+            Address::Inet(a, p) => turmoil::net::TcpListener::bind((*a, *p)).await,
+            Address::Name(h, p) => turmoil::net::TcpListener::bind((&**h, *p)).await,
+        }
     }
 
     async fn accept(&self) -> io::Result<(Self::Stream, SocketAddr)> {
@@ -70,8 +78,11 @@ impl Listener for turmoil::net::TcpListener {
 }
 
 impl Stream for tokio::net::TcpStream {
-    async fn connect(addr: SocketAddr) -> io::Result<Self> {
-        tokio::net::TcpStream::connect(addr).await
+    async fn connect(addr: &Address) -> io::Result<Self> {
+        match addr {
+            Address::Inet(a, p) => tokio::net::TcpStream::connect((*a, *p)).await,
+            Address::Name(h, p) => tokio::net::TcpStream::connect((&**h, *p)).await,
+        }
     }
 
     fn set_nodelay(&self, val: bool) -> io::Result<()> {
@@ -90,8 +101,11 @@ impl Stream for tokio::net::TcpStream {
 
 #[cfg(feature = "turmoil")]
 impl Stream for turmoil::net::TcpStream {
-    async fn connect(addr: SocketAddr) -> io::Result<Self> {
-        turmoil::net::TcpStream::connect(addr).await
+    async fn connect(addr: &Address) -> io::Result<Self> {
+        match addr {
+            Address::Inet(a, p) => turmoil::net::TcpStream::connect((*a, *p)).await,
+            Address::Name(h, p) => turmoil::net::TcpStream::connect((&**h, *p)).await,
+        }
     }
 
     fn set_nodelay(&self, val: bool) -> io::Result<()> {
