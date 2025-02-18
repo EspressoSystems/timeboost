@@ -19,6 +19,23 @@ impl Address {
         }
     }
 
+    /// We need to be able to set the port to something else.
+    pub fn set_port(&mut self, p: u16) {
+        match self {
+            Self::Inet(ip, _) => *self = Self::Inet(ip.clone(), p),
+            Self::Name(hn, _) => *self = Self::Name(hn.clone(), p),
+        }
+    }
+
+    /// Convert an address to a URL string (basically just adds the scheme).
+    /// TODO: Support TLS (if it comes up).
+    pub fn url_string(&self) -> String {
+        match self {
+            Address::Inet(ip, port) => format!("http://{ip}:{port}"),
+            Address::Name(hn, port) => format!("http://{hn}:{port}"),
+        }
+    }
+
     pub fn is_ip(&self) -> bool {
         matches!(self, Self::Inet(..))
     }

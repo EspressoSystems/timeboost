@@ -5,11 +5,14 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, resolve_with_retries, wait_for_live_peer, Keyset},
-    Timeboost, TimeboostInitializer,
+    keyset::{private_keys, wait_for_live_peer, Keyset},
+    start_rpc_api, Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
 use timeboost_core::types::NodeId;
+use timeboost_networking::Address;
+
+use tokio::sync::mpsc::channel;
 
 #[cfg(feature = "until")]
 use anyhow::ensure;
@@ -126,32 +129,49 @@ async fn main() -> Result<()> {
     // Read public key material
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
-    // Read private key material if it is being supplied
-    let (sig_key, dec_key) = if cli.key_file.is_some()
-        || cli.private_decryption_key.is_some()
-        || cli.private_signature_key.is_some()
-    {
-        private_keys(
+    // Ensure the config exists for this keyset
+    let my_keyset = keyset
+        .keyset()
+        .get(cli.id as usize)
+        .expect("keyset for this node to exist");
+
+    // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
+    // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
+    let (sig_key, dec_key) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
+        // We found both in the JSON, we're good to go.
+        (Some(sig_pk), Some(dec_pk)) => {
+            let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
+                .context("converting key string to secret key")?;
+            let dec_key = bincode::deserialize(
+                &bs58::decode(dec_pk)
+                    .into_vec()
+                    .context("unable to decode bs58")?,
+            )?;
+
+            (sig_key, dec_key)
+        }
+        // Hard crash on misconfigurations in the JSON (i.e. one key unset).
+        (Some(..), None) | (None, Some(..)) => {
+            panic!("malformed JSON configuration, both `sig_pk` and `dec_pk` must be set");
+        }
+        // Last try: Can we pick these eys from the environment or other provided key(s)?
+        _ => private_keys(
             cli.key_file,
             cli.private_signature_key,
             cli.private_decryption_key,
-        )?
-    } else {
-        let sig_key =
-            multisig::SecretKey::try_from(keyset.keyset()[cli.id as usize].sig_pk.as_str())
-                .context("converting key string to secret key")?;
-        let dec_key = bincode::deserialize(
-            &bs58::decode(keyset.keyset()[cli.id as usize].dec_pk.clone())
-                .into_vec()
-                .context("unable to decode bs58")?,
-        )?;
-        (sig_key, dec_key)
+        )?,
     };
 
     let keypair = Keypair::from(sig_key);
     let deckey = keyset
         .build_decryption_material(dec_key)
         .expect("parse keyset");
+
+    let (tb_app_tx, tb_app_rx) = channel(100);
+
+    // The RPC api needs to be started first before everything else so that way we can verify the
+    // health check.
+    let api_handle = start_rpc_api(tb_app_tx.clone(), cli.rpc_port);
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -164,15 +184,19 @@ async fn main() -> Result<()> {
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in keyset.keyset().iter().take(num) {
-        wait_for_live_peer(&peer_host.url).await?;
+        let mut spl = peer_host.url.splitn(3, ":");
+        let p0 = spl.next().expect("valid url");
+        let p1: u16 = spl
+            .next()
+            .expect("valid port")
+            .parse()
+            .expect("integer port");
+        let peer_address = Address::from((p0, p1));
+        wait_for_live_peer(peer_address.clone()).await?;
 
-        let resolved_addr = match peer_host.url.parse::<SocketAddr>() {
-            Ok(addr) => addr, // It's already an IP address with a port
-            Err(_) => resolve_with_retries(&peer_host.url).await,
-        };
         let pubkey =
             PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
-        peer_hosts_and_keys.push((pubkey, resolved_addr));
+        peer_hosts_and_keys.push((pubkey, peer_address));
     }
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
@@ -202,6 +226,8 @@ async fn main() -> Result<()> {
         deckey,
         bind_address,
         nitro_url: cli.nitro_node_url,
+        app_tx: tb_app_tx,
+        app_rx: tb_app_rx,
     };
 
     let timeboost = Timeboost::initialize(init).await?;
@@ -221,6 +247,7 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
+            api_handle.abort();
         }
     }
     #[cfg(not(feature = "until"))]
@@ -230,6 +257,7 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
+            api_handle.abort();
         }
     }
     Ok(())
