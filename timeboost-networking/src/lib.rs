@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 mod error;
 mod frame;
 mod metrics;
@@ -28,7 +30,9 @@ use tracing::{debug, error, info, trace, warn};
 use frame::{Header, Type};
 use tcp::Stream;
 
-pub use error::{Empty, NetworkError};
+use error::Empty;
+
+pub use error::NetworkError;
 pub use metrics::NetworkMetrics;
 
 type Result<T> = std::result::Result<T, NetworkError>;
@@ -166,6 +170,7 @@ enum Message {
 }
 
 impl Network {
+    /// Create a new `Network`.
     pub async fn create<P>(
         bind_to: SocketAddr,
         kp: Keypair,
@@ -178,6 +183,9 @@ impl Network {
         Self::generic_create::<tokio::net::TcpListener, _>(bind_to, kp, group, metrics).await
     }
 
+    /// Create a new `Network` for tests with [`turmoil`].
+    ///
+    /// *Requires feature* `"turmoil"`.
     #[cfg(feature = "turmoil")]
     pub async fn create_turmoil<P>(
         bind_to: SocketAddr,
