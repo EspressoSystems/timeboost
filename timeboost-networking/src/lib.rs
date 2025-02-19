@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 mod addr;
 mod error;
 mod frame;
@@ -29,8 +31,10 @@ use tracing::{debug, error, info, trace, warn};
 use frame::{Header, Type};
 use tcp::Stream;
 
+use error::Empty;
+
 pub use addr::{Address, InvalidAddress};
-pub use error::{Empty, NetworkError};
+pub use error::NetworkError;
 pub use metrics::NetworkMetrics;
 
 type Result<T> = std::result::Result<T, NetworkError>;
@@ -168,6 +172,7 @@ enum Message {
 }
 
 impl Network {
+    /// Create a new `Network`.
     pub async fn create<P, A1, A2>(
         bind_to: A1,
         kp: Keypair,
@@ -182,6 +187,9 @@ impl Network {
         Self::generic_create::<tokio::net::TcpListener, _, _, _>(bind_to, kp, group, metrics).await
     }
 
+    /// Create a new `Network` for tests with [`turmoil`].
+    ///
+    /// *Requires feature* `"turmoil"`.
     #[cfg(feature = "turmoil")]
     pub async fn create_turmoil<P, A1, A2>(
         bind_to: A1,
@@ -194,7 +202,8 @@ impl Network {
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<turmoil::net::TcpListener, _>(bind_to, kp, group, metrics).await
+        Self::generic_create::<turmoil::net::TcpListener, _, _, _>(bind_to, kp, group, metrics)
+            .await
     }
 
     async fn generic_create<T, P, A1, A2>(
