@@ -1,7 +1,20 @@
 services:
   node0:
     image: timeboost:latest
-    command: [ "/app/timeboost", "--id", "0", "--port", "8000", "--rpc-port", "8800", "--metrics-port", "9000", "--keyset-file", "docker.json" ]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "0",
+        "--port",
+        "8000",
+        "--rpc-port",
+        "8800",
+        "--metrics-port",
+        "9000",
+        "--keyset-file",
+        "docker.json",
+      ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.2
@@ -18,7 +31,20 @@ services:
       - "9000:9000"
   node1:
     image: timeboost:latest
-    command: [ "/app/timeboost", "--id", "1", "--port", "8001", "--rpc-port", "8801", "--metrics-port", "9001", "--keyset-file", "docker.json" ]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "1",
+        "--port",
+        "8001",
+        "--rpc-port",
+        "8801",
+        "--metrics-port",
+        "9001",
+        "--keyset-file",
+        "docker.json",
+      ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.3
@@ -35,7 +61,20 @@ services:
       - "9001:9001"
   node2:
     image: timeboost:latest
-    command: [ "/app/timeboost", "--id", "2", "--port", "8002", "--rpc-port", "8802", "--metrics-port", "9002", "--keyset-file", "docker.json" ]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "2",
+        "--port",
+        "8002",
+        "--rpc-port",
+        "8802",
+        "--metrics-port",
+        "9002",
+        "--keyset-file",
+        "docker.json",
+      ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.4
@@ -52,7 +91,20 @@ services:
       - "9002:9002"
   node3:
     image: timeboost:latest
-    command: [ "/app/timeboost", "--id", "3", "--port", "8003", "--rpc-port", "8803", "--metrics-port", "9003", "--keyset-file", "docker.json" ]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "3",
+        "--port",
+        "8003",
+        "--rpc-port",
+        "8803",
+        "--metrics-port",
+        "9003",
+        "--keyset-file",
+        "docker.json",
+      ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.5
@@ -70,7 +122,20 @@ services:
 
   node4:
     image: timeboost:latest
-    command: [ "/app/timeboost", "--id", "4", "--port", "8004", "--rpc-port", "8804", "--metrics-port", "9004", "--keyset-file", "docker.json" ]
+    command:
+      [
+        "/app/timeboost",
+        "--id",
+        "4",
+        "--port",
+        "8004",
+        "--rpc-port",
+        "8804",
+        "--metrics-port",
+        "9004",
+        "--keyset-file",
+        "docker.json",
+      ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.6

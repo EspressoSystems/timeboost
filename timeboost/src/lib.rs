@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
-use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
+use api::endpoints::TimeboostApiState;
+use api::metrics::serve_metrics_api;
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
+use reqwest::Url;
 use sailfish::metrics::SailfishMetrics;
 use sailfish::rbc::{self, Rbc};
 use sailfish::{
@@ -19,10 +21,9 @@ use sequencer::{
     protocol::Sequencer,
 };
 use std::{sync::Arc, time::Duration};
-use tide_disco::Url;
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use timeboost_networking::NetworkMetrics;
+use timeboost_networking::{Address, NetworkMetrics};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
@@ -61,7 +62,7 @@ pub struct TimeboostInitializer {
     pub metrics_port: u16,
 
     /// The peers that this node will connect to.
-    pub peers: Vec<(PublicKey, SocketAddr)>,
+    pub peers: Vec<(PublicKey, Address)>,
 
     /// The keypair for the node.
     pub keypair: Keypair,
@@ -74,14 +75,17 @@ pub struct TimeboostInitializer {
 
     /// The url for arbitrum nitro node for gas calculations
     pub nitro_url: Option<reqwest::Url>,
+
+    /// The sender for events to the sailfish node.
+    pub app_tx: Sender<TimeboostStatusEvent>,
+
+    /// The receiver for events to the sailfish node.
+    pub app_rx: Receiver<TimeboostStatusEvent>,
 }
 
 pub struct Timeboost {
     /// The ID of the node.
     id: NodeId,
-
-    /// The port to bind the RPC server to.
-    rpc_port: u16,
 
     /// The port to bind the metrics API server to.
     metrics_port: u16,
@@ -143,7 +147,6 @@ impl HasInitializer for Timeboost {
         let net_metrics =
             NetworkMetrics::new(prom.as_ref(), initializer.peers.iter().map(|(k, _)| *k));
 
-        let (tb_app_tx, tb_app_rx) = channel(100);
         let (block_tx, block_rx) = channel(1000);
 
         let committee = Committee::new(
@@ -184,10 +187,9 @@ impl HasInitializer for Timeboost {
         // Then, initialize and run the timeboost node.
         let timeboost = Timeboost {
             id: initializer.id,
-            rpc_port: initializer.rpc_port,
             metrics_port: initializer.metrics_port,
-            app_tx: tb_app_tx,
-            app_rx: tb_app_rx,
+            app_tx: initializer.app_tx,
+            app_rx: initializer.app_rx,
             mempool,
             coordinator,
             metrics: prom,
@@ -210,25 +212,6 @@ impl Drop for Timeboost {
 }
 
 impl Timeboost {
-    fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let api = TimeboostApiState::new(app_tx);
-            if let Err(e) = api
-                .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
-                .await
-            {
-                error!("failed to run timeboost api: {}", e);
-            }
-        })
-    }
-
-    /// Start out metrics api with given port
-    fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
-        })
-    }
-
     /// Spawns a task that will continuously send transactions to the timeboost app layer
     fn start_load_generator(tps: u32, app_tx: Sender<TimeboostStatusEvent>) -> JoinHandle<()> {
         let millis = tps_to_millis(tps);
@@ -270,11 +253,7 @@ impl Timeboost {
     pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
         self.handles
-            .push(Self::start_rpc_api(app_tx.clone(), self.rpc_port));
-        self.handles.push(Self::start_metrics_api(
-            self.metrics.clone(),
-            self.metrics_port,
-        ));
+            .push(start_metrics_api(self.metrics.clone(), self.metrics_port));
 
         // Start the load generator.
         if tps > 0 {
@@ -369,4 +348,23 @@ impl Timeboost {
             }
         }
     }
+}
+
+pub fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let api = TimeboostApiState::new(app_tx);
+        if let Err(e) = api
+            .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
+            .await
+        {
+            error!("failed to run timeboost api: {}", e);
+        }
+    })
+}
+
+/// Start out metrics api with given port
+fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
+    tokio::spawn(
+        async move { serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await },
+    )
 }

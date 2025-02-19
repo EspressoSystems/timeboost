@@ -24,6 +24,9 @@ COPY --from=builder /app/test-configs .
 # Set ownership of application files and make binary executable
 RUN chown -R timeboostuser:appgroup /app && chmod +x /app/timeboost
 
+# We need curl for the healthcheck
+RUN apt update && apt install -yqq curl
+
 # Switch to non-root user
 USER timeboostuser
 

@@ -1,11 +1,11 @@
-use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
 use anyhow::{bail, ensure, Context, Result};
 use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
-use tokio::{net::lookup_host, time::sleep};
+use timeboost_networking::Address;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -21,6 +21,14 @@ pub struct Keyset {
 pub struct PublicNodeInfo {
     pub url: String,
     pub pubkey: String,
+
+    /// The optional signature private key for this node.
+    #[serde(default)]
+    pub sig_pk: Option<String>,
+
+    /// The optional decryption private key for this node.
+    #[serde(default)]
+    pub dec_pk: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -91,14 +99,35 @@ pub fn private_keys(
     }
 }
 
-pub async fn resolve_with_retries(host: &str) -> SocketAddr {
+/// NON PRODUCTION
+/// This function takes the provided host and hits the healthz endpoint. This to ensure that when
+/// initiating the network TCP stream that we do not try to hit a dead host, causing issues with
+/// network startup.
+pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
+    if host.is_ip() {
+        return Ok(());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()?;
+
+    // The port is always 8800 + node index. We need to increment the port by one because we are using
+    // the cli port for sailfish in our default config.
+    host.set_port(800 + host.port());
+
     loop {
-        if let Ok(mut addresses) = lookup_host(host).await {
-            if let Some(addr) = addresses.next() {
-                break addr;
+        let url = format!("http://{host}/v0/healthz");
+        tracing::info!(%host, %url, "establishing connection to load balancer");
+
+        // Check if the healthz endpoint returns a 200 on the new host, looping forever until it does
+        if let Ok(resp) = client.get(&url).send().await {
+            tracing::info!("got response {resp:?}, status {}", resp.status());
+            if resp.status() == 200 {
+                return Ok(());
             }
         }
-        sleep(Duration::from_secs(2)).await;
-        tracing::error!(%host, "looking up peer host");
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
 }
