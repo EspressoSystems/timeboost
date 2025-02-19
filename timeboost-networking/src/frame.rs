@@ -1,24 +1,8 @@
 use std::fmt;
 
 /// The header of a frame.
-//
-//  0                   1                   2                   3
-//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |       |       |P|             |                               |
-// |Version|  Type |a|  Reserved   |        Payload length         |
-// |       |       |r|             |                               |
-// |       |       |t|             |                               |
-// +-------+-------+-+-------------+-------------------------------+
-//
-// - Version (4 bits)
-// - Type (4 bits)
-//    - Data (0)
-//    - Ping (1)
-//    - Pong (2)
-// - Partial (1 bit)
-// - Reserved (7 bits)
-// - Payload length (16 bits)
+///
+/// See top-level documentation for details.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Header(u32);
 
