@@ -15,7 +15,7 @@ use timeboost_core::types::{
     time::Timestamp,
     transaction::Transaction,
 };
-use timeboost_utils::types::round_number::RoundNumber;
+use timeboost_core::types::round_number::RoundNumber;
 use tokio::{sync::mpsc::Sender, time::sleep};
 use tracing::{error, info, instrument};
 

@@ -4,24 +4,22 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use super::{message::NoVote, time::Timestamp};
-use crate::types::block::sailfish::SailfishBlock;
-use crate::types::message::Evidence;
-use timeboost_utils::types::round_number::RoundNumber;
+use super::message::NoVote;
+use crate::{Evidence, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Vertex {
+pub struct Vertex<B> {
     round: Signed<RoundNumber>,
     source: PublicKey,
     edges: BTreeSet<PublicKey>,
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
-    block: SailfishBlock,
+    block: Option<B>,
 }
 
-impl Vertex {
-    pub fn new<N, E>(r: N, e: E, k: &Keypair, b: SailfishBlock, deterministic: bool) -> Self
+impl<B> Vertex<B> {
+    pub fn new<N, E>(r: N, e: E, k: &Keypair, b: Option<B>, deterministic: bool) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
@@ -30,7 +28,6 @@ impl Vertex {
         let e = e.into();
 
         debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
-        debug_assert_eq!(r, b.round_number());
 
         Self {
             source: k.public_key(),
@@ -50,13 +47,7 @@ impl Vertex {
         E: Into<Evidence>,
     {
         let r = r.into();
-        Self::new(
-            r,
-            e,
-            k,
-            SailfishBlock::empty(r, Timestamp::now(), 0),
-            deterministic,
-        )
+        Self::new(r, e, k, None, deterministic)
     }
 
     /// Is this vertex from the genesis round?
@@ -66,7 +57,7 @@ impl Vertex {
             && self.evidence.is_genesis()
             && self.edges.is_empty()
             && self.no_vote.is_none()
-            && self.block.is_empty()
+            && self.block.is_none()
     }
 
     pub fn source(&self) -> &PublicKey {
@@ -101,8 +92,8 @@ impl Vertex {
         self.no_vote.as_ref()
     }
 
-    pub fn block(&self) -> &SailfishBlock {
-        &self.block
+    pub fn block(&self) -> Option<&B> {
+        self.block.as_ref()
     }
 
     pub fn set_committed_round<N: Into<RoundNumber>>(&mut self, n: N) -> &mut Self {
@@ -133,18 +124,18 @@ impl Vertex {
     }
 }
 
-impl Display for Vertex {
+impl<B> Display for Vertex<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Vertex({},{})", self.round.data(), self.source)
     }
 }
 
-impl Committable for Vertex {
+impl<B: Committable> Committable for Vertex<B> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
             .fixed_size_field("source", &self.source.as_bytes())
             .field("round", self.round.commit())
-            .field("block", self.block.commit())
+            .optional("block", &self.block)
             .field("evidence", self.evidence.commit())
             .optional("no_vote", &self.no_vote)
             .u64_field("edges", self.edges.len() as u64);

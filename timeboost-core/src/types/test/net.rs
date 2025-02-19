@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::{io, iter};
 
-use crate::traits::comm::Comm;
-use crate::types::message::Message;
-
 use async_trait::async_trait;
 use multisig::{PublicKey, Validated};
+use sailfish_types::{Comm, Message};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -151,20 +149,20 @@ impl<T: Clone> Star<T> {
 }
 
 #[async_trait]
-impl Comm for Star<Message<Validated>> {
+impl<B: Clone + Send> Comm<B> for Star<Message<B, Validated>> {
     type Err = io::Error;
 
-    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Message<B, Validated>) -> Result<(), Self::Err> {
         self.broadcast(msg);
         Ok(())
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Message<B, Validated>) -> Result<(), Self::Err> {
         self.send(to, msg)
             .map_err(|_| io::Error::other("Star network failed to send"))
     }
 
-    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Message<B, Validated>, Self::Err> {
         Ok(self.recv().await.data().clone())
     }
 }
@@ -176,10 +174,10 @@ impl<T: Clone> Default for Star<T> {
 }
 
 #[async_trait]
-impl Comm for Conn<Message<Validated>> {
+impl<B: Clone + Send> Comm<B> for Conn<Message<B, Validated>> {
     type Err = io::Error;
 
-    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Message<B, Validated>) -> Result<(), Self::Err> {
         let e = Event::Multicast {
             src: self.id,
             data: msg,
@@ -189,7 +187,7 @@ impl Comm for Conn<Message<Validated>> {
             .map_err(|_| io::Error::other("Comm: failed to broadcast"))
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Message<B, Validated>) -> Result<(), Self::Err> {
         let e = Event::Unicast {
             src: self.id,
             dest: to,
@@ -200,7 +198,7 @@ impl Comm for Conn<Message<Validated>> {
             .map_err(|_| io::Error::other("Comm: failed to send"))
     }
 
-    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Message<B, Validated>, Self::Err> {
         self.rx
             .recv()
             .await

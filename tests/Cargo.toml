@@ -6,7 +6,7 @@ description.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
-committable = { workspace = true }
+committable = { path = "../committable" }
 bytes = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
@@ -14,7 +14,7 @@ portpicker = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking", features = ["turmoil"] }
+sailfish-net = { path = "../sailfish-net", features = ["turmoil"] }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

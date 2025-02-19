@@ -6,8 +6,6 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use timeboost_utils::types::round_number::RoundNumber;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SailfishBlock(Arc<Inner>);
@@ -15,27 +13,26 @@ pub struct SailfishBlock(Arc<Inner>);
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename = "SailfishBlock")]
 struct Inner {
-    header: BlockHeader,
+    header: BlockHeader<()>,
     payload: Vec<Transaction>,
     delayed_inbox_index: u64,
 }
 
 impl SailfishBlock {
     pub fn new(
-        round: RoundNumber,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
         delayed_inbox_index: u64,
     ) -> Self {
         Self(Arc::new(Inner {
-            header: BlockHeader::new(round, timestamp),
+            header: BlockHeader::new((), timestamp),
             payload: transactions,
             delayed_inbox_index,
         }))
     }
 
-    pub fn empty(round: RoundNumber, timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
-        Self::new(round, timestamp, Vec::new(), delayed_inbox_index)
+    pub fn empty(timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
+        Self::new(timestamp, Vec::new(), delayed_inbox_index)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -52,14 +49,6 @@ impl SailfishBlock {
 
     pub fn len(&self) -> usize {
         self.0.payload.len()
-    }
-
-    pub fn size_bytes(&self) -> usize {
-        self.0.header.size_bytes() + self.0.payload.iter().map(|t| t.size_bytes()).sum::<usize>()
-    }
-
-    pub fn round_number(&self) -> RoundNumber {
-        self.0.header.round()
     }
 
     pub fn timestamp(&self) -> Timestamp {

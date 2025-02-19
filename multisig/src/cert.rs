@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 use crate::{Committee, KeyId, PublicKey, Signature};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Certificate<D: Committable> {
+pub struct Certificate<D> {
     data: D,
     commitment: Commitment<D>,
     signatures: BTreeMap<KeyId, Signature>,
 }
 
-impl<D: Committable> Certificate<D> {
+impl<D> Certificate<D> {
     pub(crate) fn new(data: D, commit: Commitment<D>, sigs: BTreeMap<KeyId, Signature>) -> Self {
         Self {
             data,

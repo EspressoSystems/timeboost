@@ -1,4 +1,3 @@
-pub mod traits;
 pub mod types;
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {

@@ -10,7 +10,7 @@ pub struct CanonicalInclusionPhase {}
 impl InclusionPhase for CanonicalInclusionPhase {
     fn produce_inclusion_list(
         &self,
-        round_number: timeboost_utils::types::round_number::RoundNumber,
+        round_number: timeboost_core::types::round_number::RoundNumber,
         mut candidate_list: super::CandidateList,
         last_delayed_inbox_index: u64,
     ) -> anyhow::Result<super::InclusionList> {

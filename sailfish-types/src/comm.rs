@@ -1,0 +1,81 @@
+use std::error::Error;
+
+use async_trait::async_trait;
+use bytes::Bytes;
+use multisig::{PublicKey, Validated};
+
+use crate::Message;
+
+/// Types that provide broadcast and 1:1 message communication.
+#[async_trait]
+pub trait Comm<B> {
+    type Err: Error + Send + Sync + 'static;
+
+    async fn broadcast(&mut self, msg: Message<B, Validated>) -> Result<(), Self::Err>;
+
+    async fn send(&mut self, to: PublicKey, msg: Message<B, Validated>) -> Result<(), Self::Err>;
+
+    async fn receive(&mut self) -> Result<Message<B, Validated>, Self::Err>;
+}
+
+/// Types that provide broadcast and 1:1 message communication.
+///
+/// In contrast to `Comm` this trait operates on raw byte vectors instead
+/// of `Message`s.
+#[async_trait]
+pub trait RawComm {
+    type Err: Error + Send + Sync + 'static;
+
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err>;
+
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err>;
+
+    async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err>;
+}
+
+#[async_trait]
+impl<B: Send + 'static, T: Comm<B> + Send> Comm<B> for Box<T> {
+    type Err = T::Err;
+
+    async fn broadcast(&mut self, msg: Message<B, Validated>) -> Result<(), Self::Err> {
+        (**self).broadcast(msg).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Message<B, Validated>) -> Result<(), Self::Err> {
+        (**self).send(to, msg).await
+    }
+
+    async fn receive(&mut self) -> Result<Message<B, Validated>, Self::Err> {
+        (**self).receive().await
+    }
+}
+
+#[async_trait]
+impl<T: RawComm + Send> RawComm for Box<T> {
+    type Err = T::Err;
+
+    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
+        (**self).broadcast(msg).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
+        (**self).send(to, msg).await
+    }
+
+    async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err> {
+        (**self).receive().await
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum CommError<E> {
+    #[error("network error: {0}")]
+    Net(#[source] E),
+
+    #[error("bincode error: {0}")]
+    Bincode(#[from] bincode::Error),
+
+    #[error("invalid message signature")]
+    Invalid,
+}

@@ -1,12 +1,9 @@
+use std::{collections::HashMap, fmt, num::NonZeroUsize};
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use multisig::{Committee, Keypair, PublicKey};
-use sailfish::consensus::{Consensus, Dag};
-use std::{collections::HashMap, fmt, num::NonZeroUsize};
-use timeboost_core::types::{
-    message::{Action, Evidence, Message},
-    NodeId,
-};
-use timeboost_utils::types::logging;
+use sailfish::{Consensus, Dag};
+use sailfish_types::{Action, Empty, Evidence, Message};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -26,7 +23,7 @@ impl fmt::Display for MultiRoundTestSpec {
 
 struct Net {
     /// Mapping of public key to the corresponding cx node.
-    nodes: HashMap<PublicKey, Consensus>,
+    nodes: HashMap<PublicKey, Consensus<Empty>>,
 
     /// How many rounds to run until.
     rounds: u64,
@@ -35,7 +32,7 @@ struct Net {
     iteration: u64,
 
     /// Message buffer.
-    messages: Vec<Message>,
+    messages: Vec<Message<Empty>>,
 }
 
 impl Net {
@@ -51,12 +48,8 @@ impl Net {
 
         let mut nodes = kps
             .into_iter()
-            .enumerate()
-            .map(|(i, kp)| {
-                (
-                    kp.public_key(),
-                    Consensus::new(NodeId::from(i as u64), kp, com.clone()),
-                )
+            .map(|kp| {
+                (kp.public_key(), Consensus::new(kp, com.clone()))
             })
             .collect::<HashMap<_, _>>();
 
@@ -94,7 +87,7 @@ impl Net {
 }
 
 /// Many-to-many broadcast of a message stack.
-fn send(nodes: &mut HashMap<PublicKey, Consensus>, msgs: &[Message]) -> Vec<Action> {
+fn send(nodes: &mut HashMap<PublicKey, Consensus<Empty>>, msgs: &[Message<Empty>]) -> Vec<Action<Empty>> {
     use rayon::prelude::*;
 
     if nodes.len() == 1 {
@@ -120,7 +113,7 @@ fn send(nodes: &mut HashMap<PublicKey, Consensus>, msgs: &[Message]) -> Vec<Acti
         .collect()
 }
 
-fn action_to_msg(action: Action) -> Option<Message> {
+fn action_to_msg<B>(action: Action<B>) -> Option<Message<B>> {
     match action {
         Action::SendNoVote(_, e) => Some(Message::NoVote(e)),
         Action::SendProposal(e) => Some(Message::Vertex(e)),
@@ -132,8 +125,6 @@ fn action_to_msg(action: Action) -> Option<Message> {
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    logging::init_logging();
-
     let mut group = c.benchmark_group("multi_round_consensus");
     for s in [
         MultiRoundTestSpec {

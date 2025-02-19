@@ -69,7 +69,7 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
 /// ## Counting HTTP requests, partitioned by method.
 ///
 /// ```
-/// # use timeboost_utils::traits::metrics::{Metrics, MetricsFamily, Counter};
+/// # use metrics::{Metrics, MetricsFamily, Counter};
 /// # fn doc(_metrics: Box<dyn Metrics>) {
 /// let metrics: Box<dyn Metrics>;
 /// # metrics = _metrics;
@@ -91,7 +91,7 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
 /// ## Using labels to store key-value text pairs.
 ///
 /// ```
-/// # use timeboost_utils::traits::metrics::{Metrics, MetricsFamily};
+/// # use metrics::{Metrics, MetricsFamily};
 /// # fn doc(_metrics: Box<dyn Metrics>) {
 /// let metrics: Box<dyn Metrics>;
 /// # metrics = _metrics;

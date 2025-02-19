@@ -1,5 +1,5 @@
 [package]
-name = "timeboost-networking"
+name = "sailfish-net"
 version.workspace = true
 edition.workspace = true
 description.workspace = true
@@ -9,14 +9,16 @@ name = "network_bytes"
 harness = false
 
 [dependencies]
+async-trait = { workspace = true }
 bimap = { workspace = true }
 bytes = { workspace = true }
+metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+sailfish-types = { path = "../sailfish-types" }
 snow = { workspace = true }
 thiserror = { workspace = true }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true, optional = true }

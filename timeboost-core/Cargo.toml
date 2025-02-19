@@ -13,7 +13,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 bytes = { workspace = true }
-committable = { workspace = true }
+committable = { path = "../committable" }
 crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
@@ -21,7 +21,8 @@ serde = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 thiserror = { workspace = true }
-timeboost-networking = { path = "../timeboost-networking" }
+sailfish-net = { path = "../sailfish-net" }
+sailfish-types = { path = "../sailfish-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

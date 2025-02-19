@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Committee, Keypair, PublicKey, Signature};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Signed<D: Committable> {
+pub struct Signed<D> {
     data: D,
     commitment: Commitment<D>,
     signature: Signature,
@@ -30,7 +30,9 @@ impl<D: Committable> Signed<D> {
                 .signing_key
                 .is_valid(self.commitment.as_ref(), &self.signature)
     }
+}
 
+impl<D> Signed<D> {
     pub fn signature(&self) -> &Signature {
         &self.signature
     }

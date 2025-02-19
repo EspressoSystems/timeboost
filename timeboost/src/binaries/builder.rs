@@ -9,7 +9,6 @@ use timeboost::{
     Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
-use timeboost_core::types::NodeId;
 
 #[cfg(feature = "until")]
 use anyhow::ensure;
@@ -120,9 +119,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let num = cli.nodes.unwrap_or(5);
 
-    // TODO: Remove Node Id from Timeboost
-    let id = NodeId::from(cli.id as u64);
-
     // Read public key material
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
@@ -169,7 +165,7 @@ async fn main() -> Result<()> {
 
         let task_handle = tokio::spawn(run_until(cli.until, cli.watchdog_timeout, host));
         if cli.late_start && cli.id == cli.late_start_node_id {
-            tracing::warn!("Adding delay before starting node: id: {}", id);
+            tracing::warn!("Adding delay before starting node: id: {}", cli.id);
             tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
         }
         task_handle
@@ -177,7 +173,6 @@ async fn main() -> Result<()> {
 
     let committee_size = peer_hosts_and_keys.len();
     let init = TimeboostInitializer {
-        id,
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,

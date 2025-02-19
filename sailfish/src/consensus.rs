@@ -1,22 +1,14 @@
 mod dag;
 mod info;
 
-use anyhow::{ensure, Result};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
+use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use timeboost_core::types::{
-    block::sailfish::SailfishBlock,
-    message::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage},
-    time::Timestamp,
-    transaction::Transaction,
-    transaction::TransactionsQueue,
-    vertex::Vertex,
-    NodeId,
-};
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
+use sailfish_types::{RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -24,17 +16,14 @@ pub use dag::Dag;
 use crate::metrics::SailfishMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
-struct NewVertex(Vertex);
+struct NewVertex<B>(Vertex<B>);
 
-pub struct Consensus {
-    /// The ID of the node running this consensus instance.
-    id: NodeId,
-
+pub struct Consensus<B> {
     /// The public and private key of this node.
     keypair: Keypair,
 
     /// The DAG of vertices.
-    dag: Dag,
+    dag: Dag<B>,
 
     /// The quorum membership.
     committee: Committee,
@@ -49,7 +38,7 @@ pub struct Consensus {
     nodes: NodeInfo,
 
     /// The set of vertices that we've received so far.
-    buffer: Dag,
+    buffer: Dag<B>,
 
     /// The set of values we have delivered so far.
     delivered: HashSet<(RoundNumber, PublicKey)>,
@@ -64,10 +53,10 @@ pub struct Consensus {
     no_votes: BTreeMap<RoundNumber, VoteAccumulator<NoVote>>,
 
     /// Stack of leader vertices.
-    leader_stack: Vec<Vertex>,
+    leader_stack: Vec<Vertex<B>>,
 
-    /// Transactions to include in vertex proposals.
-    transactions: TransactionsQueue,
+    /// Blocks to merge and include in vertex proposals.
+    blocks: VecDeque<B>,
 
     /// The consensus metrics for this node.
     metrics: SailfishMetrics,
@@ -75,40 +64,11 @@ pub struct Consensus {
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
 
-    /// The current delayed inbox index.
-    delayed_inbox_index: u64,
-
     /// Sign deterministically?
     deterministic: bool,
 }
 
-impl Consensus {
-    pub fn new<N>(id: N, keypair: Keypair, committee: Committee) -> Self
-    where
-        N: Into<NodeId>,
-    {
-        Self {
-            id: id.into(),
-            keypair,
-            nodes: NodeInfo::new(&committee),
-            dag: Dag::new(committee.size()),
-            round: RoundNumber::genesis(),
-            committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committee.size()),
-            delivered: HashSet::new(),
-            rounds: BTreeMap::new(),
-            timeouts: BTreeMap::new(),
-            no_votes: BTreeMap::new(),
-            committee,
-            leader_stack: Vec::new(),
-            transactions: TransactionsQueue::new(),
-            metrics: Default::default(),
-            metrics_timer: std::time::Instant::now(),
-            delayed_inbox_index: 0,
-            deterministic: false,
-        }
-    }
-
+impl<B> Consensus<B> {
     pub fn with_metrics(mut self, m: SailfishMetrics) -> Self {
         self.metrics = m;
         self
@@ -117,10 +77,6 @@ impl Consensus {
     pub fn sign_deterministically(mut self, val: bool) -> Self {
         self.deterministic = val;
         self
-    }
-
-    pub fn id(&self) -> NodeId {
-        self.id
     }
 
     pub fn public_key(&self) -> PublicKey {
@@ -134,30 +90,39 @@ impl Consensus {
     pub fn committee_size(&self) -> NonZeroUsize {
         self.committee.size()
     }
+}
 
-    pub fn enqueue_transaction(&mut self, t: Transaction) {
-        self.transactions.add(t);
+impl<B: Committable + Clone + PartialEq> Consensus<B> {
+    pub fn new(keypair: Keypair, committee: Committee) -> Self {
+        Self {
+            keypair,
+            nodes: NodeInfo::new(&committee),
+            dag: Dag::new(committee.size()),
+            round: RoundNumber::genesis(),
+            committed_round: RoundNumber::genesis(),
+            buffer: Dag::new(committee.size()),
+            delivered: HashSet::new(),
+            rounds: BTreeMap::new(),
+            timeouts: BTreeMap::new(),
+            no_votes: BTreeMap::new(),
+            committee,
+            leader_stack: Vec::new(),
+            blocks: VecDeque::new(),
+            metrics: Default::default(),
+            metrics_timer: std::time::Instant::now(),
+            deterministic: false,
+        }
     }
 
-    pub fn set_transactions_queue(&mut self, q: TransactionsQueue) {
-        self.transactions = q
-    }
-
-    pub fn set_delayed_inbox_index(&mut self, index: u64) -> Result<()> {
-        ensure!(
-            index >= self.delayed_inbox_index,
-            "delayed inbox index must be >= than the current delayed inbox index"
-        );
-        self.delayed_inbox_index = index;
-
-        Ok(())
+    pub fn add_block(&mut self, b: B) {
+        self.blocks.push_back(b);
     }
 
     /// (Re-)start consensus.
     ///
     /// This continues with the highest round number found in the DAG (or else
     /// starts from the genesis round).
-    pub fn go(&mut self, d: Dag, e: Evidence) -> Vec<Action> {
+    pub fn go(&mut self, d: Dag<B>, e: Evidence) -> Vec<Action<B>> {
         info!(node = %self.public_key(), round = %self.round(), "start consensus");
 
         let r = d.max_round().unwrap_or(RoundNumber::genesis());
@@ -175,7 +140,7 @@ impl Consensus {
     }
 
     /// Main entry point to process a `Message`.
-    pub fn handle_message(&mut self, m: Message<Validated>) -> Vec<Action> {
+    pub fn handle_message(&mut self, m: Message<B, Validated>) -> Vec<Action<B>> {
         trace!(
             node      = %self.public_key(),
             round     = %self.round,
@@ -199,7 +164,7 @@ impl Consensus {
     ///
     /// This means we did not receive a leader vertex in a round and
     /// results in a timeout message being broadcasted to all nodes.
-    pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action> {
+    pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action<B>> {
         info!(node = %self.public_key(), round = %r, "internal timeout");
         debug_assert_eq!(r, self.round());
         let e = if r.is_genesis() {
@@ -219,7 +184,7 @@ impl Consensus {
     /// but we can not yet add it (e.g. because not all of its edges resolve to other
     /// DAG elements yet), we store it in a buffer and retry adding it once we have
     /// received another vertex which we sucessfully added.
-    pub fn handle_vertex(&mut self, e: Envelope<Vertex, Validated>) -> Vec<Action> {
+    pub fn handle_vertex(&mut self, e: Envelope<Vertex<B>, Validated>) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), vertex = %e.data(), "handle vertex message");
 
         let mut actions = Vec::new();
@@ -298,7 +263,7 @@ impl Consensus {
     ///   `no_votes` a certificate will be created.
     /// - If a no-vote certificate has been created, advance to the next round with
     ///   the `no_vote` and `timeout_certificate`.
-    pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action> {
+    pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action<B>> {
         trace!(
             node    = %self.public_key(),
             signer  = %e.signing_key(),
@@ -375,7 +340,7 @@ impl Consensus {
     /// Once we have collected more than f timeouts we start broadcasting our own timeout.
     /// Eventually, if we receive more than 2f timeouts we form a timeout certificate and
     /// broadcast that too.
-    pub fn handle_timeout(&mut self, e: Envelope<TimeoutMessage, Validated>) -> Vec<Action> {
+    pub fn handle_timeout(&mut self, e: Envelope<TimeoutMessage, Validated>) -> Vec<Action<B>> {
         trace!(
             node    = %self.public_key(),
             signer  = %e.signing_key(),
@@ -445,7 +410,7 @@ impl Consensus {
     /// If we also have more than 2f vertex proposals (i.e. we are just missing the
     /// leader vertex), we can move to the next round and include the certificate in
     /// our next vertex proposal.
-    pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action> {
+    pub fn handle_timeout_cert(&mut self, cert: Certificate<Timeout>) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), timeout = %cert.data().round(), "timeout certificate");
 
         let mut actions = Vec::new();
@@ -478,7 +443,7 @@ impl Consensus {
     ///   1. we have a leader vertex in `r`, or else
     ///   2. we have a timeout certificate for `r`, and,
     ///   3. if we are leader of `r + 1`, we have a no-vote certificate for `r`.
-    fn advance_from_round(&mut self, round: RoundNumber, evidence: Evidence) -> Vec<Action> {
+    fn advance_from_round(&mut self, round: RoundNumber, evidence: Evidence) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), from = %round, "advance round");
 
         let mut actions = Vec::new();
@@ -555,7 +520,7 @@ impl Consensus {
         round: RoundNumber,
         tc: Certificate<Timeout>,
         nc: Certificate<NoVote>,
-    ) -> Vec<Action> {
+    ) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), from = %round, "advance with no-vote certificate");
         debug_assert_eq!(tc.data().round(), nc.data().round());
         let mut actions = Vec::new();
@@ -574,7 +539,7 @@ impl Consensus {
     }
 
     /// Add a new vertex to the DAG and send it as a proposal to nodes.
-    fn broadcast_vertex(&mut self, v: Vertex) -> Vec<Action> {
+    fn broadcast_vertex(&mut self, v: Vertex<B>) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), vertex = %v, "broadcast vertex");
         let e = Envelope::signed(v, &self.keypair, self.deterministic);
         vec![Action::SendProposal(e)]
@@ -585,16 +550,10 @@ impl Consensus {
     /// NB that the returned value requires further processing iff there is no
     /// leader vertex in `r - 1`. In that case a timeout certificate (and potentially
     /// a no-vote certificate) is required.
-    fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex {
+    fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex<B> {
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
-        let block = SailfishBlock::new(
-            r,
-            Timestamp::now(),
-            self.transactions.take(),
-            self.delayed_inbox_index,
-        );
-
+        let block = self.blocks.pop_front();
         let mut new = Vertex::new(r, e, &self.keypair, block, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
@@ -610,7 +569,7 @@ impl Consensus {
     /// If all edges of the vertex point to other vertices in the DAG we add the
     /// vertex to the DAG. If we also have more than 2f vertices for the given
     /// round, we can try to commit the leader vertex of a round.
-    fn try_to_add_to_dag(&mut self, v: Vertex) -> Result<Vec<Action>, Vertex> {
+    fn try_to_add_to_dag(&mut self, v: Vertex<B>) -> Result<Vec<Action<B>>, Vertex<B>> {
         trace!(node = %self.public_key(), vertex = %v, "try to add to dag");
 
         let r = *v.round().data();
@@ -668,7 +627,7 @@ impl Consensus {
 
     /// Go over buffered vertices in increasing round number and try to add
     /// each vertex to the DAG as per the usual constraints.
-    fn try_to_add_to_dag_from_buffer(&mut self) -> Vec<Action> {
+    fn try_to_add_to_dag_from_buffer(&mut self) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), "try to add to dag from buffer");
 
         let mut actions = Vec::new();
@@ -710,7 +669,7 @@ impl Consensus {
     /// In addition to committing the argument vertex, this will also commit leader
     /// vertices between the last previously committed leader vertex and the current
     /// leader vertex, if there is a path between them.
-    fn commit_leader(&mut self, mut v: Vertex) -> Vec<Action> {
+    fn commit_leader(&mut self, mut v: Vertex<B>) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), vertex = %v, "commit leader");
         debug_assert!(*v.round().data() >= self.committed_round);
         self.leader_stack.push(v.clone());
@@ -740,7 +699,7 @@ impl Consensus {
     ///
     /// Leader vertices are ordered on the leader stack. The other vertices of a round
     /// are ordered arbitrarily, but consistently, relative to the leaders.
-    fn order_vertices(&mut self) -> Vec<Action> {
+    fn order_vertices(&mut self) -> Vec<Action<B>> {
         trace!(node = %self.public_key(), "order vertices");
         let mut actions = Vec::new();
         while let Some(v) = self.leader_stack.pop() {
@@ -755,15 +714,9 @@ impl Consensus {
                 if self.delivered.contains(&(r, s)) {
                     continue;
                 }
-                let b = to_deliver.block().clone();
-                debug!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                info!(
-                    round_number = *b.round_number(),
-                    num_txns = b.len(),
-                    block_size_bytes = b.size_bytes(),
-                    "deliver"
-                );
-                actions.push(Action::Deliver(b, r, s));
+                let b = to_deliver.block().cloned();
+                info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
+                actions.push(Action::Deliver(r, s, b));
                 self.delivered.insert((r, s));
             }
         }
@@ -832,7 +785,7 @@ impl Consensus {
     /// vertex needs to have either a path to the leader vertex of the
     /// previous round, or a timeout certificate and (if from the leader) a
     /// no-vote certificate.
-    fn is_valid(&self, v: &Vertex) -> bool {
+    fn is_valid(&self, v: &Vertex<B>) -> bool {
         trace!(node = %self.public_key(), vertex = %v, "check vertex");
         if v.is_genesis() {
             info!(
@@ -884,7 +837,7 @@ impl Consensus {
     }
 
     /// Retrieve leader vertex for a given round.
-    fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex> {
+    fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex<B>> {
         self.dag.vertex(r, &self.committee.leader(*r as usize))
     }
 
@@ -927,8 +880,8 @@ impl Consensus {
 }
 
 #[cfg(feature = "test")]
-impl Consensus {
-    pub fn dag(&self) -> &Dag {
+impl<B: Block + Eq> Consensus<B> {
+    pub fn dag(&self) -> &Dag<B> {
         &self.dag
     }
 
@@ -936,11 +889,11 @@ impl Consensus {
         self.buffer.depth()
     }
 
-    pub fn delivered(&self) -> &HashSet<(RoundNumber, PublicKey)> {
-        &self.delivered
+    pub fn delivered(&self) -> impl Iterator<Item = (RoundNumber, PublicKey)> + '_ {
+        self.delivered.iter().copied()
     }
 
-    pub fn leader_stack(&self) -> &Vec<Vertex> {
+    pub fn leader_stack(&self) -> &[Vertex<B>] {
         &self.leader_stack
     }
 
@@ -948,22 +901,11 @@ impl Consensus {
         self.committed_round
     }
 
-    pub fn committee(&self) -> &Committee {
-        &self.committee
+    pub fn no_vote_accumulators(&self) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<NoVote>)> {
+        self.no_votes.iter().map(|(r, v)| (*r, v))
     }
 
-    pub fn no_vote_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<NoVote>> {
-        &self.no_votes
-    }
-
-    pub fn timeout_accumulators(&self) -> &BTreeMap<RoundNumber, VoteAccumulator<Timeout>> {
-        &self.timeouts
-    }
-
-    pub fn sign<D>(&self, d: D) -> Envelope<D, Validated>
-    where
-        D: committable::Committable,
-    {
-        Envelope::signed(d, &self.keypair, self.deterministic)
+    pub fn timeout_accumulators(&self) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<Timeout>)> {
+        self.timeouts.iter().map(|(r, v)| (*r, v))
     }
 }

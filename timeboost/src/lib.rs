@@ -4,13 +4,16 @@ use anyhow::{bail, Result};
 use api::{endpoints::TimeboostApiState, metrics::serve_metrics_api};
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
-use sailfish::metrics::SailfishMetrics;
-use sailfish::rbc::{self, Rbc};
 use sailfish::{
-    coordinator::Coordinator,
-    rbc::RbcMetrics,
-    sailfish::{Sailfish, SailfishInitializerBuilder},
+    Consensus,
+    Coordinator,
+    Rbc,
+    RbcConfig,
+    RbcMetrics,
+    SailfishMetrics
 };
+use sailfish_net::{Network, NetworkMetrics};
+use sailfish_types::Action;
 use sequencer::{
     phase::{
         block_builder::noop::NoOpBlockBuilder, decryption::noop::NoOpDecryptionPhase,
@@ -22,11 +25,11 @@ use std::{sync::Arc, time::Duration};
 use tide_disco::Url;
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
-use timeboost_networking::NetworkMetrics;
+use timeboost_core::types::time::Timestamp;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{error, instrument, trace, warn};
 use vbs::version::StaticVersion;
 
 use crate::mempool::Mempool;
@@ -34,12 +37,8 @@ use crate::mempool::Mempool;
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_core::{
     traits::has_initializer::HasInitializer,
-    types::{
-        event::{SailfishEventType, TimeboostEventType, TimeboostStatusEvent},
-        NodeId,
-    },
+    types::event::{TimeboostEventType, TimeboostStatusEvent}
 };
-use timeboost_networking::Network;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub mod api;
@@ -50,10 +49,9 @@ pub mod metrics;
 mod producer;
 pub mod sequencer;
 
-pub struct TimeboostInitializer {
-    /// The ID of the node.
-    pub id: NodeId,
+type SailfishCoordinator = Coordinator<SailfishBlock, Rbc<SailfishBlock>>;
 
+pub struct TimeboostInitializer {
     /// The port to bind the RPC server to.
     pub rpc_port: u16,
 
@@ -77,9 +75,6 @@ pub struct TimeboostInitializer {
 }
 
 pub struct Timeboost {
-    /// The ID of the node.
-    id: NodeId,
-
     /// The port to bind the RPC server to.
     rpc_port: u16,
 
@@ -96,7 +91,7 @@ pub struct Timeboost {
     mempool: Arc<Mempool>,
 
     /// The coordinator for the timeboost node.
-    coordinator: Coordinator<Rbc>,
+    coordinator: SailfishCoordinator,
 
     /// The prometheus metrics for all the metrics layers.
     metrics: Arc<PrometheusMetrics>,
@@ -164,26 +159,16 @@ impl HasInitializer for Timeboost {
         .await
         .expect("failed to connect to remote nodes");
 
-        let cfg = rbc::Config::new(initializer.keypair.clone(), committee.clone());
+        let cfg = RbcConfig::new(initializer.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
-        let sailfish_initializer = SailfishInitializerBuilder::default()
-            .id(initializer.id)
-            .keypair(initializer.keypair)
-            .bind_address(initializer.bind_address)
-            .network(rbc)
-            .committee(committee.clone())
-            .metrics(sf_metrics)
-            .build()
-            .expect("sailfish initializer to be built");
-        let sailfish = Sailfish::initialize(sailfish_initializer).await.unwrap();
-        let coordinator = sailfish.into_coordinator();
+        let consensus = Consensus::new(initializer.keypair, committee).with_metrics(sf_metrics);
+        let coordinator = Coordinator::new(rbc, consensus);
 
         let mempool = Arc::new(Mempool::new(initializer.nitro_url, block_rx));
 
         // Then, initialize and run the timeboost node.
         let timeboost = Timeboost {
-            id: initializer.id,
             rpc_port: initializer.rpc_port,
             metrics_port: initializer.metrics_port,
             app_tx: tb_app_tx,
@@ -266,7 +251,7 @@ impl Timeboost {
     /// - Start and run the `Sailfish Coordinator` to retrieve network messages by calling `next` and executing actions after message is processed
     /// - Runs a channel to receive `TimeboostEventType` this will receive transactions and send completed blocks to the producer
     /// - Will continuously run until there is a shutdown signal received
-    #[instrument(level = "info", skip_all, fields(node = %self.id))]
+    #[instrument(level = "info", skip_all)]
     pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
         self.handles
@@ -303,57 +288,42 @@ impl Timeboost {
         self.handles.push(tokio::spawn(producer.run()));
 
         // Kickstart the network.
-        match self.coordinator.start().await {
-            Ok(actions) => {
-                for a in actions {
-                    let _ = self.coordinator.execute(a).await;
-                }
-            }
-            Err(e) => {
-                bail!("failed to start coordinator: {}", e);
-            }
+        let actions = self.coordinator.start().await;
+        for a in actions {
+            let _ = self.coordinator.execute(a).await;
         }
         loop {
             tokio::select! { biased;
                 result = self.coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
-                            let event = self.coordinator.execute(a).await;
-                            if let Ok(Some(e)) = event {
-                                match e.event {
-                                    SailfishEventType::Error { error } => {
-                                        error!(%error, "sailfish encountered an error");
-                                    },
-                                    SailfishEventType::RoundFinished { round: _ } => {
-                                        debug!("round finished");
-                                    },
-                                    SailfishEventType::Timeout { round: _ } => {
-                                        debug!("timeout");
-                                    },
-                                    SailfishEventType::Committed { round: _, block } => {
-                                        if !block.is_empty() {
-                                            if self.mempool.run_estimator() {
-                                                // Send to the estimation task
-                                                // There we will estimate transactions and insert block into mempool
-                                                let _ = self.block_tx.send(block).await;
-                                            } else {
-                                                self.mempool.insert(block);
-                                            }
-                                        }
-                                    },
+                            if let Action::Deliver(.., Some(block)) = a {
+                                if !block.is_empty() {
+                                    if self.mempool.run_estimator() {
+                                        // Send to the estimation task
+                                        // There we will estimate transactions and insert block into mempool
+                                        let _ = self.block_tx.send(block).await;
+                                    } else {
+                                        self.mempool.insert(block);
+                                    }
+                                }
+                            } else {
+                                if let Err(e) = self.coordinator.execute(a).await {
+                                    tracing::error!("coordinator execution error: {}", e);
                                 }
                             }
                         }
                     },
                     Err(e) => {
-                        tracing::error!("Error receiving message: {}", e);
+                        tracing::error!("coordinator error: {}", e);
                     },
                 },
                 tb_event = self.app_rx.recv() => match tb_event {
                     Some(event) => {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
-                                self.coordinator.handle_transactions(transactions);
+                                let b = SailfishBlock::new(Timestamp::now(), transactions, 0);
+                                self.coordinator.append_block(b);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
                                 let _ = p_tx.send(block).await;

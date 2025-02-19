@@ -5,16 +5,14 @@ use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated,
 };
 use serde::{Deserialize, Serialize};
-use timeboost_utils::types::round_number::RoundNumber;
 use tracing::warn;
 
-use crate::types::block::sailfish::SailfishBlock;
-use crate::types::vertex::Vertex;
+use crate::{RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub enum Message<Status = Validated> {
+pub enum Message<B, Status = Validated> {
     /// A vertex proposal from a node.
-    Vertex(Envelope<Vertex, Status>),
+    Vertex(Envelope<Vertex<B>, Status>),
 
     /// A timeout message from a node.
     Timeout(Envelope<TimeoutMessage, Status>),
@@ -26,7 +24,7 @@ pub enum Message<Status = Validated> {
     TimeoutCert(Certificate<Timeout>),
 }
 
-impl<S> Message<S> {
+impl<B, S> Message<B, S> {
     pub fn round(&self) -> RoundNumber {
         match self {
             Self::Vertex(v) => *v.data().round().data(),
@@ -53,8 +51,8 @@ impl<S> Message<S> {
     }
 }
 
-impl Message<Unchecked> {
-    pub fn validated(self, c: &Committee) -> Option<Message<Validated>> {
+impl<B: Committable> Message<B, Unchecked> {
+    pub fn validated(self, c: &Committee) -> Option<Message<B, Validated>> {
         match self {
             Self::Vertex(e) => {
                 // Validate the envelope's signature:
@@ -222,15 +220,15 @@ impl Message<Unchecked> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Action {
+pub enum Action<B> {
     /// Reset the timer to the given round.
     ResetTimer(RoundNumber),
 
     /// Deliver a block to the application layer.
-    Deliver(SailfishBlock, RoundNumber, PublicKey),
+    Deliver(RoundNumber, PublicKey, Option<B>),
 
     /// Send a vertex proposal to all nodes.
-    SendProposal(Envelope<Vertex, Validated>),
+    SendProposal(Envelope<Vertex<B>, Validated>),
 
     /// Send a timeout message to all nodes.
     SendTimeout(Envelope<TimeoutMessage, Validated>),
@@ -242,7 +240,7 @@ pub enum Action {
     SendTimeoutCert(Certificate<Timeout>),
 }
 
-impl fmt::Display for Action {
+impl<B> fmt::Display for Action<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
@@ -406,13 +404,13 @@ impl NoVoteMessage {
     }
 }
 
-impl Message<Unchecked> {
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
+impl<'a, B: Committable + Deserialize<'a>> Message<B, Unchecked> {
+    pub fn decode(bytes: &'a [u8]) -> Option<Self> {
         bincode::deserialize(bytes).ok()
     }
 }
 
-impl<S: Serialize> Message<S> {
+impl<B: Committable + Serialize, S: Serialize> Message<B, S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
         bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
     }
@@ -422,7 +420,7 @@ impl<S: Serialize> Message<S> {
     }
 }
 
-impl<S> fmt::Display for Message<S> {
+impl<B, S> fmt::Display for Message<B, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Vertex(e) => {
@@ -495,7 +493,7 @@ impl Committable for Evidence {
     }
 }
 
-impl<S> Committable for Message<S> {
+impl<B: Committable, S> Committable for Message<B, S> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Message");
         match self {

@@ -25,8 +25,7 @@ pub enum Validated {}
 /// let _: Envelope<Signature, Validated> = bincode::deserialize(&[]).unwrap();
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
-pub struct Envelope<D: Committable, S> {
+pub struct Envelope<D, S> {
     signed: Signed<D>,
     #[serde(skip)]
     _marker: PhantomData<fn(S)>,
@@ -61,7 +60,9 @@ impl<D: Committable, S> Envelope<D, S> {
             _marker: PhantomData,
         })
     }
+}
 
+impl<D, S> Envelope<D, S> {
     pub fn into_signed(self) -> Signed<D> {
         self.signed
     }
@@ -71,7 +72,7 @@ impl<D: Committable, S> Envelope<D, S> {
     }
 }
 
-impl<D: Committable, S> Deref for Envelope<D, S> {
+impl<D, S> Deref for Envelope<D, S> {
     type Target = Signed<D>;
 
     fn deref(&self) -> &Self::Target {

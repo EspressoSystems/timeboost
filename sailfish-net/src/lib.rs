@@ -94,6 +94,23 @@ impl Drop for Network {
     }
 }
 
+#[async_trait::async_trait]
+impl sailfish_types::RawComm for Network {
+    type Err = NetworkError;
+
+    async fn broadcast(&mut self, msg: Bytes) -> Result<()> {
+        self.multicast(msg).await
+    }
+
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<()> {
+        self.unicast(to, msg).await
+    }
+
+    async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
+        self.receive().await
+    }
+}
+
 /// The `Server` is accepting connections and also establishing and
 /// maintaining connections with all parties.
 #[derive(Debug)]
@@ -804,3 +821,4 @@ where
     w.write_all(msg).await?;
     Ok(())
 }
+

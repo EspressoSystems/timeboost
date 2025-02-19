@@ -1,12 +1,14 @@
 [workspace]
 members = [
+    "committable",
+    "metrics",
     "multisig",
     "sailfish",
-    "tests",
+    "sailfish-net",
+    "sailfish-types",
     "timeboost",
     "timeboost-core",
     "timeboost-crypto",
-    "timeboost-networking",
     "timeboost-utils",
 ]
 resolver = "2"
@@ -41,7 +43,6 @@ blake3 = "1.5"
 bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
-committable = "0.2"
 criterion = "0.5"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"

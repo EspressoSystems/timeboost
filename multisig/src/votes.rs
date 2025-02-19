@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
 
-use committable::{Commitment, Committable};
+use committable::Commitment;
 use either::Either;
 
 use crate::{Certificate, Committee, KeyId, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
-pub struct VoteAccumulator<D: Committable> {
+pub struct VoteAccumulator<D> {
     committee: Committee,
     votes: HashMap<Commitment<D>, Entry<D>>,
     cert: Option<Certificate<D>>,
@@ -28,7 +28,7 @@ impl<D> Entry<D> {
     }
 }
 
-impl<D: Committable + Clone> VoteAccumulator<D> {
+impl<D> VoteAccumulator<D> {
     pub fn new(committee: Committee) -> Self {
         Self {
             committee,
@@ -64,7 +64,9 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     pub fn into_certificate(self) -> Option<Certificate<D>> {
         self.cert
     }
+}
 
+impl<D: Clone> VoteAccumulator<D> {
     /// Set the certificate.
     pub fn set_certificate(&mut self, c: Certificate<D>) {
         self.clear();
