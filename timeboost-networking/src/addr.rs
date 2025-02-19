@@ -27,15 +27,6 @@ impl Address {
         }
     }
 
-    /// Convert an address to a URL string (basically just adds the scheme).
-    /// TODO: Support TLS (if it comes up).
-    pub fn url_string(&self) -> String {
-        match self {
-            Address::Inet(ip, port) => format!("http://{ip}:{port}"),
-            Address::Name(hn, port) => format!("http://{hn}:{port}"),
-        }
-    }
-
     pub fn is_ip(&self) -> bool {
         matches!(self, Self::Inet(..))
     }
