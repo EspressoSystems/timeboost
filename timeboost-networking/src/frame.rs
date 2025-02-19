@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// The header of a frame.
 //
 //  0                   1                   2                   3
@@ -110,6 +112,16 @@ impl TryFrom<[u8; 4]> for Header {
 
     fn try_from(val: [u8; 4]) -> Result<Self, Self::Error> {
         Ok(Self(u32::from_be_bytes(val)))
+    }
+}
+
+impl fmt::Display for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Header")
+            .field("type", &self.frame_type())
+            .field("len", &self.len())
+            .field("partial", &self.is_partial())
+            .finish()
     }
 }
 
