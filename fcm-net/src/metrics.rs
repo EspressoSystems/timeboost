@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
 use multisig::PublicKey;
-use timeboost_utils::traits::metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]

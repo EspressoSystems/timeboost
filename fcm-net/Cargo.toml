@@ -4,9 +4,13 @@ version = "0.1.0"
 description = "A fully connected mesh network"
 edition.workspace = true
 
+[features]
+sailfish = ["async-trait", "sailfish-types"]
+
 [dependencies]
 bimap = { workspace = true }
 bytes = { workspace = true }
+metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rand = { workspace = true }
@@ -14,6 +18,9 @@ snow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+# optional:
+async-trait = { workspace = true, optional = true }
+sailfish-types = { path = "../sailfish-types", optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
