@@ -1,32 +1,24 @@
 use std::collections::HashMap;
 
-use crate::Group;
-
-use super::{TaskHandleResult, TestCondition, TestableNetwork};
-use sailfish::{
-    coordinator::Coordinator,
-    metrics::SailfishMetrics,
-    sailfish::{Sailfish, SailfishInitializerBuilder},
-};
-use timeboost_core::{
-    traits::has_initializer::HasInitializer,
-    types::{
-        message::Message,
-        test::{
-            message_interceptor::NetworkMessageInterceptor,
-            net::{Conn, Star},
-            testnet::{MsgQueues, TestNet},
-        },
-    },
+use multisig::PublicKey;
+use sailfish::Coordinator;
+use timeboost_core::types::test::{
+    message_interceptor::NetworkMessageInterceptor,
+    net::{Conn, Star},
+    testnet::{MsgQueues, TestNet},
 };
 use tokio::task::{JoinHandle, JoinSet};
+
+use crate::Group;
+use crate::prelude::*;
+use super::{TaskHandleResult, TestCondition, TestableNetwork};
 
 pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {
     group: Group,
-    outcomes: HashMap<u64, Vec<TestCondition>>,
-    interceptor: NetworkMessageInterceptor,
+    outcomes: HashMap<PublicKey, Vec<TestCondition>>,
+    interceptor: NetworkMessageInterceptor<SailfishBlock>,
     star_net: Star<Message>,
     jh: JoinHandle<()>,
 }
@@ -38,13 +30,13 @@ impl Drop for MemoryNetworkTest {
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = (Coordinator<TestNet<Conn<Message>>>, MsgQueues);
-    type Network = TestNet<Conn<Message>>;
+    type Node = (Coordinator<SailfishBlock, TestNet<SailfishBlock, Conn<Message>>>, MsgQueues<SailfishBlock>);
+    type Network = TestNet<SailfishBlock, Conn<Message>>;
 
     fn new(
         group: Group,
-        outcomes: HashMap<u64, Vec<TestCondition>>,
-        interceptor: NetworkMessageInterceptor,
+        outcomes: HashMap<PublicKey, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor<SailfishBlock>,
     ) -> Self {
         Self {
             group,
@@ -55,9 +47,11 @@ impl TestableNetwork for MemoryNetworkTest {
         }
     }
 
+    fn public_key(&self, n: &Self::Node) -> PublicKey {
+        n.0.public_key()
+    }
+
     async fn init(&mut self) -> Vec<Self::Node> {
-        // This is intentionally *not* a member of the struct due to `run` consuming
-        // the instance.
         let mut coordinators = Vec::new();
         for i in 0..self.group.size {
             // Join each node to the network
@@ -68,28 +62,11 @@ impl TestableNetwork for MemoryNetworkTest {
             );
             let messages = test_net.messages();
             let kpr = self.group.keypairs[i].clone();
-            let addr = *self
-                .group
-                .peers
-                .get(&kpr.public_key())
-                .expect("own public key to be present");
-            let initializer = SailfishInitializerBuilder::default()
-                .id((i as u64).into())
-                .keypair(kpr)
-                .bind_address(addr)
-                .network(test_net)
-                .committee(self.group.committee.clone())
-                .metrics(SailfishMetrics::default())
-                .build()
-                .unwrap();
-            let n = Sailfish::initialize(initializer).await.unwrap();
 
-            // Initialize the coordinator
-            let co = n.into_coordinator();
+            let cons = Consensus::new(kpr, self.group.committee.clone());
+            let coor = Coordinator::new(test_net, cons);
 
-            tracing::debug!("Started coordinator {}", i);
-            let c = (co, messages);
-            coordinators.push(c);
+            coordinators.push((coor, messages))
         }
 
         coordinators
@@ -102,11 +79,10 @@ impl TestableNetwork for MemoryNetworkTest {
         let mut co_handles = JoinSet::new();
         // There's always only one network for the memory network test.
         for (mut coordinator, msgs) in nodes.into_iter() {
-            let id: u64 = coordinator.id().into();
-            let mut conditions = self.outcomes.remove(&id).unwrap();
+            let mut conditions = self.outcomes.remove(&coordinator.public_key()).unwrap();
 
             co_handles.spawn(async move {
-                Self::run_coordinator(&mut coordinator, &mut conditions, msgs, id).await
+                Self::run_coordinator(&mut coordinator, &mut conditions, msgs).await
             });
         }
 

@@ -4,18 +4,11 @@ use committable::Committable;
 use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
-use sailfish::{
-    consensus::{Consensus, Dag},
-    metrics::SailfishMetrics,
-};
-use timeboost_core::types::{
-    message::{Evidence, Message, Timeout, TimeoutMessage},
-    vertex::Vertex,
-    NodeId,
-};
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish::consensus::ConsensusMetrics;
+use sailfish::types::{Evidence, Timeout, TimeoutMessage, RoundNumber};
 use timeboost_utils::unsafe_zero_keypair;
 
+use crate::prelude::*;
 use super::node_instrument::TestNodeInstrument;
 
 #[derive(Clone)]
@@ -38,11 +31,10 @@ impl KeyManager {
     /// Create test helpers for all the nodes.
     pub(crate) fn create_node_instruments(&self) -> Vec<TestNodeInstrument> {
         self.keys
-            .iter()
-            .map(|(id, kpair)| {
-                let node_id = NodeId::from(*id as u64);
-                let metrics = SailfishMetrics::default();
-                let cons = Consensus::new(node_id, kpair.clone(), self.committee.clone())
+            .values()
+            .map(|kpair| {
+                let metrics = ConsensusMetrics::default();
+                let cons = Consensus::new(kpair.clone(), self.committee.clone())
                     .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })

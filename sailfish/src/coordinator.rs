@@ -2,6 +2,7 @@ use std::{future::pending, time::Duration};
 
 use committable::Committable;
 use futures::{future::BoxFuture, FutureExt};
+use multisig::PublicKey;
 use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Comm, Action, Evidence, Message, RoundNumber, Payload};
 use tokio::time::sleep;
@@ -21,6 +22,7 @@ pub struct Coordinator<T: Committable, C> {
 }
 
 impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
+    /// Create a new coordinator.
     pub fn new(comm: C, cons: Consensus<T>) -> Self {
         Self {
             comm,
@@ -29,11 +31,21 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
             init: false,
         }
     }
+
+    /// The public key of this coordinator.
+    pub fn public_key(&self) -> PublicKey {
+        self.consensus.public_key()
+    }
+
+    /// Access the communication layer.
+    pub fn comm(&self) -> &C {
+        &self.comm
+    }
 }
 
 impl<T, C: Comm<T>> Coordinator<T, C>
 where
-    T: Committable + Clone + Eq
+    T: Committable + Clone + PartialEq
 {
     /// Starts Sailfish consensus.
     ///
@@ -63,11 +75,6 @@ where
             r = &mut self.timer => Ok(self.consensus.timeout(r)),
             msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
         }
-    }
-
-    /// Add payload data to the outgoing queue.
-    pub fn add_payload(&mut self, data: T) {
-        self.consensus.add_payload(data)
     }
 
     /// Execute a given consensus `Action`.
@@ -102,5 +109,10 @@ where
             }
         }
         Ok(None)
+    }
+
+    /// Add payload data to the outgoing queue.
+    pub fn add_payload(&mut self, data: T) {
+        self.consensus.add_payload(data)
     }
 }

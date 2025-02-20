@@ -1,31 +1,31 @@
 use std::collections::HashMap;
 
-use crate::tests::network::{TaskHandleResult, TestCondition, TestableNetwork};
-use crate::Group;
-use sailfish::metrics::SailfishMetrics;
-use sailfish::rbc::{self, Rbc};
-use sailfish::sailfish::Sailfish;
-use sailfish::sailfish::SailfishInitializerBuilder;
-use timeboost_core::traits::has_initializer::HasInitializer;
+use multisig::PublicKey;
+use sailfish::Coordinator;
+use sailfish::rbc::{Rbc, RbcConfig};
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use timeboost_networking::{Network, NetworkMetrics};
+use cliquenet::{Network, NetworkMetrics};
 use tokio::task::JoinSet;
+
+use crate::prelude::*;
+use crate::Group;
+use crate::tests::network::{TaskHandleResult, TestCondition, TestableNetwork};
 
 pub struct BasicNetworkTest {
     group: Group,
-    outcomes: HashMap<u64, Vec<TestCondition>>,
-    interceptor: NetworkMessageInterceptor,
+    outcomes: HashMap<PublicKey, Vec<TestCondition>>,
+    interceptor: NetworkMessageInterceptor<SailfishBlock>,
 }
 
 impl TestableNetwork for BasicNetworkTest {
-    type Node = Sailfish<Self::Network>;
-    type Network = TestNet<Rbc>;
+    type Node = Coordinator<SailfishBlock, Self::Network>;
+    type Network = TestNet<SailfishBlock, Rbc<SailfishBlock>>;
 
     fn new(
         group: Group,
-        outcomes: HashMap<u64, Vec<TestCondition>>,
-        interceptor: NetworkMessageInterceptor,
+        outcomes: HashMap<PublicKey, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor<SailfishBlock>,
     ) -> Self {
         Self {
             group,
@@ -34,9 +34,13 @@ impl TestableNetwork for BasicNetworkTest {
         }
     }
 
+    fn public_key(&self, n: &Self::Node) -> PublicKey {
+        n.public_key()
+    }
+
     async fn init(&mut self) -> Vec<Self::Node> {
-        let mut handles = JoinSet::new();
         let committee = self.group.committee.clone();
+        let mut nodes = Vec::new();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();
             let addr = *self
@@ -52,29 +56,16 @@ impl TestableNetwork for BasicNetworkTest {
             )
             .await
             .expect("failed to make network");
-            let interceptor = self.interceptor.clone();
-            let committee_clone = committee.clone();
-            handles.spawn(async move {
-                let cfg = rbc::Config::new(kpr.clone(), committee_clone.clone());
-                let net = Rbc::new(net, cfg);
-                tracing::debug!(%i, "created rbc");
-                let test_net = TestNet::new(net, i as u64, interceptor);
-                tracing::debug!(%i, "created testnet");
-
-                let initializer = SailfishInitializerBuilder::default()
-                    .id((i as u64).into())
-                    .keypair(kpr)
-                    .bind_address(addr)
-                    .network(test_net)
-                    .committee(committee_clone)
-                    .metrics(SailfishMetrics::default())
-                    .build()
-                    .unwrap();
-
-                Sailfish::initialize(initializer).await.unwrap()
-            });
+            let cfg = RbcConfig::new(kpr.clone(), committee.clone());
+            let net = Rbc::new(net, cfg);
+            tracing::debug!(%i, "created rbc");
+            let test_net = TestNet::new(net, i as u64, self.interceptor.clone());
+            tracing::debug!(%i, "created testnet");
+            let consensus = Consensus::new(kpr, committee.clone());
+            let coord = Coordinator::new(test_net, consensus);
+            nodes.push(coord)
         }
-        handles.join_all().await.into_iter().collect()
+        nodes
     }
 
     /// Return the result of the task handle
@@ -83,14 +74,12 @@ impl TestableNetwork for BasicNetworkTest {
     async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult> {
         let mut handles = JoinSet::new();
 
-        for node in nodes.into_iter() {
-            let id: u64 = node.id().into();
-            let mut conditions = self.outcomes.remove(&id).unwrap();
+        for mut node in nodes.into_iter() {
+            let mut conditions = self.outcomes.remove(&node.public_key()).unwrap();
 
             handles.spawn(async move {
-                let msgs = node.network().messages().clone();
-                let coordinator = &mut node.into_coordinator();
-                Self::run_coordinator(coordinator, &mut conditions, msgs, id).await
+                let msgs = node.comm().messages().clone();
+                Self::run_coordinator(&mut node, &mut conditions, msgs).await
             });
         }
         handles

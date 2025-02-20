@@ -1,7 +1,8 @@
-use timeboost_core::types::message::Message;
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish::types::RoundNumber;
 
+use crate::prelude::*;
 use super::{node_instrument::TestNodeInstrument, test_helpers::MessageModifier};
+
 /// Intercept a message before a node processes it and apply transformations if any provided
 pub struct Interceptor {
     msg_modifier: MessageModifier,

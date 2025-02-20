@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use multisig::PublicKey;
-use timeboost_core::types::message::Message;
 
+use crate::prelude::*;
 use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
 
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;

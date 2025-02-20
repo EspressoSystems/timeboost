@@ -4,6 +4,17 @@ use std::net::{Ipv4Addr, SocketAddr};
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_utils::unsafe_zero_keypair;
 
+#[allow(unused)]
+pub(crate) mod prelude {
+    pub use timeboost_core::types::block::sailfish::SailfishBlock;
+
+    pub type Action    = sailfish::types::Action<SailfishBlock>;
+    pub type Message   = sailfish::types::Message<SailfishBlock>;
+    pub type Vertex    = sailfish::types::Vertex<SailfishBlock>;
+    pub type Consensus = sailfish::consensus::Consensus<SailfishBlock>;
+    pub type Dag       = sailfish::consensus::Dag<SailfishBlock>;
+}
+
 #[cfg(test)]
 mod tests;
 

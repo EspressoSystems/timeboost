@@ -1,16 +1,11 @@
 use multisig::PublicKey;
-use sailfish::consensus::{Consensus, Dag};
 use std::{
     collections::{HashMap, VecDeque},
     num::NonZeroUsize,
 };
-use timeboost_core::types::{
-    message::{Action, Evidence, Message},
-    NodeId,
-};
-use timeboost_utils::types::round_number::RoundNumber;
-use tracing::info;
+use sailfish::types::{Evidence, RoundNumber};
 
+use crate::prelude::*;
 use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
 
 /// Mock the network
@@ -36,7 +31,7 @@ impl FakeNetwork {
         for node_instrument in self.nodes.values_mut() {
             let node = node_instrument.node_mut();
             for a in node.go(Dag::new(committee_size), Evidence::Genesis) {
-                Self::handle_action(node.id(), a, &mut next)
+                Self::handle_action(a, &mut next)
             }
         }
         self.dispatch(next)
@@ -59,7 +54,6 @@ impl FakeNetwork {
             .values()
             .next()
             .expect("at least one node exists")
-            .node()
             .committee()
             .leader(*round as usize)
     }
@@ -76,7 +70,7 @@ impl FakeNetwork {
         for node_handle in self.nodes.values_mut() {
             while let Some(msg) = node_handle.pop_msg() {
                 for a in Self::handle_message(node_handle, msg, &self.msg_interceptor) {
-                    Self::handle_action(node_handle.node().id(), a, &mut next_msgs);
+                    Self::handle_action(a, &mut next_msgs);
                 }
             }
         }
@@ -85,11 +79,11 @@ impl FakeNetwork {
 
     /// Look in each node and grab their queue of messages
     /// Used for asserting in tests to make sure outputs are expected
-    pub(crate) fn msgs_in_queue(&self) -> HashMap<NodeId, &VecDeque<Message>> {
+    pub(crate) fn msgs_in_queue(&self) -> HashMap<PublicKey, &VecDeque<Message>> {
         let nodes_msgs = self
             .nodes
-            .values()
-            .map(|node_instrument| (node_instrument.node().id(), node_instrument.msg_queue()))
+            .iter()
+            .map(|(key, node_instrument)| (*key, node_instrument.msg_queue()))
             .collect();
         nodes_msgs
     }
@@ -125,16 +119,12 @@ impl FakeNetwork {
         }
     }
 
-    fn handle_action(node: NodeId, a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
+    fn handle_action(a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
         let msg = match a {
             Action::ResetTimer(_) => {
-                // TODO
-                info!(%node, "reset timer");
                 return;
             }
-            Action::Deliver(_b, r, src) => {
-                // TODO
-                info!(%node, %r, %src, "deliver");
+            Action::Deliver(_) => {
                 return;
             }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),
