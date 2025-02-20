@@ -271,7 +271,7 @@ mod tests {
         // Generate tuple (g, g_hat, h, h_hat)
         let g = G::generator();
         let g_hat = g * x;
-        let h = ark_secp256k1::Projective::rand(&mut rng);
+        let h = G::rand(&mut rng);
         let h_hat = h * x;
         let tuple = DleqTuple::new(g, g_hat, h, h_hat);
         (x, tuple)
