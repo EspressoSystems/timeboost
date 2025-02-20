@@ -46,18 +46,6 @@ impl<C: CurveGroup, D: DuplexHash> Clone for CPParameters<C, D> {
     }
 }
 
-impl<C: CurveGroup, D: DuplexHash> CPParameters<C, D> {
-    pub(crate) fn new(generator: C) -> Self {
-        Self {
-            _hash: PhantomData,
-            generator,
-            io_pattern: <IOPattern<D> as ChaumPedersenIOPattern<C>>::new_cp_proof(
-                "dleq::chaum-pedersen",
-            ),
-        }
-    }
-}
-
 /// Tuple (g, g_hat, h, h_hat)
 ///
 /// subject to proving: DLOG_{g}(g_hat) == DLOG_{h}(h_hat)
@@ -109,28 +97,18 @@ where
 }
 
 impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
-    type Parameters = CPParameters<C, D>;
     type DleqTuple = DleqTuple<C>;
     type Scalar = C::ScalarField;
     type Proof = Proof;
 
-    fn setup<R: ark_std::rand::Rng>(rng: &mut R) -> Result<Self::Parameters, DleqProofError> {
-        let generator: C = C::rand(rng);
-        Ok(CPParameters::new(generator))
-    }
-
-    fn prove(
-        pp: &Self::Parameters,
-        tuple: Self::DleqTuple,
-        x: &Self::Scalar,
-    ) -> Result<Self::Proof, DleqProofError> {
+    fn prove(tuple: Self::DleqTuple, x: &Self::Scalar) -> Result<Self::Proof, DleqProofError> {
         if !tuple.verify_tuple(*x) {
             return Err(DleqProofError::Internal(anyhow!(
                 "unable to generate proof for invalid tuple"
             )));
         }
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
-        let mut merlin = pp.io_pattern.to_merlin();
+        let mut merlin = Self::io_pattern().to_merlin();
         merlin.public_points(&[g, g_hat, h, h_hat])?;
         merlin.ratchet()?;
 
@@ -148,16 +126,12 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
         })
     }
 
-    fn verify(
-        pp: &Self::Parameters,
-        tuple: DleqTuple<C>,
-        proof: &Self::Proof,
-    ) -> Result<(), DleqProofError>
+    fn verify(tuple: DleqTuple<C>, proof: &Self::Proof) -> Result<(), DleqProofError>
     where
         for<'a> Arthur<'a, D>:
             GroupReader<C> + FieldReader<C::ScalarField> + FieldChallenges<C::ScalarField>,
     {
-        let mut arthur = pp.io_pattern.to_arthur(&proof.transcript);
+        let mut arthur = Self::io_pattern().to_arthur(&proof.transcript);
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
         arthur.public_points(&[g, g_hat, h, h_hat])?;
         arthur.ratchet()?;
@@ -173,6 +147,11 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
     }
 }
 
+impl<C: CurveGroup, D: DuplexHash> ChaumPedersen<C, D> {
+    pub(crate) fn io_pattern() -> IOPattern<D> {
+        <IOPattern<D> as ChaumPedersenIOPattern<C>>::new_cp_proof("dleq::chaum-pedersen")
+    }
+}
 #[cfg(test)]
 mod tests {
     use ark_ec::PrimeGroup;
@@ -189,8 +168,6 @@ mod tests {
         traits::dleq_proof::DleqProofScheme,
     };
 
-    use super::CPParameters;
-
     type G = ark_secp256k1::Projective;
     type D = Keccak;
     type S = <ark_secp256k1::Projective as PrimeGroup>::ScalarField;
@@ -200,13 +177,13 @@ mod tests {
         let mut rng = test_rng();
 
         // Setup
-        let (params, x, tuple) = setup(&mut rng);
+        let (x, tuple) = setup(&mut rng);
 
         // Create proof
-        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
+        let proof = ChaumPedersen::<G, D>::prove(tuple.clone(), &x).unwrap();
 
         // Verify proof
-        let result = ChaumPedersen::<G, D>::verify(&params, tuple, &proof);
+        let result = ChaumPedersen::<G, D>::verify(tuple, &proof);
         assert!(result.is_ok(), "Proof verification failed");
     }
 
@@ -215,7 +192,7 @@ mod tests {
         let mut rng = test_rng();
 
         // Setup
-        let (params, x, tuple) = setup(&mut rng);
+        let (x, tuple) = setup(&mut rng);
         let DleqTuple(g, g_hat, h, _) = tuple;
         let y = S::from(2);
 
@@ -223,7 +200,7 @@ mod tests {
         let tuple = DleqTuple::new(g, g_hat, h, h * y);
 
         // Verify proof
-        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x);
+        let proof = ChaumPedersen::<G, D>::prove(tuple.clone(), &x);
         assert!(
             proof.is_err(),
             "Proof generation should fail with invalid tuple"
@@ -234,11 +211,11 @@ mod tests {
     fn verify_proof_for_invalid_tuple() {
         let mut rng = test_rng();
 
-        let (params, x, tuple) = setup(&mut rng);
+        let (x, tuple) = setup(&mut rng);
         let DleqTuple(g, g_hat, h, _) = tuple;
 
         // Create proof
-        let proof = ChaumPedersen::<G, D>::prove(&params, tuple.clone(), &x).unwrap();
+        let proof = ChaumPedersen::<G, D>::prove(tuple.clone(), &x).unwrap();
 
         let y = S::rand(&mut rng);
         let tuple_invalid = DleqTuple::new(g, g_hat, h, h * y);
@@ -246,7 +223,7 @@ mod tests {
         assert!(!tuple_invalid.verify_tuple(y));
 
         // Verify proof
-        let result = ChaumPedersen::<G, D>::verify(&params, tuple_invalid, &proof);
+        let result = ChaumPedersen::<G, D>::verify(tuple_invalid, &proof);
         assert!(
             result.is_err(),
             "Proof verification should fail with invalid tuple"
@@ -257,11 +234,11 @@ mod tests {
     fn verify_invalid_proof_for_tuple() {
         let mut rng = test_rng();
 
-        let (params, x, tuple) = setup(&mut rng);
+        let (x, tuple) = setup(&mut rng);
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
 
         // Create invalid transcript
-        let mut mordred: Merlin<D> = params.io_pattern.to_merlin();
+        let mut mordred: Merlin<D> = ChaumPedersen::<G, D>::io_pattern().to_merlin();
         mordred.public_points(&[g, g_hat, h, h_hat]).unwrap();
         mordred.ratchet().unwrap();
 
@@ -280,26 +257,23 @@ mod tests {
         };
 
         // Verify proof
-        let result = ChaumPedersen::<G, D>::verify(&params, tuple, &mordred_proof);
+        let result = ChaumPedersen::<G, D>::verify(tuple, &mordred_proof);
         assert!(
             result.is_err(),
             "Proof verification should fail with invalid transcript"
         );
     }
 
-    fn setup<R: Rng>(mut rng: R) -> (CPParameters<G, D>, S, DleqTuple<G>) {
-        // Setup parameters
-        let params = ChaumPedersen::<G, D>::setup(&mut rng).unwrap();
-
+    fn setup<R: Rng>(mut rng: R) -> (S, DleqTuple<G>) {
         // Generate random scalar x
         let x = S::rand(&mut rng);
 
         // Generate tuple (g, g_hat, h, h_hat)
-        let g = params.generator;
+        let g = G::generator();
         let g_hat = g * x;
         let h = ark_secp256k1::Projective::rand(&mut rng);
         let h_hat = h * x;
         let tuple = DleqTuple::new(g, g_hat, h, h_hat);
-        (params, x, tuple)
+        (x, tuple)
     }
 }

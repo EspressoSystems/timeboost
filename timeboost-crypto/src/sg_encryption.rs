@@ -16,10 +16,10 @@ use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
 use crate::{
-    cp_proof::{CPParameters, ChaumPedersen, DleqTuple},
+    cp_proof::{ChaumPedersen, DleqTuple},
     traits::dleq_proof::DleqProofScheme,
     traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
-    Ciphertext, CombKey, Committee, DecShare, KeyShare, Parameters, Plaintext, PublicKey,
+    Ciphertext, CombKey, Committee, DecShare, KeyShare, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -47,7 +47,6 @@ where
     C::ScalarField: PrimeField,
 {
     type Committee = Committee;
-    type Parameters = Parameters<C, H, D>;
     type PublicKey = PublicKey<C>;
     type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
@@ -55,26 +54,13 @@ where
     type Ciphertext = Ciphertext<C>;
     type DecShare = DecShare<C>;
 
-    fn setup<R: Rng>(
-        rng: &mut R,
-        committee: Committee,
-    ) -> Result<Self::Parameters, ThresholdEncError> {
-        let generator: C = C::rand(rng);
-        Ok(Parameters {
-            _hash: PhantomData::<H>,
-            generator,
-            committee,
-            cp_params: CPParameters::new(generator),
-        })
-    }
-
     fn keygen<R: Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = pp.committee.size as usize;
+        let committee_size = committee.size as usize;
         let degree = committee_size / CORR_RATIO;
-        let gen = pp.generator;
+        let gen = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
         let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size);
 
@@ -111,17 +97,21 @@ where
 
     fn encrypt<R: Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
         let beta = C::ScalarField::rand(rng);
-        let v = pp.generator * beta;
+        let gen = C::generator();
+        let v = gen * beta;
         let w = pub_key.key * beta;
 
         // hash to symmetric key `k`
         let key = hash_to_key::<C, H>(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
+
+        // TODO: use committee id for hashing
+        let _cid = committee.id;
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
@@ -129,13 +119,13 @@ where
         let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref()).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
         })?;
-        let u_hat = hash_to_curve::<C, H, D>(v, e.clone(), pp)?;
+        let u_hat = hash_to_curve::<C, H, D>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
 
         // Produce DLEQ proof for CCA security
-        let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
-        let pi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &beta).map_err(|e| {
+        let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
+        let pi = ChaumPedersen::<C, D>::prove(tuple, &beta).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Encrypt: Proof generation failed: {:?}", e))
         })?;
 
@@ -149,10 +139,10 @@ where
     }
 
     fn decrypt(
-        pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, ThresholdEncError> {
+        let gen = C::generator();
         let alpha = sk.share;
         let (v, e, w_hat, pi) = (
             ciphertext.v,
@@ -160,15 +150,15 @@ where
             ciphertext.w_hat,
             ciphertext.pi.clone(),
         );
-        let u_hat = hash_to_curve(v, e, pp).unwrap();
-        let tuple = DleqTuple::new(pp.generator, v, u_hat, w_hat);
-        ChaumPedersen::verify(&pp.cp_params, tuple, &pi)
+        let u_hat = hash_to_curve::<C, H, D>(v, e).unwrap();
+        let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
+        ChaumPedersen::<C, D>::verify(tuple, &pi)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
 
         let w = v * alpha;
-        let u_i = pp.generator * alpha;
-        let tuple = DleqTuple::new(pp.generator, u_i, v, w);
-        let phi = ChaumPedersen::<C, D>::prove(&pp.cp_params, tuple, &alpha).map_err(|e| {
+        let u_i = gen * alpha;
+        let tuple = DleqTuple::new(gen, u_i, v, w);
+        let phi = ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Decrypt: Proof generation failed {:?}", e))
         })?;
 
@@ -180,13 +170,14 @@ where
     }
 
     fn combine(
-        pp: &Self::Parameters,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = pp.committee.size as usize;
+        let committee_size: usize = committee.size as usize;
         let threshold = committee_size / CORR_RATIO + 1;
+        let gen = C::generator();
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
@@ -212,8 +203,8 @@ where
             .filter_map(|share| {
                 let (w, phi) = (share.w, share.phi.clone());
                 let u = pk_comb[share.index as usize];
-                let tuple = DleqTuple::new(pp.generator, u, v, w);
-                ChaumPedersen::verify(&pp.cp_params, tuple, &phi)
+                let tuple = DleqTuple::new(gen, u, v, w);
+                ChaumPedersen::<C, D>::verify(tuple, &phi)
                     .ok()
                     .map(|_| *share)
             })
@@ -223,7 +214,7 @@ where
             return Err(ThresholdEncError::NotEnoughShares);
         }
 
-        // Colllect eval points for decryption shares
+        // Collect eval points for decryption shares
         let x = dec_shares
             .iter()
             .map(|share| domain.element(share.index as usize))
@@ -269,16 +260,13 @@ where
 
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C, H, D>(
-    v: C,
-    e: Vec<u8>,
-    pp: &Parameters<C, H, D>,
-) -> Result<C, ThresholdEncError>
+fn hash_to_curve<C, H, D>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
 where
     C: CurveGroup,
     H: Digest + Default + Clone + FixedOutputReset + 'static,
     D: DuplexHash,
 {
+    let gen = C::generator();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer).unwrap();
@@ -287,7 +275,7 @@ where
     drop(writer);
     let hasher = <DefaultFieldHasher<H> as HashToField<C::ScalarField>>::new(&[0u8]);
     let scalar_from_hash: C::ScalarField = hasher.hash_to_field::<1>(&buffer)[0];
-    let u_hat = pp.generator * scalar_from_hash;
+    let u_hat = gen * scalar_from_hash;
     Ok(u_hat)
 }
 
@@ -326,24 +314,23 @@ mod test {
         let rng = &mut test_rng();
         let committee = Committee { size: 20, id: 0 };
 
-        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee).unwrap();
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
         let check_message =
-            ShoupGennaro::<G, H, D>::combine(&parameters, &comb_key, dec_shares_refs, &ciphertext)
+            ShoupGennaro::<G, H, D>::combine(&committee, &comb_key, dec_shares_refs, &ciphertext)
                 .unwrap();
         assert_eq!(
             message, check_message.0,
@@ -357,18 +344,17 @@ mod test {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
 
-        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
 
         let threshold = (committee.size / 3) as usize;
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
             .filter_map(|res| res.ok())
             .take(threshold) // not enough shares to combine
             .collect::<Vec<_>>();
@@ -376,7 +362,7 @@ mod test {
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
         let result =
-            ShoupGennaro::<G, H, D>::combine(&parameters, &comb_key, dec_shares_refs, &ciphertext);
+            ShoupGennaro::<G, H, D>::combine(&committee, &comb_key, dec_shares_refs, &ciphertext);
         assert!(
             result.is_err(),
             "Should fail to combine; insufficient amount of shares"
@@ -388,17 +374,16 @@ mod test {
         let rng = &mut test_rng();
         let committee = Committee { size: 10, id: 0 };
 
-        let parameters = ShoupGennaro::<G, H, D>::setup(rng, committee.clone()).unwrap();
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &parameters).unwrap();
+        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
 
         let mut dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
@@ -406,7 +391,7 @@ mod test {
         dec_shares.shuffle(rng);
 
         let check_message = ShoupGennaro::<G, H, D>::combine(
-            &parameters,
+            &committee,
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
@@ -428,7 +413,7 @@ mod test {
             dec_shares[i] = share;
         });
         let result = ShoupGennaro::<G, H, D>::combine(
-            &parameters,
+            &committee,
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
@@ -441,7 +426,7 @@ mod test {
         // to obtain exactly t+1 correct shares (enough to combine)
         dec_shares[0] = first_correct_share;
         let result = ShoupGennaro::<G, H, D>::combine(
-            &parameters,
+            &committee,
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,

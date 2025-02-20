@@ -1,9 +1,11 @@
 use ark_std::rand::Rng;
 use thiserror::Error;
 
+use crate::Committee;
+
+/// A Threshold Encryption Scheme.
 pub trait ThresholdEncScheme {
     type Committee;
-    type Parameters;
     type PublicKey;
     type CombKey;
     type KeyShare;
@@ -11,39 +13,37 @@ pub trait ThresholdEncScheme {
     type Ciphertext;
     type DecShare;
 
-    fn setup<R: Rng>(
-        rng: &mut R,
-        committee: Self::Committee,
-    ) -> Result<Self::Parameters, ThresholdEncError>;
-
+    /// Generate the key material for the scheme.
     #[allow(clippy::type_complexity)]
     fn keygen<R: Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
+    /// Encrypt a `message` using the encryption key `pk`.
     fn encrypt<R: Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
 
+    /// Partial decrypt a `ciphertext` using key share `sk`.
     fn decrypt(
-        pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, ThresholdEncError>;
 
+    /// Combine a set of `dec_shares` using `comb_key` into a plaintext message.
     fn combine(
-        pp: &Self::Parameters,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError>;
 }
 
-/// The error type for `ThresholdEncScheme` methods.
+/// Error types for `ThresholdEncScheme`.
 #[derive(Error, Debug)]
 pub enum ThresholdEncError {
     #[error("Invalid argument: {0}")]
