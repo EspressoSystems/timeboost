@@ -881,8 +881,8 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
 }
 
 #[cfg(feature = "test")]
-impl<B: Block + Eq> Consensus<B> {
-    pub fn dag(&self) -> &Dag<B> {
+impl<T: Committable + Eq> Consensus<T> {
+    pub fn dag(&self) -> &Dag<T> {
         &self.dag
     }
 
@@ -894,7 +894,7 @@ impl<B: Block + Eq> Consensus<B> {
         self.delivered.iter().copied()
     }
 
-    pub fn leader_stack(&self) -> &[Vertex<B>] {
+    pub fn leader_stack(&self) -> &[Vertex<T>] {
         &self.leader_stack
     }
 
