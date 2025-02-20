@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
+use cliquenet::{Network, NetworkMetrics};
 use multisig::PublicKey;
-use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
+use sailfish::Coordinator;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::TestNet;
-use cliquenet::{Network, NetworkMetrics};
 use tokio::task::JoinSet;
 
 use crate::prelude::*;
-use crate::Group;
 use crate::tests::network::{TaskHandleResult, TestCondition, TestableNetwork};
+use crate::Group;
 
 pub struct BasicNetworkTest {
     group: Group,

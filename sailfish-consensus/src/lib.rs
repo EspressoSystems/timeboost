@@ -9,7 +9,7 @@ use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{RoundNumber, Vertex, Payload};
+use sailfish_types::{Payload, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -902,12 +902,15 @@ impl<T: Committable + Eq> Consensus<T> {
         self.committed_round
     }
 
-    pub fn no_vote_accumulators(&self) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<NoVote>)> {
+    pub fn no_vote_accumulators(
+        &self,
+    ) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<NoVote>)> {
         self.no_votes.iter().map(|(r, v)| (*r, v))
     }
 
-    pub fn timeout_accumulators(&self) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<Timeout>)> {
+    pub fn timeout_accumulators(
+        &self,
+    ) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<Timeout>)> {
         self.timeouts.iter().map(|(r, v)| (*r, v))
     }
 }
-

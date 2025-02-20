@@ -1,12 +1,12 @@
 use multisig::PublicKey;
+use sailfish::types::{Evidence, RoundNumber};
 use std::{
     collections::{HashMap, VecDeque},
     num::NonZeroUsize,
 };
-use sailfish::types::{Evidence, RoundNumber};
 
-use crate::prelude::*;
 use super::{interceptor::Interceptor, node_instrument::TestNodeInstrument};
+use crate::prelude::*;
 
 /// Mock the network
 pub struct FakeNetwork {

@@ -18,7 +18,10 @@ pub struct MsgQueues<T: Committable> {
 
 impl<T: Committable> Clone for MsgQueues<T> {
     fn clone(&self) -> Self {
-        Self { ibox: self.ibox.clone(), obox: self.obox.clone() }
+        Self {
+            ibox: self.ibox.clone(),
+            obox: self.obox.clone(),
+        }
     }
 }
 
@@ -90,7 +93,10 @@ impl<T: Committable + Send, C: Comm<T> + Send> std::fmt::Display for TestNetErro
     }
 }
 
-impl<T: Committable + Debug + Send, C: Comm<T> + Debug + Send> std::error::Error for TestNetError<T, C> {}
+impl<T: Committable + Debug + Send, C: Comm<T> + Debug + Send> std::error::Error
+    for TestNetError<T, C>
+{
+}
 
 #[async_trait]
 impl<T, C> Comm<T> for TestNet<T, C>

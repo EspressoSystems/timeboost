@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use multisig::PublicKey;
-use sailfish::Coordinator;
 use sailfish::types::Comm;
+use sailfish::Coordinator;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::MsgQueues;
 use timeboost_utils::types::logging;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use crate::Group;
 use crate::prelude::*;
+use crate::Group;
 
 mod rbc;
 
@@ -184,7 +184,10 @@ impl<N: TestableNetwork> NetworkTest<N> {
         let mut results = HashMap::new();
 
         // Default to timeout for each node
-        for key in nodes_and_networks.iter().map(|c| self.network.public_key(c)) {
+        for key in nodes_and_networks
+            .iter()
+            .map(|c| self.network.public_key(c))
+        {
             results.insert(key, TestOutcome::Timeout);
         }
 

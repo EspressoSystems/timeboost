@@ -4,7 +4,7 @@ use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
-use sailfish::types::{NoVoteMessage, Timeout, TimeoutMessage, RoundNumber};
+use sailfish::types::{NoVoteMessage, RoundNumber, Timeout, TimeoutMessage};
 
 use crate::prelude::*;
 
@@ -126,7 +126,8 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
-        let accumulator = self.node
+        let accumulator = self
+            .node
             .timeout_accumulators()
             .find_map(|(r, v)| (r == expected_round).then_some(v));
 

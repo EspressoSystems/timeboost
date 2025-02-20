@@ -8,8 +8,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use serde::{de::DeserializeOwned, Serialize};
 use sailfish_types::{Message, RawComm, RoundNumber};
+use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
 use tracing::{debug, instrument, warn};
@@ -66,7 +66,7 @@ impl<T: Committable> Default for Messages<T> {
         Self {
             early: false,
             map: Default::default(),
-            acks: Default::default()
+            acks: Default::default(),
         }
     }
 }
@@ -653,7 +653,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             // We have previously reached the quorum of votes but did not manage to request
             // the still missing message. We use this additional vote to try again.
             Status::ReachedQuorum if tracker.message.item.is_none() => {
-                let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(digest, &self.config.keypair, false));
+                let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(
+                    digest,
+                    &self.config.keypair,
+                    false,
+                ));
                 let b = serialize(&m)?;
                 let s = tracker.choose_voter(&commit).expect("quorum => voter");
                 self.comm.send(s, b).await.map_err(RbcError::net)?;
@@ -748,7 +752,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     }
                     tracker.status = Status::Delivered
                 } else {
-                    let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(digest, &self.config.keypair, false));
+                    let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(
+                        digest,
+                        &self.config.keypair,
+                        false,
+                    ));
                     let b = serialize(&m)?;
                     let s = tracker.choose_voter(&commit).expect("certificate => voter");
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
@@ -898,7 +906,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         continue;
                     }
                     debug!(n = %self.label, d = %digest, "requesting message again");
-                    let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(*digest, &self.config.keypair, false));
+                    let m = Protocol::<'_, T, Validated>::Get(Envelope::signed(
+                        *digest,
+                        &self.config.keypair,
+                        false,
+                    ));
                     let b = serialize(&m).expect("idempotent serialization");
                     let c = digest.commit();
                     let s = tracker.choose_voter(&c).expect("req-msg => voter");
@@ -981,7 +993,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 }
 
 /// Factored out of `Worker` to help with borrowing.
-async fn fire<B: Clone + Committable + Serialize, C: RawComm>(net: &mut C, to: PublicKey, msg: &Message<B, Validated>) -> Result<()> {
+async fn fire<B: Clone + Committable + Serialize, C: RawComm>(
+    net: &mut C,
+    to: PublicKey,
+    msg: &Message<B, Validated>,
+) -> Result<()> {
     let proto = Protocol::Fire(Cow::Borrowed(msg));
     let bytes = serialize(&proto)?;
     net.send(to, bytes).await.map_err(RbcError::net)?;
@@ -994,4 +1010,3 @@ fn serialize<T: Serialize>(d: &T) -> Result<Bytes> {
     bincode::serialize_into(&mut b, d)?;
     Ok(b.into_inner().freeze())
 }
-

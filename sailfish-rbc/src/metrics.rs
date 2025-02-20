@@ -1,5 +1,5 @@
-use std::time::Duration;
 use metrics::{Counter, Histogram, Metrics, NoMetrics};
+use std::time::Duration;
 
 #[derive(Debug)]
 #[non_exhaustive]

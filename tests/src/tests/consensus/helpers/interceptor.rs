@@ -1,7 +1,7 @@
 use sailfish::types::RoundNumber;
 
-use crate::prelude::*;
 use super::{node_instrument::TestNodeInstrument, test_helpers::MessageModifier};
+use crate::prelude::*;
 
 /// Intercept a message before a node processes it and apply transformations if any provided
 pub struct Interceptor {

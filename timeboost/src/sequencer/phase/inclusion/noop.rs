@@ -1,7 +1,7 @@
 use super::{CandidateList, InclusionList, InclusionPhase};
 use anyhow::Result;
-use timeboost_core::types::seqno::SeqNo;
 use timeboost_core::types::round_number::RoundNumber;
+use timeboost_core::types::seqno::SeqNo;
 
 pub struct NoOpInclusionPhase;
 impl InclusionPhase for NoOpInclusionPhase {

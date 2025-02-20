@@ -47,7 +47,10 @@ async fn test_timeout_round_and_no_vote() {
         move |msg: &Message, node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(v) = msg {
                 if *v.data().round().data() == timeout_at_round
-                    && *v.signing_key() == manager.committee().leader(**v.data().round().data() as usize)
+                    && *v.signing_key()
+                        == manager
+                            .committee()
+                            .leader(**v.data().round().data() as usize)
                 {
                     let timeout_msgs = manager.create_timeout_msgs(timeout_at_round.into());
                     node_handle.add_msgs(timeout_msgs);
@@ -219,7 +222,10 @@ fn basic_liveness() {
                     let na = match a {
                         Action::Deliver(data) => {
                             if n.public_key() == *id {
-                                delivered.entry(*id).or_default().push((data.round(), data.source()));
+                                delivered
+                                    .entry(*id)
+                                    .or_default()
+                                    .push((data.round(), data.source()));
                             }
                             continue;
                         }

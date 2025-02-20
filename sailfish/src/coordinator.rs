@@ -4,7 +4,7 @@ use committable::Committable;
 use futures::{future::BoxFuture, FutureExt};
 use multisig::PublicKey;
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Comm, Action, Evidence, Message, RoundNumber, Payload};
+use sailfish_types::{Action, Comm, Evidence, Message, Payload, RoundNumber};
 use tokio::time::sleep;
 
 pub struct Coordinator<T: Committable, C> {
@@ -45,7 +45,7 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
 
 impl<T, C: Comm<T>> Coordinator<T, C>
 where
-    T: Committable + Clone + PartialEq
+    T: Committable + Clone + PartialEq,
 {
     /// Starts Sailfish consensus.
     ///
@@ -92,9 +92,7 @@ where
             Action::ResetTimer(r) => {
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
             }
-            Action::Deliver(data) => {
-                return Ok(Some(data))
-            }
+            Action::Deliver(data) => return Ok(Some(data)),
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }

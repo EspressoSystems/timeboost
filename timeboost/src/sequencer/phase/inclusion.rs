@@ -7,13 +7,13 @@ use std::{
 use anyhow::Result;
 use committable::{Commitment, Committable};
 use serde::{Deserialize, Serialize};
+use timeboost_core::types::round_number::RoundNumber;
 use timeboost_core::types::{
     block::sailfish::SailfishBlock,
     seqno::SeqNo,
     time::{Epoch, Timestamp},
     transaction::Transaction,
 };
-use timeboost_core::types::round_number::RoundNumber;
 
 use crate::sequencer::{protocol::RoundState, util::median};
 

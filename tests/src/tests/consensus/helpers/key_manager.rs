@@ -5,11 +5,11 @@ use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
 use sailfish::consensus::ConsensusMetrics;
-use sailfish::types::{Evidence, Timeout, TimeoutMessage, RoundNumber};
+use sailfish::types::{Evidence, RoundNumber, Timeout, TimeoutMessage};
 use timeboost_utils::unsafe_zero_keypair;
 
-use crate::prelude::*;
 use super::node_instrument::TestNodeInstrument;
+use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct KeyManager {
@@ -34,8 +34,8 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
-                let cons = Consensus::new(kpair.clone(), self.committee.clone())
-                    .with_metrics(metrics);
+                let cons =
+                    Consensus::new(kpair.clone(), self.committee.clone()).with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
             .collect()

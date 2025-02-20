@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::transaction::Transaction;
 use super::block::timeboost::TimeboostBlock;
+use crate::types::transaction::Transaction;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimeboostEventType {

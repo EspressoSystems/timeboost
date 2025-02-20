@@ -1,8 +1,8 @@
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use serde::{Deserialize, Serialize};
 use sailfish_types::{Message, RoundNumber};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Digest(RoundNumber, [u8; 32]);

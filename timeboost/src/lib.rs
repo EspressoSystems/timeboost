@@ -7,9 +7,9 @@ use cliquenet::{Address, Network, NetworkMetrics};
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
-use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcMetrics};
+use sailfish::Coordinator;
 use sequencer::{
     phase::{
         block_builder::noop::NoOpBlockBuilder, decryption::noop::NoOpDecryptionPhase,

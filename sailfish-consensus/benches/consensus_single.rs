@@ -49,9 +49,7 @@ impl Net {
 
         let mut nodes = kps
             .into_iter()
-            .map(|kp| {
-                (kp.public_key(), Consensus::new(kp, com.clone()))
-            })
+            .map(|kp| (kp.public_key(), Consensus::new(kp, com.clone())))
             .collect::<HashMap<_, _>>();
 
         let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
@@ -88,7 +86,10 @@ impl Net {
 }
 
 /// Many-to-many broadcast of a message stack.
-fn send(nodes: &mut HashMap<PublicKey, Consensus<Empty>>, msgs: &[Message<Empty>]) -> Vec<Action<Empty>> {
+fn send(
+    nodes: &mut HashMap<PublicKey, Consensus<Empty>>,
+    msgs: &[Message<Empty>],
+) -> Vec<Action<Empty>> {
     use rayon::prelude::*;
 
     if nodes.len() == 1 {

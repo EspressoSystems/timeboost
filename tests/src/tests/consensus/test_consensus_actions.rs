@@ -1,4 +1,4 @@
-use sailfish::types::{Timeout, RoundNumber};
+use sailfish::types::{RoundNumber, Timeout};
 use timeboost_utils::types::logging;
 
 use crate::prelude::*;

@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
+use sailfish_types::{Comm, Message, RawComm};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sailfish_types::{Comm, RawComm, Message};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 

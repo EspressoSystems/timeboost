@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use cliquenet::{Address, Network, NetworkMetrics};
 use multisig::{Committee, Keypair, PublicKey};
-use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
+use sailfish::Coordinator;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 

@@ -3,14 +3,14 @@ mod message;
 mod round;
 mod vertex;
 
-pub use comm::{Comm, RawComm, CommError};
-pub use message::{Message, TimeoutMessage, NoVoteMessage, Timeout, NoVote};
-pub use message::{Action, Payload, Evidence};
+pub use comm::{Comm, CommError, RawComm};
+pub use message::{Action, Evidence, Payload};
+pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use round::RoundNumber;
 pub use vertex::Vertex;
 
-use committable::{Committable, Commitment};
-use serde::{Serialize, Deserialize};
+use committable::{Commitment, Committable};
+use serde::{Deserialize, Serialize};
 
 /// The empty type has no values.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

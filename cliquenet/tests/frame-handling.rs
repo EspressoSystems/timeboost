@@ -1,10 +1,10 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::Bytes;
+use cliquenet::{Network, NetworkMetrics};
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
-use cliquenet::{Network, NetworkMetrics};
 use tokio::time::{timeout, Duration};
 
 /// Send and receive messages of various sizes between 1 byte and 5 MiB.

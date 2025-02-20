@@ -3,7 +3,8 @@ use std::sync::Arc;
 use committable::Committable;
 use sailfish_types::Message;
 
-type NetworkMessageModifier<T> = Arc<dyn Fn(&Message<T>, u64) -> Result<Message<T>, String> + Send + Sync>;
+type NetworkMessageModifier<T> =
+    Arc<dyn Fn(&Message<T>, u64) -> Result<Message<T>, String> + Send + Sync>;
 
 /// Intercept a message before a node processes it and apply transformations if any provided
 #[derive(Clone)]

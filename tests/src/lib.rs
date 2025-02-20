@@ -8,11 +8,11 @@ use timeboost_utils::unsafe_zero_keypair;
 pub(crate) mod prelude {
     pub use timeboost_core::types::block::sailfish::SailfishBlock;
 
-    pub type Action    = sailfish::types::Action<SailfishBlock>;
-    pub type Message   = sailfish::types::Message<SailfishBlock>;
-    pub type Vertex    = sailfish::types::Vertex<SailfishBlock>;
+    pub type Action = sailfish::types::Action<SailfishBlock>;
+    pub type Message = sailfish::types::Message<SailfishBlock>;
+    pub type Vertex = sailfish::types::Vertex<SailfishBlock>;
     pub type Consensus = sailfish::consensus::Consensus<SailfishBlock>;
-    pub type Dag       = sailfish::consensus::Dag<SailfishBlock>;
+    pub type Dag = sailfish::consensus::Dag<SailfishBlock>;
 }
 
 #[cfg(test)]

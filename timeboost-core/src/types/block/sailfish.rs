@@ -2,8 +2,8 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::types::transaction::Transaction;
 use crate::types::time::{Epoch, Timestamp};
+use crate::types::transaction::Transaction;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]

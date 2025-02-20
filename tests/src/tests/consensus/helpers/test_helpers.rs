@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use multisig::PublicKey;
 
-use crate::prelude::*;
 use super::{key_manager::KeyManager, node_instrument::TestNodeInstrument};
+use crate::prelude::*;
 
 pub(crate) type MessageModifier = Box<dyn Fn(&Message, &mut TestNodeInstrument) -> Vec<Message>>;
 

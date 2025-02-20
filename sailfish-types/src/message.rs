@@ -223,16 +223,24 @@ impl<T: Committable> Message<T, Unchecked> {
 pub struct Payload<T: Committable> {
     round: RoundNumber,
     source: PublicKey,
-    data: Option<T>
+    data: Option<T>,
 }
 
 impl<T: Committable> Payload<T> {
     pub fn empty(round: RoundNumber, source: PublicKey) -> Self {
-        Self { round, source, data: None }
+        Self {
+            round,
+            source,
+            data: None,
+        }
     }
 
     pub fn new(round: RoundNumber, source: PublicKey, d: Option<T>) -> Self {
-        Self { round, source, data: d }
+        Self {
+            round,
+            source,
+            data: d,
+        }
     }
 
     pub fn with_data(mut self, d: T) -> Self {

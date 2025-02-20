@@ -5,8 +5,8 @@ use sailfish::types::RoundNumber;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_utils::types::logging;
 
-use crate::Group;
 use crate::prelude::*;
+use crate::Group;
 
 use super::{NetworkTest, TestCondition, TestOutcome, TestableNetwork};
 
@@ -20,7 +20,9 @@ where
     let group = Group::new(num_nodes);
 
     // Each node should see the initial vertex proposal from every other node.
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             let conditions: Vec<TestCondition> = group
                 .keypairs
@@ -63,7 +65,9 @@ where
     let group = Group::new(num_nodes);
     let rounds = 25;
 
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             let conditions: Vec<TestCondition> = group
                 .keypairs
@@ -117,7 +121,9 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
             let committee = group.committee.clone();
@@ -195,7 +201,9 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
             let committee = group.committee.clone();
@@ -270,7 +278,9 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             let conditions = group
                 .keypairs
@@ -344,7 +354,9 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group.keypairs.iter()
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
         .map(|k| {
             let conditions = group
                 .keypairs

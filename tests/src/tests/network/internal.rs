@@ -9,9 +9,9 @@ use timeboost_core::types::test::{
 };
 use tokio::task::{JoinHandle, JoinSet};
 
-use crate::Group;
-use crate::prelude::*;
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
+use crate::prelude::*;
+use crate::Group;
 
 pub mod test_simple_network;
 
@@ -30,7 +30,10 @@ impl Drop for MemoryNetworkTest {
 }
 
 impl TestableNetwork for MemoryNetworkTest {
-    type Node = (Coordinator<SailfishBlock, TestNet<SailfishBlock, Conn<Message>>>, MsgQueues<SailfishBlock>);
+    type Node = (
+        Coordinator<SailfishBlock, TestNet<SailfishBlock, Conn<Message>>>,
+        MsgQueues<SailfishBlock>,
+    );
     type Network = TestNet<SailfishBlock, Conn<Message>>;
 
     fn new(
