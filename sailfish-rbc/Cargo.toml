@@ -1,8 +1,8 @@
 [package]
 name = "sailfish-rbc"
 version = "0.1.0"
-edition = "2021"
 description = "RBC implementations for use with sailfish"
+edition.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }

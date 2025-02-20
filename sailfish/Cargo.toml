@@ -1,8 +1,8 @@
 [package]
 name = "sailfish"
 version = "0.1.0"
-edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
+edition.workspace = true
 
 [features]
 test = ["sailfish-consensus/test"]

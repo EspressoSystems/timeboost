@@ -83,13 +83,13 @@ fn progress_after_random_prefix() {
     timeboost_utils::types::logging::init_logging();
 
     let all = ["A", "B", "C", "D", "E"];
-    let mut gen = RuleGen::new(all)
+    let mut rgen = RuleGen::new(all)
         .with_max_delay(17)
         .with_max_repeat(29)
         .with_min_edges(all.len());
 
     let mut sim = Simulator::new(all);
-    sim.set_rules(gen.generate(50));
+    sim.set_rules(rgen.generate(50));
     sim.goto(1000);
 
     assert_eq!(0, sim.pending_messages());
@@ -103,19 +103,19 @@ fn progress_after_random_prefix() {
     assert!(
         sim.events().len() > n,
         "no new events (seed = {})",
-        gen.seed()
+        rgen.seed()
     );
 
     assert!(
         sim.events()[n..].iter().any(|e| e.is_deliver()),
         "no deliveries (seed = {})",
-        gen.seed()
+        rgen.seed()
     );
 
     assert!(
         is_valid_delivery(&sim),
         "invalid deliveries (seed = {})",
-        gen.seed()
+        rgen.seed()
     )
 }
 
