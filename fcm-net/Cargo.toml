@@ -1,12 +1,8 @@
 [package]
-name = "timeboost-networking"
-version.workspace = true
+name = "fcm-net"
+version = "0.1.0"
+description = "A fully connected mesh network"
 edition.workspace = true
-description.workspace = true
-
-[[bench]]
-name = "network_bytes"
-harness = false
 
 [dependencies]
 bimap = { workspace = true }
@@ -16,7 +12,6 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 snow = { workspace = true }
 thiserror = { workspace = true }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true, optional = true }
@@ -25,3 +20,8 @@ turmoil = { workspace = true, optional = true }
 criterion = { workspace = true }
 portpicker = { workspace = true }
 quickcheck = { workspace = true }
+
+[[bench]]
+name = "network_bytes"
+harness = false
+

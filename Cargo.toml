@@ -1,7 +1,10 @@
 [workspace]
 members = [
+    "fcm-net",
+    "metrics",
     "multisig",
     "sailfish",
+    "sailfish-types",
     "tests",
     "timeboost",
     "timeboost-core",
