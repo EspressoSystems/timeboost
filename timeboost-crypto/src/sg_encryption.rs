@@ -119,7 +119,7 @@ where
         let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref()).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
         })?;
-        let u_hat = hash_to_curve::<C, H, D>(v, e.clone())?;
+        let u_hat = hash_to_curve::<C, H>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
 
@@ -150,7 +150,7 @@ where
             ciphertext.w_hat,
             ciphertext.pi.clone(),
         );
-        let u_hat = hash_to_curve::<C, H, D>(v, e).unwrap();
+        let u_hat = hash_to_curve::<C, H>(v, e).unwrap();
         let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
@@ -260,11 +260,10 @@ where
 
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C, H, D>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
+fn hash_to_curve<C, H>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
 where
     C: CurveGroup,
     H: Digest + Default + Clone + FixedOutputReset + 'static,
-    D: DuplexHash,
 {
     let gen = C::generator();
     let mut buffer = Vec::new();
