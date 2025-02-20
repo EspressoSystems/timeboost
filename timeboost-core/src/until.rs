@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tokio::signal;
+
 const ROUND_TIMEOUT_SECS: u64 = 30;
 const MAX_ROUND_TIMEOUTS: u64 = 15;
 
