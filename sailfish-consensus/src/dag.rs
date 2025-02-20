@@ -4,12 +4,12 @@ use multisig::PublicKey;
 use sailfish_types::{RoundNumber, Vertex};
 
 #[derive(Debug, Clone)]
-pub struct Dag<B> {
-    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex<B>>>,
+pub struct Dag<T> {
+    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex<T>>>,
     max_keys: NonZeroUsize,
 }
 
-impl<B: PartialEq> Dag<B> {
+impl<T: PartialEq> Dag<T> {
     /// Create a new empty DAG.
     pub fn new(max_keys: NonZeroUsize) -> Self {
         Self {
@@ -21,7 +21,7 @@ impl<B: PartialEq> Dag<B> {
     /// Create a new DAG from a sequence of `Vertex` values.
     pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
     where
-        I: IntoIterator<Item = Vertex<B>>,
+        I: IntoIterator<Item = Vertex<T>>,
     {
         let mut dag = Self::new(max_keys);
         for v in entries {
@@ -31,7 +31,7 @@ impl<B: PartialEq> Dag<B> {
     }
 
     /// Adds a new vertex to the DAG in its corresponding round and source position
-    pub fn add(&mut self, v: Vertex<B>) {
+    pub fn add(&mut self, v: Vertex<T>) {
         debug_assert!(!self.contains(&v));
         let r = *v.round().data();
         let s = v.source();
@@ -71,7 +71,7 @@ impl<B: PartialEq> Dag<B> {
     }
 
     /// Checks if a specific vertex exists in the DAG
-    pub fn contains(&self, v: &Vertex<B>) -> bool {
+    pub fn contains(&self, v: &Vertex<T>) -> bool {
         self.elements
             .get(v.round().data())
             .map(|m| m.contains_key(v.source()))
@@ -79,24 +79,24 @@ impl<B: PartialEq> Dag<B> {
     }
 
     /// Returns an iterator over all vertices in a specific round
-    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex<B>> + Clone {
+    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex<T>> + Clone {
         self.elements.get(&r).into_iter().flat_map(|m| m.values())
     }
 
     /// Retrieves a specific vertex by its round number and source public key
-    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex<B>> {
+    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex<T>> {
         self.elements.get(&r)?.get(s)
     }
 
     /// Consume the DAG as an iterator over its elements.
-    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<B>)> {
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<T>)> {
         std::mem::take(&mut self.elements)
             .into_iter()
             .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
-    pub fn drain_round(&mut self, r: RoundNumber) -> impl Iterator<Item = Vertex<B>> {
+    pub fn drain_round(&mut self, r: RoundNumber) -> impl Iterator<Item = Vertex<T>> {
         self.elements
             .remove(&r)
             .into_iter()
@@ -115,7 +115,7 @@ impl<B: PartialEq> Dag<B> {
     /// 1. Uses BTreeMap's range() to get rounds within the specified bounds
     /// 2. For each round, flattens its map of vertices into a single iterator
     /// 3. Combines all rounds' vertices into a single sequential iterator
-    pub fn vertex_range<R>(&self, r: R) -> impl Iterator<Item = &Vertex<B>> + Clone
+    pub fn vertex_range<R>(&self, r: R) -> impl Iterator<Item = &Vertex<T>> + Clone
     where
         R: RangeBounds<RoundNumber>,
     {
@@ -128,7 +128,7 @@ impl<B: PartialEq> Dag<B> {
     }
 
     /// Is there a connection between two vertices?
-    pub fn is_connected(&self, from: &Vertex<B>, to: &Vertex<B>) -> bool {
+    pub fn is_connected(&self, from: &Vertex<T>, to: &Vertex<T>) -> bool {
         let mut current = vec![from];
         for nodes in self
             .elements
@@ -153,7 +153,7 @@ impl<B: PartialEq> Dag<B> {
     }
 
     /// Iterate over the DAG elements.
-    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex<B>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex<T>)> {
         self.elements
             .iter()
             .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))

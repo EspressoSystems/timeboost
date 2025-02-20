@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt, num::NonZeroUsize};
 
+use committable::Committable;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
@@ -113,7 +114,7 @@ fn send(nodes: &mut HashMap<PublicKey, Consensus<Empty>>, msgs: &[Message<Empty>
         .collect()
 }
 
-fn action_to_msg<B>(action: Action<B>) -> Option<Message<B>> {
+fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
     match action {
         Action::SendNoVote(_, e) => Some(Message::NoVote(e)),
         Action::SendProposal(e) => Some(Message::Vertex(e)),

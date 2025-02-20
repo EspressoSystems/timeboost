@@ -23,6 +23,3 @@ tracing = { workspace = true }
 criterion = { workspace = true }
 rayon = { workspace = true }
 
-[[bench]]
-name = "consensus_single"
-harness = false

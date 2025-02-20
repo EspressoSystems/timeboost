@@ -13,3 +13,11 @@ metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rayon = { workspace = true }
+
+[[bench]]
+name = "consensus_single"
+harness = false
