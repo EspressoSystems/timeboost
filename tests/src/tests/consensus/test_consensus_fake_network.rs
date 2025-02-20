@@ -93,11 +93,10 @@ async fn test_timeout_round_and_no_vote() {
     network.process();
 
     // After the NVC has been created, the no-vote accumulator is empty.
-    assert!(network
+    assert!(!network
         .leader(timeout_at_round)
         .no_vote_accumulators()
-        .find(|(r, _)| r == &timeout_at_round)
-        .is_none());
+        .any(|(r, _)| r == timeout_at_round));
 
     let nodes_msgs = network.msgs_in_queue();
 
