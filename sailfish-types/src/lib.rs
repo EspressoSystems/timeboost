@@ -4,7 +4,8 @@ mod round;
 mod vertex;
 
 pub use comm::{Comm, RawComm, CommError};
-pub use message::{Message, Action, TimeoutMessage, NoVoteMessage, Timeout, NoVote, Evidence};
+pub use message::{Message, TimeoutMessage, NoVoteMessage, Timeout, NoVote};
+pub use message::{Action, Payload, Evidence};
 pub use round::RoundNumber;
 pub use vertex::Vertex;
 

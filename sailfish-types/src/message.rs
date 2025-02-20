@@ -220,12 +220,54 @@ impl<T: Committable> Message<T, Unchecked> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Payload<T: Committable> {
+    round: RoundNumber,
+    source: PublicKey,
+    data: Option<T>
+}
+
+impl<T: Committable> Payload<T> {
+    pub fn empty(round: RoundNumber, source: PublicKey) -> Self {
+        Self { round, source, data: None }
+    }
+
+    pub fn new(round: RoundNumber, source: PublicKey, d: Option<T>) -> Self {
+        Self { round, source, data: d }
+    }
+
+    pub fn with_data(mut self, d: T) -> Self {
+        self.data = Some(d);
+        self
+    }
+
+    pub fn round(&self) -> RoundNumber {
+        self.round
+    }
+
+    pub fn source(&self) -> PublicKey {
+        self.source
+    }
+
+    pub fn data(&self) -> Option<&T> {
+        self.data.as_ref()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_none()
+    }
+
+    pub fn into_parts(self) -> (RoundNumber, PublicKey, Option<T>) {
+        (self.round, self.source, self.data)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action<T: Committable> {
     /// Reset the timer to the given round.
     ResetTimer(RoundNumber),
 
-    /// Deliver a block to the application layer.
-    Deliver(RoundNumber, PublicKey, Option<T>),
+    /// Deliver payload data to the application layer.
+    Deliver(Payload<T>),
 
     /// Send a vertex proposal to all nodes.
     SendProposal(Envelope<Vertex<T>, Validated>),
@@ -244,7 +286,7 @@ impl<T: Committable> fmt::Display for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
-            Action::Deliver(_, round, _) => write!(f, "Deliver({})", round),
+            Action::Deliver(data) => write!(f, "Deliver({})", data.round),
             Action::SendProposal(envelope) => {
                 write!(f, "SendProposal({})", envelope.data().round().data())
             }
@@ -502,5 +544,15 @@ impl<T: Committable, S> Committable for Message<T, S> {
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
         }
+    }
+}
+
+impl<T: Committable> Committable for Payload<T> {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Payload")
+            .field("round", self.round.commit())
+            .fixed_size_field("source", &self.source.as_bytes())
+            .optional("data", &self.data)
+            .finalize()
     }
 }

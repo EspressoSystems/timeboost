@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::types::transaction::Transaction;
+use crate::types::time::{Epoch, Timestamp};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -11,18 +12,26 @@ pub struct SailfishBlock(Arc<Inner>);
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename = "SailfishBlock")]
 struct Inner {
+    time: Timestamp,
     payload: Vec<Transaction>,
+    delayed_inbox_index: u64,
 }
 
 impl SailfishBlock {
-    pub fn new(transactions: Vec<Transaction>) -> Self {
+    pub fn new(
+        timestamp: Timestamp,
+        transactions: Vec<Transaction>,
+        delayed_inbox_index: u64,
+    ) -> Self {
         Self(Arc::new(Inner {
+            time: timestamp,
             payload: transactions,
+            delayed_inbox_index,
         }))
     }
 
-    pub fn empty() -> Self {
-        Self::new(Vec::new())
+    pub fn empty(timestamp: Timestamp, delayed_inbox_index: u64) -> Self {
+        Self::new(timestamp, Vec::new(), delayed_inbox_index)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -33,8 +42,16 @@ impl SailfishBlock {
         self.0.payload.iter().any(|t| t.is_priority())
     }
 
+    pub fn epoch(&self) -> Epoch {
+        self.0.time.epoch()
+    }
+
     pub fn len(&self) -> usize {
         self.0.payload.len()
+    }
+
+    pub fn timestamp(&self) -> Timestamp {
+        self.0.time
     }
 
     pub fn into_transactions(self) -> Vec<Transaction> {
@@ -47,11 +64,17 @@ impl SailfishBlock {
     pub fn transactions(&self) -> &[Transaction] {
         &self.0.payload
     }
+
+    pub fn delayed_inbox_index(&self) -> u64 {
+        self.0.delayed_inbox_index
+    }
 }
 
 impl Committable for SailfishBlock {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Block")
+            .u64_field("time", *self.0.time)
+            .u64_field("dii", self.0.delayed_inbox_index)
             .u64_field("payload", self.0.payload.len() as u64);
 
         self.0

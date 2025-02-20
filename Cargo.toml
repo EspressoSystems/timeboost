@@ -1,15 +1,15 @@
 [workspace]
 members = [
-    "fcm-net",
+    "clique-net",
     "metrics",
     "multisig",
     "sailfish",
+    "sailfish-consensus",
+    "sailfish-rbc",
     "sailfish-types",
-    "tests",
     "timeboost",
     "timeboost-core",
     "timeboost-crypto",
-    "timeboost-networking",
     "timeboost-utils",
 ]
 resolver = "2"

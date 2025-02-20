@@ -3,7 +3,7 @@ use std::{future::pending, time::Duration};
 use committable::Committable;
 use futures::{future::BoxFuture, FutureExt};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Comm, Action, Evidence, Message, RoundNumber};
+use sailfish_types::{Comm, Action, Evidence, Message, RoundNumber, Payload};
 use tokio::time::sleep;
 
 pub struct Coordinator<T: Committable, C> {
@@ -65,9 +65,9 @@ where
         }
     }
 
-    /// Appends a sequence of transactions to the consensus transaction queue.
-    pub fn append_block(&mut self, block: T) {
-        self.consensus.add_block(block)
+    /// Add payload data to the outgoing queue.
+    pub fn add_payload(&mut self, data: T) {
+        self.consensus.add_payload(data)
     }
 
     /// Execute a given consensus `Action`.
@@ -80,13 +80,13 @@ where
     /// - `SendTimeout` - Multicast a timeout message to the members in the committee.
     /// - `SendTimeoutCert` - Multicast a timeout certificate to the members in the committee.
     /// - `SendNoVote` - Send a no-vote to the leader in `r + 1` for a timeout in round `r`.
-    pub async fn execute(&mut self, action: Action<T>) -> Result<(), C::Err> {
+    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Payload<T>>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
             }
-            Action::Deliver(..) => {
-                // nothing todo
+            Action::Deliver(data) => {
+                return Ok(Some(data))
             }
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
@@ -101,6 +101,6 @@ where
                 self.comm.send(to, Message::NoVote(v)).await?;
             }
         }
-        Ok(())
+        Ok(None)
     }
 }

@@ -9,7 +9,7 @@ use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{RoundNumber, Vertex};
+use sailfish_types::{RoundNumber, Vertex, Payload};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -114,7 +114,7 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
         }
     }
 
-    pub fn add_block(&mut self, b: T) {
+    pub fn add_payload(&mut self, b: T) {
         self.payloads.push_back(b);
     }
 
@@ -717,7 +717,7 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
                 }
                 let b = to_deliver.payload().cloned();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                actions.push(Action::Deliver(r, s, b));
+                actions.push(Action::Deliver(Payload::new(r, s, b)));
                 self.delivered.insert((r, s));
             }
         }

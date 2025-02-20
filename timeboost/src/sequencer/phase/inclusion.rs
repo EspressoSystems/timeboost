@@ -13,7 +13,7 @@ use timeboost_core::types::{
     time::{Epoch, Timestamp},
     transaction::Transaction,
 };
-use timeboost_utils::types::round_number::RoundNumber;
+use timeboost_core::types::round_number::RoundNumber;
 
 use crate::sequencer::{protocol::RoundState, util::median};
 
