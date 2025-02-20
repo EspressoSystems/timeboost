@@ -17,7 +17,7 @@ async-trait = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
-clique-net = { path = "../clique-net" }
+cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 dashmap = "6.1.0"
 dotenvy = { workspace = true }

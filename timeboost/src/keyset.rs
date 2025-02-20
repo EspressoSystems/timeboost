@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
 use anyhow::{bail, ensure, Context, Result};
-use clique_net::Address;
+use cliquenet::Address;
 use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;

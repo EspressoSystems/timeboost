@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clique_net::Address;
+use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
 use std::{
     net::{Ipv4Addr, SocketAddr},

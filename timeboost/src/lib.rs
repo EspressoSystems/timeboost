@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use anyhow::{bail, Result};
 use api::endpoints::TimeboostApiState;
 use api::metrics::serve_metrics_api;
-use clique_net::{Address, Network, NetworkMetrics};
+use cliquenet::{Address, Network, NetworkMetrics};
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
 use reqwest::Url;

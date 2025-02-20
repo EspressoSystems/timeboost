@@ -1,12 +1,13 @@
 [workspace]
 members = [
-    "clique-net",
+    "cliquenet",
     "metrics",
     "multisig",
     "sailfish",
     "sailfish-consensus",
     "sailfish-rbc",
     "sailfish-types",
+    "tests",
     "timeboost",
     "timeboost-core",
     "timeboost-crypto",

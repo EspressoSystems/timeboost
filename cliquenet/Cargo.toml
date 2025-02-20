@@ -1,5 +1,5 @@
 [package]
-name = "clique-net"
+name = "cliquenet"
 version = "0.1.0"
 description = "A fully connected mesh network"
 edition.workspace = true
