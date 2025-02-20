@@ -1,5 +1,5 @@
 use multisig::{Committee, PublicKey};
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish_types::RoundNumber;
 
 /// Information about nodes.
 #[derive(Debug)]

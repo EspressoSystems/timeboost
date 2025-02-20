@@ -1,8 +1,8 @@
-use timeboost_utils::traits::metrics::{Gauge, Histogram, Metrics, NoMetrics};
+use metrics::{Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct SailfishMetrics {
+pub struct ConsensusMetrics {
     pub committed_round: Box<dyn Gauge>,
     pub dag_depth: Box<dyn Gauge>,
     pub delivered: Box<dyn Gauge>,
@@ -15,13 +15,13 @@ pub struct SailfishMetrics {
     pub rounds_timed_out: Box<dyn Gauge>,
 }
 
-impl Default for SailfishMetrics {
+impl Default for ConsensusMetrics {
     fn default() -> Self {
         Self::new(&NoMetrics)
     }
 }
 
-impl SailfishMetrics {
+impl ConsensusMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
             committed_round: m.create_gauge("committed_round", None),

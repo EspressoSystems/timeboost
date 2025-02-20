@@ -1,17 +1,15 @@
 use std::{collections::BTreeMap, num::NonZeroUsize, ops::RangeBounds};
 
 use multisig::PublicKey;
-use serde::{Deserialize, Serialize};
-use timeboost_core::types::vertex::Vertex;
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish_types::{RoundNumber, Vertex};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Dag {
-    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex>>,
+#[derive(Debug, Clone)]
+pub struct Dag<B> {
+    elements: BTreeMap<RoundNumber, BTreeMap<PublicKey, Vertex<B>>>,
     max_keys: NonZeroUsize,
 }
 
-impl Dag {
+impl<B: PartialEq> Dag<B> {
     /// Create a new empty DAG.
     pub fn new(max_keys: NonZeroUsize) -> Self {
         Self {
@@ -23,7 +21,7 @@ impl Dag {
     /// Create a new DAG from a sequence of `Vertex` values.
     pub fn from_iter<I>(entries: I, max_keys: NonZeroUsize) -> Self
     where
-        I: IntoIterator<Item = Vertex>,
+        I: IntoIterator<Item = Vertex<B>>,
     {
         let mut dag = Self::new(max_keys);
         for v in entries {
@@ -33,7 +31,7 @@ impl Dag {
     }
 
     /// Adds a new vertex to the DAG in its corresponding round and source position
-    pub fn add(&mut self, v: Vertex) {
+    pub fn add(&mut self, v: Vertex<B>) {
         debug_assert!(!self.contains(&v));
         let r = *v.round().data();
         let s = v.source();
@@ -73,7 +71,7 @@ impl Dag {
     }
 
     /// Checks if a specific vertex exists in the DAG
-    pub fn contains(&self, v: &Vertex) -> bool {
+    pub fn contains(&self, v: &Vertex<B>) -> bool {
         self.elements
             .get(v.round().data())
             .map(|m| m.contains_key(v.source()))
@@ -81,24 +79,24 @@ impl Dag {
     }
 
     /// Returns an iterator over all vertices in a specific round
-    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex> + Clone {
+    pub fn vertices(&self, r: RoundNumber) -> impl Iterator<Item = &Vertex<B>> + Clone {
         self.elements.get(&r).into_iter().flat_map(|m| m.values())
     }
 
     /// Retrieves a specific vertex by its round number and source public key
-    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex> {
+    pub fn vertex(&self, r: RoundNumber, s: &PublicKey) -> Option<&Vertex<B>> {
         self.elements.get(&r)?.get(s)
     }
 
     /// Consume the DAG as an iterator over its elements.
-    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex)> {
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<B>)> {
         std::mem::take(&mut self.elements)
             .into_iter()
             .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))
     }
 
     /// Remove elements at a given round and return iterator over the values
-    pub fn drain_round(&mut self, r: RoundNumber) -> impl Iterator<Item = Vertex> {
+    pub fn drain_round(&mut self, r: RoundNumber) -> impl Iterator<Item = Vertex<B>> {
         self.elements
             .remove(&r)
             .into_iter()
@@ -117,7 +115,7 @@ impl Dag {
     /// 1. Uses BTreeMap's range() to get rounds within the specified bounds
     /// 2. For each round, flattens its map of vertices into a single iterator
     /// 3. Combines all rounds' vertices into a single sequential iterator
-    pub fn vertex_range<R>(&self, r: R) -> impl Iterator<Item = &Vertex> + Clone
+    pub fn vertex_range<R>(&self, r: R) -> impl Iterator<Item = &Vertex<B>> + Clone
     where
         R: RangeBounds<RoundNumber>,
     {
@@ -130,7 +128,7 @@ impl Dag {
     }
 
     /// Is there a connection between two vertices?
-    pub fn is_connected(&self, from: &Vertex, to: &Vertex) -> bool {
+    pub fn is_connected(&self, from: &Vertex<B>, to: &Vertex<B>) -> bool {
         let mut current = vec![from];
         for nodes in self
             .elements
@@ -155,12 +153,14 @@ impl Dag {
     }
 
     /// Iterate over the DAG elements.
-    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&RoundNumber, &PublicKey, &Vertex<B>)> {
         self.elements
             .iter()
             .flat_map(|(r, map)| map.iter().map(move |(pk, v)| (r, pk, v)))
     }
+}
 
+impl<B: std::fmt::Display> Dag<B> {
     /// Create a string representation of the DAG for debugging purposes.
     pub fn dbg(&self) -> String {
         let mut s = String::from("\n\n");
@@ -180,14 +180,13 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use multisig::{Committee, Keypair, Signed, VoteAccumulator};
-    use timeboost_core::types::vertex::Vertex;
-    use timeboost_utils::types::round_number::RoundNumber;
+    use sailfish_types::{Empty, RoundNumber, Vertex};
 
-    use crate::consensus::Dag;
+    use super::Dag;
 
     #[test]
     fn test_is_connected() {
-        let mut dag = Dag::new(NonZeroUsize::new(10).unwrap());
+        let mut dag = Dag::<Empty>::new(NonZeroUsize::new(10).unwrap());
 
         let kp1 = Keypair::generate();
         let kp2 = Keypair::generate();
