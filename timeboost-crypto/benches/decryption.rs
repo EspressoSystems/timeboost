@@ -37,15 +37,13 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters =
-                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
             let (pk, _, _) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
+                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
                         .expect("encrypt message");
                 });
             });
@@ -57,16 +55,14 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters =
-                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
             let (pk, _, key_shares) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
+                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
                 .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::decrypt(&parameters, &key_shares[0], &ciphertext)
+                    ShoupGennaro::<G, H, D>::decrypt(&key_shares[0], &ciphertext)
                         .expect("generate partial decryption share");
                 });
             });
@@ -78,23 +74,21 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Committee { size, id: 0 };
-            let parameters =
-                ShoupGennaro::<G, H, D>::setup(rng, committee).expect("generate public parameters");
             let (pk, comb_key, key_shares) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &parameters).expect("generate key material");
+                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &parameters, &pk, &plaintext)
+            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
                 .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
-                .map(|s| ShoupGennaro::<G, H, D>::decrypt(&parameters, s, &ciphertext))
+                .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
                 .filter_map(|res| res.ok())
                 .collect::<Vec<_>>();
             let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::combine(
-                        &parameters,
+                        &committee,
                         &comb_key,
                         dec_shares_refs.clone(),
                         &ciphertext,
