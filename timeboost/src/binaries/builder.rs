@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use multisig::{Keypair, PublicKey};
 use std::{
     net::{Ipv4Addr, SocketAddr},
@@ -14,8 +14,6 @@ use timeboost_networking::Address;
 
 use tokio::sync::mpsc::channel;
 
-#[cfg(feature = "until")]
-use anyhow::ensure;
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
