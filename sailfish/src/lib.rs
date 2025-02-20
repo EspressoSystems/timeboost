@@ -1,5 +1,6 @@
 mod coordinator;
 
+pub use committable;
 pub use sailfish_consensus as consensus;
 pub use sailfish_rbc as rbc;
 pub use sailfish_types as types;

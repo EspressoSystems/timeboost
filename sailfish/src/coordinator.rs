@@ -44,7 +44,7 @@ where
     /// # Panics
     ///
     /// `Coordinator::start` must only be invoked once, otherwise it will panic.
-    pub async fn start(&mut self) -> Vec<Action<T>> {
+    pub fn init(&mut self) -> Vec<Action<T>> {
         assert!(!self.init, "Cannot call start twice");
         self.init = true;
         let e = Evidence::Genesis;

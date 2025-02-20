@@ -259,8 +259,7 @@ impl Timeboost {
         self.handles.push(tokio::spawn(producer.run()));
 
         // Kickstart the network.
-        let actions = self.coordinator.start().await;
-        for a in actions {
+        for a in self.coordinator.init() {
             let _ = self.coordinator.execute(a).await;
         }
         loop {
