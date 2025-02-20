@@ -1,36 +1,34 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
+use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use serde::{Deserialize, Serialize};
-use timeboost_core::traits::comm::{Comm, RawComm};
-use timeboost_core::types::message::Message;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sailfish_types::{Comm, RawComm, Message};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-mod digest;
-mod metrics;
+use crate::digest::Digest;
+use crate::{RbcError, RbcMetrics};
+
 mod worker;
 
-use digest::Digest;
-use worker::{RbcError, Worker};
-
-pub use metrics::RbcMetrics;
+use worker::Worker;
 
 /// The message type exchanged during RBC.
 #[derive(Debug, Serialize, Deserialize)]
 #[rustfmt::skip]
-enum Protocol<'a, Status: Clone> {
+enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     // Non-RBC section ////////////////////////////////////////////////////////
 
     /// A message that is sent without expectations ("fire and forget").
-    Fire(Cow<'a, Message<Status>>),
+    Fire(Cow<'a, Message<T, Status>>),
 
     /// A message that is sent and received without quorum requirements.
     ///
     /// The sender expects an `Ack` for each message and will retry until
     /// it has been received (or the protocol moved on).
-    Send(Cow<'a, Message<Status>>),
+    Send(Cow<'a, Message<T, Status>>),
 
     /// An acknowledgement reply of a message.
     Ack(Envelope<Digest, Status>),
@@ -38,7 +36,7 @@ enum Protocol<'a, Status: Clone> {
     // RBC section ////////////////////////////////////////////////////////////
 
     /// An RBC proposal.
-    Propose(Cow<'a, Message<Status>>),
+    Propose(Cow<'a, Message<T, Status>>),
 
     /// A vote for an RBC proposal.
     ///
@@ -53,25 +51,25 @@ enum Protocol<'a, Status: Clone> {
 }
 
 /// Worker command
-enum Command {
+enum Command<T: Committable> {
     /// Send message to a party identified by the given public key.
-    Send(PublicKey, Message<Validated>),
+    Send(PublicKey, Message<T, Validated>),
     /// Do a best-effort broadcast of the given message.
-    Broadcast(Message<Validated>),
+    Broadcast(Message<T, Validated>),
     /// Do a byzantine reliable broadcast of the given message.
-    RbcBroadcast(Message<Validated>, oneshot::Sender<Result<(), RbcError>>),
+    RbcBroadcast(Message<T, Validated>, oneshot::Sender<Result<(), RbcError>>),
 }
 
 /// RBC configuration
 #[derive(Debug)]
-pub struct Config {
+pub struct RbcConfig {
     keypair: Keypair,
     committee: Committee,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
 
-impl Config {
+impl RbcConfig {
     pub fn new(k: Keypair, c: Committee) -> Self {
         Self {
             keypair: k,
@@ -114,23 +112,23 @@ impl Config {
 /// [1]: Good-case Latency of Byzantine Broadcast: A Complete Categorization
 ///      (arXiv:2102.07240v3)
 #[derive(Debug)]
-pub struct Rbc {
+pub struct Rbc<T: Committable> {
     // Inbound, RBC-delivered messages.
-    rx: mpsc::Receiver<Message<Validated>>,
+    rx: mpsc::Receiver<Message<T, Validated>>,
     // Directives to the RBC worker.
-    tx: mpsc::Sender<Command>,
+    tx: mpsc::Sender<Command<T>>,
     // The worker task handle.
     jh: JoinHandle<()>,
 }
 
-impl Drop for Rbc {
+impl<T: Committable> Drop for Rbc<T> {
     fn drop(&mut self) {
         self.jh.abort()
     }
 }
 
-impl Rbc {
-    pub fn new<C: RawComm + Send + 'static>(n: C, c: Config) -> Self {
+impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
+    pub fn new<C: RawComm + Send + 'static>(n: C, c: RbcConfig) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
         let worker = Worker::new(ibound_tx, obound_rx, c, n);
@@ -143,10 +141,10 @@ impl Rbc {
 }
 
 #[async_trait]
-impl Comm for Rbc {
+impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
     type Err = RbcError;
 
-    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
@@ -173,7 +171,7 @@ impl Comm for Rbc {
         Ok(())
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
@@ -184,7 +182,7 @@ impl Comm for Rbc {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
         Ok(self.rx.recv().await.unwrap())
     }
 }

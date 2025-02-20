@@ -1,5 +1,5 @@
 use std::time::Duration;
-use timeboost_utils::traits::metrics::{Counter, Histogram, Metrics, NoMetrics};
+use metrics::{Counter, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]

@@ -2,14 +2,13 @@ use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::message::Message;
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish_types::{Message, RoundNumber};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Digest(RoundNumber, [u8; 32]);
 
 impl Digest {
-    pub fn new<S>(d: &Message<S>) -> Self {
+    pub fn new<T: Committable, S>(d: &Message<T, S>) -> Self {
         Self(d.round(), d.commit().into())
     }
 
