@@ -8,8 +8,8 @@ description = "Sailfish is a DAG-based BFT consensus protocol."
 test = []
 
 [dependencies]
+clique-net = { path = "../clique-net", features = ["sailfish"] }
 committable = { workspace = true }
-fcm-net = { path = "../fcm-net", features = ["sailfish"] }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
