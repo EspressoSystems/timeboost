@@ -1,0 +1,27 @@
+[package]
+name = "sailfish-consensus"
+version = "0.1.0"
+edition = "2021"
+description = "Sailfish consensus protocol"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
+bs58 = { workspace = true }
+clap = { workspace = true }
+committable = { workspace = true }
+criterion = { workspace = true }
+derive_builder = { workspace = true }
+futures = { workspace = true }
+multisig = { path = "../multisig" }
+rand = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+timeboost-core = { path = "../timeboost-core" }
+timeboost-networking = { path = "../timeboost-networking" }
+timeboost-utils = { path = "../timeboost-utils" }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
