@@ -36,11 +36,6 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
     pub fn public_key(&self) -> PublicKey {
         self.consensus.public_key()
     }
-
-    /// Access the communication layer.
-    pub fn comm(&self) -> &C {
-        &self.comm
-    }
 }
 
 impl<T, C: Comm<T>> Coordinator<T, C>

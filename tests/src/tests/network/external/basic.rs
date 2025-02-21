@@ -5,7 +5,7 @@ use multisig::PublicKey;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::Coordinator;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
-use timeboost_core::types::test::testnet::TestNet;
+use timeboost_core::types::test::testnet::{MsgQueues, TestNet};
 use tokio::task::JoinSet;
 
 use crate::prelude::*;
@@ -19,7 +19,10 @@ pub struct BasicNetworkTest {
 }
 
 impl TestableNetwork for BasicNetworkTest {
-    type Node = Coordinator<SailfishBlock, Self::Network>;
+    type Node = (
+        Coordinator<SailfishBlock, Self::Network>,
+        MsgQueues<SailfishBlock>,
+    );
     type Network = TestNet<SailfishBlock, Rbc<SailfishBlock>>;
 
     fn new(
@@ -35,7 +38,7 @@ impl TestableNetwork for BasicNetworkTest {
     }
 
     fn public_key(&self, n: &Self::Node) -> PublicKey {
-        n.public_key()
+        n.0.public_key()
     }
 
     async fn init(&mut self) -> Vec<Self::Node> {
@@ -60,10 +63,11 @@ impl TestableNetwork for BasicNetworkTest {
             let net = Rbc::new(net, cfg);
             tracing::debug!(%i, "created rbc");
             let test_net = TestNet::new(net, i as u64, self.interceptor.clone());
+            let messages = test_net.messages();
             tracing::debug!(%i, "created testnet");
             let consensus = Consensus::new(kpr, committee.clone());
             let coord = Coordinator::new(test_net, consensus);
-            nodes.push(coord)
+            nodes.push((coord, messages))
         }
         nodes
     }
@@ -75,11 +79,10 @@ impl TestableNetwork for BasicNetworkTest {
         let mut handles = JoinSet::new();
 
         for mut node in nodes.into_iter() {
-            let mut conditions = self.outcomes.remove(&node.public_key()).unwrap();
+            let mut conditions = self.outcomes.remove(&node.0.public_key()).unwrap();
 
             handles.spawn(async move {
-                let msgs = node.comm().messages().clone();
-                Self::run_coordinator(&mut node, &mut conditions, msgs).await
+                Self::run_coordinator(&mut node.0, &mut conditions, node.1.clone()).await
             });
         }
         handles
