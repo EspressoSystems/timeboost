@@ -6,5 +6,5 @@ pub mod seqno;
 pub mod time;
 pub mod transaction;
 
-// #[cfg(feature = "test")]
+#[cfg(feature = "test")]
 pub mod test;
