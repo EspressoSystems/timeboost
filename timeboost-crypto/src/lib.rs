@@ -2,16 +2,14 @@ pub mod cp_proof;
 pub mod sg_encryption;
 pub mod traits;
 
-use std::marker::PhantomData;
-
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use cp_proof::{CPParameters, Proof};
-use nimue::{DigestBridge, DuplexHash};
+use cp_proof::Proof;
+use nimue::DigestBridge;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::convert::TryFrom;
 use traits::threshold_enc::ThresholdEncScheme;
 
@@ -19,13 +17,6 @@ use traits::threshold_enc::ThresholdEncScheme;
 pub struct Committee {
     pub id: u32,
     pub size: u64,
-}
-
-pub struct Parameters<C: CurveGroup, H: Digest, D: DuplexHash> {
-    _hash: PhantomData<H>,
-    pub committee: Committee,
-    pub generator: C,
-    pub cp_params: CPParameters<C, D>,
 }
 
 #[serde_as]
@@ -173,63 +164,54 @@ impl DecryptionScheme {
         // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
         let committee = Committee { id: 0, size };
-        let parameters =
-            <DecryptionScheme as ThresholdEncScheme>::setup(&mut rng, committee).unwrap();
-        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &parameters).unwrap()
+        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &committee).unwrap()
     }
 }
 
 impl ThresholdEncScheme for DecryptionScheme {
     type PublicKey = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::PublicKey;
     type Committee = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Committee;
-    type Parameters = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Parameters;
     type CombKey = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::CombKey;
     type KeyShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::KeyShare;
     type Plaintext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Plaintext;
     type Ciphertext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Ciphertext;
     type DecShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::DecShare;
 
-    fn setup<R: ark_std::rand::Rng>(
-        rng: &mut R,
-        committee: Self::Committee,
-    ) -> Result<Self::Parameters, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::setup(rng, committee)
-    }
-
     fn keygen<R: ark_std::rand::Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
     ) -> Result<
         (Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>),
         traits::threshold_enc::ThresholdEncError,
     > {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::keygen(rng, pp)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::keygen(rng, committee)
     }
 
     fn encrypt<R: ark_std::rand::Rng>(
         rng: &mut R,
-        pp: &Self::Parameters,
+        committee: &Committee,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, pp, pk, message)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, committee, pk, message)
     }
 
     fn decrypt(
-        pp: &Self::Parameters,
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::decrypt(pp, sk, ciphertext)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::decrypt(sk, ciphertext)
     }
 
     fn combine(
-        pp: &Self::Parameters,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::combine(pp, comb_key, dec_shares, ciphertext)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::combine(
+            committee, comb_key, dec_shares, ciphertext,
+        )
     }
 }
 
