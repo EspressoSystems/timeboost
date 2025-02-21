@@ -133,11 +133,12 @@ impl<B> Display for Vertex<B> {
 impl<B: Committable> Committable for Vertex<B> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
-            .fixed_size_field("source", &self.source.as_bytes())
             .field("round", self.round.commit())
-            .optional("payload", &self.payload)
+            .fixed_size_field("source", &self.source.as_bytes())
             .field("evidence", self.evidence.commit())
+            .field("committed", self.committed.commit())
             .optional("no_vote", &self.no_vote)
+            .optional("payload", &self.payload)
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()
