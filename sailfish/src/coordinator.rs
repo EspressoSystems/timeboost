@@ -3,7 +3,7 @@ use std::{future::pending, time::Duration};
 use committable::Committable;
 use futures::{future::BoxFuture, FutureExt};
 use multisig::PublicKey;
-use sailfish_consensus::{Consensus, Dag};
+use sailfish_consensus::{Consensus, Dag, Inbox};
 use sailfish_types::{Action, Comm, Evidence, Message, Payload, RoundNumber};
 use tokio::time::sleep;
 
@@ -109,8 +109,13 @@ where
         Ok(None)
     }
 
-    /// Add payload data to the outgoing queue.
-    pub fn add_payload(&mut self, data: T) {
-        self.consensus.add_payload(data)
+    /// Access the payload data inbox of consensus.
+    pub fn payload_inbox(&self) -> &Inbox<T> {
+        self.consensus.inbox()
+    }
+
+    /// Uniquely access the payload data inbox of consensus.
+    pub fn payload_inbox_mut(&mut self) -> &mut Inbox<T> {
+        self.consensus.inbox_mut()
     }
 }

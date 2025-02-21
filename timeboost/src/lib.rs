@@ -297,7 +297,7 @@ impl Timeboost {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
                                 let b = SailfishBlock::new(Timestamp::now(), transactions, 0);
-                                self.coordinator.add_payload(b);
+                                self.coordinator.payload_inbox_mut().insert_last(b);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
                                 let _ = p_tx.send(block).await;

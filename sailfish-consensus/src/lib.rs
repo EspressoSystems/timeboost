@@ -1,8 +1,9 @@
 mod dag;
+mod inbox;
 mod info;
 mod metrics;
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 
 use committable::Committable;
@@ -13,6 +14,7 @@ use sailfish_types::{Payload, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
+pub use inbox::Inbox;
 pub use metrics::ConsensusMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
@@ -55,8 +57,8 @@ pub struct Consensus<T> {
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex<T>>,
 
-    /// Payload data to include in vertex proposals.
-    payloads: VecDeque<T>,
+    /// Inbox of payload data to include in vertex proposals.
+    inbox: Inbox<T>,
 
     /// The consensus metrics for this node.
     metrics: ConsensusMetrics,
@@ -107,15 +109,21 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
             no_votes: BTreeMap::new(),
             committee,
             leader_stack: Vec::new(),
-            payloads: VecDeque::new(),
+            inbox: Inbox::new(),
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
             deterministic: false,
         }
     }
 
-    pub fn add_payload(&mut self, b: T) {
-        self.payloads.push_back(b);
+    /// Access the payload inbox.
+    pub fn inbox(&self) -> &Inbox<T> {
+        &self.inbox
+    }
+
+    /// Unique access to the payload inbox.
+    pub fn inbox_mut(&mut self) -> &mut Inbox<T> {
+        &mut self.inbox
     }
 
     /// (Re-)start consensus.
@@ -553,9 +561,8 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
     fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex<T> {
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
-        let data = self.payloads.pop_front();
-
-        let mut new = Vertex::new(r, e, &self.keypair, data, self.deterministic);
+        let payload = self.inbox.take_first();
+        let mut new = Vertex::new(r, e, &self.keypair, payload, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
 
