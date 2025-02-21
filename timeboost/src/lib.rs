@@ -226,7 +226,7 @@ impl Timeboost {
     /// - Start and run the `Sailfish Coordinator` to retrieve network messages by calling `next` and executing actions after message is processed
     /// - Runs a channel to receive `TimeboostEventType` this will receive transactions and send completed blocks to the producer
     /// - Will continuously run until there is a shutdown signal received
-    #[instrument(level = "info", skip_all)]
+    #[instrument(level = "info", skip_all, fields(node = %self.coordinator.public_key()))]
     pub async fn go(mut self, committee_size: usize, tps: u32) -> Result<()> {
         let app_tx = self.app_tx.clone();
         self.handles
