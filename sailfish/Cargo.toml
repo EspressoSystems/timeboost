@@ -5,37 +5,21 @@ edition = "2021"
 description = "Sailfish is a DAG-based BFT consensus protocol."
 
 [features]
-test = ['timeboost-core/test']
-
-[[bench]]
-name = "consensus_single"
-harness = false
+test = ["sailfish-consensus/test"]
 
 [dependencies]
-anyhow = { workspace = true }
-async-trait = { workspace = true }
-bincode = { workspace = true }
-bytes = { workspace = true }
-bs58 = { workspace = true }
-clap = { workspace = true }
+cliquenet = { path = "../cliquenet", features = ["sailfish"] }
 committable = { workspace = true }
-criterion = { workspace = true }
-derive_builder = { workspace = true }
 futures = { workspace = true }
+metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
-rand = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
-timeboost-networking = { path = "../timeboost-networking" }
-timeboost-utils = { path = "../timeboost-utils" }
+sailfish-consensus = { path = "../sailfish-consensus" }
+sailfish-rbc = { path = "../sailfish-rbc" }
+sailfish-types = { path = "../sailfish-types" }
 tokio = { workspace = true }
-toml = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 rayon = { workspace = true }
 
-[[bin]]
-name = "sailfish"
-path = "src/binaries/node.rs"

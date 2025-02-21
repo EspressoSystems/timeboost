@@ -1,6 +1,6 @@
+use crate::types::round_number::RoundNumber;
 use committable::Committable;
 use serde::{Deserialize, Serialize};
-use timeboost_utils::types::round_number::RoundNumber;
 
 use super::time::Timestamp;
 

@@ -1,0 +1,23 @@
+[package]
+name = "sailfish-consensus"
+version = "0.1.0"
+edition = "2021"
+description = "sailfish core consensus protocol"
+
+[features]
+test = []
+
+[dependencies]
+committable = { workspace = true }
+metrics = { path = "../metrics" }
+multisig = { path = "../multisig" }
+sailfish-types = { path = "../sailfish-types" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rayon = { workspace = true }
+
+[[bench]]
+name = "consensus_single"
+harness = false

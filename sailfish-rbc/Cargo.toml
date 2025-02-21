@@ -1,0 +1,21 @@
+[package]
+name = "sailfish-rbc"
+version = "0.1.0"
+edition = "2021"
+description = "RBC implementations for use with sailfish"
+
+[dependencies]
+async-trait = { workspace = true }
+bincode = { workspace = true }
+bs58 = { workspace = true }
+bytes = { workspace = true }
+committable = { workspace = true }
+metrics = { path = "../metrics" }
+multisig = { path = "../multisig" }
+rand = { workspace = true }
+sailfish-types = { path = "../sailfish-types" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+

@@ -1,6 +1,7 @@
-use timeboost_core::types::message::{Action, Message, Timeout};
-use timeboost_utils::types::{logging, round_number::RoundNumber};
+use sailfish::types::{RoundNumber, Timeout};
+use timeboost_utils::types::logging;
 
+use crate::prelude::*;
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 
 #[tokio::test]

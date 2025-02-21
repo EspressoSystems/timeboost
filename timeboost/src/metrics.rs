@@ -1,4 +1,4 @@
-use timeboost_utils::traits::metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
+use metrics::{Counter, Gauge, Histogram, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]

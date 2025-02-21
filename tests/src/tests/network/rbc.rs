@@ -1,15 +1,14 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
+use cliquenet::{Address, Network, NetworkMetrics};
 use multisig::{Committee, Keypair, PublicKey};
-use sailfish::consensus::Consensus;
-use sailfish::coordinator::Coordinator;
-use sailfish::rbc::{self, Rbc};
-use timeboost_core::types::event::SailfishEventType;
-use timeboost_core::types::NodeId;
-use timeboost_networking::{Address, Network, NetworkMetrics};
+use sailfish::rbc::{Rbc, RbcConfig};
+use sailfish::Coordinator;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
+
+use crate::prelude::*;
 
 type Peers<const N: usize> = [(PublicKey, Address); N];
 
@@ -36,8 +35,7 @@ const UNSPECIFIED: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 ///
 /// The host consists of `Coordinator` and `Consensus` with
 /// `Rbc<TurmoilComm>` as its network communication layer.
-fn mk_host<T, A, const N: usize>(
-    id: T,
+fn mk_host<A, const N: usize>(
     name: &str,
     addr: A,
     sim: &mut turmoil::Sim,
@@ -45,10 +43,8 @@ fn mk_host<T, A, const N: usize>(
     c: Committee,
     peers: Peers<N>,
 ) where
-    T: Into<NodeId>,
     A: Into<Address>,
 {
-    let id = id.into();
     let addr = addr.into();
     sim.host(name, move || {
         let k = k.clone();
@@ -57,10 +53,10 @@ fn mk_host<T, A, const N: usize>(
         let p = peers.clone();
         async move {
             let comm = Network::create_turmoil(a, k.clone(), p, NetworkMetrics::default()).await?;
-            let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
-            let cons = Consensus::new(id, k, c);
-            let mut coor = Coordinator::new(id, rbc, cons);
-            let mut actions = coor.start().await?;
+            let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+            let cons = Consensus::new(k, c);
+            let mut coor = Coordinator::new(rbc, cons);
+            let mut actions = coor.init();
             loop {
                 for a in actions {
                     coor.execute(a).await?;
@@ -92,8 +88,8 @@ fn small_committee() {
         (ks[2].public_key(), ("C", ports[2]).into()),
     ];
 
-    mk_host(1, "A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host(2, "B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
 
     let k = ks[2].clone();
     let c = committee.clone();
@@ -101,17 +97,15 @@ fn small_committee() {
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
-        let cons = Consensus::new(3, k, c);
-        let mut coor = Coordinator::new(3, rbc, cons);
-        let mut actions = coor.start().await?;
+        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let cons = Consensus::new(k, c);
+        let mut coor = Coordinator::new(rbc, cons);
+        let mut actions = coor.init();
         loop {
             for a in actions {
-                if let Some(event) = coor.execute(a).await? {
-                    if let SailfishEventType::Committed { round, .. } = event.event {
-                        if round >= 3.into() {
-                            return Ok(());
-                        }
+                if let Some(data) = coor.execute(a).await? {
+                    if data.round() >= 3.into() {
+                        return Ok(());
                     }
                 }
             }
@@ -145,10 +139,10 @@ fn medium_committee() {
         (ks[4].public_key(), ("E", ports[4]).into()),
     ];
 
-    mk_host(1, "A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host(2, "B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
-    mk_host(3, "C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
-    mk_host(4, "D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
+    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
+    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
 
     let k = ks[4].clone();
     let c = committee.clone();
@@ -156,17 +150,15 @@ fn medium_committee() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
-        let cons = Consensus::new(5, k, c);
-        let mut coor = Coordinator::new(5, rbc, cons);
-        let mut actions = coor.start().await?;
+        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let cons = Consensus::new(k, c);
+        let mut coor = Coordinator::new(rbc, cons);
+        let mut actions = coor.init();
         loop {
             for a in actions {
-                if let Some(event) = coor.execute(a).await? {
-                    if let SailfishEventType::Committed { round, .. } = event.event {
-                        if round >= 3.into() {
-                            return Ok(());
-                        }
+                if let Some(data) = coor.execute(a).await? {
+                    if data.round() >= 3.into() {
+                        return Ok(());
                     }
                 }
             }
@@ -199,10 +191,10 @@ fn medium_committee_partition_network() {
         (ks[4].public_key(), ("E", ports[4]).into()),
     ];
 
-    mk_host(1, "A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host(2, "B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
-    mk_host(3, "C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
-    mk_host(4, "D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
+    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
+    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
 
     let k = ks[4].clone();
     let c = committee.clone();
@@ -210,25 +202,22 @@ fn medium_committee_partition_network() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, rbc::Config::new(k.clone(), c.clone()));
-        let cons = Consensus::new(5, k, c);
-        let mut coor = Coordinator::new(5, rbc, cons);
-        let mut actions = coor.start().await?;
+        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let cons = Consensus::new(k, c);
+        let mut coor = Coordinator::new(rbc, cons);
+        let mut actions = coor.init();
         loop {
 
             for a in actions.clone() {
-                if let Some(event) = coor.execute(a).await? {
-                    if let SailfishEventType::Committed { round, .. } = event.event {
-                        let r = *round;
-                        if r == 3 {
-                            turmoil::partition("E", "A");
-                            turmoil::partition("E", "B");
-                            turmoil::partition("E", "C");
-                            turmoil::partition("E", "D");
-                        }
-                        if r >= 20 {
-                            return Ok(());
-                        }
+                if let Some(data) = coor.execute(a).await? {
+                    if data.round() == 3.into() {
+                        turmoil::partition("E", "A");
+                        turmoil::partition("E", "B");
+                        turmoil::partition("E", "C");
+                        turmoil::partition("E", "D");
+                    }
+                    if data.round() >= 20.into() {
+                        return Ok(());
                     }
                 }
             }

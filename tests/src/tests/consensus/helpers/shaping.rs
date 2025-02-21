@@ -6,10 +6,10 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::consensus::{Consensus, Dag};
-use timeboost_core::types::message::{Action, Evidence, Message};
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish::types::{Evidence, RoundNumber};
 use tracing::debug;
+
+use crate::prelude::*;
 
 /// Name of a party.
 pub type Name = &'static str;
@@ -323,11 +323,10 @@ impl Simulator {
 
         let mut parties: BTreeMap<Name, Party> = keypairs
             .into_iter()
-            .enumerate()
-            .map(|(i, (n, k))| {
+            .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(i as u64, k, committee.clone()),
+                    logic: Consensus::new(k, committee.clone()),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -505,9 +504,10 @@ impl Simulator {
                         p.timeout.1 = r;
                     }
                 }
-                Action::Deliver(_, r, k) => {
-                    let k = self.resolve.get(&k).expect("known public key");
-                    self.events.push(Event::Deliver(self.time, party, r, k))
+                Action::Deliver(data) => {
+                    let k = self.resolve.get(&data.source()).expect("known public key");
+                    self.events
+                        .push(Event::Deliver(self.time, party, data.round(), k))
                 }
             }
         }

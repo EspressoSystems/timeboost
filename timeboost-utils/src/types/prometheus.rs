@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::traits::metrics::{
-    Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
-};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
+use metrics::{
+    Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
+};
 use parking_lot::RwLock;
 use prometheus::{Encoder, TextEncoder};
 use tide_disco::method::ReadState;

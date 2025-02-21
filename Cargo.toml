@@ -1,12 +1,16 @@
 [workspace]
 members = [
+    "cliquenet",
+    "metrics",
     "multisig",
     "sailfish",
+    "sailfish-consensus",
+    "sailfish-rbc",
+    "sailfish-types",
     "tests",
     "timeboost",
     "timeboost-core",
     "timeboost-crypto",
-    "timeboost-networking",
     "timeboost-utils",
 ]
 resolver = "2"
