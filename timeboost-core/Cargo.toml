@@ -22,6 +22,7 @@ rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 thiserror = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

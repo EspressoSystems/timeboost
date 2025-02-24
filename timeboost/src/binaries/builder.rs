@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
     };
 
     let keypair = Keypair::from(sig_key);
-    let deckey = keyset
+    let dec_key = keyset
         .build_decryption_material(dec_key)
         .expect("parse keyset");
 
@@ -195,7 +195,10 @@ async fn main() -> Result<()> {
         peer_hosts_and_keys.push((pubkey, peer_address));
     }
 
-    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
+    let sf_bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
+    // HACK: Set the timeboost decryption port at a fixed offset
+    let tb_bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port + 250));
+
     #[cfg(feature = "until")]
     let handle = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
@@ -212,14 +215,14 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let committee_size = peer_hosts_and_keys.len();
     let init = TimeboostInitializer {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
-        deckey,
-        bind_address,
+        dec_key,
+        sf_bind_address,
+        tb_bind_address,
         nitro_url: cli.nitro_node_url,
         app_tx: tb_app_tx,
         app_rx: tb_app_rx,
@@ -247,7 +250,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "until"))]
     tokio::select! {
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go(cli.tps) => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {

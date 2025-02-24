@@ -8,6 +8,7 @@ use std::{
 use anyhow::{bail, Result};
 use committable::{Commitment, Committable};
 use futures::{future::BoxFuture, FutureExt};
+use multisig::Committee;
 use timeboost_core::types::round_number::RoundNumber;
 use timeboost_core::types::{
     block::timeboost::TimeboostBlock,
@@ -81,6 +82,7 @@ where
     #[allow(unused)]
     metrics: Arc<TimeboostMetrics>,
 
+    committee: Committee,
     /// The round recovery state if a given node crashes and restarts.
     round_state: RoundState,
 
@@ -109,6 +111,7 @@ where
         decryption_phase: D,
         ordering_phase: O,
         block_builder: B,
+        committee: Committee,
         metrics: Arc<TimeboostMetrics>,
         mempool: Arc<Mempool>,
     ) -> Self {
@@ -117,6 +120,7 @@ where
             decryption_phase,
             ordering_phase,
             block_builder,
+            committee,
             metrics,
             round_state: RoundState::default(),
             consensus_interval_clock: pending().boxed(),
@@ -133,7 +137,7 @@ where
     /// - Processes transactions from the mempool, builds blocks, and updates state.
     /// - Communicates status updates to an application via a channel.
     /// - Handles shutdown signals to gracefully exit the loop.
-    pub async fn go(mut self, app_tx: Sender<TimeboostStatusEvent>, committee_size: usize) {
+    pub async fn go(mut self, app_tx: Sender<TimeboostStatusEvent>) {
         self.consensus_interval_clock = sleep(CONSENSUS_INTERVAL).map(|_| 0).fuse().boxed();
         loop {
             tokio::select! {
@@ -153,7 +157,7 @@ where
                         mempool_snapshot,
                         self.round_state.clone(),
                         &self.prior_tx_hashes.values().flatten().cloned().collect(),
-                        committee_size,
+                        usize::from(self.committee.size())
                     );
 
                     // We add the mempool snapshot to the prior tx hashes only if it succeeds, so we have
@@ -161,7 +165,7 @@ where
                     let tmp_previous_bundles = candidate_list.transactions.clone();
 
                     // Build the block from the snapshot.
-                    let Ok(block) = self.build(candidate_list) else {
+                    let Ok(block) = self.build(candidate_list).await else {
                         error!(%self.round, "failed to build block");
                         continue;
                     };
@@ -198,7 +202,7 @@ where
         skip_all,
         fields(round = %self.round)
     )]
-    pub fn build(&mut self, candidate_list: CandidateList) -> Result<TimeboostBlock> {
+    pub async fn build(&mut self, candidate_list: CandidateList) -> Result<TimeboostBlock> {
         let epoch = candidate_list.epoch();
 
         // Phase 1: Inclusion
@@ -215,7 +219,7 @@ where
         self.round_state.update(&inclusion_list);
 
         // Phase 2: Decryption
-        let Ok(decrypted_transactions) = self.decryption_phase.decrypt(inclusion_list) else {
+        let Ok(decrypted_transactions) = self.decryption_phase.decrypt(inclusion_list).await else {
             error!(%epoch, %self.round, "failed to decrypt transactions");
             bail!("failed to decrypt transactions")
         };

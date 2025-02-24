@@ -6,7 +6,7 @@ use super::DecryptionPhase;
 
 pub struct NoOpDecryptionPhase;
 impl DecryptionPhase for NoOpDecryptionPhase {
-    fn decrypt(&self, inclusion_list: InclusionList) -> Result<InclusionList> {
+    async fn decrypt(&mut self, inclusion_list: InclusionList) -> Result<InclusionList> {
         Ok(inclusion_list)
     }
 }

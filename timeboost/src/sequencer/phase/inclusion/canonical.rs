@@ -5,7 +5,7 @@ use timeboost_core::types::{seqno::SeqNo, transaction::Transaction};
 use super::{InclusionList, InclusionPhase};
 
 /// Implements the canonical inclusion phase based on the spec.
-pub struct CanonicalInclusionPhase {}
+pub struct CanonicalInclusionPhase;
 
 impl InclusionPhase for CanonicalInclusionPhase {
     fn produce_inclusion_list(

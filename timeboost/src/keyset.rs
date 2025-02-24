@@ -38,7 +38,7 @@ pub struct PublicDecInfo {
 }
 
 #[allow(dead_code)]
-pub struct DecryptionInfo {
+pub struct DecKeyInfo {
     pub pubkey: PublicKey,
     pub combkey: CombKey,
     pub privkey: KeyShare,
@@ -52,12 +52,12 @@ impl Keyset {
         Ok(keyset)
     }
 
-    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionInfo> {
+    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecKeyInfo> {
         let pubkey = PublicKey::try_from(self.dec_keyset.pubkey.as_str())
             .context("Failed to parse public key from keyset")?;
         let combkey = CombKey::try_from(self.dec_keyset.combkey.as_str())
             .context("Failed to parse combination key from keyset")?;
-        Ok(DecryptionInfo {
+        Ok(DecKeyInfo {
             pubkey,
             combkey,
             privkey: deckey,

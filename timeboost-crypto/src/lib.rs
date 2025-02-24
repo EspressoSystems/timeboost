@@ -50,16 +50,36 @@ impl Plaintext {
     }
 }
 
+impl Plaintext {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Ciphertext<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
     v: C,
+    #[serde_as(as = "crate::SerdeAs")]
     w_hat: C,
     e: Vec<u8>,
     nonce: Vec<u8>,
     pi: Proof,
 }
 
-#[derive(Clone)]
+impl<C: CurveGroup> Ciphertext<C> {
+    /// Supposedly random nonce for the ciphertext.
+    /// Can be used for optimistic eq check of ciphertexts.
+    pub fn nonce(&self) -> &[u8] {
+        &self.nonce
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecShare<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
     w: C,
     index: u32,
     phi: Proof,
