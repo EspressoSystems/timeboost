@@ -6,4 +6,3 @@ description.workspace = true
 
 [dependencies]
 dyn-clone = { workspace = true }
-prometheus = { workspace = true }
