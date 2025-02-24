@@ -6,7 +6,7 @@ use metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
 use parking_lot::RwLock;
-use prometheus::{Encoder, TextEncoder};
+use prometheus::{Encoder, HistogramOpts, TextEncoder};
 use tide_disco::method::ReadState;
 
 #[derive(Clone, Debug)]
@@ -38,9 +38,8 @@ impl Histogram for TimeboostHistogram {
 }
 
 impl TimeboostHistogram {
-    pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
-        let histogram =
-            prometheus::Histogram::with_opts(opts.into()).expect("failed to create histogram");
+    pub fn new(registry: &prometheus::Registry, opts: prometheus::HistogramOpts) -> Self {
+        let histogram = prometheus::Histogram::with_opts(opts).expect("failed to create histogram");
         registry
             .register(Box::new(histogram.clone()))
             .expect("failed to register histogram");
@@ -154,9 +153,21 @@ impl Metrics for PrometheusMetrics {
         Box::new(gauge)
     }
 
-    fn create_histogram(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Histogram> {
+    fn create_histogram(
+        &self,
+        name: &str,
+        unit_label: Option<&str>,
+        buckets: Option<&[f64]>,
+    ) -> Box<dyn Histogram> {
         let opts = self.metric_opts(name, unit_label);
-        let histogram = TimeboostHistogram::new(&self.registry, opts);
+        let histogram_opts = buckets.map_or_else(
+            || opts.clone().into(),
+            |b| HistogramOpts {
+                common_opts: opts.clone(),
+                buckets: b.to_vec(),
+            },
+        );
+        let histogram = TimeboostHistogram::new(&self.registry, histogram_opts);
         self.historgrams
             .write()
             .insert(name.to_string(), histogram.clone());

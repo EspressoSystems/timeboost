@@ -21,8 +21,8 @@ impl Default for RbcMetrics {
 impl RbcMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
-            delivery_duration: m.create_histogram("delivery_duration", Some("seconds")),
-            ack_duration: m.create_histogram("ack_duration", Some("seconds")),
+            delivery_duration: m.create_histogram("delivery_duration", Some("seconds"), None),
+            ack_duration: m.create_histogram("ack_duration", Some("seconds"), None),
             retries: m.create_counter("retries", None),
         }
     }

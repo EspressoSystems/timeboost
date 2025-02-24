@@ -29,7 +29,12 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
     /// Create a [`Histogram`] with an optional `unit_label`.
     ///
     /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
-    fn create_histogram(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Histogram>;
+    fn create_histogram(
+        &self,
+        name: &str,
+        unit_label: Option<&str>,
+        buckets: Option<&[f64]>,
+    ) -> Box<dyn Histogram>;
 
     /// Create a text metric.
     ///
@@ -151,7 +156,7 @@ impl Metrics for NoMetrics {
         Box::new(NoMetrics)
     }
 
-    fn create_histogram(&self, _: &str, _: Option<&str>) -> Box<dyn Histogram> {
+    fn create_histogram(&self, _: &str, _: Option<&str>, _: Option<&[f64]>) -> Box<dyn Histogram> {
         Box::new(NoMetrics)
     }
 
@@ -289,6 +294,7 @@ mod test {
             &self,
             name: &str,
             _unit_label: Option<&str>,
+            _buckets: Option<&[f64]>,
         ) -> Box<dyn super::Histogram> {
             Box::new(self.sub(name))
         }
@@ -403,7 +409,7 @@ mod test {
 
             let gauge = metrics.create_gauge("foo", None);
             let counter = metrics.create_counter("bar", None);
-            let histogram = metrics.create_histogram("baz", None);
+            let histogram = metrics.create_histogram("baz", None, None);
 
             gauge.set(5);
             gauge.update(-2);
@@ -420,7 +426,7 @@ mod test {
 
             let sub_gauge = sub.create_gauge("foo", None);
             let sub_counter = sub.create_counter("bar", None);
-            let sub_histogram = sub.create_histogram("baz", None);
+            let sub_histogram = sub.create_histogram("baz", None, None);
 
             sub_gauge.set(10);
 
