@@ -18,7 +18,7 @@ impl TimeboostMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
             epoch: m.create_gauge("epoch", None),
-            epoch_duration: m.create_histogram("epoch_duration", None),
+            epoch_duration: m.create_histogram("epoch_duration", None, None),
             failed_epochs: m.create_counter("failed_epochs", None),
         }
     }

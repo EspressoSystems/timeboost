@@ -24,8 +24,9 @@ impl NetworkMetrics {
     where
         P: IntoIterator<Item = PublicKey>,
     {
+        let buckets = prometheus::exponential_buckets(0.125, 2.0, 14).expect("calculate buckets");
         Self {
-            latency: m.create_histogram("latency", Some("ms")),
+            latency: m.create_histogram("latency", Some("ms"), Some(buckets)),
             connections: m.create_gauge("connections", None),
             sent: m.create_counter("messages_sent", None),
             received: m.create_counter("messages_received", None),

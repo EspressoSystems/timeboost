@@ -13,6 +13,7 @@ bytes = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
+prometheus = { workspace = true }
 rand = { workspace = true }
 snow = { workspace = true }
 thiserror = { workspace = true }
