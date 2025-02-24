@@ -1,10 +1,11 @@
+use std::iter::repeat;
 use std::{collections::HashMap, fmt, num::NonZeroUsize};
 
 use committable::Committable;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Empty, Evidence, Message};
+use sailfish_types::{Action, Evidence, Message, Unit};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -24,7 +25,7 @@ impl fmt::Display for MultiRoundTestSpec {
 
 struct Net {
     /// Mapping of public key to the corresponding cx node.
-    nodes: HashMap<PublicKey, Consensus<Empty>>,
+    nodes: HashMap<PublicKey, Consensus<Unit>>,
 
     /// How many rounds to run until.
     rounds: u64,
@@ -33,7 +34,7 @@ struct Net {
     iteration: u64,
 
     /// Message buffer.
-    messages: Vec<Message<Empty>>,
+    messages: Vec<Message<Unit>>,
 }
 
 impl Net {
@@ -49,7 +50,12 @@ impl Net {
 
         let mut nodes = kps
             .into_iter()
-            .map(|kp| (kp.public_key(), Consensus::new(kp, com.clone())))
+            .map(|kp| {
+                (
+                    kp.public_key(),
+                    Consensus::new(kp, com.clone(), repeat(Unit)),
+                )
+            })
             .collect::<HashMap<_, _>>();
 
         let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
@@ -87,9 +93,9 @@ impl Net {
 
 /// Many-to-many broadcast of a message stack.
 fn send(
-    nodes: &mut HashMap<PublicKey, Consensus<Empty>>,
-    msgs: &[Message<Empty>],
-) -> Vec<Action<Empty>> {
+    nodes: &mut HashMap<PublicKey, Consensus<Unit>>,
+    msgs: &[Message<Unit>],
+) -> Vec<Action<Unit>> {
     use rayon::prelude::*;
 
     if nodes.len() == 1 {

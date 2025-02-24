@@ -54,7 +54,7 @@ fn mk_host<A, const N: usize>(
         async move {
             let comm = Network::create_turmoil(a, k.clone(), p, NetworkMetrics::default()).await?;
             let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
-            let cons = Consensus::new(k, c);
+            let cons = Consensus::new(k, c, EmptyBlocks);
             let mut coor = Coordinator::new(rbc, cons);
             let mut actions = coor.init();
             loop {
@@ -98,15 +98,17 @@ fn small_committee() {
         let addr = (UNSPECIFIED, ports[2]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
-        let cons = Consensus::new(k, c);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {
             for a in actions {
-                if let Some(data) = coor.execute(a).await? {
+                if let Action::Deliver(data) = a {
                     if data.round() >= 3.into() {
                         return Ok(());
                     }
+                } else {
+                    coor.execute(a).await?
                 }
             }
             actions = coor.next().await?
@@ -151,15 +153,17 @@ fn medium_committee() {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
-        let cons = Consensus::new(k, c);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {
             for a in actions {
-                if let Some(data) = coor.execute(a).await? {
+                if let Action::Deliver(data) = a {
                     if data.round() >= 3.into() {
                         return Ok(());
                     }
+                } else {
+                    coor.execute(a).await?
                 }
             }
             actions = coor.next().await?
@@ -203,13 +207,13 @@ fn medium_committee_partition_network() {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
-        let cons = Consensus::new(k, c);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {
 
             for a in actions.clone() {
-                if let Some(data) = coor.execute(a).await? {
+                if let Action::Deliver(data) = a {
                     if data.round() == 3.into() {
                         turmoil::partition("E", "A");
                         turmoil::partition("E", "B");
@@ -219,6 +223,8 @@ fn medium_committee_partition_network() {
                     if data.round() >= 20.into() {
                         return Ok(());
                     }
+                } else {
+                    coor.execute(a).await?
                 }
             }
 

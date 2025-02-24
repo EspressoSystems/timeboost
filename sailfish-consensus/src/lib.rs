@@ -1,5 +1,4 @@
 mod dag;
-mod inbox;
 mod info;
 mod metrics;
 
@@ -10,11 +9,10 @@ use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{Payload, RoundNumber, Vertex};
+use sailfish_types::{DataSource, Payload, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
-pub use inbox::Inbox;
 pub use metrics::ConsensusMetrics;
 
 /// A `NewVertex` may need to have a timeout or no-vote certificate set.
@@ -57,8 +55,8 @@ pub struct Consensus<T> {
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex<T>>,
 
-    /// Inbox of payload data to include in vertex proposals.
-    inbox: Inbox<T>,
+    /// Source of payload data to include in vertex proposals.
+    datasource: Box<dyn DataSource<Data = T> + Send>,
 
     /// The consensus metrics for this node.
     metrics: ConsensusMetrics,
@@ -89,13 +87,23 @@ impl<T> Consensus<T> {
         self.round
     }
 
+    pub fn committed_round(&self) -> RoundNumber {
+        self.committed_round
+    }
+
     pub fn committee_size(&self) -> NonZeroUsize {
         self.committee.size()
     }
 }
 
-impl<T: Committable + Clone + PartialEq> Consensus<T> {
-    pub fn new(keypair: Keypair, committee: Committee) -> Self {
+impl<T> Consensus<T>
+where
+    T: Committable + Clone + PartialEq,
+{
+    pub fn new<D>(keypair: Keypair, committee: Committee, datasource: D) -> Self
+    where
+        D: DataSource<Data = T> + Send + 'static,
+    {
         Self {
             keypair,
             nodes: NodeInfo::new(&committee),
@@ -109,21 +117,11 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
             no_votes: BTreeMap::new(),
             committee,
             leader_stack: Vec::new(),
-            inbox: Inbox::new(),
+            datasource: Box::new(datasource),
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
             deterministic: false,
         }
-    }
-
-    /// Access the payload inbox.
-    pub fn inbox(&self) -> &Inbox<T> {
-        &self.inbox
-    }
-
-    /// Unique access to the payload inbox.
-    pub fn inbox_mut(&mut self) -> &mut Inbox<T> {
-        &mut self.inbox
     }
 
     /// (Re-)start consensus.
@@ -139,7 +137,13 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
         self.round = r;
 
         if r.is_genesis() {
-            let vtx = Vertex::empty(r, Evidence::Genesis, &self.keypair, self.deterministic);
+            let vtx = Vertex::new(
+                r,
+                Evidence::Genesis,
+                self.datasource.next(r),
+                &self.keypair,
+                self.deterministic,
+            );
             let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
             vec![Action::SendProposal(env), Action::ResetTimer(r)]
         } else {
@@ -561,8 +565,8 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
     fn create_new_vertex(&mut self, r: RoundNumber, e: Evidence) -> NewVertex<T> {
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
-        let payload = self.inbox.take_first();
-        let mut new = Vertex::new(r, e, &self.keypair, payload, self.deterministic);
+        let payload = self.datasource.next(r);
+        let mut new = Vertex::new(r, e, payload, &self.keypair, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
 
@@ -722,7 +726,7 @@ impl<T: Committable + Clone + PartialEq> Consensus<T> {
                 if self.delivered.contains(&(r, s)) {
                     continue;
                 }
-                let b = to_deliver.payload().cloned();
+                let b = to_deliver.payload().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
                 actions.push(Action::Deliver(Payload::new(r, s, b)));
                 self.delivered.insert((r, s));
@@ -903,10 +907,6 @@ impl<T: Committable + Eq> Consensus<T> {
 
     pub fn leader_stack(&self) -> &[Vertex<T>] {
         &self.leader_stack
-    }
-
-    pub fn committed_round(&self) -> RoundNumber {
-        self.committed_round
     }
 
     pub fn no_vote_accumulators(

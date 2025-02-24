@@ -3,8 +3,9 @@ use std::{future::pending, time::Duration};
 use committable::Committable;
 use futures::{future::BoxFuture, FutureExt};
 use multisig::PublicKey;
-use sailfish_consensus::{Consensus, Dag, Inbox};
-use sailfish_types::{Action, Comm, Evidence, Message, Payload, RoundNumber};
+use sailfish_consensus::{Consensus, Dag};
+use sailfish_types::{Action, Comm, Evidence, Message, RoundNumber};
+use tokio::select;
 use tokio::time::sleep;
 
 pub struct Coordinator<T: Committable, C> {
@@ -32,9 +33,19 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
         }
     }
 
+    /// Has this coordinator been initialized?
+    pub fn is_init(&self) -> bool {
+        self.init
+    }
+
     /// The public key of this coordinator.
     pub fn public_key(&self) -> PublicKey {
         self.consensus.public_key()
+    }
+
+    /// Get the current consensus round.
+    pub fn consensus_round(&self) -> RoundNumber {
+        self.consensus.round()
     }
 }
 
@@ -50,7 +61,7 @@ where
     ///
     /// # Panics
     ///
-    /// `Coordinator::start` must only be invoked once, otherwise it will panic.
+    /// `Coordinator::init` must only be invoked once, otherwise it will panic.
     pub fn init(&mut self) -> Vec<Action<T>> {
         assert!(!self.init, "Cannot call start twice");
         self.init = true;
@@ -66,9 +77,9 @@ where
     /// - timeout a sailfish round if no progress was made, or
     /// - process a validated consensus `Message` that was RBC-delivered over the network.
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
-        tokio::select! { biased;
+        select! { biased;
             r = &mut self.timer => Ok(self.consensus.timeout(r)),
-            msg = self.comm.receive() => Ok(self.consensus.handle_message(msg?)),
+            m = self.comm.receive() => Ok(self.consensus.handle_message(m?)),
         }
     }
 
@@ -77,17 +88,16 @@ where
     /// This function will handle one of the following actions:
     ///
     /// - `ResetTimer` - Reset timeout timer.
-    /// - `Deliver` - Return a Sailfish consensus block to the caller.
     /// - `SendProposal` - Reliably broadcast a vertex to the members in the committee.
     /// - `SendTimeout` - Multicast a timeout message to the members in the committee.
     /// - `SendTimeoutCert` - Multicast a timeout certificate to the members in the committee.
     /// - `SendNoVote` - Send a no-vote to the leader in `r + 1` for a timeout in round `r`.
-    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Payload<T>>, C::Err> {
+    /// - `Deliver` - NOOP.
+    pub async fn execute(&mut self, action: Action<T>) -> Result<(), C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
             }
-            Action::Deliver(data) => return Ok(Some(data)),
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }
@@ -100,17 +110,10 @@ where
             Action::SendNoVote(to, v) => {
                 self.comm.send(to, Message::NoVote(v)).await?;
             }
+            Action::Deliver(_) => {
+                // nothing to do
+            }
         }
-        Ok(None)
-    }
-
-    /// Access the payload data inbox of consensus.
-    pub fn payload_inbox(&self) -> &Inbox<T> {
-        self.consensus.inbox()
-    }
-
-    /// Uniquely access the payload data inbox of consensus.
-    pub fn payload_inbox_mut(&mut self) -> &mut Inbox<T> {
-        self.consensus.inbox_mut()
+        Ok(())
     }
 }
