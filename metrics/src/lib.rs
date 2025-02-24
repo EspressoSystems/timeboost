@@ -33,7 +33,7 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
         &self,
         name: &str,
         unit_label: Option<&str>,
-        buckets: Option<Vec<f64>>,
+        buckets: Option<&[f64]>,
     ) -> Box<dyn Histogram>;
 
     /// Create a text metric.
@@ -156,12 +156,7 @@ impl Metrics for NoMetrics {
         Box::new(NoMetrics)
     }
 
-    fn create_histogram(
-        &self,
-        _: &str,
-        _: Option<&str>,
-        _: Option<Vec<f64>>,
-    ) -> Box<dyn Histogram> {
+    fn create_histogram(&self, _: &str, _: Option<&str>, _: Option<&[f64]>) -> Box<dyn Histogram> {
         Box::new(NoMetrics)
     }
 
@@ -299,7 +294,7 @@ mod test {
             &self,
             name: &str,
             _unit_label: Option<&str>,
-            _buckets: Option<Vec<f64>>,
+            _buckets: Option<&[f64]>,
         ) -> Box<dyn super::Histogram> {
             Box::new(self.sub(name))
         }

@@ -157,14 +157,14 @@ impl Metrics for PrometheusMetrics {
         &self,
         name: &str,
         unit_label: Option<&str>,
-        buckets: Option<Vec<f64>>,
+        buckets: Option<&[f64]>,
     ) -> Box<dyn Histogram> {
         let opts = self.metric_opts(name, unit_label);
         let histogram_opts = buckets.map_or_else(
             || opts.clone().into(),
             |b| HistogramOpts {
                 common_opts: opts.clone(),
-                buckets: b,
+                buckets: b.to_vec(),
             },
         );
         let histogram = TimeboostHistogram::new(&self.registry, histogram_opts);
