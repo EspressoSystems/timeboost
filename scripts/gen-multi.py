@@ -36,9 +36,15 @@ if __name__ == "__main__":
 
     print(f"[*] Editing {CLOUD_MULTI_PATH}")
     # Now, map the entries to the new DNS
+    print("Printing prometheus output, paste this into prometheus.yml")
     for i in range(len(cloud_single["keyset"])):
         region = REGIONS[i // 4]
-        cloud_single["keyset"][i]["url"] = f"{dns_names[region]}:{8000 + i % 4}"
+
+        # Print the prometheus line
+        print(f"- {dns_names[region]}:{9000 + i}")
+
+        # Update the cloud config file
+        cloud_single["keyset"][i]["url"] = f"{dns_names[region]}:{8000 + i}"
 
     with open(CLOUD_MULTI_PATH, "w") as f:
         json.dump(cloud_single, f, indent=4)
