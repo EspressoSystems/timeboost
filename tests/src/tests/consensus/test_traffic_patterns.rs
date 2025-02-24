@@ -1,8 +1,10 @@
+use std::collections::{BTreeMap, HashSet};
+
+use sailfish::types::RoundNumber;
+
 use crate::tests::consensus::helpers::shaping::{
     edge, edges, Event, Name, Rule, RuleGen, Simulator,
 };
-use std::collections::{BTreeMap, HashSet};
-use timeboost_utils::types::round_number::RoundNumber;
 
 /// A simple test that always delivers messages to all parties.
 ///

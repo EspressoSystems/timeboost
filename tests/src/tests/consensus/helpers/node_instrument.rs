@@ -4,13 +4,9 @@ use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
-use sailfish::consensus::Consensus;
-use timeboost_core::types::block::sailfish::SailfishBlock;
-use timeboost_core::types::{
-    message::{Action, Message, NoVoteMessage, Timeout, TimeoutMessage},
-    vertex::Vertex,
-};
-use timeboost_utils::types::round_number::RoundNumber;
+use sailfish::types::{NoVoteMessage, RoundNumber, Timeout, TimeoutMessage};
+
+use crate::prelude::*;
 
 pub(crate) struct TestNodeInstrument {
     node: Consensus,
@@ -70,8 +66,8 @@ impl TestNodeInstrument {
         &mut self.node
     }
 
-    pub(crate) fn committee(&self) -> &Committee {
-        self.node.committee()
+    pub(crate) fn committee(&self) -> Committee {
+        self.manager.committee()
     }
 
     pub(crate) fn expected_vertex_proposal(
@@ -91,7 +87,7 @@ impl TestNodeInstrument {
             )
         };
         v.add_edges(edges);
-        self.node.sign(v)
+        self.sign(v)
     }
 
     pub(crate) fn expected_timeout(
@@ -103,7 +99,7 @@ impl TestNodeInstrument {
             &self.kpair,
             true,
         );
-        self.node.sign(d.clone())
+        self.sign(d.clone())
     }
 
     pub(crate) fn expected_timeout_certificate(
@@ -122,7 +118,7 @@ impl TestNodeInstrument {
         round: RoundNumber,
     ) -> Envelope<NoVoteMessage, Validated> {
         let nv = NoVoteMessage::new(self.manager.gen_timeout_cert(round), &self.kpair, true);
-        self.node.sign(nv)
+        self.sign(nv)
     }
 
     pub(crate) fn expected_actions_is_empty(&self) -> bool {
@@ -130,8 +126,10 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn assert_timeout_accumulator(&self, expected_round: RoundNumber, votes: u64) {
-        let timeout_accumulators = self.node.timeout_accumulators();
-        let accumulator = timeout_accumulators.get(&expected_round);
+        let accumulator = self
+            .node
+            .timeout_accumulators()
+            .find_map(|(r, v)| (r == expected_round).then_some(v));
 
         if let Some(accumulator) = accumulator {
             assert_eq!(
@@ -144,6 +142,10 @@ impl TestNodeInstrument {
 
         assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
     }
+
+    pub(crate) fn sign<D: Committable>(&self, d: D) -> Envelope<D, Validated> {
+        Envelope::signed(d, &self.kpair, true)
+    }
 }
 
 fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
@@ -152,10 +154,10 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
             assert_eq!(x, y)
         }
-        (Action::Deliver(xb, xr, xk), Action::Deliver(yb, yr, yk)) => {
-            assert_eq!(xr, yr);
-            assert_eq!(xk, yk);
-            block_equiv(xb, yb);
+        (Action::Deliver(x), Action::Deliver(y)) => {
+            assert_eq!(x.round(), y.round());
+            assert_eq!(x.source(), y.source());
+            block_equiv(x.data(), y.data());
         }
         (Action::SendProposal(x), Action::SendProposal(y)) => {
             assert_eq!(x.is_valid(c), y.is_valid(c));
@@ -175,7 +177,7 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert!(yve.is_subset(&parties));
             assert!(xve.len() >= c.quorum_size().get());
             assert!(yve.len() >= c.quorum_size().get());
-            block_equiv(xv.block(), yv.block());
+            block_equiv(xv.payload(), yv.payload());
         }
         (Action::SendTimeout(x), Action::SendTimeout(y)) => {
             assert_eq!(x.is_valid(c), y.is_valid(c));
@@ -204,12 +206,17 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
     }
 }
 
-fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
-    assert!(
-        l.timestamp().abs_diff(*r.timestamp()) <= 5,
-        "Drift is too high from expected to actual block timestamps"
-    );
-    assert_eq!(l.round_number(), r.round_number());
-    assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
-    assert_eq!(l.clone().transactions(), r.clone().transactions());
+fn block_equiv(l: Option<&SailfishBlock>, r: Option<&SailfishBlock>) {
+    match (l, r) {
+        (None, None) => {}
+        (Some(l), Some(r)) => {
+            assert!(
+                l.timestamp().abs_diff(*r.timestamp()) <= 5,
+                "Drift is too high from expected to actual block timestamps"
+            );
+            assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
+            assert_eq!(l.clone().transactions(), r.clone().transactions());
+        }
+        _ => panic!("{l:?} ≁ {r:?}"),
+    }
 }

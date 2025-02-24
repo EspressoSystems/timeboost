@@ -1,10 +1,11 @@
 use std::{collections::HashMap, time::Duration};
 
-use timeboost_core::types::{
-    message::Message, test::message_interceptor::NetworkMessageInterceptor,
-};
-use timeboost_utils::types::{logging, round_number::RoundNumber};
+use multisig::PublicKey;
+use sailfish::types::RoundNumber;
+use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
+use timeboost_utils::types::logging;
 
+use crate::prelude::*;
 use crate::Group;
 
 use super::{NetworkTest, TestCondition, TestOutcome, TestableNetwork};
@@ -17,15 +18,18 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes);
+
     // Each node should see the initial vertex proposal from every other node.
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             let conditions: Vec<TestCondition> = group
                 .keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
-                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                    TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if *v.data().round().data() == RoundNumber::genesis() + 1
                                 && node_public_key == *v.data().source()
@@ -37,7 +41,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 
@@ -61,14 +65,16 @@ where
     let group = Group::new(num_nodes);
     let rounds = 25;
 
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             let conditions: Vec<TestCondition> = group
                 .keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
-                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                    TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             if **v.data().round().data() == rounds
                                 && node_public_key == *v.data().source()
@@ -80,7 +86,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 
@@ -115,8 +121,10 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
             let committee = group.committee.clone();
             let mut conditions = vec![TestCondition::new(
@@ -146,7 +154,7 @@ where
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
-                TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
                         if **v.data().round().data() == timeout_round + 20
@@ -158,7 +166,7 @@ where
                     TestOutcome::Waiting
                 })
             }));
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 
@@ -193,8 +201,10 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
             let committee = group.committee.clone();
             let mut conditions = vec![TestCondition::new(
@@ -224,7 +234,7 @@ where
             // Next make sure we can advance some rounds and receive all vertices from each node
             conditions.extend(group.keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
-                TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
                         // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
                         if **v.data().round().data() == timeout_round + 20
@@ -236,7 +246,7 @@ where
                     TestOutcome::Waiting
                 })
             }));
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 
@@ -268,14 +278,16 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             let conditions = group
                 .keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
-                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                    TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             let r = **v.data().round().data();
                             if v.data().evidence().is_timeout() && r != 3 {
@@ -293,7 +305,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 
@@ -342,14 +354,16 @@ where
         Ok(msg.clone())
     });
 
-    let node_outcomes: HashMap<u64, Vec<TestCondition>> = (0..num_nodes)
-        .map(|node_id| {
+    let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
+        .keypairs
+        .iter()
+        .map(|k| {
             let conditions = group
                 .keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
-                    TestCondition::new(format!("Vertex from {}", node_id), move |msg, _a| {
+                    TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             // Go 10 rounds passed from when the nodes come online
                             // Ensure we receive all vertices even from the node that missed a round
@@ -362,7 +376,7 @@ where
                     })
                 })
                 .collect();
-            (node_id as u64, conditions)
+            (k.public_key(), conditions)
         })
         .collect();
 

@@ -21,7 +21,7 @@ serde = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 thiserror = { workspace = true }
-timeboost-networking = { path = "../timeboost-networking" }
+sailfish-types = { path = "../sailfish-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

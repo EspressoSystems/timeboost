@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use sailfish::coordinator::Coordinator;
-use timeboost_core::traits::comm::Comm;
-use timeboost_core::types::message::{Action, Message};
+use multisig::PublicKey;
+use sailfish::types::Comm;
+use sailfish::Coordinator;
 use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_core::types::test::testnet::MsgQueues;
 use timeboost_utils::types::logging;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
+use crate::prelude::*;
 use crate::Group;
 
 mod rbc;
@@ -84,43 +85,40 @@ impl TestCondition {
 /// This will be the result that a task returns for a given node
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) struct TaskHandleResult {
-    id: u64,
+    key: PublicKey,
     outcome: TestOutcome,
 }
 
 impl TaskHandleResult {
-    pub(crate) fn new(id: u64, outcome: TestOutcome) -> Self {
-        Self { id, outcome }
+    pub(crate) fn new(key: PublicKey, outcome: TestOutcome) -> Self {
+        Self { key, outcome }
     }
 }
 
 pub trait TestableNetwork {
     type Node: Send;
-    type Network: Comm + Send + 'static;
+    type Network: Comm<SailfishBlock> + Send + 'static;
+
     fn new(
         group: Group,
-        outcomes: HashMap<u64, Vec<TestCondition>>,
-        interceptor: NetworkMessageInterceptor,
+        outcomes: HashMap<PublicKey, Vec<TestCondition>>,
+        interceptor: NetworkMessageInterceptor<SailfishBlock>,
     ) -> Self;
+
+    fn public_key(&self, n: &Self::Node) -> PublicKey;
+
     async fn init(&mut self) -> Vec<Self::Node>;
+
     async fn start(&mut self, nodes: Vec<Self::Node>) -> JoinSet<TaskHandleResult>;
 
     /// Default method for running the coordinator in tests
     async fn run_coordinator(
-        coordinator: &mut Coordinator<Self::Network>,
+        coordinator: &mut Coordinator<SailfishBlock, Self::Network>,
         conditions: &mut Vec<TestCondition>,
-        msgs: MsgQueues,
-        node_id: u64,
+        msgs: MsgQueues<SailfishBlock>,
     ) -> TaskHandleResult {
-        match coordinator.start().await {
-            Ok(actions) => {
-                for a in actions {
-                    let _ = coordinator.execute(a).await;
-                }
-            }
-            Err(e) => {
-                panic!("Failed to start coordinator: {}", e);
-            }
+        for a in coordinator.init() {
+            let _ = coordinator.execute(a).await;
         }
         loop {
             match coordinator.next().await {
@@ -149,7 +147,7 @@ pub trait TestableNetwork {
                     if all_evaluated {
                         // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
                         sleep(Duration::from_secs(1)).await;
-                        return TaskHandleResult::new(node_id, outcome);
+                        return TaskHandleResult::new(coordinator.public_key(), outcome);
                     }
                 }
                 Err(e) => {
@@ -168,9 +166,9 @@ pub struct NetworkTest<N: TestableNetwork> {
 impl<N: TestableNetwork> NetworkTest<N> {
     pub fn new(
         group: Group,
-        outcomes: HashMap<u64, Vec<TestCondition>>,
+        outcomes: HashMap<PublicKey, Vec<TestCondition>>,
         duration: Option<Duration>,
-        interceptor: NetworkMessageInterceptor,
+        interceptor: NetworkMessageInterceptor<SailfishBlock>,
     ) -> Self {
         Self {
             duration: duration.unwrap_or(Duration::from_secs(4)),
@@ -182,15 +180,18 @@ impl<N: TestableNetwork> NetworkTest<N> {
         logging::init_logging();
 
         let nodes_and_networks = self.network.init().await;
-        let nodes_len = nodes_and_networks.len();
-        let mut handles = self.network.start(nodes_and_networks).await;
+
         let mut results = HashMap::new();
 
         // Default to timeout for each node
-        for id in 0..nodes_len {
-            let node_id = id as u64;
-            results.insert(node_id, TestOutcome::Timeout);
+        for key in nodes_and_networks
+            .iter()
+            .map(|c| self.network.public_key(c))
+        {
+            results.insert(key, TestOutcome::Timeout);
         }
+
+        let mut handles = self.network.start(nodes_and_networks).await;
 
         let timeout = loop {
             tokio::select! {
@@ -199,7 +200,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                         Some(result) => {
                             match result {
                                 Ok(handle_res) => {
-                                    results.insert(handle_res.id, handle_res.outcome);
+                                    results.insert(handle_res.key, handle_res.outcome);
                                 },
                                 Err(err) => {
                                     panic!("Join Err: {}", err);

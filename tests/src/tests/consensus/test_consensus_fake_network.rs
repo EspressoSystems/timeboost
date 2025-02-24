@@ -1,14 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use multisig::PublicKey;
-use sailfish::consensus::Dag;
-use timeboost_core::types::message::Message;
-use timeboost_core::types::message::{Action, Evidence};
-use timeboost_core::types::NodeId;
+use sailfish::types::{Evidence, RoundNumber};
 use timeboost_utils::types::logging;
-use timeboost_utils::types::round_number::RoundNumber;
 use timeboost_utils::unsafe_zero_keypair;
 
+use crate::prelude::*;
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
 use crate::tests::consensus::helpers::{
     fake_network::FakeNetwork, interceptor::Interceptor, test_helpers::make_consensus_nodes,
@@ -51,8 +48,7 @@ async fn test_timeout_round_and_no_vote() {
             if let Message::Vertex(v) = msg {
                 if *v.data().round().data() == timeout_at_round
                     && *v.signing_key()
-                        == node_handle
-                            .node()
+                        == manager
                             .committee()
                             .leader(**v.data().round().data() as usize)
                 {
@@ -77,31 +73,30 @@ async fn test_timeout_round_and_no_vote() {
     // No timeout messages expected:
     assert!(network
         .consensus()
-        .all(|c| c.timeout_accumulators().is_empty()));
+        .all(|c| c.timeout_accumulators().count() == 0));
 
     // Process timeouts
     network.process();
 
     assert!(network
         .consensus()
-        .any(|c| !c.timeout_accumulators().is_empty()));
+        .any(|c| c.timeout_accumulators().count() > 0));
 
     // Process timeouts (create Timeout Certificate)
     network.process();
 
     assert!(network
         .consensus()
-        .any(|c| !c.timeout_accumulators().is_empty()));
+        .any(|c| c.timeout_accumulators().count() > 0));
 
     // Leader send vertex with no vote certificate and timeout certificate
     network.process();
 
     // After the NVC has been created, the no-vote accumulator is empty.
-    assert!(network
+    assert!(!network
         .leader(timeout_at_round)
         .no_vote_accumulators()
-        .get(&timeout_at_round)
-        .is_none());
+        .any(|(r, _)| r == timeout_at_round));
 
     let nodes_msgs = network.msgs_in_queue();
 
@@ -138,7 +133,7 @@ async fn test_timeout_round_and_no_vote() {
     // Everyone moved 2 rounds, so timeout accumulators should be empty again.
     assert!(network
         .consensus()
-        .all(|c| c.timeout_accumulators().is_empty()));
+        .all(|c| c.timeout_accumulators().count() == 0));
 
     let mut i = 0;
     let current_round = network.current_round();
@@ -202,20 +197,19 @@ fn basic_liveness() {
 
     let (mut nodes, _manager) = make_consensus_nodes(5);
 
-    let mut actions: Vec<(NodeId, Vec<Action>)> = nodes
-        .values_mut()
-        .enumerate()
-        .map(|(i, node_handle)| {
+    let mut actions: Vec<(PublicKey, Vec<Action>)> = nodes
+        .iter_mut()
+        .map(|(id, node_handle)| {
             let node = node_handle.node_mut();
             (
-                (i as u64).into(),
+                *id,
                 node.go(Dag::new(node.committee_size()), Evidence::Genesis),
             )
         })
         .collect();
 
     // Track what each node delivers as output:
-    let mut delivered: HashMap<NodeId, Vec<(RoundNumber, PublicKey)>> = HashMap::new();
+    let mut delivered: HashMap<PublicKey, Vec<(RoundNumber, PublicKey)>> = HashMap::new();
 
     // Run for a couple of rounds:
     for _ in 0..17 {
@@ -225,9 +219,12 @@ fn basic_liveness() {
                 let n = node_handle.node_mut();
                 for a in aa {
                     let na = match a {
-                        Action::Deliver(_, r, s) => {
-                            if n.id() == *id {
-                                delivered.entry(*id).or_default().push((*r, *s));
+                        Action::Deliver(data) => {
+                            if n.public_key() == *id {
+                                delivered
+                                    .entry(*id)
+                                    .or_default()
+                                    .push((data.round(), data.source()));
                             }
                             continue;
                         }
@@ -240,7 +237,7 @@ fn basic_liveness() {
                         Action::SendNoVote(..) | Action::ResetTimer(..) => continue,
                     };
                     if !na.is_empty() {
-                        next.push((n.id(), na))
+                        next.push((n.public_key(), na))
                     }
                 }
             }

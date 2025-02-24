@@ -94,7 +94,7 @@ impl Mempool {
                                             estimates.insert(c, e);
                                         }
                                         Err(e) => {
-                                            warn!("failed to estimate for block: {}, error: {}", b.round_number(), e);
+                                            warn!("failed to estimate block, error: {}", e);
                                         }
                                     }
                                     bundles.write().push_back(b);
@@ -157,7 +157,7 @@ impl Mempool {
                         keep.push(b);
                     }
                 } else {
-                    warn!("no gas estimate available for block: {}", b.round_number());
+                    warn!("no gas estimate available block");
                     keep.push(b);
                 }
 

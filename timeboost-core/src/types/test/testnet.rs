@@ -1,23 +1,33 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use committable::Committable;
 use crossbeam_queue::SegQueue;
 use multisig::{PublicKey, Validated};
 
-use crate::traits::comm::Comm;
-use crate::types::message::Message;
+use sailfish_types::{Comm, Message};
 
 use super::message_interceptor::NetworkMessageInterceptor;
 
-#[derive(Debug, Clone)]
-pub struct MsgQueues {
-    ibox: Arc<SegQueue<Message>>,
-    obox: Arc<SegQueue<(Option<PublicKey>, Message)>>,
+#[derive(Debug)]
+pub struct MsgQueues<T: Committable> {
+    ibox: Arc<SegQueue<Message<T>>>,
+    obox: Arc<SegQueue<(Option<PublicKey>, Message<T>)>>,
+}
+
+impl<T: Committable> Clone for MsgQueues<T> {
+    fn clone(&self) -> Self {
+        Self {
+            ibox: self.ibox.clone(),
+            obox: self.obox.clone(),
+        }
+    }
 }
 
 /// Go through the messages inbound and outbound that we received / sent
-impl MsgQueues {
-    pub fn drain_inbox(&self) -> Vec<Message> {
+impl<T: Committable> MsgQueues<T> {
+    pub fn drain_inbox(&self) -> Vec<Message<T>> {
         let mut v = Vec::new();
         while let Some(m) = self.ibox.pop() {
             v.push(m)
@@ -25,7 +35,7 @@ impl MsgQueues {
         v
     }
 
-    pub fn drain_outbox(&self) -> Vec<(Option<PublicKey>, Message)> {
+    pub fn drain_outbox(&self) -> Vec<(Option<PublicKey>, Message<T>)> {
         let mut v = Vec::new();
         while let Some(m) = self.obox.pop() {
             v.push(m)
@@ -38,15 +48,15 @@ impl MsgQueues {
 /// This helps us with networking tests and we can then interact and write tests in a way
 /// Where we do not have to modify anything inside of `Coordinator` itself
 #[derive(Debug)]
-pub struct TestNet<C> {
+pub struct TestNet<T: Committable, C> {
     comm: C,
-    msgs: MsgQueues,
+    msgs: MsgQueues<T>,
     id: u64,
-    interceptor: NetworkMessageInterceptor,
+    interceptor: NetworkMessageInterceptor<T>,
 }
 
-impl<C: Comm> TestNet<C> {
-    pub fn new(comm: C, id: u64, interceptor: NetworkMessageInterceptor) -> Self {
+impl<T: Committable, C: Comm<T>> TestNet<T, C> {
+    pub fn new(comm: C, id: u64, interceptor: NetworkMessageInterceptor<T>) -> Self {
         Self {
             comm,
             msgs: MsgQueues {
@@ -58,21 +68,21 @@ impl<C: Comm> TestNet<C> {
         }
     }
 
-    pub fn messages(&self) -> MsgQueues {
+    pub fn messages(&self) -> MsgQueues<T> {
         self.msgs.clone()
     }
 }
 
 /// Wrap Comm Err into `TestNetError`
 #[derive(Debug)]
-pub enum TestNetError<C: Comm> {
+pub enum TestNetError<T: Committable, C: Comm<T>> {
     RecvError(C::Err),
     SendError(C::Err),
     BroadcastError(C::Err),
     InterceptError(String),
 }
 
-impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
+impl<T: Committable + Send, C: Comm<T> + Send> std::fmt::Display for TestNetError<T, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TestNetError::RecvError(err) => write!(f, "receive Error: {}", err),
@@ -83,16 +93,20 @@ impl<C: Comm + Send> std::fmt::Display for TestNetError<C> {
     }
 }
 
-impl<C: Comm + std::fmt::Debug + Send> std::error::Error for TestNetError<C> {}
+impl<T: Committable + Debug + Send, C: Comm<T> + Debug + Send> std::error::Error
+    for TestNetError<T, C>
+{
+}
 
 #[async_trait]
-impl<C> Comm for TestNet<C>
+impl<T, C> Comm<T> for TestNet<T, C>
 where
-    C: Comm + Send + std::fmt::Debug + 'static,
+    T: Committable + Clone + std::fmt::Debug + Send + 'static,
+    C: Comm<T> + Send + std::fmt::Debug + 'static,
 {
-    type Err = TestNetError<C>;
+    type Err = TestNetError<T, C>;
 
-    async fn broadcast(&mut self, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));
         if let Err(e) = self.comm.broadcast(msg).await {
             return Err(TestNetError::BroadcastError(e));
@@ -100,7 +114,7 @@ where
         Ok(())
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Message<Validated>) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((Some(to), msg.clone()));
         if let Err(e) = self.comm.send(to, msg).await {
             return Err(TestNetError::SendError(e));
@@ -108,7 +122,7 @@ where
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message<Validated>, Self::Err> {
+    async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
         match self.comm.receive().await {
             Ok(msg) => match self.interceptor.intercept_message(msg, self.id) {
                 Ok(m) => {
