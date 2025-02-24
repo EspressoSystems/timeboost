@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
 use std::{
@@ -13,8 +13,6 @@ use timeboost_core::traits::has_initializer::HasInitializer;
 
 use tokio::sync::mpsc::channel;
 
-#[cfg(feature = "until")]
-use anyhow::ensure;
 #[cfg(feature = "until")]
 use timeboost_core::until::run_until;
 
@@ -112,6 +110,10 @@ struct Cli {
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
+
+    /// Backwards compatibility. This allows for a single region to run (i.e. local)
+    #[clap(long, default_value_t = false)]
+    multi_region: bool,
 }
 
 #[tokio::main]
@@ -120,7 +122,12 @@ async fn main() -> Result<()> {
 
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
-    let num = cli.nodes.unwrap_or(5);
+
+    // The total number of nodes in the set
+    let num = cli.nodes.unwrap_or(4);
+
+    ensure!(num > 0, "number of nodes must be greater than zero");
+    ensure!(num < 20, "number of nodes must be less 20");
 
     // Read public key material
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
@@ -179,7 +186,27 @@ async fn main() -> Result<()> {
 
     let mut peer_hosts_and_keys = Vec::new();
 
-    for peer_host in keyset.keyset().iter().take(num) {
+    // Rust is *really* picky about mixing iterators, so we just erase the type.
+    let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
+        // The number of nodes to take from the group. The layout of the nodes is such that (in the cloud) each region
+        // continues sequentially from the prior region. So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
+        // 4, 5, 6, 7, then we need to offset this otherwise we'd attribute us-east-2 nodes to us-west-2.
+        let take_from_group = num / 4;
+
+        Box::new(
+            keyset
+                .keyset()
+                .chunks(4)
+                .flat_map(move |v| v.iter().take(take_from_group)),
+        )
+    } else {
+        // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
+        // on the same host.
+        Box::new(keyset.keyset().iter().take(num))
+    };
+
+    // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.
+    for peer_host in peer_host_iter {
         let mut spl = peer_host.url.splitn(3, ":");
         let p0 = spl.next().expect("valid url");
         let p1: u16 = spl
