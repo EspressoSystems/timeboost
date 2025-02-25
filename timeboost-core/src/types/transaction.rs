@@ -51,11 +51,27 @@ pub struct TransactionData {
     nonce: Nonce,
     to: Address,
     data: Vec<u8>,
+    encrypt: Option<u32>,
 }
 
 impl TransactionData {
-    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
-        Self { nonce, to, data }
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn encrypt(&self) -> &Option<u32> {
+        &self.encrypt
+    }
+}
+
+impl TransactionData {
+    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>, encrypt: Option<u32>) -> Self {
+        Self {
+            nonce,
+            to,
+            data,
+            encrypt,
+        }
     }
 
     pub fn size_bytes(&self) -> usize {

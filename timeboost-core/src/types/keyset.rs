@@ -37,7 +37,7 @@ pub struct PublicDecInfo {
     combkey: String,
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct DecKeyInfo {
     pub pubkey: PublicKey,
     pub combkey: CombKey,

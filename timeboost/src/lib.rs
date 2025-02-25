@@ -4,13 +4,13 @@ use anyhow::{bail, Result};
 use api::endpoints::TimeboostApiState;
 use api::metrics::serve_metrics_api;
 use cliquenet::{Address, Network, NetworkMetrics};
-use keyset::DecKeyInfo;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcMetrics};
 use sailfish::Coordinator;
 use sequencer::phase::decryption::canonical::CanonicalDecryptionPhase;
+use sequencer::phase::inclusion::canonical::CanonicalInclusionPhase;
 use sequencer::{
     phase::{
         block_builder::noop::NoOpBlockBuilder, inclusion::noop::NoOpInclusionPhase,
@@ -21,6 +21,7 @@ use sequencer::{
 use std::{sync::Arc, time::Duration};
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
+use timeboost_core::types::keyset::DecKeyInfo;
 use timeboost_core::types::time::Timestamp;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
@@ -38,7 +39,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 pub mod api;
 pub mod decrypter;
 pub mod gas;
-pub mod keyset;
 mod mempool;
 pub mod metrics;
 mod producer;
@@ -182,7 +182,7 @@ impl HasInitializer for Timeboost {
             })
             .collect::<Vec<_>>();
 
-        let tb_net_metrics = NetworkMetrics::new(prom.as_ref(), tb_peers.iter().map(|(k, _)| *k));
+        let tb_net_metrics = NetworkMetrics::default();
         let tb_net = Network::create(
             initializer.tb_bind_address,
             initializer.keypair.clone(),
@@ -225,13 +225,17 @@ impl Drop for Timeboost {
 
 impl Timeboost {
     /// Spawns a task that will continuously send transactions to the timeboost app layer
-    fn start_load_generator(tps: u32, app_tx: Sender<TimeboostStatusEvent>) -> JoinHandle<()> {
+    fn start_load_generator(
+        tps: u32,
+        app_tx: Sender<TimeboostStatusEvent>,
+        dec_key: DecKeyInfo,
+    ) -> JoinHandle<()> {
         let millis = tps_to_millis(tps);
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(millis));
             #[allow(clippy::redundant_pattern_matching)]
             while let Some(_) = interval.tick().await.into() {
-                let tx = make_tx();
+                let tx = make_tx(dec_key.clone());
                 match app_tx
                     .send(TimeboostStatusEvent {
                         event: TimeboostEventType::Transactions {
@@ -262,20 +266,21 @@ impl Timeboost {
     /// - Runs a channel to receive `TimeboostEventType` this will receive transactions and send completed blocks to the producer
     /// - Will continuously run until there is a shutdown signal received
     #[instrument(level = "info", skip_all, fields(node = %self.coordinator.public_key()))]
-    pub async fn go(mut self, tps: u32) -> Result<()> {
+    pub async fn go(mut self, tps: u32, dec_key: DecKeyInfo) -> Result<()> {
         let app_tx = self.app_tx.clone();
         self.handles
             .push(start_metrics_api(self.metrics.clone(), self.metrics_port));
 
         // Start the load generator.
         if tps > 0 {
-            self.handles.push(Self::start_load_generator(tps, app_tx));
+            self.handles
+                .push(Self::start_load_generator(tps, app_tx, dec_key));
         } else {
             warn!("running without load generator");
         }
 
         let sequencer = Sequencer::new(
-            NoOpInclusionPhase,
+            CanonicalInclusionPhase,
             CanonicalDecryptionPhase::new(
                 self.tb_net.take().unwrap(),
                 self.committee.clone(),

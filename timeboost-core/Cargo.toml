@@ -6,20 +6,25 @@ description.workspace = true
 
 [features]
 test = []
-until = ["reqwest"]
+until = []
 
 [dependencies]
 anyhow = { workspace = true }
+ark-std = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+bs58 = { workspace = true }
 bytes = { workspace = true }
+cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
+dotenvy = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true }
 thiserror = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
 timeboost-crypto = { path = "../timeboost-crypto" }

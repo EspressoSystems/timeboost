@@ -5,11 +5,11 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, Keyset},
-    start_rpc_api, Timeboost, TimeboostInitializer,
+use timeboost::{start_rpc_api, Timeboost, TimeboostInitializer};
+use timeboost_core::{
+    traits::has_initializer::HasInitializer,
+    types::keyset::{private_keys, wait_for_live_peer, Keyset},
 };
-use timeboost_core::traits::has_initializer::HasInitializer;
 
 use tokio::sync::mpsc::channel;
 
@@ -162,7 +162,6 @@ async fn main() -> Result<()> {
     let dec_key = keyset
         .build_decryption_material(dec_key)
         .expect("parse keyset");
-
     let (tb_app_tx, tb_app_rx) = channel(100);
 
     // The RPC api needs to be started first before everything else so that way we can verify the
@@ -220,7 +219,7 @@ async fn main() -> Result<()> {
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
-        dec_key,
+        dec_key: dec_key.clone(),
         sf_bind_address,
         tb_bind_address,
         nitro_url: cli.nitro_node_url,
@@ -240,7 +239,7 @@ async fn main() -> Result<()> {
                 Err(e) => anyhow::bail!("Error: {}", e),
             };
         },
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go(cli.tps, dec_key) => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
@@ -250,7 +249,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "until"))]
     tokio::select! {
-        _ = timeboost.go(cli.tps) => {
+        _ = timeboost.go(cli.tps, dec_key.clone()) => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {

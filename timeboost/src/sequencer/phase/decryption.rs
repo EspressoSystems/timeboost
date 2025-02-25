@@ -9,5 +9,8 @@ pub mod noop;
 /// and threshold-decrypts any encrypted transactions or bundles in the list.
 /// https://github.com/OffchainLabs/decentralized-timeboost-spec/blob/main?plain=1#L128
 pub trait DecryptionPhase {
-    async fn decrypt(&mut self, inclusion_list: InclusionList) -> Result<InclusionList>;
+    fn decrypt(
+        &mut self,
+        inclusion_list: InclusionList,
+    ) -> impl std::future::Future<Output = Result<InclusionList>> + Send;
 }

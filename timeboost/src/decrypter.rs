@@ -1,19 +1,18 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use bimap::BiMap;
 use cliquenet::Network;
 use multisig::Committee;
-use sailfish::types::RoundNumber;
 use serde::{Deserialize, Serialize};
-use timeboost_core::types::transaction::Transaction;
+use timeboost_core::types::round_number::RoundNumber;
+use timeboost_core::types::{
+    keyset::DecKeyInfo,
+    seqno::SeqNo,
+    transaction::{Address, Nonce, TransactionData},
+};
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme, Plaintext};
 use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{error, warn};
-
-use crate::keyset::DecKeyInfo;
+use tracing::{info, warn};
 
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
@@ -34,7 +33,8 @@ pub struct Decrypter {
     pub net: Network,
     pub committee: Committee,
     pub dec_key: DecKeyInfo,
-    pub ciphertexts: BiMap<Vec<u8>, Ciphertext>,
+    pub idx2nonce: BiMap<usize, Vec<u8>>,
+    pub nonce2ct: BiMap<Vec<u8>, Ciphertext>,
     pub shares: Arc<tokio::sync::RwLock<BTreeMap<(RoundNumber, Vec<u8>), Vec<DecShareInfo>>>>,
 }
 
@@ -44,7 +44,8 @@ impl Decrypter {
             net,
             committee,
             dec_key,
-            ciphertexts: BiMap::new(),
+            idx2nonce: BiMap::new(),
+            nonce2ct: BiMap::new(),
             shares: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
         }
     }
@@ -53,19 +54,21 @@ impl Decrypter {
 impl Decrypter {
     pub async fn go(
         mut self,
-        mut enc_rx: Receiver<Vec<Transaction>>,
-        dec_tx: Sender<Vec<Transaction>>,
+        mut enc_rx: Receiver<(RoundNumber, Vec<TransactionData>)>,
+        dec_tx: Sender<(RoundNumber, Vec<TransactionData>)>,
     ) {
         loop {
             // single task to handle the decryption network
             tokio::select! {
-                Ok((_pubkey, bytes)) = self.net.receive() => {
+                Ok((pubkey, bytes)) = self.net.receive() => {
+                    info!("received decryption share from: {}", pubkey);
                     if let Ok(s) = bincode::deserialize::<DecShareInfo>(&bytes) {
-                        self.shares.write().await
-                            .entry((s.round.clone(), s.cid.clone()))
-                            .or_insert_with(Vec::new)
-                            .push(s.clone());
-                        let decrypted_items = self.check_for_round(s.round);
+                        let round = s.clone().round;
+                        let decrypted_items = self.handle_shares(s).await;
+                        if let Some(decrypted_items) = decrypted_items {
+                            info!("received enough shares to fully decrypt");
+                            let _ = dec_tx.send((round, decrypted_items)).await;
+                        }
                     } else {
                         warn!("failed to deserialize decryption share");
                         continue;
@@ -73,7 +76,8 @@ impl Decrypter {
                 },
                 enc_txns = enc_rx.recv() => {
                     if let Some(enc_txns) = enc_txns {
-                        self.submit_decrypt(RoundNumber::genesis(), enc_txns).await.unwrap();
+                        info!("sending shares to fellow nodes");
+                        self.submit_decrypt(enc_txns.0, enc_txns.1).await.unwrap();
                     }
                 }
             }
@@ -83,43 +87,44 @@ impl Decrypter {
     pub(crate) async fn submit_decrypt(
         &mut self,
         round: RoundNumber,
-        encrypted_txns: Vec<Transaction>,
+        encrypted_txns: Vec<TransactionData>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        for tx in encrypted_txns {
-            if let Some(ciphertext_bytes) = tx.data() {
-                let ciphertext = match bincode::deserialize::<Ciphertext>(ciphertext_bytes) {
-                    Ok(ciphertext) => ciphertext,
-                    Err(_) => {
-                        warn!("failed to deserialize ciphertext");
-                        continue;
-                    }
-                };
-                match <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                    &self.dec_key.privkey,
-                    &ciphertext,
-                ) {
-                    Ok(dec_share) => {
-                        let share = DecShareInfo {
-                            round,
-                            cid: ciphertext.nonce().to_vec(),
-                            share: dec_share,
-                        };
-                        self.shares
-                            .write()
-                            .await
-                            .entry((round, ciphertext.nonce().to_vec()))
-                            .or_insert_with(Vec::new)
-                            .push(share.clone());
-
-                        let _ = self.send(&share).await;
-                    }
-                    Err(_) => {
-                        warn!("failed to decrypt ciphertext");
-                        continue;
-                    }
+        for (idx, tx) in encrypted_txns.iter().enumerate() {
+            let ciphertext = match bincode::deserialize::<Ciphertext>(tx.data()) {
+                Ok(ciphertext) => ciphertext,
+                Err(_) => {
+                    warn!("failed to deserialize ciphertext");
+                    continue;
                 }
-            } else {
-                error!("encrypted tx without data");
+            };
+            // mappings
+            let nonce = ciphertext.nonce().to_vec();
+            self.nonce2ct.insert(nonce.clone(), ciphertext.clone());
+            self.idx2nonce.insert(idx, nonce.clone());
+
+            match <DecryptionScheme as ThresholdEncScheme>::decrypt(
+                &self.dec_key.privkey,
+                &ciphertext,
+            ) {
+                Ok(dec_share) => {
+                    let share = DecShareInfo {
+                        round,
+                        cid: nonce.clone(),
+                        share: dec_share,
+                    };
+                    self.shares
+                        .write()
+                        .await
+                        .entry((round, nonce))
+                        .or_insert_with(Vec::new)
+                        .push(share.clone());
+
+                    let _ = self.send(&share).await;
+                }
+                Err(_) => {
+                    warn!("failed to create decryption share");
+                    continue;
+                }
             }
         }
         Ok(())
@@ -133,27 +138,35 @@ impl Decrypter {
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
-    async fn check_for_round(
-        &self,
-        round: RoundNumber,
-    ) -> Option<Vec<(RoundNumber, Vec<u8>, Vec<u8>)>> {
-        // Implement the logic for checking the round
-        // This is a placeholder implementation
+    async fn handle_shares(&self, share: DecShareInfo) -> Option<Vec<TransactionData>> {
+        // we add the share to our map using round and nonce as key.
+        self.shares
+            .write()
+            .await
+            .entry((share.round.clone(), share.cid.clone()))
+            .or_insert_with(Vec::new)
+            .push(share.clone());
 
-        let shares = self.shares.read().await;
-        let round_entries: Vec<_> = shares.iter().filter(|(k, v)| k.0 == round).collect();
+        // we filter our shares on the given round.
+        let shares_read = self.shares.read().await;
+        let round_entries: Vec<_> = shares_read
+            .iter()
+            .filter(|(k, _v)| k.0 == share.round)
+            .collect();
+        // a round is "ready" when all ciphertexts for the round have enough shares.
         let round_ready = round_entries
             .iter()
-            .any(|(k, v)| v.len() <= usize::from(self.committee.threshold()));
+            .any(|(_k, v)| v.len() <= usize::from(self.committee.threshold()));
         let first_key = round_entries.first().map(|e| e.0);
 
         if round_ready {
+            // then we can start combining decryption shares for each ciphertext
             if let Some(key) = first_key {
                 let mut shares = self.shares.write().await;
                 let round_shares = shares.split_off(key);
-                let decrypted_items: Vec<(RoundNumber, Vec<u8>, Vec<u8>)> = round_shares
+                let mut decrypted_items: Vec<(usize, TransactionData)> = round_shares
                     .into_iter()
-                    .map(|(k, v)| {
+                    .map(|(_k, v)| {
                         let cid = v[0].cid.clone();
                         let committee = timeboost_crypto::Committee {
                             id: 0,
@@ -164,13 +177,26 @@ impl Decrypter {
                             &committee,
                             &self.dec_key.combkey,
                             dec_shares.iter().collect::<Vec<_>>(),
-                            self.ciphertexts.get_by_left(&cid).unwrap(),
+                            self.nonce2ct.get_by_left(&cid).unwrap(),
                         )
                         .expect("unable to combine the shares");
-                        (k.0, k.1, item.as_bytes().to_vec())
+                        let idx = self
+                            .idx2nonce
+                            .get_by_right(&cid)
+                            .expect("unable to find index");
+                        (
+                            *idx,
+                            TransactionData::new(
+                                Nonce::now(SeqNo::zero()),
+                                Address::zero(),
+                                item.as_bytes().to_vec(),
+                                Some(0),
+                            ),
+                        )
                     })
                     .collect();
-                return Some(decrypted_items);
+                decrypted_items.sort_by_key(|tx| tx.0);
+                return Some(decrypted_items.into_iter().map(|tx| tx.1).collect());
             }
         }
 
