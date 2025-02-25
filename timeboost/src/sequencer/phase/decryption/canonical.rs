@@ -10,6 +10,7 @@ use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
 };
+use tracing::{info, warn};
 
 use crate::decrypter::Decrypter;
 
@@ -48,6 +49,9 @@ impl DecryptionPhase for CanonicalDecryptionPhase {
         // Implement the decryption logic here
         let r = inclusion_list.round_number;
         let mut txns = inclusion_list.txns.clone();
+        if txns.is_empty() {
+            return Ok(inclusion_list);
+        }
         let mut encrypted_txns = vec![];
         // extract the encrypted txns from the list
         for (i, txn) in inclusion_list.txns.iter().enumerate() {
@@ -55,15 +59,23 @@ impl DecryptionPhase for CanonicalDecryptionPhase {
                 Transaction::Priority {
                     nonce: _,
                     to: _,
-                    txns: _,
-                } => {}
-                Transaction::Regular { txn } => {
-                    if txn.encrypt().is_some() {
-                        encrypted_txns.push((i, txn));
+                    txns,
+                } => {
+                    if txns[0].encrypt().is_some() {
+                        encrypted_txns.push((i, txns[0].clone()));
+                    }
+                }
+                Transaction::Regular { txn: txn1 } => {
+                    if txn1.encrypt().is_some() {
+                        encrypted_txns.push((i, txn1.clone()));
                     }
                 }
             }
         }
+        if encrypted_txns.is_empty() {
+            return Ok(inclusion_list);
+        }
+        info!("we have {} encrypted txns", encrypted_txns.len());
 
         // submit batch to decrypter
         self.enc_tx
@@ -76,19 +88,26 @@ impl DecryptionPhase for CanonicalDecryptionPhase {
             ))
             .await?;
 
-        let dec_batch = self.dec_rx.recv().await.unwrap();
-
-        for i in 0..encrypted_txns.len() {
-            let index = encrypted_txns[i].0;
-            // swap the encrypted tx with the decrypted tx
-            txns[index] = Transaction::Regular {
-                txn: dec_batch.1[i].clone(),
-            };
+        let dec_batch = self.dec_rx.recv().await;
+        match dec_batch {
+            Some(batch) => {
+                for i in 0..encrypted_txns.len() {
+                    let index = encrypted_txns[i].0;
+                    // swap the encrypted tx with the decrypted tx
+                    txns[index] = Transaction::Regular {
+                        txn: batch.1[i].clone(),
+                    };
+                }
+                let decrypted_inclusion_list = InclusionList {
+                    txns,
+                    ..inclusion_list
+                };
+                return Ok(decrypted_inclusion_list);
+            }
+            None => {
+                warn!("failed to decrypt round: {}", r);
+                Ok(inclusion_list)
+            }
         }
-        let decrypted_inclusion_list = InclusionList {
-            txns,
-            ..inclusion_list
-        };
-        Ok(decrypted_inclusion_list)
     }
 }

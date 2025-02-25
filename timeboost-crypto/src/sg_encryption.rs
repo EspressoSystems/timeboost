@@ -180,7 +180,7 @@ where
         let gen = C::generator();
 
         if dec_shares.len() < threshold {
-            return Err(ThresholdEncError::NotEnoughShares);
+            return Err(ThresholdEncError::Argument(String::from("threshold stuff")));
         }
         let domain: Radix2EvaluationDomain<C::ScalarField> =
             Radix2EvaluationDomain::new(committee_size).ok_or_else(|| {
@@ -211,7 +211,7 @@ where
             .collect();
 
         if valid_shares.len() < threshold {
-            return Err(ThresholdEncError::NotEnoughShares);
+            return Err(ThresholdEncError::Argument(String::from("validity stuff")));
         }
 
         // Collect eval points for decryption shares

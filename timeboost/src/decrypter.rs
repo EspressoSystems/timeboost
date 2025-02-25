@@ -1,8 +1,10 @@
+use core::str;
 use std::{collections::BTreeMap, sync::Arc};
 
 use bimap::BiMap;
 use cliquenet::Network;
 use multisig::Committee;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use timeboost_core::types::round_number::RoundNumber;
 use timeboost_core::types::{
@@ -10,6 +12,7 @@ use timeboost_core::types::{
     seqno::SeqNo,
     transaction::{Address, Nonce, TransactionData},
 };
+
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme, Plaintext};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{info, warn};
@@ -35,7 +38,7 @@ pub struct Decrypter {
     pub dec_key: DecKeyInfo,
     pub idx2nonce: BiMap<usize, Vec<u8>>,
     pub nonce2ct: BiMap<Vec<u8>, Ciphertext>,
-    pub shares: Arc<tokio::sync::RwLock<BTreeMap<(RoundNumber, Vec<u8>), Vec<DecShareInfo>>>>,
+    pub shares: Arc<Mutex<BTreeMap<(RoundNumber, Vec<u8>), Vec<DecShareInfo>>>>,
 }
 
 impl Decrypter {
@@ -46,7 +49,7 @@ impl Decrypter {
             dec_key,
             idx2nonce: BiMap::new(),
             nonce2ct: BiMap::new(),
-            shares: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
+            shares: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -68,6 +71,8 @@ impl Decrypter {
                         if let Some(decrypted_items) = decrypted_items {
                             info!("received enough shares to fully decrypt");
                             let _ = dec_tx.send((round, decrypted_items)).await;
+                        } else {
+                            continue;
                         }
                     } else {
                         warn!("failed to deserialize decryption share");
@@ -76,8 +81,10 @@ impl Decrypter {
                 },
                 enc_txns = enc_rx.recv() => {
                     if let Some(enc_txns) = enc_txns {
-                        info!("sending shares to fellow nodes");
-                        self.submit_decrypt(enc_txns.0, enc_txns.1).await.unwrap();
+                        info!("sending shares to fellow nodes: {}", enc_txns.1.len());
+                        if let Err(e) = self.submit_decrypt(enc_txns.0, enc_txns.1).await {
+                            warn!("failed to submit decrypt: {:?}", e);
+                        }
                     }
                 }
             }
@@ -101,7 +108,7 @@ impl Decrypter {
             let nonce = ciphertext.nonce().to_vec();
             self.nonce2ct.insert(nonce.clone(), ciphertext.clone());
             self.idx2nonce.insert(idx, nonce.clone());
-
+            info!("trying to decrypt share");
             match <DecryptionScheme as ThresholdEncScheme>::decrypt(
                 &self.dec_key.privkey,
                 &ciphertext,
@@ -112,13 +119,14 @@ impl Decrypter {
                         cid: nonce.clone(),
                         share: dec_share,
                     };
-                    self.shares
-                        .write()
-                        .await
-                        .entry((round, nonce))
-                        .or_insert_with(Vec::new)
-                        .push(share.clone());
-
+                    info!("successfully decrypted share");
+                    {
+                        self.shares
+                            .lock()
+                            .entry((round, nonce))
+                            .or_insert_with(Vec::new)
+                            .push(share.clone());
+                    }
                     let _ = self.send(&share).await;
                 }
                 Err(_) => {
@@ -132,6 +140,7 @@ impl Decrypter {
 
     async fn send(&self, share: &DecShareInfo) -> Result<(), Box<dyn std::error::Error>> {
         let share_bytes = bincode::serialize(&share)?;
+        info!("sending the actual shares");
         self.net
             .multicast(share_bytes.into())
             .await
@@ -140,30 +149,42 @@ impl Decrypter {
 
     async fn handle_shares(&self, share: DecShareInfo) -> Option<Vec<TransactionData>> {
         // we add the share to our map using round and nonce as key.
-        self.shares
-            .write()
-            .await
-            .entry((share.round.clone(), share.cid.clone()))
-            .or_insert_with(Vec::new)
-            .push(share.clone());
-
+        {
+            self.shares
+                .lock()
+                .entry((share.round.clone(), share.cid.clone()))
+                .or_insert_with(Vec::new)
+                .push(share.clone());
+        }
         // we filter our shares on the given round.
-        let shares_read = self.shares.read().await;
-        let round_entries: Vec<_> = shares_read
-            .iter()
-            .filter(|(k, _v)| k.0 == share.round)
-            .collect();
-        // a round is "ready" when all ciphertexts for the round have enough shares.
-        let round_ready = round_entries
-            .iter()
-            .any(|(_k, v)| v.len() <= usize::from(self.committee.threshold()));
-        let first_key = round_entries.first().map(|e| e.0);
+        let (round_not_ready, first_key) = {
+            let shares = self.shares.lock();
 
-        if round_ready {
+            let cloned_shares = shares.clone();
+            let round_entries: Vec<_> = cloned_shares
+                .into_iter()
+                .filter(|(k, _v)| k.0 == share.round)
+                .collect();
+
+            // a round is "ready" when all ciphertexts for the round have enough shares.
+            let round_not_ready = round_entries
+                .iter()
+                .any(|(_k, v)| v.len() <= usize::from(self.committee.threshold()));
+            let first_key = round_entries.first().map(|e| e.0.clone());
+            (round_not_ready, first_key)
+        };
+        info!("round not ready: {}", round_not_ready);
+        if !round_not_ready {
             // then we can start combining decryption shares for each ciphertext
             if let Some(key) = first_key {
-                let mut shares = self.shares.write().await;
-                let round_shares = shares.split_off(key);
+                info!("before write");
+
+                let round_shares = self.shares.lock().split_off(&key);
+
+                info!("after write");
+
+                info!("the round shares: {}", round_shares.len());
+
                 let mut decrypted_items: Vec<(usize, TransactionData)> = round_shares
                     .into_iter()
                     .map(|(_k, v)| {
@@ -173,26 +194,71 @@ impl Decrypter {
                             size: self.committee.size().get() as u64,
                         };
                         let dec_shares: Vec<_> = v.iter().map(|v| v.share.clone()).collect();
-                        let item: Plaintext = DecryptionScheme::combine(
+                        info!("number of shares: {}", dec_shares.len());
+                        let idx = self.idx2nonce.get_by_right(&cid);
+                        let idx = match idx {
+                            Some(idx) => idx,
+                            None => {
+                                warn!("unable to find index for nonce");
+                                return (
+                                    0,
+                                    TransactionData::new(
+                                        Nonce::now(SeqNo::zero()),
+                                        Address::zero(),
+                                        vec![],
+                                        Some(0),
+                                    ),
+                                );
+                            }
+                        };
+                        match DecryptionScheme::combine(
                             &committee,
                             &self.dec_key.combkey,
                             dec_shares.iter().collect::<Vec<_>>(),
-                            self.nonce2ct.get_by_left(&cid).unwrap(),
-                        )
-                        .expect("unable to combine the shares");
-                        let idx = self
-                            .idx2nonce
-                            .get_by_right(&cid)
-                            .expect("unable to find index");
-                        (
-                            *idx,
-                            TransactionData::new(
-                                Nonce::now(SeqNo::zero()),
-                                Address::zero(),
-                                item.as_bytes().to_vec(),
-                                Some(0),
-                            ),
-                        )
+                            match self.nonce2ct.get_by_left(&cid) {
+                                Some(c) => c,
+                                None => {
+                                    warn!("unable to find ciphertext for nonce");
+                                    return (
+                                        *idx,
+                                        TransactionData::new(
+                                            Nonce::now(SeqNo::zero()),
+                                            Address::zero(),
+                                            vec![],
+                                            Some(0),
+                                        ),
+                                    );
+                                }
+                            },
+                        ) {
+                            Err(_) => {
+                                warn!("failed to combine decryption shares");
+                                return (
+                                    *idx,
+                                    TransactionData::new(
+                                        Nonce::now(SeqNo::zero()),
+                                        Address::zero(),
+                                        vec![],
+                                        Some(0),
+                                    ),
+                                );
+                            }
+                            Ok(item) => {
+                                info!("combined the shares");
+                                info!("PRINTING BYTES CODE:");
+                                info!("{:?}", str::from_utf8(item.as_bytes()));
+                                info!("found the index of the ciphertext");
+                                (
+                                    *idx,
+                                    TransactionData::new(
+                                        Nonce::now(SeqNo::zero()),
+                                        Address::zero(),
+                                        item.as_bytes().to_vec(),
+                                        Some(0),
+                                    ),
+                                )
+                            }
+                        }
                     })
                     .collect();
                 decrypted_items.sort_by_key(|tx| tx.0);
