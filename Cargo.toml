@@ -9,8 +9,10 @@ members = [
     "sailfish-types",
     "tests",
     "timeboost",
+    "timeboost-sequencer",
     "timeboost-core",
     "timeboost-crypto",
+    "timeboost-types",
     "timeboost-utils",
 ]
 resolver = "2"
@@ -41,7 +43,7 @@ async-trait = "0.1"
 axum = "0.8.1"
 bimap = "0.6.3"
 bincode = "1"
-blake3 = "1.5"
+blake3 = { version = "1.5", features = ["serde"] }
 bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -55,6 +57,7 @@ dotenvy = "0.15.7"
 dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
 either = "1.13.0"
+ethereum_ssz = "0.8.3"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 multiaddr = "0.18.2"
 nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }

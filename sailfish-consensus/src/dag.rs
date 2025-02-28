@@ -180,13 +180,13 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use multisig::{Committee, Keypair, Signed, VoteAccumulator};
-    use sailfish_types::{Empty, RoundNumber, Vertex};
+    use sailfish_types::{RoundNumber, Unit, Vertex};
 
     use super::Dag;
 
     #[test]
     fn test_is_connected() {
-        let mut dag = Dag::<Empty>::new(NonZeroUsize::new(10).unwrap());
+        let mut dag = Dag::<Unit>::new(NonZeroUsize::new(10).unwrap());
 
         let kp1 = Keypair::generate();
         let kp2 = Keypair::generate();
@@ -218,24 +218,24 @@ mod tests {
         };
 
         // Layer 1
-        let v11 = Vertex::empty(1, gen_evidence(0), &kp1, false);
-        let v12 = Vertex::empty(1, gen_evidence(0), &kp2, false);
-        let v13 = Vertex::empty(1, gen_evidence(0), &kp3, false);
-        let v14 = Vertex::empty(1, gen_evidence(0), &kp4, false);
-        let v15 = Vertex::empty(1, gen_evidence(0), &kp5, false);
+        let v11 = Vertex::new(1, gen_evidence(0), Unit, &kp1, false);
+        let v12 = Vertex::new(1, gen_evidence(0), Unit, &kp2, false);
+        let v13 = Vertex::new(1, gen_evidence(0), Unit, &kp3, false);
+        let v14 = Vertex::new(1, gen_evidence(0), Unit, &kp4, false);
+        let v15 = Vertex::new(1, gen_evidence(0), Unit, &kp5, false);
 
         // Layer 2
-        let mut v21 = Vertex::empty(2, gen_evidence(1), &kp1, false);
-        let mut v22 = Vertex::empty(2, gen_evidence(1), &kp2, false);
-        let mut v23 = Vertex::empty(2, gen_evidence(1), &kp3, false);
+        let mut v21 = Vertex::new(2, gen_evidence(1), Unit, &kp1, false);
+        let mut v22 = Vertex::new(2, gen_evidence(1), Unit, &kp2, false);
+        let mut v23 = Vertex::new(2, gen_evidence(1), Unit, &kp3, false);
 
         // Layer 3
-        let mut v31 = Vertex::empty(3, gen_evidence(2), &kp1, false);
-        let mut v32 = Vertex::empty(3, gen_evidence(2), &kp2, false);
-        let mut v33 = Vertex::empty(3, gen_evidence(2), &kp3, false);
+        let mut v31 = Vertex::new(3, gen_evidence(2), Unit, &kp1, false);
+        let mut v32 = Vertex::new(3, gen_evidence(2), Unit, &kp2, false);
+        let mut v33 = Vertex::new(3, gen_evidence(2), Unit, &kp3, false);
 
         // Layer 4
-        let mut v41 = Vertex::empty(4, gen_evidence(3), &kp1, false);
+        let mut v41 = Vertex::new(4, gen_evidence(3), Unit, &kp1, false);
 
         v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
 

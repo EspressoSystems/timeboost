@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use api::endpoints::TimeboostApiState;
@@ -6,9 +7,11 @@ use api::metrics::serve_metrics_api;
 use cliquenet::{Address, Network, NetworkMetrics};
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
+use parking_lot::Mutex;
 use reqwest::Url;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcMetrics};
+use sailfish::types::{Action, DataSource};
 use sailfish::Coordinator;
 use sequencer::{
     phase::{
@@ -17,10 +20,10 @@ use sequencer::{
     },
     protocol::Sequencer,
 };
-use std::{sync::Arc, time::Duration};
 use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use timeboost_core::types::time::Timestamp;
+use timeboost_core::types::transaction::Transaction;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
@@ -100,6 +103,20 @@ pub struct Timeboost {
 
     /// Task handles
     handles: Vec<JoinHandle<()>>,
+
+    transactions: TransactionQueue,
+}
+
+#[derive(Clone)]
+struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
+
+impl DataSource for TransactionQueue {
+    type Data = SailfishBlock;
+
+    fn next(&mut self, _: sailfish::types::RoundNumber) -> Self::Data {
+        let transactions = std::mem::take(&mut *self.0.lock());
+        SailfishBlock::new(Timestamp::now(), transactions, 0)
+    }
 }
 
 /// Asynchronously initializes and constructs a `Timeboost` instance from the provided initializer.
@@ -157,7 +174,9 @@ impl HasInitializer for Timeboost {
         let cfg = RbcConfig::new(initializer.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
-        let consensus = Consensus::new(initializer.keypair, committee).with_metrics(sf_metrics);
+        let producer = TransactionQueue(Arc::new(Mutex::new(Vec::new())));
+        let consensus = Consensus::new(initializer.keypair, committee, producer.clone())
+            .with_metrics(sf_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
 
         let mempool = Arc::new(Mempool::new(initializer.nitro_url, block_rx));
@@ -173,6 +192,7 @@ impl HasInitializer for Timeboost {
             tb_metrics,
             block_tx,
             handles: vec![],
+            transactions: producer,
         };
 
         Ok(timeboost)
@@ -267,24 +287,19 @@ impl Timeboost {
                 result = self.coordinator.next() => match result {
                     Ok(actions) => {
                         for a in actions {
-                            match self.coordinator.execute(a).await {
-                                Ok(None) => {}
-                                Ok(Some(payload)) => {
-                                    if let (.., Some(b)) = payload.into_parts() {
-                                        if !b.is_empty() {
-                                            if self.mempool.run_estimator() {
-                                                // Send to the estimation task
-                                                // There we will estimate transactions and insert block into mempool
-                                                let _ = self.block_tx.send(b).await;
-                                            } else {
-                                                self.mempool.insert(b);
-                                            }
-                                        }
+                            if let Action::Deliver(payload) = a {
+                                let (.., b) = payload.into_parts();
+                                if !b.is_empty() {
+                                    if self.mempool.run_estimator() {
+                                        // Send to the estimation task
+                                        // There we will estimate transactions and insert block into mempool
+                                        let _ = self.block_tx.send(b).await;
+                                    } else {
+                                        self.mempool.insert(b);
                                     }
                                 }
-                                Err(e) => {
-                                    tracing::error!("coordinator execution error: {}", e);
-                                }
+                            } else if let Err(e) = self.coordinator.execute(a).await {
+                                tracing::error!("coordinator execution error: {}", e);
                             }
                         }
                     },
@@ -296,8 +311,7 @@ impl Timeboost {
                     Some(event) => {
                         match event.event {
                             TimeboostEventType::Transactions { transactions } => {
-                                let b = SailfishBlock::new(Timestamp::now(), transactions, 0);
-                                self.coordinator.payload_inbox_mut().insert_last(b);
+                                self.transactions.0.lock().extend_from_slice(&transactions);
                             }
                             TimeboostEventType::BlockBuilt { block } => {
                                 let _ = p_tx.send(block).await;

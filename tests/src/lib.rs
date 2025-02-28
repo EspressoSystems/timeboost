@@ -6,13 +6,25 @@ use timeboost_utils::unsafe_zero_keypair;
 
 #[allow(unused)]
 pub(crate) mod prelude {
+    pub use sailfish::types::DataSource;
     pub use timeboost_core::types::block::sailfish::SailfishBlock;
+    pub use timeboost_core::types::time::Timestamp;
 
     pub type Action = sailfish::types::Action<SailfishBlock>;
     pub type Message = sailfish::types::Message<SailfishBlock>;
     pub type Vertex = sailfish::types::Vertex<SailfishBlock>;
     pub type Consensus = sailfish::consensus::Consensus<SailfishBlock>;
     pub type Dag = sailfish::consensus::Dag<SailfishBlock>;
+
+    pub struct EmptyBlocks;
+
+    impl DataSource for EmptyBlocks {
+        type Data = SailfishBlock;
+
+        fn next(&mut self, _: sailfish::types::RoundNumber) -> Self::Data {
+            SailfishBlock::empty(Timestamp::now(), 0)
+        }
+    }
 }
 
 #[cfg(test)]

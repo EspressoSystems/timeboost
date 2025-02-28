@@ -15,11 +15,11 @@ pub struct Vertex<T> {
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
-    payload: Option<T>,
+    payload: T,
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, k: &Keypair, d: Option<T>, deterministic: bool) -> Self
+    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair, deterministic: bool) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
@@ -40,16 +40,6 @@ impl<T> Vertex<T> {
         }
     }
 
-    /// Create a vertex with an empty block.
-    pub fn empty<N, E>(r: N, e: E, k: &Keypair, deterministic: bool) -> Self
-    where
-        N: Into<RoundNumber>,
-        E: Into<Evidence>,
-    {
-        let r = r.into();
-        Self::new(r, e, k, None, deterministic)
-    }
-
     /// Is this vertex from the genesis round?
     pub fn is_genesis(&self) -> bool {
         *self.round.data() == RoundNumber::genesis()
@@ -57,7 +47,6 @@ impl<T> Vertex<T> {
             && self.evidence.is_genesis()
             && self.edges.is_empty()
             && self.no_vote.is_none()
-            && self.payload.is_none()
     }
 
     pub fn source(&self) -> &PublicKey {
@@ -92,8 +81,8 @@ impl<T> Vertex<T> {
         self.no_vote.as_ref()
     }
 
-    pub fn payload(&self) -> Option<&T> {
-        self.payload.as_ref()
+    pub fn payload(&self) -> &T {
+        &self.payload
     }
 
     pub fn set_committed_round<N: Into<RoundNumber>>(&mut self, n: N) -> &mut Self {
@@ -124,13 +113,13 @@ impl<T> Vertex<T> {
     }
 }
 
-impl<B> Display for Vertex<B> {
+impl<T> Display for Vertex<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Vertex({},{})", self.round.data(), self.source)
     }
 }
 
-impl<B: Committable> Committable for Vertex<B> {
+impl<T: Committable> Committable for Vertex<T> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
             .field("round", self.round.commit())
@@ -138,7 +127,7 @@ impl<B: Committable> Committable for Vertex<B> {
             .field("evidence", self.evidence.commit())
             .field("committed", self.committed.commit())
             .optional("no_vote", &self.no_vote)
-            .optional("payload", &self.payload)
+            .field("payload", self.payload.commit())
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()

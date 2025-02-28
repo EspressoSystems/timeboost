@@ -326,7 +326,7 @@ impl Simulator {
             .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, committee.clone()),
+                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };

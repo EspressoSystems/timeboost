@@ -77,11 +77,12 @@ impl TestNodeInstrument {
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
-            Vertex::empty(round, tc, &self.kpair, true)
+            Vertex::new(round, tc, EmptyBlocks.next(round), &self.kpair, true)
         } else {
-            Vertex::empty(
+            Vertex::new(
                 round,
                 self.manager.gen_round_cert(round - 1),
+                EmptyBlocks.next(round),
                 &self.kpair,
                 true,
             )
@@ -206,17 +207,11 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
     }
 }
 
-fn block_equiv(l: Option<&SailfishBlock>, r: Option<&SailfishBlock>) {
-    match (l, r) {
-        (None, None) => {}
-        (Some(l), Some(r)) => {
-            assert!(
-                l.timestamp().abs_diff(*r.timestamp()) <= 5,
-                "Drift is too high from expected to actual block timestamps"
-            );
-            assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
-            assert_eq!(l.clone().transactions(), r.clone().transactions());
-        }
-        _ => panic!("{l:?} ≁ {r:?}"),
-    }
+fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
+    assert!(
+        l.timestamp().abs_diff(*r.timestamp()) <= 5,
+        "Drift is too high from expected to actual block timestamps"
+    );
+    assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
+    assert_eq!(l.clone().transactions(), r.clone().transactions());
 }

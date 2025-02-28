@@ -223,29 +223,16 @@ impl<T: Committable> Message<T, Unchecked> {
 pub struct Payload<T: Committable> {
     round: RoundNumber,
     source: PublicKey,
-    data: Option<T>,
+    data: T,
 }
 
 impl<T: Committable> Payload<T> {
-    pub fn empty(round: RoundNumber, source: PublicKey) -> Self {
+    pub fn new(round: RoundNumber, source: PublicKey, data: T) -> Self {
         Self {
             round,
             source,
-            data: None,
+            data,
         }
-    }
-
-    pub fn new(round: RoundNumber, source: PublicKey, d: Option<T>) -> Self {
-        Self {
-            round,
-            source,
-            data: d,
-        }
-    }
-
-    pub fn with_data(mut self, d: T) -> Self {
-        self.data = Some(d);
-        self
     }
 
     pub fn round(&self) -> RoundNumber {
@@ -256,15 +243,15 @@ impl<T: Committable> Payload<T> {
         self.source
     }
 
-    pub fn data(&self) -> Option<&T> {
-        self.data.as_ref()
+    pub fn data(&self) -> &T {
+        &self.data
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.data.is_none()
+    pub fn into_data(self) -> T {
+        self.data
     }
 
-    pub fn into_parts(self) -> (RoundNumber, PublicKey, Option<T>) {
+    pub fn into_parts(self) -> (RoundNumber, PublicKey, T) {
         (self.round, self.source, self.data)
     }
 }
@@ -560,7 +547,7 @@ impl<T: Committable> Committable for Payload<T> {
         RawCommitmentBuilder::new("Payload")
             .field("round", self.round.commit())
             .fixed_size_field("source", &self.source.as_bytes())
-            .optional("data", &self.data)
+            .field("data", self.data.commit())
             .finalize()
     }
 }
