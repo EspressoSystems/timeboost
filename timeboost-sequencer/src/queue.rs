@@ -103,7 +103,7 @@ impl TransactionQueue {
             .transactions
             .front()
             .map(|(t, _)| *t)
-            .unwrap_or_else(|| Instant::now());
+            .unwrap_or_else(Instant::now);
 
         for t in retry.into_transactions() {
             inner.transactions.push_front((now, t));
