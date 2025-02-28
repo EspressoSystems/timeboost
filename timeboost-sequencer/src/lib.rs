@@ -29,7 +29,7 @@ type Result<T> = std::result::Result<T, TimeboostError>;
 
 #[derive(Debug)]
 pub struct SequencerConfig {
-    plc: Address,
+    priority_addr: Address,
     keypair: Keypair,
     peers: Vec<(PublicKey, net::Address)>,
     bind: SocketAddr,
@@ -67,7 +67,7 @@ impl Sequencer {
         let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
 
-        let queue = TransactionsQueue::new(cfg.plc, Epoch::default(), cfg.index);
+        let queue = TransactionsQueue::new(cfg.priority_addr, Epoch::default(), cfg.index);
         let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);

@@ -14,7 +14,7 @@ pub struct TransactionsQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
-    plc: Address,
+    priority_addr: Address,
     epoch: Epoch,
     index: DelayedInboxIndex,
     curr_bundles: Vec<PriorityBundle>,
@@ -23,20 +23,15 @@ struct Inner {
 }
 
 impl TransactionsQueue {
-    pub fn new(plc: Address, epoch: Epoch, idx: DelayedInboxIndex) -> Self {
+    pub fn new(prio: Address, epoch: Epoch, idx: DelayedInboxIndex) -> Self {
         Self(Arc::new(Mutex::new(Inner {
-            plc,
+            priority_addr: prio,
             epoch,
             index: idx,
             curr_bundles: Vec::new(),
             next_bundles: Vec::new(),
             transactions: Vec::new(),
         })))
-    }
-
-    #[allow(unused)]
-    pub fn set_plc(&self, plc: Address) {
-        self.0.lock().plc = plc
     }
 
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
@@ -59,7 +54,7 @@ impl TransactionsQueue {
         let mut inner = self.0.lock();
 
         for t in it.into_iter() {
-            if t.to() != inner.plc {
+            if t.to() != inner.priority_addr {
                 inner.transactions.push((now, t));
                 continue;
             }
