@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
@@ -20,6 +20,8 @@ pub struct Includer {
     seqno: SeqNo,
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
+    /// Cache of transaction hashes for the previous 8 rounds.
+    cache: BTreeMap<RoundNumber, HashSet<[u8; 32]>>,
 }
 
 impl Includer {
@@ -31,6 +33,7 @@ impl Includer {
             epoch: Timestamp::default().epoch(),
             seqno: SeqNo::zero(),
             index: i,
+            cache: BTreeMap::new(),
         }
     }
 
@@ -38,6 +41,10 @@ impl Includer {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = r;
+
+        while self.cache.len() > 8 {
+            self.cache.pop_first();
+        }
 
         self.time = {
             let mut times = lists.iter().map(|cl| cl.timestamp()).collect::<Vec<_>>();
@@ -89,14 +96,22 @@ impl Includer {
 
         let bundles = bundles.into_values().collect();
 
-        let transactions = transactions
-            .into_iter()
-            .filter_map(|(t, n)| (n > self.committee.threshold().get()).then_some(t))
-            .collect();
+        let transactions = transactions.into_iter().filter_map(|(t, n)| {
+            (n > self.committee.threshold().get() && self.is_unknown(&t)).then_some(t)
+        });
 
         InclusionList::new(self.round, self.time, self.index)
             .with_priority_bundles(bundles)
             .with_transactions(transactions)
+    }
+
+    fn is_unknown(&self, t: &Transaction) -> bool {
+        for hashes in self.cache.values().rev() {
+            if hashes.contains(t.digest()) {
+                return false;
+            }
+        }
+        true
     }
 
     fn validate_bundles(&self, bundles: &BTreeMap<SeqNo, PriorityBundle>) -> Result<SeqNo, ()> {

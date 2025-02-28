@@ -43,11 +43,18 @@ pub struct Transaction {
     to: Address,
     nonce: Nonce,
     data: Vec<u8>,
+    hash: [u8; 32],
 }
 
 impl Transaction {
     pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
-        Self { nonce, to, data }
+        let h = blake3::hash(&data);
+        Self {
+            nonce,
+            to,
+            data,
+            hash: h.into(),
+        }
     }
 
     pub fn nonce(&self) -> Nonce {
@@ -65,6 +72,10 @@ impl Transaction {
     pub fn into_data(self) -> Vec<u8> {
         self.data
     }
+
+    pub fn digest(&self) -> &[u8; 32] {
+        &self.hash
+    }
 }
 
 impl Committable for Transaction {
@@ -77,25 +88,15 @@ impl Committable for Transaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PriorityBundle {
     epoch: Epoch,
     seqno: SeqNo,
     data: Vec<u8>,
-    hash: blake3::Hash,
+    hash: [u8; 32],
 }
 
 impl PriorityBundle {
-    pub fn new(e: Epoch, s: SeqNo, d: Vec<u8>) -> Self {
-        let h = blake3::hash(&d);
-        Self {
-            epoch: e,
-            seqno: s,
-            data: d,
-            hash: h,
-        }
-    }
-
     pub fn epoch(&self) -> Epoch {
         self.epoch
     }
@@ -105,7 +106,7 @@ impl PriorityBundle {
     }
 
     pub fn digest(&self) -> &[u8; 32] {
-        self.hash.as_bytes()
+        &self.hash
     }
 
     pub fn data(&self) -> &[u8] {
@@ -114,6 +115,17 @@ impl PriorityBundle {
 
     pub fn into_data(self) -> Vec<u8> {
         self.data
+    }
+}
+
+impl From<Transaction> for PriorityBundle {
+    fn from(t: Transaction) -> Self {
+        Self {
+            epoch: t.nonce.to_epoch(),
+            seqno: t.nonce.to_seqno(),
+            data: t.data,
+            hash: t.hash,
+        }
     }
 }
 

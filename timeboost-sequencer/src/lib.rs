@@ -118,6 +118,7 @@ impl Sequencer {
                         let mut inclusions = Vec::new();
                         for (round, lists) in payloads {
                             let i = self.includer.inclusion_list(round, lists);
+                            self.transactions.prune_transactions(&i);
                             inclusions.push(i)
                         }
                         self.decrypter.enqueue(inclusions)
