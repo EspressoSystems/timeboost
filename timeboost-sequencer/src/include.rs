@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
-use timeboost_types::{math, PriorityBundle, Transaction, TransactionSet};
+use timeboost_types::{math, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Timestamp};
 
 #[derive(Debug)]
@@ -37,15 +37,11 @@ impl Includer {
         }
     }
 
-    /// Derive an `InclusionList` from the given `CandidateList`s.
-    ///
-    /// In addition return the set of transactions which did not cross the threshold.
-    /// These will become part of future `CandidateList`s.
     pub fn inclusion_list(
         &mut self,
         round: RoundNumber,
         lists: Vec<CandidateList>,
-    ) -> (InclusionList, TransactionSet) {
+    ) -> (InclusionList, RetryList) {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
@@ -74,24 +70,34 @@ impl Includer {
 
         let mut transactions: BTreeMap<Transaction, usize> = BTreeMap::new();
         let mut bundles: BTreeMap<SeqNo, PriorityBundle> = BTreeMap::new();
+        let mut retry = RetryList::new();
 
         for (bs, ts) in lists.into_iter().map(CandidateList::into_transactions) {
             for t in ts {
                 *transactions.entry(t).or_default() += 1
             }
             for b in bs {
-                if b.epoch() != self.epoch {
+                if b.epoch() < self.epoch {
                     continue;
                 }
-                match bundles.entry(b.seqno()) {
-                    Entry::Vacant(e) => {
-                        e.insert(b);
-                    }
-                    Entry::Occupied(mut e) => {
-                        if b.digest() < e.get().digest() {
+                if b.epoch() == self.epoch {
+                    match bundles.entry(b.seqno()) {
+                        Entry::Vacant(e) => {
                             e.insert(b);
                         }
+                        Entry::Occupied(mut e) => {
+                            if b.digest() < e.get().digest() {
+                                let b = e.insert(b);
+                                retry.add_bundle(b);
+                            } else {
+                                retry.add_bundle(b);
+                            }
+                        }
                     }
+                    continue;
+                }
+                if b.epoch() == self.epoch + 1 {
+                    retry.add_bundle(b)
                 }
             }
         }
@@ -105,7 +111,6 @@ impl Includer {
         let bundles = bundles.into_values().collect();
 
         let mut include = Vec::new();
-        let mut retry = TransactionSet::new();
 
         for (t, n) in transactions {
             if n > self.committee.threshold().get() {
@@ -117,7 +122,7 @@ impl Includer {
                     include.push(t)
                 }
             } else {
-                retry.insert(t)
+                retry.add_transaction(t)
             }
         }
 

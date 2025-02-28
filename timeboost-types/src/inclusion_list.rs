@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
+
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction, TransactionSet};
+use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
 use sailfish_types::RoundNumber;
 
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -10,7 +12,7 @@ pub struct InclusionList {
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: Vec<PriorityBundle>,
-    transactions: TransactionSet,
+    transactions: BTreeSet<Transaction>,
 }
 
 impl InclusionList {
@@ -20,7 +22,7 @@ impl InclusionList {
             time: t,
             index: i,
             priority: Vec::new(),
-            transactions: TransactionSet::new(),
+            transactions: BTreeSet::new(),
         }
     }
 
@@ -57,11 +59,11 @@ impl InclusionList {
         self.transactions.len() + self.priority.len()
     }
 
-    pub fn into_transactions(self) -> (Vec<PriorityBundle>, TransactionSet) {
+    pub fn into_transactions(self) -> (Vec<PriorityBundle>, BTreeSet<Transaction>) {
         (self.priority, self.transactions)
     }
 
-    pub fn transactions(&self) -> &TransactionSet {
+    pub fn transactions(&self) -> &BTreeSet<Transaction> {
         &self.transactions
     }
 

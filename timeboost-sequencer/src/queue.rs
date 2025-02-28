@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{Address, Epoch, PriorityBundle, Transaction, TransactionSet};
+use timeboost_types::{Address, Epoch, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -77,7 +77,7 @@ impl TransactionQueue {
         }
     }
 
-    pub fn update_transactions(&self, incl: &InclusionList, retry: TransactionSet) {
+    pub fn update_transactions(&self, incl: &InclusionList, retry: RetryList) {
         let mut inner = self.0.lock();
 
         // Retain priority bundles not in the inclusion list.
@@ -99,14 +99,21 @@ impl TransactionQueue {
             .transactions
             .retain(|(_, t)| !incl.transactions().contains(t));
 
+        // Process transactions and bundles that should be retried:
+        let (transactions, bundles) = retry.into_parts();
+
         let now = inner
             .transactions
             .front()
             .map(|(t, _)| *t)
             .unwrap_or_else(Instant::now);
 
-        for t in retry.into_transactions() {
+        for t in transactions {
             inner.transactions.push_front((now, t));
+        }
+
+        for b in bundles {
+            inner.bundles.entry(b.epoch()).or_default().push(b)
         }
     }
 }

@@ -11,6 +11,6 @@ impl Sorter {
     pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = Transaction> {
         // TODO
         let (_, t) = list.into_transactions();
-        t.into_transactions()
+        t.into_iter()
     }
 }

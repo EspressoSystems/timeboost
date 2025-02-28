@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -138,57 +136,5 @@ impl Committable for PriorityBundle {
             .field("seqno", self.seqno.commit())
             .var_size_field("data", &self.data)
             .finalize()
-    }
-}
-
-#[derive(Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TransactionSet {
-    items: BTreeSet<Transaction>,
-}
-
-impl TransactionSet {
-    pub fn new() -> Self {
-        Self {
-            items: BTreeSet::new(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn insert(&mut self, t: Transaction) {
-        self.items.insert(t);
-    }
-
-    pub fn remove(&mut self, t: &Transaction) {
-        self.items.remove(t);
-    }
-
-    pub fn contains(&self, t: &Transaction) -> bool {
-        self.items.contains(t)
-    }
-
-    pub fn into_transactions(self) -> impl Iterator<Item = Transaction> {
-        self.items.into_iter()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Transaction> {
-        self.items.iter()
-    }
-}
-
-impl FromIterator<Transaction> for TransactionSet {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = Transaction>,
-    {
-        Self {
-            items: iter.into_iter().collect(),
-        }
     }
 }
