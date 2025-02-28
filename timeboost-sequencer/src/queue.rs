@@ -48,7 +48,6 @@ impl TransactionsQueue {
         self.0.lock().index = idx
     }
 
-    // Fig. 3, lines 10 - 21
     pub fn add_transactions<I>(&self, it: I)
     where
         I: IntoIterator<Item = Transaction>,
@@ -95,10 +94,10 @@ impl TransactionsQueue {
             });
         }
 
-        // Retain transactions not in the inclusion list.
+        // Retain transactions not in the inclusion list which are not known duplicates.
         inner
             .transactions
-            .retain(|(_, t)| !incl.transactions().contains(t));
+            .retain(|(_, t)| !(incl.transactions().contains(t) || incl.duplicates().contains(t)));
     }
 }
 

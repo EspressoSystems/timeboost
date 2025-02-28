@@ -13,6 +13,7 @@ pub struct InclusionList {
     index: DelayedInboxIndex,
     priority: Vec<PriorityBundle>,
     transactions: BTreeSet<Transaction>,
+    duplicates: BTreeSet<Transaction>,
 }
 
 impl InclusionList {
@@ -23,19 +24,28 @@ impl InclusionList {
             index: i,
             priority: Vec::new(),
             transactions: BTreeSet::new(),
+            duplicates: BTreeSet::new(),
         }
     }
 
-    pub fn with_priority_bundles(mut self, t: Vec<PriorityBundle>) -> Self {
+    pub fn set_priority_bundles(&mut self, t: Vec<PriorityBundle>) -> &mut Self {
         self.priority = t;
         self
     }
 
-    pub fn with_transactions<I>(mut self, it: I) -> Self
+    pub fn set_transactions<I>(&mut self, it: I) -> &mut Self
     where
         I: IntoIterator<Item = Transaction>,
     {
         self.transactions = it.into_iter().collect();
+        self
+    }
+
+    pub fn set_duplicates<I>(&mut self, it: I) -> &mut Self
+    where
+        I: IntoIterator<Item = Transaction>,
+    {
+        self.duplicates = it.into_iter().collect();
         self
     }
 
@@ -65,6 +75,10 @@ impl InclusionList {
 
     pub fn transactions(&self) -> &BTreeSet<Transaction> {
         &self.transactions
+    }
+
+    pub fn duplicates(&self) -> &BTreeSet<Transaction> {
+        &self.duplicates
     }
 
     pub fn priority_bundles(&self) -> &[PriorityBundle] {

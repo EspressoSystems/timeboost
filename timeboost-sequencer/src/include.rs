@@ -96,13 +96,24 @@ impl Includer {
 
         let bundles = bundles.into_values().collect();
 
-        let transactions = transactions.into_iter().filter_map(|(t, n)| {
-            (n > self.committee.threshold().get() && self.is_unknown(&t)).then_some(t)
-        });
+        let (trxs, dups): (Vec<_>, Vec<_>) = transactions
+            .into_iter()
+            .filter_map(|(t, n)| (n > self.committee.threshold().get()).then_some(t))
+            .partition(|t| self.is_unknown(t));
 
-        InclusionList::new(self.round, self.time, self.index)
-            .with_priority_bundles(bundles)
-            .with_transactions(transactions)
+        for t in &trxs {
+            self.cache
+                .entry(self.round)
+                .or_default()
+                .insert(*t.digest());
+        }
+
+        let mut ilist = InclusionList::new(self.round, self.time, self.index);
+        ilist
+            .set_priority_bundles(bundles)
+            .set_transactions(trxs)
+            .set_duplicates(dups);
+        ilist
     }
 
     fn is_unknown(&self, t: &Transaction) -> bool {
