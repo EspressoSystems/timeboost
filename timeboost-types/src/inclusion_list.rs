@@ -1,9 +1,7 @@
-use std::collections::BTreeSet;
-
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
+use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction, TransactionSet};
 use sailfish_types::RoundNumber;
 
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -12,8 +10,7 @@ pub struct InclusionList {
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: Vec<PriorityBundle>,
-    transactions: BTreeSet<Transaction>,
-    duplicates: BTreeSet<Transaction>,
+    transactions: TransactionSet,
 }
 
 impl InclusionList {
@@ -23,8 +20,7 @@ impl InclusionList {
             time: t,
             index: i,
             priority: Vec::new(),
-            transactions: BTreeSet::new(),
-            duplicates: BTreeSet::new(),
+            transactions: TransactionSet::new(),
         }
     }
 
@@ -38,14 +34,6 @@ impl InclusionList {
         I: IntoIterator<Item = Transaction>,
     {
         self.transactions = it.into_iter().collect();
-        self
-    }
-
-    pub fn set_duplicates<I>(&mut self, it: I) -> &mut Self
-    where
-        I: IntoIterator<Item = Transaction>,
-    {
-        self.duplicates = it.into_iter().collect();
         self
     }
 
@@ -69,16 +57,12 @@ impl InclusionList {
         self.transactions.len() + self.priority.len()
     }
 
-    pub fn into_transactions(self) -> (Vec<PriorityBundle>, BTreeSet<Transaction>) {
+    pub fn into_transactions(self) -> (Vec<PriorityBundle>, TransactionSet) {
         (self.priority, self.transactions)
     }
 
-    pub fn transactions(&self) -> &BTreeSet<Transaction> {
+    pub fn transactions(&self) -> &TransactionSet {
         &self.transactions
-    }
-
-    pub fn duplicates(&self) -> &BTreeSet<Transaction> {
-        &self.duplicates
     }
 
     pub fn priority_bundles(&self) -> &[PriorityBundle] {

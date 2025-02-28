@@ -14,4 +14,4 @@ pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use seqno::SeqNo;
 pub use time::{Epoch, Timestamp};
-pub use transaction::{PriorityBundle, Transaction};
+pub use transaction::{PriorityBundle, Transaction, TransactionSet};

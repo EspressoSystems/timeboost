@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
-use timeboost_types::{math, PriorityBundle, Transaction};
+use timeboost_types::{math, PriorityBundle, Transaction, TransactionSet};
 use timeboost_types::{CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Timestamp};
 
 #[derive(Debug)]
@@ -37,10 +37,18 @@ impl Includer {
         }
     }
 
-    pub fn inclusion_list(&mut self, r: RoundNumber, lists: Vec<CandidateList>) -> InclusionList {
+    /// Derive an `InclusionList` from the given `CandidateList`s.
+    ///
+    /// In addition return the set of transactions which did not cross the threshold.
+    /// These will become part of future `CandidateList`s.
+    pub fn inclusion_list(
+        &mut self,
+        round: RoundNumber,
+        lists: Vec<CandidateList>,
+    ) -> (InclusionList, TransactionSet) {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
-        self.round = r;
+        self.round = round;
 
         while self.cache.len() > 8 {
             self.cache.pop_first();
@@ -96,24 +104,29 @@ impl Includer {
 
         let bundles = bundles.into_values().collect();
 
-        let (trxs, dups): (Vec<_>, Vec<_>) = transactions
-            .into_iter()
-            .filter_map(|(t, n)| (n > self.committee.threshold().get()).then_some(t))
-            .partition(|t| self.is_unknown(t));
+        let mut include = Vec::new();
+        let mut retry = TransactionSet::new();
 
-        for t in &trxs {
-            self.cache
-                .entry(self.round)
-                .or_default()
-                .insert(*t.digest());
+        for (t, n) in transactions {
+            if n > self.committee.threshold().get() {
+                if self.is_unknown(&t) {
+                    self.cache
+                        .entry(self.round)
+                        .or_default()
+                        .insert(*t.digest());
+                    include.push(t)
+                }
+            } else {
+                retry.insert(t)
+            }
         }
 
         let mut ilist = InclusionList::new(self.round, self.time, self.index);
         ilist
             .set_priority_bundles(bundles)
-            .set_transactions(trxs)
-            .set_duplicates(dups);
-        ilist
+            .set_transactions(include);
+
+        (ilist, retry)
     }
 
     fn is_unknown(&self, t: &Transaction) -> bool {

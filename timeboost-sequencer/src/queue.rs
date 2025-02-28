@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{Address, Epoch, PriorityBundle, Transaction};
+use timeboost_types::{Address, Epoch, PriorityBundle, Transaction, TransactionSet};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
-pub struct TransactionsQueue(Arc<Mutex<Inner>>);
+pub struct TransactionQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
@@ -18,7 +18,7 @@ struct Inner {
     time: Timestamp,
     index: DelayedInboxIndex,
     bundles: BTreeMap<Epoch, Vec<PriorityBundle>>,
-    transactions: Vec<(Instant, Transaction)>,
+    transactions: VecDeque<(Instant, Transaction)>,
 }
 
 impl Inner {
@@ -32,14 +32,14 @@ impl Inner {
     }
 }
 
-impl TransactionsQueue {
+impl TransactionQueue {
     pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
             index: idx,
             bundles: BTreeMap::new(),
-            transactions: Vec::new(),
+            transactions: VecDeque::new(),
         })))
     }
 
@@ -61,7 +61,7 @@ impl TransactionsQueue {
 
         for t in it.into_iter() {
             if t.to() != inner.priority_addr {
-                inner.transactions.push((now, t));
+                inner.transactions.push_back((now, t));
                 continue;
             }
 
@@ -77,7 +77,7 @@ impl TransactionsQueue {
         }
     }
 
-    pub fn prune_transactions(&self, incl: &InclusionList) {
+    pub fn update_transactions(&self, incl: &InclusionList, retry: TransactionSet) {
         let mut inner = self.0.lock();
 
         // Retain priority bundles not in the inclusion list.
@@ -94,14 +94,24 @@ impl TransactionsQueue {
             });
         }
 
-        // Retain transactions not in the inclusion list which are not known duplicates.
+        // Retain transactions not in the inclusion list.
         inner
             .transactions
-            .retain(|(_, t)| !(incl.transactions().contains(t) || incl.duplicates().contains(t)));
+            .retain(|(_, t)| !incl.transactions().contains(t));
+
+        let now = inner
+            .transactions
+            .front()
+            .map(|(t, _)| *t)
+            .unwrap_or_else(|| Instant::now());
+
+        for t in retry.into_transactions() {
+            inner.transactions.push_front((now, t));
+        }
     }
 }
 
-impl DataSource for TransactionsQueue {
+impl DataSource for TransactionQueue {
     type Data = CandidateList;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
