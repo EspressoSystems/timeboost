@@ -34,14 +34,6 @@ impl Includer {
         }
     }
 
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn delayed_inbox_index(&self) -> DelayedInboxIndex {
-        self.index
-    }
-
     pub fn inclusion_list(&mut self, r: RoundNumber, lists: Vec<CandidateList>) -> InclusionList {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 

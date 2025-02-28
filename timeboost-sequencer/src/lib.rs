@@ -14,7 +14,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
-use timeboost_types::{Address, Epoch, Transaction};
+use timeboost_types::{Address, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
@@ -37,7 +37,6 @@ pub struct SequencerConfig {
 }
 
 pub struct Sequencer {
-    epoch: Epoch,
     transactions: TransactionsQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
@@ -67,7 +66,7 @@ impl Sequencer {
         let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
 
-        let queue = TransactionsQueue::new(cfg.priority_addr, Epoch::default(), cfg.index);
+        let queue = TransactionsQueue::new(cfg.priority_addr, cfg.index);
         let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
@@ -77,7 +76,6 @@ impl Sequencer {
         let sorter = Sorter::new();
 
         Ok(Self {
-            epoch: Epoch::default(),
             transactions: queue,
             sailfish: coordinator,
             includer,
@@ -121,13 +119,6 @@ impl Sequencer {
                         for (round, lists) in payloads {
                             let i = self.includer.inclusion_list(round, lists);
                             inclusions.push(i)
-                        }
-                        let index = self.includer.delayed_inbox_index();
-                        self.transactions.set_delayed_inbox_index(index);
-                        let epoch = self.includer.epoch();
-                        if self.epoch != epoch {
-                            self.epoch = epoch;
-                            self.transactions.advance_to_epoch(epoch)
                         }
                         self.decrypter.enqueue(inclusions)
                     },

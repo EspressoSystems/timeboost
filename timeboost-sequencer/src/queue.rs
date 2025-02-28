@@ -1,4 +1,4 @@
-use std::mem;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,31 +17,24 @@ struct Inner {
     priority_addr: Address,
     epoch: Epoch,
     index: DelayedInboxIndex,
-    curr_bundles: Vec<PriorityBundle>,
-    next_bundles: Vec<PriorityBundle>,
+    bundles: BTreeMap<Epoch, Vec<PriorityBundle>>,
     transactions: Vec<(Instant, Transaction)>,
 }
 
 impl TransactionsQueue {
-    pub fn new(prio: Address, epoch: Epoch, idx: DelayedInboxIndex) -> Self {
+    pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
-            epoch,
+            epoch: Timestamp::now().epoch(),
             index: idx,
-            curr_bundles: Vec::new(),
-            next_bundles: Vec::new(),
+            bundles: BTreeMap::new(),
             transactions: Vec::new(),
         })))
     }
 
+    #[allow(unused)]
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
         self.0.lock().index = idx
-    }
-
-    pub fn advance_to_epoch(&self, e: Epoch) {
-        let mut inner = self.0.lock();
-        inner.curr_bundles = mem::take(&mut inner.next_bundles);
-        inner.epoch = e
     }
 
     // Fig. 3, lines 10 - 21
@@ -69,11 +62,7 @@ impl TransactionsQueue {
 
             let bundle = PriorityBundle::new(epoch, t.nonce().to_seqno(), t.into_data());
 
-            if epoch == inner.epoch {
-                inner.curr_bundles.push(bundle);
-            } else {
-                inner.next_bundles.push(bundle);
-            }
+            inner.bundles.entry(epoch).or_default().push(bundle);
         }
     }
 }
@@ -86,24 +75,27 @@ impl DataSource for TransactionsQueue {
             return CandidateList::builder(Timestamp::now(), 0).finish();
         }
 
+        let time = Timestamp::now();
         let now = Instant::now();
 
         let mut inner = self.0.lock();
 
-        let txns = if let Some(i) = inner
+        if time.epoch() > inner.epoch {
+            inner.bundles = inner.bundles.split_off(&time.epoch());
+            inner.epoch = time.epoch();
+        }
+
+        let bundles = inner.bundles.get(&inner.epoch).cloned().unwrap_or_default();
+
+        let txns = inner
             .transactions
             .iter()
-            .position(|(t, _)| now.duration_since(*t) >= MIN_WAIT_TIME)
-        {
-            let mut vec = inner.transactions.split_off(i);
-            mem::swap(&mut inner.transactions, &mut vec);
-            vec.into_iter().map(|(_, t)| t).collect()
-        } else {
-            Vec::new()
-        };
+            .take_while(|(t, _)| now.duration_since(*t) >= MIN_WAIT_TIME)
+            .map(|(_, x)| x.clone())
+            .collect();
 
-        CandidateList::builder(Timestamp::now(), inner.index)
-            .with_priority_bundles(mem::take(&mut inner.curr_bundles))
+        CandidateList::builder(time, inner.index)
+            .with_priority_bundles(bundles)
             .with_transactions(txns)
             .finish()
     }
