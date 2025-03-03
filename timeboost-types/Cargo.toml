@@ -5,11 +5,17 @@ edition.workspace = true
 description.workspace = true
 
 [dependencies]
+alloy-consensus = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-rlp = { workspace = true }
 blake3 = { workspace = true }
+bytes = { workspace = true }
 committable = { workspace = true }
+ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 quickcheck = "1"

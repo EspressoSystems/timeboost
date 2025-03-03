@@ -20,7 +20,6 @@ clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 dashmap = "6.1.0"
-derive_more = { version = "1", features = ["display"] } # for alloy
 dotenvy = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }

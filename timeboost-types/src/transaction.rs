@@ -1,30 +1,57 @@
+use std::ops::Deref;
+
+use alloy_consensus::transaction::PooledTransaction;
+use alloy_consensus::Transaction as _;
+use alloy_primitives::{Bytes, TxHash};
+use alloy_rlp::Decodable;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::{Address, Epoch, SeqNo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Nonce([u8; 32]);
+pub struct Hash(TxHash);
 
-impl Nonce {
-    pub fn to_epoch(self) -> Epoch {
-        let n = u128::from_be_bytes(self.0[..16].try_into().expect("16 bytes = 128 bit"));
-        Epoch::from(n)
-    }
-
-    pub fn to_seqno(self) -> SeqNo {
-        let n = u128::from_be_bytes(self.0[16..].try_into().expect("16 bytes = 128 bit"));
-        SeqNo::from(n)
+impl From<[u8; 32]> for Hash {
+    fn from(value: [u8; 32]) -> Self {
+        Hash(value.into())
     }
 }
 
-impl From<[u8; 32]> for Nonce {
-    fn from(val: [u8; 32]) -> Self {
+impl AsRef<[u8; 32]> for Hash {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.0.as_ref()
+    }
+}
+
+impl Deref for Hash {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Nonce(u64);
+
+impl Nonce {
+    pub fn to_epoch(self) -> Epoch {
+        Epoch::from(self.0 >> 32)
+    }
+
+    pub fn to_seqno(self) -> SeqNo {
+        SeqNo::from(0x0000_0000_FFFF_FFFF & self.0)
+    }
+}
+
+impl From<u64> for Nonce {
+    fn from(val: u64) -> Self {
         Self(val)
     }
 }
 
-impl From<Nonce> for [u8; 32] {
+impl From<Nonce> for u64 {
     fn from(val: Nonce) -> Self {
         val.0
     }
@@ -32,48 +59,46 @@ impl From<Nonce> for [u8; 32] {
 
 impl Committable for Nonce {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("Nonce")
-            .fixed_size_bytes(&self.0)
-            .finalize()
+        RawCommitmentBuilder::new("Nonce").u64(self.0).finalize()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Transaction {
-    to: Address,
-    nonce: Nonce,
-    data: Vec<u8>,
-    hash: [u8; 32],
+    hash: Hash,
+    tx: PooledTransaction,
 }
 
 impl Transaction {
-    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
-        let h = blake3::hash(&data);
-        Self {
-            nonce,
-            to,
-            data,
-            hash: h.into(),
-        }
+    pub fn decode(bytes: &[u8]) -> Result<Self, InvalidTransaction> {
+        let tx = PooledTransaction::decode(&mut &*bytes)?;
+        Ok(Self {
+            hash: Hash(*tx.hash()),
+            tx,
+        })
     }
 
     pub fn nonce(&self) -> Nonce {
-        self.nonce
+        self.tx.nonce().into()
     }
 
-    pub fn to(&self) -> Address {
-        self.to
+    pub fn from(&self) -> Option<Address> {
+        self.tx.recover_signer().ok().map(Address::from)
+    }
+
+    pub fn to(&self) -> Option<Address> {
+        self.tx.to().map(Address::from)
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.data
+        self.tx.input()
     }
 
-    pub fn into_data(self) -> Vec<u8> {
-        self.data
+    pub fn into_data(self) -> Bytes {
+        self.tx.input().clone()
     }
 
-    pub fn digest(&self) -> &[u8; 32] {
+    pub fn digest(&self) -> &Hash {
         &self.hash
     }
 }
@@ -81,9 +106,11 @@ impl Transaction {
 impl Committable for Transaction {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Transaction")
-            .field("to", self.to.commit())
-            .field("nonce", self.nonce.commit())
-            .var_size_field("data", &self.data)
+            .optional("to", &self.to())
+            .optional("from", &self.from())
+            .field("nonce", self.nonce().commit())
+            .var_size_field("data", self.data())
+            .fixed_size_bytes(self.digest().as_ref())
             .finalize()
     }
 }
@@ -92,8 +119,8 @@ impl Committable for Transaction {
 pub struct PriorityBundle {
     epoch: Epoch,
     seqno: SeqNo,
-    data: Vec<u8>,
-    hash: [u8; 32],
+    hash: Hash,
+    data: Bytes,
 }
 
 impl PriorityBundle {
@@ -105,7 +132,7 @@ impl PriorityBundle {
         self.seqno
     }
 
-    pub fn digest(&self) -> &[u8; 32] {
+    pub fn digest(&self) -> &Hash {
         &self.hash
     }
 
@@ -113,7 +140,7 @@ impl PriorityBundle {
         &self.data
     }
 
-    pub fn into_data(self) -> Vec<u8> {
+    pub fn into_data(self) -> Bytes {
         self.data
     }
 }
@@ -121,10 +148,10 @@ impl PriorityBundle {
 impl From<Transaction> for PriorityBundle {
     fn from(t: Transaction) -> Self {
         Self {
-            epoch: t.nonce.to_epoch(),
-            seqno: t.nonce.to_seqno(),
-            data: t.data,
-            hash: t.hash,
+            epoch: t.nonce().to_epoch(),
+            seqno: t.nonce().to_seqno(),
+            hash: *t.digest(),
+            data: t.into_data(),
         }
     }
 }
@@ -134,7 +161,12 @@ impl Committable for PriorityBundle {
         RawCommitmentBuilder::new("PriorityBundle")
             .field("epoch", self.epoch.commit())
             .field("seqno", self.seqno.commit())
+            .fixed_size_field("hash", self.hash.as_ref())
             .var_size_field("data", &self.data)
             .finalize()
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("rlp error: {0}")]
+pub struct InvalidTransaction(#[from] alloy_rlp::Error);

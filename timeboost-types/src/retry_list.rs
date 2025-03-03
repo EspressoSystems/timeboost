@@ -1,11 +1,10 @@
-use std::collections::BTreeSet;
-
 use crate::{PriorityBundle, Transaction};
+use std::collections::HashSet;
 
 #[derive(Debug, Default)]
 pub struct RetryList {
-    transactions: BTreeSet<Transaction>,
-    bundles: BTreeSet<PriorityBundle>,
+    transactions: HashSet<Transaction>,
+    bundles: HashSet<PriorityBundle>,
 }
 
 impl RetryList {
@@ -21,7 +20,7 @@ impl RetryList {
         self.bundles.insert(b);
     }
 
-    pub fn into_parts(self) -> (BTreeSet<Transaction>, BTreeSet<PriorityBundle>) {
+    pub fn into_parts(self) -> (HashSet<Transaction>, HashSet<PriorityBundle>) {
         (self.transactions, self.bundles)
     }
 }
