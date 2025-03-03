@@ -1,12 +1,35 @@
+use std::ops::Deref;
+
+use alloy_primitives::Address as EthAddress;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Address([u8; 32]);
+pub struct Address(EthAddress);
 
 impl Address {
     pub fn zero() -> Self {
-        Self([0; 32])
+        Self(EthAddress::ZERO)
+    }
+}
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+
+impl From<EthAddress> for Address {
+    fn from(value: EthAddress) -> Self {
+        Self(value)
+    }
+}
+
+impl Deref for Address {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
     }
 }
 
