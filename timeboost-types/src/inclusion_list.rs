@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +12,7 @@ pub struct InclusionList {
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: Vec<PriorityBundle>,
-    transactions: Vec<Transaction>,
+    transactions: BTreeSet<Transaction>,
 }
 
 impl InclusionList {
@@ -20,17 +22,20 @@ impl InclusionList {
             time: t,
             index: i,
             priority: Vec::new(),
-            transactions: Vec::new(),
+            transactions: BTreeSet::new(),
         }
     }
 
-    pub fn with_priority_bundles(mut self, t: Vec<PriorityBundle>) -> Self {
+    pub fn set_priority_bundles(&mut self, t: Vec<PriorityBundle>) -> &mut Self {
         self.priority = t;
         self
     }
 
-    pub fn with_transactions(mut self, t: Vec<Transaction>) -> Self {
-        self.transactions = t;
+    pub fn set_transactions<I>(&mut self, it: I) -> &mut Self
+    where
+        I: IntoIterator<Item = Transaction>,
+    {
+        self.transactions = it.into_iter().collect();
         self
     }
 
@@ -54,11 +59,11 @@ impl InclusionList {
         self.transactions.len() + self.priority.len()
     }
 
-    pub fn into_transactions(self) -> (Vec<PriorityBundle>, Vec<Transaction>) {
+    pub fn into_transactions(self) -> (Vec<PriorityBundle>, BTreeSet<Transaction>) {
         (self.priority, self.transactions)
     }
 
-    pub fn transactions(&self) -> &[Transaction] {
+    pub fn transactions(&self) -> &BTreeSet<Transaction> {
         &self.transactions
     }
 

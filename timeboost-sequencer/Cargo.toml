@@ -5,6 +5,7 @@ edition.workspace = true
 description.workspace = true
 
 [dependencies]
+blake3 = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 metrics = { path = "../metrics" }

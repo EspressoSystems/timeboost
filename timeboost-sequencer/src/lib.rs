@@ -22,7 +22,7 @@ use tracing::error;
 
 use decrypt::Decrypter;
 use include::Includer;
-use queue::TransactionsQueue;
+use queue::TransactionQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
@@ -37,7 +37,7 @@ pub struct SequencerConfig {
 }
 
 pub struct Sequencer {
-    transactions: TransactionsQueue,
+    transactions: TransactionQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
     decrypter: Decrypter,
@@ -66,7 +66,7 @@ impl Sequencer {
         let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
 
-        let queue = TransactionsQueue::new(cfg.priority_addr, cfg.index);
+        let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
         let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
@@ -117,7 +117,8 @@ impl Sequencer {
                         }
                         let mut inclusions = Vec::new();
                         for (round, lists) in payloads {
-                            let i = self.includer.inclusion_list(round, lists);
+                            let (i, r) = self.includer.inclusion_list(round, lists);
+                            self.transactions.update_transactions(&i, r);
                             inclusions.push(i)
                         }
                         self.decrypter.enqueue(inclusions)
