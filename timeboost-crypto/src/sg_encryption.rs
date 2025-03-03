@@ -17,9 +17,11 @@ use std::marker::PhantomData;
 
 use crate::{
     cp_proof::{ChaumPedersen, DleqTuple},
-    traits::dleq_proof::DleqProofScheme,
-    traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
-    Ciphertext, CombKey, Committee, DecShare, KeyShare, Plaintext, PublicKey,
+    traits::{
+        dleq_proof::DleqProofScheme,
+        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+    },
+    Ciphertext, CombKey, Committee, DecShare, KeyShare, Nonce, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -115,10 +117,10 @@ where
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let nonce = Aes256Gcm::generate_nonce(OsRng);
-        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref()).map_err(|e| {
-            ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
-        })?;
+        let nonce = Nonce::from(Aes256Gcm::generate_nonce(OsRng));
+        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), message.0.as_ref()).map_err(
+            |e| ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e)),
+        )?;
         let u_hat = hash_to_curve::<C, H>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
@@ -132,7 +134,7 @@ where
         Ok(Ciphertext {
             v,
             w_hat,
-            nonce: nonce.to_vec(),
+            nonce,
             e,
             pi,
         })
@@ -192,7 +194,7 @@ where
 
         let (v, nonce, data) = (
             ciphertext.v,
-            ciphertext.nonce.as_slice(),
+            &ciphertext.nonce.into() as &GenericArray<u8, <Aes256Gcm as AeadCore>::NonceSize>,
             ciphertext.e.clone(),
         );
         let pk_comb = comb_key.key.clone();
@@ -251,7 +253,7 @@ where
         let key = hash_to_key::<C, H>(v, w).unwrap();
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
+        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, data.as_ref());
         plaintext
             .map(Plaintext)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Decryption failed: {:?}", e)))

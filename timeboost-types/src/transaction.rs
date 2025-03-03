@@ -6,6 +6,32 @@ use crate::{Address, Epoch, SeqNo};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Nonce([u8; 32]);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct KeysetId(u32);
+
+impl From<u32> for KeysetId {
+    fn from(value: u32) -> Self {
+        KeysetId(value)
+    }
+}
+
+impl From<&[u8]> for KeysetId {
+    fn from(v: &[u8]) -> Self {
+        Self(u32::from_be_bytes(
+            v[0..4].try_into().expect("4 bytes is always u32"),
+        ))
+    }
+}
+
+impl KeysetId {
+    pub fn parse_from(data: &[u8]) -> KeysetId {
+        if data.len() >= 4 {
+            return KeysetId::from(&data[..4]);
+        }
+        KeysetId(0)
+    }
+}
+
 impl Nonce {
     pub fn to_epoch(self) -> Epoch {
         let n = u128::from_be_bytes(self.0[..16].try_into().expect("16 bytes = 128 bit"));
@@ -44,16 +70,18 @@ pub struct Transaction {
     nonce: Nonce,
     data: Vec<u8>,
     hash: [u8; 32],
+    kid: KeysetId,
 }
 
 impl Transaction {
-    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
+    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>, kid: KeysetId) -> Self {
         let h = blake3::hash(&data);
         Self {
             nonce,
             to,
             data,
             hash: h.into(),
+            kid,
         }
     }
 
@@ -63,6 +91,14 @@ impl Transaction {
 
     pub fn to(&self) -> Address {
         self.to
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.kid != KeysetId(0)
+    }
+
+    pub fn kid(&self) -> KeysetId {
+        self.kid
     }
 
     pub fn data(&self) -> &[u8] {
@@ -75,6 +111,13 @@ impl Transaction {
 
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
+    }
+
+    pub fn with_keyset(&self, kid: KeysetId) -> Self {
+        Self {
+            kid,
+            ..self.clone()
+        }
     }
 }
 
@@ -94,9 +137,20 @@ pub struct PriorityBundle {
     seqno: SeqNo,
     data: Vec<u8>,
     hash: [u8; 32],
+    kid: KeysetId,
 }
 
 impl PriorityBundle {
+    pub fn new(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, hash: [u8; 32], kid: KeysetId) -> Self {
+        Self {
+            epoch,
+            seqno,
+            data,
+            hash,
+            kid,
+        }
+    }
+
     pub fn epoch(&self) -> Epoch {
         self.epoch
     }
@@ -107,6 +161,14 @@ impl PriorityBundle {
 
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.kid != KeysetId(0)
+    }
+
+    pub fn kid(&self) -> KeysetId {
+        self.kid
     }
 
     pub fn data(&self) -> &[u8] {
@@ -125,6 +187,7 @@ impl From<Transaction> for PriorityBundle {
             seqno: t.nonce.to_seqno(),
             data: t.data,
             hash: t.hash,
+            kid: KeysetId(0),
         }
     }
 }

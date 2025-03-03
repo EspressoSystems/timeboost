@@ -14,8 +14,8 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
-use timeboost_types::{Address, Transaction};
-use timeboost_types::{CandidateList, DelayedInboxIndex};
+use timeboost_types::{Address, CandidateList, DelayedInboxIndex};
+use timeboost_types::{DecryptionKey, Transaction};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tracing::error;
@@ -34,6 +34,7 @@ pub struct SequencerConfig {
     peers: Vec<(PublicKey, net::Address)>,
     bind: SocketAddr,
     index: DelayedInboxIndex,
+    dec_sk: DecryptionKey,
 }
 
 pub struct Sequencer {
@@ -52,7 +53,7 @@ impl Sequencer {
         let rbc_metrics = RbcMetrics::new(prom.as_ref());
         let net_metrics = NetworkMetrics::new(prom.as_ref(), cfg.peers.iter().map(|(k, _)| *k));
 
-        let committee = Committee::new(
+        let cons_keyset = Committee::new(
             cfg.peers
                 .iter()
                 .map(|(k, _)| *k)
@@ -60,19 +61,30 @@ impl Sequencer {
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let network =
-            Network::create(cfg.bind, cfg.keypair.clone(), cfg.peers, net_metrics).await?;
+        let cons_net = Network::create(
+            cfg.bind,
+            cfg.keypair.clone(),
+            cfg.peers.clone(),
+            net_metrics,
+        )
+        .await?;
 
-        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
-        let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
+        let rcf = RbcConfig::new(cfg.keypair.clone(), cons_keyset.clone());
+        let rbc = Rbc::new(cons_net, rcf.with_metrics(rbc_metrics));
 
         let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
-        let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
+        let consensus = Consensus::new(cfg.keypair.clone(), cons_keyset.clone(), queue.clone())
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
 
-        let includer = Includer::new(committee, cfg.index);
-        let decrypter = Decrypter::new();
+        let dec_peers: Vec<_> = cfg.peers.iter().map(|(k, a)| (*k, dec_addr(a))).collect();
+        let dec_addr = dec_addr(&net::Address::from(cfg.bind));
+        // decryption network uses the same auth keys
+        let dec_net =
+            Network::create(dec_addr, cfg.keypair, dec_peers, NetworkMetrics::default()).await?;
+
+        let includer = Includer::new(cons_keyset.clone(), cfg.index);
+        let decrypter = Decrypter::new(dec_net, cons_keyset, cfg.dec_sk);
         let sorter = Sorter::new();
 
         Ok(Self {
@@ -121,7 +133,7 @@ impl Sequencer {
                             self.transactions.update_transactions(&i, r);
                             inclusions.push(i)
                         }
-                        self.decrypter.enqueue(inclusions)
+                        self.decrypter.enqueue(inclusions).await;
                     },
                     Err(e) => {
                         error!("coordinator error: {}", e);
@@ -140,6 +152,12 @@ impl Sequencer {
             }
         }
     }
+}
+
+fn dec_addr(addr: &net::Address) -> net::Address {
+    let mut dec_addr = addr.clone();
+    dec_addr.set_port(addr.port() + 250);
+    dec_addr
 }
 
 #[derive(Debug, thiserror::Error)]

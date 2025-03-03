@@ -60,6 +60,7 @@ impl TransactionQueue {
         inner.set_time(time);
 
         for t in it.into_iter() {
+            // TODO: initial validity checks on data (mininum length, etc.)
             if t.to() != inner.priority_addr {
                 inner.transactions.push_back((now, t));
                 continue;

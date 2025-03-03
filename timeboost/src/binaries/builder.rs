@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
 
     // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
     // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
-    let (sig_key, dec_key) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
+    let (sig_key, dec_sk) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
         // We found both in the JSON, we're good to go.
         (Some(sig_pk), Some(dec_pk)) => {
             let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
@@ -166,8 +166,8 @@ async fn main() -> Result<()> {
     };
 
     let keypair = Keypair::from(sig_key);
-    let deckey = keyset
-        .build_decryption_material(dec_key)
+    let dec_sk = keyset
+        .build_decryption_material(dec_sk)
         .expect("parse keyset");
 
     let (tb_app_tx, tb_app_rx) = channel(100);
@@ -245,7 +245,7 @@ async fn main() -> Result<()> {
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
-        deckey,
+        dec_sk,
         bind_address,
         nitro_url: cli.nitro_node_url,
         app_tx: tb_app_tx,
