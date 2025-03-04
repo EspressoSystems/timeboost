@@ -50,6 +50,10 @@ impl SailfishBlock {
         self.0.payload.len()
     }
 
+    pub fn size_bytes(&self) -> usize {
+        self.0.payload.iter().map(|t| t.size_bytes()).sum()
+    }
+
     pub fn timestamp(&self) -> Timestamp {
         self.0.time
     }

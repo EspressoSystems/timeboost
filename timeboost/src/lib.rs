@@ -108,7 +108,13 @@ pub struct Timeboost {
 }
 
 #[derive(Clone)]
-struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
+pub struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
+
+impl TransactionQueue {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(Vec::new())))
+    }
+}
 
 impl DataSource for TransactionQueue {
     type Data = SailfishBlock;
@@ -174,7 +180,7 @@ impl HasInitializer for Timeboost {
         let cfg = RbcConfig::new(initializer.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
-        let producer = TransactionQueue(Arc::new(Mutex::new(Vec::new())));
+        let producer = TransactionQueue::new();
         let consensus = Consensus::new(initializer.keypair, committee, producer.clone())
             .with_metrics(sf_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
