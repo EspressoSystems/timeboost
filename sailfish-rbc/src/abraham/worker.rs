@@ -8,7 +8,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Message, RawComm, RoundNumber};
+use sailfish_types::{Message, MessageKind, RawComm, RoundNumber};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
@@ -61,6 +61,33 @@ struct Messages<T: Committable> {
     acks: BTreeMap<Digest, Acks<T>>,
 }
 
+impl<T: Committable> Messages<T> {
+    /// Get a message digest by type and source.
+    fn digest(&self, k: MessageKind, s: &PublicKey) -> Option<Digest> {
+        for (d, t) in &self.map {
+            match &t.message.item {
+                Some(Message::Vertex(e)) => {
+                    if k == MessageKind::Vertex && e.data().source() == s {
+                        return Some(*d);
+                    }
+                }
+                Some(Message::Timeout(e)) => {
+                    if k == MessageKind::Timeout && e.data().timeout().signing_key() == s {
+                        return Some(*d);
+                    }
+                }
+                Some(Message::NoVote(e)) => {
+                    if k == MessageKind::NoVote && e.data().no_vote().signing_key() == s {
+                        return Some(*d);
+                    }
+                }
+                None | Some(Message::TimeoutCert(_)) => {}
+            }
+        }
+        None
+    }
+}
+
 impl<T: Committable> Default for Messages<T> {
     fn default() -> Self {
         Self {
@@ -87,6 +114,8 @@ struct Acks<T: Committable> {
 
 /// Tracking information about a message and its status.
 struct Tracker<T: Committable> {
+    /// The producer of this message.
+    source: Option<PublicKey>,
     /// Are we the original producer of this message?
     ours: bool,
     /// The time when this info was created.
@@ -345,6 +374,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let now = Instant::now();
 
         let tracker = Tracker {
+            source: Some(self.config.keypair.public_key()),
             ours: true,
             start: now,
             timestamp: now,
@@ -379,7 +409,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             Protocol::Fire(msg) => self.on_message(src, msg.into_owned(), false).await?,
             Protocol::Send(msg) => self.on_message(src, msg.into_owned(), true).await?,
             Protocol::Ack(env) => self.on_ack(src, env).await?,
-            Protocol::Propose(msg) => self.on_propose(msg.into_owned()).await?,
+            Protocol::Propose(msg) => self.on_propose(src, msg.into_owned()).await?,
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::Get(env) => self.on_get(env).await?,
             Protocol::Cert(crt) => self.on_cert(crt).await?,
@@ -453,18 +483,35 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// An RBC message proposal has been received.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, m = %msg))]
-    async fn on_propose(&mut self, msg: Message<T, Unchecked>) -> Result<()> {
+    async fn on_propose(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> Result<()> {
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
+
+        let Some(key) = msg.signing_key() else {
+            return Err(RbcError::InvalidMessage);
+        };
+
+        if *key != src {
+            warn!(%src, "message sender != message signer");
+            return Err(RbcError::InvalidMessage);
+        }
 
         let digest = Digest::new(&msg);
 
         let messages = self.buffer.entry(digest.round()).or_default();
 
+        if let Some(d) = messages.digest(msg.kind(), &src) {
+            if d != digest {
+                warn!(%src, "multiple proposals received");
+                return Err(RbcError::InvalidMessage);
+            }
+        }
+
         let tracker = messages.map.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
+                source: None,
                 ours: false,
                 start: now,
                 timestamp: now,
@@ -480,6 +527,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         match tracker.status {
             // First time we see this message.
             Status::Init => {
+                tracker.source = Some(src);
                 tracker.message = Item::some(msg);
                 tracker.status = Status::ReceivedMsg;
                 let env = Envelope::signed(digest, &self.config.keypair, false);
@@ -502,6 +550,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             // tracking info with the actual message proposal and vote on the message.
             Status::ReceivedVotes => {
                 if tracker.message.item.is_none() {
+                    tracker.source = Some(src);
                     tracker.message = Item::some(msg);
                     let env = Envelope::signed(digest, &self.config.keypair, false);
                     let vote = Protocol::<'_, T, Validated>::Vote(env, false);
@@ -514,6 +563,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             // which now arrived (after we requested it). We can finally deliver it to
             // the application.
             Status::RequestedMsg => {
+                tracker.source = Some(src);
                 tracker.message = Item::some(msg.clone());
                 debug!(n = %self.label, m = %msg, d = %digest, "delivered");
                 self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
@@ -584,6 +634,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .or_insert_with(|| {
                 let now = Instant::now();
                 Tracker {
+                    source: None,
                     ours: false,
                     start: now,
                     timestamp: now,
@@ -711,6 +762,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .or_insert_with(|| {
                 let now = Instant::now();
                 Tracker {
+                    source: None,
                     ours: false,
                     start: now,
                     timestamp: now,

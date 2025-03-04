@@ -9,6 +9,14 @@ use tracing::warn;
 
 use crate::{RoundNumber, Vertex};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MessageKind {
+    Vertex,
+    Timeout,
+    NoVote,
+    TimeoutCert,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
     /// A vertex proposal from a node.
@@ -25,12 +33,30 @@ pub enum Message<T: Committable, Status = Validated> {
 }
 
 impl<T: Committable, S> Message<T, S> {
+    pub fn kind(&self) -> MessageKind {
+        match self {
+            Self::Vertex(_) => MessageKind::Vertex,
+            Self::Timeout(_) => MessageKind::Timeout,
+            Self::NoVote(_) => MessageKind::NoVote,
+            Self::TimeoutCert(_) => MessageKind::TimeoutCert,
+        }
+    }
+
     pub fn round(&self) -> RoundNumber {
         match self {
             Self::Vertex(v) => *v.data().round().data(),
             Self::Timeout(t) => t.data().timeout().data().round(),
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
+        }
+    }
+
+    pub fn signing_key(&self) -> Option<&PublicKey> {
+        match self {
+            Self::Vertex(e) => Some(e.signing_key()),
+            Self::Timeout(e) => Some(e.signing_key()),
+            Self::NoVote(e) => Some(e.signing_key()),
+            Self::TimeoutCert(_) => None,
         }
     }
 
