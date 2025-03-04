@@ -21,9 +21,6 @@ use worker::Worker;
 enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     // Non-RBC section ////////////////////////////////////////////////////////
 
-    /// A message that is sent without expectations ("fire and forget").
-    Fire(Cow<'a, Message<T, Status>>),
-
     /// A message that is sent and received without quorum requirements.
     ///
     /// The sender expects an `Ack` for each message and will retry until
@@ -47,7 +44,10 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     Cert(Envelope<Certificate<Digest>, Status>),
 
     /// A direct request to retrieve a message, identified by the given digest.
-    Get(Envelope<Digest, Status>),
+    GetRequest(Envelope<Digest, Status>),
+
+    /// The reply to a get request.
+    GetResponse(Cow<'a, Message<T, Status>>),
 }
 
 /// Worker command
