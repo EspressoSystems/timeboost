@@ -16,6 +16,7 @@ use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
 use timeboost_types::{Address, CandidateList, DelayedInboxIndex};
 use timeboost_types::{DecryptionKey, Transaction};
+use timeboost_utils::dec_addr;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tracing::error;
@@ -80,9 +81,13 @@ impl Sequencer {
         let dec_keyset = timeboost_crypto::Keyset::new(1, cons_keyset.size().get() as u16);
         let dec_peers: Vec<_> = cfg.peers.iter().map(|(k, a)| (*k, dec_addr(a))).collect();
         let dec_addr = dec_addr(&net::Address::from(cfg.bind));
-        // decryption network uses the same auth keys
-        let dec_net =
-            Network::create(dec_addr, cfg.keypair, dec_peers, NetworkMetrics::default()).await?;
+        let dec_net = Network::create(
+            dec_addr,
+            cfg.keypair, // same auth
+            dec_peers,
+            NetworkMetrics::default(),
+        )
+        .await?;
 
         let includer = Includer::new(cons_keyset.clone(), cfg.index);
         let decrypter = Decrypter::new(dec_net, dec_keyset, cfg.dec_sk);
@@ -153,12 +158,6 @@ impl Sequencer {
             }
         }
     }
-}
-
-fn dec_addr(addr: &net::Address) -> net::Address {
-    let mut dec_addr = addr.clone();
-    dec_addr.set_port(addr.port() + 250);
-    dec_addr
 }
 
 #[derive(Debug, thiserror::Error)]
