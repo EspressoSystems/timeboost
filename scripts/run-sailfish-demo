@@ -7,11 +7,12 @@ just build_release
 nodes=${1:-5}
 
 for (( i=0; i<$nodes; i++ )); do
-    echo "Starting node $i"
-
-    cmd=(target/release/sailfish
+    cmd=(RUST_LOG=sailfish=info,timeboost=info,cliquenet=warn,sailfish_rbc=info \
+        target/release/sailfish
         --id $i
         --port $((8000 + $i))
+        --rpc-port $((8800 + $i))
+        --metrics-port $((9000 + $i))
         --keyset-file test-configs/local.json
         --tps 100
         --nodes $nodes

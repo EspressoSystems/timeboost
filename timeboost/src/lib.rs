@@ -338,6 +338,7 @@ impl Timeboost {
 pub fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
     tokio::spawn(async move {
         let api = TimeboostApiState::new(app_tx);
+        tracing::info!("starting rpc api on port {}", rpc_port);
         if let Err(e) = api
             .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
             .await
@@ -348,8 +349,9 @@ pub fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> Joi
 }
 
 /// Start out metrics api with given port
-fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
-    tokio::spawn(
-        async move { serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await },
-    )
+pub fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        tracing::info!("starting metrics api on port {}", metrics_port);
+        serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
+    })
 }

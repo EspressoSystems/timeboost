@@ -14,10 +14,10 @@ use std::{
 };
 use timeboost::{
     keyset::{private_keys, wait_for_live_peer, Keyset},
-    TransactionQueue,
+    start_metrics_api, start_rpc_api, TransactionQueue,
 };
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
-use tokio::signal;
+use tokio::{signal, sync::mpsc};
 use tracing::info;
 
 use clap::Parser;
@@ -27,6 +27,14 @@ struct Cli {
     /// The ID of the node to build.
     #[clap(long)]
     id: u16,
+
+    /// The port of the RPC API.
+    #[clap(long)]
+    rpc_port: u16,
+
+    /// The port of the metrics server.
+    #[clap(long)]
+    metrics_port: u16,
 
     /// The port of the node to build.
     #[clap(long)]
@@ -89,6 +97,24 @@ async fn main() -> Result<()> {
     let num = cli.nodes.unwrap_or(4);
 
     let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+
+    let (app_tx, mut app_rx) = mpsc::channel(1024);
+
+    // Spin app_rx in a background thread and just drop the messages using a tokio select. Exiting when we
+    // get a ctrl-c.
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = app_rx.recv() => {}
+                _ = signal::ctrl_c() => {
+                    break;
+                }
+            }
+        }
+    });
+
+    info!("starting rpc api");
+    let rpc = start_rpc_api(app_tx, cli.rpc_port);
 
     let my_keyset = keyset
         .keyset()
@@ -176,6 +202,9 @@ async fn main() -> Result<()> {
         net_metrics,
     )
     .await?;
+
+    info!("starting metrics api");
+    let metrics = start_metrics_api(prom.clone(), cli.metrics_port);
     let committee = Committee::new(
         peer_hosts_and_keys
             .iter()
@@ -191,8 +220,14 @@ async fn main() -> Result<()> {
     let consensus = Consensus::new(keypair, committee, producer.clone()).with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
+    // Kickstart the network.
+    for a in coordinator.init() {
+        let _ = coordinator.execute(a).await;
+    }
+    info!("network kicked off");
+
     loop {
-        tokio::select! {
+        tokio::select! { biased;
             result = coordinator.next() => {
                 match result {
                     Ok(actions) => {
@@ -204,6 +239,8 @@ async fn main() -> Result<()> {
                                     transactions = payload.data().len(),
                                     "block delivered"
                                 );
+                            } else if let Err(e) = coordinator.execute(a).await {
+                                tracing::error!("Error receiving message: {}", e);
                             }
                         }
                     },
@@ -214,6 +251,8 @@ async fn main() -> Result<()> {
             }
             _ = signal::ctrl_c() => {
                 info!("received ctrl-c; shutting down");
+                metrics.abort();
+                rpc.abort();
                 break;
             }
         }
