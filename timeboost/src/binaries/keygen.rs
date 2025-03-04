@@ -42,7 +42,7 @@ impl Scheme {
                 }
             }
             Self::Decryption => {
-                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num as u64);
+                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num as u16);
                 debug!("generating new threshold encryption keyset");
                 let pub_key = bs58_encode(&pub_key.as_bytes());
                 let comb_key = bs58_encode(&comb_key.as_bytes());

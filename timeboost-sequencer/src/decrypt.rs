@@ -4,13 +4,12 @@ use std::sync::Arc;
 
 use bimap::BiMap;
 use cliquenet::Network;
-use multisig::Committee;
 use parking_lot::Mutex;
 use sailfish::types::RoundNumber;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
-use timeboost_crypto::{DecryptionScheme, Nonce};
+use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
 use timeboost_types::{
-    DecShareKey, DecryptionKey, InclusionList, KeysetId, PriorityBundle, ShareInfo, Transaction,
+    DecShareKey, DecryptionKey, InclusionList, PriorityBundle, ShareInfo, Transaction,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -40,7 +39,7 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(net: Network, committee: Committee, dec_sk: DecryptionKey) -> Self {
+    pub fn new(net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
         let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
         let decrypter = Worker::new(net, committee, dec_sk);
@@ -152,7 +151,7 @@ impl Drop for Decrypter {
 
 struct Worker {
     net: Network,
-    committee: Committee,
+    committee: Keyset,
     dec_sk: DecryptionKey,
     idx2cid: BiMap<usize, Nonce>,
     cid2ct: BiMap<Nonce, Ciphertext>,
@@ -160,7 +159,7 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(net: Network, committee: Committee, dec_sk: DecryptionKey) -> Self {
+    pub fn new(net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
             net,
             committee,
@@ -297,10 +296,7 @@ impl Worker {
             let mut to_remove = vec![];
             let round_entries: Vec<_> = shares.iter().filter(|(k, _)| k.round() == round).collect();
             let mut decrypted: Vec<Vec<u8>> = Vec::with_capacity(round_entries.len());
-            let committee = timeboost_crypto::Committee {
-                id: 1,
-                size: self.committee.size().get() as u64,
-            };
+
             // combine decryption shares for each ciphertext
             for (k, shares) in round_entries {
                 let cid = k.cid();
@@ -322,7 +318,7 @@ impl Worker {
                 };
 
                 let decrypted_data = match DecryptionScheme::combine(
-                    &committee,
+                    &self.committee,
                     self.dec_sk.combkey(),
                     shares.iter().collect::<Vec<_>>(),
                     ciphertext,

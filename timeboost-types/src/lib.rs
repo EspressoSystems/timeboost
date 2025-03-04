@@ -18,4 +18,4 @@ pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
 pub use time::{Epoch, Timestamp};
-pub use transaction::{KeysetId, PriorityBundle, Transaction};
+pub use transaction::{PriorityBundle, Transaction};

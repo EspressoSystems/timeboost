@@ -1,5 +1,6 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::KeysetId;
 
 use crate::{Address, Epoch, SeqNo};
 
@@ -38,32 +39,6 @@ impl Committable for Nonce {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct KeysetId(u32);
-
-impl From<u32> for KeysetId {
-    fn from(value: u32) -> Self {
-        KeysetId(value)
-    }
-}
-
-impl From<&[u8]> for KeysetId {
-    fn from(v: &[u8]) -> Self {
-        Self(u32::from_be_bytes(
-            v[0..4].try_into().expect("4 bytes is always u32"),
-        ))
-    }
-}
-
-impl KeysetId {
-    pub fn parse_from(data: &[u8]) -> KeysetId {
-        if data.len() >= 4 {
-            return KeysetId::from(&data[..4]);
-        }
-        KeysetId(0)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Transaction {
     to: Address,
@@ -94,7 +69,7 @@ impl Transaction {
     }
 
     pub fn encrypted(&self) -> bool {
-        self.kid != KeysetId(0)
+        self.kid != KeysetId::from(0u64)
     }
 
     pub fn kid(&self) -> KeysetId {
@@ -166,7 +141,7 @@ impl PriorityBundle {
     }
 
     pub fn encrypted(&self) -> bool {
-        self.kid != KeysetId(0)
+        self.kid != KeysetId::from(0)
     }
 
     pub fn kid(&self) -> KeysetId {
@@ -189,7 +164,7 @@ impl From<Transaction> for PriorityBundle {
             seqno: t.nonce.to_seqno(),
             data: t.data,
             hash: t.hash,
-            kid: KeysetId(0),
+            kid: KeysetId::from(0),
         }
     }
 }

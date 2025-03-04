@@ -77,6 +77,7 @@ impl Sequencer {
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
 
+        let dec_keyset = timeboost_crypto::Keyset::new(1, cons_keyset.size().get() as u16);
         let dec_peers: Vec<_> = cfg.peers.iter().map(|(k, a)| (*k, dec_addr(a))).collect();
         let dec_addr = dec_addr(&net::Address::from(cfg.bind));
         // decryption network uses the same auth keys
@@ -84,7 +85,7 @@ impl Sequencer {
             Network::create(dec_addr, cfg.keypair, dec_peers, NetworkMetrics::default()).await?;
 
         let includer = Includer::new(cons_keyset.clone(), cfg.index);
-        let decrypter = Decrypter::new(dec_net, cons_keyset, cfg.dec_sk);
+        let decrypter = Decrypter::new(dec_net, dec_keyset, cfg.dec_sk);
         let sorter = Sorter::new();
 
         Ok(Self {

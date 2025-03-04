@@ -21,7 +21,7 @@ use crate::{
         dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
-    Ciphertext, CombKey, Committee, DecShare, KeyShare, Nonce, Plaintext, PublicKey,
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -48,7 +48,7 @@ where
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
-    type Committee = Committee;
+    type Committee = Keyset;
     type PublicKey = PublicKey<C>;
     type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
@@ -58,7 +58,7 @@ where
 
     fn keygen<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size as usize;
         let degree = committee_size / CORR_RATIO;
@@ -99,7 +99,7 @@ where
 
     fn encrypt<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
@@ -107,13 +107,13 @@ where
         let gen = C::generator();
         let v = gen * beta;
         let w = pub_key.key * beta;
+        let cid = committee.id;
 
         // hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w, cid.into()).unwrap();
         let k = GenericArray::from_slice(&key);
 
         // TODO: use committee id for hashing
-        let _cid = committee.id;
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
@@ -172,7 +172,7 @@ where
     }
 
     fn combine(
-        committee: &Committee,
+        committee: &Keyset,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
@@ -250,7 +250,7 @@ where
         }
 
         // Hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w, committee.id.into()).unwrap();
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, data.as_ref());
@@ -280,12 +280,17 @@ where
     Ok(u_hat)
 }
 
-fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
+fn hash_to_key<C: CurveGroup, H: Digest>(
+    v: C,
+    w: C,
+    id: u64,
+) -> Result<Vec<u8>, ThresholdEncError> {
     let mut hasher = H::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer).unwrap();
-    w.serialize_compressed(&mut writer).unwrap();
+    v.serialize_compressed(&mut writer)?;
+    w.serialize_compressed(&mut writer)?;
+    writer.write_all(&id.to_be_bytes())?;
     writer.flush()?;
     drop(writer);
     hasher.update(buffer);
@@ -297,7 +302,7 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
 mod test {
     use crate::{
         cp_proof::Proof,
-        sg_encryption::{Committee, DecShare, Plaintext, ShoupGennaro},
+        sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
         traits::threshold_enc::ThresholdEncScheme,
     };
 
@@ -313,7 +318,7 @@ mod test {
     #[test]
     fn test_correctness() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 20, id: 0 };
+        let committee = Keyset::new(0, 20);
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
@@ -343,7 +348,7 @@ mod test {
     #[test]
     fn test_not_enough_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset::new(0, 10);
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
@@ -373,7 +378,7 @@ mod test {
     #[test]
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset::new(0, 10);
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();

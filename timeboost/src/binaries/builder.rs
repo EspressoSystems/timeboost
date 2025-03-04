@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, Keyset},
+    keyset::{private_keys, wait_for_live_peer, KeysetConfig},
     start_rpc_api, Timeboost, TimeboostInitializer,
 };
 use timeboost_core::traits::has_initializer::HasInitializer;
@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
     ensure!(num < 20, "number of nodes must be less 20");
 
     // Read public key material
-    let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+    let keyset = KeysetConfig::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset

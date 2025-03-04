@@ -7,7 +7,7 @@ use digest::{DynDigest, FixedOutputReset};
 use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
 use timeboost_crypto::{
-    sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme, Committee, Plaintext,
+    sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme, Keyset, Plaintext,
 };
 
 const KB: usize = 1 << 10;
@@ -36,7 +36,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("encrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset::new(size, 0);
             let (pk, _, _) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -54,7 +54,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("decrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset::new(size, 0);
             let (pk, _, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -73,7 +73,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("combine"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Committee { size, id: 0 };
+            let committee = Keyset::new(size, 0);
             let (pk, comb_key, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());

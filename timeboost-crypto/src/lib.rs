@@ -17,10 +17,54 @@ use traits::threshold_enc::ThresholdEncScheme;
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct KeysetId(u64);
+
+impl TryFrom<&[u8]> for KeysetId {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let bytes: [u8; 8] = value.try_into()?;
+        Ok(KeysetId(u64::from_be_bytes(bytes)))
+    }
+}
+
+impl From<u64> for KeysetId {
+    fn from(value: u64) -> Self {
+        KeysetId(value)
+    }
+}
+
+impl Into<u64> for KeysetId {
+    fn into(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Clone)]
-pub struct Committee {
-    pub id: u32,
-    pub size: u64,
+pub struct Keyset {
+    id: KeysetId,
+    size: u16,
+}
+
+impl Keyset {
+    pub fn new(id: u64, size: u16) -> Self {
+        assert!(size > 0);
+        Keyset {
+            id: KeysetId::from(id),
+            size,
+        }
+    }
+}
+
+impl Keyset {
+    pub fn size(&self) -> u16 {
+        self.size
+    }
+
+    pub fn threshold(&self) -> u16 {
+        self.size.div_ceil(3)
+    }
 }
 
 #[serde_as]
@@ -204,11 +248,11 @@ impl DecryptionScheme {
     /// - A single public key for clients to encrypt their transaction bundles.
     /// - A single combination key to all nodes for combining partially decrypted ciphertexts.
     /// - One distinct private key share per node for partial decryption.
-    pub fn trusted_keygen(size: u64) -> TrustedKeyMaterial {
+    pub fn trusted_keygen(size: u16) -> TrustedKeyMaterial {
         // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
-        let committee = Committee { id: 1, size };
-        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &committee).unwrap()
+        let keyset = Keyset::new(1, size);
+        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &keyset).unwrap()
     }
 }
 
@@ -223,7 +267,7 @@ impl ThresholdEncScheme for DecryptionScheme {
 
     fn keygen<R: ark_std::rand::Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
     ) -> Result<
         (Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>),
         traits::threshold_enc::ThresholdEncError,
@@ -233,7 +277,7 @@ impl ThresholdEncScheme for DecryptionScheme {
 
     fn encrypt<R: ark_std::rand::Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
@@ -248,7 +292,7 @@ impl ThresholdEncScheme for DecryptionScheme {
     }
 
     fn combine(
-        committee: &Committee,
+        committee: &Keyset,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
