@@ -107,12 +107,16 @@ pub struct Timeboost {
     transactions: TransactionQueue,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
 
 impl TransactionQueue {
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(Vec::new())))
+    }
+
+    pub fn send(&self, tx: Transaction) {
+        self.0.lock().push(tx);
     }
 }
 

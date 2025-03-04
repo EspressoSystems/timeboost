@@ -1,3 +1,6 @@
+#[cfg(feature = "until")]
+use anyhow::ensure;
+
 use anyhow::{Context, Result};
 use cliquenet::{Address, Network, NetworkMetrics};
 use multisig::{Committee, Keypair, PublicKey};
@@ -11,14 +14,28 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use timeboost::{
     keyset::{private_keys, wait_for_live_peer, Keyset},
     start_metrics_api, start_rpc_api, TransactionQueue,
 };
+use timeboost_core::{
+    load_generation::{make_tx, tps_to_millis},
+    types::block::sailfish::SailfishBlock,
+};
+
+#[cfg(feature = "until")]
+use timeboost_core::until::run_until;
+
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
-use tokio::{signal, sync::mpsc};
-use tracing::info;
+use tokio::{
+    signal,
+    sync::mpsc,
+    task::JoinHandle,
+    time::{interval, Interval},
+};
+use tracing::{info, trace};
 
 use clap::Parser;
 
@@ -49,6 +66,16 @@ struct Cli {
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
     nodes: Option<usize>,
+
+    /// The until value to use for the committee config.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 1000)]
+    until: u64,
+
+    /// The watchdog timeout.
+    #[cfg(feature = "until")]
+    #[clap(long, default_value_t = 30)]
+    watchdog_timeout: u64,
 
     /// Path to file containing private keys.
     ///
@@ -89,6 +116,96 @@ struct Cli {
     tps: u32,
 }
 
+async fn run(
+    mut coordinator: Coordinator<SailfishBlock, Rbc<SailfishBlock>>,
+    producer: TransactionQueue,
+    mut interval: Interval,
+    handles: Vec<JoinHandle<()>>,
+    #[cfg(feature = "until")] mut until_handle: JoinHandle<()>,
+) -> Result<()> {
+    loop {
+        #[cfg(feature = "until")]
+        tokio::select! { biased;
+            result = coordinator.next() => {
+                match result {
+                    Ok(actions) => {
+                        for a in actions {
+                            if let Action::Deliver(payload) = a {
+                                info!(
+                                    round_number = *payload.round(),
+                                    size = payload.data().size_bytes(),
+                                    transactions = payload.data().len(),
+                                    "block delivered"
+                                );
+                            } else if let Err(e) = coordinator.execute(a).await {
+                                tracing::error!("Error receiving message: {}", e);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Error receiving message: {}", e);
+                    },
+                }
+            }
+            _ = &mut until_handle => {
+                tracing::info!("watchdog completed");
+                return Ok(());
+            }
+            _ = interval.tick() => {
+                let tx = make_tx();
+                trace!("generating transaction");
+                producer.send(tx);
+            }
+            _ = signal::ctrl_c() => {
+                info!("received ctrl-c; shutting down");
+                for handle in handles {
+                    handle.abort();
+                }
+                break;
+            }
+        }
+
+        #[cfg(not(feature = "until"))]
+        tokio::select! { biased;
+            result = coordinator.next() => {
+                match result {
+                    Ok(actions) => {
+                        for a in actions {
+                            if let Action::Deliver(payload) = a {
+                                info!(
+                                    round_number = *payload.round(),
+                                    size = payload.data().size_bytes(),
+                                    transactions = payload.data().len(),
+                                    "block delivered"
+                                );
+                            } else if let Err(e) = coordinator.execute(a).await {
+                                tracing::error!("Error receiving message: {}", e);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("Error receiving message: {}", e);
+                    },
+                }
+            }
+            _ = interval.tick() => {
+                let tx = make_tx();
+                trace!("generating transaction");
+                producer.send(tx);
+            }
+            _ = signal::ctrl_c() => {
+                info!("received ctrl-c; shutting down");
+                for handle in handles {
+                    handle.abort();
+                }
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::init_logging();
@@ -113,7 +230,6 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!("starting rpc api");
     let rpc = start_rpc_api(app_tx, cli.rpc_port);
 
     let my_keyset = keyset
@@ -151,6 +267,31 @@ async fn main() -> Result<()> {
     let keypair = Keypair::from(sig_key);
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
+
+    #[cfg(feature = "until")]
+    let peer_urls: Vec<reqwest::Url> = keyset
+        .keyset()
+        .iter()
+        .take(num)
+        .map(|ph| format!("http://{}", ph.url).parse().unwrap())
+        .collect();
+
+    #[cfg(feature = "until")]
+    let until_handle = {
+        ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
+        let mut host = peer_urls[usize::from(cli.id)].clone();
+
+        // HACK: The port is always 9000 + i in the local setup
+        host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
+
+        // Map the Result<(), anyhow::Error> to () to match the expected JoinHandle<()> type
+        let task_handle = tokio::spawn(async move {
+            if let Err(e) = run_until(cli.until, cli.watchdog_timeout, host).await {
+                tracing::error!("Until task failed: {}", e);
+            }
+        });
+        task_handle
+    };
 
     let mut peer_hosts_and_keys = Vec::new();
 
@@ -203,7 +344,6 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    info!("starting metrics api");
     let metrics = start_metrics_api(prom.clone(), cli.metrics_port);
     let committee = Committee::new(
         peer_hosts_and_keys
@@ -224,38 +364,20 @@ async fn main() -> Result<()> {
     for a in coordinator.init() {
         let _ = coordinator.execute(a).await;
     }
-    info!("network kicked off");
 
-    loop {
-        tokio::select! { biased;
-            result = coordinator.next() => {
-                match result {
-                    Ok(actions) => {
-                        for a in actions {
-                            if let Action::Deliver(payload) = a {
-                                info!(
-                                    round_number = *payload.round(),
-                                    size = payload.data().size_bytes(),
-                                    transactions = payload.data().len(),
-                                    "block delivered"
-                                );
-                            } else if let Err(e) = coordinator.execute(a).await {
-                                tracing::error!("Error receiving message: {}", e);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Error receiving message: {}", e);
-                    },
-                }
-            }
-            _ = signal::ctrl_c() => {
-                info!("received ctrl-c; shutting down");
-                metrics.abort();
-                rpc.abort();
-                break;
-            }
-        }
+    // Set up the load generator interval
+    let millis = tps_to_millis(cli.tps);
+    let interval = interval(Duration::from_millis(millis));
+
+    let handles = vec![rpc, metrics];
+
+    #[cfg(feature = "until")]
+    {
+        run(coordinator, producer, interval, handles, until_handle).await
     }
-    Ok(())
+
+    #[cfg(not(feature = "until"))]
+    {
+        run(coordinator, producer, interval, handles).await
+    }
 }

@@ -36,7 +36,7 @@ fix:
   cargo fix --allow-dirty --allow-staged
 
 ci_local:
-  just build && just lint && just test_ci --release && just run_demo && just build_docker
+  just build && just lint && just test_ci --release && just run_demo && just run_sailfish_demo && just build_docker
 
 bacon: clippy check fmt
 
@@ -61,7 +61,10 @@ run_integration_local *ARGS:
   ./scripts/run-local-integration {{ARGS}}
 
 run_demo *ARGS:
-  ./scripts/run-demo {{ARGS}}
+  ./scripts/run-timeboost-demo {{ARGS}}
+
+run_sailfish_demo *ARGS:
+  ./scripts/run-sailfish-demo {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}

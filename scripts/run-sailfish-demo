@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
-just build_release
+just build_release --features until
 
 nodes=${1:-5}
 
 for (( i=0; i<$nodes; i++ )); do
-    cmd=(RUST_LOG=sailfish=info,timeboost=info,cliquenet=warn,sailfish_rbc=info \
+    cmd=(RUST_LOG=sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info \
         target/release/sailfish
         --id $i
         --port $((8000 + $i))
@@ -16,6 +16,7 @@ for (( i=0; i<$nodes; i++ )); do
         --keyset-file test-configs/local.json
         --tps 100
         --nodes $nodes
+        --until 300
     )
 
     eval "${cmd[@]}" &
