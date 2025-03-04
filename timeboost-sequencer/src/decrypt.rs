@@ -25,11 +25,17 @@ type DecryptedData = Vec<Vec<u8>>;
 const MAX_ROUNDS: usize = 100;
 
 pub struct Decrypter {
-    ready: BTreeMap<RoundNumber, Option<InclusionList>>,
+    /// Incoming encrypted lists.
     incls: BTreeMap<RoundNumber, InclusionList>,
-    modified: BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
+    /// Storing encrypted indicies.
+    modified: BTreeMap<RoundNumber, (Vec<usize>, Vec<Transaction>)>,
+    /// Map signaling decrypted lists.
+    ready: BTreeMap<RoundNumber, Option<InclusionList>>,
+    /// Send encrypted data.
     enc_tx: Sender<(RoundNumber, EncryptedData)>,
+    /// Receive decrypted data.
     dec_rx: Receiver<(RoundNumber, DecryptedData)>,
+    /// Worker task handle.
     jh: JoinHandle<()>,
 }
 
@@ -49,18 +55,17 @@ impl Decrypter {
         }
     }
 
+    // 1. extract encrypted txns from each inclusion list.
+    // 2. send the encrypted data to the worker.
     pub async fn enqueue<I>(&mut self, incls: I)
     where
         I: IntoIterator<Item = InclusionList>,
     {
-        // 1. extract encrypted txns from each inclusion list.
-        // 2. send the encrypted data to the worker.
         for incl in incls {
             let mut encrypted_data = Vec::new();
             let round = incl.round();
             self.incls.insert(round, incl.clone());
             let (ptxs, txs) = incl.into_transactions();
-            let txs: Vec<_> = txs.into_iter().collect();
             let mut modified_ptxs = Vec::new();
             let mut modified_txs = Vec::new();
             for (i, ptx) in ptxs.iter().enumerate() {
@@ -69,59 +74,60 @@ impl Decrypter {
                     modified_ptxs.push(i);
                 }
             }
-            for (i, tx) in txs.iter().enumerate() {
+            for tx in txs.into_iter() {
                 if tx.encrypted() {
                     encrypted_data.push((tx.kid(), tx.data().to_vec()));
-                    modified_txs.push(i);
+                    modified_txs.push(tx);
                 }
             }
-            self.modified.insert(round, (modified_ptxs, modified_txs));
-            self.ready.insert(round, None);
             if let Err(e) = self.enc_tx.send((round, encrypted_data)).await {
                 error!("failed to send encrypted data: {:?}", e);
             }
+            self.modified.insert(round, (modified_ptxs, modified_txs));
+            self.ready.insert(round, None);
         }
     }
 
+    // 1. receive decrypted data for some round r.
+    // 2. reassemble incl list and mark round r as "ready".
+    // 3. if r is next round, then return list, otherwise, goto (1).
     pub async fn next(&mut self) -> Result<InclusionList, DecryptError> {
-        // 1. receive decrypted data for some round r.
-        // 2. reassemble incl list and mark round r as "ready".
-        // 3. if r is next round, then return list, otherwise, goto (1).
         while let Some((r, dec)) = self.dec_rx.recv().await {
-            self.incls
-                .remove(&r)
-                .map(|incl| {
-                    let ptxs_len = incl.priority_bundles().len();
-                    let modified = self
-                        .modified
-                        .remove(&r)
-                        .expect("worker has incl list => was enqueued");
+            if let Some(incl) = self.incls.remove(&r) {
+                // reassemble inclusion list for round r
+                let mut decrypted_incl = incl.clone();
+                let ptxs_len = incl.priority_bundles().len();
+                let (modified_ptxs, modified_txs) = self
+                    .modified
+                    .remove(&r)
+                    .expect("worker has incl list => was enqueued");
 
-                    let (mut ptxs, txs) = incl.clone().into_transactions();
-                    let mut txs = Vec::from_iter(txs);
+                let (mut ptxs, mut txs) = incl.into_transactions();
+                for (i, m) in modified_ptxs.into_iter().enumerate() {
+                    ptxs[m] = PriorityBundle::new_compute_hash(
+                        ptxs[m].epoch(),
+                        ptxs[m].seqno(),
+                        dec[i].clone(),
+                        ptxs[m].kid(),
+                    );
+                }
 
-                    for (i, m) in modified.0.into_iter().enumerate() {
-                        ptxs[m] = PriorityBundle::new(
-                            ptxs[m].epoch(),
-                            ptxs[m].seqno(),
-                            dec[i].clone(),
-                            *ptxs[m].digest(),
-                            ptxs[m].kid(),
-                        );
-                    }
+                for (i, tx) in modified_txs.into_iter().enumerate() {
+                    // re-insert all decrypted txs (incl. deduplication)
+                    txs.remove(&tx);
+                    let dec_tx =
+                        Transaction::new(tx.nonce(), tx.to(), dec[i + ptxs_len].clone(), tx.kid());
+                    txs.insert(dec_tx);
+                }
 
-                    for (i, m) in modified.1.into_iter().enumerate() {
-                        txs[m] = Transaction::new(
-                            txs[m].nonce(),
-                            txs[m].to(),
-                            dec[ptxs_len + i].clone(),
-                            txs[m].kid(),
-                        );
-                    }
-                    Some(incl)
-                })
-                .map(|incl| self.ready.insert(r, incl));
+                decrypted_incl
+                    .set_priority_bundles(ptxs)
+                    .set_transactions(txs);
 
+                self.ready.insert(r, Some(decrypted_incl));
+            }
+
+            // inclusion lists are processed in order; return if r is the immediate next round.
             if let Some(entry) = self.ready.first_entry() {
                 if let Some(incl) = entry.get() {
                     return Ok(incl.clone());
@@ -148,8 +154,8 @@ struct Worker {
     net: Network,
     committee: Committee,
     dec_sk: DecryptionKey,
-    idx2nonce: BiMap<usize, Nonce>,
-    nonce2ct: BiMap<Nonce, Ciphertext>,
+    idx2cid: BiMap<usize, Nonce>,
+    cid2ct: BiMap<Nonce, Ciphertext>,
     shares: Arc<Mutex<BTreeMap<DecShareKey, Vec<DecShare>>>>,
 }
 
@@ -159,8 +165,8 @@ impl Worker {
             net,
             committee,
             dec_sk,
-            idx2nonce: BiMap::new(),
-            nonce2ct: BiMap::new(),
+            idx2cid: BiMap::new(),
+            cid2ct: BiMap::new(),
             shares: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
@@ -214,8 +220,8 @@ impl Worker {
             };
             // mappings
             let nonce = ciphertext.nonce();
-            self.nonce2ct.insert(nonce, ciphertext.clone());
-            self.idx2nonce.insert(idx, nonce);
+            self.cid2ct.insert(nonce, ciphertext.clone());
+            self.idx2cid.insert(idx, nonce);
 
             match <DecryptionScheme as ThresholdEncScheme>::decrypt(
                 self.dec_sk.privkey(),
@@ -292,14 +298,14 @@ impl Worker {
             let round_entries: Vec<_> = shares.iter().filter(|(k, _)| k.round() == round).collect();
             let mut decrypted: Vec<Vec<u8>> = Vec::with_capacity(round_entries.len());
             let committee = timeboost_crypto::Committee {
-                id: 0,
+                id: 1,
                 size: self.committee.size().get() as u64,
             };
             // combine decryption shares for each ciphertext
             for (k, shares) in round_entries {
                 let cid = k.cid();
                 // TODO: make sure that the correct keyset is used for combining.
-                let ciphertext = match self.nonce2ct.get_by_left(cid) {
+                let ciphertext = match self.cid2ct.get_by_left(cid) {
                     Some(c) => c,
                     None => {
                         warn!("received sufficient shares but not the actual ciphertext");
@@ -307,7 +313,7 @@ impl Worker {
                     }
                 };
 
-                let idx = match self.idx2nonce.get_by_right(cid) {
+                let idx = match self.idx2cid.get_by_right(cid) {
                     Some(idx) => idx,
                     None => {
                         error!("cipertext is present but corresponding id is missing");
@@ -334,8 +340,8 @@ impl Worker {
             // clean up
             shares.retain(|k, _| k.round() != round);
             for cid in to_remove {
-                self.idx2nonce.remove_by_right(&cid);
-                self.nonce2ct.remove_by_left(&cid);
+                self.idx2cid.remove_by_right(&cid);
+                self.cid2ct.remove_by_left(&cid);
             }
 
             Some((round, decrypted))

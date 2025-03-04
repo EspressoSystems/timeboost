@@ -6,32 +6,6 @@ use crate::{Address, Epoch, SeqNo};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Nonce([u8; 32]);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct KeysetId(u32);
-
-impl From<u32> for KeysetId {
-    fn from(value: u32) -> Self {
-        KeysetId(value)
-    }
-}
-
-impl From<&[u8]> for KeysetId {
-    fn from(v: &[u8]) -> Self {
-        Self(u32::from_be_bytes(
-            v[0..4].try_into().expect("4 bytes is always u32"),
-        ))
-    }
-}
-
-impl KeysetId {
-    pub fn parse_from(data: &[u8]) -> KeysetId {
-        if data.len() >= 4 {
-            return KeysetId::from(&data[..4]);
-        }
-        KeysetId(0)
-    }
-}
-
 impl Nonce {
     pub fn to_epoch(self) -> Epoch {
         let n = u128::from_be_bytes(self.0[..16].try_into().expect("16 bytes = 128 bit"));
@@ -61,6 +35,32 @@ impl Committable for Nonce {
         RawCommitmentBuilder::new("Nonce")
             .fixed_size_bytes(&self.0)
             .finalize()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct KeysetId(u32);
+
+impl From<u32> for KeysetId {
+    fn from(value: u32) -> Self {
+        KeysetId(value)
+    }
+}
+
+impl From<&[u8]> for KeysetId {
+    fn from(v: &[u8]) -> Self {
+        Self(u32::from_be_bytes(
+            v[0..4].try_into().expect("4 bytes is always u32"),
+        ))
+    }
+}
+
+impl KeysetId {
+    pub fn parse_from(data: &[u8]) -> KeysetId {
+        if data.len() >= 4 {
+            return KeysetId::from(&data[..4]);
+        }
+        KeysetId(0)
     }
 }
 
@@ -113,11 +113,8 @@ impl Transaction {
         &self.hash
     }
 
-    pub fn with_keyset(&self, kid: KeysetId) -> Self {
-        Self {
-            kid,
-            ..self.clone()
-        }
+    pub fn set_keyset(&mut self, kid: KeysetId) {
+        self.kid = kid
     }
 }
 
@@ -149,6 +146,11 @@ impl PriorityBundle {
             hash,
             kid,
         }
+    }
+
+    pub fn new_compute_hash(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, kid: KeysetId) -> Self {
+        let h = blake3::hash(&data);
+        Self::new(epoch, seqno, data, h.into(), kid)
     }
 
     pub fn epoch(&self) -> Epoch {

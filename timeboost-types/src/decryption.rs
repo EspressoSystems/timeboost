@@ -5,7 +5,6 @@ use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionSche
 use crate::KeysetId;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
-
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;

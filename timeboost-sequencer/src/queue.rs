@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{Address, Epoch, PriorityBundle, RetryList, Transaction};
+use timeboost_types::{Address, Epoch, KeysetId, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -59,8 +59,9 @@ impl TransactionQueue {
 
         inner.set_time(time);
 
-        for t in it.into_iter() {
-            // TODO: initial validity checks on data (mininum length, etc.)
+        for mut t in it.into_iter() {
+            let kid = KeysetId::parse_from(t.data());
+            t.set_keyset(kid);
             if t.to() != inner.priority_addr {
                 inner.transactions.push_back((now, t));
                 continue;

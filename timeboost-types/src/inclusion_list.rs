@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
 use sailfish_types::RoundNumber;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
