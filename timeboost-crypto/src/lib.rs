@@ -17,35 +17,6 @@ use traits::threshold_enc::ThresholdEncScheme;
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
-impl Nonce {
-    pub fn new(value: u128) -> Self {
-        Nonce(value)
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::array::TryFromSliceError> {
-        let array: [u8; 16] = bytes.try_into()?;
-        Ok(Nonce(u128::from_le_bytes(array)))
-    }
-
-    pub fn as_bytes(&self) -> [u8; 16] {
-        self.0.to_le_bytes()
-    }
-}
-
-impl From<GenericArray<u8, typenum::U12>> for Nonce {
-    fn from(array: GenericArray<u8, typenum::U12>) -> Self {
-        let mut bytes = [0u8; 16];
-        bytes[..12].copy_from_slice(array.as_slice());
-        Nonce(u128::from_le_bytes(bytes))
-    }
-}
-
-impl From<Nonce> for GenericArray<u8, typenum::U12> {
-    fn from(val: Nonce) -> Self {
-        GenericArray::clone_from_slice(&val.as_bytes()[..12])
-    }
-}
-
 #[derive(Clone)]
 pub struct Committee {
     pub id: u32,
@@ -77,16 +48,6 @@ pub struct KeyShare<C: CurveGroup> {
 #[derive(Debug, Clone)]
 pub struct Plaintext(Vec<u8>);
 
-impl Plaintext {
-    pub fn new(data: Vec<u8>) -> Self {
-        Plaintext(data)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Ciphertext<C: CurveGroup> {
@@ -99,12 +60,6 @@ pub struct Ciphertext<C: CurveGroup> {
     pi: Proof,
 }
 
-impl<C: CurveGroup> Ciphertext<C> {
-    pub fn nonce(&self) -> Nonce {
-        self.nonce
-    }
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecShare<C: CurveGroup> {
@@ -112,6 +67,30 @@ pub struct DecShare<C: CurveGroup> {
     w: C,
     index: u32,
     phi: Proof,
+}
+
+impl Nonce {
+    pub fn new(value: u128) -> Self {
+        Nonce(value)
+    }
+
+    pub fn as_bytes(&self) -> [u8; 16] {
+        self.0.to_le_bytes()
+    }
+}
+
+impl From<GenericArray<u8, typenum::U12>> for Nonce {
+    fn from(array: GenericArray<u8, typenum::U12>) -> Self {
+        let mut bytes = [0u8; 16];
+        bytes[..12].copy_from_slice(array.as_slice());
+        Nonce(u128::from_le_bytes(bytes))
+    }
+}
+
+impl From<Nonce> for GenericArray<u8, typenum::U12> {
+    fn from(val: Nonce) -> Self {
+        GenericArray::clone_from_slice(&val.as_bytes()[..12])
+    }
 }
 
 impl<C: CurveGroup> CombKey<C> {
@@ -192,6 +171,22 @@ impl<C: CurveGroup> TryFrom<&[u8]> for KeyShare<C> {
     }
 }
 
+impl Plaintext {
+    pub fn new(data: Vec<u8>) -> Self {
+        Plaintext(data)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl<C: CurveGroup> Ciphertext<C> {
+    pub fn nonce(&self) -> Nonce {
+        self.nonce
+    }
+}
+
 // Type initialization for decryption scheme
 type G = ark_secp256k1::Projective;
 type H = Sha256;
@@ -212,7 +207,7 @@ impl DecryptionScheme {
     pub fn trusted_keygen(size: u64) -> TrustedKeyMaterial {
         // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
-        let committee = Committee { id: 0, size };
+        let committee = Committee { id: 1, size };
         <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &committee).unwrap()
     }
 }
