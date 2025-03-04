@@ -1,11 +1,12 @@
+use std::fmt;
 use std::ops::Deref;
 
 use alloy_consensus::transaction::PooledTransaction;
 use alloy_consensus::Transaction as _;
 use alloy_primitives::{Bytes, TxHash};
-use alloy_rlp::Decodable;
+use alloy_rlp::{Decodable, Encodable};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{Address, Epoch, SeqNo};
 
@@ -29,6 +30,12 @@ impl Deref for Hash {
 
     fn deref(&self) -> &Self::Target {
         self.0.deref()
+    }
+}
+
+impl fmt::Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -63,7 +70,7 @@ impl Committable for Nonce {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Transaction {
     hash: Hash,
     tx: PooledTransaction,
@@ -112,6 +119,32 @@ impl Committable for Transaction {
             .var_size_field("data", self.data())
             .fixed_size_bytes(self.digest().as_ref())
             .finalize()
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Transaction {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let tx = PooledTransaction::arbitrary(u)?;
+        Ok(Self {
+            hash: Hash(*tx.hash()),
+            tx,
+        })
+    }
+}
+
+impl Serialize for Transaction {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut buf = Vec::new();
+        self.tx.encode(&mut buf);
+        s.serialize_bytes(&buf)
+    }
+}
+
+impl<'de> Deserialize<'de> for Transaction {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let buf = <Vec<u8>>::deserialize(d)?;
+        Self::decode(&buf).map_err(de::Error::custom)
     }
 }
 

@@ -4,10 +4,14 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[features]
+arbitrary = ["dep:arbitrary", "alloy-consensus/arbitrary"]
+
 [dependencies]
 alloy-consensus = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
+arbitrary = { workspace = true, optional = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }

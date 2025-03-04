@@ -1,25 +1,28 @@
 use anyhow::{ensure, Context, Result};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
+use reqwest::Url;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 use timeboost::{
+    api::endpoints::TimeboostApiState,
     keyset::{private_keys, wait_for_live_peer, Keyset},
-    start_rpc_api, Timeboost, TimeboostInitializer,
+    {Timeboost, TimeboostInitializer},
 };
-use timeboost_core::traits::has_initializer::HasInitializer;
+use timeboost_types::Transaction;
 
-use tokio::sync::mpsc::channel;
+use tokio::signal;
+use tokio::sync::mpsc::{channel, Sender};
+use tokio::task::spawn;
 
 #[cfg(feature = "until")]
-use timeboost_core::until::run_until;
+use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost_utils::types::logging;
-use tokio::signal;
-use tracing::warn;
+use tracing::{error, warn};
 
 #[cfg(feature = "until")]
 const LATE_START_DELAY_SECS: u64 = 15;
@@ -174,7 +177,7 @@ async fn main() -> Result<()> {
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
-    let api_handle = start_rpc_api(tb_app_tx.clone(), cli.rpc_port);
+    let api_handle = spawn(start_rpc_api(tb_app_tx.clone(), cli.rpc_port));
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -239,7 +242,6 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let committee_size = peer_hosts_and_keys.len();
     let init = TimeboostInitializer {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
@@ -248,11 +250,12 @@ async fn main() -> Result<()> {
         deckey,
         bind_address,
         nitro_url: cli.nitro_node_url,
-        app_tx: tb_app_tx,
-        app_rx: tb_app_rx,
+        sender: tb_app_tx,
+        receiver: tb_app_rx,
+        tps: cli.tps,
     };
 
-    let timeboost = Timeboost::initialize(init).await?;
+    let timeboost = Timeboost::new(init).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {
@@ -264,7 +267,7 @@ async fn main() -> Result<()> {
                 Err(e) => anyhow::bail!("Error: {}", e),
             };
         },
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go() => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
@@ -274,7 +277,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "until"))]
     tokio::select! {
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go() => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
@@ -283,4 +286,13 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn start_rpc_api(sender: Sender<Transaction>, rpc_port: u16) {
+    if let Err(e) = TimeboostApiState::new(sender)
+        .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
+        .await
+    {
+        error!("failed to run timeboost api: {}", e);
+    }
 }

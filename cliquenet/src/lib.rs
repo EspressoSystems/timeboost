@@ -103,10 +103,12 @@ impl sailfish_types::RawComm for Network {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Bytes) -> Result<()> {
+        trace!(len = %msg.len(), "broadcasting message");
         self.multicast(msg).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<()> {
+        trace!(len = %msg.len(), %to, "sending message");
         self.unicast(to, msg).await
     }
 

@@ -16,7 +16,6 @@ sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

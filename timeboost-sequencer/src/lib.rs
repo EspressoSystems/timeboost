@@ -4,11 +4,10 @@ mod queue;
 mod sort;
 
 use std::collections::{BTreeMap, VecDeque};
-use std::net::SocketAddr;
-use std::sync::Arc;
 
 use cliquenet as net;
 use cliquenet::{Network, NetworkError, NetworkMetrics};
+use metrics::Metrics;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
@@ -16,7 +15,6 @@ use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
 use timeboost_types::{Address, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
-use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tracing::error;
 
@@ -32,8 +30,42 @@ pub struct SequencerConfig {
     priority_addr: Address,
     keypair: Keypair,
     peers: Vec<(PublicKey, net::Address)>,
-    bind: SocketAddr,
+    bind: net::Address,
     index: DelayedInboxIndex,
+}
+
+impl SequencerConfig {
+    pub fn new<A>(keyp: Keypair, bind: A) -> Self
+    where
+        A: Into<net::Address>,
+    {
+        Self {
+            priority_addr: Address::zero(),
+            keypair: keyp,
+            peers: Vec::new(),
+            bind: bind.into(),
+            index: DelayedInboxIndex::default(),
+        }
+    }
+
+    pub fn with_priority_addr(mut self, a: Address) -> Self {
+        self.priority_addr = a;
+        self
+    }
+
+    pub fn with_peers<I, A>(mut self, it: I) -> Self
+    where
+        I: IntoIterator<Item = (PublicKey, A)>,
+        A: Into<net::Address>,
+    {
+        self.peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
+        self
+    }
+
+    pub fn with_delayed_inbox_index(mut self, i: DelayedInboxIndex) -> Self {
+        self.index = i;
+        self
+    }
 }
 
 pub struct Sequencer {
@@ -46,11 +78,10 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
-    pub async fn new(cfg: SequencerConfig) -> Result<Self> {
-        let prom = Arc::new(PrometheusMetrics::default());
-        let cons_metrics = ConsensusMetrics::new(prom.as_ref());
-        let rbc_metrics = RbcMetrics::new(prom.as_ref());
-        let net_metrics = NetworkMetrics::new(prom.as_ref(), cfg.peers.iter().map(|(k, _)| *k));
+    pub async fn new<M: Metrics>(cfg: SequencerConfig, metrics: &M) -> Result<Self> {
+        let cons_metrics = ConsensusMetrics::new(metrics);
+        let rbc_metrics = RbcMetrics::new(metrics);
+        let net_metrics = NetworkMetrics::new(metrics, cfg.peers.iter().map(|(k, _)| *k));
 
         let committee = Committee::new(
             cfg.peers

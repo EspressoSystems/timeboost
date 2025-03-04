@@ -10,7 +10,6 @@ members = [
     "tests",
     "timeboost",
     "timeboost-sequencer",
-    "timeboost-core",
     "timeboost-crypto",
     "timeboost-types",
     "timeboost-utils",
@@ -29,10 +28,11 @@ opt-level = 3
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy-consensus = { version = "0.11.1", features = ["serde"] }
+alloy-consensus = { version = "0.11.1", features = ["arbitrary", "k256", "serde"] }
 alloy-primitives = { version = "0.8.22", features = ["serde"] }
 alloy-rlp = "0.3.11"
 anyhow = "1.0.89"
+arbitrary = "1.4.1"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
 ark-ed25519 = "0.5"
