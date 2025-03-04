@@ -17,7 +17,7 @@ use tracing::{debug, instrument, warn};
 use crate::digest::Digest;
 use crate::RbcError;
 
-use super::{Command, Protocol, RbcConfig};
+use super::{requires_rbc, Command, Protocol, RbcConfig};
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender<T> = mpsc::Sender<Message<T, Validated>>;
@@ -422,6 +422,10 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     /// If indicated, we also send back an ack so the sender knows we received the message.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, f = %src, m = %msg))]
     async fn on_message(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> Result<()> {
+        if requires_rbc(&msg) {
+            warn!(n = %self.label, s = %src, "received rbc message as non-rbc message");
+            return Err(RbcError::InvalidMessage);
+        }
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };

@@ -149,11 +149,10 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
             return Err(RbcError::Shutdown);
         }
 
-        // Only vertex proposals require RBC properties. If this message is one
-        // we hand it to the worker and wait for its acknowlegement by the worker
-        // before returning. Once the message has been handed over to the worker it
-        // will be eventually delivered.
-        if matches!(msg, Message::Vertex(_)) {
+        // If this message requires RBC we hand it to the worker and wait for its
+        // acknowlegement by the worker before returning. Once the message has been
+        // handed over to the worker it will be eventually delivered.
+        if requires_rbc(&msg) {
             let (tx, rx) = oneshot::channel();
             self.tx
                 .send(Command::RbcBroadcast(msg, tx))
@@ -184,5 +183,15 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
 
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
         Ok(self.rx.recv().await.unwrap())
+    }
+}
+
+/// Check if the given message requires RBC properties.
+fn requires_rbc<T: Committable, S>(m: &Message<T, S>) -> bool {
+    match m {
+        Message::Vertex(_) => true,
+        Message::Timeout(_) => false,
+        Message::NoVote(_) => false,
+        Message::TimeoutCert(_) => false,
     }
 }
