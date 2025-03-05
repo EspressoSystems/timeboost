@@ -418,8 +418,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     }
 
     /// A non-RBC message has been received which we deliver directly to the application.
-    ///
-    /// If indicated, we also send back an ack so the sender knows we received the message.
     #[instrument(level = "trace", skip_all, fields(n = %self.label, f = %src, m = %msg))]
     async fn on_message(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> Result<()> {
         if requires_rbc(&msg) {
