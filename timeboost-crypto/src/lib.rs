@@ -35,9 +35,9 @@ impl From<u64> for KeysetId {
     }
 }
 
-impl Into<u64> for KeysetId {
-    fn into(self) -> u64 {
-        self.0
+impl From<KeysetId> for u64 {
+    fn from(val: KeysetId) -> Self {
+        val.0
     }
 }
 
