@@ -5,10 +5,9 @@ edition.workspace = true
 description.workspace = true
 
 [features]
-arbitrary = ["dep:arbitrary", "alloy-consensus/arbitrary"]
+arbitrary = ["dep:arbitrary", "alloy-primitives/arbitrary"]
 
 [dependencies]
-alloy-consensus = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
 arbitrary = { workspace = true, optional = true }
@@ -17,8 +16,9 @@ bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
-serde = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
+serde = { workspace = true }
+sha3 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -1,11 +1,17 @@
-use arbitrary::{Arbitrary, Unstructured};
-use timeboost_types::Transaction;
+use arbitrary::Unstructured;
+use rand::Rng;
+use timeboost_types::{PriorityBundle, Transaction};
 
 pub fn make_tx() -> Transaction {
     let mut v = [0; 16];
     rand::fill(&mut v);
     let mut u = Unstructured::new(&v);
-    Transaction::arbitrary(&mut u).unwrap()
+
+    if rand::rng().random_bool(0.1) {
+        PriorityBundle::arbitrary(10, 512, &mut u).unwrap()
+    } else {
+        Transaction::arbitrary(512, &mut u).unwrap()
+    }
 }
 
 /// Transactions per second to milliseconds is 1000 / TPS

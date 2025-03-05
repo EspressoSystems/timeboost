@@ -58,10 +58,10 @@ fn compare(seed: &[u8], x: &Transaction, y: &Transaction) -> Ordering {
     hx.update(seed);
     hy.update(seed);
 
-    hx.update(x.from().as_deref().unwrap_or(&[]));
-    hy.update(y.from().as_deref().unwrap_or(&[]));
+    hx.update(x.from());
+    hy.update(y.from());
 
     hx.finalize().as_bytes().cmp(hy.finalize().as_bytes())
-        .then_with(|| x.nonce().cmp(&y.nonce())
+        .then_with(|| x.nonce().cmp(y.nonce())
         .then_with(|| x.digest().cmp(y.digest())))
 }

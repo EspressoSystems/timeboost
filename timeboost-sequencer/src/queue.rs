@@ -60,7 +60,7 @@ impl TransactionQueue {
         inner.set_time(time);
 
         for t in it.into_iter() {
-            if t.to() != Some(inner.priority_addr) {
+            if t.to() != &inner.priority_addr {
                 inner.transactions.push_back((now, t));
                 continue;
             }
