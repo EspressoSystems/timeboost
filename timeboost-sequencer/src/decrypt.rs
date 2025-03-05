@@ -107,7 +107,7 @@ impl Decrypter {
 
                 let (mut ptxs, mut txs) = incl.into_transactions();
                 for (i, m) in modified_ptxs.into_iter().enumerate() {
-                    ptxs[m] = PriorityBundle::new_compute_hash(
+                    ptxs[m] = PriorityBundle::new_with_hash(
                         ptxs[m].epoch(),
                         ptxs[m].seqno(),
                         dec[i].clone(),

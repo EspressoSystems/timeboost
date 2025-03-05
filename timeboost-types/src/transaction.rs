@@ -123,7 +123,7 @@ impl PriorityBundle {
         }
     }
 
-    pub fn new_compute_hash(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, kid: KeysetId) -> Self {
+    pub fn new_with_hash(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, kid: KeysetId) -> Self {
         let h = blake3::hash(&data);
         Self::new(epoch, seqno, data, h.into(), kid)
     }

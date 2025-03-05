@@ -38,9 +38,6 @@ impl DecryptionKey {
     }
 }
 
-/// Representing a set of shares from a single Timeboost node.
-/// If a round has multiple encrypted items (ciphertexts),
-/// they are "batched" in `ciphertexts` and `decryption_shares`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShareInfo {
     round: RoundNumber,
