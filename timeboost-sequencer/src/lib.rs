@@ -21,7 +21,7 @@ use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tracing::error;
 
-use decrypt::Decrypter;
+use decrypt::{DecryptError, Decrypter};
 use include::Includer;
 use queue::TransactionQueue;
 use sort::Sorter;
@@ -139,7 +139,9 @@ impl Sequencer {
                             self.transactions.update_transactions(&i, r);
                             inclusions.push(i)
                         }
-                        self.decrypter.enqueue(inclusions).await;
+                        if let Err(e) = self.decrypter.enqueue(inclusions).await {
+                            error!("decrypt enqueue error: {}", e);
+                        }
                     },
                     Err(e) => {
                         error!("coordinator error: {}", e);
@@ -152,7 +154,7 @@ impl Sequencer {
                         }
                     }
                     Err(e) => {
-                        error!("decrypter error: {}", e);
+                        error!("decrypt dequeue error: {}", e);
                     }
                 }
             }
@@ -166,6 +168,9 @@ pub enum TimeboostError {
     #[error("network error: {0}")]
     Net(#[from] NetworkError),
 
-    #[error("network error: {0}")]
+    #[error("rbc error: {0}")]
     Rbc(#[from] RbcError),
+
+    #[error("decrypt error: {0}")]
+    Decrypt(#[from] DecryptError),
 }

@@ -61,7 +61,10 @@ impl TransactionQueue {
         inner.set_time(time);
 
         for mut t in it.into_iter() {
-            let kid = KeysetId::try_from(t.data()).expect("first 8 data bytes are keyset id");
+            let kid = match KeysetId::try_from(t.data()) {
+                Ok(kid) => kid,
+                Err(_) => continue,
+            };
             t.set_keyset(kid);
 
             if t.to() != inner.priority_addr {
