@@ -14,6 +14,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
+use timeboost_crypto::Keyset;
 use timeboost_types::{Address, CandidateList, DelayedInboxIndex};
 use timeboost_types::{DecryptionKey, Transaction};
 use timeboost_utils::dec_addr;
@@ -78,7 +79,7 @@ impl Sequencer {
             .with_metrics(cons_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
 
-        let dec_keyset = timeboost_crypto::Keyset::new(1, cons_keyset.size().get() as u16);
+        let dec_keyset = Keyset::new(1, cons_keyset.size());
         let dec_peers: Vec<_> = cfg.peers.iter().map(|(k, a)| (*k, dec_addr(a))).collect();
         let dec_addr = dec_addr(&net::Address::from(cfg.bind));
         let dec_net = Network::create(

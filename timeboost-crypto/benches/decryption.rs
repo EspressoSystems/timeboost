@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use ark_std::rand::RngCore;
@@ -36,7 +38,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("encrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(size, 0);
+            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
             let (pk, _, _) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -54,7 +56,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("decrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(size, 0);
+            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
             let (pk, _, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -73,7 +75,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("combine"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(size, 0);
+            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
             let (pk, comb_key, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
