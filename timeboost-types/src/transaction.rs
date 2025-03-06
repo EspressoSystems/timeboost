@@ -157,11 +157,10 @@ impl Transaction {
 
 impl fmt::Display for Transaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{to := {}, from := {}, nonce := {}, hash := {}}}",
-            self.to,
-            self.from,
-            self.nonce,
-            self.hash
+        write!(
+            f,
+            "{{to := {}, from := {}, nonce := {}, hash := {}}}",
+            self.to, self.from, self.nonce, self.hash
         )
     }
 }
