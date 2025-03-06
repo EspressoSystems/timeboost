@@ -57,7 +57,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --until 300 \
         $nitro_node_url \
-        --tps 20 \
+        --tps 5 \
         --nodes $nodes \
         --keyset-file test-configs/local.json \
         --watchdog-timeout 300"
