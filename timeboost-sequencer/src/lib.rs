@@ -3,7 +3,7 @@ mod include;
 mod queue;
 mod sort;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 use cliquenet as net;
 use cliquenet::{Network, NetworkError, NetworkMetrics};
@@ -16,6 +16,8 @@ use sailfish::Coordinator;
 use timeboost_types::{Address, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::task::{spawn, JoinHandle};
 use tracing::{error, trace, Level};
 
 use decrypt::Decrypter;
@@ -70,12 +72,25 @@ impl SequencerConfig {
 
 pub struct Sequencer {
     label: PublicKey,
+    task: JoinHandle<Result<()>>,
+    transactions: TransactionQueue,
+    output: Receiver<Transaction>,
+}
+
+impl Drop for Sequencer {
+    fn drop(&mut self) {
+        self.task.abort()
+    }
+}
+
+struct Task {
+    label: PublicKey,
     transactions: TransactionQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
-    output: VecDeque<Transaction>,
+    output: Sender<Transaction>,
 }
 
 impl Sequencer {
@@ -103,20 +118,24 @@ impl Sequencer {
         let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
         let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
-        let coordinator = Coordinator::new(rbc, consensus);
 
-        let includer = Includer::new(committee, cfg.index);
-        let decrypter = Decrypter::new();
-        let sorter = Sorter::new();
+        let (tx, rx) = mpsc::channel(1024);
+
+        let task = Task {
+            label,
+            transactions: queue.clone(),
+            sailfish: Coordinator::new(rbc, consensus),
+            includer: Includer::new(committee, cfg.index),
+            decrypter: Decrypter::new(),
+            sorter: Sorter::new(),
+            output: tx,
+        };
 
         Ok(Self {
             label,
+            task: spawn(task.go()),
             transactions: queue,
-            sailfish: coordinator,
-            includer,
-            decrypter,
-            sorter,
-            output: VecDeque::new(),
+            output: rx,
         })
     }
 
@@ -138,6 +157,28 @@ impl Sequencer {
     }
 
     pub async fn next_transaction(&mut self) -> Result<Transaction> {
+        select! {
+            trx = self.output.recv() => trx.ok_or(TimeboostError::ChannelClosed),
+            res = &mut self.task => match res {
+                Ok(Ok(())) => {
+                    error!(node = %self.label, "unexpected task termination");
+                    Err(TimeboostError::TaskTerminated)
+                }
+                Ok(Err(err)) => {
+                    error!(node = %self.label, %err, "task error");
+                    Err(err)
+                }
+                Err(err) => {
+                    error!(node = %self.label, %err, "task panic");
+                    Err(TimeboostError::TaskTerminated)
+                }
+            }
+        }
+    }
+}
+
+impl Task {
+    async fn go(mut self) -> Result<()> {
         if !self.sailfish.is_init() {
             for a in self.sailfish.init() {
                 debug_assert!(!matches!(a, Action::Deliver(_)));
@@ -145,10 +186,6 @@ impl Sequencer {
             }
         }
         loop {
-            if let Some(t) = self.output.pop_front() {
-                trace!(node = %self.label, transaction = %t.digest());
-                return Ok(t);
-            }
             select! {
                 result = self.sailfish.next() => match result {
                     Ok(actions) => {
@@ -176,7 +213,7 @@ impl Sequencer {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         for t in self.sorter.sort(incl) {
-                            self.output.push_back(t)
+                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
                         }
                     }
                     Err(e) => {
@@ -196,4 +233,10 @@ pub enum TimeboostError {
 
     #[error("network error: {0}")]
     Rbc(#[from] RbcError),
+
+    #[error("channel closed")]
+    ChannelClosed,
+
+    #[error("task terminated")]
+    TaskTerminated,
 }
