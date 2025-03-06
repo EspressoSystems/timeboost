@@ -288,3 +288,38 @@ impl PriorityBundle {
 #[derive(Debug, thiserror::Error)]
 #[error("rlp error: {0}")]
 pub struct InvalidTransaction(#[from] alloy_rlp::Error);
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::U256;
+    use quickcheck::quickcheck;
+
+    use super::Nonce;
+    use crate::{Epoch, SeqNo};
+
+    quickcheck! {
+        fn epoch_seqno_nonce_identity(e: u64, s: u64) -> bool {
+            let e = Epoch::from(e);
+            let s = SeqNo::from(s);
+
+            let mut n = Nonce(U256::ZERO);
+            n.0 |= U256::from(u64::from(e)) << 128;
+            n.0 |= U256::from(u64::from(s));
+
+            n.to_epoch() == e && n.to_seqno() == s
+        }
+
+        fn epoch_seqno_nonce_be_bytes_identity(e: u64, s: u64) -> bool {
+            let e = Epoch::from(e);
+            let s = SeqNo::from(s);
+
+            let mut bytes = [0; 32];
+            bytes[8  .. 16].copy_from_slice(&e.to_be_bytes()[..]);
+            bytes[24 .. 32].copy_from_slice(&s.to_be_bytes()[..]);
+
+            let n = Nonce(U256::from_be_bytes(bytes));
+
+            n.to_epoch() == e && n.to_seqno() == s
+        }
+    }
+}
