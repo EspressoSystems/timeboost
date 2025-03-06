@@ -1,7 +1,9 @@
+use std::fmt;
 use std::ops::Deref;
 
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use data_encoding::HEXLOWER;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -51,5 +53,12 @@ impl Committable for Address {
         RawCommitmentBuilder::new("Address")
             .fixed_size_bytes(&self.0)
             .finalize()
+    }
+}
+
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("0x")?;
+        HEXLOWER.encode_write(&self.0, f)
     }
 }

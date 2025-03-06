@@ -16,7 +16,7 @@ use sailfish::Coordinator;
 use timeboost_types::{Address, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
-use tracing::error;
+use tracing::{error, trace, Level};
 
 use decrypt::Decrypter;
 use include::Includer;
@@ -69,6 +69,7 @@ impl SequencerConfig {
 }
 
 pub struct Sequencer {
+    label: PublicKey,
     transactions: TransactionQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
@@ -97,6 +98,8 @@ impl Sequencer {
         let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
 
+        let label = cfg.keypair.public_key();
+
         let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
         let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
@@ -107,6 +110,7 @@ impl Sequencer {
         let sorter = Sorter::new();
 
         Ok(Self {
+            label,
             transactions: queue,
             sailfish: coordinator,
             includer,
@@ -120,6 +124,16 @@ impl Sequencer {
     where
         I: IntoIterator<Item = Transaction>,
     {
+        if tracing::enabled!(Level::TRACE) {
+            let (b, t) = self.transactions.len();
+            trace!(
+                node = %self.label,
+                bundles = %b,
+                transactions = %t,
+                "adding transactions to queue"
+            );
+        }
+
         self.transactions.add_transactions(it)
     }
 
@@ -132,6 +146,7 @@ impl Sequencer {
         }
         loop {
             if let Some(t) = self.output.pop_front() {
+                trace!(node = %self.label, transaction = %t.digest());
                 return Ok(t);
             }
             select! {
@@ -142,7 +157,7 @@ impl Sequencer {
                             if let Action::Deliver(data) = a {
                                 payloads.entry(data.round()).or_default().push(data.into_data());
                             } else if let Err(e) = self.sailfish.execute(a).await {
-                                error!("coordinator error: {}", e);
+                                error!(node = %self.label, "coordinator error: {}", e);
                                 return Err(e.into())
                             }
                         }
@@ -155,7 +170,7 @@ impl Sequencer {
                         self.decrypter.enqueue(inclusions)
                     },
                     Err(e) => {
-                        error!("coordinator error: {}", e);
+                        error!(node = %self.label, "coordinator error: {}", e);
                     },
                 },
                 result = self.decrypter.next() => match result {
@@ -165,7 +180,7 @@ impl Sequencer {
                         }
                     }
                     Err(e) => {
-                        error!("decrypter error: {}", e);
+                        error!(node = %self.label, "decrypter error: {}", e);
                     }
                 }
             }

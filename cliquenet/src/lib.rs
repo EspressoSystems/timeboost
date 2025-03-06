@@ -103,12 +103,10 @@ impl sailfish_types::RawComm for Network {
     type Err = NetworkError;
 
     async fn broadcast(&mut self, msg: Bytes) -> Result<()> {
-        trace!(len = %msg.len(), "broadcasting message");
         self.multicast(msg).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<()> {
-        trace!(len = %msg.len(), %to, "sending message");
         self.unicast(to, msg).await
     }
 
@@ -439,6 +437,7 @@ where
                 msg = self.obound.recv() => match msg {
                     // Uni-cast
                     Some((Some(to), m)) => {
+                        trace!(node = %self.key, %to, len = %m.len(), "sending message");
                         if to == self.key {
                             let _ = self.ibound.try_send((self.key, m));
                             continue
@@ -452,6 +451,7 @@ where
                     }
                     // Multi-cast
                     Some((None, m)) => {
+                        trace!(node = %self.key, len = %m.len(), "multicasting message");
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
                         for (k, task) in &self.active {

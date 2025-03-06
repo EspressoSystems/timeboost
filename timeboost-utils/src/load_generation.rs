@@ -1,14 +1,14 @@
 use arbitrary::Unstructured;
 use rand::Rng;
-use timeboost_types::{PriorityBundle, Transaction};
+use timeboost_types::{Address, PriorityBundle, Transaction};
 
 pub fn make_tx() -> Transaction {
-    let mut v = [0; 16];
+    let mut v = [0; 64];
     rand::fill(&mut v);
     let mut u = Unstructured::new(&v);
 
     if rand::rng().random_bool(0.1) {
-        PriorityBundle::arbitrary(10, 512, &mut u).unwrap()
+        PriorityBundle::arbitrary(Address::zero(), 10, 512, &mut u).unwrap()
     } else {
         Transaction::arbitrary(512, &mut u).unwrap()
     }

@@ -67,7 +67,7 @@ struct Cli {
 
     /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
     /// Set this to 0 for no load generation.
-    #[clap(long, short, default_value_t = 100)]
+    #[clap(long, short, default_value_t = 1)]
     tps: u32,
 
     /// Path to file containing the keyset description.

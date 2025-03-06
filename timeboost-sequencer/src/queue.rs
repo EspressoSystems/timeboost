@@ -43,6 +43,11 @@ impl TransactionQueue {
         })))
     }
 
+    pub fn len(&self) -> (usize, usize) {
+        let inner = self.0.lock();
+        (inner.bundles.len(), inner.transactions.len())
+    }
+
     #[allow(unused)]
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
         self.0.lock().index = idx

@@ -91,6 +91,12 @@ impl Committable for Nonce {
     }
 }
 
+impl fmt::Display for Nonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, RlpEncodable, RlpDecodable)]
 pub struct Transaction {
     nonce: Nonce,
@@ -146,6 +152,17 @@ impl Transaction {
         h.update(self.s.as_le_slice());
 
         self.hash = <[u8; 32]>::from(h.finalize()).into();
+    }
+}
+
+impl fmt::Display for Transaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{to := {}, from := {}, nonce := {}, hash := {}}}",
+            self.to,
+            self.from,
+            self.nonce,
+            self.hash
+        )
     }
 }
 
@@ -245,6 +262,7 @@ impl Committable for PriorityBundle {
 #[cfg(feature = "arbitrary")]
 impl PriorityBundle {
     pub fn arbitrary(
+        to: Address,
         max_seqno: u64,
         max_data: usize,
         u: &mut Unstructured<'_>,
@@ -260,6 +278,7 @@ impl PriorityBundle {
         nonce |= U256::from(u64::from(e)) << 128;
         nonce |= U256::from(u64::from(s));
 
+        t.to = to;
         t.nonce = Nonce(nonce);
         t.update_hash();
 
