@@ -1,20 +1,17 @@
 use anyhow::{ensure, Context, Result};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
-use reqwest::Url;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 use timeboost::{
-    api::endpoints::TimeboostApiState,
     keyset::{private_keys, wait_for_live_peer, Keyset},
-    {Timeboost, TimeboostInitializer},
+    {rpc_api, Timeboost, TimeboostInitializer},
 };
-use timeboost_types::Transaction;
 
 use tokio::signal;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
 
 #[cfg(feature = "until")]
@@ -22,7 +19,7 @@ use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost_utils::types::logging;
-use tracing::{error, warn};
+use tracing::warn;
 
 #[cfg(feature = "until")]
 const LATE_START_DELAY_SECS: u64 = 15;
@@ -177,7 +174,7 @@ async fn main() -> Result<()> {
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
-    let api_handle = spawn(start_rpc_api(tb_app_tx.clone(), cli.rpc_port));
+    let api_handle = spawn(rpc_api(tb_app_tx.clone(), cli.rpc_port));
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -286,13 +283,4 @@ async fn main() -> Result<()> {
         }
     }
     Ok(())
-}
-
-async fn start_rpc_api(sender: Sender<Transaction>, rpc_port: u16) {
-    if let Err(e) = TimeboostApiState::new(sender)
-        .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
-        .await
-    {
-        error!("failed to run timeboost api: {}", e);
-    }
 }

@@ -7,6 +7,7 @@ use api::metrics::serve_metrics_api;
 use cliquenet::Address;
 use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
+use reqwest::Url;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
 use timeboost_types::Transaction;
 use timeboost_utils::load_generation::{make_tx, tps_to_millis};
@@ -15,7 +16,7 @@ use tokio::select;
 use tokio::task::spawn;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 use vbs::version::StaticVersion;
 
 use multisig::{Keypair, PublicKey};
@@ -131,6 +132,15 @@ async fn gen_transactions(tps: u32, tx: Sender<Transaction>) {
     }
 }
 
-async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
+pub async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
     serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
+}
+
+pub async fn rpc_api(sender: Sender<Transaction>, rpc_port: u16) {
+    if let Err(e) = api::endpoints::TimeboostApiState::new(sender)
+        .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
+        .await
+    {
+        error!("failed to run timeboost api: {}", e);
+    }
 }
