@@ -5,7 +5,6 @@ use anyhow::{bail, Result};
 use api::endpoints::TimeboostApiState;
 use api::metrics::serve_metrics_api;
 use cliquenet::{Address, Network, NetworkMetrics};
-use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
 use parking_lot::Mutex;
 use reqwest::Url;
@@ -24,6 +23,7 @@ use timeboost_core::load_generation::{make_tx, tps_to_millis};
 use timeboost_core::types::block::sailfish::SailfishBlock;
 use timeboost_core::types::time::Timestamp;
 use timeboost_core::types::transaction::Transaction;
+use timeboost_types::DecryptionKey;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::time::interval;
 use tokio::{sync::mpsc::channel, task::JoinHandle};
@@ -61,7 +61,7 @@ pub struct TimeboostInitializer {
     pub keypair: Keypair,
 
     /// The decryption key material for the node.
-    pub deckey: DecryptionInfo,
+    pub dec_sk: DecryptionKey,
 
     /// The bind address for the node.
     pub bind_address: SocketAddr,

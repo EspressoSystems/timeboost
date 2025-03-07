@@ -17,7 +17,7 @@ use std::{
     time::Duration,
 };
 use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, Keyset},
+    keyset::{private_keys, wait_for_live_peer, KeysetConfig},
     start_metrics_api, start_rpc_api, TransactionQueue,
 };
 use timeboost_core::{
@@ -213,7 +213,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let num = cli.nodes.unwrap_or(4);
 
-    let keyset = Keyset::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
+    let keyset =
+        KeysetConfig::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 

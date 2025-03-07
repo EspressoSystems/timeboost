@@ -8,6 +8,7 @@ use nimue::{
     },
     Arthur, DuplexHash, IOPattern,
 };
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
@@ -62,7 +63,7 @@ impl<C: CurveGroup> DleqTuple<C> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Proof {
     pub(crate) transcript: Vec<u8>,
 }

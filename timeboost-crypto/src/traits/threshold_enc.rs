@@ -1,7 +1,7 @@
 use ark_std::rand::Rng;
 use thiserror::Error;
 
-use crate::Committee;
+use crate::Keyset;
 
 /// A Threshold Encryption Scheme.
 pub trait ThresholdEncScheme {
@@ -17,13 +17,13 @@ pub trait ThresholdEncScheme {
     #[allow(clippy::type_complexity)]
     fn keygen<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
     /// Encrypt a `message` using the encryption key `pk`.
     fn encrypt<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
@@ -36,7 +36,7 @@ pub trait ThresholdEncScheme {
 
     /// Combine a set of `dec_shares` using `comb_key` into a plaintext message.
     fn combine(
-        committee: &Committee,
+        committee: &Keyset,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
@@ -54,4 +54,6 @@ pub enum ThresholdEncError {
     Internal(anyhow::Error),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    SerializationError(#[from] ark_serialize::SerializationError),
 }

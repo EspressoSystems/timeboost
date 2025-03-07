@@ -17,9 +17,11 @@ use std::marker::PhantomData;
 
 use crate::{
     cp_proof::{ChaumPedersen, DleqTuple},
-    traits::dleq_proof::DleqProofScheme,
-    traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
-    Ciphertext, CombKey, Committee, DecShare, KeyShare, Plaintext, PublicKey,
+    traits::{
+        dleq_proof::DleqProofScheme,
+        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+    },
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -46,7 +48,7 @@ where
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
-    type Committee = Committee;
+    type Committee = Keyset;
     type PublicKey = PublicKey<C>;
     type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
@@ -56,23 +58,20 @@ where
 
     fn keygen<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = committee.size as usize;
+        let committee_size = committee.size.get();
         let degree = committee_size / CORR_RATIO;
         let gen = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
-        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size);
 
-        if domain.is_none() {
-            return Err(ThresholdEncError::Internal(anyhow!(
-                "Unable to create eval domain"
-            )));
-        }
+        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size)
+            .ok_or_else(|| ThresholdEncError::Internal(anyhow!("Unable to create eval domain")))?;
+
         let alpha_0 = poly[0];
         let evals: Vec<_> = (0..committee_size)
             .map(|i| {
-                let x = domain.unwrap().element(i);
+                let x = domain.element(i);
                 poly.evaluate(&x)
             })
             .collect();
@@ -97,7 +96,7 @@ where
 
     fn encrypt<R: Rng>(
         rng: &mut R,
-        committee: &Committee,
+        committee: &Keyset,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
@@ -105,20 +104,21 @@ where
         let gen = C::generator();
         let v = gen * beta;
         let w = pub_key.key * beta;
+        let cid = committee.id;
 
         // hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w, cid.into())
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
 
         // TODO: use committee id for hashing
-        let _cid = committee.id;
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let nonce = Aes256Gcm::generate_nonce(OsRng);
-        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce, message.0.as_ref()).map_err(|e| {
-            ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
-        })?;
+        let nonce = Nonce::from(Aes256Gcm::generate_nonce(OsRng));
+        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), message.0.as_ref()).map_err(
+            |e| ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e)),
+        )?;
         let u_hat = hash_to_curve::<C, H>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
@@ -132,7 +132,7 @@ where
         Ok(Ciphertext {
             v,
             w_hat,
-            nonce: nonce.to_vec(),
+            nonce,
             e,
             pi,
         })
@@ -150,7 +150,8 @@ where
             ciphertext.w_hat,
             ciphertext.pi.clone(),
         );
-        let u_hat = hash_to_curve::<C, H>(v, e).unwrap();
+        let u_hat = hash_to_curve::<C, H>(v, e)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
@@ -170,12 +171,12 @@ where
     }
 
     fn combine(
-        committee: &Committee,
+        committee: &Keyset,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = committee.size as usize;
+        let committee_size: usize = committee.size.get();
         let threshold = committee_size / CORR_RATIO + 1;
         let gen = C::generator();
 
@@ -192,7 +193,7 @@ where
 
         let (v, nonce, data) = (
             ciphertext.v,
-            ciphertext.nonce.as_slice(),
+            &ciphertext.nonce.into() as &GenericArray<u8, <Aes256Gcm as AeadCore>::NonceSize>,
             ciphertext.e.clone(),
         );
         let pk_comb = comb_key.key.clone();
@@ -248,10 +249,11 @@ where
         }
 
         // Hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w).unwrap();
+        let key = hash_to_key::<C, H>(v, w, committee.id.into())
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce.into(), data.as_ref());
+        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, data.as_ref());
         plaintext
             .map(Plaintext)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Decryption failed: {:?}", e)))
@@ -268,7 +270,7 @@ where
     let gen = C::generator();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer).unwrap();
+    v.serialize_compressed(&mut writer)?;
     let _ = writer.write(&e);
     writer.flush()?;
     drop(writer);
@@ -278,12 +280,17 @@ where
     Ok(u_hat)
 }
 
-fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
+fn hash_to_key<C: CurveGroup, H: Digest>(
+    v: C,
+    w: C,
+    id: u64,
+) -> Result<Vec<u8>, ThresholdEncError> {
     let mut hasher = H::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer).unwrap();
-    w.serialize_compressed(&mut writer).unwrap();
+    v.serialize_compressed(&mut writer)?;
+    w.serialize_compressed(&mut writer)?;
+    writer.write_all(&id.to_be_bytes())?;
     writer.flush()?;
     drop(writer);
     hasher.update(buffer);
@@ -293,9 +300,11 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
 
 #[cfg(test)]
 mod test {
+    use std::num::NonZeroUsize;
+
     use crate::{
         cp_proof::Proof,
-        sg_encryption::{Committee, DecShare, Plaintext, ShoupGennaro},
+        sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
         traits::threshold_enc::ThresholdEncScheme,
     };
 
@@ -311,7 +320,7 @@ mod test {
     #[test]
     fn test_correctness() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 20, id: 0 };
+        let committee = Keyset::new(0, NonZeroUsize::new(20).unwrap());
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
@@ -341,7 +350,7 @@ mod test {
     #[test]
     fn test_not_enough_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
@@ -350,7 +359,7 @@ mod test {
         let ciphertext =
             ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
 
-        let threshold = (committee.size / 3) as usize;
+        let threshold = committee.threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
             .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
@@ -371,7 +380,7 @@ mod test {
     #[test]
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
-        let committee = Committee { size: 10, id: 0 };
+        let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
 
         // setup schemes
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
@@ -402,11 +411,11 @@ mod test {
         );
 
         // 2. Invalidate n - t shares
-        let committee_size = committee.size as usize;
-        let threshold = committee_size / 3;
+        let c_size = committee.size().get();
+        let c_threshold = committee.threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
-        (0..(committee_size - threshold)).for_each(|i| {
+        (0..(c_size - c_threshold)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;

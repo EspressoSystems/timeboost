@@ -1,3 +1,5 @@
+use cliquenet::Address;
+
 pub mod types;
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
@@ -14,4 +16,10 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
 
 pub fn bs58_encode(b: &[u8]) -> String {
     bs58::encode(b).into_string()
+}
+
+pub fn dec_addr(addr: &Address) -> Address {
+    let mut dec_addr = addr.clone();
+    dec_addr.set_port(addr.port() + 250);
+    dec_addr
 }
