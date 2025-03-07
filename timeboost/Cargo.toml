@@ -47,3 +47,7 @@ path = "src/binaries/builder.rs"
 [[bin]]
 name = "keygen"
 path = "src/binaries/keygen.rs"
+
+[[bin]]
+name = "sailfish"
+path = "src/binaries/sailfish.rs"

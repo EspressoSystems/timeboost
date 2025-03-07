@@ -6,10 +6,10 @@ description = "API types of sailfish"
 
 [dependencies]
 async-trait = { workspace = true }
-bincode     = { workspace = true }
-bytes       = { workspace = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
 committable = { workspace = true }
-multisig    = { path = "../multisig" }
-serde       = { workspace = true }
-thiserror   = { workspace = true }
-tracing     = { workspace = true }
+multisig = { path = "../multisig" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

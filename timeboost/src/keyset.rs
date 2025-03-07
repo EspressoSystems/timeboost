@@ -121,13 +121,16 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
         tracing::info!(%host, %url, "establishing connection to load balancer");
 
         // Check if the healthz endpoint returns a 200 on the new host, looping forever until it does
-        if let Ok(resp) = client.get(&url).send().await {
-            tracing::info!("got response {resp:?}, status {}", resp.status());
-            if resp.status() == 200 {
-                return Ok(());
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                tracing::info!("got response {resp:?}, status {}", resp.status());
+                if resp.status() == 200 {
+                    return Ok(());
+                }
             }
+            Err(e) => tracing::error!("Failed to send request: {}", e),
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
     }
 }

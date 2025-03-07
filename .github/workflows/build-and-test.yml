@@ -91,3 +91,5 @@ jobs:
       run: just run_demo -url http://localhost:8547
     - name: Run tests with late-start node
       run: just run_demo -l -url http://localhost:8547
+    - name: Run sailfish demo
+      run: just run_sailfish_demo
