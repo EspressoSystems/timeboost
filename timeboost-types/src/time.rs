@@ -7,12 +7,11 @@ use serde::{Deserialize, Serialize};
 const EPOCH_DURATION: Duration = Duration::from_secs(60);
 
 /// Epoch number.
-//
-// TODO: Is a `u128` required here?
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
 )]
-pub struct Epoch(u128);
+#[serde(transparent)]
+pub struct Epoch(u64);
 
 impl Epoch {
     pub fn now() -> Self {
@@ -24,7 +23,7 @@ impl Add<u64> for Epoch {
     type Output = Self;
 
     fn add(self, rhs: u64) -> Self::Output {
-        Self(self.0 + u128::from(rhs))
+        Self(self.0 + rhs)
     }
 }
 
@@ -36,9 +35,7 @@ impl std::fmt::Display for Epoch {
 
 impl Committable for Epoch {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("Epoch")
-            .fixed_size_bytes(&self.0.to_be_bytes())
-            .finalize()
+        RawCommitmentBuilder::new("Epoch").u64(self.0).finalize()
     }
 }
 
@@ -46,6 +43,7 @@ impl Committable for Epoch {
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
 )]
+#[serde(transparent)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
@@ -57,7 +55,7 @@ impl Timestamp {
     }
 
     pub fn epoch(self) -> Epoch {
-        Epoch(u128::from(self.0 / EPOCH_DURATION.as_secs()))
+        Epoch(self.0 / EPOCH_DURATION.as_secs())
     }
 }
 
@@ -77,13 +75,13 @@ impl Div<u64> for Timestamp {
     }
 }
 
-impl From<u128> for Epoch {
-    fn from(value: u128) -> Self {
+impl From<u64> for Epoch {
+    fn from(value: u64) -> Self {
         Self(value)
     }
 }
 
-impl From<Epoch> for u128 {
+impl From<Epoch> for u64 {
     fn from(value: Epoch) -> Self {
         value.0
     }
@@ -102,7 +100,7 @@ impl From<Timestamp> for u64 {
 }
 
 impl Deref for Epoch {
-    type Target = u128;
+    type Target = u64;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -123,9 +121,9 @@ mod tests {
     use quickcheck::quickcheck;
 
     quickcheck! {
-        fn timestamp_of_epoch(n: u64) -> bool {
-            let e: u128 = Timestamp(n).epoch().into();
-            let t: u128 = n.into();
+        fn timestamp_of_epoch(n: u32) -> bool {
+            let e: u64 = Timestamp(n.into()).epoch().into();
+            let t: u64 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }
     }

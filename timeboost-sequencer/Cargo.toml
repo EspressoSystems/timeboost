@@ -8,6 +8,7 @@ description.workspace = true
 blake3 = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
@@ -15,7 +16,6 @@ sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

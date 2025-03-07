@@ -1,5 +1,9 @@
-#[cfg(feature = "until")]
-use anyhow::ensure;
+use std::{
+    iter::repeat,
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use anyhow::{bail, Context, Result};
 use cliquenet::{Address, Network, NetworkMetrics};
@@ -7,37 +11,26 @@ use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::Action,
+    types::{Action, Unit},
     Coordinator,
 };
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, Keyset},
-    start_metrics_api, start_rpc_api, TransactionQueue,
-};
-use timeboost_core::{
-    load_generation::{make_tx, tps_to_millis},
-    types::block::sailfish::SailfishBlock,
-};
-
-#[cfg(feature = "until")]
-use timeboost_core::until::run_until;
+use timeboost::keyset::{private_keys, wait_for_live_peer, Keyset};
+use timeboost::{metrics_api, rpc_api};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
-use tokio::{
-    signal,
-    sync::mpsc,
-    task::JoinHandle,
-    time::{interval, Interval},
-};
-use tracing::{info, trace};
+use tokio::signal;
+use tokio::sync::mpsc;
+use tokio::task::spawn;
+use tracing::info;
 
 use clap::Parser;
+
+#[cfg(feature = "until")]
+use anyhow::ensure;
+#[cfg(feature = "until")]
+use timeboost_utils::until::run_until;
+#[cfg(feature = "until")]
+use tokio::task::JoinHandle;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -110,18 +103,11 @@ struct Cli {
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
     multi_region: bool,
-
-    /// The number of transactions to generate per second.
-    #[clap(long, default_value_t = 100)]
-    tps: u32,
 }
 
 async fn run(
-    mut coordinator: Coordinator<SailfishBlock, Rbc<SailfishBlock>>,
-    producer: TransactionQueue,
-    mut interval: Interval,
-    handles: Vec<JoinHandle<()>>,
-    #[cfg(feature = "until")] mut until_handle: JoinHandle<()>,
+    mut coordinator: Coordinator<Unit, Rbc<Unit>>,
+    #[cfg(feature = "until")] mut until_task: JoinHandle<()>,
 ) -> Result<()> {
     loop {
         #[cfg(feature = "until")]
@@ -131,12 +117,7 @@ async fn run(
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
-                                info!(
-                                    round_number = *payload.round(),
-                                    size = payload.data().size_bytes(),
-                                    transactions = payload.data().len(),
-                                    "block delivered"
-                                );
+                                info!(round_number = *payload.round(), "payload delivered");
                             } else if let Err(e) = coordinator.execute(a).await {
                                 tracing::error!("Error receiving message: {}", e);
                             }
@@ -147,20 +128,12 @@ async fn run(
                     },
                 }
             }
-            _ = &mut until_handle => {
+            _ = &mut until_task => {
                 tracing::info!("watchdog completed");
                 return Ok(());
             }
-            _ = interval.tick() => {
-                let tx = make_tx();
-                trace!("generating transaction");
-                producer.send(tx);
-            }
             _ = signal::ctrl_c() => {
                 info!("received ctrl-c; shutting down");
-                for handle in handles {
-                    handle.abort();
-                }
                 break;
             }
         }
@@ -172,12 +145,7 @@ async fn run(
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
-                                info!(
-                                    round_number = *payload.round(),
-                                    size = payload.data().size_bytes(),
-                                    transactions = payload.data().len(),
-                                    "block delivered"
-                                );
+                                info!(round_number = *payload.round(), "payload delivered");
                             } else if let Err(e) = coordinator.execute(a).await {
                                 tracing::error!("Error receiving message: {}", e);
                             }
@@ -188,16 +156,8 @@ async fn run(
                     },
                 }
             }
-            _ = interval.tick() => {
-                let tx = make_tx();
-                trace!("generating transaction");
-                producer.send(tx);
-            }
             _ = signal::ctrl_c() => {
                 info!("received ctrl-c; shutting down");
-                for handle in handles {
-                    handle.abort();
-                }
                 break;
             }
         }
@@ -217,8 +177,8 @@ async fn main() -> Result<()> {
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 
-    // Spin app_rx in a background thread and just drop the messages using a tokio select. Exiting when we
-    // get a ctrl-c.
+    // Spin app_rx in a background thread and just drop the messages using a tokio select.
+    // Exiting when we get a ctrl-c.
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -230,15 +190,16 @@ async fn main() -> Result<()> {
         }
     });
 
-    let rpc = start_rpc_api(app_tx, cli.rpc_port);
+    let rpc = spawn(rpc_api(app_tx, cli.rpc_port));
 
     let my_keyset = keyset
         .keyset()
         .get(cli.id as usize)
         .context("Keyset for this node does not exist")?;
 
-    // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
-    // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
+    // Now, fetch the signature private key and decryption private key, preference toward the JSON
+    // config. Note that the clone of the two fields explicitly avoids cloning the entire
+    // `PublicNodeInfo`.
     let (sig_key, _) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
         // We found both in the JSON, we're good to go.
         (Some(sig_pk), Some(dec_pk)) => {
@@ -281,7 +242,7 @@ async fn main() -> Result<()> {
     };
 
     #[cfg(feature = "until")]
-    let until_handle = {
+    let until_task = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
         let mut host = peer_urls[usize::from(cli.id)].clone();
 
@@ -303,9 +264,10 @@ async fn main() -> Result<()> {
 
     // Rust is *really* picky about mixing iterators, so we just erase the type.
     let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
-        // The number of nodes to take from the group. The layout of the nodes is such that (in the cloud) each region
-        // continues sequentially from the prior region. So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
-        // 4, 5, 6, 7, then we need to offset this otherwise we'd attribute us-east-2 nodes to us-west-2.
+        // The number of nodes to take from the group. The layout of the nodes is such that
+        // (in the cloud) each region continues sequentially from the prior region. So if us-east-2
+        // has nodes 0, 1, 2, 3 and us-west-2 has nodes 4, 5, 6, 7, then we need to offset this
+        // otherwise we'd attribute us-east-2 nodes to us-west-2.
         let take_from_group = num / 4;
 
         Box::new(
@@ -315,12 +277,13 @@ async fn main() -> Result<()> {
                 .flat_map(move |v| v.iter().take(take_from_group)),
         )
     } else {
-        // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
-        // on the same host.
+        // Fallback behavior for multi regions, we just take the first n nodes if we're running on
+        // a single region or all on the same host.
         Box::new(keyset.keyset().iter().take(num))
     };
 
-    // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.
+    // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys
+    // from each chunk.
     for peer_host in peer_host_iter {
         let mut spl = peer_host.url.splitn(3, ":");
         let p0 = spl
@@ -359,7 +322,8 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let metrics = start_metrics_api(prom.clone(), cli.metrics_port);
+    let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
+
     let committee = Committee::new(
         peer_hosts_and_keys
             .iter()
@@ -370,9 +334,8 @@ async fn main() -> Result<()> {
 
     let cfg = RbcConfig::new(keypair.clone(), committee.clone());
     let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
-    let producer = TransactionQueue::new();
 
-    let consensus = Consensus::new(keypair, committee, producer.clone()).with_metrics(sf_metrics);
+    let consensus = Consensus::new(keypair, committee, repeat(Unit)).with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
     // Kickstart the network.
@@ -382,19 +345,15 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Set up the load generator interval
-    let millis = tps_to_millis(cli.tps);
-    let interval = interval(Duration::from_millis(millis));
+    let result = run(
+        coordinator,
+        #[cfg(feature = "until")]
+        until_task,
+    )
+    .await;
 
-    let handles = vec![rpc, metrics];
+    rpc.abort();
+    metrics.abort();
 
-    #[cfg(feature = "until")]
-    {
-        run(coordinator, producer, interval, handles, until_handle).await
-    }
-
-    #[cfg(not(feature = "until"))]
-    {
-        run(coordinator, producer, interval, handles).await
-    }
+    result
 }

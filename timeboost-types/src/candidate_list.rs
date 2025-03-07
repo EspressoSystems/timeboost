@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CandidateList(Arc<Inner>);
 
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename = "CandidateList")]
 struct Inner {
     time: Timestamp,

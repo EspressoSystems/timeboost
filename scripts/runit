@@ -6,6 +6,7 @@ nodes=5
 rounds=1000
 late_start=false
 keyset_file="test-configs/local.json"
+tps=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -25,6 +26,10 @@ while [[ $# -gt 0 ]]; do
             rounds="$2"
             shift 2
             ;;
+        -t|--tps)
+            tps="$2"
+            shift 2
+            ;;
         *)
             echo -e "Unknown: $1\n"
             echo "Usage: $0 [Options] where
@@ -39,6 +44,9 @@ Options:
 
     -r | --rounds <NUMBER>
         Run for the given number of rounds (default = 1000).
+
+    -t | --tps <NUMBER>
+        Number of transactions per second to generate.
 
     -n | --nodes <NUMBER>
         Run the given number of nodes (default = 5)."
@@ -64,6 +72,7 @@ for (( i=0; i<$nodes; i++ )); do
         --until $rounds
         --nodes $nodes
         --keyset-file $keyset_file
+        --tps $tps
         --watchdog-timeout $rounds)
 
     if $late_start; then

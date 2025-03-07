@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
-use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
+use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_utils::types::logging;
 
 use crate::prelude::*;

@@ -212,6 +212,4 @@ fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
         l.timestamp().abs_diff(*r.timestamp()) <= 5,
         "Drift is too high from expected to actual block timestamps"
     );
-    assert_eq!(l.delayed_inbox_index(), r.delayed_inbox_index());
-    assert_eq!(l.clone().transactions(), r.clone().transactions());
 }

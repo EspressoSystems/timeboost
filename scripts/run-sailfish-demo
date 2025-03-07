@@ -18,12 +18,11 @@ for (( i=0; i<$nodes; i++ )); do
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --keyset-file test-configs/local.json
-        --tps 100
         --nodes $nodes
         --until 300
     )
 
-    eval "${cmd[@]}" &
+    "${cmd[@]}" &
 done
 
 wait

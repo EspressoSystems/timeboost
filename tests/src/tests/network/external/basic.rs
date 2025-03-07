@@ -4,8 +4,8 @@ use cliquenet::{Network, NetworkMetrics};
 use multisig::PublicKey;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::Coordinator;
-use timeboost_core::types::test::message_interceptor::NetworkMessageInterceptor;
-use timeboost_core::types::test::testnet::{MsgQueues, TestNet};
+use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
+use timeboost_utils::test::testnet::{MsgQueues, TestNet};
 use tokio::task::JoinSet;
 
 use crate::prelude::*;

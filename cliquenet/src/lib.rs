@@ -437,6 +437,7 @@ where
                 msg = self.obound.recv() => match msg {
                     // Uni-cast
                     Some((Some(to), m)) => {
+                        trace!(node = %self.key, %to, len = %m.len(), "sending message");
                         if to == self.key {
                             let _ = self.ibound.try_send((self.key, m));
                             continue
@@ -450,6 +451,7 @@ where
                     }
                     // Multi-cast
                     Some((None, m)) => {
+                        trace!(node = %self.key, len = %m.len(), "multicasting message");
                         let _ = self.ibound.try_send((self.key, m.clone()));
                         let mut reconnect = Vec::new();
                         for (k, task) in &self.active {

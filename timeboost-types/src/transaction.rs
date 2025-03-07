@@ -1,90 +1,208 @@
+use std::fmt;
+use std::ops::Deref;
+
+use alloy_primitives::{Bytes, TxHash, U256};
+use alloy_rlp::{Decodable, RlpDecodable, RlpEncodable};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::{Address, Epoch, SeqNo};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Nonce([u8; 32]);
+#[cfg(feature = "arbitrary")]
+use arbitrary::Unstructured;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    RlpDecodable,
+    RlpEncodable,
+)]
+#[rlp(transparent)]
+pub struct Hash(TxHash);
+
+impl From<[u8; 32]> for Hash {
+    fn from(value: [u8; 32]) -> Self {
+        Hash(value.into())
+    }
+}
+
+impl AsRef<[u8; 32]> for Hash {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.0.as_ref()
+    }
+}
+
+impl Deref for Hash {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl fmt::Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    RlpDecodable,
+    RlpEncodable,
+)]
+#[rlp(transparent)]
+pub struct Nonce(U256);
 
 impl Nonce {
     pub fn to_epoch(self) -> Epoch {
-        let n = u128::from_be_bytes(self.0[..16].try_into().expect("16 bytes = 128 bit"));
-        Epoch::from(n)
+        let n: u128 = (self.0 >> 128u8).try_into().unwrap();
+        Epoch::from(n as u64)
     }
 
     pub fn to_seqno(self) -> SeqNo {
-        let n = u128::from_be_bytes(self.0[16..].try_into().expect("16 bytes = 128 bit"));
-        SeqNo::from(n)
-    }
-}
-
-impl From<[u8; 32]> for Nonce {
-    fn from(val: [u8; 32]) -> Self {
-        Self(val)
-    }
-}
-
-impl From<Nonce> for [u8; 32] {
-    fn from(val: Nonce) -> Self {
-        val.0
+        let n: u128 = (self.0 & U256::from(u128::MAX)).try_into().unwrap();
+        SeqNo::from(n as u64)
     }
 }
 
 impl Committable for Nonce {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Nonce")
-            .fixed_size_bytes(&self.0)
+            .var_size_bytes(self.0.as_le_slice())
             .finalize()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+impl fmt::Display for Nonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, RlpEncodable, RlpDecodable)]
 pub struct Transaction {
-    to: Address,
     nonce: Nonce,
-    data: Vec<u8>,
-    hash: [u8; 32],
+    to: Address,
+    from: Address,
+    data: Bytes,
+    v: u64,
+    r: U256,
+    s: U256,
+    hash: Hash,
 }
 
 impl Transaction {
-    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
-        let h = blake3::hash(&data);
-        Self {
-            nonce,
-            to,
-            data,
-            hash: h.into(),
-        }
+    pub fn decode(bytes: &[u8]) -> Result<Self, InvalidTransaction> {
+        <Self as Decodable>::decode(&mut &*bytes).map_err(InvalidTransaction)
     }
 
-    pub fn nonce(&self) -> Nonce {
-        self.nonce
+    pub fn nonce(&self) -> &Nonce {
+        &self.nonce
     }
 
-    pub fn to(&self) -> Address {
-        self.to
+    pub fn from(&self) -> &Address {
+        &self.from
+    }
+
+    pub fn to(&self) -> &Address {
+        &self.to
     }
 
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
-    pub fn into_data(self) -> Vec<u8> {
-        self.data
+    pub fn into_data(self) -> Bytes {
+        self.data.clone()
     }
 
-    pub fn digest(&self) -> &[u8; 32] {
+    pub fn digest(&self) -> &Hash {
         &self.hash
+    }
+
+    #[cfg(feature = "arbitrary")]
+    fn update_hash(&mut self) {
+        use sha3::Digest;
+
+        let mut h = sha3::Keccak256::new();
+        h.update(self.to);
+        h.update(self.from);
+        h.update(self.nonce.0.as_le_slice());
+        h.update(&self.data);
+        h.update(&self.v.to_le_bytes()[..]);
+        h.update(self.r.as_le_slice());
+        h.update(self.s.as_le_slice());
+
+        self.hash = <[u8; 32]>::from(h.finalize()).into();
+    }
+}
+
+impl fmt::Display for Transaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{to := {}, from := {}, nonce := {}, hash := {}}}",
+            self.to, self.from, self.nonce, self.hash
+        )
     }
 }
 
 impl Committable for Transaction {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Transaction")
-            .field("to", self.to.commit())
-            .field("nonce", self.nonce.commit())
-            .var_size_field("data", &self.data)
+            .field("to", self.to().commit())
+            .field("from", self.from().commit())
+            .field("nonce", self.nonce().commit())
+            .var_size_field("data", self.data())
+            .fixed_size_bytes(self.digest().as_ref())
             .finalize()
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl Transaction {
+    pub fn arbitrary(max_data: usize, u: &mut Unstructured<'_>) -> arbitrary::Result<Self> {
+        use arbitrary::Arbitrary;
+
+        let mut from = [0; 20];
+        u.fill_buffer(&mut from)?;
+
+        let mut to = [0; 20];
+        u.fill_buffer(&mut to)?;
+
+        let mut this = Self {
+            to: to.into(),
+            from: from.into(),
+            nonce: Nonce(U256::arbitrary(u)?),
+            data: Bytes::arbitrary(u)?,
+            v: u64::arbitrary(u)?,
+            r: U256::arbitrary(u)?,
+            s: U256::arbitrary(u)?,
+            hash: Hash::from([0; 32]),
+        };
+
+        this.data.truncate(max_data);
+        this.update_hash();
+
+        Ok(this)
     }
 }
 
@@ -92,8 +210,8 @@ impl Committable for Transaction {
 pub struct PriorityBundle {
     epoch: Epoch,
     seqno: SeqNo,
-    data: Vec<u8>,
-    hash: [u8; 32],
+    hash: Hash,
+    data: Bytes,
 }
 
 impl PriorityBundle {
@@ -105,7 +223,7 @@ impl PriorityBundle {
         self.seqno
     }
 
-    pub fn digest(&self) -> &[u8; 32] {
+    pub fn digest(&self) -> &Hash {
         &self.hash
     }
 
@@ -113,7 +231,7 @@ impl PriorityBundle {
         &self.data
     }
 
-    pub fn into_data(self) -> Vec<u8> {
+    pub fn into_data(self) -> Bytes {
         self.data
     }
 }
@@ -121,10 +239,10 @@ impl PriorityBundle {
 impl From<Transaction> for PriorityBundle {
     fn from(t: Transaction) -> Self {
         Self {
-            epoch: t.nonce.to_epoch(),
-            seqno: t.nonce.to_seqno(),
-            data: t.data,
-            hash: t.hash,
+            epoch: t.nonce().to_epoch(),
+            seqno: t.nonce().to_seqno(),
+            hash: *t.digest(),
+            data: t.into_data(),
         }
     }
 }
@@ -134,7 +252,74 @@ impl Committable for PriorityBundle {
         RawCommitmentBuilder::new("PriorityBundle")
             .field("epoch", self.epoch.commit())
             .field("seqno", self.seqno.commit())
+            .fixed_size_field("hash", self.hash.as_ref())
             .var_size_field("data", &self.data)
             .finalize()
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl PriorityBundle {
+    pub fn arbitrary(
+        to: Address,
+        max_seqno: u64,
+        max_data: usize,
+        u: &mut Unstructured<'_>,
+    ) -> arbitrary::Result<Transaction> {
+        use arbitrary::Arbitrary;
+
+        let mut t = Transaction::arbitrary(max_data, u)?;
+
+        let e = Epoch::now() + bool::arbitrary(u)? as u64;
+        let s = SeqNo::from(u.int_in_range(0..=max_seqno)?);
+
+        let mut nonce = U256::ZERO;
+        nonce |= U256::from(u64::from(e)) << 128;
+        nonce |= U256::from(u64::from(s));
+
+        t.to = to;
+        t.nonce = Nonce(nonce);
+        t.update_hash();
+
+        Ok(t)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("rlp error: {0}")]
+pub struct InvalidTransaction(#[from] alloy_rlp::Error);
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::U256;
+    use quickcheck::quickcheck;
+
+    use super::Nonce;
+    use crate::{Epoch, SeqNo};
+
+    quickcheck! {
+        fn epoch_seqno_nonce_identity(e: u64, s: u64) -> bool {
+            let e = Epoch::from(e);
+            let s = SeqNo::from(s);
+
+            let mut n = Nonce(U256::ZERO);
+            n.0 |= U256::from(u64::from(e)) << 128;
+            n.0 |= U256::from(u64::from(s));
+
+            n.to_epoch() == e && n.to_seqno() == s
+        }
+
+        fn epoch_seqno_nonce_be_bytes_identity(e: u64, s: u64) -> bool {
+            let e = Epoch::from(e);
+            let s = SeqNo::from(s);
+
+            let mut bytes = [0; 32];
+            bytes[8  .. 16].copy_from_slice(&e.to_be_bytes()[..]);
+            bytes[24 .. 32].copy_from_slice(&s.to_be_bytes()[..]);
+
+            let n = Nonce(U256::from_be_bytes(bytes));
+
+            n.to_epoch() == e && n.to_seqno() == s
+        }
     }
 }

@@ -1,10 +1,10 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
-use timeboost_types::{math, PriorityBundle, RetryList, Transaction};
+use timeboost_types::{math, Hash, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Timestamp};
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct Includer {
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
     /// Cache of transaction hashes for the previous 8 rounds.
-    cache: BTreeMap<RoundNumber, HashSet<[u8; 32]>>,
+    cache: BTreeMap<RoundNumber, HashSet<Hash>>,
 }
 
 impl Includer {
@@ -68,7 +68,7 @@ impl Includer {
             self.seqno = SeqNo::zero();
         }
 
-        let mut transactions: BTreeMap<Transaction, usize> = BTreeMap::new();
+        let mut transactions: HashMap<Transaction, usize> = HashMap::new();
         let mut bundles: BTreeMap<SeqNo, PriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
