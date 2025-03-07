@@ -1,7 +1,7 @@
 #[cfg(feature = "until")]
 use anyhow::ensure;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use cliquenet::{Address, Network, NetworkMetrics};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{
@@ -213,7 +213,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let num = cli.nodes.unwrap_or(4);
 
-    let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+    let keyset = Keyset::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 
@@ -235,7 +235,7 @@ async fn main() -> Result<()> {
     let my_keyset = keyset
         .keyset()
         .get(cli.id as usize)
-        .expect("keyset for this node to exist");
+        .context("Keyset for this node does not exist")?;
 
     // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
     // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
@@ -252,11 +252,11 @@ async fn main() -> Result<()> {
 
             (sig_key, dec_key)
         }
-        // Hard crash on misconfigurations in the JSON (i.e. one key unset).
+        // Convert panic to error for misconfigurations in the JSON
         (Some(..), None) | (None, Some(..)) => {
-            panic!("malformed JSON configuration, both `sig_pk` and `dec_pk` must be set");
+            bail!("Malformed JSON configuration, both `sig_pk` and `dec_pk` must be set");
         }
-        // Last try: Can we pick these eys from the environment or other provided key(s)?
+        // Last try: Can we pick these keys from the environment or other provided key(s)?
         _ => private_keys(
             cli.key_file,
             cli.private_signature_key,
@@ -269,20 +269,26 @@ async fn main() -> Result<()> {
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
     #[cfg(feature = "until")]
-    let peer_urls: Vec<reqwest::Url> = keyset
-        .keyset()
-        .iter()
-        .take(num)
-        .map(|ph| format!("http://{}", ph.url).parse().unwrap())
-        .collect();
+    let peer_urls: Vec<reqwest::Url> = {
+        let mut urls = Vec::new();
+        for ph in keyset.keyset().iter().take(num) {
+            let url = format!("http://{}", ph.url)
+                .parse()
+                .context(format!("Failed to parse URL: http://{}", ph.url))?;
+            urls.push(url);
+        }
+        urls
+    };
 
     #[cfg(feature = "until")]
     let until_handle = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
         let mut host = peer_urls[usize::from(cli.id)].clone();
 
-        // HACK: The port is always 9000 + i in the local setup
-        host.set_port(Some(host.port().unwrap() + 1000)).unwrap();
+        // Set the port (9000 + i in the local setup)
+        host.port().context("Invalid port in URL")?;
+        host.set_port(Some(host.port().unwrap() + 1000))
+            .map_err(|_| anyhow::anyhow!("Failed to set port in URL"))?;
 
         // Map the Result<(), anyhow::Error> to () to match the expected JoinHandle<()> type
         let task_handle = tokio::spawn(async move {
@@ -317,17 +323,26 @@ async fn main() -> Result<()> {
     // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.
     for peer_host in peer_host_iter {
         let mut spl = peer_host.url.splitn(3, ":");
-        let p0 = spl.next().expect("valid url");
-        let p1: u16 = spl
+        let p0 = spl
             .next()
-            .expect("valid port")
+            .context("Invalid URL format: missing host part")?;
+
+        let p1_str = spl
+            .next()
+            .context("Invalid URL format: missing port part")?;
+
+        let p1: u16 = p1_str
             .parse()
-            .expect("integer port");
+            .context(format!("Failed to parse port number: {}", p1_str))?;
+
         let peer_address = Address::from((p0, p1));
         wait_for_live_peer(peer_address.clone()).await?;
 
-        let pubkey =
-            PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
+        let pubkey = PublicKey::try_from(peer_host.pubkey.as_str()).context(format!(
+            "Failed to derive public signature key from: {}",
+            peer_host.pubkey
+        ))?;
+
         peer_hosts_and_keys.push((pubkey, peer_address));
     }
 
@@ -362,7 +377,9 @@ async fn main() -> Result<()> {
 
     // Kickstart the network.
     for a in coordinator.init() {
-        let _ = coordinator.execute(a).await;
+        if let Err(e) = coordinator.execute(a).await {
+            tracing::error!("Error executing coordinator action: {}", e);
+        }
     }
 
     // Set up the load generator interval

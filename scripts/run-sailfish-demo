@@ -6,9 +6,13 @@ just build_release --features until
 
 nodes=${1:-5}
 
+# Set default RUST_LOG if not already defined
+if [ -z "${RUST_LOG:-}" ]; then
+    export RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
+fi
+
 for (( i=0; i<$nodes; i++ )); do
-    cmd=(RUST_LOG=sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info \
-        target/release/sailfish
+    cmd=(target/release/sailfish
         --id $i
         --port $((8000 + $i))
         --rpc-port $((8800 + $i))
