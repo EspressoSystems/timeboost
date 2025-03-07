@@ -60,7 +60,7 @@ where
         rng: &mut R,
         committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = committee.size.get() as usize;
+        let committee_size = committee.size.get();
         let degree = committee_size / CORR_RATIO;
         let gen = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
@@ -177,7 +177,7 @@ where
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = committee.size.get() as usize;
+        let committee_size: usize = committee.size.get();
         let threshold = committee_size / CORR_RATIO + 1;
         let gen = C::generator();
 
@@ -359,7 +359,7 @@ mod test {
         let ciphertext =
             ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
 
-        let threshold = committee.threshold().get() as usize;
+        let threshold = committee.threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
             .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
@@ -411,7 +411,7 @@ mod test {
         );
 
         // 2. Invalidate n - t shares
-        let committee_size = committee.size.get() as usize;
+        let committee_size = committee.size.get();
         let threshold = committee_size / 3;
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
