@@ -64,17 +64,14 @@ where
         let degree = committee_size / CORR_RATIO;
         let gen = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
-        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size);
 
-        if domain.is_none() {
-            return Err(ThresholdEncError::Internal(anyhow!(
-                "Unable to create eval domain"
-            )));
-        }
+        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size)
+            .ok_or_else(|| ThresholdEncError::Internal(anyhow!("Unable to create eval domain")))?;
+
         let alpha_0 = poly[0];
         let evals: Vec<_> = (0..committee_size)
             .map(|i| {
-                let x = domain.unwrap().element(i);
+                let x = domain.element(i);
                 poly.evaluate(&x)
             })
             .collect();
@@ -110,7 +107,8 @@ where
         let cid = committee.id;
 
         // hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w, cid.into()).unwrap();
+        let key = hash_to_key::<C, H>(v, w, cid.into())
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
 
         // TODO: use committee id for hashing
@@ -152,7 +150,8 @@ where
             ciphertext.w_hat,
             ciphertext.pi.clone(),
         );
-        let u_hat = hash_to_curve::<C, H>(v, e).unwrap();
+        let u_hat = hash_to_curve::<C, H>(v, e)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
@@ -250,7 +249,8 @@ where
         }
 
         // Hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w, committee.id.into()).unwrap();
+        let key = hash_to_key::<C, H>(v, w, committee.id.into())
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, data.as_ref());
@@ -270,7 +270,7 @@ where
     let gen = C::generator();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
-    v.serialize_compressed(&mut writer).unwrap();
+    v.serialize_compressed(&mut writer)?;
     let _ = writer.write(&e);
     writer.flush()?;
     drop(writer);
