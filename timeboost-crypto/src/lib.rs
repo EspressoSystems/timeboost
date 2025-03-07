@@ -62,7 +62,7 @@ impl Keyset {
     }
 
     pub fn threshold(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.size.get().div_ceil(3)).expect("ceil(n/3) with n > 0 never gives 0")
+        NonZeroUsize::new(self.size.get() / 3).expect("ceil(n/3) with n > 0 never gives 0")
     }
 }
 

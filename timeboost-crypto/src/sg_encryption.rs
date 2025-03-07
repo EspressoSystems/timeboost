@@ -411,11 +411,11 @@ mod test {
         );
 
         // 2. Invalidate n - t shares
-        let committee_size = committee.size.get();
-        let threshold = committee_size / 3;
+        let c_size = committee.size().get();
+        let c_threshold = committee.threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
-        (0..(committee_size - threshold)).for_each(|i| {
+        (0..(c_size - c_threshold)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
