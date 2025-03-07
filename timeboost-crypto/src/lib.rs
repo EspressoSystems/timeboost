@@ -218,9 +218,11 @@ impl Plaintext {
     pub fn new(data: Vec<u8>) -> Self {
         Plaintext(data)
     }
+}
 
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
+impl From<Plaintext> for Vec<u8> {
+    fn from(plaintext: Plaintext) -> Self {
+        plaintext.0
     }
 }
 

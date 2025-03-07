@@ -409,7 +409,7 @@ impl Worker {
                     &ciphertext,
                 )
                 .map_err(DecryptError::Decryption)?;
-                Ok((idx, DecryptedItem(decrypted_data.as_bytes().to_vec())))
+                Ok((idx, DecryptedItem(decrypted_data.into())))
             })
             .collect::<Result<_, DecryptError>>()?;
 
