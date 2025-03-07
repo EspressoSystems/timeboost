@@ -45,7 +45,7 @@ impl TransactionQueue {
 
     pub fn len(&self) -> (usize, usize) {
         let inner = self.0.lock();
-        (inner.bundles.len(), inner.transactions.len())
+        (inner.bundles.values().map(Vec::len).sum(), inner.transactions.len())
     }
 
     #[allow(unused)]
