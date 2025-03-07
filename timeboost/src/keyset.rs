@@ -117,8 +117,7 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
     host.set_port(800 + host.port());
 
     loop {
-        // let url = format!("http://{host}/v0/healthz");
-        let url = format!("http://localhost:{}/v0/healthz", host.port());
+        let url = format!("http://{host}/v0/healthz");
         tracing::info!(%host, %url, "establishing connection to load balancer");
 
         // Check if the healthz endpoint returns a 200 on the new host, looping forever until it does
