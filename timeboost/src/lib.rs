@@ -107,8 +107,18 @@ pub struct Timeboost {
     transactions: TransactionQueue,
 }
 
-#[derive(Clone)]
-struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
+#[derive(Clone, Default)]
+pub struct TransactionQueue(Arc<Mutex<Vec<Transaction>>>);
+
+impl TransactionQueue {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(Vec::new())))
+    }
+
+    pub fn send(&self, tx: Transaction) {
+        self.0.lock().push(tx);
+    }
+}
 
 impl DataSource for TransactionQueue {
     type Data = SailfishBlock;
@@ -174,7 +184,7 @@ impl HasInitializer for Timeboost {
         let cfg = RbcConfig::new(initializer.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
-        let producer = TransactionQueue(Arc::new(Mutex::new(Vec::new())));
+        let producer = TransactionQueue::new();
         let consensus = Consensus::new(initializer.keypair, committee, producer.clone())
             .with_metrics(sf_metrics);
         let coordinator = Coordinator::new(rbc, consensus);
@@ -332,6 +342,7 @@ impl Timeboost {
 pub fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> JoinHandle<()> {
     tokio::spawn(async move {
         let api = TimeboostApiState::new(app_tx);
+        tracing::info!("starting rpc api on port {}", rpc_port);
         if let Err(e) = api
             .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
             .await
@@ -342,8 +353,9 @@ pub fn start_rpc_api(app_tx: Sender<TimeboostStatusEvent>, rpc_port: u16) -> Joi
 }
 
 /// Start out metrics api with given port
-fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
-    tokio::spawn(
-        async move { serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await },
-    )
+pub fn start_metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        tracing::info!("starting metrics api on port {}", metrics_port);
+        serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
+    })
 }
