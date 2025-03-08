@@ -249,10 +249,10 @@ impl DecryptionScheme {
     /// - A single public key for clients to encrypt their transaction bundles.
     /// - A single combination key to all nodes for combining partially decrypted ciphertexts.
     /// - One distinct private key share per node for partial decryption.
-    pub fn trusted_keygen(size: usize) -> TrustedKeyMaterial {
+    pub fn trusted_keygen(size: NonZeroUsize) -> TrustedKeyMaterial {
         // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
-        let keyset = Keyset::new(1, NonZeroUsize::new(size).expect("no non-zero keyset size"));
+        let keyset = Keyset::new(1, size);
         <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &keyset).unwrap()
     }
 }

@@ -7,6 +7,7 @@ use rand::Rng;
 use std::{
     fs::{self, File},
     io::Write,
+    num::NonZeroUsize,
     path::PathBuf,
 };
 use timeboost_crypto::DecryptionScheme;
@@ -22,14 +23,14 @@ enum Scheme {
 }
 
 impl Scheme {
-    fn gen(self, seed: [u8; 32], num: usize, out: &PathBuf) -> anyhow::Result<()> {
+    fn gen(self, seed: [u8; 32], num: NonZeroUsize, out: &PathBuf) -> anyhow::Result<()> {
         match self {
             Self::All => {
                 Self::Signature.gen(seed, num, out)?;
                 Self::Decryption.gen(seed, num, out)?;
             }
             Self::Signature => {
-                for index in 0..num {
+                for index in 0..num.into() {
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options().append(true).create(true).open(&path)?;
                     let keypair = sig_keypair_from_seed_indexed(seed, index as u64);
@@ -47,7 +48,7 @@ impl Scheme {
                 let pub_key = bs58_encode(&pub_key.as_bytes());
                 let comb_key = bs58_encode(&comb_key.as_bytes());
 
-                for index in 0..num {
+                for index in 0..num.into() {
                     let key_share = key_shares
                         .get(index)
                         .expect("key share should exist in generated material");
@@ -148,7 +149,8 @@ fn main() -> anyhow::Result<()> {
         .truncate(true)
         .open(out.join(".seed"))?;
     writeln!(env_file, "TIMEBOOST_SIGNATURE_SEED={}", hex::encode(seed))?;
-    let _ = cli.scheme.gen(seed, cli.num, &out);
+    let num = NonZeroUsize::new(cli.num).expect("committee size greater than zero");
+    let _ = cli.scheme.gen(seed, num, &out);
 
     Ok(())
 }
