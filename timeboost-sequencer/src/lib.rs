@@ -17,7 +17,6 @@ use sailfish::Coordinator;
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, CandidateList, DelayedInboxIndex};
 use timeboost_types::{DecryptionKey, Transaction};
-use timeboost_utils::dec_addr;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tracing::error;
@@ -80,8 +79,13 @@ impl Sequencer {
         let coordinator = Coordinator::new(rbc, consensus);
 
         let dec_keyset = Keyset::new(1, cons_keyset.size());
-        let dec_peers: Vec<_> = cfg.peers.iter().map(|(k, a)| (*k, dec_addr(a))).collect();
-        let dec_addr = dec_addr(&net::Address::from(cfg.bind));
+        let dec_peers: Vec<_> = cfg
+            .peers
+            .iter()
+            .map(|(k, a)| (*k, a.clone().with_port(a.port() + 250)))
+            .collect();
+        let dec_addr = net::Address::from(cfg.bind).with_port(cfg.bind.port() + 250);
+
         let dec_net = Network::create(
             dec_addr,
             cfg.keypair, // same auth

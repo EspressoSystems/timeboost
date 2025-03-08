@@ -61,11 +61,11 @@ impl TransactionQueue {
         inner.set_time(time);
 
         for mut t in it.into_iter() {
-            let kid = match KeysetId::try_from(t.data()) {
-                Ok(kid) => kid,
-                Err(_) => continue,
-            };
-            t.set_keyset(kid);
+            if let Ok(kid) = KeysetId::try_from(t.data()) {
+                t.set_keyset(kid);
+            } else {
+                continue;
+            }
 
             if t.to() != inner.priority_addr {
                 inner.transactions.push_back((now, t));

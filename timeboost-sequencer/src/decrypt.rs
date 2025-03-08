@@ -1,10 +1,7 @@
 use std::collections::BTreeMap;
 
-use std::sync::Arc;
-
 use bimap::BiMap;
 use cliquenet::Network;
-use parking_lot::Mutex;
 use sailfish::types::RoundNumber;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
@@ -216,7 +213,7 @@ impl Drop for Decrypter {
     }
 }
 
-type Incubator = Arc<Mutex<BTreeMap<DecShareKey, Vec<DecShare>>>>;
+type Incubator = BTreeMap<DecShareKey, Vec<DecShare>>;
 
 /// Worker is responsible for "hatching" ciphertexts.
 ///
@@ -248,8 +245,8 @@ impl Worker {
         mut enc_rx: Receiver<(RoundNumber, Vec<EncryptedItem>)>,
         dec_tx: Sender<(RoundNumber, Vec<DecryptedItem>)>,
     ) {
-        let mut r = RoundNumber::new(0);
         loop {
+            let r;
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 Ok((pubkey, bytes)) = self.net.receive() => {
@@ -257,10 +254,12 @@ impl Worker {
                         r = s.round();
                         if let Err(e) = self.insert_shares(s) {
                             warn!("failed to insert shares from remote: {:?}", e);
+                            continue;
                         }
 
                     } else {
                         warn!("failed to deserialize share from: {}", pubkey);
+                        continue;
                     }
                 }
 
@@ -274,10 +273,12 @@ impl Worker {
                             }
                             if let Err(e) = self.insert_shares(s) {
                                 warn!("failed to insert local shares: {:?}", e);
+                                continue;
                             }
                         }
                         Err(e) => {
                             warn!("failed to decrypt data: {:?}", e);
+                            continue;
                         }
                     }
                 }
@@ -346,7 +347,7 @@ impl Worker {
             .map_err(DecryptError::net)
     }
 
-    fn insert_shares(&self, share_info: ShareInfo) -> Result<(), DecryptError> {
+    fn insert_shares(&mut self, share_info: ShareInfo) -> Result<(), DecryptError> {
         let kids = share_info.kids();
         let cids = share_info.cids();
         let shares = share_info.dec_shares();
@@ -360,7 +361,7 @@ impl Worker {
                 .ok_or(DecryptError::InvalidMessage)?
                 .to_owned();
             let k = DecShareKey::new(share_info.round(), *cid, kid);
-            self.shares.lock().entry(k).or_default().push(s);
+            self.shares.entry(k).or_default().push(s);
             Ok(())
         })
     }
@@ -372,7 +373,6 @@ impl Worker {
         // TODO: avoid linear scan if remote nodes batch same number of shares.
         let hatched = self
             .shares
-            .lock()
             .iter()
             .filter(|(k, _)| k.round() == round)
             .all(|(_, v)| self.committee.threshold().get() < v.len());
@@ -382,10 +382,9 @@ impl Worker {
             return Ok(None);
         }
 
-        let mut shares = self.shares.lock();
-
         // combine decryption shares for each ciphertext
-        let decrypted: BTreeMap<_, _> = shares
+        let decrypted: BTreeMap<_, _> = self
+            .shares
             .iter()
             .filter(|(k, _)| k.round() == round)
             .map(|(k, shares)| {
@@ -413,7 +412,7 @@ impl Worker {
             })
             .collect::<Result<_, DecryptError>>()?;
 
-        shares.retain(|k, _| k.round() != round);
+        self.shares.retain(|k, _| k.round() != round);
         Ok(Some((round, decrypted.into_values().collect())))
     }
 }
