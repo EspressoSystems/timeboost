@@ -32,7 +32,7 @@ pub enum Message<T: Committable, Status = Validated> {
     TimeoutCert(Certificate<Timeout>),
 }
 
-impl<T: Committable> Message<T, Unchecked> {
+impl<T: Committable, S> Message<T, S> {
     pub fn kind(&self) -> MessageKind {
         match self {
             Self::Vertex(_) => MessageKind::Vertex,
@@ -77,7 +77,7 @@ impl<T: Committable> Message<T, Unchecked> {
     }
 }
 
-impl<T: Committable, S> Message<T, S> {
+impl<T: Committable> Message<T, Unchecked> {
     pub fn validated(self, c: &Committee) -> Option<Message<T, Validated>> {
         match self {
             Self::Vertex(e) => {
