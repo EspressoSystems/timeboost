@@ -138,8 +138,7 @@ impl From<Nonce> for GenericArray<u8, typenum::U12> {
 
 impl<C: CurveGroup> CombKey<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(&self, bincode::config::legacy())
-            .expect("serializing combkey")
+        bincode::serde::encode_to_vec(self, bincode::config::legacy()).expect("serializing combkey")
     }
 }
 
@@ -167,7 +166,7 @@ impl<C: CurveGroup> TryFrom<&[u8]> for CombKey<C> {
 
 impl<C: CurveGroup> PublicKey<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(&self, bincode::config::legacy())
+        bincode::serde::encode_to_vec(self, bincode::config::legacy())
             .expect("serializing public key")
     }
 }
@@ -196,7 +195,7 @@ impl<C: CurveGroup> TryFrom<&[u8]> for PublicKey<C> {
 
 impl<C: CurveGroup> KeyShare<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(&self, bincode::config::legacy())
+        bincode::serde::encode_to_vec(self, bincode::config::legacy())
             .expect("serializing key share")
     }
 }

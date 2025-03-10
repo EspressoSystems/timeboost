@@ -54,7 +54,7 @@ impl<D: Committable> Signed<D> {
 
 impl<D: Committable> Committable for Signed<D> {
     fn commit(&self) -> Commitment<Self> {
-        let sig = bincode::serde::encode_to_vec(&self.signature, bincode::config::legacy())
+        let sig = bincode::serde::encode_to_vec(self.signature, bincode::config::legacy())
             .expect("serializing signature never fails");
         RawCommitmentBuilder::new("Signed")
             .field("data", self.data.commit())
