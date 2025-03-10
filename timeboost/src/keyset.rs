@@ -6,13 +6,13 @@ use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;
 use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
-
+use timeboost_types::DecryptionKey;
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
 #[derive(Deserialize)]
-pub struct Keyset {
+pub struct KeysetConfig {
     keyset: Vec<PublicNodeInfo>,
     dec_keyset: PublicDecInfo,
 }
@@ -37,31 +37,20 @@ pub struct PublicDecInfo {
     combkey: String,
 }
 
-#[allow(dead_code)]
-pub struct DecryptionInfo {
-    pub pubkey: PublicKey,
-    pub combkey: CombKey,
-    pub privkey: KeyShare,
-}
-
-impl Keyset {
+impl KeysetConfig {
     pub fn read_keyset(path: PathBuf) -> Result<Self> {
         ensure!(path.exists(), "File not found: {:?}", path);
         let data = fs::read_to_string(&path).context("Failed to read file")?;
-        let keyset: Keyset = from_str(&data).context("Failed to parse JSON")?;
+        let keyset: KeysetConfig = from_str(&data).context("Failed to parse JSON")?;
         Ok(keyset)
     }
 
-    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionInfo> {
+    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionKey> {
         let pubkey = PublicKey::try_from(self.dec_keyset.pubkey.as_str())
             .context("Failed to parse public key from keyset")?;
         let combkey = CombKey::try_from(self.dec_keyset.combkey.as_str())
             .context("Failed to parse combination key from keyset")?;
-        Ok(DecryptionInfo {
-            pubkey,
-            combkey,
-            privkey: deckey,
-        })
+        Ok(DecryptionKey::new(pubkey, combkey, deckey))
     }
 
     pub fn keyset(&self) -> &[PublicNodeInfo] {

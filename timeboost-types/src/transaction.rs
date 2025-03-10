@@ -1,5 +1,6 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::KeysetId;
 
 use crate::{Address, Epoch, SeqNo};
 
@@ -44,16 +45,18 @@ pub struct Transaction {
     nonce: Nonce,
     data: Vec<u8>,
     hash: [u8; 32],
+    kid: KeysetId,
 }
 
 impl Transaction {
-    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>) -> Self {
+    pub fn new(nonce: Nonce, to: Address, data: Vec<u8>, kid: KeysetId) -> Self {
         let h = blake3::hash(&data);
         Self {
             nonce,
             to,
             data,
             hash: h.into(),
+            kid,
         }
     }
 
@@ -63,6 +66,14 @@ impl Transaction {
 
     pub fn to(&self) -> Address {
         self.to
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.kid != KeysetId::from(0u64)
+    }
+
+    pub fn kid(&self) -> KeysetId {
+        self.kid
     }
 
     pub fn data(&self) -> &[u8] {
@@ -75,6 +86,10 @@ impl Transaction {
 
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
+    }
+
+    pub fn set_keyset(&mut self, kid: KeysetId) {
+        self.kid = kid
     }
 }
 
@@ -94,9 +109,25 @@ pub struct PriorityBundle {
     seqno: SeqNo,
     data: Vec<u8>,
     hash: [u8; 32],
+    kid: KeysetId,
 }
 
 impl PriorityBundle {
+    pub fn new(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, hash: [u8; 32], kid: KeysetId) -> Self {
+        Self {
+            epoch,
+            seqno,
+            data,
+            hash,
+            kid,
+        }
+    }
+
+    pub fn new_with_hash(epoch: Epoch, seqno: SeqNo, data: Vec<u8>, kid: KeysetId) -> Self {
+        let h = blake3::hash(&data);
+        Self::new(epoch, seqno, data, h.into(), kid)
+    }
+
     pub fn epoch(&self) -> Epoch {
         self.epoch
     }
@@ -107,6 +138,14 @@ impl PriorityBundle {
 
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.kid != KeysetId::from(0)
+    }
+
+    pub fn kid(&self) -> KeysetId {
+        self.kid
     }
 
     pub fn data(&self) -> &[u8] {
@@ -125,6 +164,7 @@ impl From<Transaction> for PriorityBundle {
             seqno: t.nonce.to_seqno(),
             data: t.data,
             hash: t.hash,
+            kid: KeysetId::from(0),
         }
     }
 }

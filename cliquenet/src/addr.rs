@@ -19,12 +19,20 @@ impl Address {
         }
     }
 
-    /// We need to be able to set the port to something else.
+    /// Set the address port.
     pub fn set_port(&mut self, p: u16) {
         match self {
-            Self::Inet(ip, _) => *self = Self::Inet(*ip, p),
-            Self::Name(hn, _) => *self = Self::Name(hn.clone(), p),
+            Self::Inet(_, o) => *o = p,
+            Self::Name(_, o) => *o = p,
         }
+    }
+
+    pub fn with_port(mut self, p: u16) -> Self {
+        match self {
+            Self::Inet(ip, _) => self = Self::Inet(ip, p),
+            Self::Name(hn, _) => self = Self::Name(hn, p),
+        }
+        self
     }
 
     pub fn is_ip(&self) -> bool {

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
+use timeboost_crypto::KeysetId;
 use timeboost_types::{Address, Epoch, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 
@@ -59,7 +60,13 @@ impl TransactionQueue {
 
         inner.set_time(time);
 
-        for t in it.into_iter() {
+        for mut t in it.into_iter() {
+            if let Ok(kid) = KeysetId::try_from(t.data()) {
+                t.set_keyset(kid);
+            } else {
+                continue;
+            }
+
             if t.to() != inner.priority_addr {
                 inner.transactions.push_back((now, t));
                 continue;

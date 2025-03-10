@@ -6,6 +6,8 @@ description.workspace = true
 
 [dependencies]
 blake3 = { workspace = true }
+bincode = { workspace = true }
+bimap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 metrics = { path = "../metrics" }
@@ -14,8 +16,8 @@ parking_lot = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-
