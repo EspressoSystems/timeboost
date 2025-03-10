@@ -1,18 +1,13 @@
-use std::collections::BTreeSet;
-
-use committable::{Commitment, Committable, RawCommitmentBuilder};
-use serde::{Deserialize, Serialize};
-
 use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
 use sailfish_types::RoundNumber;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: Vec<PriorityBundle>,
-    transactions: BTreeSet<Transaction>,
+    transactions: Vec<Transaction>,
 }
 
 impl InclusionList {
@@ -22,7 +17,7 @@ impl InclusionList {
             time: t,
             index: i,
             priority: Vec::new(),
-            transactions: BTreeSet::new(),
+            transactions: Vec::new(),
         }
     }
 
@@ -35,7 +30,8 @@ impl InclusionList {
     where
         I: IntoIterator<Item = Transaction>,
     {
-        self.transactions = it.into_iter().collect();
+        self.transactions.clear();
+        self.transactions.extend(it);
         self
     }
 
@@ -63,11 +59,11 @@ impl InclusionList {
         self.transactions.len() + self.priority.len()
     }
 
-    pub fn into_transactions(self) -> (Vec<PriorityBundle>, BTreeSet<Transaction>) {
+    pub fn into_transactions(self) -> (Vec<PriorityBundle>, Vec<Transaction>) {
         (self.priority, self.transactions)
     }
 
-    pub fn transactions(&self) -> &BTreeSet<Transaction> {
+    pub fn transactions(&self) -> &[Transaction] {
         &self.transactions
     }
 
@@ -78,23 +74,18 @@ impl InclusionList {
     pub fn delayed_inbox_index(&self) -> DelayedInboxIndex {
         self.index
     }
-}
 
-impl Committable for InclusionList {
-    fn commit(&self) -> Commitment<Self> {
-        let mut builder = RawCommitmentBuilder::new("InclusionList")
-            .u64_field("round", self.round.into())
-            .u64_field("time", self.time.into())
-            .u64_field("index", self.index.into())
-            .u64_field("priority", self.priority.len() as u64);
-        builder = self
-            .priority
-            .iter()
-            .fold(builder, |b, t| b.var_size_bytes(t.commit().as_ref()));
-        builder = builder.u64_field("transactions", self.transactions.len() as u64);
-        self.transactions
-            .iter()
-            .fold(builder, |b, t| b.var_size_bytes(t.commit().as_ref()))
-            .finalize()
+    pub fn digest(&self) -> [u8; 32] {
+        let mut h = blake3::Hasher::new();
+        h.update(&self.round.u64().to_be_bytes());
+        h.update(&u64::from(self.time).to_be_bytes());
+        h.update(&u64::from(self.index).to_be_bytes());
+        for b in &self.priority {
+            h.update(&b.digest()[..]);
+        }
+        for t in &self.transactions {
+            h.update(&t.digest()[..]);
+        }
+        h.finalize().into()
     }
 }

@@ -1,13 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bimap::BiMap;
 use cliquenet::Network;
 use sailfish::types::RoundNumber;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
-use timeboost_types::{
-    DecShareKey, DecryptionKey, InclusionList, PriorityBundle, ShareInfo, Transaction,
-};
+use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo, Transaction};
 use tokio::spawn;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -33,10 +31,10 @@ impl From<Status> for InclusionList {
 }
 
 /// Encrypted item (Decrypter -> Worker)
-struct EncryptedItem(KeysetId, Vec<u8>);
+struct EncryptedItem(KeysetId, Bytes);
 
 /// Decrypted item (Worker -> Decrypter)
-struct DecryptedItem(Vec<u8>);
+struct DecryptedItem(Bytes);
 
 pub struct Decrypter {
     /// Incoming (encrypted) incl lists.
@@ -82,14 +80,14 @@ impl Decrypter {
                 .iter()
                 .enumerate()
                 .filter(|(_, ptx)| ptx.encrypted())
-                .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().to_vec())))
+                .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().clone())))
                 .unzip();
 
             let (encrypted_tx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
                 .transactions()
                 .iter()
                 .filter(|tx| tx.encrypted())
-                .map(|tx| (tx.clone(), EncryptedItem(tx.kid(), tx.data().to_vec())))
+                .map(|tx| (tx.clone(), EncryptedItem(tx.kid(), tx.data().clone())))
                 .unzip();
 
             let encrypted_data: Vec<EncryptedItem> = encrypted_ptx_data
@@ -139,7 +137,10 @@ impl Decrypter {
             // inclusion lists are processed in order; return only if r is decrypted.
             if let Some(entry) = self.incls.first_entry() {
                 match entry.get() {
-                    Status::Decrypted(incl) => return Ok(incl.clone()),
+                    Status::Decrypted(_) => {
+                        let incl = entry.remove().into();
+                        return Ok(incl);
+                    }
                     Status::Encrypted(_) => {
                         debug!(
                             "received decrypted txns for r={} but the next round is r={}",
@@ -163,7 +164,8 @@ fn assemble_incl(
     let (modified_ptxs, modified_txs) = modified
         .remove(&r)
         .expect("encrypted incl => modified entry");
-    let (mut ptxs, mut txs) = incl.to_owned().into_transactions();
+    let (mut ptxs, txs) = incl.to_owned().into_transactions();
+    let mut txs = BTreeSet::from_iter(txs);
     if modified_ptxs.len() + modified_txs.len() != dec.len() {
         return Err(DecryptError::State);
     }
@@ -172,12 +174,14 @@ fn assemble_incl(
         .enumerate()
         .map(|(i, m)| {
             if let Some(ptx) = ptxs.get_mut(m) {
-                *ptx = PriorityBundle::new_with_hash(
-                    ptx.epoch(),
-                    ptx.seqno(),
+                *ptx = Transaction::new(
+                    *ptx.nonce(),
+                    *ptx.to(),
+                    *ptx.from(),
                     dec.get(i).ok_or(DecryptError::State)?.0.clone(),
                     ptx.kid(),
-                );
+                )
+                .into();
                 Ok::<(), DecryptError>(())
             } else {
                 Err(DecryptError::State)
@@ -195,7 +199,8 @@ fn assemble_incl(
                     .ok_or(DecryptError::InvalidMessage)?
                     .0
                     .clone();
-                let dec_tx = Transaction::new(tx.nonce(), tx.to(), data, tx.kid());
+                let mut dec_tx = tx.clone();
+                dec_tx.set_data(data);
                 txs.insert(dec_tx);
                 Ok(())
             } else {
@@ -408,7 +413,10 @@ impl Worker {
                     &ciphertext,
                 )
                 .map_err(DecryptError::Decryption)?;
-                Ok((idx, DecryptedItem(decrypted_data.into())))
+                Ok((
+                    idx,
+                    DecryptedItem(Bytes::from(<Vec<u8>>::from(decrypted_data))),
+                ))
             })
             .collect::<Result<_, DecryptError>>()?;
 

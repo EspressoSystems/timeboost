@@ -6,15 +6,12 @@ use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
 use tide_disco::{error::ServerError, Api, App, StatusCode, Url};
-use timeboost_core::types::{
-    event::{TimeboostEventType, TimeboostStatusEvent},
-    transaction::Transaction,
-};
+use timeboost_types::Transaction;
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
-    app_tx: Sender<TimeboostStatusEvent>,
+    app_tx: Sender<Transaction>,
 }
 
 #[async_trait]
@@ -23,7 +20,7 @@ pub trait TimeboostApi {
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<TimeboostStatusEvent>) -> Self {
+    pub fn new(app_tx: Sender<Transaction>) -> Self {
         Self { app_tx }
     }
 
@@ -43,15 +40,9 @@ impl TimeboostApiState {
 impl TimeboostApi for TimeboostApiState {
     /// Submit a transaction to timeboost layer.
     async fn submit(&self, tx: Transaction) -> Result<(), ServerError> {
-        let status = TimeboostStatusEvent {
-            event: TimeboostEventType::Transactions {
-                transactions: vec![tx],
-            },
-        };
-
-        self.app_tx.send(status).await.map_err(|e| ServerError {
+        self.app_tx.send(tx).await.map_err(|e| ServerError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: format!("Failed to broadcast status event: {}", e),
+            message: format!("Failed to broadcast transaction: {}", e),
         })?;
 
         Ok(())

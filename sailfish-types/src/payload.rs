@@ -21,3 +21,14 @@ impl<T: Clone> DataSource for std::iter::Repeat<T> {
         <Self as std::iter::Iterator>::next(self).expect("`Repeat` is never `None`")
     }
 }
+
+impl<F, T> DataSource for std::iter::RepeatWith<F>
+where
+    F: FnMut() -> T,
+{
+    type Data = T;
+
+    fn next(&mut self, _: RoundNumber) -> Self::Data {
+        <Self as std::iter::Iterator>::next(self).expect("`Repeat` is never `None`")
+    }
+}

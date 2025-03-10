@@ -2,6 +2,7 @@ pub mod cp_proof;
 pub mod sg_encryption;
 pub mod traits;
 
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use cp_proof::Proof;
@@ -17,14 +18,31 @@ use traits::threshold_enc::ThresholdEncScheme;
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    RlpDecodable,
+    RlpEncodable,
+)]
 pub struct KeysetId(u64);
 
 impl TryFrom<&[u8]> for KeysetId {
-    type Error = std::array::TryFromSliceError;
+    type Error = InvalidKeysetId;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let bytes: [u8; 8] = value.try_into()?;
+        let bytes: [u8; 8] = value
+            .get(..8)
+            .ok_or(InvalidKeysetId(()))?
+            .try_into()
+            .map_err(|_| InvalidKeysetId(()))?;
         Ok(KeysetId(u64::from_be_bytes(bytes)))
     }
 }
@@ -334,3 +352,7 @@ where
         T::deserialize_compressed(&mut &bytes[..]).map_err(serde::de::Error::custom)
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid keyset id")]
+pub struct InvalidKeysetId(());

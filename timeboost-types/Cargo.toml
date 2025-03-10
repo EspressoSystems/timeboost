@@ -4,12 +4,23 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[features]
+arbitrary = ["dep:arbitrary", "alloy-primitives/arbitrary"]
+
 [dependencies]
+alloy-primitives = { workspace = true }
+alloy-rlp = { workspace = true }
+arbitrary = { workspace = true, optional = true }
 blake3 = { workspace = true }
+bytes = { workspace = true }
 committable = { workspace = true }
+data-encoding = { workspace = true }
+ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
-serde = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
+serde = { workspace = true }
+sha3 = { workspace = true }
+thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 
 [dev-dependencies]

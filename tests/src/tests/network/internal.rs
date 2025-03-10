@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use multisig::PublicKey;
 use sailfish::Coordinator;
-use timeboost_core::types::test::{
+use timeboost_utils::test::{
     message_interceptor::NetworkMessageInterceptor,
     net::{Conn, Star},
     testnet::{MsgQueues, TestNet},

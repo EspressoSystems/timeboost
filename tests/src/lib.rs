@@ -6,9 +6,28 @@ use timeboost_utils::unsafe_zero_keypair;
 
 #[allow(unused)]
 pub(crate) mod prelude {
+    use committable::{Commitment, Committable, RawCommitmentBuilder};
+    use serde::{Deserialize, Serialize};
+
     pub use sailfish::types::DataSource;
-    pub use timeboost_core::types::block::sailfish::SailfishBlock;
-    pub use timeboost_core::types::time::Timestamp;
+    pub use timeboost::types::Timestamp;
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct SailfishBlock(Timestamp);
+
+    impl SailfishBlock {
+        pub fn timestamp(&self) -> Timestamp {
+            self.0
+        }
+    }
+
+    impl Committable for SailfishBlock {
+        fn commit(&self) -> Commitment<Self> {
+            RawCommitmentBuilder::new("SailfishBlock")
+                .u64_field("timestamp", *self.0)
+                .finalize()
+        }
+    }
 
     pub type Action = sailfish::types::Action<SailfishBlock>;
     pub type Message = sailfish::types::Message<SailfishBlock>;
@@ -22,7 +41,7 @@ pub(crate) mod prelude {
         type Data = SailfishBlock;
 
         fn next(&mut self, _: sailfish::types::RoundNumber) -> Self::Data {
-            SailfishBlock::empty(Timestamp::now(), 0)
+            SailfishBlock(Timestamp::now())
         }
     }
 }
