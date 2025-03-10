@@ -467,9 +467,9 @@ impl NoVoteMessage {
     }
 }
 
-impl<T: Committable + for<'de> Deserialize<'de>> Message<T, Unchecked> {
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
-        bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
+impl<'a, T: Committable + Deserialize<'a>> Message<T, Unchecked> {
+    pub fn decode(bytes: &'a [u8]) -> Option<Self> {
+        bincode::serde::borrow_decode_from_slice(bytes, bincode::config::legacy())
             .ok()
             .map(|(msg, _)| msg)
     }
