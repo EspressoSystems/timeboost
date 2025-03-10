@@ -137,7 +137,10 @@ impl Decrypter {
             // inclusion lists are processed in order; return only if r is decrypted.
             if let Some(entry) = self.incls.first_entry() {
                 match entry.get() {
-                    Status::Decrypted(incl) => return Ok(incl.clone()),
+                    Status::Decrypted(_) => {
+                        let incl = entry.remove().into();
+                        return Ok(incl);
+                    }
                     Status::Encrypted(_) => {
                         debug!(
                             "received decrypted txns for r={} but the next round is r={}",
