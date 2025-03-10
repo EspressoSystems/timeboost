@@ -1,7 +1,7 @@
 use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
 use sailfish_types::RoundNumber;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
@@ -49,6 +49,10 @@ impl InclusionList {
 
     pub fn timestamp(&self) -> Timestamp {
         self.time
+    }
+
+    pub fn round(&self) -> RoundNumber {
+        self.round
     }
 
     pub fn len(&self) -> usize {

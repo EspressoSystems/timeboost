@@ -6,8 +6,8 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, Keyset},
-    {rpc_api, Timeboost, TimeboostInitializer},
+    keyset::{private_keys, wait_for_live_peer, KeysetConfig},
+    {rpc_api, Timeboost, TimeboostConfig},
 };
 
 use tokio::signal;
@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
     ensure!(num < 20, "number of nodes must be less 20");
 
     // Read public key material
-    let keyset = Keyset::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+    let keyset = KeysetConfig::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset
@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
 
     // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
     // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
-    let (sig_key, dec_key) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
+    let (sig_key, dec_sk) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
         // We found both in the JSON, we're good to go.
         (Some(sig_pk), Some(dec_pk)) => {
             let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
@@ -166,8 +166,8 @@ async fn main() -> Result<()> {
     };
 
     let keypair = Keypair::from(sig_key);
-    let deckey = keyset
-        .build_decryption_material(dec_key)
+    let dec_sk = keyset
+        .build_decryption_material(dec_sk)
         .expect("parse keyset");
 
     let (tb_app_tx, tb_app_rx) = channel(100);
@@ -239,12 +239,12 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let init = TimeboostInitializer {
+    let init = TimeboostConfig {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
         keypair,
-        deckey,
+        dec_sk,
         bind_address,
         nitro_url: cli.nitro_node_url,
         sender: tb_app_tx,

@@ -5,11 +5,10 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Result;
 use api::metrics::serve_metrics_api;
 use cliquenet::Address;
-use keyset::DecryptionInfo;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::Transaction;
+use timeboost_types::{DecryptionKey, Transaction};
 use timeboost_utils::load_generation::{make_tx, tps_to_millis};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
@@ -28,7 +27,7 @@ pub mod api;
 pub mod keyset;
 pub mod metrics;
 
-pub struct TimeboostInitializer {
+pub struct TimeboostConfig {
     /// The port to bind the RPC server to.
     pub rpc_port: u16,
 
@@ -42,7 +41,7 @@ pub struct TimeboostInitializer {
     pub keypair: Keypair,
 
     /// The decryption key material for the node.
-    pub deckey: DecryptionInfo,
+    pub dec_sk: DecryptionKey,
 
     /// The bind address for the node.
     pub bind_address: SocketAddr,
@@ -62,7 +61,7 @@ pub struct TimeboostInitializer {
 
 pub struct Timeboost {
     label: PublicKey,
-    init: TimeboostInitializer,
+    init: TimeboostConfig,
     sequencer: Sequencer,
     prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
@@ -70,9 +69,10 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
-    pub async fn new(init: TimeboostInitializer) -> Result<Self> {
-        let scf = SequencerConfig::new(init.keypair.clone(), init.bind_address)
-            .with_peers(init.peers.clone());
+    pub async fn new(init: TimeboostConfig) -> Result<Self> {
+        let scf =
+            SequencerConfig::new(init.keypair.clone(), init.dec_sk.clone(), init.bind_address)
+                .with_peers(init.peers.clone());
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(scf, &*pro).await?;
         let met = Arc::new(TimeboostMetrics::new(&*pro));

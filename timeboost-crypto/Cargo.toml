@@ -6,6 +6,7 @@ description.workspace = true
 
 [dependencies]
 aes-gcm = { workspace = true }
+alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
 ark-ec = { workspace = true }
 ark-secp256k1 = { workspace = true }

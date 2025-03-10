@@ -77,11 +77,14 @@ impl Includer {
                 *transactions.entry(t).or_default() += 1
             }
             for b in bs {
-                if b.epoch() < self.epoch {
+                let n = b.nonce();
+                let e = n.to_epoch();
+                let s = n.to_seqno();
+                if e < self.epoch {
                     continue;
                 }
-                if b.epoch() == self.epoch {
-                    match bundles.entry(b.seqno()) {
+                if e == self.epoch {
+                    match bundles.entry(s) {
                         Entry::Vacant(e) => {
                             e.insert(b);
                         }
@@ -96,7 +99,7 @@ impl Includer {
                     }
                     continue;
                 }
-                if b.epoch() == self.epoch + 1 {
+                if e == self.epoch + 1 {
                     retry.add_bundle(b)
                 }
             }

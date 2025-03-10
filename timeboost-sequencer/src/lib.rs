@@ -13,14 +13,15 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use sailfish::Coordinator;
-use timeboost_types::{Address, Transaction};
+use timeboost_crypto::Keyset;
+use timeboost_types::{Address, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{spawn, JoinHandle};
-use tracing::{error, trace, Level};
+use tracing::{debug, error, trace, Level};
 
-use decrypt::Decrypter;
+use decrypt::{DecryptError, Decrypter};
 use include::Includer;
 use queue::TransactionQueue;
 use sort::Sorter;
@@ -34,10 +35,11 @@ pub struct SequencerConfig {
     peers: Vec<(PublicKey, net::Address)>,
     bind: net::Address,
     index: DelayedInboxIndex,
+    dec_sk: DecryptionKey,
 }
 
 impl SequencerConfig {
-    pub fn new<A>(keyp: Keypair, bind: A) -> Self
+    pub fn new<A>(keyp: Keypair, dec_sk: DecryptionKey, bind: A) -> Self
     where
         A: Into<net::Address>,
     {
@@ -47,6 +49,7 @@ impl SequencerConfig {
             peers: Vec::new(),
             bind: bind.into(),
             index: DelayedInboxIndex::default(),
+            dec_sk,
         }
     }
 
@@ -107,8 +110,13 @@ impl Sequencer {
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let network =
-            Network::create(cfg.bind, cfg.keypair.clone(), cfg.peers, net_metrics).await?;
+        let network = Network::create(
+            cfg.bind.clone(),
+            cfg.keypair.clone(),
+            cfg.peers.clone(),
+            net_metrics,
+        )
+        .await?;
 
         let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
         let rbc = Rbc::new(network, rcf.with_metrics(rbc_metrics));
@@ -116,8 +124,29 @@ impl Sequencer {
         let label = cfg.keypair.public_key();
 
         let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
-        let consensus = Consensus::new(cfg.keypair, committee.clone(), queue.clone())
+        let consensus = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
+
+        let keyset = Keyset::new(1, committee.size());
+
+        let peers: Vec<_> = cfg
+            .peers
+            .iter()
+            .map(|(k, a)| (*k, a.clone().with_port(a.port() + 250)))
+            .collect();
+
+        let addr = {
+            let p = cfg.bind.port() + 250;
+            cfg.bind.with_port(p)
+        };
+
+        let network = Network::create(
+            addr,
+            cfg.keypair, // same auth
+            peers,
+            NetworkMetrics::default(),
+        )
+        .await?;
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -126,7 +155,7 @@ impl Sequencer {
             transactions: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
-            decrypter: Decrypter::new(),
+            decrypter: Decrypter::new(network, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
         };
@@ -202,9 +231,12 @@ impl Task {
                         for (round, lists) in payloads {
                             let (i, r) = self.includer.inclusion_list(round, lists);
                             self.transactions.update_transactions(&i, r);
-                            inclusions.push(i)
+                            inclusions.push(i);
+                            debug!(node = %self.label, %round, "derived inclusion list")
                         }
-                        self.decrypter.enqueue(inclusions)
+                        if let Err(e) = self.decrypter.enqueue(inclusions).await {
+                            error!("decrypt enqueue error: {}", e);
+                        }
                     },
                     Err(e) => {
                         error!(node = %self.label, "coordinator error: {}", e);
@@ -216,8 +248,8 @@ impl Task {
                             self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
                         }
                     }
-                    Err(e) => {
-                        error!(node = %self.label, "decrypter error: {}", e);
+                    Err(err) => {
+                        error!(node = %self.label, %err);
                     }
                 }
             }
@@ -231,7 +263,7 @@ pub enum TimeboostError {
     #[error("network error: {0}")]
     Net(#[from] NetworkError),
 
-    #[error("network error: {0}")]
+    #[error("rbc error: {0}")]
     Rbc(#[from] RbcError),
 
     #[error("channel closed")]
@@ -239,4 +271,7 @@ pub enum TimeboostError {
 
     #[error("task terminated")]
     TaskTerminated,
+
+    #[error("decrypt error: {0}")]
+    Decrypt(#[from] DecryptError),
 }

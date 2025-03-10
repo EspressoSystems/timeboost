@@ -14,7 +14,7 @@ use sailfish::{
     types::{Action, Unit},
     Coordinator,
 };
-use timeboost::keyset::{private_keys, wait_for_live_peer, Keyset};
+use timeboost::keyset::{private_keys, wait_for_live_peer, KeysetConfig};
 use timeboost::{metrics_api, rpc_api};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
@@ -173,7 +173,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let num = cli.nodes.unwrap_or(4);
 
-    let keyset = Keyset::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
+    let keyset =
+        KeysetConfig::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 
