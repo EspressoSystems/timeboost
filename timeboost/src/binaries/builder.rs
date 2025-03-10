@@ -149,7 +149,7 @@ async fn main() -> Result<()> {
                 &bs58::decode(dec_pk)
                     .into_vec()
                     .context("unable to decode bs58")?,
-                bincode::config::legacy(),
+                bincode::config::standard(),
             )?
             .0;
 

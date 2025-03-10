@@ -250,7 +250,7 @@ impl Worker {
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 Ok((pubkey, bytes)) = self.net.receive() => {
-                    if let Ok((s, _)) = bincode::serde::decode_from_slice::<ShareInfo, _>(&bytes, bincode::config::legacy()) {
+                    if let Ok((s, _)) = bincode::serde::decode_from_slice::<ShareInfo, _>(&bytes, bincode::config::standard()) {
                         r = s.round();
                         if let Err(e) = self.insert_shares(s) {
                             warn!("failed to insert shares from remote: {:?}", e);
@@ -318,9 +318,11 @@ impl Worker {
         let mut dec_shares = vec![];
 
         for (idx, EncryptedItem(kid, data)) in encrypted_items.iter().enumerate() {
-            let (ciphertext, _) =
-                bincode::serde::decode_from_slice::<Ciphertext, _>(data, bincode::config::legacy())
-                    .map_err(DecryptError::BincodeDecode)?;
+            let (ciphertext, _) = bincode::serde::decode_from_slice::<Ciphertext, _>(
+                data,
+                bincode::config::standard(),
+            )
+            .map_err(DecryptError::BincodeDecode)?;
             // mappings
             let cid = ciphertext.nonce();
             self.cid2ct.insert(cid, ciphertext.clone());
@@ -341,7 +343,7 @@ impl Worker {
     }
 
     async fn broadcast(&self, share: &ShareInfo) -> Result<(), DecryptError> {
-        let share_bytes = bincode::serde::encode_to_vec(share, bincode::config::legacy())
+        let share_bytes = bincode::serde::encode_to_vec(share, bincode::config::standard())
             .map_err(DecryptError::BincodeEncode)?;
         self.net
             .multicast(share_bytes.into())

@@ -74,7 +74,7 @@ pub fn private_keys(
             .context("key file missing TIMEBOOST_PRIVATE_DECRYPTION_KEY")?;
         let dec_key: KeyShare = bincode::serde::decode_from_slice(
             &bs58::decode(dec_key_string).into_vec()?,
-            bincode::config::legacy(),
+            bincode::config::standard(),
         )
         .map(|(val, _)| val)?;
 
@@ -84,9 +84,10 @@ pub fn private_keys(
         let bytes = &bs58::decode(dec_key)
             .into_vec()
             .context("unable to decode bs58")?;
-        let dec_key: KeyShare = bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
-            .map(|(val, _)| val)
-            .expect("unable to read bytes into keyshare");
+        let dec_key: KeyShare =
+            bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+                .map(|(val, _)| val)
+                .expect("unable to read bytes into keyshare");
 
         Ok((sig_key, dec_key))
     } else {
