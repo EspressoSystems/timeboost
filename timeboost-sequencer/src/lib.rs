@@ -19,7 +19,7 @@ use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{spawn, JoinHandle};
-use tracing::{debug, error, trace, Level};
+use tracing::{error, trace, Level};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
@@ -231,8 +231,7 @@ impl Task {
                         for (round, lists) in payloads {
                             let (i, r) = self.includer.inclusion_list(round, lists);
                             self.transactions.update_transactions(&i, r);
-                            inclusions.push(i);
-                            debug!(node = %self.label, %round, "derived inclusion list")
+                            inclusions.push(i)
                         }
                         if let Err(e) = self.decrypter.enqueue(inclusions).await {
                             error!("decrypt enqueue error: {}", e);

@@ -3,7 +3,7 @@ use rand::Rng;
 use timeboost_types::{Address, PriorityBundle, Transaction};
 
 pub fn make_tx() -> Transaction {
-    let mut v = [0; 64];
+    let mut v = [0; 128];
     rand::fill(&mut v);
     let mut u = Unstructured::new(&v);
 

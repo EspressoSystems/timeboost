@@ -35,10 +35,14 @@ pub struct Nonce(u128);
 pub struct KeysetId(u64);
 
 impl TryFrom<&[u8]> for KeysetId {
-    type Error = std::array::TryFromSliceError;
+    type Error = InvalidKeysetId;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let bytes: [u8; 8] = value.try_into()?;
+        let bytes: [u8; 8] = value
+            .get(.. 8)
+            .ok_or(InvalidKeysetId(()))?
+            .try_into()
+            .map_err(|_| InvalidKeysetId(()))?;
         Ok(KeysetId(u64::from_be_bytes(bytes)))
     }
 }
@@ -348,3 +352,8 @@ where
         T::deserialize_compressed(&mut &bytes[..]).map_err(serde::de::Error::custom)
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid keyset id")]
+pub struct InvalidKeysetId(());
+

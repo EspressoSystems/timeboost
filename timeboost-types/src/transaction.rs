@@ -233,13 +233,16 @@ impl Transaction {
         let mut to = [0; 20];
         u.fill_buffer(&mut to)?;
 
+        let mut data = vec![0; 8];
+        data.extend_from_slice(&<Vec<u8>>::arbitrary(u)?);
+
         let mut this = Self {
             to: to.into(),
             from: from.into(),
             nonce: Nonce(U256::arbitrary(u)?),
-            data: Bytes::arbitrary(u)?,
+            data: data.into(),
             hash: Hash::from([0; 32]),
-            kid: KeysetId::from(u64::arbitrary(u)?),
+            kid: KeysetId::from(0),
         };
 
         this.data.truncate(max_data);
