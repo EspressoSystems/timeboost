@@ -145,11 +145,13 @@ async fn main() -> Result<()> {
         (Some(sig_pk), Some(dec_pk)) => {
             let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
                 .context("converting key string to secret key")?;
-            let dec_key = bincode::deserialize(
+            let dec_key = bincode::serde::decode_from_slice(
                 &bs58::decode(dec_pk)
                     .into_vec()
                     .context("unable to decode bs58")?,
-            )?;
+                bincode::config::legacy(),
+            )?
+            .0;
 
             (sig_key, dec_key)
         }

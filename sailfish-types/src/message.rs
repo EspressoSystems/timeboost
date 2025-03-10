@@ -77,7 +77,7 @@ impl<T: Committable, S> Message<T, S> {
     }
 }
 
-impl<T: Committable> Message<T, Unchecked> {
+impl<T: Committable, S> Message<T, S> {
     pub fn validated(self, c: &Committee) -> Option<Message<T, Validated>> {
         match self {
             Self::Vertex(e) => {
@@ -467,19 +467,23 @@ impl NoVoteMessage {
     }
 }
 
-impl<'a, T: Committable + Deserialize<'a>> Message<T, Unchecked> {
-    pub fn decode(bytes: &'a [u8]) -> Option<Self> {
-        bincode::deserialize(bytes).ok()
+impl<T: Committable + for<'de> Deserialize<'de>> Message<T, Unchecked> {
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
+            .ok()
+            .map(|(msg, _)| msg)
     }
 }
 
 impl<T: Committable + Serialize, S: Serialize> Message<T, S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
+        bincode::serde::encode_into_std_write(self, buf, bincode::config::legacy())
+            .expect("serializing a `Message` never fails");
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("serializing a `Message` never fails")
+        bincode::serde::encode_to_vec(self, bincode::config::legacy())
+            .expect("serializing a `Message` never fails")
     }
 }
 
