@@ -39,7 +39,7 @@ impl TryFrom<&[u8]> for KeysetId {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let bytes: [u8; 8] = value
-            .get(.. 8)
+            .get(..8)
             .ok_or(InvalidKeysetId(()))?
             .try_into()
             .map_err(|_| InvalidKeysetId(()))?;
@@ -356,4 +356,3 @@ where
 #[derive(Debug, thiserror::Error)]
 #[error("invalid keyset id")]
 pub struct InvalidKeysetId(());
-
