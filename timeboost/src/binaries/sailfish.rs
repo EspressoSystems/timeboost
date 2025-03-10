@@ -1,5 +1,5 @@
 use std::{
-    iter::repeat,
+    iter::repeat_with,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -7,13 +7,15 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use cliquenet::{Address, Network, NetworkMetrics};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::{Action, Unit},
+    types::Action,
     Coordinator,
 };
+use serde::{Deserialize, Serialize};
 use timeboost::keyset::{private_keys, wait_for_live_peer, KeysetConfig};
 use timeboost::{metrics_api, rpc_api};
 
@@ -105,8 +107,26 @@ struct Cli {
     multi_region: bool,
 }
 
+/// Payload data type is a block of 512 random bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct Block(#[serde(with = "serde_bytes")] [u8; 512]);
+
+impl Block {
+    fn random() -> Self {
+        Self(rand::random())
+    }
+}
+
+impl Committable for Block {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Block")
+            .var_size_bytes(&self.0)
+            .finalize()
+    }
+}
+
 async fn run(
-    mut coordinator: Coordinator<Unit, Rbc<Unit>>,
+    mut coordinator: Coordinator<Block, Rbc<Block>>,
     #[cfg(feature = "until")] mut until_task: JoinHandle<()>,
 ) -> Result<()> {
     loop {
@@ -336,7 +356,8 @@ async fn main() -> Result<()> {
     let cfg = RbcConfig::new(keypair.clone(), committee.clone());
     let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
 
-    let consensus = Consensus::new(keypair, committee, repeat(Unit)).with_metrics(sf_metrics);
+    let consensus =
+        Consensus::new(keypair, committee, repeat_with(Block::random)).with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
     // Kickstart the network.

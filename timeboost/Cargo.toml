@@ -30,6 +30,7 @@ reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_bytes = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }

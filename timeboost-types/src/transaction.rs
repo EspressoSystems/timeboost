@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt;
 use std::ops::Deref;
 
@@ -245,7 +246,7 @@ impl Transaction {
             kid: KeysetId::from(0),
         };
 
-        this.data.truncate(max_data);
+        this.data.truncate(max(8, max_data));
         this.update_hash();
 
         Ok(this)
