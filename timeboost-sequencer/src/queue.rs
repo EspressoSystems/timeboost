@@ -44,6 +44,14 @@ impl TransactionQueue {
         })))
     }
 
+    pub fn len(&self) -> (usize, usize) {
+        let inner = self.0.lock();
+        (
+            inner.bundles.values().map(Vec::len).sum(),
+            inner.transactions.len(),
+        )
+    }
+
     #[allow(unused)]
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
         self.0.lock().index = idx
@@ -61,13 +69,13 @@ impl TransactionQueue {
         inner.set_time(time);
 
         for mut t in it.into_iter() {
-            if let Ok(kid) = KeysetId::try_from(t.data()) {
+            if let Ok(kid) = KeysetId::try_from(t.data().as_ref()) {
                 t.set_keyset(kid);
             } else {
                 continue;
             }
 
-            if t.to() != inner.priority_addr {
+            if t.to() != &inner.priority_addr {
                 inner.transactions.push_back((now, t));
                 continue;
             }
@@ -92,7 +100,7 @@ impl TransactionQueue {
             bundles.retain(|b| {
                 if let Ok(i) = incl
                     .priority_bundles()
-                    .binary_search_by_key(&b.seqno(), |x| x.seqno())
+                    .binary_search_by_key(&b.nonce().to_seqno(), |x| x.nonce().to_seqno())
                 {
                     incl.priority_bundles()[i] != *b
                 } else {
@@ -120,7 +128,11 @@ impl TransactionQueue {
         }
 
         for b in bundles {
-            inner.bundles.entry(b.epoch()).or_default().push(b)
+            inner
+                .bundles
+                .entry(b.nonce().to_epoch())
+                .or_default()
+                .push(b)
         }
     }
 }

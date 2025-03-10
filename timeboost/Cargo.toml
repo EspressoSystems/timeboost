@@ -5,7 +5,7 @@ edition.workspace = true
 description.workspace = true
 
 [features]
-until = ["timeboost-core/until"]
+until = []
 
 [dependencies]
 alloy = { version = "0.11.0", features = ["full"] }
@@ -20,7 +20,6 @@ clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 dashmap = "6.1.0"
-derive_more = { version = "1", features = ["display"] } # for alloy
 dotenvy = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
@@ -31,9 +30,10 @@ reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_bytes = { workspace = true }
 tide-disco = { workspace = true }
-timeboost-core = { path = "../timeboost-core" }
 timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }

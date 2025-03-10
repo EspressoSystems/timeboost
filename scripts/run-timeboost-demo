@@ -43,9 +43,9 @@ pids=()
 SECONDS=0
 for i in $(seq 0 $((nodes - 1))); do
     echo "Starting node $i"
-    
+
     SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
-    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"    
+    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
 
     cmd="RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=warn \
     TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
@@ -57,7 +57,7 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --until 300 \
         $nitro_node_url \
-        --tps 20 \
+        --tps 5 \
         --nodes $nodes \
         --keyset-file test-configs/local.json \
         --watchdog-timeout 300"

@@ -14,8 +14,9 @@ multisig = { path = "../multisig" }
 portpicker = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
-timeboost-core = { path = "../timeboost-core", features = ["test"] }
-timeboost-utils = { path = "../timeboost-utils" }
+serde = { workspace = true }
+timeboost = { path = "../timeboost" }
+timeboost-utils = { path = "../timeboost-utils", features = ["test"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }

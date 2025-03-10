@@ -7,18 +7,18 @@ use std::{
 };
 use timeboost::{
     keyset::{private_keys, wait_for_live_peer, KeysetConfig},
-    start_rpc_api, Timeboost, TimeboostInitializer,
+    {rpc_api, Timeboost, TimeboostConfig},
 };
-use timeboost_core::traits::has_initializer::HasInitializer;
 
+use tokio::signal;
 use tokio::sync::mpsc::channel;
+use tokio::task::spawn;
 
 #[cfg(feature = "until")]
-use timeboost_core::until::run_until;
+use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost_utils::types::logging;
-use tokio::signal;
 use tracing::warn;
 
 #[cfg(feature = "until")]
@@ -64,7 +64,7 @@ struct Cli {
 
     /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
     /// Set this to 0 for no load generation.
-    #[clap(long, short, default_value_t = 100)]
+    #[clap(long, short, default_value_t = 1)]
     tps: u32,
 
     /// Path to file containing the keyset description.
@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
-    let api_handle = start_rpc_api(tb_app_tx.clone(), cli.rpc_port);
+    let api_handle = spawn(rpc_api(tb_app_tx.clone(), cli.rpc_port));
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -241,8 +241,7 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let committee_size = peer_hosts_and_keys.len();
-    let init = TimeboostInitializer {
+    let init = TimeboostConfig {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
         peers: peer_hosts_and_keys,
@@ -250,11 +249,12 @@ async fn main() -> Result<()> {
         dec_sk,
         bind_address,
         nitro_url: cli.nitro_node_url,
-        app_tx: tb_app_tx,
-        app_rx: tb_app_rx,
+        sender: tb_app_tx,
+        receiver: tb_app_rx,
+        tps: cli.tps,
     };
 
-    let timeboost = Timeboost::initialize(init).await?;
+    let timeboost = Timeboost::new(init).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {
@@ -266,7 +266,7 @@ async fn main() -> Result<()> {
                 Err(e) => anyhow::bail!("Error: {}", e),
             };
         },
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go() => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {
@@ -276,7 +276,7 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "until"))]
     tokio::select! {
-        _ = timeboost.go(committee_size, cli.tps) => {
+        _ = timeboost.go() => {
             anyhow::bail!("timeboost shutdown unexpectedly");
         }
         _ = signal::ctrl_c() => {

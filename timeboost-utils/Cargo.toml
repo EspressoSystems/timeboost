@@ -4,8 +4,12 @@ version.workspace = true
 edition.workspace = true
 description.workspace = true
 
+[features]
+test = ["committable", "crossbeam-queue", "sailfish-types"]
+
 [dependencies]
 anyhow = { workspace = true }
+arbitrary = { workspace = true }
 async-trait = { workspace = true }
 bs58 = { workspace = true }
 blake3 = { workspace = true }
@@ -14,6 +18,15 @@ metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 prometheus = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 tide-disco = { workspace = true }
+timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# optional:
+committable = { workspace = true, optional = true }
+crossbeam-queue = { workspace = true, optional = true }
+sailfish-types = { path = "../sailfish-types", optional = true }

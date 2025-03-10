@@ -9,7 +9,7 @@ type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DecryptionKey {
     pubkey: PublicKey,
     combkey: CombKey,
