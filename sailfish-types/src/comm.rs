@@ -74,8 +74,11 @@ pub enum CommError<E> {
     #[error("network error: {0}")]
     Net(#[source] E),
 
-    #[error("bincode error: {0}")]
-    Bincode(#[from] bincode::Error),
+    #[error("bincode encode error: {0}")]
+    BincodeEncode(#[from] bincode::error::EncodeError),
+
+    #[error("bincode decode error: {0}")]
+    BincodeDecode(#[from] bincode::error::DecodeError),
 
     #[error("invalid message signature")]
     Invalid,
