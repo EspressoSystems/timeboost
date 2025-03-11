@@ -26,6 +26,9 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-crypto`: Contains the threshold encryption scheme used by timeboost.
 - `timeboost-utils`: Contains some utility functions.
 
+## MSRV (minimum supported Rust version)
+The MSRV of this repository is 1.85.
+
 ## Build
 
 Debug build
