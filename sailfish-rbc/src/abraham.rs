@@ -44,7 +44,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     Cert(Certificate<Digest>),
 
     /// A direct request to retrieve a message, identified by the given digest.
-    GetRequest(Envelope<Digest, Status>),
+    GetRequest(Digest),
 
     /// The reply to a get request.
     GetResponse(Cow<'a, Message<T, Status>>),
