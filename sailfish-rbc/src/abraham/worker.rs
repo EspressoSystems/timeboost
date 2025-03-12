@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use std::time::Duration;
 
