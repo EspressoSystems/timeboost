@@ -1,8 +1,9 @@
 [package]
 name = "timeboost-types"
+description = "Timeboost API types"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [features]
 arbitrary = ["dep:arbitrary", "alloy-primitives/arbitrary"]

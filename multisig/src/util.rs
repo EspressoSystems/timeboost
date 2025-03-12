@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use ed25519_compact as ed25519;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_bytes::ByteArray;
 
 pub(crate) fn encode<S, T, const N: usize>(d: &T, s: S) -> Result<S::Ok, S::Error>

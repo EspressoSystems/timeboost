@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 const ONE_KB: usize = 1024;
 const MAX_NUM_KB: usize = 64;

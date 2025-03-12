@@ -5,7 +5,7 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
-use tide_disco::{error::ServerError, Api, App, StatusCode, Url};
+use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
 use timeboost_types::Transaction;
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
@@ -49,8 +49,8 @@ impl TimeboostApi for TimeboostApiState {
     }
 }
 
-fn define_api<ApiVer: StaticVersionType + 'static>(
-) -> Result<Api<RwLock<TimeboostApiState>, ServerError, ApiVer>> {
+fn define_api<ApiVer: StaticVersionType + 'static>()
+-> Result<Api<RwLock<TimeboostApiState>, ServerError, ApiVer>> {
     let toml = toml::from_str::<toml::Value>(include_str!("../../api/endpoints.toml"))?;
     let mut api = Api::<RwLock<TimeboostApiState>, ServerError, ApiVer>::new(toml)?;
 

@@ -1,7 +1,7 @@
 use sailfish_types::RoundNumber;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::{
-    traits::threshold_enc::ThresholdEncScheme, DecryptionScheme, KeysetId, Nonce,
+    DecryptionScheme, KeysetId, Nonce, traits::threshold_enc::ThresholdEncScheme,
 };
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;

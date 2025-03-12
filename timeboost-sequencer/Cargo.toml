@@ -1,8 +1,9 @@
 [package]
 name = "timeboost-sequencer"
+description = "Timeboost sequencer protocol"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 blake3 = { workspace = true }

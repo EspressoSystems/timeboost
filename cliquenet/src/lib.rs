@@ -15,13 +15,13 @@ use std::time::Duration;
 
 use bimap::BiHashMap;
 use bytes::{Bytes, BytesMut};
-use multisig::{x25519, Keypair, PublicKey};
+use multisig::{Keypair, PublicKey, x25519};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use time::{Countdown, Timestamp};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::time::{sleep, timeout, Interval, MissedTickBehavior};
+use tokio::time::{Interval, MissedTickBehavior, sleep, timeout};
 use tokio::{
     spawn,
     task::{self, AbortHandle, JoinHandle, JoinSet},

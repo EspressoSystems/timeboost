@@ -89,7 +89,7 @@ impl<T: PartialEq> Dag<T> {
     }
 
     /// Consume the DAG as an iterator over its elements.
-    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<T>)> {
+    pub fn drain(&mut self) -> impl Iterator<Item = (RoundNumber, PublicKey, Vertex<T>)> + use<T> {
         std::mem::take(&mut self.elements)
             .into_iter()
             .flat_map(|(r, map)| map.into_iter().map(move |(pk, v)| (r, pk, v)))

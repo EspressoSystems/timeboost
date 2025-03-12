@@ -2,26 +2,26 @@ use aes_gcm::{AeadCore, Aes256Gcm};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
-    field_hashers::{DefaultFieldHasher, HashToField},
     One, PrimeField, UniformRand, Zero,
+    field_hashers::{DefaultFieldHasher, HashToField},
 };
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
-use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
-use ark_std::rand::rngs::OsRng;
+use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
-use digest::{generic_array::GenericArray, Digest, DynDigest, FixedOutputReset};
+use ark_std::rand::rngs::OsRng;
+use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
 use nimue::DuplexHash;
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
 use crate::{
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
 };
 
 /// Corruption ratio.
@@ -62,7 +62,7 @@ where
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size.get();
         let degree = committee_size / CORR_RATIO;
-        let gen = C::generator();
+        let generator = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
         let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size)
@@ -76,10 +76,10 @@ where
             })
             .collect();
 
-        let u_0 = gen * alpha_0;
+        let u_0 = generator * alpha_0;
         let pub_key = PublicKey { key: u_0 };
         let comb_key = CombKey {
-            key: evals.iter().map(|alpha| gen * alpha).collect(),
+            key: evals.iter().map(|alpha| generator * alpha).collect(),
         };
 
         let key_shares = evals
@@ -101,8 +101,8 @@ where
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
         let beta = C::ScalarField::rand(rng);
-        let gen = C::generator();
-        let v = gen * beta;
+        let generator = C::generator();
+        let v = generator * beta;
         let w = pub_key.key * beta;
         let cid = committee.id;
 
@@ -124,7 +124,7 @@ where
         let w_hat = u_hat * beta;
 
         // Produce DLEQ proof for CCA security
-        let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
+        let tuple = DleqTuple::new(generator, v, u_hat, w_hat);
         let pi = ChaumPedersen::<C, D>::prove(tuple, &beta).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Encrypt: Proof generation failed: {:?}", e))
         })?;
@@ -142,7 +142,7 @@ where
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::DecShare, ThresholdEncError> {
-        let gen = C::generator();
+        let generator = C::generator();
         let alpha = sk.share;
         let (v, e, w_hat, pi) = (
             ciphertext.v,
@@ -152,13 +152,13 @@ where
         );
         let u_hat = hash_to_curve::<C, H>(v, e)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
-        let tuple = DleqTuple::new(gen, v, u_hat, w_hat);
+        let tuple = DleqTuple::new(generator, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
 
         let w = v * alpha;
-        let u_i = gen * alpha;
-        let tuple = DleqTuple::new(gen, u_i, v, w);
+        let u_i = generator * alpha;
+        let tuple = DleqTuple::new(generator, u_i, v, w);
         let phi = ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Decrypt: Proof generation failed {:?}", e))
         })?;
@@ -178,7 +178,7 @@ where
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = committee.size.get();
         let threshold = committee_size / CORR_RATIO + 1;
-        let gen = C::generator();
+        let generator = C::generator();
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
@@ -204,7 +204,7 @@ where
             .filter_map(|share| {
                 let (w, phi) = (share.w, share.phi.clone());
                 let u = pk_comb[share.index as usize];
-                let tuple = DleqTuple::new(gen, u, v, w);
+                let tuple = DleqTuple::new(generator, u, v, w);
                 ChaumPedersen::<C, D>::verify(tuple, &phi)
                     .ok()
                     .map(|_| *share)
@@ -267,7 +267,7 @@ where
     C: CurveGroup,
     H: Digest + Default + Clone + FixedOutputReset + 'static,
 {
-    let gen = C::generator();
+    let generator = C::generator();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
@@ -276,7 +276,7 @@ where
     drop(writer);
     let hasher = <DefaultFieldHasher<H> as HashToField<C::ScalarField>>::new(&[0u8]);
     let scalar_from_hash: C::ScalarField = hasher.hash_to_field::<1>(&buffer)[0];
-    let u_hat = gen * scalar_from_hash;
+    let u_hat = generator * scalar_from_hash;
     Ok(u_hat)
 }
 

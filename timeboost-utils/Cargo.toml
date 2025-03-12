@@ -1,8 +1,9 @@
 [package]
 name = "timeboost-utils"
+description = "utility crate"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [features]
 test = ["committable", "crossbeam-queue", "sailfish-types"]

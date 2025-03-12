@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use std::task::{Context, Poll, Waker};
 
 use parking_lot::Mutex;
-use tokio::time::{sleep, Duration, Instant, Sleep};
+use tokio::time::{Duration, Instant, Sleep, sleep};
 
 /// An unspecified epoch for use with `Timestamp`.
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -130,7 +130,7 @@ impl Future for Countdown {
 #[cfg(test)]
 mod tests {
     use super::{Countdown, Timestamp};
-    use tokio::time::{sleep, timeout, Duration, Instant};
+    use tokio::time::{Duration, Instant, sleep, timeout};
 
     #[tokio::test]
     async fn duration() {

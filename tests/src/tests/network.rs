@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use multisig::PublicKey;
-use sailfish::types::Comm;
 use sailfish::Coordinator;
+use sailfish::types::Comm;
 use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_utils::test::testnet::MsgQueues;
 use timeboost_utils::types::logging;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use crate::prelude::*;
 use crate::Group;
+use crate::prelude::*;
 
 mod rbc;
 
