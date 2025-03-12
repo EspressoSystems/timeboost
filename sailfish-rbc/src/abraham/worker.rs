@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cmp::max;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
@@ -56,9 +57,9 @@ struct Messages<T: Committable> {
     early: bool,
     /// Tracking info per message.
     map: BTreeMap<Digest, Tracker<T>>,
-    /// For non-RBC proposals this tracks the remaining number of ACKs we still
-    /// expect for the given message digest.
-    acks: BTreeMap<Digest, Acks<T>>,
+    /// This tracks the remaining number of ACKs we still expect for the given
+    /// message digest.
+    acks: BTreeMap<Digest, Acks>,
 }
 
 impl<T: Committable> Messages<T> {
@@ -99,9 +100,9 @@ impl<T: Committable> Default for Messages<T> {
 }
 
 /// Tracks remaining expected ACKs of a message.
-struct Acks<T: Committable> {
+struct Acks {
     /// The message we sent and await ACKs for.
-    msg: Message<T, Validated>,
+    msg: Bytes,
     /// The time when the message was first sent.
     start: Instant,
     /// The time when the message was last sent.
@@ -307,7 +308,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     async fn on_broadcast(&mut self, msg: Message<T, Validated>) -> Result<()> {
         let proto = Protocol::Send(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
-        let digest = Digest::new(&msg);
+        let digest = Digest::of_msg(&msg);
         // Expect an ACK from each party:
         self.buffer
             .entry(digest.round())
@@ -317,7 +318,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .or_insert_with(|| {
                 let now = Instant::now();
                 Acks {
-                    msg,
+                    msg: bytes.clone(),
                     start: now,
                     timestamp: now,
                     retries: 0,
@@ -333,7 +334,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     async fn on_send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<()> {
         let proto = Protocol::Send(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
-        let digest = Digest::new(&msg);
+        let digest = Digest::of_msg(&msg);
         // Expect an ACK from `to`:
         self.buffer
             .entry(digest.round())
@@ -343,7 +344,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .or_insert_with(|| {
                 let now = Instant::now();
                 Acks {
-                    msg,
+                    msg: bytes.clone(),
                     start: now,
                     timestamp: now,
                     retries: 0,
@@ -358,7 +359,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     async fn on_outbound(&mut self, msg: Message<T, Validated>) -> Result<()> {
         let proto = Protocol::Propose(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
-        let digest = Digest::new(&msg);
+        let digest = Digest::of_msg(&msg);
 
         // We track the max. round number to know when it is safe to remove
         // old messages from our buffer.
@@ -412,7 +413,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::GetRequest(env) => self.on_get_request(env).await?,
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
-            Protocol::Cert(crt) => self.on_cert(crt).await?,
+            Protocol::Cert(env) => self.on_cert(src, env).await?,
         }
         Ok(())
     }
@@ -427,7 +428,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let Some(msg) = msg.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
-        let dig = Digest::new(&msg);
+        let dig = Digest::of_msg(&msg);
         let env = Envelope::signed(dig, &self.config.keypair, false);
         let ack = Protocol::<'_, T, Validated>::Ack(env);
         let bytes = serialize(&ack)?;
@@ -490,7 +491,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Err(RbcError::InvalidMessage);
         }
 
-        let digest = Digest::new(&msg);
+        let digest = Digest::of_msg(&msg);
 
         let messages = self.buffer.entry(digest.round()).or_default();
 
@@ -618,25 +619,21 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let commit = digest.commit();
         let source = *env.signing_key();
 
-        let tracker = self
-            .buffer
-            .entry(digest.round())
-            .or_default()
-            .map
-            .entry(digest)
-            .or_insert_with(|| {
-                let now = Instant::now();
-                Tracker {
-                    source: None,
-                    ours: false,
-                    start: now,
-                    timestamp: now,
-                    retries: 0,
-                    message: Item::none(),
-                    votes: VoteAccumulator::new(self.config.committee.clone()),
-                    status: Status::Init,
-                }
-            });
+        let messages = self.buffer.entry(digest.round()).or_default();
+
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                source: None,
+                ours: false,
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Init,
+            }
+        });
 
         debug!(
             n = %self.label,
@@ -661,10 +658,21 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 Ok(Some(cert)) => {
                     tracker.status = Status::ReachedQuorum;
                     if let Some(msg) = &tracker.message.item {
-                        let e = Envelope::signed(cert.clone(), &self.config.keypair, false);
-                        let m = Protocol::<'_, T, Validated>::Cert(e);
-                        let b = serialize(&m)?;
-                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                        let cert_digest = Digest::of_cert(cert);
+                        if let Entry::Vacant(acks) = messages.acks.entry(cert_digest) {
+                            let e = Envelope::signed(cert.clone(), &self.config.keypair, false);
+                            let m = Protocol::<'_, T, Validated>::Cert(e);
+                            let b = serialize(&m)?;
+                            let now = Instant::now();
+                            acks.insert(Acks {
+                                msg: b.clone(),
+                                start: now,
+                                timestamp: now,
+                                retries: 0,
+                                rem: self.config.committee.parties().copied().collect(),
+                            });
+                            self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                        }
                         if !tracker.message.early {
                             self.tx
                                 .send(msg.clone())
@@ -731,7 +739,24 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         s = %env.signing_key(),
         r = %env.data().data().round())
     )]
-    async fn on_cert(&mut self, env: Envelope<Certificate<Digest>, Unchecked>) -> Result<()> {
+    async fn on_cert(
+        &mut self,
+        src: PublicKey,
+        env: Envelope<Certificate<Digest>, Unchecked>,
+    ) -> Result<()> {
+        let digest = *env.data().data();
+        let cert_digest = Digest::of_cert(env.data());
+
+        if let Some(r) = self.buffer.keys().next() {
+            if digest.round() < *r {
+                // Certificate is too old.
+                if src == *env.signing_key() {
+                    self.ack(src, cert_digest).await?;
+                }
+                return Ok(());
+            }
+        }
+
         let Some(env) = env.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
@@ -740,28 +765,23 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Err(RbcError::InvalidMessage);
         }
 
-        let digest = *env.data().data();
         let commit = digest.commit();
 
-        let tracker = self
-            .buffer
-            .entry(digest.round())
-            .or_default()
-            .map
-            .entry(digest)
-            .or_insert_with(|| {
-                let now = Instant::now();
-                Tracker {
-                    source: None,
-                    ours: false,
-                    start: now,
-                    timestamp: now,
-                    retries: 0,
-                    message: Item::none(),
-                    votes: VoteAccumulator::new(self.config.committee.clone()),
-                    status: Status::Init,
-                }
-            });
+        let messages = self.buffer.entry(digest.round()).or_default();
+
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                source: None,
+                ours: false,
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Init,
+            }
+        });
 
         debug!(n = %self.label, d = %digest, s = %tracker.status, "certificate received");
 
@@ -778,10 +798,20 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 tracker.status = Status::ReachedQuorum;
 
                 if let Some(msg) = &tracker.message.item {
-                    let e = Envelope::signed(env.into_data(), &self.config.keypair, false);
-                    let m = Protocol::<'_, T, Validated>::Cert(e);
-                    let b = serialize(&m)?;
-                    self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                    if let Entry::Vacant(acks) = messages.acks.entry(cert_digest) {
+                        let e = Envelope::signed(env.into_data(), &self.config.keypair, false);
+                        let m = Protocol::<'_, T, Validated>::Cert(e);
+                        let b = serialize(&m)?;
+                        let now = Instant::now();
+                        acks.insert(Acks {
+                            msg: b.clone(),
+                            start: now,
+                            timestamp: now,
+                            retries: 0,
+                            rem: self.config.committee.parties().copied().collect(),
+                        });
+                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                    }
                     if !tracker.message.early {
                         self.tx
                             .send(msg.clone())
@@ -816,6 +846,8 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 debug!(n = %self.label, s = %tracker.status, "ignoring certificate")
             }
         }
+
+        self.ack(src, cert_digest).await?;
 
         Ok(())
     }
@@ -879,7 +911,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Err(RbcError::InvalidMessage);
         };
 
-        let digest = Digest::new(&msg);
+        let digest = Digest::of_msg(&msg);
 
         let Some(tracker) = self
             .buffer
@@ -1001,18 +1033,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         continue;
                     }
                     if let Some(msg) = &tracker.message.item {
-                        let c = tracker
-                            .votes
-                            .certificate()
-                            .expect("reached quorum => certificate");
-                        debug!(n = %self.label, d = %digest, m = %msg, "sending certificate");
-                        let e = Envelope::signed(c.clone(), &self.config.keypair, false);
-                        let m = Protocol::<'_, T, Validated>::Cert(e);
-                        let b = serialize(&m).expect("idempotent serialization");
-                        tracker.timestamp = now;
-                        tracker.retries = tracker.retries.saturating_add(1);
-                        self.config.metrics.retries.add(1);
-                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
                         if !tracker.message.early {
                             self.tx
                                 .send(msg.clone())
@@ -1049,9 +1069,10 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             }
             for party in &acks.rem {
                 debug!(n = %self.label, d = %digest, s = %party, "re-sending message");
-                let proto = Protocol::Send(Cow::Borrowed(&acks.msg));
-                let bytes = serialize(&proto)?;
-                self.comm.send(*party, bytes).await.map_err(RbcError::net)?
+                self.comm
+                    .send(*party, acks.msg.clone())
+                    .await
+                    .map_err(RbcError::net)?
             }
             acks.retries = acks.retries.saturating_add(1);
             self.config.metrics.retries.add(1);
@@ -1059,6 +1080,14 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         }
 
         Ok(())
+    }
+
+    async fn ack(&mut self, to: PublicKey, dig: Digest) -> Result<()> {
+        let env = Envelope::signed(dig, &self.config.keypair, false);
+        let ack = Protocol::<'_, T, Validated>::Ack(env);
+        let bytes = serialize(&ack)?;
+        debug!(n = %self.label, d = %dig, %to, "sending ack");
+        self.comm.send(to, bytes).await.map_err(RbcError::net)
     }
 }
 

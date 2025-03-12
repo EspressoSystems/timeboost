@@ -1,6 +1,7 @@
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::Certificate;
 use sailfish_types::{Message, RoundNumber};
 use serde::{Deserialize, Serialize};
 
@@ -8,8 +9,12 @@ use serde::{Deserialize, Serialize};
 pub struct Digest(RoundNumber, [u8; 32]);
 
 impl Digest {
-    pub fn new<T: Committable, S>(d: &Message<T, S>) -> Self {
+    pub fn of_msg<T: Committable, S>(d: &Message<T, S>) -> Self {
         Self(d.round(), d.commit().into())
+    }
+
+    pub fn of_cert(c: &Certificate<Digest>) -> Self {
+        Self(c.data().round(), c.commit().into())
     }
 
     pub fn round(&self) -> RoundNumber {
