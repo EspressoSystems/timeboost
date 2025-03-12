@@ -1,8 +1,9 @@
 [package]
 name = "timeboost-crypto"
+description = "Timeboost's threshold encryption scheme"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 aes-gcm = { workspace = true }

@@ -1,8 +1,9 @@
 [package]
 name = "tests"
+description = "Integration tests"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }

@@ -5,8 +5,8 @@ use sailfish::types::RoundNumber;
 use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_utils::types::logging;
 
-use crate::prelude::*;
 use crate::Group;
+use crate::prelude::*;
 
 use super::{NetworkTest, TestCondition, TestOutcome, TestableNetwork};
 

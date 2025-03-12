@@ -5,18 +5,18 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cliquenet::{Address, Network, NetworkMetrics};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{
+    Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
     types::Action,
-    Coordinator,
 };
 use serde::{Deserialize, Serialize};
-use timeboost::keyset::{private_keys, wait_for_live_peer, KeysetConfig};
+use timeboost::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 use timeboost::{metrics_api, rpc_api};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};

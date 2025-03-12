@@ -23,11 +23,11 @@ enum Scheme {
 }
 
 impl Scheme {
-    fn gen(self, seed: [u8; 32], num: NonZeroUsize, out: &PathBuf) -> anyhow::Result<()> {
+    fn generate(self, seed: [u8; 32], num: NonZeroUsize, out: &PathBuf) -> anyhow::Result<()> {
         match self {
             Self::All => {
-                Self::Signature.gen(seed, num, out)?;
-                Self::Decryption.gen(seed, num, out)?;
+                Self::Signature.generate(seed, num, out)?;
+                Self::Decryption.generate(seed, num, out)?;
             }
             Self::Signature => {
                 for index in 0..num.into() {
@@ -60,8 +60,10 @@ impl Scheme {
                     writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
                     debug!("private decryption key written to {}", path.display());
                 }
-                info!("generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
-                      pub_key, comb_key);
+                info!(
+                    "generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
+                    pub_key, comb_key
+                );
             }
         }
         Ok(())
@@ -150,7 +152,7 @@ fn main() -> anyhow::Result<()> {
         .open(out.join(".seed"))?;
     writeln!(env_file, "TIMEBOOST_SIGNATURE_SEED={}", hex::encode(seed))?;
     let num = NonZeroUsize::new(cli.num).expect("committee size greater than zero");
-    let _ = cli.scheme.gen(seed, num, &out);
+    let _ = cli.scheme.generate(seed, num, &out);
 
     Ok(())
 }

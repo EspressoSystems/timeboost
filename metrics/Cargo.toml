@@ -1,8 +1,9 @@
 [package]
 name = "metrics"
+description = "Metrics API types"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 dyn-clone = { workspace = true }

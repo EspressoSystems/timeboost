@@ -71,32 +71,40 @@ async fn test_timeout_round_and_no_vote() {
     network.process();
 
     // No timeout messages expected:
-    assert!(network
-        .consensus()
-        .all(|c| c.timeout_accumulators().count() == 0));
+    assert!(
+        network
+            .consensus()
+            .all(|c| c.timeout_accumulators().count() == 0)
+    );
 
     // Process timeouts
     network.process();
 
-    assert!(network
-        .consensus()
-        .any(|c| c.timeout_accumulators().count() > 0));
+    assert!(
+        network
+            .consensus()
+            .any(|c| c.timeout_accumulators().count() > 0)
+    );
 
     // Process timeouts (create Timeout Certificate)
     network.process();
 
-    assert!(network
-        .consensus()
-        .any(|c| c.timeout_accumulators().count() > 0));
+    assert!(
+        network
+            .consensus()
+            .any(|c| c.timeout_accumulators().count() > 0)
+    );
 
     // Leader send vertex with no vote certificate and timeout certificate
     network.process();
 
     // After the NVC has been created, the no-vote accumulator is empty.
-    assert!(!network
-        .leader(timeout_at_round)
-        .no_vote_accumulators()
-        .any(|(r, _)| r == timeout_at_round));
+    assert!(
+        !network
+            .leader(timeout_at_round)
+            .no_vote_accumulators()
+            .any(|(r, _)| r == timeout_at_round)
+    );
 
     let nodes_msgs = network.msgs_in_queue();
 
@@ -131,9 +139,11 @@ async fn test_timeout_round_and_no_vote() {
     network.process();
 
     // Everyone moved 2 rounds, so timeout accumulators should be empty again.
-    assert!(network
-        .consensus()
-        .all(|c| c.timeout_accumulators().count() == 0));
+    assert!(
+        network
+            .consensus()
+            .all(|c| c.timeout_accumulators().count() == 0)
+    );
 
     let mut i = 0;
     let current_round = network.current_round();

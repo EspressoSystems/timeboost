@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
-use timeboost_types::{math, Hash, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Timestamp};
+use timeboost_types::{Hash, PriorityBundle, RetryList, Transaction, math};
 
 #[derive(Debug)]
 pub struct Includer {

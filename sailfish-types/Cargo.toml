@@ -1,8 +1,9 @@
 [package]
 name = "sailfish-types"
+description = "API types of sailfish"
 version.workspace = true
 edition.workspace = true
-description = "API types of sailfish"
+rust-version.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }

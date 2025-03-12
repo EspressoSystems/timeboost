@@ -5,7 +5,7 @@ use cliquenet::{Network, NetworkMetrics};
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// Send and receive messages of various sizes between 1 byte and 5 MiB.
 #[tokio::test]

@@ -1,8 +1,9 @@
 [package]
 name = "multisig"
-version = "0.1.0"
-edition = "2021"
 description = "Signature set over ED25519 signatures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [features]
 benchmark = []
