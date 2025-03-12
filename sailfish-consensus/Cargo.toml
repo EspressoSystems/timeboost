@@ -1,8 +1,9 @@
 [package]
 name = "sailfish-consensus"
-version = "0.1.0"
 description = "sailfish core consensus protocol"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
 test = []

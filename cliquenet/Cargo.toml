@@ -1,8 +1,9 @@
 [package]
 name = "cliquenet"
-version = "0.1.0"
 description = "A fully connected mesh network"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
 sailfish = ["async-trait", "sailfish-types"]

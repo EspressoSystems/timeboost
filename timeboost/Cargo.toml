@@ -1,8 +1,9 @@
 [package]
 name = "timeboost"
+description = "decentralized sequencer"
 version.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
 
 [features]
 until = []

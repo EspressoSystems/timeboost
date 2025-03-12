@@ -1,8 +1,9 @@
 [package]
 name = "sailfish-rbc"
-version = "0.1.0"
 description = "RBC implementations for use with sailfish"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
