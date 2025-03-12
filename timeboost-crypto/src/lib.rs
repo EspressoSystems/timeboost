@@ -156,7 +156,8 @@ impl From<Nonce> for GenericArray<u8, typenum::U12> {
 
 impl<C: CurveGroup> CombKey<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serializing combkey")
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing combkey")
     }
 }
 
@@ -176,13 +177,16 @@ impl<C: CurveGroup> TryFrom<&[u8]> for CombKey<C> {
     type Error = ark_serialize::SerializationError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+        bincode::serde::decode_from_slice(value, bincode::config::standard())
+            .map(|(val, _)| val)
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)
     }
 }
 
 impl<C: CurveGroup> PublicKey<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serializing public key")
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing public key")
     }
 }
 
@@ -202,13 +206,16 @@ impl<C: CurveGroup> TryFrom<&[u8]> for PublicKey<C> {
     type Error = ark_serialize::SerializationError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+        bincode::serde::decode_from_slice(value, bincode::config::standard())
+            .map(|(val, _)| val)
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)
     }
 }
 
 impl<C: CurveGroup> KeyShare<C> {
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("serializing key share")
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing key share")
     }
 }
 
@@ -228,7 +235,9 @@ impl<C: CurveGroup> TryFrom<&[u8]> for KeyShare<C> {
     type Error = ark_serialize::SerializationError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value).map_err(|_| ark_serialize::SerializationError::InvalidData)
+        bincode::serde::decode_from_slice(value, bincode::config::standard())
+            .map(|(val, _)| val)
+            .map_err(|_| ark_serialize::SerializationError::InvalidData)
     }
 }
 
