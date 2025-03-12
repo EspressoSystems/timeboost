@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Message, MessageKind, RawComm, RoundNumber};
+use sailfish_types::{Evidence, Message, MessageKind, RawComm, RoundNumber};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
@@ -410,7 +410,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
             Protocol::Ack(env) => self.on_ack(src, env).await?,
             Protocol::Propose(msg) => self.on_propose(src, msg.into_owned()).await?,
-            Protocol::Vote(env, done) => self.on_vote(env, done).await?,
+            Protocol::Vote(env, evi, done) => self.on_vote(env, evi, done).await?,
             Protocol::GetRequest(dig) => self.on_get_request(src, dig).await?,
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
             Protocol::Cert(crt) => self.on_cert(src, crt).await?,
@@ -491,6 +491,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             }
         }
 
+        let Some(evidence) = msg.evidence().cloned() else {
+            warn!(%src, "message without evidence");
+            return Err(RbcError::InvalidMessage);
+        };
+
         let messages = self.buffer.entry(digest.round()).or_default();
 
         let tracker = messages.map.entry(digest).or_insert_with(|| {
@@ -516,7 +521,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 tracker.message = Item::some(msg);
                 tracker.status = Status::ReceivedMsg;
                 let env = Envelope::signed(digest, &self.config.keypair, false);
-                let vote = Protocol::<'_, T, Validated>::Vote(env, false);
+                let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                 let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
@@ -526,7 +531,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             Status::ReceivedMsg | Status::SentMsg => {
                 debug_assert!(tracker.message.item.is_some());
                 let env = Envelope::signed(digest, &self.config.keypair, false);
-                let vote = Protocol::<'_, T, Validated>::Vote(env, false);
+                let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                 let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                 tracker.status = Status::SentVote
@@ -538,7 +543,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     tracker.source = Some(src);
                     tracker.message = Item::some(msg);
                     let env = Envelope::signed(digest, &self.config.keypair, false);
-                    let vote = Protocol::<'_, T, Validated>::Vote(env, false);
+                    let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                     let bytes = serialize(&vote)?;
                     self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                     tracker.status = Status::SentVote
@@ -632,7 +637,12 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         s = %env.signing_key(),
         r = %env.data())
     )]
-    async fn on_vote(&mut self, env: Envelope<Digest, Unchecked>, done: bool) -> Result<()> {
+    async fn on_vote(
+        &mut self,
+        env: Envelope<Digest, Unchecked>,
+        evidence: Evidence,
+        done: bool,
+    ) -> Result<()> {
         let Some(env) = env.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
@@ -640,6 +650,19 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let digest = *env.data();
         let commit = digest.commit();
         let source = *env.signing_key();
+
+        // For unknown rounds we check the vote evidence to make sure
+        // a quorum of parties is backing the round prior to the vote.
+        if !self.buffer.contains_key(&digest.round()) {
+            if evidence.round() + 1 != digest.round() && !digest.round().is_genesis() {
+                warn!(n = %self.label, "invalid vote evidence round");
+                return Err(RbcError::InvalidMessage);
+            }
+            if !evidence.is_valid(&self.config.committee) {
+                warn!(n = %self.label, "invalid vote evidence");
+                return Err(RbcError::InvalidMessage);
+            }
+        }
 
         let messages = self.buffer.entry(digest.round()).or_default();
 
@@ -742,7 +765,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         "replying with our vote to sender"
                     );
                     let env = Envelope::signed(digest, &self.config.keypair, false);
-                    let vote = Protocol::<'_, T, Validated>::Vote(env, true);
+                    let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, true);
                     let bytes = serialize(&vote)?;
                     self.comm.send(source, bytes).await.map_err(RbcError::net)?;
                 }
@@ -993,8 +1016,12 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                             self.comm.broadcast(bytes).await.map_err(RbcError::net)?
                         }
                         debug!(n = %self.label, d = %digest, "sending our vote (again)");
+                        let evidence = msg
+                            .evidence()
+                            .cloned()
+                            .expect("tracked messages have evidence");
                         let env = Envelope::signed(*digest, &self.config.keypair, false);
-                        let vote = Protocol::<'_, T, Validated>::Vote(env, false);
+                        let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                         let bytes = serialize(&vote).expect("idempotent serialization");
                         tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);

@@ -60,6 +60,14 @@ impl<T: Committable, S> Message<T, S> {
         }
     }
 
+    pub fn evidence(&self) -> Option<&Evidence> {
+        if let Self::Vertex(env) = self {
+            Some(env.data().evidence())
+        } else {
+            None
+        }
+    }
+
     pub fn is_vertex(&self) -> bool {
         matches!(self, Self::Vertex(_))
     }

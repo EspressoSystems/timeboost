@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Message, RawComm};
+use sailfish_types::{Comm, Evidence, Message, RawComm};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -38,7 +38,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     /// A vote for an RBC proposal.
     ///
     /// The boolean flag indicates if the sender has received enough votes.
-    Vote(Envelope<Digest, Status>, bool),
+    Vote(Envelope<Digest, Status>, Evidence, bool),
 
     /// A quorum certificate for an RBC proposal.
     Cert(Certificate<Digest>),
