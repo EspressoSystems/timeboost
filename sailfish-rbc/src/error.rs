@@ -4,8 +4,11 @@ pub enum RbcError {
     #[error("network error: {0}")]
     Net(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("bincode error: {0}")]
-    Serialization(#[from] bincode::Error),
+    #[error("serialization error: {0}")]
+    Serialization(#[from] bincode::error::EncodeError),
+
+    #[error("deserialization error: {0}")]
+    Deserialization(#[from] bincode::error::DecodeError),
 
     #[error("invalid message")]
     InvalidMessage,
