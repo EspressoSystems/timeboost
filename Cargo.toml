@@ -19,6 +19,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85.0"
 description = "Low-latency decentralized sequencer with optional encrypted mempool"
 
 [profile.test]
@@ -42,7 +43,7 @@ async-lock = "3.3"
 async-trait = "0.1"
 axum = "0.8.1"
 bimap = "0.6.3"
-bincode = "1"
+bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
 bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }

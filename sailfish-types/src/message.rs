@@ -469,17 +469,21 @@ impl NoVoteMessage {
 
 impl<'a, T: Committable + Deserialize<'a>> Message<T, Unchecked> {
     pub fn decode(bytes: &'a [u8]) -> Option<Self> {
-        bincode::deserialize(bytes).ok()
+        bincode::serde::borrow_decode_from_slice(bytes, bincode::config::standard())
+            .ok()
+            .map(|(msg, _)| msg)
     }
 }
 
 impl<T: Committable + Serialize, S: Serialize> Message<T, S> {
     pub fn encode(&self, buf: &mut Vec<u8>) {
-        bincode::serialize_into(buf, self).expect("serializing a `Message` never fails")
+        bincode::serde::encode_into_std_write(self, buf, bincode::config::standard())
+            .expect("serializing a `Message` never fails");
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("serializing a `Message` never fails")
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing a `Message` never fails")
     }
 }
 
