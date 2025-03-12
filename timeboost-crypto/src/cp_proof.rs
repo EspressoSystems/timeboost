@@ -2,11 +2,11 @@ use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_std::UniformRand;
 use nimue::{
+    Arthur, DuplexHash, IOPattern,
     plugins::ark::{
         FieldChallenges, FieldIOPattern, FieldReader, FieldWriter, GroupIOPattern, GroupPublic,
         GroupReader, GroupWriter,
     },
-    Arthur, DuplexHash, IOPattern,
 };
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -157,11 +157,11 @@ impl<C: CurveGroup, D: DuplexHash> ChaumPedersen<C, D> {
 mod tests {
     use ark_ec::PrimeGroup;
     use ark_std::rand::Rng;
-    use ark_std::{test_rng, UniformRand};
+    use ark_std::{UniformRand, test_rng};
     use nimue::{
+        Merlin,
         hash::Keccak,
         plugins::ark::{FieldChallenges, FieldWriter, GroupPublic, GroupWriter},
-        Merlin,
     };
 
     use crate::{

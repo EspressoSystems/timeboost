@@ -1,6 +1,6 @@
 use std::{env, sync::Once};
 
-use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
 
 static LOG_INIT: Once = Once::new();
 

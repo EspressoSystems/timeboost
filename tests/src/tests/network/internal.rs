@@ -10,8 +10,8 @@ use timeboost_utils::test::{
 use tokio::task::{JoinHandle, JoinSet};
 
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
-use crate::prelude::*;
 use crate::Group;
+use crate::prelude::*;
 
 pub mod test_simple_network;
 

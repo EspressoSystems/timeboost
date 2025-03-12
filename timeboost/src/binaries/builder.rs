@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
 use std::{
@@ -6,8 +6,8 @@ use std::{
     path::PathBuf,
 };
 use timeboost::{
-    keyset::{private_keys, wait_for_live_peer, KeysetConfig},
-    {rpc_api, Timeboost, TimeboostConfig},
+    keyset::{KeysetConfig, private_keys, wait_for_live_peer},
+    {Timeboost, TimeboostConfig, rpc_api},
 };
 
 use tokio::signal;

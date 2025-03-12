@@ -2,7 +2,7 @@ use std::iter::repeat;
 use std::{collections::HashMap, fmt, num::NonZeroUsize};
 
 use committable::Committable;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Action, Evidence, Message, Unit};

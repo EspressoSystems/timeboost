@@ -1,7 +1,7 @@
 use std::{future::pending, time::Duration};
 
 use committable::Committable;
-use futures::{future::BoxFuture, FutureExt};
+use futures::{FutureExt, future::BoxFuture};
 use multisig::PublicKey;
 use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Action, Comm, Evidence, Message, RoundNumber};

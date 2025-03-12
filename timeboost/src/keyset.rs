@@ -1,11 +1,11 @@
 use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use cliquenet::Address;
 use multisig::SecretKey;
 use serde::Deserialize;
 use serde_json::from_str;
-use timeboost_crypto::{traits::threshold_enc::ThresholdEncScheme, DecryptionScheme};
+use timeboost_crypto::{DecryptionScheme, traits::threshold_enc::ThresholdEncScheme};
 use timeboost_types::DecryptionKey;
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;

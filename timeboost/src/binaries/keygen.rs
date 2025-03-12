@@ -60,8 +60,10 @@ impl Scheme {
                     writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
                     debug!("private decryption key written to {}", path.display());
                 }
-                info!("generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
-                      pub_key, comb_key);
+                info!(
+                    "generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
+                    pub_key, comb_key
+                );
             }
         }
         Ok(())

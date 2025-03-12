@@ -9,15 +9,15 @@ use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use sailfish_types::{Message, MessageKind, RawComm, RoundNumber};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant, Interval};
 use tracing::{debug, instrument, warn};
 
-use crate::digest::Digest;
 use crate::RbcError;
+use crate::digest::Digest;
 
-use super::{requires_rbc, Command, Protocol, RbcConfig};
+use super::{Command, Protocol, RbcConfig, requires_rbc};
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender<T> = mpsc::Sender<Message<T, Validated>>;

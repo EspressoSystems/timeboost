@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use sailfish::types::RoundNumber;
 
 use crate::tests::consensus::helpers::shaping::{
-    edge, edges, Event, Name, Rule, RuleGen, Simulator,
+    Event, Name, Rule, RuleGen, Simulator, edge, edges,
 };
 
 /// A simple test that always delivers messages to all parties.
