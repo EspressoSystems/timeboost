@@ -429,8 +429,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Err(RbcError::InvalidMessage);
         };
         let dig = Digest::of_msg(&msg);
-        let env = Envelope::signed(dig, &self.config.keypair, false);
-        let ack = Protocol::<'_, T, Validated>::Ack(env);
+        let ack = Protocol::<'_, T, Validated>::Ack(dig);
         let bytes = serialize(&ack)?;
         self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
         debug!(n = %self.label, d = %dig, s = %src, "sending ack");
@@ -441,27 +440,16 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     #[instrument(level = "trace", skip_all, fields(
         n = %self.label,
         s = %src,
-        d = %env.data())
+        d = %digest)
     )]
-    async fn on_ack(&mut self, src: PublicKey, env: Envelope<Digest, Unchecked>) -> Result<()> {
-        let Some(env) = env.validated(&self.config.committee) else {
-            return Err(RbcError::InvalidMessage);
-        };
-
-        if src != *env.signing_key() {
-            warn!(n = %self.label, s = %src, k = %env.signing_key(), "ack signer != sender");
-            return Err(RbcError::InvalidSender);
-        }
-
-        let digest = env.data();
-
+    async fn on_ack(&mut self, src: PublicKey, digest: Digest) -> Result<()> {
         let Some(msgs) = self.buffer.get_mut(&digest.round()) else {
-            debug!(n = %self.label, d = %env.data(), "no ack expected for digest round");
+            debug!(n = %self.label, d = %digest, "no ack expected for digest round");
             return Ok(());
         };
 
-        let Some(acks) = msgs.acks.get_mut(digest) else {
-            debug!(n = %self.label, d = %env.data(), "no ack expected for digest");
+        let Some(acks) = msgs.acks.get_mut(&digest) else {
+            debug!(n = %self.label, d = %digest, "no ack expected for digest");
             return Ok(());
         };
 
@@ -469,7 +457,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
         if acks.rem.is_empty() {
             self.config.metrics.add_ack_duration(acks.start.elapsed());
-            msgs.acks.remove(digest);
+            msgs.acks.remove(&digest);
         }
 
         Ok(())
@@ -1083,8 +1071,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     }
 
     async fn ack(&mut self, to: PublicKey, dig: Digest) -> Result<()> {
-        let env = Envelope::signed(dig, &self.config.keypair, false);
-        let ack = Protocol::<'_, T, Validated>::Ack(env);
+        let ack = Protocol::<'_, T, Validated>::Ack(dig);
         let bytes = serialize(&ack)?;
         debug!(n = %self.label, d = %dig, %to, "sending ack");
         self.comm.send(to, bytes).await.map_err(RbcError::net)

@@ -28,7 +28,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     Send(Cow<'a, Message<T, Status>>),
 
     /// An acknowledgement reply of a message.
-    Ack(Envelope<Digest, Status>),
+    Ack(Digest),
 
     // RBC section ////////////////////////////////////////////////////////////
 
