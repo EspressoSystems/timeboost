@@ -481,14 +481,16 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
         let digest = Digest::of_msg(&msg);
 
-        let messages = self.buffer.entry(digest.round()).or_default();
-
-        if let Some(d) = messages.digest(msg.kind(), &src) {
-            if d != digest {
-                warn!(%src, "multiple proposals received");
-                return Err(RbcError::InvalidMessage);
+        if let Some(messages) = self.buffer.get(&digest.round()) {
+            if let Some(d) = messages.digest(msg.kind(), &src) {
+                if d != digest {
+                    warn!(%src, "multiple proposals received");
+                    return Err(RbcError::InvalidMessage);
+                }
             }
         }
+
+        let messages = self.buffer.entry(digest.round()).or_default();
 
         let tracker = messages.map.entry(digest).or_insert_with(|| {
             let now = Instant::now();
@@ -541,6 +543,37 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     tracker.status = Status::SentVote
                 }
             }
+            // We have received enough votes to form a quorum but we either did not manage
+            // to request the message or to broadcast the certificate.
+            Status::ReachedQuorum => {
+                if tracker.message.item.is_none() {
+                    tracker.source = Some(src);
+                    tracker.message = Item::some(msg.clone());
+                    let cert = tracker.votes.certificate().expect("quorum => certificate");
+                    if let Entry::Vacant(acks) = messages.acks.entry(Digest::of_cert(cert)) {
+                        let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
+                        let b = serialize(&m)?;
+                        let now = Instant::now();
+                        acks.insert(Acks {
+                            msg: b.clone(),
+                            start: now,
+                            timestamp: now,
+                            retries: 0,
+                            rem: self.config.committee.parties().copied().collect(),
+                        });
+                        self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                    }
+                }
+                self.tx
+                    .send(msg.clone())
+                    .await
+                    .map_err(|_| RbcError::Shutdown)?;
+                self.config
+                    .metrics
+                    .add_delivery_duration(tracker.start.elapsed());
+                debug!(n = %self.label, m = %msg, d = %digest, "delivered");
+                tracker.status = Status::Delivered
+            }
             // We had previously reached a quorum of votes but were missing the message
             // which now arrived (after we requested it). We can finally deliver it to
             // the application.
@@ -555,7 +588,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     .add_delivery_duration(tracker.start.elapsed())
             }
             // These states already have the message, so there is nothing to be done.
-            Status::Delivered | Status::SentVote | Status::ReachedQuorum => {
+            Status::Delivered | Status::SentVote => {
                 debug!(n = %self.label, d = %digest, s = %tracker.status, "ignoring message proposal");
                 debug_assert!(tracker.message.item.is_some())
             }
@@ -897,7 +930,12 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Ok(());
         }
 
-        self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
+        self.tx
+            .send(msg.clone())
+            .await
+            .map_err(|_| RbcError::Shutdown)?;
+
+        tracker.message = Item::some(msg);
         tracker.status = Status::Delivered;
 
         Ok(())
