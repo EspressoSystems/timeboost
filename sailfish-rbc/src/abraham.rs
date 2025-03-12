@@ -41,7 +41,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     Vote(Envelope<Digest, Status>, bool),
 
     /// A quorum certificate for an RBC proposal.
-    Cert(Envelope<Certificate<Digest>, Status>),
+    Cert(Certificate<Digest>),
 
     /// A direct request to retrieve a message, identified by the given digest.
     GetRequest(Envelope<Digest, Status>),

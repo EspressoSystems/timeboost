@@ -413,7 +413,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::GetRequest(env) => self.on_get_request(env).await?,
             Protocol::GetResponse(msg) => self.on_get_response(src, msg.into_owned()).await?,
-            Protocol::Cert(env) => self.on_cert(src, env).await?,
+            Protocol::Cert(crt) => self.on_cert(src, crt).await?,
         }
         Ok(())
     }
@@ -648,8 +648,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     if let Some(msg) = &tracker.message.item {
                         let cert_digest = Digest::of_cert(cert);
                         if let Entry::Vacant(acks) = messages.acks.entry(cert_digest) {
-                            let e = Envelope::signed(cert.clone(), &self.config.keypair, false);
-                            let m = Protocol::<'_, T, Validated>::Cert(e);
+                            let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
                             let b = serialize(&m)?;
                             let now = Instant::now();
                             acks.insert(Acks {
@@ -724,32 +723,22 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     /// We received a vote certificate.
     #[instrument(level = "trace", skip_all, fields(
         n = %self.label,
-        s = %env.signing_key(),
-        r = %env.data().data().round())
+        s = %src,
+        r = %crt.data().round())
     )]
-    async fn on_cert(
-        &mut self,
-        src: PublicKey,
-        env: Envelope<Certificate<Digest>, Unchecked>,
-    ) -> Result<()> {
-        let digest = *env.data().data();
-        let cert_digest = Digest::of_cert(env.data());
+    async fn on_cert(&mut self, src: PublicKey, crt: Certificate<Digest>) -> Result<()> {
+        let digest = *crt.data();
+        let cert_digest = Digest::of_cert(&crt);
 
         if let Some(r) = self.buffer.keys().next() {
             if digest.round() < *r {
                 // Certificate is too old.
-                if src == *env.signing_key() {
-                    self.ack(src, cert_digest).await?;
-                }
+                self.ack(src, cert_digest).await?;
                 return Ok(());
             }
         }
 
-        let Some(env) = env.validated(&self.config.committee) else {
-            return Err(RbcError::InvalidMessage);
-        };
-
-        if !env.data().is_valid_par(&self.config.committee) {
+        if !crt.is_valid_par(&self.config.committee) {
             return Err(RbcError::InvalidMessage);
         }
 
@@ -782,13 +771,12 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             | Status::SentMsg
             | Status::ReceivedVotes
             | Status::SentVote => {
-                tracker.votes.set_certificate(env.data().clone());
+                tracker.votes.set_certificate(crt.clone());
                 tracker.status = Status::ReachedQuorum;
 
                 if let Some(msg) = &tracker.message.item {
                     if let Entry::Vacant(acks) = messages.acks.entry(cert_digest) {
-                        let e = Envelope::signed(env.into_data(), &self.config.keypair, false);
-                        let m = Protocol::<'_, T, Validated>::Cert(e);
+                        let m = Protocol::<'_, T, Validated>::Cert(crt);
                         let b = serialize(&m)?;
                         let now = Instant::now();
                         acks.insert(Acks {
