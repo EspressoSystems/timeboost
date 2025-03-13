@@ -3,7 +3,7 @@ mod include;
 mod queue;
 mod sort;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use cliquenet as net;
 use cliquenet::{Network, NetworkError, NetworkMetrics};
@@ -87,7 +87,6 @@ impl Drop for Sequencer {
 }
 
 struct Task {
-    label: PublicKey,
     transactions: TransactionQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
@@ -151,7 +150,6 @@ impl Sequencer {
         let (tx, rx) = mpsc::channel(1024);
 
         let task = Task {
-            label,
             transactions: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
@@ -208,50 +206,62 @@ impl Sequencer {
 
 impl Task {
     async fn go(mut self) -> Result<()> {
-        if !self.sailfish.is_init() {
-            for a in self.sailfish.init() {
-                debug_assert!(!matches!(a, Action::Deliver(_)));
-                self.sailfish.execute(a).await?
-            }
-        }
+        let mut actions: VecDeque<_> = self.sailfish.init().into();
+
         loop {
-            select! {
-                result = self.sailfish.next() => match result {
-                    Ok(actions) => {
-                        let mut payloads: BTreeMap<RoundNumber, Vec<CandidateList>> = BTreeMap::new();
-                        for a in actions {
-                            if let Action::Deliver(data) = a {
-                                payloads.entry(data.round()).or_default().push(data.into_data());
-                            } else if let Err(e) = self.sailfish.execute(a).await {
-                                error!(node = %self.label, "coordinator error: {}", e);
-                                return Err(e.into())
-                            }
-                        }
-                        let mut inclusions = Vec::new();
-                        for (round, lists) in payloads {
-                            let (i, r) = self.includer.inclusion_list(round, lists);
-                            self.transactions.update_transactions(&i, r);
-                            inclusions.push(i)
-                        }
-                        if let Err(e) = self.decrypter.enqueue(inclusions).await {
-                            error!("decrypt enqueue error: {}", e);
-                        }
-                    },
-                    Err(e) => {
-                        error!(node = %self.label, "coordinator error: {}", e);
-                    },
-                },
-                result = self.decrypter.next() => match result {
-                    Ok(incl) => {
-                        for t in self.sorter.sort(incl) {
-                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
-                        }
+            while !actions.is_empty() {
+                while let Some(a) = actions.pop_front() {
+                    if a.is_deliver() {
+                        actions.push_front(a);
+                        break;
                     }
-                    Err(err) => {
-                        error!(node = %self.label, %err);
+                    self.sailfish.execute(a).await?
+                }
+
+                if actions.is_empty() {
+                    break;
+                }
+
+                debug_assert!(actions.front().expect("non-empty actions").is_deliver());
+
+                let mut payloads: BTreeMap<RoundNumber, Vec<CandidateList>> = BTreeMap::new();
+
+                while let Some(a) = actions.pop_front() {
+                    if let Action::Deliver(data) = a {
+                        payloads
+                            .entry(data.round())
+                            .or_default()
+                            .push(data.into_data())
+                    } else {
+                        actions.push_front(a);
+                        break;
+                    }
+                }
+
+                let mut inclusions = Vec::new();
+
+                for (round, lists) in payloads {
+                    let (i, r) = self.includer.inclusion_list(round, lists);
+                    self.transactions.update_transactions(&i, r);
+                    inclusions.push(i)
+                }
+
+                if inclusions.is_empty() {
+                    continue;
+                }
+
+                for inc in inclusions {
+                    let inc = self.decrypter.decrypt(inc).await?;
+                    for trx in self.sorter.sort(inc) {
+                        self.output
+                            .send(trx)
+                            .await
+                            .map_err(|_| TimeboostError::ChannelClosed)?
                     }
                 }
             }
+
+            actions.extend(self.sailfish.next().await?)
         }
     }
 }

@@ -67,51 +67,51 @@ impl Decrypter {
         }
     }
 
+    pub async fn decrypt(&mut self, i: InclusionList) -> Result<InclusionList, DecryptError> {
+        self.enqueue(i).await?;
+        self.next().await
+    }
+
     /// Identifies encrypted txns in inclusion lists and sends the
     /// encrypted data to the worker for hatching.
-    pub async fn enqueue<I>(&mut self, incls: I) -> Result<(), DecryptError>
-    where
-        I: IntoIterator<Item = InclusionList>,
-    {
-        for incl in incls {
-            let round = incl.round();
-            let (encrypted_ptx_idx, encrypted_ptx_data): (Vec<_>, Vec<_>) = incl
-                .priority_bundles()
-                .iter()
-                .enumerate()
-                .filter(|(_, ptx)| ptx.encrypted())
-                .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().clone())))
-                .unzip();
+    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<(), DecryptError> {
+        let round = incl.round();
+        let (encrypted_ptx_idx, encrypted_ptx_data): (Vec<_>, Vec<_>) = incl
+            .priority_bundles()
+            .iter()
+            .enumerate()
+            .filter(|(_, ptx)| ptx.encrypted())
+            .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().clone())))
+            .unzip();
 
-            let (encrypted_tx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
-                .transactions()
-                .iter()
-                .filter(|tx| tx.encrypted())
-                .map(|tx| (tx.clone(), EncryptedItem(tx.kid(), tx.data().clone())))
-                .unzip();
+        let (encrypted_tx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
+            .transactions()
+            .iter()
+            .filter(|tx| tx.encrypted())
+            .map(|tx| (tx.clone(), EncryptedItem(tx.kid(), tx.data().clone())))
+            .unzip();
 
-            let encrypted_data: Vec<EncryptedItem> = encrypted_ptx_data
-                .into_iter()
-                .chain(encrypted_tx_data)
-                .collect();
+        let encrypted_data: Vec<EncryptedItem> = encrypted_ptx_data
+            .into_iter()
+            .chain(encrypted_tx_data)
+            .collect();
 
-            if encrypted_data.is_empty() {
-                // short-circuit if no encrypted txns
-                self.incls.insert(round, Status::Decrypted(incl));
-                self.dec_tx
-                    .send((round, vec![]))
-                    .await
-                    .map_err(|_| DecryptError::Shutdown)?;
-            } else {
-                self.enc_tx
-                    .send((round, encrypted_data))
-                    .await
-                    .map_err(|_| DecryptError::Shutdown)?;
-                // bookkeeping for reassembling inclusion list.
-                self.incls.insert(round, Status::Encrypted(incl));
-                self.modified
-                    .insert(round, (encrypted_ptx_idx, encrypted_tx));
-            }
+        if encrypted_data.is_empty() {
+            // short-circuit if no encrypted txns
+            self.incls.insert(round, Status::Decrypted(incl));
+            self.dec_tx
+                .send((round, vec![]))
+                .await
+                .map_err(|_| DecryptError::Shutdown)?;
+        } else {
+            self.enc_tx
+                .send((round, encrypted_data))
+                .await
+                .map_err(|_| DecryptError::Shutdown)?;
+            // bookkeeping for reassembling inclusion list.
+            self.incls.insert(round, Status::Encrypted(incl));
+            self.modified
+                .insert(round, (encrypted_ptx_idx, encrypted_tx));
         }
         Ok(())
     }
