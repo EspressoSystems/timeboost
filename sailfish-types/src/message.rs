@@ -286,6 +286,12 @@ pub enum Action<T: Committable> {
     SendTimeoutCert(Certificate<Timeout>),
 }
 
+impl<T: Committable> Action<T> {
+    pub fn is_deliver(&self) -> bool {
+        matches!(self, Self::Deliver(_))
+    }
+}
+
 impl<T: Committable> fmt::Display for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
