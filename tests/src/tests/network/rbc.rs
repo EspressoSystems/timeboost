@@ -76,6 +76,7 @@ fn small_committee() {
         .enable_random_order()
         .fail_rate(0.05)
         .simulation_duration(Duration::from_secs(500))
+        .tcp_capacity(256)
         .build();
 
     let n = 3;
@@ -127,6 +128,7 @@ fn medium_committee() {
         .enable_random_order()
         .fail_rate(0.01)
         .simulation_duration(Duration::from_secs(500))
+        .tcp_capacity(256)
         .build();
 
     let n = 5;
@@ -181,6 +183,7 @@ fn medium_committee_partition_network() {
     let mut sim = turmoil::Builder::new()
         .enable_random_order()
         .simulation_duration(Duration::from_secs(500))
+        .tcp_capacity(256)
         .build();
 
     let n = 5;
