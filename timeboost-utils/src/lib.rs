@@ -2,9 +2,6 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-#[cfg(feature = "test")]
-pub mod test;
-
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
 }

@@ -35,6 +35,7 @@ impl<T: Committable> MsgQueues<T> {
         v
     }
 
+    #[allow(dead_code)]
     pub fn drain_outbox(&self) -> Vec<(Option<PublicKey>, Message<T>)> {
         let mut v = Vec::new();
         while let Some(m) = self.obox.pop() {

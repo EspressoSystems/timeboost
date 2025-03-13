@@ -2,12 +2,12 @@ use std::{collections::HashMap, time::Duration};
 
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
-use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
 use timeboost_utils::types::logging;
 
 use crate::Group;
 use crate::prelude::*;
 
+use super::message_interceptor::NetworkMessageInterceptor;
 use super::{NetworkTest, TestCondition, TestOutcome, TestableNetwork};
 
 pub async fn run_simple_network_genesis_test<N>()
