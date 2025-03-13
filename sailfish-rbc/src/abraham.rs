@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Message, RawComm};
+use sailfish_types::{Comm, Message, RawComm, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -33,7 +33,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     // RBC section ////////////////////////////////////////////////////////////
 
     /// An RBC proposal.
-    Propose(Cow<'a, Message<T, Status>>),
+    Propose(Cow<'a, Envelope<Vertex<T>, Status>>),
 
     /// A vote for an RBC proposal.
     ///
@@ -47,7 +47,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     GetRequest(Digest),
 
     /// The reply to a get request.
-    GetResponse(Cow<'a, Message<T, Status>>),
+    GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
 }
 
 /// Worker command
@@ -57,7 +57,10 @@ enum Command<T: Committable> {
     /// Do a best-effort broadcast of the given message.
     Broadcast(Message<T, Validated>),
     /// Do a byzantine reliable broadcast of the given message.
-    RbcBroadcast(Message<T, Validated>, oneshot::Sender<Result<(), RbcError>>),
+    RbcBroadcast(
+        Envelope<Vertex<T>, Validated>,
+        oneshot::Sender<Result<(), RbcError>>,
+    ),
 }
 
 /// RBC configuration
@@ -152,10 +155,10 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
         // If this message requires RBC we hand it to the worker and wait for its
         // acknowlegement by the worker before returning. Once the message has been
         // handed over to the worker it will be eventually delivered.
-        if requires_rbc(&msg) {
+        if let Message::Vertex(v) = msg {
             let (tx, rx) = oneshot::channel();
             self.tx
-                .send(Command::RbcBroadcast(msg, tx))
+                .send(Command::RbcBroadcast(v, tx))
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
             return rx.await.map_err(|_| RbcError::Shutdown)?;
@@ -183,15 +186,5 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
 
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
         Ok(self.rx.recv().await.unwrap())
-    }
-}
-
-/// Check if the given message requires RBC properties.
-fn requires_rbc<T: Committable, S>(m: &Message<T, S>) -> bool {
-    match m {
-        Message::Vertex(_) => true,
-        Message::Timeout(_) => false,
-        Message::NoVote(_) => false,
-        Message::TimeoutCert(_) => false,
     }
 }
