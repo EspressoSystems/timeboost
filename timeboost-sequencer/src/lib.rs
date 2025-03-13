@@ -87,7 +87,6 @@ impl Drop for Sequencer {
 }
 
 struct Task {
-    label: PublicKey,
     transactions: TransactionQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
@@ -151,7 +150,6 @@ impl Sequencer {
         let (tx, rx) = mpsc::channel(1024);
 
         let task = Task {
-            label,
             transactions: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
@@ -208,67 +206,56 @@ impl Sequencer {
 
 impl Task {
     async fn go(mut self) -> Result<()> {
-        if !self.sailfish.is_init() {
-            for a in self.sailfish.init() {
-                debug_assert!(!matches!(a, Action::Deliver(_)));
-                self.sailfish.execute(a).await?
-            }
-        }
+        let mut actions: VecDeque<_> = self.sailfish.init().into();
+
         loop {
-            select! {
-                result = self.sailfish.next() => match result {
-                    Ok(actions) => {
-                        let mut actions = VecDeque::from(actions);
-                        let mut lists = Vec::new();
-                        while !actions.is_empty() {
-                            let mut round = RoundNumber::genesis();
-                            let mut candidates = Vec::new();
-                            while let Some(action) = actions.pop_front() {
-                                if let Action::Deliver(payload) = action {
-                                    round = payload.round();
-                                    candidates.push(payload.into_data())
-                                } else {
-                                    actions.push_front(action);
-                                    break
-                                }
-                            }
-                            if !candidates.is_empty() {
-                                lists.push((round, candidates))
-                            }
-                            while let Some(action) = actions.pop_front() {
-                                if let Action::Deliver(_) = action {
-                                    actions.push_front(action);
-                                    break
-                                }
-                                if let Err(err) = self.sailfish.execute(action).await {
-                                    error!(node = %self.label, %err, "coordinator error");
-                                    return Err(err.into())
-                                }
-                            }
-                        }
-                        for (round, candidates) in lists {
-                            let (i, r) = self.includer.inclusion_list(round, candidates);
-                            self.transactions.update_transactions(&i, r);
-                            if let Err(err) = self.decrypter.enqueue(i).await {
-                                error!(%err, "decrypt enqueue error");
-                            }
-                        }
-                    },
-                    Err(err) => {
-                        error!(node = %self.label, %err, "coordinator error");
-                    },
-                },
-                result = self.decrypter.next() => match result {
-                    Ok(incl) => {
-                        for t in self.sorter.sort(incl) {
-                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
-                        }
+            while !actions.is_empty() {
+                while let Some(a) = actions.pop_front() {
+                    if a.is_deliver() {
+                        actions.push_front(a);
+                        break;
                     }
-                    Err(err) => {
-                        error!(node = %self.label, %err);
+                    self.sailfish.execute(a).await?
+                }
+
+                if actions.is_empty() {
+                    break;
+                }
+
+                debug_assert!(actions.front().expect("non-empty actions").is_deliver());
+
+                let mut round = RoundNumber::genesis();
+                let mut lists = Vec::new();
+
+                while let Some(action) = actions.pop_front() {
+                    if let Action::Deliver(payload) = action {
+                        round = payload.round();
+                        lists.push(payload.into_data())
+                    } else {
+                        actions.push_front(action);
+                        break;
                     }
                 }
+
+                if lists.is_empty() {
+                    continue;
+                }
+
+                let (inc, retry) = self.includer.inclusion_list(round, lists);
+                self.transactions.update_transactions(&inc, retry);
+
+                self.decrypter.enqueue(inc).await?;
+                let inc = self.decrypter.next().await?;
+
+                for trx in self.sorter.sort(inc) {
+                    self.output
+                        .send(trx)
+                        .await
+                        .map_err(|_| TimeboostError::ChannelClosed)?
+                }
             }
+
+            actions.extend(self.sailfish.next().await?)
         }
     }
 }
