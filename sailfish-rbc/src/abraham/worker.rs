@@ -408,7 +408,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<()> {
         match bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?.0 {
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
-            Protocol::Ack(env) => self.on_ack(src, env).await?,
+            Protocol::Ack(dig) => self.on_ack(src, dig).await?,
             Protocol::Propose(msg) => self.on_propose(src, msg.into_owned()).await?,
             Protocol::Vote(env, done) => self.on_vote(env, done).await?,
             Protocol::GetRequest(dig) => self.on_get_request(src, dig).await?,
