@@ -1,4 +1,4 @@
-use crate::tests::network::{external::basic::BasicNetworkTest, network_tests::*};
+use crate::tests::network::{external::BasicNetworkTest, network_tests::*};
 
 #[tokio::test]
 async fn test_simple_network_genesis() {
