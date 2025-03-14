@@ -252,10 +252,10 @@ impl Worker {
         loop {
             let r;
             trace!(
-                node       = %label,
-                round      = %self.shares.keys().next().map(|k| k.round()).unwrap_or(RoundNumber::genesis()),
-                shares     = %self.shares.len(),
-                cids       = %self.cid2ct.len(),
+                node   = %label,
+                round  = %self.shares.keys().next().map(|k| k.round()).unwrap_or(RoundNumber::genesis()),
+                shares = %self.shares.len(),
+                cids   = %self.cid2ct.len(),
             );
             tokio::select! {
                 // received batch of decryption shares from remote node.
