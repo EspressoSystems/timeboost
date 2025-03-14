@@ -28,8 +28,8 @@ opt-level = 3
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy-primitives = { version = "0.8.22", features = ["serde"] }
-alloy-rlp = "0.3.11"
+alloy-primitives = { version = "0.8.22", features = ["serde", "rlp"] }
+alloy-rlp = { version = "0.3.11", features = ["derive"] }
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 ark-bn254 = "0.5"
