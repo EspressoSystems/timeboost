@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::time::Duration;
 
@@ -236,7 +236,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         }
                     }
                 },
-                val = self.comm.receive() => {
+                val = self.comm.receive(), if self.tx.capacity() > 0 => {
                     match val {
                         Ok((key, bytes)) => {
                             match self.on_inbound(key, bytes).await {
@@ -606,7 +606,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         self.config
                             .metrics
                             .add_delivery_duration(tracker.start.elapsed());
-                        debug!(node = %self.label, vertex = %vertex.data(), %digest, "delivered");
+                        debug!(node = %self.label, vertex = %vertex.data(), "delivered");
                     }
                 }
                 messages.early = true
@@ -855,7 +855,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 tracker.status = Status::RequestedMsg;
             }
             Status::ReachedQuorum | Status::RequestedMsg | Status::Delivered => {
-                debug!(node = %self.label, status = %tracker.status, "ignoring certificate")
+                debug!(node = %self.label, %digest, status = %tracker.status, "ignoring certificate")
             }
         }
 
@@ -938,6 +938,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .await
             .map_err(|_| RbcError::Shutdown)?;
 
+        debug!(node = %self.label, vertex = %vertex.data(), %digest, "delivered");
         tracker.message = Item::some(vertex);
         tracker.status = Status::Delivered;
 
@@ -995,12 +996,21 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                             continue;
                         }
                         if tracker.ours {
-                            debug!(node = %self.label, %digest, "sending our message (again)");
                             let proto = Protocol::Propose(Cow::Borrowed(msg));
                             let bytes = serialize(&proto)?;
-                            self.comm.broadcast(bytes).await.map_err(RbcError::net)?
+                            if let Some(rem) = remaining_voters(&self.config, tracker) {
+                                for to in rem {
+                                    debug!(node = %self.label, %to, %digest, "sending our message (again)");
+                                    self.comm
+                                        .send(to, bytes.clone())
+                                        .await
+                                        .map_err(RbcError::net)?
+                                }
+                            } else {
+                                debug!(node = %self.label, %digest, "broadcasting our message (again)");
+                                self.comm.broadcast(bytes).await.map_err(RbcError::net)?
+                            }
                         }
-                        debug!(node = %self.label, %digest, "sending our vote (again)");
                         let evidence = msg.data().evidence().clone();
                         let env = Envelope::signed(*digest, &self.config.keypair, false);
                         let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
@@ -1008,7 +1018,18 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         tracker.timestamp = now;
                         tracker.retries = tracker.retries.saturating_add(1);
                         self.config.metrics.retries.add(1);
-                        self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
+                        if let Some(rem) = remaining_voters(&self.config, tracker) {
+                            for to in rem {
+                                debug!(node = %self.label, %to, %digest, "sending our vote (again)");
+                                self.comm
+                                    .send(to, bytes.clone())
+                                    .await
+                                    .map_err(RbcError::net)?;
+                            }
+                        } else {
+                            debug!(node = %self.label, %digest, "broadcasting our vote (again)");
+                            self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
+                        }
                         tracker.status = Status::SentVote
                     }
                 }
@@ -1079,7 +1100,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 continue;
             }
             for party in &acks.rem {
-                debug!(node = %self.label, %digest, src = %party, "re-sending message");
+                debug!(node = %self.label, %digest, to = %party, "re-sending message");
                 self.comm
                     .send(*party, acks.msg.clone())
                     .await
@@ -1099,6 +1120,17 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         debug!(node = %self.label, %to, digest = %dig, "sending ack");
         self.comm.send(to, bytes).await.map_err(RbcError::net)
     }
+}
+
+fn remaining_voters<T>(c: &RbcConfig, t: &Tracker<T>) -> Option<impl Iterator<Item = PublicKey>>
+where
+    T: Committable,
+{
+    let msg = t.message.item.as_ref()?;
+    let com = Digest::of_vertex(msg).commit();
+    let fin = t.votes.voters(&com).copied().collect::<HashSet<_>>();
+    let all = c.committee.parties().copied().collect::<HashSet<_>>();
+    Some(all.into_iter().filter(move |p| !fin.contains(p)))
 }
 
 /// Factored out of `Worker` to help with borrowing.

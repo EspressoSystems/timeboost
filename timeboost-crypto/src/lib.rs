@@ -75,6 +75,10 @@ impl Keyset {
 }
 
 impl Keyset {
+    pub fn id(&self) -> KeysetId {
+        self.id
+    }
+
     pub fn size(&self) -> NonZeroUsize {
         self.size
     }

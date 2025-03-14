@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use message_interceptor::NetworkMessageInterceptor;
 use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::types::Comm;
-use timeboost_utils::test::message_interceptor::NetworkMessageInterceptor;
-use timeboost_utils::test::testnet::MsgQueues;
+use testnet::MsgQueues;
 use timeboost_utils::types::logging;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
@@ -13,9 +13,11 @@ use tokio::time::sleep;
 use crate::Group;
 use crate::prelude::*;
 
-mod rbc;
+mod message_interceptor;
+mod testnet;
 
 pub mod external;
+#[allow(unused)]
 pub mod internal;
 pub mod network_tests;
 
