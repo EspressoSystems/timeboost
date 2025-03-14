@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
 use multisig::PublicKey;
+use net::{Conn, Star};
 use sailfish::Coordinator;
-use timeboost_utils::test::{
-    message_interceptor::NetworkMessageInterceptor,
-    net::{Conn, Star},
-    testnet::{MsgQueues, TestNet},
-};
 use tokio::task::{JoinHandle, JoinSet};
 
+use super::message_interceptor::NetworkMessageInterceptor;
+use super::testnet::{MsgQueues, TestNet};
 use super::{TaskHandleResult, TestCondition, TestableNetwork};
 use crate::Group;
 use crate::prelude::*;
 
+mod net;
 pub mod test_simple_network;
 
 pub struct MemoryNetworkTest {

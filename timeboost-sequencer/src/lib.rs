@@ -142,7 +142,7 @@ impl Sequencer {
 
         let network = Network::create(
             addr,
-            cfg.keypair, // same auth
+            cfg.keypair.clone(), // same auth
             peers,
             NetworkMetrics::default(),
         )
@@ -155,7 +155,7 @@ impl Sequencer {
             transactions: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
-            decrypter: Decrypter::new(network, keyset, cfg.dec_sk),
+            decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
         };

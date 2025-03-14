@@ -35,6 +35,7 @@ impl<T: Committable> MsgQueues<T> {
         v
     }
 
+    #[allow(dead_code)]
     pub fn drain_outbox(&self) -> Vec<(Option<PublicKey>, Message<T>)> {
         let mut v = Vec::new();
         while let Some(m) = self.obox.pop() {
@@ -76,19 +77,19 @@ impl<T: Committable, C: Comm<T>> TestNet<T, C> {
 /// Wrap Comm Err into `TestNetError`
 #[derive(Debug)]
 pub enum TestNetError<T: Committable, C: Comm<T>> {
-    RecvError(C::Err),
-    SendError(C::Err),
-    BroadcastError(C::Err),
-    InterceptError(String),
+    Recv(C::Err),
+    Send(C::Err),
+    Broadcast(C::Err),
+    Intercept(String),
 }
 
 impl<T: Committable + Send, C: Comm<T> + Send> std::fmt::Display for TestNetError<T, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestNetError::RecvError(err) => write!(f, "receive Error: {}", err),
-            TestNetError::SendError(err) => write!(f, "send Error: {}", err),
-            TestNetError::BroadcastError(err) => write!(f, "broadcast Error: {}", err),
-            TestNetError::InterceptError(err) => write!(f, "intercept Error: {}", err),
+            TestNetError::Recv(err) => write!(f, "receive Error: {}", err),
+            TestNetError::Send(err) => write!(f, "send Error: {}", err),
+            TestNetError::Broadcast(err) => write!(f, "broadcast Error: {}", err),
+            TestNetError::Intercept(err) => write!(f, "intercept Error: {}", err),
         }
     }
 }
@@ -109,7 +110,7 @@ where
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));
         if let Err(e) = self.comm.broadcast(msg).await {
-            return Err(TestNetError::BroadcastError(e));
+            return Err(TestNetError::Broadcast(e));
         }
         Ok(())
     }
@@ -117,7 +118,7 @@ where
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((Some(to), msg.clone()));
         if let Err(e) = self.comm.send(to, msg).await {
-            return Err(TestNetError::SendError(e));
+            return Err(TestNetError::Send(e));
         }
         Ok(())
     }
@@ -130,11 +131,11 @@ where
                     return Ok(m);
                 }
                 Err(e) => {
-                    return Err(TestNetError::InterceptError(e));
+                    return Err(TestNetError::Intercept(e));
                 }
             },
             Err(e) => {
-                return Err(TestNetError::RecvError(e));
+                return Err(TestNetError::Recv(e));
             }
         }
     }
