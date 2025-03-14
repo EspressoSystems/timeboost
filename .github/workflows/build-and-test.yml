@@ -50,6 +50,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Test packages individually
+      run: just test-individually
     - name: Run tests
       run: just test_ci
 
@@ -62,6 +64,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Check packages individually
+      run: just check-individually
     - name: Run lint
       run: just lint
   build-docker:
