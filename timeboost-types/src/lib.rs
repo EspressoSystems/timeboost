@@ -20,4 +20,4 @@ pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
 pub use time::{Epoch, Timestamp};
-pub use transaction::{Hash, PriorityBundle, Transaction};
+pub use transaction::{Hash, Nonce, PriorityBundle, Transaction};

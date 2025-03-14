@@ -1,15 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use bimap::BiMap;
 use cliquenet::Network;
+use multisig::PublicKey;
 use sailfish::types::RoundNumber;
+use std::collections::{BTreeMap, BTreeSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
 use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo, Transaction};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
@@ -40,7 +40,7 @@ pub struct Decrypter {
     /// Incoming (encrypted) incl lists.
     incls: BTreeMap<RoundNumber, Status>,
     /// Store encrypted items info.
-    modified: BTreeMap<RoundNumber, (Vec<usize>, Vec<Transaction>)>,
+    modified: BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
     /// Send encrypted data.
     enc_tx: Sender<(RoundNumber, Vec<EncryptedItem>)>,
     /// Send decrypted data.
@@ -52,7 +52,7 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(net: Network, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Network, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
         let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
         let decrypter = Worker::new(net, keyset, dec_sk);
@@ -63,7 +63,7 @@ impl Decrypter {
             dec_rx,
             incls: BTreeMap::new(),
             modified: BTreeMap::new(),
-            jh: spawn(decrypter.go(enc_rx, dec_tx)),
+            jh: spawn(decrypter.go(label, enc_rx, dec_tx)),
         }
     }
 
@@ -83,11 +83,12 @@ impl Decrypter {
                 .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().clone())))
                 .unzip();
 
-            let (encrypted_tx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
+            let (encrypted_tx_idx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
                 .transactions()
                 .iter()
-                .filter(|tx| tx.encrypted())
-                .map(|tx| (tx.clone(), EncryptedItem(tx.kid(), tx.data().clone())))
+                .enumerate()
+                .filter(|(_, tx)| tx.encrypted())
+                .map(|(i, tx)| (i, EncryptedItem(tx.kid(), tx.data().clone())))
                 .unzip();
 
             let encrypted_data: Vec<EncryptedItem> = encrypted_ptx_data
@@ -110,7 +111,7 @@ impl Decrypter {
                 // bookkeeping for reassembling inclusion list.
                 self.incls.insert(round, Status::Encrypted(incl));
                 self.modified
-                    .insert(round, (encrypted_ptx_idx, encrypted_tx));
+                    .insert(round, (encrypted_ptx_idx, encrypted_tx_idx));
             }
         }
         Ok(())
@@ -128,13 +129,14 @@ impl Decrypter {
                 match status {
                     Status::Encrypted(incl) => {
                         // reassemble inclusion list for round r
-                        assemble_incl(r, incl, dec, &mut self.modified)?;
+                        let dec_incl = assemble_incl(r, incl.to_owned(), dec, &mut self.modified)?;
+                        *status = Status::Decrypted(dec_incl);
                     }
                     Status::Decrypted(_) => {}
                 }
             };
 
-            // inclusion lists are processed in order; return only if r is decrypted.
+            // inclusion lists are processed in order; return if next round is decrypted.
             if let Some(entry) = self.incls.first_entry() {
                 match entry.get() {
                     Status::Decrypted(_) => {
@@ -157,59 +159,53 @@ impl Decrypter {
 
 fn assemble_incl(
     r: RoundNumber,
-    incl: &mut InclusionList,
+    incl: InclusionList,
     dec: Vec<DecryptedItem>,
-    modified: &mut BTreeMap<RoundNumber, (Vec<usize>, Vec<Transaction>)>,
-) -> Result<(), DecryptError> {
+    modified: &mut BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
+) -> Result<InclusionList, DecryptError> {
     let (modified_ptxs, modified_txs) = modified
         .remove(&r)
         .expect("encrypted incl => modified entry");
-    let (mut ptxs, txs) = incl.to_owned().into_transactions();
-    let mut txs = BTreeSet::from_iter(txs);
+    let mut new_incl =
+        InclusionList::new(incl.round(), incl.timestamp(), incl.delayed_inbox_index());
+    let (mut ptxs, txs) = incl.into_transactions();
     if modified_ptxs.len() + modified_txs.len() != dec.len() {
         return Err(DecryptError::State);
     }
-    modified_ptxs
-        .into_iter()
-        .enumerate()
-        .map(|(i, m)| {
-            if let Some(ptx) = ptxs.get_mut(m) {
-                *ptx = Transaction::new(
-                    *ptx.nonce(),
-                    *ptx.to(),
-                    *ptx.from(),
-                    dec.get(i).ok_or(DecryptError::State)?.0.clone(),
-                    ptx.kid(),
-                )
-                .into();
-                Ok::<(), DecryptError>(())
-            } else {
-                Err(DecryptError::State)
-            }
-        })
-        .collect::<Result<Vec<_>, DecryptError>>()?;
 
-    modified_txs
-        .into_iter()
-        .enumerate()
-        .map(|(i, tx)| {
-            if let Some(tx) = txs.take(&tx) {
-                let data = dec
-                    .get(i + ptxs.len())
-                    .ok_or(DecryptError::InvalidMessage)?
-                    .0
-                    .clone();
-                let mut dec_tx = tx.clone();
-                dec_tx.set_data(data);
-                txs.insert(dec_tx);
-                Ok(())
-            } else {
-                Err(DecryptError::State)
-            }
-        })
-        .collect::<Result<Vec<_>, DecryptError>>()?;
+    for (i, m) in modified_ptxs.into_iter().enumerate() {
+        let ptx = ptxs.get_mut(m).ok_or(DecryptError::InvalidMessage)?;
+        *ptx = Transaction::new(
+            *ptx.nonce(),
+            *ptx.to(),
+            *ptx.from(),
+            dec.get(i).ok_or(DecryptError::State)?.0.clone().into(),
+            ptx.kid(),
+        )
+        .into();
+    }
 
-    Ok(())
+    let mut encrypted_txs = vec![];
+    for m in modified_txs.iter() {
+        let encrypted_tx = txs.get(*m).ok_or(DecryptError::InvalidMessage)?;
+        encrypted_txs.push(encrypted_tx.clone());
+    }
+
+    let mut new_txs = BTreeSet::from_iter(txs.into_iter());
+    for (i, tx) in encrypted_txs.into_iter().enumerate() {
+        let mut decrypted_tx = new_txs.take(&tx).ok_or(DecryptError::InvalidMessage)?;
+        let data = dec
+            .get(i + ptxs.len())
+            .ok_or(DecryptError::InvalidMessage)?
+            .0
+            .clone();
+        decrypted_tx.set_data(data);
+        new_txs.insert(decrypted_tx);
+    }
+
+    new_incl.set_transactions(new_txs.into_iter());
+
+    Ok(new_incl)
 }
 
 impl Drop for Decrypter {
@@ -247,14 +243,24 @@ impl Worker {
 
     pub async fn go(
         mut self,
+        label: PublicKey,
         mut enc_rx: Receiver<(RoundNumber, Vec<EncryptedItem>)>,
         dec_tx: Sender<(RoundNumber, Vec<DecryptedItem>)>,
     ) {
         loop {
             let r;
+            trace!(
+                node       = %label,
+                round      = %self.shares.keys().next().map(|k| k.round()).unwrap_or(RoundNumber::genesis()),
+                shares     = %self.shares.len(),
+                cids       = %self.cid2ct.len(),
+            );
             tokio::select! {
                 // received batch of decryption shares from remote node.
-                Ok((pubkey, bytes)) = self.net.receive() => {
+                Ok((remote_pk, bytes)) = self.net.receive() => {
+                    if remote_pk == label {
+                        continue;
+                    }
                     if let Ok((s, _)) = bincode::serde::decode_from_slice::<ShareInfo, _>(&bytes, bincode::config::standard()) {
                         r = s.round();
                         if let Err(e) = self.insert_shares(s) {
@@ -263,7 +269,7 @@ impl Worker {
                         }
 
                     } else {
-                        warn!("failed to deserialize share from: {}", pubkey);
+                        warn!("failed to deserialize shares from: {}", remote_pk);
                         continue;
                     }
                 }
@@ -328,7 +334,8 @@ impl Worker {
                 bincode::config::standard(),
             )
             .map_err(DecryptError::BincodeDecode)?;
-            // mappings
+
+            // establish mappings
             let cid = ciphertext.nonce();
             self.cid2ct.insert(cid, ciphertext.clone());
             self.idx2cid.insert(idx, cid);
@@ -360,8 +367,7 @@ impl Worker {
         let kids = share_info.kids();
         let cids = share_info.cids();
         let shares = share_info.dec_shares();
-
-        // add the shares to the map using round, keyset id and nonce as key.
+        // add shares to the map using round, keyset id and nonce as key.
         (0..cids.len()).try_for_each(|i| {
             let kid = *kids.get(i).ok_or(DecryptError::InvalidMessage)?;
             let cid = cids.get(i).ok_or(DecryptError::InvalidMessage)?;
@@ -379,7 +385,6 @@ impl Worker {
         &mut self,
         round: RoundNumber,
     ) -> Result<Option<(RoundNumber, Vec<DecryptedItem>)>, DecryptError> {
-        // TODO: avoid linear scan if remote nodes batch same number of shares.
         let hatched = self
             .shares
             .iter()
@@ -390,25 +395,23 @@ impl Worker {
             // ciphertexts are not ready to be decrypted.
             return Ok(None);
         }
-
+        let mut to_remove = vec![];
         // combine decryption shares for each ciphertext
         let decrypted: BTreeMap<_, _> = self
             .shares
             .iter()
             .filter(|(k, _)| k.round() == round)
             .map(|(k, shares)| {
-                // TODO: make sure that the correct keyset is used for combining.
                 let ciphertext = self
                     .cid2ct
-                    .remove_by_left(k.cid())
-                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?
-                    .1;
+                    .get_by_left(k.cid())
+                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
 
                 let idx = self
                     .idx2cid
-                    .remove_by_right(k.cid())
-                    .ok_or(DecryptError::MissingIndex(*k.cid()))?
-                    .1;
+                    .get_by_right(k.cid())
+                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?
+                    .clone();
 
                 let decrypted_data = DecryptionScheme::combine(
                     &self.committee,
@@ -417,6 +420,7 @@ impl Worker {
                     &ciphertext,
                 )
                 .map_err(DecryptError::Decryption)?;
+                to_remove.push(k.cid().clone());
                 Ok((
                     idx,
                     DecryptedItem(Bytes::from(<Vec<u8>>::from(decrypted_data))),
@@ -424,7 +428,17 @@ impl Worker {
             })
             .collect::<Result<_, DecryptError>>()?;
 
+        // clean up
         self.shares.retain(|k, _| k.round() != round);
+        for cid in to_remove {
+            self.idx2cid
+                .remove_by_right(&cid)
+                .ok_or(DecryptError::MissingIndex(cid))?;
+            self.cid2ct
+                .remove_by_left(&cid)
+                .ok_or(DecryptError::MissingCiphertext(cid))?;
+        }
+
         Ok(Some((round, decrypted.into_values().collect())))
     }
 }

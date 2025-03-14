@@ -74,6 +74,12 @@ impl fmt::Display for Hash {
 pub struct Nonce(U256);
 
 impl Nonce {
+    pub fn new(value: u128) -> Self {
+        Nonce(U256::from(value))
+    }
+}
+
+impl Nonce {
     pub fn to_epoch(self) -> Epoch {
         let n: u128 = (self.0 >> 128u8).try_into().unwrap();
         Epoch::from(n as u64)

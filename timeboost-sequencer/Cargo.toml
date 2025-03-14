@@ -22,3 +22,9 @@ timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+ark-std = { workspace = true }
+bs58 = { workspace = true }
+portpicker = { workspace = true }
+timeboost-utils = { path = "../timeboost-utils" }
