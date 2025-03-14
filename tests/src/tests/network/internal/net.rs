@@ -29,8 +29,6 @@ pub struct Conn<T> {
 
 /// A network event.
 #[derive(Clone, Debug)]
-#[allow(unused)]
-
 pub enum Event<T> {
     Unicast {
         src: PublicKey,

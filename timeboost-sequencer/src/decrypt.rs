@@ -9,7 +9,7 @@ use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInf
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
@@ -203,7 +203,9 @@ fn assemble_incl(
         new_txs.insert(decrypted_tx);
     }
 
-    new_incl.set_transactions(new_txs.into_iter());
+    new_incl
+        .set_priority_bundles(ptxs)
+        .set_transactions(new_txs.into_iter());
 
     Ok(new_incl)
 }
@@ -477,5 +479,186 @@ pub enum DecryptError {
 impl DecryptError {
     pub(crate) fn net<E: std::error::Error + Send + Sync + 'static>(e: E) -> Self {
         Self::Net(Box::new(e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{Ipv4Addr, SocketAddr},
+        num::NonZeroUsize,
+        time::Duration,
+    };
+    use timeboost_utils::types::logging;
+
+    use ark_std::test_rng;
+    use cliquenet::{Network, NetworkMetrics};
+    use multisig::SecretKey;
+    use sailfish::types::RoundNumber;
+    use timeboost_crypto::{
+        DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
+    };
+    use timeboost_types::{DecryptionKey, InclusionList, Timestamp, Transaction};
+    use tracing::warn;
+
+    use crate::decrypt::Decrypter;
+
+    #[tokio::test]
+    async fn test_with_encrypted_data() {
+        logging::init_logging();
+        let num_nodes = 5;
+        let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
+        let encryption_key: PublicKey<_> =
+            decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
+
+        let mut decrypters = build_decrypters(keyset.clone()).await;
+
+        // Craft a ciphertext for decryption
+        let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
+        let tx_message = b"The slow brown fox jumps over the lazy dog".to_vec();
+        let ptx_plaintext = Plaintext::new(ptx_message.clone());
+        let tx_plaintext = Plaintext::new(tx_message.clone());
+        let ptx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &keyset, &encryption_key, &ptx_plaintext)
+                .unwrap();
+        let tx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &keyset, &encryption_key, &tx_plaintext)
+                .unwrap();
+        let ptx_ciphertext_bytes =
+            bincode::serde::encode_to_vec(&ptx_ciphertext, bincode::config::standard())
+                .expect("Failed to encode ciphertext");
+        let tx_ciphertext_bytes =
+            bincode::serde::encode_to_vec(&tx_ciphertext, bincode::config::standard())
+                .expect("Failed to encode ciphertext");
+
+        // Create inclusion lists with encrypted transactions
+        let mut incl_list = InclusionList::new(RoundNumber::new(42), Timestamp::now(), 0.into());
+        let keyset_id = keyset.id();
+        incl_list.set_priority_bundles(vec![
+            Transaction::new(
+                timeboost_types::Nonce::new(42u128),
+                timeboost_types::Address::zero(),
+                timeboost_types::Address::zero(),
+                ptx_ciphertext_bytes.into(),
+                keyset_id,
+            )
+            .into(),
+        ]);
+        incl_list.set_transactions(vec![Transaction::new(
+            timeboost_types::Nonce::new(42u128),
+            timeboost_types::Address::zero(),
+            timeboost_types::Address::zero(),
+            tx_ciphertext_bytes.into(),
+            keyset_id,
+        )]);
+
+        // Enqueue inclusion lists to each decrypter
+        for i in 0..num_nodes {
+            if let Err(e) = decrypters[i].enqueue(vec![incl_list.clone()]).await {
+                warn!("failed to enqueue inclusion list: {:?}", e);
+            }
+        }
+
+        // Collect decrypted inclusion lists
+        let mut decrypted_lists = Vec::new();
+        for i in 0..num_nodes {
+            let incl = decrypters[i].next().await.unwrap();
+            decrypted_lists.push(incl);
+        }
+
+        // Verify that all decrypted inclusion lists are correct
+        for i in 0..num_nodes {
+            assert_eq!(decrypted_lists[i].round(), RoundNumber::new(42));
+            assert_eq!(decrypted_lists[i].priority_bundles().len(), 1);
+            assert_eq!(decrypted_lists[i].transactions().len(), 1);
+            let decrypted_ptx_data = decrypted_lists[i].priority_bundles()[0].data();
+            let decrypted_tx_data = decrypted_lists[i].transactions()[0].data();
+            assert_eq!(decrypted_ptx_data.to_vec(), ptx_message);
+            assert_eq!(decrypted_tx_data.to_vec(), tx_message);
+        }
+    }
+
+    async fn build_decrypters(keyset: Keyset) -> Vec<Decrypter> {
+        let signature_private_keys = [
+            "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
+            "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
+            "4Y7yyg11MBYJaeD2UWCh5cto8wizJoUCqFm7YjMbY3hXyWSWVPgi7y1D9e7D78a1NcWdE4k59D6vK9f6eCpzVkbQ",
+            "zrjZDknq9nPhiBXKeG2PeotwxAayYkv2UFmxc2UsCGHsdu5vCsjqxn8ko2Rh2fWts76u6eCJYjDgKEaveutVhjW",
+            "jW98dJM94zuvhRCA1bGLiPjakePTc1CYPP2V5iCswfayZiYujGYdSoE1MYDa61dHCyzPdEvGNBDmnFHS6jf83Km",
+        ];
+        let decryption_private_keys = [
+            "jMbTDiLo8tgyERv92mGrCAe1s3KnnnyqhQeSYte6vUhZy1",
+            "jysmvvvwSHu872gmxkejPP8RxUDpSpKChnkPMVeXyRibwN",
+            "kCioHtYdX7pUVXJLceFFKx7j4czcqDjjS52FYbvy2AuyQV",
+            "jVEU8hbv7uUntaDt4GgDxUKgoCu8UCXugx1coMeiVfn31L",
+            "jUzpdPzgxn2zpaLXaHJiWJ2jbbD3scsP8YqscA1uZGhPfZ",
+        ];
+
+        let encryption_key = "kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK";
+        let comb_key = "AuMP7yjmQH98sUnn7gcP7UUEZ1zNNbzESuNFkizXXHLeyyeH89Ky6F3M5xQ5kDXHyBAuza2CJmyXG9r1n38dW5GYj3asqB1TJzxmCDpmQo7eGjQEgcfEhz521k91kymL7u14EaGriN43WfzDBvcvWjNq93tjTUpRtv4kBycAujLxsWUoaCZBFDVcYMrLAoNXAaCMZHNerseE5V9vqMmgDXRqXZZZtJFv6kgARqmqH";
+
+        let signature_keys: Vec<_> = signature_private_keys
+            .iter()
+            .map(|s| SecretKey::try_from(&decode_bs58(s)[..]).expect("into secret key"))
+            .collect();
+
+        let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
+            .iter()
+            .map(|k| {
+                DecryptionKey::new(
+                    decode_bincode(encryption_key),
+                    decode_bincode(comb_key),
+                    decode_bincode(k),
+                )
+            })
+            .collect();
+
+        let peers: Vec<_> = signature_keys
+            .iter()
+            .map(|k| {
+                let port = portpicker::pick_unused_port().expect("find open port");
+                (
+                    k.public_key(),
+                    SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+                )
+            })
+            .collect();
+
+        // Create decrypters for each node
+        let mut decrypters = Vec::new();
+        for i in 0..usize::from(keyset.size()) {
+            let sig_key = signature_keys[i].clone();
+            let (_, addr) = peers[i].clone();
+
+            let network = Network::create(
+                addr,
+                sig_key.clone().into(),
+                peers.clone(),
+                NetworkMetrics::default(),
+            )
+            .await
+            .expect("starting network");
+
+            let decrypter = Decrypter::new(
+                sig_key.public_key(),
+                network,
+                keyset.clone(),
+                decryption_keys[i].clone(),
+            );
+            decrypters.push(decrypter);
+        }
+        // wait for network
+        let _ = tokio::time::sleep(Duration::from_secs(1)).await;
+        decrypters
+    }
+
+    fn decode_bs58(encoded: &str) -> Vec<u8> {
+        bs58::decode(encoded).into_vec().unwrap()
+    }
+
+    fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
+        bincode::serde::decode_from_slice(&decode_bs58(encoded), bincode::config::standard())
+            .unwrap()
+            .0
     }
 }
