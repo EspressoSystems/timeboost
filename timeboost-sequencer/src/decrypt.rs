@@ -179,7 +179,7 @@ fn assemble_incl(
             *ptx.nonce(),
             *ptx.to(),
             *ptx.from(),
-            dec.get(i).ok_or(DecryptError::State)?.0.clone().into(),
+            dec.get(i).ok_or(DecryptError::State)?.0.clone(),
             ptx.kid(),
         )
         .into();
@@ -191,7 +191,7 @@ fn assemble_incl(
         encrypted_txs.push(encrypted_tx.clone());
     }
 
-    let mut new_txs = BTreeSet::from_iter(txs.into_iter());
+    let mut new_txs = BTreeSet::from_iter(txs);
     for (i, tx) in encrypted_txs.into_iter().enumerate() {
         let mut decrypted_tx = new_txs.take(&tx).ok_or(DecryptError::InvalidMessage)?;
         let data = dec
@@ -205,7 +205,7 @@ fn assemble_incl(
 
     new_incl
         .set_priority_bundles(ptxs)
-        .set_transactions(new_txs.into_iter());
+        .set_transactions(new_txs);
 
     Ok(new_incl)
 }
@@ -409,20 +409,19 @@ impl Worker {
                     .get_by_left(k.cid())
                     .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
 
-                let idx = self
+                let idx = *self
                     .idx2cid
                     .get_by_right(k.cid())
-                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?
-                    .clone();
+                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
 
                 let decrypted_data = DecryptionScheme::combine(
                     &self.committee,
                     self.dec_sk.combkey(),
                     shares.iter().collect::<Vec<_>>(),
-                    &ciphertext,
+                    ciphertext,
                 )
                 .map_err(DecryptError::Decryption)?;
-                to_remove.push(k.cid().clone());
+                to_remove.push(*k.cid());
                 Ok((
                     idx,
                     DecryptedItem(Bytes::from(<Vec<u8>>::from(decrypted_data))),
@@ -553,26 +552,26 @@ mod tests {
         )]);
 
         // Enqueue inclusion lists to each decrypter
-        for i in 0..num_nodes {
-            if let Err(e) = decrypters[i].enqueue(vec![incl_list.clone()]).await {
+        for d in decrypters.iter_mut() {
+            if let Err(e) = d.enqueue(vec![incl_list.clone()]).await {
                 warn!("failed to enqueue inclusion list: {:?}", e);
             }
         }
 
         // Collect decrypted inclusion lists
         let mut decrypted_lists = Vec::new();
-        for i in 0..num_nodes {
-            let incl = decrypters[i].next().await.unwrap();
+        for d in decrypters.iter_mut() {
+            let incl = d.next().await.unwrap();
             decrypted_lists.push(incl);
         }
 
         // Verify that all decrypted inclusion lists are correct
-        for i in 0..num_nodes {
-            assert_eq!(decrypted_lists[i].round(), RoundNumber::new(42));
-            assert_eq!(decrypted_lists[i].priority_bundles().len(), 1);
-            assert_eq!(decrypted_lists[i].transactions().len(), 1);
-            let decrypted_ptx_data = decrypted_lists[i].priority_bundles()[0].data();
-            let decrypted_tx_data = decrypted_lists[i].transactions()[0].data();
+        for d in decrypted_lists {
+            assert_eq!(d.round(), RoundNumber::new(42));
+            assert_eq!(d.priority_bundles().len(), 1);
+            assert_eq!(d.transactions().len(), 1);
+            let decrypted_ptx_data = d.priority_bundles()[0].data();
+            let decrypted_tx_data = d.transactions()[0].data();
             assert_eq!(decrypted_ptx_data.to_vec(), ptx_message);
             assert_eq!(decrypted_tx_data.to_vec(), tx_message);
         }
@@ -628,7 +627,7 @@ mod tests {
         let mut decrypters = Vec::new();
         for i in 0..usize::from(keyset.size()) {
             let sig_key = signature_keys[i].clone();
-            let (_, addr) = peers[i].clone();
+            let (_, addr) = peers[i];
 
             let network = Network::create(
                 addr,
