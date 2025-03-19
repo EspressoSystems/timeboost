@@ -1,4 +1,6 @@
 mod address;
+#[cfg(test)]
+mod bundle;
 mod bytes;
 mod candidate_list;
 mod decryption;
