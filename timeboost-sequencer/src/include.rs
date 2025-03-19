@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
@@ -68,7 +68,7 @@ impl Includer {
             self.seqno = SeqNo::zero();
         }
 
-        let mut transactions: HashMap<Transaction, usize> = HashMap::new();
+        let mut transactions: BTreeMap<Transaction, usize> = BTreeMap::new();
         let mut bundles: BTreeMap<SeqNo, PriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
