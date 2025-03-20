@@ -270,11 +270,12 @@ type D = DigestBridge<H>;
 
 pub struct DecryptionScheme(ShoupGennaro<G, H, D>);
 
-type TrustedKeyMaterial = (
+pub type TrustedKeyMaterial = (
     <DecryptionScheme as ThresholdEncScheme>::PublicKey,
     <DecryptionScheme as ThresholdEncScheme>::CombKey,
     Vec<<DecryptionScheme as ThresholdEncScheme>::KeyShare>,
 );
+
 impl DecryptionScheme {
     /// Trusted Keygen Outputs:
     /// - A single public key for clients to encrypt their transaction bundles.

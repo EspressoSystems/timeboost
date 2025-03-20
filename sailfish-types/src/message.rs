@@ -290,7 +290,7 @@ impl<T: Committable> fmt::Display for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
-            Action::Deliver(data) => write!(f, "Deliver({})", data.round),
+            Action::Deliver(data) => write!(f, "Deliver({},{})", data.round, data.source),
             Action::SendProposal(envelope) => {
                 write!(f, "SendProposal({})", envelope.data().round().data())
             }
