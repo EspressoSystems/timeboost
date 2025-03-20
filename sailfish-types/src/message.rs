@@ -286,11 +286,17 @@ pub enum Action<T: Committable> {
     SendTimeoutCert(Certificate<Timeout>),
 }
 
+impl<T: Committable> Action<T> {
+    pub fn is_deliver(&self) -> bool {
+        matches!(self, Self::Deliver(_))
+    }
+}
+
 impl<T: Committable> fmt::Display for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
-            Action::Deliver(data) => write!(f, "Deliver({})", data.round),
+            Action::Deliver(data) => write!(f, "Deliver({},{})", data.round, data.source),
             Action::SendProposal(envelope) => {
                 write!(f, "SendProposal({})", envelope.data().round().data())
             }
