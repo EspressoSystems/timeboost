@@ -8,6 +8,8 @@ use timeboost_crypto::KeysetId;
 use timeboost_types::{Address, Epoch, PriorityBundle, RetryList, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 
+use crate::metrics::SequencerMetrics;
+
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
@@ -20,6 +22,7 @@ struct Inner {
     index: DelayedInboxIndex,
     bundles: BTreeMap<Epoch, Vec<PriorityBundle>>,
     transactions: VecDeque<(Instant, Transaction)>,
+    metrics: Arc<SequencerMetrics>,
 }
 
 impl Inner {
@@ -29,27 +32,21 @@ impl Inner {
                 self.bundles = self.bundles.split_off(&time.epoch());
             }
             self.time = time;
+            self.metrics.time.set(u64::from(self.time) as usize);
         }
     }
 }
 
 impl TransactionQueue {
-    pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
+    pub fn new(prio: Address, idx: DelayedInboxIndex, metrics: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
             index: idx,
             bundles: BTreeMap::new(),
             transactions: VecDeque::new(),
+            metrics,
         })))
-    }
-
-    pub fn len(&self) -> (usize, usize) {
-        let inner = self.0.lock();
-        (
-            inner.bundles.values().map(Vec::len).sum(),
-            inner.transactions.len(),
-        )
     }
 
     #[allow(unused)]
@@ -90,6 +87,15 @@ impl TransactionQueue {
 
             inner.bundles.entry(epoch).or_default().push(t.into());
         }
+
+        inner
+            .metrics
+            .queued_bundles
+            .set(inner.bundles.values().map(Vec::len).sum());
+        inner
+            .metrics
+            .queued_transactions
+            .set(inner.transactions.len());
     }
 
     pub fn update_transactions(&self, incl: &InclusionList, retry: RetryList) {
@@ -134,6 +140,15 @@ impl TransactionQueue {
                 .or_default()
                 .push(b)
         }
+
+        inner
+            .metrics
+            .queued_bundles
+            .set(inner.bundles.values().map(Vec::len).sum());
+        inner
+            .metrics
+            .queued_transactions
+            .set(inner.transactions.len());
     }
 }
 
