@@ -8,7 +8,7 @@ use cliquenet::Address;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::{DecryptionKey, Transaction};
+use timeboost_types::{Bundle, DecryptionKey};
 use timeboost_utils::load_generation::{make_tx, tps_to_millis};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
@@ -50,10 +50,10 @@ pub struct TimeboostConfig {
     pub nitro_url: Option<reqwest::Url>,
 
     /// The sender for transactions.
-    pub sender: Sender<Transaction>,
+    pub sender: Sender<Bundle>,
 
     /// The receiver for transactions.
-    pub receiver: Receiver<Transaction>,
+    pub receiver: Receiver<Bundle>,
 
     /// Transactions per second
     pub tps: u32,
@@ -113,7 +113,7 @@ impl Timeboost {
                     }
                 },
                 trx = self.init.receiver.recv() => {
-                    if let Some(t) = trx {
+                    if let Some(Bundle::Tx(t)) = trx {
                         self.sequencer.add_transactions(once(t))
                     }
                 }
@@ -122,11 +122,11 @@ impl Timeboost {
     }
 }
 
-async fn gen_transactions(tps: u32, tx: Sender<Transaction>) {
+async fn gen_transactions(tps: u32, tx: Sender<Bundle>) {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     loop {
         interval.tick().await;
-        if tx.send(make_tx()).await.is_err() {
+        if tx.send(Bundle::Tx(make_tx())).await.is_err() {
             return;
         }
     }
@@ -136,7 +136,7 @@ pub async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
     serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
 }
 
-pub async fn rpc_api(sender: Sender<Transaction>, rpc_port: u16) {
+pub async fn rpc_api(sender: Sender<Bundle>, rpc_port: u16) {
     if let Err(e) = api::endpoints::TimeboostApiState::new(sender)
         .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
         .await

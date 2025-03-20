@@ -3,7 +3,7 @@ use alloy_primitives::{Address, B256, PrimitiveSignature, keccak256};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
 
-use crate::{Bytes, Epoch, SeqNo};
+use crate::{Bytes, Epoch, SeqNo, Transaction};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
@@ -12,8 +12,14 @@ const DOMAIN: &str = "TIMEBOOST_BID";
 )]
 pub struct ChainId(u32);
 
+pub enum Bundle {
+    Regular(RBundle),
+    Priority(PBundle),
+    Tx(Transaction),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct RegularBundle {
+pub struct RBundle {
     chain: ChainId,
     epoch: Epoch,
     auction: Address,
@@ -23,7 +29,7 @@ pub struct RegularBundle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PriorityBundle {
+pub struct PBundle {
     chain: ChainId,
     epoch: Epoch,
     auction: Address,
@@ -34,7 +40,7 @@ pub struct PriorityBundle {
     signature: Option<PrimitiveSignature>,
 }
 
-impl PriorityBundle {
+impl PBundle {
     // https://github.com/OffchainLabs/nitro/blob/1e16dc408d24a7784f19acd1e76a71daac528a22/timeboost/types.go#L206
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -48,7 +54,7 @@ impl PriorityBundle {
     }
 }
 
-impl PriorityBundle {
+impl PBundle {
     pub fn with_signature(&mut self, sig: PrimitiveSignature) {
         self.signature = Some(sig);
     }
@@ -128,7 +134,7 @@ mod tests {
 
     use crate::{Epoch, SeqNo};
 
-    use super::{ChainId, PriorityBundle};
+    use super::{ChainId, PBundle};
 
     #[tokio::test]
     async fn test_verify() -> Result<(), Box<dyn std::error::Error>> {
@@ -142,7 +148,7 @@ mod tests {
         Ok(())
     }
 
-    async fn sample_bundle(plc: &PrivateKeySigner) -> anyhow::Result<PriorityBundle> {
+    async fn sample_bundle(plc: &PrivateKeySigner) -> anyhow::Result<PBundle> {
         let mut rlp_encoded_txns = Vec::new();
         for _ in 0..5 {
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -150,7 +156,7 @@ mod tests {
         }
         let ssz_encoded_txns = ssz_encode(&rlp_encoded_txns);
 
-        let mut bundle = PriorityBundle {
+        let mut bundle = PBundle {
             chain: ChainId::default(),
             epoch: Epoch::default(),
             auction: Address::ZERO,

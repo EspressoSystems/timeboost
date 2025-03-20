@@ -6,21 +6,23 @@ use async_trait::async_trait;
 use committable::Committable;
 use futures::FutureExt;
 use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
-use timeboost_types::Transaction;
+use timeboost_types::{Bundle, PBundle, RBundle, Transaction};
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
-    app_tx: Sender<Transaction>,
+    app_tx: Sender<Bundle>,
 }
 
 #[async_trait]
 pub trait TimeboostApi {
     async fn submit(&self, tx: Transaction) -> Result<(), ServerError>;
+    async fn submit_priority(&self, bundle: PBundle) -> Result<(), ServerError>;
+    async fn submit_regular(&self, bundle: RBundle) -> Result<(), ServerError>;
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<Transaction>) -> Self {
+    pub fn new(app_tx: Sender<Bundle>) -> Self {
         Self { app_tx }
     }
 
@@ -40,10 +42,37 @@ impl TimeboostApiState {
 impl TimeboostApi for TimeboostApiState {
     /// Submit a transaction to timeboost layer.
     async fn submit(&self, tx: Transaction) -> Result<(), ServerError> {
-        self.app_tx.send(tx).await.map_err(|e| ServerError {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: format!("Failed to broadcast transaction: {}", e),
-        })?;
+        self.app_tx
+            .send(Bundle::Tx(tx))
+            .await
+            .map_err(|e| ServerError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to broadcast transaction: {}", e),
+            })?;
+
+        Ok(())
+    }
+    /// Submit priority bundle to timeboost layer.
+    async fn submit_priority(&self, bundle: PBundle) -> Result<(), ServerError> {
+        self.app_tx
+            .send(Bundle::Priority(bundle))
+            .await
+            .map_err(|e| ServerError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to broadcast transaction: {}", e),
+            })?;
+
+        Ok(())
+    }
+    /// Submit regular (non-priority) bundle to timeboost layer.
+    async fn submit_regular(&self, bundle: RBundle) -> Result<(), ServerError> {
+        self.app_tx
+            .send(Bundle::Regular(bundle))
+            .await
+            .map_err(|e| ServerError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to broadcast transaction: {}", e),
+            })?;
 
         Ok(())
     }
