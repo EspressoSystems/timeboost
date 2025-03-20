@@ -1,5 +1,4 @@
 mod address;
-#[cfg(test)]
 mod bundle;
 mod bytes;
 mod candidate_list;
@@ -14,6 +13,7 @@ mod transaction;
 pub mod math;
 
 pub use address::Address;
+pub use bundle::{Bundle, PBundle, RBundle};
 pub use bytes::Bytes;
 pub use candidate_list::CandidateList;
 pub use decryption::{DecShareKey, DecryptionKey, ShareInfo};
