@@ -1,13 +1,15 @@
 mod decrypt;
 mod include;
+mod metrics;
 mod queue;
 mod sort;
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use cliquenet as net;
 use cliquenet::{Network, NetworkError, NetworkMetrics};
-use metrics::Metrics;
+use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
@@ -19,7 +21,8 @@ use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::{Level, error, trace};
+use tokio::time::Instant;
+use tracing::error;
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
@@ -93,13 +96,18 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     output: Sender<Transaction>,
+    metrics: Arc<SequencerMetrics>,
 }
 
 impl Sequencer {
-    pub async fn new<M: Metrics>(cfg: SequencerConfig, metrics: &M) -> Result<Self> {
+    pub async fn new<M>(cfg: SequencerConfig, metrics: &M) -> Result<Self>
+    where
+        M: ::metrics::Metrics,
+    {
         let cons_metrics = ConsensusMetrics::new(metrics);
         let rbc_metrics = RbcMetrics::new(metrics);
         let net_metrics = NetworkMetrics::new(metrics, cfg.peers.iter().map(|(k, _)| *k));
+        let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let committee = Committee::new(
             cfg.peers
@@ -122,7 +130,7 @@ impl Sequencer {
 
         let label = cfg.keypair.public_key();
 
-        let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
+        let queue = TransactionQueue::new(cfg.priority_addr, cfg.index, seq_metrics.clone());
         let consensus = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
 
@@ -156,6 +164,7 @@ impl Sequencer {
             decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
+            metrics: seq_metrics,
         };
 
         Ok(Self {
@@ -170,16 +179,6 @@ impl Sequencer {
     where
         I: IntoIterator<Item = Transaction>,
     {
-        if tracing::enabled!(Level::TRACE) {
-            let (b, t) = self.transactions.len();
-            trace!(
-                node = %self.label,
-                bundles = %b,
-                transactions = %t,
-                "adding transactions to queue"
-            );
-        }
-
         self.transactions.add_transactions(it)
     }
 
@@ -242,10 +241,30 @@ impl Task {
                 }
 
                 let (inc, retry) = self.includer.inclusion_list(round, lists);
+
+                self.metrics.round.set(u64::from(round) as usize);
+                self.metrics
+                    .included_bundles
+                    .set(inc.priority_bundles().len());
+                self.metrics
+                    .included_transactions
+                    .set(inc.transactions().len());
+                self.metrics
+                    .retry_bundles
+                    .set(retry.priority_bundles().len());
+                self.metrics
+                    .retry_transactions
+                    .set(retry.transactions().len());
+
                 self.transactions.update_transactions(&inc, retry);
 
+                let now = Instant::now();
                 self.decrypter.enqueue(inc).await?;
                 let inc = self.decrypter.next().await?;
+
+                self.metrics
+                    .decrypt_duration
+                    .add_point(now.elapsed().as_secs_f64() / 1000.0);
 
                 for trx in self.sorter.sort(inc) {
                     self.output
@@ -254,7 +273,6 @@ impl Task {
                         .map_err(|_| TimeboostError::ChannelClosed)?
                 }
             }
-
             actions.extend(self.sailfish.next().await?)
         }
     }
