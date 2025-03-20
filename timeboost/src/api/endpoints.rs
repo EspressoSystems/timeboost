@@ -96,6 +96,28 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
         .boxed()
     })?;
 
+    api.post("submitpriority", |req, state| {
+        async move {
+            let priority_bundle = req.body_auto::<PBundle, ApiVer>(ApiVer::instance())?;
+
+            state.submit_priority(priority_bundle).await?;
+
+            Ok(())
+        }
+        .boxed()
+    })?;
+
+    api.post("submitregular", |req, state| {
+        async move {
+            let regular_bundle = req.body_auto::<RBundle, ApiVer>(ApiVer::instance())?;
+
+            state.submit_regular(regular_bundle).await?;
+
+            Ok(())
+        }
+        .boxed()
+    })?;
+
     api.get("healthz", |_, _| async move { Ok("running") }.boxed())?;
 
     Ok(api)
