@@ -5,11 +5,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[features]
-arbitrary = ["dep:arbitrary", "alloy-primitives/arbitrary"]
-
 [dependencies]
-alloy-primitives = { workspace = true }
+alloy = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }

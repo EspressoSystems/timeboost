@@ -3,26 +3,24 @@ use std::io::{self, ErrorKind};
 use anyhow::Result;
 use async_lock::RwLock;
 use async_trait::async_trait;
-use committable::Committable;
 use futures::FutureExt;
 use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
-use timeboost_types::{Bundle, PBundle, RBundle, Transaction};
+use timeboost_types::{Bundle, BundleVariant, PriorityBundle, Signed};
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
-    app_tx: Sender<Bundle>,
+    app_tx: Sender<BundleVariant>,
 }
 
 #[async_trait]
 pub trait TimeboostApi {
-    async fn submit(&self, tx: Transaction) -> Result<(), ServerError>;
-    async fn submit_priority(&self, bundle: PBundle) -> Result<(), ServerError>;
-    async fn submit_regular(&self, bundle: RBundle) -> Result<(), ServerError>;
+    async fn submit_priority(&self, bundle: PriorityBundle<Signed>) -> Result<(), ServerError>;
+    async fn submit_regular(&self, bundle: Bundle) -> Result<(), ServerError>;
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<Bundle>) -> Self {
+    pub fn new(app_tx: Sender<BundleVariant>) -> Self {
         Self { app_tx }
     }
 
@@ -40,22 +38,10 @@ impl TimeboostApiState {
 
 #[async_trait]
 impl TimeboostApi for TimeboostApiState {
-    /// Submit a transaction to timeboost layer.
-    async fn submit(&self, tx: Transaction) -> Result<(), ServerError> {
-        self.app_tx
-            .send(Bundle::Tx(tx))
-            .await
-            .map_err(|e| ServerError {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("Failed to broadcast transaction: {}", e),
-            })?;
-
-        Ok(())
-    }
     /// Submit priority bundle to timeboost layer.
-    async fn submit_priority(&self, bundle: PBundle) -> Result<(), ServerError> {
+    async fn submit_priority(&self, bundle: PriorityBundle<Signed>) -> Result<(), ServerError> {
         self.app_tx
-            .send(Bundle::Priority(bundle))
+            .send(BundleVariant::Priority(bundle))
             .await
             .map_err(|e| ServerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -65,9 +51,9 @@ impl TimeboostApi for TimeboostApiState {
         Ok(())
     }
     /// Submit regular (non-priority) bundle to timeboost layer.
-    async fn submit_regular(&self, bundle: RBundle) -> Result<(), ServerError> {
+    async fn submit_regular(&self, bundle: Bundle) -> Result<(), ServerError> {
         self.app_tx
-            .send(Bundle::Regular(bundle))
+            .send(BundleVariant::Regular(bundle))
             .await
             .map_err(|e| ServerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -83,22 +69,10 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
     let toml = toml::from_str::<toml::Value>(include_str!("../../api/endpoints.toml"))?;
     let mut api = Api::<RwLock<TimeboostApiState>, ServerError, ApiVer>::new(toml)?;
 
-    api.post("submit", |req, state| {
+    api.post("submit-priority", |req, state| {
         async move {
-            let tx = req.body_auto::<Transaction, ApiVer>(ApiVer::instance())?;
-
-            let hash = tx.commit();
-
-            state.submit(tx).await?;
-
-            Ok(hash)
-        }
-        .boxed()
-    })?;
-
-    api.post("submitpriority", |req, state| {
-        async move {
-            let priority_bundle = req.body_auto::<PBundle, ApiVer>(ApiVer::instance())?;
+            let priority_bundle =
+                req.body_auto::<PriorityBundle<Signed>, ApiVer>(ApiVer::instance())?;
 
             state.submit_priority(priority_bundle).await?;
 
@@ -107,9 +81,9 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
         .boxed()
     })?;
 
-    api.post("submitregular", |req, state| {
+    api.post("submit-regular", |req, state| {
         async move {
-            let regular_bundle = req.body_auto::<RBundle, ApiVer>(ApiVer::instance())?;
+            let regular_bundle = req.body_auto::<Bundle, ApiVer>(ApiVer::instance())?;
 
             state.submit_regular(regular_bundle).await?;
 

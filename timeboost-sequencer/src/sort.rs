@@ -18,11 +18,16 @@ impl Sorter {
     pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = Transaction> {
         let seed = list.digest();
 
-        let (bundles, mut transactions) = list.into_transactions();
+        let (priority, regular) = list.into_bundles();
 
-        let mut priority = Vec::new();
+        let mut ptx = Vec::new();
+        let mut rtx: Vec<Transaction> = Vec::new();
 
-        for b in bundles {
+        for (b, priority) in priority
+            .iter()
+            .map(|p| (p.bundle(), true))
+            .chain(regular.iter().map(|r| (r, false)))
+        {
             match ssz_decode::<Bytes, Vec<_>>(b.data(), Some(MAX_BUNDLE_TXS)) {
                 Ok(txs) => {
                     for t in txs {
@@ -30,8 +35,15 @@ impl Sorter {
                             warn!("transaction exceeds max. allowed size {MAX_TXS_SIZE}");
                             continue;
                         }
-                        match Transaction::decode(&t) {
-                            Ok(trx) => priority.push(trx),
+                        let mut t_slice = t.as_ref();
+                        match Transaction::decode(&mut t_slice) {
+                            Ok(tx) => {
+                                if priority {
+                                    ptx.push(tx)
+                                } else {
+                                    rtx.push(tx)
+                                }
+                            }
                             Err(err) => {
                                 warn!(%err, "failed to decode transaction")
                             }
@@ -39,29 +51,30 @@ impl Sorter {
                     }
                 }
                 Err(err) => {
-                    warn!(?err, "failed to ssz-decode priority bundle")
+                    warn!(?err, "failed to ssz-decode bundle")
                 }
             }
         }
 
-        transactions.sort_unstable_by(|x, y| compare(&seed, x, y));
-
-        priority.into_iter().chain(transactions)
+        rtx.sort_unstable_by(|x, y| compare(&seed, x, y));
+        ptx.into_iter().chain(rtx)
     }
 }
 
 #[rustfmt::skip]
 fn compare(seed: &[u8], x: &Transaction, y: &Transaction) -> Ordering {
+    use alloy::consensus::transaction::Transaction;
     let mut hx = blake3::Hasher::new();
     let mut hy = blake3::Hasher::new();
 
     hx.update(seed);
     hy.update(seed);
-
-    hx.update(x.from());
-    hy.update(y.from());
+    if let (Ok(x_addr), Ok(y_addr)) = (x.tx().recover_signer(), y.tx().recover_signer()) {
+        hx.update(&x_addr[..]);
+        hy.update(&y_addr[..]);
+    }
 
     hx.finalize().as_bytes().cmp(hy.finalize().as_bytes())
-        .then_with(|| x.nonce().cmp(y.nonce())
-        .then_with(|| x.digest().cmp(y.digest())))
+        .then_with(|| x.tx().nonce().cmp(&y.tx().nonce()))
+        .then_with(|| x.hash().cmp(&y.hash()))
 }

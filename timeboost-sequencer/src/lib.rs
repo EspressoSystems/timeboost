@@ -14,7 +14,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, DecryptionKey, Transaction};
+use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -170,7 +170,7 @@ impl Sequencer {
 
     pub fn add_transactions<I>(&mut self, it: I)
     where
-        I: IntoIterator<Item = Transaction>,
+        I: IntoIterator<Item = BundleVariant>,
     {
         if tracing::enabled!(Level::TRACE) {
             let (b, t) = self.transactions.len();
@@ -182,7 +182,7 @@ impl Sequencer {
             );
         }
 
-        self.transactions.add_transactions(it)
+        self.transactions.add_bundles(it)
     }
 
     pub async fn next_transaction(&mut self) -> Result<Transaction> {
