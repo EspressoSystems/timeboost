@@ -5,7 +5,7 @@ use sailfish::types::RoundNumber;
 use std::collections::{BTreeMap, BTreeSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
-use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo, Transaction};
+use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -71,25 +71,32 @@ impl Decrypter {
     /// encrypted data to the worker for hatching.
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<(), DecryptError> {
         let round = incl.round();
-        let (encrypted_ptx_idx, encrypted_ptx_data): (Vec<_>, Vec<_>) = incl
+        let (encrypted_pb_idx, encrypted_pb_data): (Vec<_>, Vec<_>) = incl
             .priority_bundles()
             .iter()
             .enumerate()
-            .filter(|(_, ptx)| ptx.encrypted())
-            .map(|(i, ptx)| (i, EncryptedItem(ptx.kid(), ptx.data().clone())))
+            .filter_map(|(i, priority)| {
+                priority
+                    .bundle()
+                    .kid()
+                    .map(|kid| (i, EncryptedItem(kid, priority.bundle().data().clone())))
+            })
             .unzip();
 
-        let (encrypted_tx_idx, encrypted_tx_data): (Vec<_>, Vec<_>) = incl
-            .transactions()
+        let (encrypted_rb_idx, encrypted_rb_data): (Vec<_>, Vec<_>) = incl
+            .regular_bundles()
             .iter()
             .enumerate()
-            .filter(|(_, tx)| tx.encrypted())
-            .map(|(i, tx)| (i, EncryptedItem(tx.kid(), tx.data().clone())))
+            .filter_map(|(i, bundle)| {
+                bundle
+                    .kid()
+                    .map(|kid| (i, EncryptedItem(kid, bundle.data().clone())))
+            })
             .unzip();
 
-        let encrypted_data: Vec<EncryptedItem> = encrypted_ptx_data
+        let encrypted_data: Vec<EncryptedItem> = encrypted_pb_data
             .into_iter()
-            .chain(encrypted_tx_data)
+            .chain(encrypted_rb_data)
             .collect();
 
         if encrypted_data.is_empty() {
@@ -107,7 +114,7 @@ impl Decrypter {
             // bookkeeping for reassembling inclusion list.
             self.incls.insert(round, Status::Encrypted(incl));
             self.modified
-                .insert(round, (encrypted_ptx_idx, encrypted_tx_idx));
+                .insert(round, (encrypted_pb_idx, encrypted_rb_idx));
         }
         Ok(())
     }
@@ -158,49 +165,46 @@ fn assemble_incl(
     dec: Vec<DecryptedItem>,
     modified: &mut BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
 ) -> Result<InclusionList, DecryptError> {
-    let (modified_ptxs, modified_txs) = modified
+    let (modified_priority_bundles, modified_regular_bundles) = modified
         .remove(&r)
         .expect("encrypted incl => modified entry");
     let mut new_incl =
         InclusionList::new(incl.round(), incl.timestamp(), incl.delayed_inbox_index());
-    let (mut ptxs, txs) = incl.into_transactions();
-    if modified_ptxs.len() + modified_txs.len() != dec.len() {
+    let (mut priority_bundles, regular_bundles) = incl.into_bundles();
+    if modified_priority_bundles.len() + modified_regular_bundles.len() != dec.len() {
         return Err(DecryptError::State);
     }
 
-    for (i, m) in modified_ptxs.into_iter().enumerate() {
-        let ptx = ptxs.get_mut(m).ok_or(DecryptError::InvalidMessage)?;
-        *ptx = Transaction::new(
-            *ptx.nonce(),
-            *ptx.to(),
-            *ptx.from(),
-            dec.get(i).ok_or(DecryptError::State)?.0.clone(),
-            ptx.kid(),
-        )
-        .into();
+    for (i, m) in modified_priority_bundles.into_iter().enumerate() {
+        let bundle = priority_bundles
+            .get_mut(m)
+            .ok_or(DecryptError::InvalidMessage)?;
+        bundle.set_data(dec.get(i).ok_or(DecryptError::State)?.0.clone());
     }
 
-    let mut encrypted_txs = vec![];
-    for m in modified_txs.iter() {
-        let encrypted_tx = txs.get(*m).ok_or(DecryptError::InvalidMessage)?;
-        encrypted_txs.push(encrypted_tx.clone());
+    let mut encrypted_bundles = vec![];
+    for m in modified_regular_bundles.iter() {
+        let encrypted_tx = regular_bundles
+            .get(*m)
+            .ok_or(DecryptError::InvalidMessage)?;
+        encrypted_bundles.push(encrypted_tx.clone());
     }
 
-    let mut new_txs = BTreeSet::from_iter(txs);
-    for (i, tx) in encrypted_txs.into_iter().enumerate() {
-        let mut decrypted_tx = new_txs.take(&tx).ok_or(DecryptError::InvalidMessage)?;
+    let mut new_bundles = BTreeSet::from_iter(regular_bundles);
+    for (i, tx) in encrypted_bundles.into_iter().enumerate() {
+        let mut decrypted_bundles = new_bundles.take(&tx).ok_or(DecryptError::InvalidMessage)?;
         let data = dec
-            .get(i + ptxs.len())
+            .get(i + priority_bundles.len())
             .ok_or(DecryptError::InvalidMessage)?
             .0
             .clone();
-        decrypted_tx.set_data(data);
-        new_txs.insert(decrypted_tx);
+        decrypted_bundles.set_data(data);
+        new_bundles.insert(decrypted_bundles);
     }
 
     new_incl
-        .set_priority_bundles(ptxs)
-        .set_transactions(new_txs);
+        .set_priority_bundles(priority_bundles)
+        .set_regular_bundles(new_bundles);
 
     Ok(new_incl)
 }
@@ -492,7 +496,10 @@ mod tests {
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
-    use timeboost_types::{DecryptionKey, InclusionList, Timestamp, Transaction};
+    use timeboost_types::{
+        Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
+        Signer, Timestamp, Unsigned,
+    };
     use tracing::warn;
 
     use crate::decrypt::Decrypter;
@@ -528,22 +535,28 @@ mod tests {
         // Create inclusion lists with encrypted transactions
         let mut incl_list = InclusionList::new(RoundNumber::new(42), Timestamp::now(), 0.into());
         let keyset_id = keyset.id();
-        incl_list.set_priority_bundles(vec![
-            Transaction::new(
-                timeboost_types::Nonce::new(42u128),
-                timeboost_types::Address::zero(),
-                timeboost_types::Address::zero(),
+        let chain_id = ChainId::from(0);
+        let epoch = Epoch::from(42);
+        let auction = Address::zero();
+        let seqno = SeqNo::from(10);
+        let signer = Signer::default();
+        let bundle = PriorityBundle::<Unsigned>::new(
+            Bundle::new(
+                chain_id,
+                epoch,
                 ptx_ciphertext_bytes.into(),
-                keyset_id,
-            )
-            .into(),
-        ]);
-        incl_list.set_transactions(vec![Transaction::new(
-            timeboost_types::Nonce::new(42u128),
-            timeboost_types::Address::zero(),
-            timeboost_types::Address::zero(),
+                Some(keyset_id),
+            ),
+            auction,
+            seqno,
+        );
+        let signed_bundle = bundle.sign(signer).expect("default signer");
+        incl_list.set_priority_bundles(vec![signed_bundle]);
+        incl_list.set_regular_bundles(vec![Bundle::new(
+            chain_id,
+            epoch,
             tx_ciphertext_bytes.into(),
-            keyset_id,
+            Some(keyset_id),
         )]);
 
         // Enqueue inclusion lists to each decrypter
@@ -564,9 +577,9 @@ mod tests {
         for d in decrypted_lists {
             assert_eq!(d.round(), RoundNumber::new(42));
             assert_eq!(d.priority_bundles().len(), 1);
-            assert_eq!(d.transactions().len(), 1);
-            let decrypted_ptx_data = d.priority_bundles()[0].data();
-            let decrypted_tx_data = d.transactions()[0].data();
+            assert_eq!(d.regular_bundles().len(), 1);
+            let decrypted_ptx_data = d.priority_bundles()[0].bundle().data();
+            let decrypted_tx_data = d.regular_bundles()[0].data();
             assert_eq!(decrypted_ptx_data.to_vec(), ptx_message);
             assert_eq!(decrypted_tx_data.to_vec(), tx_message);
         }

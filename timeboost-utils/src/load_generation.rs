@@ -1,16 +1,36 @@
-use arbitrary::Unstructured;
+use alloy::rlp::Encodable;
+use arbitrary::Arbitrary;
 use rand::Rng;
-use timeboost_types::{Address, PriorityBundle, Transaction};
+use ssz::ssz_encode;
+use timeboost_types::{
+    Address, Bundle, BundleVariant, ChainId, Epoch, PriorityBundle, SeqNo, Signer, Transaction,
+    Unsigned,
+};
 
-pub fn make_tx() -> Transaction {
+pub fn make_tx() -> BundleVariant {
     let mut v = [0; 256];
     rand::fill(&mut v);
-    let mut u = Unstructured::new(&v);
+    let mut unstructured = arbitrary::Unstructured::new(&v);
+    let tx = Transaction::arbitrary(&mut unstructured).unwrap();
+    let mut data = Vec::new();
+    tx.encode(&mut data);
+    let encoded_data = ssz_encode(&vec![&data]); // singleton bundle
+    let signer = Signer::default();
 
     if rand::rng().random_bool(0.1) {
-        PriorityBundle::arbitrary(Address::zero(), 10, 512, &mut u).unwrap()
+        let bundle = PriorityBundle::<Unsigned>::new(
+            Bundle::new(ChainId::from(0), Epoch::from(10), encoded_data.into(), None),
+            Address::zero(),
+            SeqNo::from(3),
+        );
+        BundleVariant::Priority(bundle.sign(signer).expect("default signer"))
     } else {
-        Transaction::arbitrary(512, &mut u).unwrap()
+        BundleVariant::Regular(Bundle::new(
+            ChainId::from(0),
+            Epoch::from(10),
+            encoded_data.into(),
+            None,
+        ))
     }
 }
 

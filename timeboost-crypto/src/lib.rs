@@ -5,6 +5,7 @@ pub mod traits;
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
 use digest::{generic_array::GenericArray, typenum};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ pub struct Nonce(u128);
 
 #[derive(
     Debug,
+    Default,
     Clone,
     Copy,
     PartialEq,
@@ -56,6 +58,13 @@ impl From<u64> for KeysetId {
 impl From<KeysetId> for u64 {
     fn from(val: KeysetId) -> Self {
         val.0
+    }
+}
+
+impl Committable for KeysetId {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("KeysetId");
+        builder.u64(self.0).finalize()
     }
 }
 
