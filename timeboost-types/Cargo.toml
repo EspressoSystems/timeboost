@@ -24,7 +24,6 @@ serde = { workspace = true }
 sha3 = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
-tokio = { workspace = true }
 
 [dev-dependencies]
 quickcheck = "1"

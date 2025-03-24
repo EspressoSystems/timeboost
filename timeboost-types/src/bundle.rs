@@ -386,19 +386,19 @@ mod tests {
 
     use super::{Bundle, ChainId, PriorityBundle, Signed, Unsigned};
 
-    #[tokio::test]
-    async fn test_verify() -> Result<(), Box<dyn std::error::Error>> {
+    #[test]
+    fn test_verify() -> Result<(), Box<dyn std::error::Error>> {
         let epoch = Epoch::from(0);
         let private_key = SigningKey::random(&mut rand::thread_rng());
         let plc = PrivateKeySigner::from_signing_key(private_key);
-        let bundle = sample_bundle(plc.clone()).await.unwrap();
+        let bundle = sample_bundle(plc.clone()).unwrap();
         let plc_address = plc.address();
         let result = bundle.validate(epoch, Some(Address(plc_address)));
         assert_eq!(result, Ok(()));
         Ok(())
     }
 
-    async fn sample_bundle(plc: PrivateKeySigner) -> anyhow::Result<PriorityBundle<Signed>> {
+    fn sample_bundle(plc: PrivateKeySigner) -> anyhow::Result<PriorityBundle<Signed>> {
         let mut rlp_encoded_txns = Vec::new();
         for _ in 0..5 {
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
