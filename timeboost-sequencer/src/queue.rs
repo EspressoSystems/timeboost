@@ -82,8 +82,8 @@ impl TransactionQueue {
                 }
                 BundleVariant::Priority(b) => {
                     trace!(
-                        "bundle auction address: {:?}, did not match current address: {:?}",
-                        b.auction(),
+                        "bundle signed by: {:?}, did not match current plc: {:?}",
+                        b.sender(),
                         &inner.priority_addr
                     );
                 }
