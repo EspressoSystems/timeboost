@@ -4,9 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{
-    Bundle, BundleVariant, Epoch, Address, PriorityBundle, RetryList, Signed,
-};
+use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, RetryList, Signed};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 use tracing::trace;
 
