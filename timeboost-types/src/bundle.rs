@@ -198,6 +198,14 @@ impl PriorityBundle<Signed> {
         Ok(())
     }
 
+    pub fn sender(&self) -> Result<Address, ValidationError> {
+        let msg = self.as_bytes();
+        let recovered = self.signature().recover_address_from_msg(msg);
+        Ok(Address(
+            recovered.map_err(|_| ValidationError::UnableToRecoverAddress)?,
+        ))
+    }
+
     pub fn set_data(&mut self, d: Bytes) {
         self.bundle.data = d;
         self.update_hash()
@@ -206,14 +214,6 @@ impl PriorityBundle<Signed> {
     fn update_hash(&mut self) {
         let digest = self.commit();
         self.hash = digest.into();
-    }
-
-    fn sender(&self) -> Result<Address, ValidationError> {
-        let msg = self.as_bytes();
-        let recovered = self.signature().recover_address_from_msg(msg);
-        Ok(Address(
-            recovered.map_err(|_| ValidationError::UnableToRecoverAddress)?,
-        ))
     }
 }
 
