@@ -35,8 +35,7 @@ impl Sorter {
                             warn!("transaction exceeds max. allowed size {MAX_TXS_SIZE}");
                             continue;
                         }
-                        let mut t_slice = t.as_ref();
-                        match Transaction::decode(&mut t_slice) {
+                        match Transaction::decode(&t) {
                             Ok(tx) => {
                                 if priority {
                                     ptx.push(tx)
@@ -76,5 +75,5 @@ fn compare(seed: &[u8], x: &Transaction, y: &Transaction) -> Ordering {
 
     hx.finalize().as_bytes().cmp(hy.finalize().as_bytes())
         .then_with(|| x.tx().nonce().cmp(&y.tx().nonce()))
-        .then_with(|| x.hash().cmp(&y.hash()))
+        .then_with(|| x.hash().cmp(y.hash()))
 }
