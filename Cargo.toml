@@ -28,8 +28,8 @@ opt-level = 3
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy = { version = "0.12.6", features = ["arbitrary"] }
-alloy-rlp = "0.3.11"
+alloy = { version = "0.12.6", features = ["arbitrary", "rlp", "k256"] }
+alloy-rlp = { version = "0.3.11", features = ["derive"] }
 alloy-signer = "0.12.6"
 alloy-signer-local = "0.12.6"
 anyhow = "1.0.89"
