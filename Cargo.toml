@@ -62,7 +62,6 @@ either = "1.13.0"
 ethereum_ssz = "0.8.3"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 multiaddr = "0.18.2"
-nimue = { git = "https://github.com/arkworks-rs/nimue.git", features = ["ark"] }
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.13"
@@ -77,6 +76,9 @@ serde_with = "3.12.0"
 sha2 = { version = "0.10", default-features = false }
 sha3 = "0.10.8"
 snow = "0.9.6"
+spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", features = [
+    "arkworks-algebra",
+] }
 thiserror = "2.0"
 tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
