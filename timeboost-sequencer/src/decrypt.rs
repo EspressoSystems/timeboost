@@ -542,7 +542,7 @@ mod tests {
         let keyset_id = keyset.id();
         let chain_id = ChainId::from(0);
         let epoch = Epoch::from(42);
-        let auction = Address::zero();
+        let auction = Address::default();
         let seqno = SeqNo::from(10);
         let signer = Signer::default();
         let bundle = PriorityBundle::<Unsigned>::new(

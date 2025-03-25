@@ -3,6 +3,7 @@ use alloy::consensus::TxEnvelope;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
+use arbitrary::Unstructured;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
@@ -68,6 +69,23 @@ impl Bundle {
     pub fn set_data(&mut self, d: Bytes) {
         self.data = d;
         self.update_hash()
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<Bundle> {
+        use alloy_rlp::Encodable;
+        use arbitrary::Arbitrary;
+
+        let t = Transaction::arbitrary(u).unwrap();
+        let mut d = Vec::new();
+        t.encode(&mut d);
+        let c = ChainId::default();
+        let e = Epoch::now() + bool::arbitrary(u)? as u64;
+        let encoded = ssz::ssz_encode(&vec![&d]);
+        let k = None;
+        let b = Bundle::new(c, e, encoded.into(), k);
+
+        Ok(b)
     }
 }
 
@@ -179,7 +197,7 @@ impl PriorityBundle<Signed> {
         }
 
         // TODO: validate auction contract address
-        if self.auction != Address::zero() {
+        if self.auction != Address::default() {
             return Err(ValidationError::WrongAuctionContract(self.auction));
         }
 
@@ -215,6 +233,18 @@ impl PriorityBundle<Signed> {
         let digest = self.commit();
         self.hash = digest.into();
     }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<PriorityBundle<Signed>> {
+        let bundle = Bundle::arbitrary(u)?;
+        let auction = Address::default();
+        let seqno = SeqNo::from(u.int_in_range(1..=u64::MAX)?);
+        let priority_bundle = PriorityBundle::<Unsigned>::new(bundle, auction, seqno);
+
+        let signer = Signer::default();
+        let signed_bundle = priority_bundle.sign(signer).expect("default signer");
+        Ok(signed_bundle)
+    }
 }
 
 impl Committable for PriorityBundle<Signed> {
@@ -231,6 +261,7 @@ impl Committable for PriorityBundle<Signed> {
 #[derive(
     Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChainId(alloy::primitives::ChainId);
 
 impl From<u64> for ChainId {
@@ -275,11 +306,12 @@ impl Transaction {
 
 // Address wrapper
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy::primitives::Address);
 
 impl Address {
-    pub fn zero() -> Self {
-        Address(alloy::primitives::Address::ZERO)
+    pub fn default() -> Self {
+        Signer::default().0.address().into()
     }
 }
 
@@ -412,7 +444,7 @@ mod tests {
             None,
         );
         let unsigned_priority =
-            PriorityBundle::<Unsigned>::new(bundle, Address::zero(), SeqNo::zero());
+            PriorityBundle::<Unsigned>::new(bundle, Address::default(), SeqNo::zero());
 
         let signed_priority = unsigned_priority.sign((plc).into());
         signed_priority.map_err(anyhow::Error::from)
