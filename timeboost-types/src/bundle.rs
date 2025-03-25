@@ -309,8 +309,8 @@ impl Transaction {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy::primitives::Address);
 
-impl Address {
-    pub fn default() -> Self {
+impl Default for Address {
+    fn default() -> Self {
         Signer::default().0.address().into()
     }
 }
