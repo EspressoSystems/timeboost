@@ -55,12 +55,12 @@ for i in $(seq 0 $((nodes - 1))); do
         --port $((8000 + $i)) \
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
-        --until 300 \
+        --until 100 \
         $nitro_node_url \
         --tps 5 \
         --nodes $nodes \
         --keyset-file test-configs/local.json \
-        --watchdog-timeout 300"
+        --watchdog-timeout 100"
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
