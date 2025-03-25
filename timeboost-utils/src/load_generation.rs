@@ -2,7 +2,7 @@ use rand::Rng;
 use timeboost_types::{Bundle, BundleVariant, PriorityBundle};
 
 pub fn make_tx() -> BundleVariant {
-    let mut v = [0; 256];
+    let mut v = [0; 100];
     rand::fill(&mut v);
     let mut u = arbitrary::Unstructured::new(&v);
     if rand::rng().random_bool(0.1) {

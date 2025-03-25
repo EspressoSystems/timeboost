@@ -3,7 +3,6 @@ use alloy::consensus::TxEnvelope;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
-use arbitrary::Unstructured;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
@@ -72,7 +71,7 @@ impl Bundle {
     }
 
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<Bundle> {
+    pub fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Bundle> {
         use alloy_rlp::Encodable;
         use arbitrary::Arbitrary;
 
@@ -235,7 +234,9 @@ impl PriorityBundle<Signed> {
     }
 
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<PriorityBundle<Signed>> {
+    pub fn arbitrary(
+        u: &mut arbitrary::Unstructured<'_>,
+    ) -> arbitrary::Result<PriorityBundle<Signed>> {
         let bundle = Bundle::arbitrary(u)?;
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(1..=u64::MAX)?);
@@ -309,8 +310,8 @@ impl Transaction {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy::primitives::Address);
 
-impl Address {
-    pub fn default() -> Self {
+impl Default for Address {
+    fn default() -> Self {
         Signer::default().0.address().into()
     }
 }
