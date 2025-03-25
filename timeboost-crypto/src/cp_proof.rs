@@ -158,7 +158,10 @@ mod tests {
     use ark_ec::PrimeGroup;
     use ark_std::rand::Rng;
     use ark_std::{UniformRand, test_rng};
-    use spongefish::codecs::arkworks_algebra::*;
+    use spongefish::ProverPrivateState;
+    use spongefish::codecs::arkworks_algebra::{
+        CommonGroupToUnit, FieldToUnit, GroupToUnit, UnitToField,
+    };
     use spongefish::keccak::Keccak;
 
     use crate::{
