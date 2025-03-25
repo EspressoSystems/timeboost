@@ -158,7 +158,7 @@ mod tests {
     use ark_ec::PrimeGroup;
     use ark_std::rand::Rng;
     use ark_std::{UniformRand, test_rng};
-    use spongefish::ProverPrivateState;
+    use spongefish::ProverState;
     use spongefish::codecs::arkworks_algebra::{
         CommonGroupToUnit, FieldToUnit, GroupToUnit, UnitToField,
     };
@@ -239,8 +239,7 @@ mod tests {
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
 
         // Create invalid transcript
-        let mut mordred: ProverPrivateState<D> =
-            ChaumPedersen::<G, D>::io_pattern().to_prover_state();
+        let mut mordred: ProverState<D> = ChaumPedersen::<G, D>::io_pattern().to_prover_state();
         mordred.public_points(&[g, g_hat, h, h_hat]).unwrap();
         mordred.ratchet().unwrap();
 
