@@ -71,21 +71,22 @@ impl TransactionQueue {
         for b in it.into_iter() {
             match b {
                 BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
-                BundleVariant::Priority(b)
-                    // TODO: Check auction contract address on bundle
-                    if b.validate(epoch_now, Some(inner.priority_addr)).is_ok() =>
+                BundleVariant::Priority(b) =>
+                // TODO: Check auction contract address on bundle
                 {
-                    let epoch = b.bundle().epoch();
-                    if epoch >= epoch_now && epoch <= epoch_now + 1 {
-                        inner.priority.entry(epoch).or_default().push(b);
+                    match b.validate(epoch_now, Some(inner.priority_addr)) {
+                        Ok(_) => {
+                            let epoch = b.bundle().epoch();
+                            inner.priority.entry(epoch).or_default().push(b);
+                        }
+                        Err(e) => {
+                            trace!(
+                                "Validation failed for bundle signed by: {:?}, error: {:?}",
+                                b.sender(),
+                                e
+                            );
+                        }
                     }
-                }
-                BundleVariant::Priority(b) => {
-                    trace!(
-                        "bundle signed by: {:?}, did not match current plc: {:?}",
-                        b.sender(),
-                        &inner.priority_addr
-                    );
                 }
             }
         }

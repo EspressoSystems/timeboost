@@ -44,7 +44,7 @@ impl SequencerConfig {
         A: Into<net::Address>,
     {
         Self {
-            priority_addr: Address::zero(),
+            priority_addr: Address::default(),
             keypair: keyp,
             peers: Vec::new(),
             bind: bind.into(),
