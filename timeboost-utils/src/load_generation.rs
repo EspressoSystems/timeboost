@@ -8,7 +8,7 @@ use timeboost_types::{
     Address, Bundle, BundleVariant, DecryptionKey, PriorityBundle, SeqNo, Signer, Unsigned,
 };
 
-pub fn make_tx(dec_sk: DecryptionKey) -> BundleVariant {
+pub fn make_tx(dec_sk: DecryptionKey) -> anyhow::Result<BundleVariant> {
     let mut v = [0; 100];
     rand::fill(&mut v);
     let mut u = arbitrary::Unstructured::new(&v);
@@ -19,28 +19,23 @@ pub fn make_tx(dec_sk: DecryptionKey) -> BundleVariant {
         let mut rng = rngs::OsRng;
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, &kid, dec_sk.pubkey(), &plaintext)
-            .expect("encrypt plaintext");
-        let encoded = bincode::serde::encode_to_vec(ciphertext, bincode::config::standard())
-            .expect("encode succeeds")
-            .into();
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, &kid, dec_sk.pubkey(), &plaintext)?;
+        let encoded =
+            bincode::serde::encode_to_vec(ciphertext, bincode::config::standard())?.into();
         bundle.set_data(encoded);
         bundle.set_kid(kid);
     }
 
     if rand::rng().random_bool(0.1) {
         // priority bundle
-        let priority = PriorityBundle::<Unsigned>::new(
-            bundle,
-            Address::default(),
-            SeqNo::arbitrary(&mut u).expect("arbitrary works"),
-        );
+        let priority =
+            PriorityBundle::<Unsigned>::new(bundle, Address::default(), SeqNo::arbitrary(&mut u)?);
 
         let signer = Signer::default();
-        let signed_priority = priority.sign(signer).expect("default signer");
-        BundleVariant::Priority(signed_priority)
+        let signed_priority = priority.sign(signer)?;
+        Ok(BundleVariant::Priority(signed_priority))
     } else {
-        BundleVariant::Regular(bundle)
+        Ok(BundleVariant::Regular(bundle))
     }
 }
 
