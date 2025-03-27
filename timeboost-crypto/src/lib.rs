@@ -93,7 +93,8 @@ impl Keyset {
     }
 
     pub fn threshold(&self) -> NonZeroUsize {
-        NonZeroUsize::new(self.size.get() / 3).expect("ceil(n/3) with n > 0 never gives 0")
+        let t = self.size().get().div_ceil(3);
+        NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
     }
 }
 
@@ -272,6 +273,12 @@ impl<C: CurveGroup> Ciphertext<C> {
     }
 }
 
+impl<C: CurveGroup> DecShare<C> {
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+}
+
 // Type initialization for decryption scheme
 type G = ark_secp256k1::Projective;
 type H = Sha256;
@@ -318,11 +325,11 @@ impl ThresholdEncScheme for DecryptionScheme {
 
     fn encrypt<R: ark_std::rand::Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, committee, pk, message)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, kid, pk, message)
     }
 
     fn decrypt(

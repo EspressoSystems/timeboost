@@ -98,6 +98,7 @@ impl Timeboost {
             self.children.push(spawn(gen_transactions(
                 self.init.tps,
                 self.init.sender.clone(),
+                self.init.dec_sk,
             )));
         }
 
@@ -122,11 +123,11 @@ impl Timeboost {
     }
 }
 
-async fn gen_transactions(tps: u32, tx: Sender<BundleVariant>) {
+async fn gen_transactions(tps: u32, tx: Sender<BundleVariant>, dec_sk: DecryptionKey) {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     loop {
         interval.tick().await;
-        if tx.send(make_tx()).await.is_err() {
+        if tx.send(make_tx(dec_sk.clone())).await.is_err() {
             return;
         }
     }

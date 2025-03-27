@@ -16,17 +16,13 @@ use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
 use crate::{
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
 };
-
-/// Corruption ratio.
-/// Tolerate t < n/3 and t+1 dec shares to recover the plaintext
-const CORR_RATIO: usize = 3;
 
 /// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
 /// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
@@ -61,7 +57,7 @@ where
         committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size.get();
-        let degree = committee_size / CORR_RATIO;
+        let degree = committee.threshold().get();
         let generator = C::generator();
         let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
@@ -96,7 +92,7 @@ where
 
     fn encrypt<R: Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        kid: &KeysetId,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
@@ -104,10 +100,9 @@ where
         let generator = C::generator();
         let v = generator * beta;
         let w = pub_key.key * beta;
-        let cid = committee.id;
 
         // hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w, cid.into())
+        let key = hash_to_key::<C, H>(v, w, (*kid).into())
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
 
@@ -176,18 +171,18 @@ where
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = committee.size.get();
-        let threshold = committee_size / CORR_RATIO + 1;
+        let size = committee.size().get();
+        let threshold = committee.threshold().get() + 1;
         let generator = C::generator();
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
         }
-        let domain: Radix2EvaluationDomain<C::ScalarField> =
-            Radix2EvaluationDomain::new(committee_size).ok_or_else(|| {
+        let domain: Radix2EvaluationDomain<C::ScalarField> = Radix2EvaluationDomain::new(size)
+            .ok_or_else(|| {
                 ThresholdEncError::Internal(anyhow!(
                     "Unable to create eval domain for size {:?}",
-                    committee_size
+                    size
                 ))
             })?;
 
@@ -327,7 +322,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
@@ -357,7 +352,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
 
         let threshold = committee.threshold().get();
         let dec_shares: Vec<_> = key_shares
@@ -387,7 +382,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
 
         let mut dec_shares: Vec<_> = key_shares
             .iter()

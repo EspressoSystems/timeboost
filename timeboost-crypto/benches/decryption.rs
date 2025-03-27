@@ -45,7 +45,7 @@ where
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
+                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
                         .expect("encrypt message");
                 });
             });
@@ -60,8 +60,9 @@ where
             let (pk, _, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
-                .expect("encrypt message");
+            let ciphertext =
+                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
+                    .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::decrypt(&key_shares[0], &ciphertext)
@@ -79,8 +80,9 @@ where
             let (pk, comb_key, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
-                .expect("encrypt message");
+            let ciphertext =
+                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
+                    .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
                 .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))

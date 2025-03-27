@@ -70,11 +70,14 @@ impl Bundle {
         self.update_hash()
     }
 
+    pub fn set_kid(&mut self, kid: KeysetId) {
+        self.kid = Some(kid);
+    }
+
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Bundle> {
         use alloy_rlp::Encodable;
         use arbitrary::Arbitrary;
-
         let t = Transaction::arbitrary(u).unwrap();
         let mut d = Vec::new();
         t.encode(&mut d);
@@ -236,15 +239,11 @@ impl PriorityBundle<Signed> {
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(
         u: &mut arbitrary::Unstructured<'_>,
-    ) -> arbitrary::Result<PriorityBundle<Signed>> {
+    ) -> arbitrary::Result<PriorityBundle<Unsigned>> {
         let bundle = Bundle::arbitrary(u)?;
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(1..=u64::MAX)?);
-        let priority_bundle = PriorityBundle::<Unsigned>::new(bundle, auction, seqno);
-
-        let signer = Signer::default();
-        let signed_bundle = priority_bundle.sign(signer).expect("default signer");
-        Ok(signed_bundle)
+        Ok(PriorityBundle::<Unsigned>::new(bundle, auction, seqno))
     }
 }
 
