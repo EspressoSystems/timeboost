@@ -6,8 +6,8 @@ use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use digest::{DynDigest, FixedOutputReset};
-use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
+use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
     Keyset, Plaintext, sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme,
 };
@@ -18,7 +18,7 @@ const MB: usize = KB << 10;
 pub fn shoup_gennaro<G, H, D>(c: &mut Criterion, curve: &str)
 where
     H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
     G: CurveGroup,
     G::ScalarField: PrimeField,
 {
@@ -45,7 +45,7 @@ where
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
+                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
                         .expect("encrypt message");
                 });
             });
@@ -60,8 +60,9 @@ where
             let (pk, _, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
-                .expect("encrypt message");
+            let ciphertext =
+                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
+                    .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
                     ShoupGennaro::<G, H, D>::decrypt(&key_shares[0], &ciphertext)
@@ -79,8 +80,9 @@ where
             let (pk, comb_key, key_shares) =
                 ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
-            let ciphertext = ShoupGennaro::<G, H, D>::encrypt(rng, &committee, &pk, &plaintext)
-                .expect("encrypt message");
+            let ciphertext =
+                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext)
+                    .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
                 .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))

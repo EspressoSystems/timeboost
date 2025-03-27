@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(transparent)]
 pub struct SeqNo(u64);
 
@@ -17,6 +18,10 @@ impl SeqNo {
 
     pub fn is_zero(self) -> bool {
         self.0 == 0
+    }
+
+    pub fn as_bytes(&self) -> [u8; 8] {
+        self.0.to_be_bytes()
     }
 }
 
