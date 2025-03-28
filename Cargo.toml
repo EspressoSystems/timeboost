@@ -80,7 +80,7 @@ sha3 = "0.10.8"
 snow = "0.9.6"
 spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f7031", features = [
     "arkworks-algebra",
-], rev = "e9f7031" }
+] }
 thiserror = "2.0"
 tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }

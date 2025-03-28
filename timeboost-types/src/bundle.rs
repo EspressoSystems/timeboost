@@ -74,8 +74,17 @@ impl Bundle {
     pub fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Bundle> {
         use alloy_rlp::Encodable;
         use arbitrary::Arbitrary;
+        let t: Transaction = loop {
+            let candidate: Transaction = arbitrary::Arbitrary::arbitrary(u)?;
+            if let TxEnvelope::Eip4844(ref eip4844) = candidate.0 {
+                if eip4844.tx().clone().try_into_4844_with_sidecar().is_ok() {
+                    // Avoid generating 4844 Tx with blobs of size 131 KB
+                    continue;
+                }
+            }
+            break candidate;
+        };
 
-        let t = Transaction::arbitrary(u).unwrap();
         let mut d = Vec::new();
         t.encode(&mut d);
         let c = ChainId::default();
