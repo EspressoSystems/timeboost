@@ -3,7 +3,7 @@ mod include;
 mod queue;
 mod sort;
 
-use std::collections::BTreeMap;
+use std::collections::VecDeque;
 
 use cliquenet as net;
 use cliquenet::{Network, NetworkError, NetworkMetrics};
@@ -218,27 +218,44 @@ impl Task {
             select! {
                 result = self.sailfish.next() => match result {
                     Ok(actions) => {
-                        let mut payloads: BTreeMap<RoundNumber, Vec<CandidateList>> = BTreeMap::new();
-                        for a in actions {
-                            if let Action::Deliver(data) = a {
-                                payloads.entry(data.round()).or_default().push(data.into_data());
-                            } else if let Err(e) = self.sailfish.execute(a).await {
-                                error!(node = %self.label, "coordinator error: {}", e);
-                                return Err(e.into())
+                        let mut actions = VecDeque::from(actions);
+                        let mut lists = Vec::new();
+                        while !actions.is_empty() {
+                            let mut round = RoundNumber::genesis();
+                            let mut candidates = Vec::new();
+                            while let Some(action) = actions.pop_front() {
+                                if let Action::Deliver(payload) = action {
+                                    round = payload.round();
+                                    candidates.push(payload.into_data())
+                                } else {
+                                    actions.push_front(action);
+                                    break
+                                }
+                            }
+                            if !candidates.is_empty() {
+                                lists.push((round, candidates))
+                            }
+                            while let Some(action) = actions.pop_front() {
+                                if let Action::Deliver(_) = action {
+                                    actions.push_front(action);
+                                    break
+                                }
+                                if let Err(err) = self.sailfish.execute(action).await {
+                                    error!(node = %self.label, %err, "coordinator error");
+                                    return Err(err.into())
+                                }
                             }
                         }
-                        let mut inclusions = Vec::new();
-                        for (round, lists) in payloads {
-                            let (i, r) = self.includer.inclusion_list(round, lists);
+                        for (round, candidates) in lists {
+                            let (i, r) = self.includer.inclusion_list(round, candidates);
                             self.transactions.update_transactions(&i, r);
-                            inclusions.push(i)
-                        }
-                        if let Err(e) = self.decrypter.enqueue(inclusions).await {
-                            error!("decrypt enqueue error: {}", e);
+                            if let Err(err) = self.decrypter.enqueue(i).await {
+                                error!(%err, "decrypt enqueue error");
+                            }
                         }
                     },
-                    Err(e) => {
-                        error!(node = %self.label, "coordinator error: {}", e);
+                    Err(err) => {
+                        error!(node = %self.label, %err, "coordinator error");
                     },
                 },
                 result = self.decrypter.next() => match result {
