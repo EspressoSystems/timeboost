@@ -1,4 +1,4 @@
-use nimue::{IOPatternError, ProofError};
+use spongefish::{DomainSeparatorMismatch, ProofError};
 use thiserror::Error;
 
 pub trait DleqProofScheme {
@@ -23,5 +23,5 @@ pub enum DleqProofError {
     #[error(transparent)]
     ProofError(#[from] ProofError),
     #[error(transparent)]
-    IOPatternError(#[from] IOPatternError),
+    IOPatternError(#[from] DomainSeparatorMismatch),
 }

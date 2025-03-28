@@ -6,8 +6,8 @@ use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use digest::{DynDigest, FixedOutputReset};
-use nimue::{DigestBridge, DuplexHash};
 use sha2::{Digest, Sha256};
+use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
     Keyset, Plaintext, sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme,
 };
@@ -18,7 +18,7 @@ const MB: usize = KB << 10;
 pub fn shoup_gennaro<G, H, D>(c: &mut Criterion, curve: &str)
 where
     H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
     G: CurveGroup,
     G::ScalarField: PrimeField,
 {
