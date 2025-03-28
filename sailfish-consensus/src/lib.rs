@@ -153,9 +153,10 @@ where
 
     /// Main entry point to process a `Message`.
     pub fn handle_message(&mut self, m: Message<T, Validated>) -> Vec<Action<T>> {
-        trace!(
+        debug!(
             node      = %self.public_key(),
             round     = %self.round,
+            msg       = %m,
             committed = %self.committed_round,
             buffer    = %self.buffer.depth(),
             delivered = %self.delivered.len(),
