@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;

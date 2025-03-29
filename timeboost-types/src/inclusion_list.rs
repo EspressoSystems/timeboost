@@ -80,12 +80,6 @@ impl InclusionList {
         h.update(&self.round.u64().to_be_bytes());
         h.update(&u64::from(self.time).to_be_bytes());
         h.update(&u64::from(self.index).to_be_bytes());
-        for b in &self.priority {
-            h.update(&b.digest()[..]);
-        }
-        for t in &self.regular {
-            h.update(&t.digest()[..]);
-        }
         h.finalize().into()
     }
 }

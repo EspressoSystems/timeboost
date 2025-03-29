@@ -11,6 +11,7 @@ use crate::{Bytes, Epoch, SeqNo};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
+#[derive(Debug, Clone)]
 pub enum BundleVariant {
     Regular(Bundle),
     Priority(PriorityBundle<Signed>),
