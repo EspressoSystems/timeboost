@@ -3,10 +3,15 @@ NAME = "timeboost submit api"
 DESCRIPTION = "Submit transactions to Timeboost"
 FORMAT_VERSION = "0.1.0"
 
-[route.submit]
-PATH = ["/submit"]
+[route.submit-priority]
+PATH = ["/submit-priority"]
 METHOD = "POST"
-DOC = "Submit transaction to Timeboost"
+DOC = "Submit priority bundle to Timeboost"
+
+[route.submit-regular]
+PATH = ["/submit-regular"]
+METHOD = "POST"
+DOC = "Submit regular bundle to Timeboost"
 
 [route.healthz]
 PATH = ["/healthz"]

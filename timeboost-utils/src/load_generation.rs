@@ -1,16 +1,14 @@
-use arbitrary::Unstructured;
 use rand::Rng;
-use timeboost_types::{Address, PriorityBundle, Transaction};
+use timeboost_types::{Bundle, BundleVariant, PriorityBundle};
 
-pub fn make_tx() -> Transaction {
-    let mut v = [0; 256];
+pub fn make_tx() -> BundleVariant {
+    let mut v = [0; 100];
     rand::fill(&mut v);
-    let mut u = Unstructured::new(&v);
-
+    let mut u = arbitrary::Unstructured::new(&v);
     if rand::rng().random_bool(0.1) {
-        PriorityBundle::arbitrary(Address::zero(), 10, 512, &mut u).unwrap()
+        BundleVariant::Priority(PriorityBundle::arbitrary(&mut u).unwrap())
     } else {
-        Transaction::arbitrary(512, &mut u).unwrap()
+        BundleVariant::Regular(Bundle::arbitrary(&mut u).unwrap())
     }
 }
 
