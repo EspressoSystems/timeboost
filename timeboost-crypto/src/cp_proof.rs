@@ -1,14 +1,14 @@
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_std::UniformRand;
-use nimue::{
-    Arthur, DuplexHash, IOPattern,
-    plugins::ark::{
-        FieldChallenges, FieldIOPattern, FieldReader, FieldWriter, GroupIOPattern, GroupPublic,
-        GroupReader, GroupWriter,
+use serde::{Deserialize, Serialize};
+use spongefish::{
+    DomainSeparator, DuplexSpongeInterface, VerifierState,
+    codecs::arkworks_algebra::{
+        CommonGroupToUnit, DeserializeField, DeserializeGroup, FieldDomainSeparator, FieldToUnit,
+        GroupDomainSeparator, GroupToUnit, UnitToField,
     },
 };
-use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
@@ -21,7 +21,7 @@ use crate::traits::dleq_proof::{DleqProofError, DleqProofScheme};
 pub(crate) struct ChaumPedersen<C, D>
 where
     C: CurveGroup,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
 {
     _group: PhantomData<C>,
     _hash: PhantomData<D>,
@@ -30,14 +30,14 @@ where
 pub struct CPParameters<C, D>
 where
     C: CurveGroup,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
 {
     _hash: PhantomData<D>,
     pub generator: C,
-    pub io_pattern: IOPattern<D>,
+    pub io_pattern: DomainSeparator<D>,
 }
 
-impl<C: CurveGroup, D: DuplexHash> Clone for CPParameters<C, D> {
+impl<C: CurveGroup, D: DuplexSpongeInterface> Clone for CPParameters<C, D> {
     fn clone(&self) -> Self {
         Self {
             _hash: PhantomData,
@@ -76,14 +76,14 @@ trait ChaumPedersenIOPattern<C: CurveGroup> {
     fn add_cp_io(self) -> Self;
 }
 
-impl<C, D> ChaumPedersenIOPattern<C> for IOPattern<D>
+impl<C, D> ChaumPedersenIOPattern<C> for DomainSeparator<D>
 where
     C: CurveGroup,
-    D: DuplexHash,
-    IOPattern<D>: GroupIOPattern<C> + FieldIOPattern<C::ScalarField>,
+    D: DuplexSpongeInterface,
+    DomainSeparator<D>: GroupDomainSeparator<C> + FieldDomainSeparator<C::ScalarField>,
 {
     fn new_cp_proof(domsep: &str) -> Self {
-        IOPattern::new(domsep).add_cp_statement().add_cp_io()
+        DomainSeparator::new(domsep).add_cp_statement().add_cp_io()
     }
 
     fn add_cp_statement(self) -> Self {
@@ -97,7 +97,7 @@ where
     }
 }
 
-impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
+impl<C: CurveGroup, D: DuplexSpongeInterface> DleqProofScheme for ChaumPedersen<C, D> {
     type DleqTuple = DleqTuple<C>;
     type Scalar = C::ScalarField;
     type Proof = Proof;
@@ -109,7 +109,7 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
             )));
         }
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
-        let mut merlin = Self::io_pattern().to_merlin();
+        let mut merlin = Self::io_pattern().to_prover_state();
         merlin.public_points(&[g, g_hat, h, h_hat])?;
         merlin.ratchet()?;
 
@@ -123,16 +123,16 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
         let z: C::ScalarField = k + e * x;
         merlin.add_scalars(&[z])?;
         Ok(Proof {
-            transcript: merlin.transcript().to_vec(),
+            transcript: merlin.narg_string().to_vec(),
         })
     }
 
     fn verify(tuple: DleqTuple<C>, proof: &Self::Proof) -> Result<(), DleqProofError>
     where
-        for<'a> Arthur<'a, D>:
-            GroupReader<C> + FieldReader<C::ScalarField> + FieldChallenges<C::ScalarField>,
+        for<'a> VerifierState<'a, D>:
+            DeserializeGroup<C> + DeserializeField<C::ScalarField> + UnitToField<C::ScalarField>,
     {
-        let mut arthur = Self::io_pattern().to_arthur(&proof.transcript);
+        let mut arthur = Self::io_pattern().to_verifier_state(&proof.transcript);
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
         arthur.public_points(&[g, g_hat, h, h_hat])?;
         arthur.ratchet()?;
@@ -148,9 +148,9 @@ impl<C: CurveGroup, D: DuplexHash> DleqProofScheme for ChaumPedersen<C, D> {
     }
 }
 
-impl<C: CurveGroup, D: DuplexHash> ChaumPedersen<C, D> {
-    pub(crate) fn io_pattern() -> IOPattern<D> {
-        <IOPattern<D> as ChaumPedersenIOPattern<C>>::new_cp_proof("dleq::chaum-pedersen")
+impl<C: CurveGroup, D: DuplexSpongeInterface> ChaumPedersen<C, D> {
+    pub(crate) fn io_pattern() -> DomainSeparator<D> {
+        <DomainSeparator<D> as ChaumPedersenIOPattern<C>>::new_cp_proof("dleq::chaum-pedersen")
     }
 }
 #[cfg(test)]
@@ -158,11 +158,11 @@ mod tests {
     use ark_ec::PrimeGroup;
     use ark_std::rand::Rng;
     use ark_std::{UniformRand, test_rng};
-    use nimue::{
-        Merlin,
-        hash::Keccak,
-        plugins::ark::{FieldChallenges, FieldWriter, GroupPublic, GroupWriter},
+    use spongefish::ProverState;
+    use spongefish::codecs::arkworks_algebra::{
+        CommonGroupToUnit, FieldToUnit, GroupToUnit, UnitToField,
     };
+    use spongefish::keccak::Keccak;
 
     use crate::{
         cp_proof::{ChaumPedersen, DleqTuple, Proof},
@@ -239,7 +239,7 @@ mod tests {
         let DleqTuple(g, g_hat, h, h_hat) = tuple;
 
         // Create invalid transcript
-        let mut mordred: Merlin<D> = ChaumPedersen::<G, D>::io_pattern().to_merlin();
+        let mut mordred: ProverState<D> = ChaumPedersen::<G, D>::io_pattern().to_prover_state();
         mordred.public_points(&[g, g_hat, h, h_hat]).unwrap();
         mordred.ratchet().unwrap();
 
@@ -254,7 +254,7 @@ mod tests {
         mordred.add_scalars(&[z]).unwrap();
 
         let mordred_proof = Proof {
-            transcript: mordred.transcript().to_vec(),
+            transcript: mordred.narg_string().to_vec(),
         };
 
         // Verify proof

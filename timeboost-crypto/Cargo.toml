@@ -18,10 +18,10 @@ ark-std = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 digest = { workspace = true }
-nimue = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
+spongefish = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
