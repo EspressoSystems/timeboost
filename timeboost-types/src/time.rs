@@ -17,10 +17,6 @@ impl Epoch {
     pub fn now() -> Self {
         Timestamp::now().epoch()
     }
-
-    pub fn as_bytes(&self) -> [u8; 8] {
-        self.0.to_be_bytes()
-    }
 }
 
 impl Add<u64> for Epoch {

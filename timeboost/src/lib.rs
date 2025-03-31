@@ -9,7 +9,7 @@ use metrics::TimeboostMetrics;
 use reqwest::Url;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
 use timeboost_types::{BundleVariant, DecryptionKey};
-use timeboost_utils::load_generation::{make_tx, tps_to_millis};
+use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::task::JoinHandle;
@@ -95,10 +95,8 @@ impl Timeboost {
         )));
 
         if self.init.tps > 0 {
-            self.children.push(spawn(gen_transactions(
-                self.init.tps,
-                self.init.sender.clone(),
-            )));
+            self.children
+                .push(spawn(gen_bundles(self.init.tps, self.init.sender.clone())));
         }
 
         loop {
@@ -114,7 +112,7 @@ impl Timeboost {
                 },
                 trx = self.init.receiver.recv() => {
                     if let Some(t) = trx {
-                        self.sequencer.add_transactions(once(t))
+                        self.sequencer.add_bundles(once(t))
                     }
                 }
             }
@@ -122,11 +120,11 @@ impl Timeboost {
     }
 }
 
-async fn gen_transactions(tps: u32, tx: Sender<BundleVariant>) {
+async fn gen_bundles(tps: u32, tx: Sender<BundleVariant>) {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     loop {
         interval.tick().await;
-        if tx.send(make_tx()).await.is_err() {
+        if tx.send(make_bundle()).await.is_err() {
             return;
         }
     }

@@ -168,7 +168,7 @@ impl Sequencer {
         })
     }
 
-    pub fn add_transactions<I>(&mut self, it: I)
+    pub fn add_bundles<I>(&mut self, it: I)
     where
         I: IntoIterator<Item = BundleVariant>,
     {

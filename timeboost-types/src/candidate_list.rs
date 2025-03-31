@@ -3,7 +3,7 @@ use std::sync::Arc;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Bundle, DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, bundle::Signed};
+use crate::{Bundle, DelayedInboxIndex, Epoch, SignedPriorityBundle, Timestamp};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -14,7 +14,7 @@ pub struct CandidateList(Arc<Inner>);
 struct Inner {
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: Vec<PriorityBundle<Signed>>,
+    priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
 }
 
@@ -22,12 +22,12 @@ struct Inner {
 pub struct Builder {
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: Vec<PriorityBundle<Signed>>,
+    priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
 }
 
 impl Builder {
-    pub fn with_priority_bundles(mut self, t: Vec<PriorityBundle<Signed>>) -> Self {
+    pub fn with_priority_bundles(mut self, t: Vec<SignedPriorityBundle>) -> Self {
         self.priority = t;
         self
     }
@@ -80,7 +80,7 @@ impl CandidateList {
         self.0.regular.len() + self.0.priority.len()
     }
 
-    pub fn into_bundles(self) -> (Vec<PriorityBundle<Signed>>, Vec<Bundle>) {
+    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>) {
         match Arc::try_unwrap(self.0) {
             Ok(inner) => (inner.priority, inner.regular),
             Err(arc) => (arc.priority.clone(), arc.regular.clone()),
@@ -91,7 +91,7 @@ impl CandidateList {
         &self.0.regular
     }
 
-    pub fn priority_bundles(&self) -> &[PriorityBundle<Signed>] {
+    pub fn priority_bundles(&self) -> &[SignedPriorityBundle] {
         &self.0.priority
     }
 

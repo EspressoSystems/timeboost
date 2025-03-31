@@ -1,4 +1,4 @@
-use crate::{Bundle, DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, bundle::Signed};
+use crate::{Bundle, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
 use sailfish_types::RoundNumber;
 
 #[derive(Debug, Clone)]
@@ -6,7 +6,7 @@ pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: Vec<PriorityBundle<Signed>>,
+    priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
 }
 
@@ -21,7 +21,7 @@ impl InclusionList {
         }
     }
 
-    pub fn set_priority_bundles(&mut self, t: Vec<PriorityBundle<Signed>>) -> &mut Self {
+    pub fn set_priority_bundles(&mut self, t: Vec<SignedPriorityBundle>) -> &mut Self {
         self.priority = t;
         self
     }
@@ -59,7 +59,7 @@ impl InclusionList {
         self.regular.len() + self.priority.len()
     }
 
-    pub fn into_bundles(self) -> (Vec<PriorityBundle<Signed>>, Vec<Bundle>) {
+    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>) {
         (self.priority, self.regular)
     }
 
@@ -67,7 +67,7 @@ impl InclusionList {
         &self.regular
     }
 
-    pub fn priority_bundles(&self) -> &[PriorityBundle<Signed>] {
+    pub fn priority_bundles(&self) -> &[SignedPriorityBundle] {
         &self.priority
     }
 

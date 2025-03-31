@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use multisig::Committee;
 use sailfish::types::RoundNumber;
 use timeboost_types::{
-    Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Signed, Timestamp,
+    Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
+    Timestamp,
 };
-use timeboost_types::{PriorityBundle, RetryList, math};
+use timeboost_types::{RetryList, math};
 
 #[derive(Debug)]
 pub struct Includer {
@@ -71,7 +72,7 @@ impl Includer {
         }
 
         let mut regular: HashMap<Bundle, usize> = HashMap::new();
-        let mut priority: BTreeMap<SeqNo, PriorityBundle<Signed>> = BTreeMap::new();
+        let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
         for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
@@ -148,7 +149,7 @@ impl Includer {
 
     fn validate_bundles(
         &self,
-        bundles: &BTreeMap<SeqNo, PriorityBundle<Signed>>,
+        bundles: &BTreeMap<SeqNo, SignedPriorityBundle>,
     ) -> Result<SeqNo, ()> {
         if bundles.is_empty() {
             return Ok(self.seqno);

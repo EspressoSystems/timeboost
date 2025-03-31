@@ -18,10 +18,6 @@ impl SeqNo {
     pub fn is_zero(self) -> bool {
         self.0 == 0
     }
-
-    pub fn as_bytes(&self) -> [u8; 8] {
-        self.0.to_be_bytes()
-    }
 }
 
 impl Add<u64> for SeqNo {

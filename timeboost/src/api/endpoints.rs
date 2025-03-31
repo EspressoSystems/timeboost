@@ -5,7 +5,7 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use futures::FutureExt;
 use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
-use timeboost_types::{Bundle, BundleVariant, PriorityBundle, Signed};
+use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
@@ -15,7 +15,7 @@ pub struct TimeboostApiState {
 
 #[async_trait]
 pub trait TimeboostApi {
-    async fn submit_priority(&self, bundle: PriorityBundle<Signed>) -> Result<(), ServerError>;
+    async fn submit_priority(&self, bundle: SignedPriorityBundle) -> Result<(), ServerError>;
     async fn submit_regular(&self, bundle: Bundle) -> Result<(), ServerError>;
 }
 
@@ -39,7 +39,7 @@ impl TimeboostApiState {
 #[async_trait]
 impl TimeboostApi for TimeboostApiState {
     /// Submit priority bundle to timeboost layer.
-    async fn submit_priority(&self, bundle: PriorityBundle<Signed>) -> Result<(), ServerError> {
+    async fn submit_priority(&self, bundle: SignedPriorityBundle) -> Result<(), ServerError> {
         self.app_tx
             .send(BundleVariant::Priority(bundle))
             .await
@@ -72,7 +72,7 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
     api.post("submit-priority", |req, state| {
         async move {
             let priority_bundle =
-                req.body_auto::<PriorityBundle<Signed>, ApiVer>(ApiVer::instance())?;
+                req.body_auto::<SignedPriorityBundle, ApiVer>(ApiVer::instance())?;
 
             state.submit_priority(priority_bundle).await?;
 

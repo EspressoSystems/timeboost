@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use alloy_consensus::TxEnvelope;
 
 use alloy_rlp::Decodable;
@@ -14,7 +16,7 @@ const DOMAIN: &str = "TIMEBOOST_BID";
 #[derive(Debug, Clone)]
 pub enum BundleVariant {
     Regular(Bundle),
-    Priority(PriorityBundle<Signed>),
+    Priority(SignedPriorityBundle),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -109,25 +111,30 @@ impl Committable for Bundle {
     }
 }
 
-pub trait State {}
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Signed {
-    signature: Signature,
-}
-pub struct Unsigned {}
-impl State for Signed {}
-impl State for Unsigned {}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PriorityBundle<S: State> {
+pub struct PriorityBundle {
     bundle: Bundle,
     auction: Address,
     seqno: SeqNo,
     hash: [u8; 32],
-    signed: S,
 }
 
-impl<S: State> PriorityBundle<S> {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SignedPriorityBundle {
+    priority: PriorityBundle,
+    signature: Signature,
+}
+
+impl PriorityBundle {
+    pub fn new(bundle: Bundle, auction: Address, seqno: SeqNo) -> Self {
+        Self {
+            auction,
+            seqno,
+            hash: [0; 32],
+            bundle,
+        }
+    }
+
     pub fn bundle(&self) -> &Bundle {
         &self.bundle
     }
@@ -141,34 +148,22 @@ impl<S: State> PriorityBundle<S> {
     }
 
     // https://github.com/OffchainLabs/nitro/blob/1e16dc408d24a7784f19acd1e76a71daac528a22/timeboost/types.go#L206
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(DOMAIN.as_bytes());
         buf.extend_from_slice(&self.bundle().chain.0.to_be_bytes());
         buf.extend_from_slice(self.auction.0.0.as_slice());
-        buf.extend_from_slice(&self.bundle().epoch.as_bytes());
-        buf.extend_from_slice(&self.seqno.as_bytes());
+        buf.extend_from_slice(&self.bundle().epoch.to_be_bytes());
+        buf.extend_from_slice(&self.seqno.to_be_bytes());
         buf.extend_from_slice(&self.bundle().data);
         buf
     }
-}
 
-impl PriorityBundle<Unsigned> {
-    pub fn new(bundle: Bundle, auction: Address, seqno: SeqNo) -> Self {
-        Self {
-            auction,
-            seqno,
-            hash: [0; 32],
-            bundle,
-            signed: Unsigned {},
-        }
-    }
-
-    pub fn sign(self, signer: Signer) -> Result<PriorityBundle<Signed>, Error> {
+    pub fn sign(self, signer: Signer) -> Result<SignedPriorityBundle, Error> {
         use alloy_signer::Signer;
         let signer = signer.0.with_chain_id(Some(self.bundle().chain_id().0));
-        signer.sign_message_sync(&self.as_bytes()).map(|signature| {
-            PriorityBundle::<Signed>::new(
+        signer.sign_message_sync(&self.to_bytes()).map(|signature| {
+            SignedPriorityBundle::new(
                 self.bundle.clone(),
                 self.auction,
                 self.seqno,
@@ -178,25 +173,26 @@ impl PriorityBundle<Unsigned> {
     }
 }
 
-impl PriorityBundle<Signed> {
-    pub fn new(bundle: Bundle, auction: Address, seqno: SeqNo, signature: Signature) -> Self {
-        let mut this = Self {
-            auction,
-            seqno,
-            hash: [0; 32],
-            bundle,
-            signed: Signed { signature },
-        };
-        this.update_hash();
-        this
+impl Deref for SignedPriorityBundle {
+    type Target = PriorityBundle;
+    fn deref(&self) -> &Self::Target {
+        &self.priority
     }
+}
 
+impl DerefMut for SignedPriorityBundle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.priority
+    }
+}
+
+impl SignedPriorityBundle {
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
     }
 
     pub fn signature(&self) -> &Signature {
-        &self.signed.signature
+        &self.signature
     }
 
     // https://github.com/OffchainLabs/nitro/blob/1e16dc408d24a7784f19acd1e76a71daac528a22/execution/gethexec/express_lane_service.go#L309
@@ -226,7 +222,7 @@ impl PriorityBundle<Signed> {
     }
 
     pub fn sender(&self) -> Result<Address, ValidationError> {
-        let msg = self.as_bytes();
+        let msg = self.to_bytes();
         let recovered = self.signature().recover_address_from_msg(msg);
         Ok(Address(
             recovered.map_err(|_| ValidationError::UnableToRecoverAddress)?,
@@ -238,6 +234,15 @@ impl PriorityBundle<Signed> {
         self.update_hash()
     }
 
+    fn new(bundle: Bundle, auction: Address, seqno: SeqNo, signature: Signature) -> Self {
+        let mut this = Self {
+            priority: PriorityBundle::new(bundle, auction, seqno),
+            signature,
+        };
+        this.update_hash();
+        this
+    }
+
     fn update_hash(&mut self) {
         let digest = self.commit();
         self.hash = digest.into();
@@ -246,11 +251,11 @@ impl PriorityBundle<Signed> {
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(
         u: &mut arbitrary::Unstructured<'_>,
-    ) -> arbitrary::Result<PriorityBundle<Signed>> {
+    ) -> arbitrary::Result<SignedPriorityBundle> {
         let bundle = Bundle::arbitrary(u)?;
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(1..=u64::MAX)?);
-        let priority_bundle = PriorityBundle::<Unsigned>::new(bundle, auction, seqno);
+        let priority_bundle = PriorityBundle::new(bundle, auction, seqno);
 
         let signer = Signer::default();
         let signed_bundle = priority_bundle.sign(signer).expect("default signer");
@@ -258,7 +263,7 @@ impl PriorityBundle<Signed> {
     }
 }
 
-impl Committable for PriorityBundle<Signed> {
+impl Committable for SignedPriorityBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("PriorityBundle")
             .field("bundle", self.bundle.commit())
@@ -427,7 +432,7 @@ mod tests {
 
     use crate::{Epoch, SeqNo, bundle::Address};
 
-    use super::{Bundle, ChainId, PriorityBundle, Signed, Unsigned};
+    use super::{Bundle, ChainId, PriorityBundle, SignedPriorityBundle};
 
     #[test]
     fn test_verify() -> Result<(), Box<dyn std::error::Error>> {
@@ -441,7 +446,7 @@ mod tests {
         Ok(())
     }
 
-    fn sample_bundle(plc: PrivateKeySigner) -> anyhow::Result<PriorityBundle<Signed>> {
+    fn sample_bundle(plc: PrivateKeySigner) -> anyhow::Result<SignedPriorityBundle> {
         let mut rlp_encoded_txns = Vec::new();
         for _ in 0..5 {
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -454,8 +459,7 @@ mod tests {
             ssz_encoded_txns.into(),
             None,
         );
-        let unsigned_priority =
-            PriorityBundle::<Unsigned>::new(bundle, Address::default(), SeqNo::zero());
+        let unsigned_priority = PriorityBundle::new(bundle, Address::default(), SeqNo::zero());
 
         let signed_priority = unsigned_priority.sign((plc).into());
         signed_priority.map_err(anyhow::Error::from)

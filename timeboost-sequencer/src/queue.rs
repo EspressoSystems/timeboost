@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, RetryList, Signed};
+use timeboost_types::{Address, Bundle, BundleVariant, Epoch, RetryList, SignedPriorityBundle};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 use tracing::trace;
 
@@ -18,7 +18,7 @@ struct Inner {
     priority_addr: Address,
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: BTreeMap<Epoch, Vec<PriorityBundle<Signed>>>,
+    priority: BTreeMap<Epoch, Vec<SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
 }
 
@@ -80,11 +80,7 @@ impl TransactionQueue {
                             inner.priority.entry(epoch).or_default().push(b);
                         }
                         Err(e) => {
-                            trace!(
-                                "Validation failed for bundle signed by: {:?}, error: {:?}",
-                                b.sender(),
-                                e
-                            );
+                            trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
                         }
                     }
                 }

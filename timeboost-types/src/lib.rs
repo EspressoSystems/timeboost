@@ -11,7 +11,8 @@ mod time;
 pub mod math;
 
 pub use bundle::{
-    Address, Bundle, BundleVariant, ChainId, PriorityBundle, Signed, Signer, Transaction, Unsigned,
+    Address, Bundle, BundleVariant, ChainId, PriorityBundle, SignedPriorityBundle, Signer,
+    Transaction,
 };
 pub use bytes::Bytes;
 pub use candidate_list::CandidateList;

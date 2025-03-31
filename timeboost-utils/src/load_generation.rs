@@ -1,12 +1,12 @@
 use rand::Rng;
-use timeboost_types::{Bundle, BundleVariant, PriorityBundle};
+use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
 
-pub fn make_tx() -> BundleVariant {
+pub fn make_bundle() -> BundleVariant {
     let mut v = [0; 100];
     rand::fill(&mut v);
     let mut u = arbitrary::Unstructured::new(&v);
     if rand::rng().random_bool(0.1) {
-        BundleVariant::Priority(PriorityBundle::arbitrary(&mut u).unwrap())
+        BundleVariant::Priority(SignedPriorityBundle::arbitrary(&mut u).unwrap())
     } else {
         BundleVariant::Regular(Bundle::arbitrary(&mut u).unwrap())
     }

@@ -498,7 +498,7 @@ mod tests {
     };
     use timeboost_types::{
         Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
-        Signer, Timestamp, Unsigned,
+        Signer, Timestamp,
     };
     use tracing::warn;
 
@@ -540,7 +540,7 @@ mod tests {
         let auction = Address::default();
         let seqno = SeqNo::from(10);
         let signer = Signer::default();
-        let bundle = PriorityBundle::<Unsigned>::new(
+        let bundle = PriorityBundle::new(
             Bundle::new(
                 chain_id,
                 epoch,
