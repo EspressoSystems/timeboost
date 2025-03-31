@@ -9,7 +9,7 @@ rust-version.workspace = true
 until = []
 
 [dependencies]
-alloy = { version = "0.12.4", features = ["full"] }
+alloy = { version = "0.13.0", features = ["full"] }
 alloy-chains = "0.1.58"
 anyhow = { workspace = true }
 axum = { workspace = true }
