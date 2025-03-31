@@ -11,7 +11,6 @@ blake3 = { workspace = true }
 bincode = { workspace = true }
 bimap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
-committable = { workspace = true }
 ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }

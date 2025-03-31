@@ -12,7 +12,6 @@ until = []
 alloy-chains = { workspace = true }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
-axum = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }

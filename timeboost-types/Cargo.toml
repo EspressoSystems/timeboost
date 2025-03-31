@@ -17,12 +17,9 @@ ark-std = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
-data-encoding = { workspace = true }
 ethereum_ssz = { workspace = true }
-multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
-sha3 = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 

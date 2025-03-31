@@ -9,7 +9,6 @@ rust-version.workspace = true
 test = ["committable", "crossbeam-queue", "sailfish-types"]
 
 [dependencies]
-alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true }
 async-trait = { workspace = true }
@@ -23,7 +22,6 @@ prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 ethereum_ssz = { workspace = true }
-serde = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }

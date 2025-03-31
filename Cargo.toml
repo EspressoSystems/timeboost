@@ -38,7 +38,6 @@ anyhow = "1.0.89"
 arbitrary = "1.4.1"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
-ark-ed25519 = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
 ark-secp256k1 = "0.5"
@@ -46,7 +45,6 @@ ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 async-lock = "3.3"
 async-trait = "0.1"
-axum = "0.8.1"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
@@ -86,12 +84,8 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
 thiserror = "2.0"
 tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
-tokio-stream = "0.1.16"
-tokio-util = { version = "0.7.12", features = ["codec"] }
 toml = "0.8.19"
-tower-http = "0.6.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
-url = { version = "2", features = ["serde"] }
 vbs = "0.1"
