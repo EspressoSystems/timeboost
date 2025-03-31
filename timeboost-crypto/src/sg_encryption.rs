@@ -11,7 +11,7 @@ use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolyn
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
-use nimue::DuplexHash;
+use spongefish::DuplexSpongeInterface;
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 
@@ -34,7 +34,7 @@ pub struct ShoupGennaro<C, H, D>
 where
     C: CurveGroup,
     H: Digest + Default + DynDigest + Clone,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
 {
     _group: PhantomData<C>,
     _hash: PhantomData<H>,
@@ -44,7 +44,7 @@ where
 impl<C, H, D> ThresholdEncScheme for ShoupGennaro<C, H, D>
 where
     H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
-    D: DuplexHash,
+    D: DuplexSpongeInterface,
     C: CurveGroup,
     C::ScalarField: PrimeField,
 {
@@ -310,8 +310,8 @@ mod test {
 
     use ark_std::rand::seq::SliceRandom;
     use ark_std::test_rng;
-    use nimue::hash::legacy::DigestBridge;
     use sha2::Sha256;
+    use spongefish::DigestBridge;
 
     type G = ark_secp256k1::Projective;
     type H = Sha256;

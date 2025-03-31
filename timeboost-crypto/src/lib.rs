@@ -7,11 +7,11 @@ use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use cp_proof::Proof;
 use digest::{generic_array::GenericArray, typenum};
-use nimue::DigestBridge;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
 use sha2::Sha256;
+use spongefish::DigestBridge;
 use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
 
