@@ -251,10 +251,11 @@ impl SignedPriorityBundle {
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(
         u: &mut arbitrary::Unstructured<'_>,
+        max_seqno: u64,
     ) -> arbitrary::Result<SignedPriorityBundle> {
         let bundle = Bundle::arbitrary(u)?;
         let auction = Address::default();
-        let seqno = SeqNo::from(u.int_in_range(1..=u64::MAX)?);
+        let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
         let priority_bundle = PriorityBundle::new(bundle, auction, seqno);
 
         let signer = Signer::default();
