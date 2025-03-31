@@ -9,7 +9,7 @@ rust-version.workspace = true
 test = ["committable", "crossbeam-queue", "sailfish-types"]
 
 [dependencies]
-alloy = { workspace = true }
+alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true }
 async-trait = { workspace = true }

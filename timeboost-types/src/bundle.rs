@@ -1,4 +1,4 @@
-use alloy::consensus::TxEnvelope;
+use alloy_consensus::TxEnvelope;
 
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
@@ -273,7 +273,7 @@ impl Committable for PriorityBundle<Signed> {
     Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ChainId(alloy::primitives::ChainId);
+pub struct ChainId(alloy_primitives::ChainId);
 
 impl From<u64> for ChainId {
     fn from(value: u64) -> Self {
@@ -318,7 +318,7 @@ impl Transaction {
 // Address wrapper
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Address(alloy::primitives::Address);
+pub struct Address(alloy_primitives::Address);
 
 impl Default for Address {
     fn default() -> Self {
@@ -326,13 +326,13 @@ impl Default for Address {
     }
 }
 
-impl From<alloy::primitives::Address> for Address {
-    fn from(address: alloy::primitives::Address) -> Self {
+impl From<alloy_primitives::Address> for Address {
+    fn from(address: alloy_primitives::Address) -> Self {
         Address(address)
     }
 }
 
-impl From<Address> for alloy::primitives::Address {
+impl From<Address> for alloy_primitives::Address {
     fn from(eth_address: Address) -> Self {
         eth_address.0
     }
@@ -377,7 +377,7 @@ impl Committable for Signature {
 }
 
 // Signer wrapper
-pub struct Signer(alloy::signers::local::PrivateKeySigner);
+pub struct Signer(alloy_signer_local::PrivateKeySigner);
 
 impl Default for Signer {
     fn default() -> Self {
@@ -390,8 +390,8 @@ impl Default for Signer {
     }
 }
 
-impl From<alloy::signers::local::PrivateKeySigner> for Signer {
-    fn from(signer: alloy::signers::local::PrivateKeySigner) -> Self {
+impl From<alloy_signer_local::PrivateKeySigner> for Signer {
+    fn from(signer: alloy_signer_local::PrivateKeySigner) -> Self {
         Signer(signer)
     }
 }

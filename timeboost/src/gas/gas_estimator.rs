@@ -4,7 +4,7 @@ use alloy::{
     network::Ethereum,
     providers::fillers::{FillProvider, TxFiller},
 };
-use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
+use alloy_{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
 use committable::{Commitment, Committable};
 use futures::future::join_all;
 use timeboost_core::types::block::sailfish::SailfishBlock;

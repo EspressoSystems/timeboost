@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[rlp(transparent)]
-pub struct Bytes(alloy::primitives::Bytes);
+pub struct Bytes(alloy_primitives::Bytes);
 
 impl From<bytes::Bytes> for Bytes {
     fn from(value: bytes::Bytes) -> Self {
-        Self(alloy::primitives::Bytes(value))
+        Self(alloy_primitives::Bytes(value))
     }
 }
 
@@ -61,15 +61,15 @@ impl AsRef<[u8]> for Bytes {
 
 impl ssz::Decode for Bytes {
     fn is_ssz_fixed_len() -> bool {
-        alloy::primitives::Bytes::is_ssz_fixed_len()
+        alloy_primitives::Bytes::is_ssz_fixed_len()
     }
 
     fn ssz_fixed_len() -> usize {
-        alloy::primitives::Bytes::ssz_fixed_len()
+        alloy_primitives::Bytes::ssz_fixed_len()
     }
 
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-        let b = alloy::primitives::Bytes::from_ssz_bytes(bytes)?;
+        let b = alloy_primitives::Bytes::from_ssz_bytes(bytes)?;
         Ok(Self(b))
     }
 }

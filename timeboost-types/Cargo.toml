@@ -6,7 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alloy = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
