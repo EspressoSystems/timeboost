@@ -409,7 +409,7 @@ where
                         if k > self.key || !self.active.contains_key(&k) {
                             self.spawn_io(k, s, t)
                         } else {
-                            warn!(node = %self.key, peer = %k, "dropping accepted connection");
+                            debug!(node = %self.key, peer = %k, "dropping accepted connection");
                         }
                     }
                     Ok(Err(e)) => {
@@ -435,7 +435,7 @@ where
                             if k < self.key || !self.active.contains_key(&k) {
                                 self.spawn_io(k, s, t)
                             } else {
-                                warn!(node = %self.key, peer = %k, "dropping new connection");
+                                debug!(node = %self.key, peer = %k, "dropping new connection");
                             }
                         }
                         Err(e) => {
