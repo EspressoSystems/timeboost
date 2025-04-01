@@ -7,8 +7,8 @@ use metrics::NoMetrics;
 use multisig::Keypair;
 use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
 use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::{DecryptionKey, Transaction};
-use timeboost_utils::load_generation::make_tx;
+use timeboost_types::{BundleVariant, DecryptionKey};
+use timeboost_utils::load_generation::make_bundle;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast;
@@ -45,7 +45,7 @@ async fn transaction_order() {
             while i < NUM_OF_TRANSACTIONS {
                 select! {
                     t = brx.recv() => match t {
-                        Ok(trx) => s.add_transactions(once(trx)),
+                        Ok(trx) => s.add_bundles(once(trx)),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
@@ -65,7 +65,7 @@ async fn transaction_order() {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
             let t = rx.recv().await.unwrap();
-            assert_eq!(first.digest(), t.digest())
+            assert_eq!(first.hash(), t.hash())
         }
     }
 
@@ -93,9 +93,9 @@ fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<Sequencer
 }
 
 /// Generate random transactions at a fixed frequency.
-async fn gen_transactions(tx: broadcast::Sender<Transaction>) {
+async fn gen_transactions(tx: broadcast::Sender<BundleVariant>) {
     loop {
-        if tx.send(make_tx()).is_err() {
+        if tx.send(make_bundle()).is_err() {
             return;
         }
         sleep(Duration::from_millis(10)).await
