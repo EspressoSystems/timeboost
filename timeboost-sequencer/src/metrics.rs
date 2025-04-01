@@ -37,8 +37,8 @@ impl SequencerMetrics {
         ];
         Self {
             decrypt_duration: m.create_histogram("decrypt_duration", Some("ms"), Some(buckets)),
-            round: m.create_gauge("round", None),
-            time: m.create_gauge("time", Some("s")),
+            round: m.create_gauge("sequencer_round", None),
+            time: m.create_gauge("sequencer_time", Some("s")),
             queued_bundles: m.create_gauge("queued_bundles", None),
             queued_transactions: m.create_gauge("queued_transactions", None),
             included_bundles: m.create_gauge("included_bundles", None),
