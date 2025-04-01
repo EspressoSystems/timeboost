@@ -5,6 +5,7 @@ use alloy_consensus::TxEnvelope;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
+#[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,7 @@ impl Bundle {
     }
 }
 
+#[cfg(feature = "arbitrary")]
 impl<'a> Arbitrary<'a> for Bundle {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         use alloy_rlp::Encodable;
