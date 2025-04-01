@@ -1,4 +1,4 @@
-use arbitrary::Unstructured;
+use arbitrary::{Arbitrary, Unstructured};
 use rand::Rng;
 use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
 

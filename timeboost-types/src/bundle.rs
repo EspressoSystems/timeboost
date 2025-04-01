@@ -5,6 +5,7 @@ use alloy_consensus::TxEnvelope;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
+use arbitrary::{Arbitrary, Result, Unstructured};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
@@ -72,11 +73,12 @@ impl Bundle {
         self.data = d;
         self.update_hash()
     }
+}
 
-    #[cfg(feature = "arbitrary")]
-    pub fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Bundle> {
+impl<'a> Arbitrary<'a> for Bundle {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         use alloy_rlp::Encodable;
-        use arbitrary::Arbitrary;
+
         let t: Transaction = loop {
             let candidate: Transaction = arbitrary::Arbitrary::arbitrary(u)?;
             if let TxEnvelope::Eip4844(ref eip4844) = candidate.0 {
