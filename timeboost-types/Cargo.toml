@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["arbitrary"]
+
 [dependencies]
 alloy-consensus = { workspace = true }
 alloy-primitives = { workspace = true }
