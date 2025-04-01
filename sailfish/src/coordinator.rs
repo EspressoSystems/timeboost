@@ -49,8 +49,9 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
     }
 }
 
-impl<T, C: Comm<T>> Coordinator<T, C>
+impl<T, C> Coordinator<T, C>
 where
+    C: Comm<T> + Send,
     T: Committable + Clone + PartialEq,
 {
     /// Starts Sailfish consensus.
@@ -109,6 +110,9 @@ where
             }
             Action::SendNoVote(to, v) => {
                 self.comm.send(to, Message::NoVote(v)).await?;
+            }
+            Action::Gc(r) => {
+                self.comm.gc(r).await?;
             }
             Action::Deliver(_) => {
                 // nothing to do

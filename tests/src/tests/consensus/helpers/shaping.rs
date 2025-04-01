@@ -509,6 +509,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
+                Action::Gc(_) => {}
             }
         }
     }
