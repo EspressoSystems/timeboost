@@ -71,9 +71,7 @@ impl TransactionQueue {
         for b in it.into_iter() {
             match b {
                 BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
-                BundleVariant::Priority(b) =>
-                // TODO: Check auction contract address on bundle
-                {
+                BundleVariant::Priority(b) => {
                     match b.validate(epoch_now, Some(inner.priority_addr)) {
                         Ok(_) => {
                             let epoch = b.bundle().epoch();

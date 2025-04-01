@@ -221,6 +221,8 @@ impl SignedPriorityBundle {
         Ok(())
     }
 
+    /// Attempts to extract the sender's address from the signature.
+    /// Returns an error if the signature parsing fails.
     pub fn sender(&self) -> Result<Address, ValidationError> {
         let msg = self.to_bytes();
         let recovered = self.signature().recover_address_from_msg(msg);
