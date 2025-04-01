@@ -194,7 +194,7 @@ async fn main() -> Result<()> {
     let num = cli.nodes.unwrap_or(4);
 
     let keyset =
-        KeysetConfig::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
+        KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 

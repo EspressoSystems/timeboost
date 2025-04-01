@@ -130,7 +130,8 @@ async fn main() -> Result<()> {
     ensure!(num < 20, "number of nodes must be less 20");
 
     // Read public key material
-    let keyset = KeysetConfig::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+    let keyset =
+        KeysetConfig::read_keyset(&cli.keyset_file).expect("keyfile to exist and be valid");
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset
