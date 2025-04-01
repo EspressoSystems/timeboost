@@ -159,6 +159,14 @@ impl Decrypter {
     }
 }
 
+/// Re-assemble inclusion list using the decrypted items.
+///
+/// Modified entries (`modified`) points to the entries
+/// where encrypted data should be replaced.
+///
+/// Decrypted items (`dec`) is output from the Decrypter.
+/// The Decrypter preserves bundle ordering and returns a single
+/// batch containing priority bundles followed by non-priority.
 fn assemble_incl(
     r: RoundNumber,
     incl: InclusionList,
