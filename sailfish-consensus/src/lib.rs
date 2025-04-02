@@ -153,9 +153,10 @@ where
 
     /// Main entry point to process a `Message`.
     pub fn handle_message(&mut self, m: Message<T, Validated>) -> Vec<Action<T>> {
-        trace!(
+        debug!(
             node      = %self.public_key(),
             round     = %self.round,
+            msg       = %m,
             committed = %self.committed_round,
             buffer    = %self.buffer.depth(),
             delivered = %self.delivered.len(),
@@ -234,7 +235,7 @@ where
             .set_committed_round(v.source(), v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
-            self.cleanup();
+            actions.push(self.cleanup());
             actions.extend(self.try_to_add_to_dag_from_buffer());
         }
 
@@ -732,12 +733,12 @@ where
                 self.delivered.insert((r, s));
             }
         }
-        self.cleanup();
+        actions.push(self.cleanup());
         actions
     }
 
     /// Cleanup the DAG and other collections.
-    fn cleanup(&mut self) {
+    fn cleanup(&mut self) -> Action<T> {
         trace!(node = %self.public_key(), "cleanup");
 
         let r = self.lower_round_bound();
@@ -775,6 +776,8 @@ where
         self.metrics.dag_depth.set(self.dag.depth());
         self.metrics.vertex_buffer.set(self.buffer.depth());
         self.metrics.delivered.set(self.delivered.len());
+
+        Action::Gc(r)
     }
 
     /// Remove vote aggregators up to the given round.

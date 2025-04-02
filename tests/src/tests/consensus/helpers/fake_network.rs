@@ -127,6 +127,9 @@ impl FakeNetwork {
             Action::Deliver(_) => {
                 return;
             }
+            Action::Gc(_) => {
+                return;
+            }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),
             Action::SendProposal(e) => (None, Message::Vertex(e)),
             Action::SendTimeout(e) => (None, Message::Timeout(e)),
