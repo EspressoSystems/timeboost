@@ -10,17 +10,17 @@ pub struct SequencerMetrics {
     /// Unix time.
     pub time: Box<dyn Gauge>,
     /// Number of priority bundles in queue.
-    pub queued_bundles: Box<dyn Gauge>,
-    /// Number of transactions in queue.
-    pub queued_transactions: Box<dyn Gauge>,
+    pub queued_priority: Box<dyn Gauge>,
+    /// Number of regular bundles in queue.
+    pub queued_regular: Box<dyn Gauge>,
     /// Number of priority bundles in the inclusion list of `round`.
-    pub included_bundles: Box<dyn Gauge>,
-    /// Number of transactions in the inclusion list of `round`.
-    pub included_transactions: Box<dyn Gauge>,
+    pub included_priority: Box<dyn Gauge>,
+    /// Number of regular bundles in the inclusion list of `round`.
+    pub included_regular: Box<dyn Gauge>,
     /// Number of priority bundles in `round` that need to be retried.
-    pub retry_bundles: Box<dyn Gauge>,
-    /// Number of transactions in `round` that need to be retried.
-    pub retry_transactions: Box<dyn Gauge>,
+    pub retry_priority: Box<dyn Gauge>,
+    /// Number of regular bundles in `round` that need to be retried.
+    pub retry_regular: Box<dyn Gauge>,
 }
 
 impl Default for SequencerMetrics {
@@ -39,12 +39,12 @@ impl SequencerMetrics {
             decrypt_duration: m.create_histogram("decrypt_duration", Some("ms"), Some(buckets)),
             round: m.create_gauge("sequencer_round", None),
             time: m.create_gauge("sequencer_time", Some("s")),
-            queued_bundles: m.create_gauge("queued_bundles", None),
-            queued_transactions: m.create_gauge("queued_transactions", None),
-            included_bundles: m.create_gauge("included_bundles", None),
-            included_transactions: m.create_gauge("included_transactions", None),
-            retry_bundles: m.create_gauge("retry_bundles", None),
-            retry_transactions: m.create_gauge("retry_transactions", None),
+            queued_priority: m.create_gauge("queued_prio_bundles", None),
+            queued_regular: m.create_gauge("queued_reg_bundles", None),
+            included_priority: m.create_gauge("included_prio_bundles", None),
+            included_regular: m.create_gauge("included_reg_bundles", None),
+            retry_priority: m.create_gauge("retry_prio_bundles", None),
+            retry_regular: m.create_gauge("retry_reg_bundles", None),
         }
     }
 }

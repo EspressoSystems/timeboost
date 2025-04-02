@@ -203,6 +203,9 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert_eq!(x.is_valid(c), y.is_valid(c));
             assert_eq!(x.data(), y.data());
         }
+        (Action::Gc(x), Action::Gc(y)) => {
+            assert_eq!(x, y)
+        }
         _ => panic!("{a} ≁ {b}"),
     }
 }

@@ -1,10 +1,10 @@
-use crate::{PriorityBundle, Transaction};
+use crate::{Bundle, SignedPriorityBundle};
 use std::collections::HashSet;
 
 #[derive(Debug, Default)]
 pub struct RetryList {
-    transactions: HashSet<Transaction>,
-    bundles: HashSet<PriorityBundle>,
+    regular: HashSet<Bundle>,
+    priority: HashSet<SignedPriorityBundle>,
 }
 
 impl RetryList {
@@ -12,23 +12,23 @@ impl RetryList {
         Self::default()
     }
 
-    pub fn add_transaction(&mut self, t: Transaction) {
-        self.transactions.insert(t);
+    pub fn add_regular(&mut self, r: Bundle) {
+        self.regular.insert(r);
     }
 
-    pub fn add_bundle(&mut self, b: PriorityBundle) {
-        self.bundles.insert(b);
+    pub fn add_priority(&mut self, b: SignedPriorityBundle) {
+        self.priority.insert(b);
     }
 
-    pub fn priority_bundles(&self) -> &HashSet<PriorityBundle> {
-        &self.bundles
+    pub fn priority_bundles(&self) -> &HashSet<SignedPriorityBundle> {
+        &self.priority
     }
 
-    pub fn transactions(&self) -> &HashSet<Transaction> {
-        &self.transactions
+    pub fn regular_bundles(&self) -> &HashSet<Bundle> {
+        &self.regular
     }
 
-    pub fn into_parts(self) -> (HashSet<Transaction>, HashSet<PriorityBundle>) {
-        (self.transactions, self.bundles)
+    pub fn into_parts(self) -> (HashSet<SignedPriorityBundle>, HashSet<Bundle>) {
+        (self.priority, self.regular)
     }
 }

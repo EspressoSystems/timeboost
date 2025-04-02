@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::max;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -37,8 +36,6 @@ pub struct Worker<C, T: Committable> {
     tx: Sender<T>,
     /// Our channel to receive messages from the application layer.
     rx: Receiver<T>,
-    /// The highest round number of the application (used for pruning).
-    round: RoundNumber,
     /// The tracking information per message.
     buffer: BTreeMap<RoundNumber, Messages<T>>,
     /// A timer to retry messages.
@@ -204,7 +201,6 @@ impl<C: RawComm, T: Committable> Worker<C, T> {
             comm: nt,
             tx,
             rx,
-            round: RoundNumber::genesis(),
             buffer: BTreeMap::new(),
             timer: {
                 let mut i = time::interval(Duration::from_secs(1));
@@ -284,6 +280,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                                 }
                             }
                         }
+                        Some(Command::Gc(round)) => {
+                            debug!(node = %self.label, r = %round, "garbage collect");
+                            self.buffer.retain(|r, _| *r >= round);
+
+                        }
                         None => {
                             debug!(node = %self.label, "rbc shutdown detected");
                             return
@@ -296,7 +297,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// Best effort broadcast.
     async fn on_broadcast(&mut self, msg: Message<T, Validated>) -> Result<()> {
-        trace!(node = %self.label, %msg, "broadcasting");
         let proto = Protocol::Send(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
         let digest = Digest::of_msg(&msg);
@@ -317,12 +317,12 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 }
             });
         self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
+        debug!(node = %self.label, %digest, "best-effort broadcast");
         Ok(())
     }
 
     /// 1:1 communication.
     async fn on_send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<()> {
-        trace!(node = %self.label, %to, %msg, "sending");
         let proto = Protocol::Send(Cow::Borrowed(&msg));
         let bytes = serialize(&proto)?;
         let digest = Digest::of_msg(&msg);
@@ -342,7 +342,9 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     rem: vec![to],
                 }
             });
-        self.comm.send(to, bytes).await.map_err(RbcError::net)
+        self.comm.send(to, bytes).await.map_err(RbcError::net)?;
+        debug!(node = %self.label, %to, %digest, "best-effort send");
+        Ok(())
     }
 
     /// Start RBC broadcast.
@@ -351,17 +353,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let proto = Protocol::Propose(Cow::Borrowed(&vertex));
         let bytes = serialize(&proto)?;
         let digest = Digest::of_vertex(&vertex);
-
-        // We track the max. round number to know when it is safe to remove
-        // old messages from our buffer.
-        self.round = max(self.round, *vertex.data().round().data());
-
-        // Remove buffer entries that are too old to be relevant.
-        self.buffer.retain(|r, _| {
-            let n = self.config.committee.size().get() as u64;
-            let t = self.config.committee.threshold().get() as u64;
-            *r + n + t >= self.round
-        });
 
         let now = Instant::now();
 
@@ -384,10 +375,10 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             .entry(digest)
             .or_insert(tracker);
 
-        if let Err(e) = self.comm.broadcast(bytes).await {
-            debug!(node = %self.label, %e, "network error");
+        if let Err(err) = self.comm.broadcast(bytes).await {
+            debug!(node = %self.label, %digest, %err, "network error");
         } else {
-            debug!(node = %self.label, %digest, "message broadcast");
+            debug!(node = %self.label, %digest, "message broadcasted");
             tracker.status = Status::SentMsg;
         }
 
@@ -396,7 +387,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// We received a message from the network.
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<()> {
-        trace!(node = %self.label, %src, "inbound message");
+        trace!(node = %self.label, %src, buf = %self.buffer.len(), "inbound message");
         match bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?.0 {
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
             Protocol::Ack(dig) => self.on_ack(src, dig).await?,
@@ -412,7 +403,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// A non-RBC message has been received which we deliver directly to the application.
     async fn on_message(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> Result<()> {
-        trace!(node = %self.label, %src, %msg, "message received");
+        debug!(node = %self.label, %src, %msg, digest = %Digest::of_msg(&msg), "message received");
         if msg.is_vertex() {
             warn!(node = %self.label, %src, "received rbc message as non-rbc message");
             return Err(RbcError::InvalidMessage);
@@ -424,20 +415,21 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let ack = Protocol::<'_, T, Validated>::Ack(dig);
         let bytes = serialize(&ack)?;
         self.tx.send(msg).await.map_err(|_| RbcError::Shutdown)?;
-        debug!(node = %self.label, digest = %dig, %src, "sending ack");
-        self.comm.send(src, bytes).await.map_err(RbcError::net)
+        self.comm.send(src, bytes).await.map_err(RbcError::net)?;
+        debug!(node = %self.label, to = %src, digest = %dig, "ack sent");
+        Ok(())
     }
 
     /// A message acknowledgement has been received.
     async fn on_ack(&mut self, src: PublicKey, digest: Digest) -> Result<()> {
-        trace!(node = %self.label, %src, %digest, "ack received");
+        debug!(node = %self.label, %src, %digest, "ack received");
         let Some(msgs) = self.buffer.get_mut(&digest.round()) else {
-            debug!(node = %self.label, %digest, "no ack expected for digest round");
+            debug!(node = %self.label, %src, %digest, "no ack expected for digest round");
             return Ok(());
         };
 
         let Some(acks) = msgs.acks.get_mut(&digest) else {
-            debug!(node = %self.label, %digest, "no ack expected for digest");
+            trace!(node = %self.label, %src, %digest, "no ack expected for digest");
             return Ok(());
         };
 
@@ -457,7 +449,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         src: PublicKey,
         vertex: Envelope<Vertex<T>, Unchecked>,
     ) -> Result<()> {
-        trace!(node = %self.label, %src, vertex = %vertex.data(), "proposal received");
+        debug!(node = %self.label, %src, digest = %Digest::of_vertex(&vertex), "proposal received");
         let Some(vertex) = vertex.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
@@ -506,7 +498,8 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                 let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
-                tracker.status = Status::SentVote
+                tracker.status = Status::SentVote;
+                debug!(node = %self.label, %digest, "vote broadcasted");
             }
             // We received a duplicate or a reflection of our own outbound message.
             // In any case we did not manage to cast our vote yet, so we try again.
@@ -516,7 +509,8 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                 let bytes = serialize(&vote)?;
                 self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
-                tracker.status = Status::SentVote
+                tracker.status = Status::SentVote;
+                debug!(node = %self.label, %digest, "vote broadcasted");
             }
             // We received votes, possibly prior to the message. If so we update the
             // tracking info with the actual message proposal and vote on the message.
@@ -528,7 +522,8 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     let vote = Protocol::<'_, T, Validated>::Vote(env, evidence, false);
                     let bytes = serialize(&vote)?;
                     self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
-                    tracker.status = Status::SentVote
+                    tracker.status = Status::SentVote;
+                    debug!(node = %self.label, %digest, "vote broadcasted");
                 }
             }
             // We have received enough votes to form a quorum but we either did not manage
@@ -550,6 +545,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                             rem: self.config.committee.parties().copied().collect(),
                         });
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                        debug!(node = %self.label, %digest, cert = %Digest::of_cert(cert), "cert broadcasted");
                     }
                 }
                 self.tx
@@ -624,10 +620,15 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         evi: Evidence,
         done: bool,
     ) -> Result<()> {
-        trace!(node = %self.label, %src, %done, "vote received");
+        debug!(node = %self.label, %src, digest = %env.data(), %done, "vote received");
         let Some(env) = env.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
+
+        if *env.signing_key() != src {
+            warn!(node = %self.label, %src, "vote sender != vote signer");
+            return Err(RbcError::InvalidMessage);
+        }
 
         let digest = *env.data();
         let commit = digest.commit();
@@ -669,14 +670,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             }
         });
 
-        debug!(
-            node   = %self.label,
-            digest = %digest,
-            status = %tracker.status,
-            votes  = %tracker.votes.votes(&commit),
-            "vote received"
-        );
-
         match tracker.status {
             // Votes may precede the message proposal. We just try to add the votes
             // to our accumulator and see if we have reached a quorum. If this happens
@@ -705,6 +698,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                                 rem: self.config.committee.parties().copied().collect(),
                             });
                             self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                            debug!(node = %self.label, %digest, cert = %cert_digest, "cert broadcasted");
                         }
                         if !tracker.message.early {
                             self.tx
@@ -723,6 +717,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         let s = tracker.choose_voter(&commit).expect("certificate => voter");
                         self.comm.send(s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg;
+                        debug!(node = %self.label, from = %s, %digest, "message requested")
                     }
                 }
                 Err(err) => {
@@ -742,21 +737,17 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 let s = tracker.choose_voter(&commit).expect("quorum => voter");
                 self.comm.send(s, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg;
+                debug!(node = %self.label, from = %s, %digest, "message requested")
             }
             Status::ReachedQuorum | Status::RequestedMsg | Status::Delivered => {
                 if done {
                     debug!(node = %self.label, status = %tracker.status, "ignoring vote")
                 } else {
-                    debug!(
-                        node   = %self.label,
-                        digest = %digest,
-                        status = %tracker.status,
-                        "replying with our vote to sender"
-                    );
                     let env = Envelope::signed(digest, &self.config.keypair, false);
                     let vote = Protocol::<'_, T, Validated>::Vote(env, evi, true);
                     let bytes = serialize(&vote)?;
                     self.comm.send(source, bytes).await.map_err(RbcError::net)?;
+                    debug!(node = %self.label, to = %source, %digest, "vote sent")
                 }
             }
         }
@@ -766,9 +757,10 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// We received a vote certificate.
     async fn on_cert(&mut self, src: PublicKey, crt: Certificate<Digest>) -> Result<()> {
-        trace!(node = %self.label, %src, digest = %crt.data(), "certificate received");
         let digest = *crt.data();
         let cert_digest = Digest::of_cert(&crt);
+
+        debug!(node = %self.label, %src, %digest, cert = %cert_digest, "cert received");
 
         if let Some(r) = self.buffer.keys().next() {
             if digest.round() < *r {
@@ -825,6 +817,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                             rem: self.config.committee.parties().copied().collect(),
                         });
                         self.comm.broadcast(b).await.map_err(RbcError::net)?;
+                        debug!(node = %self.label, %digest, cert = %cert_digest, "cert broadcasted");
                     }
                     if !tracker.message.early {
                         self.tx
@@ -843,6 +836,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     let s = tracker.choose_voter(&commit).expect("certificate => voter");
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
                     tracker.status = Status::RequestedMsg;
+                    debug!(node = %self.label, from = %s, %digest, "message requested");
                 }
             }
             // We have previously reached the quorum of votes but did not manage to request
@@ -853,8 +847,22 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 let s = tracker.choose_voter(&commit).expect("quorum => voter");
                 self.comm.send(s, b).await.map_err(RbcError::net)?;
                 tracker.status = Status::RequestedMsg;
+                debug!(node = %self.label, from = %s, %digest, "message requested");
             }
-            Status::ReachedQuorum | Status::RequestedMsg | Status::Delivered => {
+            Status::ReachedQuorum | Status::Delivered => {
+                // A received certificate is considered an implicit ACK for the
+                // one we sent out earlier (if any), so the source key is removed
+                // from the collection of remaining parties who have yet to
+                // acknowledge the receipt.
+                if let Some(acks) = messages.acks.get_mut(&cert_digest) {
+                    acks.rem.retain(|k| *k != src);
+                    if acks.rem.is_empty() {
+                        self.config.metrics.add_ack_duration(acks.start.elapsed());
+                        messages.acks.remove(&cert_digest);
+                    }
+                }
+            }
+            Status::RequestedMsg => {
                 debug!(node = %self.label, %digest, status = %tracker.status, "ignoring certificate")
             }
         }
@@ -866,7 +874,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// One of our peers is asking for a message proposal.
     async fn on_get_request(&mut self, src: PublicKey, digest: Digest) -> Result<()> {
-        trace!(node = %self.label, %src, %digest, "get request received");
+        debug!(node = %self.label, %src, %digest, "get request received");
         let Some(tracker) = self
             .buffer
             .get_mut(&digest.round())
@@ -912,7 +920,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         src: PublicKey,
         vertex: Envelope<Vertex<T>, Unchecked>,
     ) -> Result<()> {
-        trace!(node = %self.label, %src, vertex = %vertex.data(), "get response received");
+        debug!(node = %self.label, %src, digest = %Digest::of_vertex(&vertex), "get response received");
         let Some(vertex) = vertex.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
         };
@@ -950,15 +958,24 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         trace!(node = %self.label, "retrying ...");
         // Go over RBC messages and check status:
         for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
-            trace!(
-                node    = %self.label,
-                digest  = %digest,
-                status  = %tracker.status,
-                retries = %tracker.retries,
-                "revisiting"
+            if matches!(tracker.status, Status::Init | Status::Delivered) {
+                continue; // nothing to do here (1).
+            }
+            debug!(
+                node     = %self.label,
+                digest   = %digest,
+                present  = %tracker.message.item.is_some(),
+                status   = %tracker.status,
+                ours     = %tracker.ours,
+                elapsed  = ?tracker.start.elapsed(),
+                retries  = %tracker.retries,
+                votes    = %tracker.votes.votes(&digest.commit()),
+                "revisiting ..."
             );
             match tracker.status {
-                Status::Init | Status::Delivered => {}
+                Status::Init | Status::Delivered => {
+                    unreachable!() // because of (1)
+                }
                 // We have sent a message but did not make further progress, so
                 // we try to send the message again and hope for some response.
                 Status::SentMsg => {
@@ -1053,6 +1070,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                     tracker.retries = tracker.retries.saturating_add(1);
                     self.config.metrics.retries.add(1);
                     self.comm.send(s, b).await.map_err(RbcError::net)?;
+                    debug!(node = %self.label, from = %s, %digest, "message requested");
                 }
                 // We have reached a quorum of votes. We may either already have the message,
                 // in which case we previously failed to broadcast the certificate, or we did
@@ -1088,6 +1106,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                         self.config.metrics.retries.add(1);
                         self.comm.send(s, b).await.map_err(RbcError::net)?;
                         tracker.status = Status::RequestedMsg;
+                        debug!(node = %self.label, from = %s, %digest, "message requested");
                     }
                 }
             }
@@ -1117,8 +1136,9 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
     async fn ack(&mut self, to: PublicKey, dig: Digest) -> Result<()> {
         let ack = Protocol::<'_, T, Validated>::Ack(dig);
         let bytes = serialize(&ack)?;
-        debug!(node = %self.label, %to, digest = %dig, "sending ack");
-        self.comm.send(to, bytes).await.map_err(RbcError::net)
+        self.comm.send(to, bytes).await.map_err(RbcError::net)?;
+        debug!(node = %self.label, %to, digest = %dig, "ack sent");
+        Ok(())
     }
 }
 

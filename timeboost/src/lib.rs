@@ -7,15 +7,17 @@ use api::metrics::serve_metrics_api;
 use cliquenet::Address;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
+use timeboost_crypto::DecryptionScheme;
+use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::{DecryptionKey, Transaction};
-use timeboost_utils::load_generation::{make_tx, tps_to_millis};
+use timeboost_types::{BundleVariant, DecryptionKey};
+use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tokio::time::interval;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use multisig::{Keypair, PublicKey};
@@ -26,6 +28,8 @@ pub use timeboost_types as types;
 pub mod api;
 pub mod keyset;
 pub mod metrics;
+
+type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
 pub struct TimeboostConfig {
     /// The port to bind the RPC server to.
@@ -50,10 +54,10 @@ pub struct TimeboostConfig {
     pub nitro_url: Option<reqwest::Url>,
 
     /// The sender for transactions.
-    pub sender: Sender<Transaction>,
+    pub sender: Sender<BundleVariant>,
 
     /// The receiver for transactions.
-    pub receiver: Receiver<Transaction>,
+    pub receiver: Receiver<BundleVariant>,
 
     /// Transactions per second
     pub tps: u32,
@@ -95,8 +99,9 @@ impl Timeboost {
         )));
 
         if self.init.tps > 0 {
-            self.children.push(spawn(gen_transactions(
+            self.children.push(spawn(gen_bundles(
                 self.init.tps,
+                self.init.dec_sk.pubkey().clone(),
                 self.init.sender.clone(),
             )));
         }
@@ -105,7 +110,7 @@ impl Timeboost {
             select! { biased;
                 trx = self.sequencer.next_transaction() => match trx {
                     Ok(trx) => {
-                        info!(node = %self.label, trx = %trx.digest(), "transaction");
+                        info!(node = %self.label, trx = %trx.tx().hash(), "transaction");
                         // TODO: block building phase
                     }
                     Err(err) => {
@@ -114,7 +119,7 @@ impl Timeboost {
                 },
                 trx = self.init.receiver.recv() => {
                     if let Some(t) = trx {
-                        self.sequencer.add_transactions(once(t))
+                        self.sequencer.add_bundles(once(t))
                     }
                 }
             }
@@ -122,11 +127,16 @@ impl Timeboost {
     }
 }
 
-async fn gen_transactions(tps: u32, tx: Sender<Transaction>) {
+async fn gen_bundles(tps: u32, pubkey: EncKey, tx: Sender<BundleVariant>) {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     loop {
         interval.tick().await;
-        if tx.send(make_tx()).await.is_err() {
+        let Ok(b) = make_bundle(&pubkey) else {
+            warn!("error generating bundle");
+            continue;
+        };
+        if tx.send(b).await.is_err() {
+            error!("unable to send bundle");
             return;
         }
     }
@@ -136,7 +146,7 @@ pub async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
     serve_metrics_api::<StaticVersion<0, 1>>(metrics_port, metrics).await
 }
 
-pub async fn rpc_api(sender: Sender<Transaction>, rpc_port: u16) {
+pub async fn rpc_api(sender: Sender<BundleVariant>, rpc_port: u16) {
     if let Err(e) = api::endpoints::TimeboostApiState::new(sender)
         .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
         .await

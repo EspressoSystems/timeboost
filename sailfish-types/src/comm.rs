@@ -5,18 +5,26 @@ use bytes::Bytes;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
 
-use crate::Message;
+use crate::{Message, RoundNumber};
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
 pub trait Comm<T: Committable> {
     type Err: Error + Send + Sync + 'static;
 
+    /// Send a message to all nodes.
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err>;
 
+    /// Send a message to one node.
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err>;
 
+    /// Await the next message.
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err>;
+
+    /// Garbage collect up to the given round number.
+    async fn gc(&mut self, _: RoundNumber) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 /// Types that provide broadcast and 1:1 message communication.

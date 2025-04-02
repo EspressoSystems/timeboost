@@ -284,6 +284,9 @@ pub enum Action<T: Committable> {
 
     /// Send a timeout certificate to all nodes.
     SendTimeoutCert(Certificate<Timeout>),
+
+    /// Signal that it is safe to garbage collect up to the given round number.
+    Gc(RoundNumber),
 }
 
 impl<T: Committable> Action<T> {
@@ -317,6 +320,9 @@ impl<T: Committable> fmt::Display for Action<T> {
             }
             Action::SendTimeoutCert(certificate) => {
                 write!(f, "SendTimeoutCert({})", certificate.data().round())
+            }
+            Action::Gc(r) => {
+                write!(f, "Gc({r})")
             }
         }
     }

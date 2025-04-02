@@ -12,13 +12,11 @@ test = ["sailfish-consensus/test"]
 cliquenet = { path = "../cliquenet", features = ["sailfish"] }
 committable = { workspace = true }
 futures = { workspace = true }
-metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-consensus = { path = "../sailfish-consensus" }
 sailfish-rbc = { path = "../sailfish-rbc" }
 sailfish-types = { path = "../sailfish-types" }
 tokio = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

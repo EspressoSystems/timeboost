@@ -1,6 +1,6 @@
 //! Utility program to generate keypairs
 
-use alloy::hex;
+use alloy_primitives::hex;
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use rand::Rng;

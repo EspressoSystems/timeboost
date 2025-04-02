@@ -27,12 +27,6 @@ impl From<bytes::Bytes> for Bytes {
     }
 }
 
-impl From<alloy_primitives::Bytes> for Bytes {
-    fn from(value: alloy_primitives::Bytes) -> Self {
-        Self(value)
-    }
-}
-
 impl From<Bytes> for bytes::Bytes {
     fn from(value: Bytes) -> Self {
         value.0.into()

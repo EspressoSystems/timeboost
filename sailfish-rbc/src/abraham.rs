@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Evidence, Message, RawComm, Vertex};
+use sailfish_types::{Comm, Evidence, Message, RawComm, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -61,6 +61,8 @@ enum Command<T: Committable> {
         Envelope<Vertex<T>, Validated>,
         oneshot::Sender<Result<(), RbcError>>,
     ),
+    /// Cleanup buffers up to the given round number.
+    Gc(RoundNumber),
 }
 
 /// RBC configuration
@@ -186,5 +188,12 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
 
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
         Ok(self.rx.recv().await.unwrap())
+    }
+
+    async fn gc(&mut self, r: RoundNumber) -> Result<(), Self::Err> {
+        self.tx
+            .send(Command::Gc(r))
+            .await
+            .map_err(|_| RbcError::Shutdown)
     }
 }
