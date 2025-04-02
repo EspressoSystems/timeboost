@@ -426,6 +426,12 @@ where
                     match tt {
                         Ok((id, (s, t))) => {
                             let Some(k) = self.lookup_peer(&t) else {
+                                warn!(
+                                    node = %self.key,
+                                    peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
+                                    addr = ?s.peer_addr().ok(),
+                                    "connected to unknown peer"
+                                );
                                 self.task2key.remove(&id);
                                 continue
                             };
