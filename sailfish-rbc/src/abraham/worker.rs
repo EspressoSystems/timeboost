@@ -625,6 +625,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
             return Err(RbcError::InvalidMessage);
         };
 
+        if *env.signing_key() != src {
+            warn!(node = %self.label, %src, "vote sender != vote signer");
+            return Err(RbcError::InvalidMessage);
+        }
+
         let digest = *env.data();
         let commit = digest.commit();
         let source = *env.signing_key();
