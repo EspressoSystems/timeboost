@@ -387,7 +387,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
 
     /// We received a message from the network.
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<()> {
-        trace!(node = %self.label, %src, r = %self.round, buf = %self.buffer.len(), "inbound message");
+        trace!(node = %self.label, %src, buf = %self.buffer.len(), "inbound message");
         match bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?.0 {
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
             Protocol::Ack(dig) => self.on_ack(src, dig).await?,
