@@ -425,6 +425,7 @@ where
                 Some(tt) = self.connect_tasks.join_next_with_id() => {
                     match tt {
                         Ok((id, (s, t))) => {
+                            self.on_connect_task_end(id);
                             let Some(k) = self.lookup_peer(&t) else {
                                 warn!(
                                     node = %self.key,
@@ -432,10 +433,8 @@ where
                                     addr = ?s.peer_addr().ok(),
                                     "connected to unknown peer"
                                 );
-                                self.task2key.remove(&id);
                                 continue
                             };
-                            self.on_connect_task_end(id);
                             // We only keep the connection if our key is larger than the remote,
                             // or if we do not have a connection for that key at the moment.
                             if k < self.key || !self.active.contains_key(&k) {
