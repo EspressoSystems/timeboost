@@ -51,6 +51,9 @@ const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 /// Max. number of bytes for a message (potentially consisting of several frames).
 const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
+/// Max. number of messages to queue for a peer.
+const PEER_CAPACITY: usize = 256;
+
 /// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
@@ -73,6 +76,8 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 /// `Network` is the API facade of this crate.
 #[derive(Debug)]
 pub struct Network {
+    /// Log label.
+    label: PublicKey,
     /// MPSC sender of messages to be sent to remote parties.
     ///
     /// If a public key is present, it will result in a uni-cast,
@@ -145,6 +150,9 @@ struct Server<T: tcp::Listener> {
     /// Find the public key given a tokio task ID.
     task2key: HashMap<task::Id, PublicKey>,
 
+    /// Currently active connect attempts.
+    connecting: HashMap<PublicKey, ConnectTask>,
+
     /// Currently active connections (post handshake).
     active: HashMap<PublicKey, IoTask>,
 
@@ -162,6 +170,19 @@ struct Server<T: tcp::Listener> {
 
     /// Interval at which to ping peers.
     ping_interval: Interval,
+}
+
+/// A connect task.
+#[derive(Debug)]
+struct ConnectTask {
+    h: AbortHandle,
+}
+
+// Make sure the task is stopped when `ConnectTask` is dropped.
+impl Drop for ConnectTask {
+    fn drop(&mut self) {
+        self.h.abort();
+    }
 }
 
 /// An I/O task, reading data from and writing data to a remote party.
@@ -247,9 +268,6 @@ impl Network {
 
         debug!(n = %label, a = %listener.local_addr()?, "listening");
 
-        let (otx, orx) = mpsc::channel(10_000);
-        let (itx, irx) = mpsc::channel(10_000);
-
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
@@ -257,6 +275,9 @@ impl Network {
             index.insert(k, x25519::PublicKey::try_from(k)?);
             peers.insert(k, a.into());
         }
+
+        let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
+        let (itx, irx) = mpsc::channel(PEER_CAPACITY * peers.len());
 
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -268,6 +289,7 @@ impl Network {
             obound: orx,
             peers,
             index,
+            connecting: HashMap::new(),
             active: HashMap::new(),
             task2key: HashMap::new(),
             handshake_tasks: JoinSet::new(),
@@ -278,6 +300,7 @@ impl Network {
         };
 
         Ok(Self {
+            label,
             rx: irx,
             tx: otx,
             srv: spawn(server.run(listener)),
@@ -286,6 +309,10 @@ impl Network {
 
     /// Send a message to a party, identified by the given public key.
     pub async fn unicast(&self, to: PublicKey, msg: Bytes) -> Result<()> {
+        if msg.len() > MAX_TOTAL_SIZE {
+            warn!(node = %self.label, %to, len = %msg.len(), "message too large to send");
+            return Err(NetworkError::MessageTooLarge);
+        }
         self.tx
             .send((Some(to), msg))
             .await
@@ -294,6 +321,10 @@ impl Network {
 
     /// Send a message to all parties.
     pub async fn multicast(&self, msg: Bytes) -> Result<()> {
+        if msg.len() > MAX_TOTAL_SIZE {
+            warn!(node = %self.label, len = %msg.len(), "message too large to broadcast");
+            return Err(NetworkError::MessageTooLarge);
+        }
         self.tx
             .send((None, msg))
             .await
@@ -322,17 +353,15 @@ where
         self.handshake_tasks.spawn(pending());
         self.io_tasks.spawn(pending());
 
-        for (k, a) in &self.peers {
-            if *k == self.key {
-                continue;
-            }
-            let x = self.index.get_by_left(k).expect("known public key");
-            self.connect_tasks.spawn(connect(
-                (self.key, self.keypair.clone()),
-                (*k, *x),
-                a.clone(),
-                self.metrics.clone(),
-            ));
+        // Connect to all peers.
+        for k in self
+            .peers
+            .keys()
+            .filter(|k| **k != self.key)
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            self.spawn_connect(k)
         }
 
         loop {
@@ -342,7 +371,9 @@ where
                 connects   = %self.connect_tasks.len(),
                 handshakes = %self.handshake_tasks.len().saturating_sub(1), // -1 for `pending()`
                 io_tasks   = %self.io_tasks.len().saturating_sub(1), // -1 for `pending()`
-                tasks_ids  = %self.task2key.len()
+                tasks_ids  = %self.task2key.len(),
+                iqueue     = %self.ibound.capacity(),
+                oqueue     = %self.obound.capacity(),
             );
 
             tokio::select! {
@@ -378,7 +409,7 @@ where
                         if k > self.key || !self.active.contains_key(&k) {
                             self.spawn_io(k, s, t)
                         } else {
-                            warn!(node = %self.key, peer = %k, "dropping accepted connection");
+                            debug!(node = %self.key, peer = %k, "dropping accepted connection");
                         }
                     }
                     Ok(Err(e)) => {
@@ -391,22 +422,32 @@ where
                     }
                 },
                 // One of our connection attempts completed.
-                Some(tt) = self.connect_tasks.join_next() => match tt {
-                    Ok((s, t)) => {
-                        let Some(k) = self.lookup_peer(&t) else {
-                            continue
-                        };
-                        // We only keep the connection if our key is larger than the remote,
-                        // or if we do not have a connection for that key at the moment.
-                        if k < self.key || !self.active.contains_key(&k) {
-                            self.spawn_io(k, s, t)
-                        } else {
-                            warn!(node = %self.key, peer = %k, "dropping new connection");
+                Some(tt) = self.connect_tasks.join_next_with_id() => {
+                    match tt {
+                        Ok((id, (s, t))) => {
+                            self.on_connect_task_end(id);
+                            let Some(k) = self.lookup_peer(&t) else {
+                                warn!(
+                                    node = %self.key,
+                                    peer = ?t.get_remote_static().and_then(|k| x25519::PublicKey::try_from(k).ok()),
+                                    addr = ?s.peer_addr().ok(),
+                                    "connected to unknown peer"
+                                );
+                                continue
+                            };
+                            // We only keep the connection if our key is larger than the remote,
+                            // or if we do not have a connection for that key at the moment.
+                            if k < self.key || !self.active.contains_key(&k) {
+                                self.spawn_io(k, s, t)
+                            } else {
+                                debug!(node = %self.key, peer = %k, "dropping new connection");
+                            }
                         }
-                    }
-                    Err(e) => {
-                        if !e.is_cancelled() {
-                            error!(node = %self.key, err = %e, "connect task panic");
+                        Err(e) => {
+                            if !e.is_cancelled() {
+                                error!(node = %self.key, err = %e, "connect task panic");
+                            }
+                            self.on_connect_task_end(e.id());
                         }
                     }
                 },
@@ -437,27 +478,57 @@ where
                 msg = self.obound.recv() => match msg {
                     // Uni-cast
                     Some((Some(to), m)) => {
-                        trace!(node = %self.key, %to, len = %m.len(), "sending message");
                         if to == self.key {
-                            let _ = self.ibound.try_send((self.key, m));
+                            trace!(
+                                node  = %self.key,
+                                to    = %to,
+                                len   = %m.len(),
+                                queue = self.ibound.capacity(),
+                                "sending message"
+                            );
+                            if self.ibound.try_send((self.key, m)).is_err() {
+                                warn!(node = %self.key, "channel full => dropping message")
+                            }
                             continue
                         }
                         if let Some(task) = self.active.get(&to) {
+                            trace!(
+                                node  = %self.key,
+                                to    = %to,
+                                len   = %m.len(),
+                                queue = task.tx.capacity(),
+                                "sending message"
+                            );
                             if task.tx.try_send(Message::Data(m)).is_err() {
-                                warn!(node = %self.key, peer = %to, "channel full => reconnecting");
+                                warn!(node = %self.key, %to, "channel full => reconnecting");
                                 self.spawn_connect(to)
                             }
                         }
                     }
                     // Multi-cast
                     Some((None, m)) => {
-                        trace!(node = %self.key, len = %m.len(), "multicasting message");
-                        let _ = self.ibound.try_send((self.key, m.clone()));
+                        trace!(
+                            node  = %self.key,
+                            to    = %self.key,
+                            len   = %m.len(),
+                            queue = self.ibound.capacity(),
+                            "sending message"
+                        );
+                        if self.ibound.try_send((self.key, m.clone())).is_err() {
+                            warn!(node = %self.key, "channel full => dropping message")
+                        }
                         let mut reconnect = Vec::new();
-                        for (k, task) in &self.active {
+                        for (to, task) in &self.active {
+                            trace!(
+                                node  = %self.key,
+                                to    = %to,
+                                len   = %m.len(),
+                                queue = task.tx.capacity(),
+                                "sending message"
+                            );
                             if task.tx.try_send(Message::Data(m.clone())).is_err() {
-                                warn!(node = %self.key, peer = %k, "channel full => reconnecting");
-                                reconnect.push(*k);
+                                warn!(node = %self.key, %to, "channel full => reconnecting");
+                                reconnect.push(*to);
                             }
                         }
                         for k in reconnect {
@@ -478,6 +549,15 @@ where
         }
     }
 
+    /// Handles a completed connect task.
+    fn on_connect_task_end(&mut self, id: task::Id) {
+        let Some(k) = self.task2key.remove(&id) else {
+            error!(node = %self.key, "no key for connect task");
+            return;
+        };
+        self.connecting.remove(&k);
+    }
+
     /// Handles a completed I/O task.
     ///
     /// This function will get the public key of the task that was terminated
@@ -485,7 +565,7 @@ where
     /// to the peer node it was interacting with.
     fn on_io_task_end(&mut self, id: task::Id) {
         let Some(k) = self.task2key.remove(&id) else {
-            error!(node = %self.key, "no key for task");
+            error!(node = %self.key, "no key for i/o task");
             return;
         };
         let Some(task) = self.active.get(&k) else {
@@ -509,14 +589,20 @@ where
     /// This function will look up the x25519 public key of the ed25519 key
     /// and the remote address and then spawn a connection task.
     fn spawn_connect(&mut self, k: PublicKey) {
+        if self.connecting.contains_key(&k) {
+            debug!(node = %self.key, peer = %k, "connect task already started");
+            return;
+        }
         let x = self.index.get_by_left(&k).expect("known public key");
         let a = self.peers.get(&k).expect("known address");
-        self.connect_tasks.spawn(connect(
+        let h = self.connect_tasks.spawn(connect(
             (self.key, self.keypair.clone()),
             (k, *x),
             a.clone(),
             self.metrics.clone(),
         ));
+        assert!(self.task2key.insert(h.id(), k).is_none());
+        self.connecting.insert(k, ConnectTask { h });
     }
 
     /// Spawns a new `Noise` responder handshake task using the IK pattern.
@@ -541,7 +627,7 @@ where
     /// secure link.
     fn spawn_io(&mut self, k: PublicKey, s: T::Stream, t: TransportState) {
         debug!(node = %self.key, peer = %k, addr = ?s.peer_addr().ok(), "starting i/o tasks");
-        let (to_remote, from_remote) = mpsc::channel(256);
+        let (to_remote, from_remote) = mpsc::channel(PEER_CAPACITY);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
