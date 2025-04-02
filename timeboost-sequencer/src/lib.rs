@@ -88,7 +88,7 @@ impl Drop for Sequencer {
 
 struct Task {
     label: PublicKey,
-    transactions: BundleQueue,
+    bundles: BundleQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
     decrypter: Decrypter,
