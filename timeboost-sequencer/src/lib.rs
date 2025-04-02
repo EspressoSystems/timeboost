@@ -152,7 +152,7 @@ impl Sequencer {
 
         let task = Task {
             label,
-            transactions: queue.clone(),
+            bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
             decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
@@ -248,7 +248,7 @@ impl Task {
                         }
                         for (round, candidates) in lists {
                             let (i, r) = self.includer.inclusion_list(round, candidates);
-                            self.transactions.update_bundles(&i, r);
+                            self.bundles.update_bundles(&i, r);
                             if let Err(err) = self.decrypter.enqueue(i).await {
                                 error!(%err, "decrypt enqueue error");
                             }
