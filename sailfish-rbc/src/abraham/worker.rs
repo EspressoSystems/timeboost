@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::max;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -37,8 +36,6 @@ pub struct Worker<C, T: Committable> {
     tx: Sender<T>,
     /// Our channel to receive messages from the application layer.
     rx: Receiver<T>,
-    /// The highest round number of the application (used for pruning).
-    round: RoundNumber,
     /// The tracking information per message.
     buffer: BTreeMap<RoundNumber, Messages<T>>,
     /// A timer to retry messages.
@@ -204,7 +201,6 @@ impl<C: RawComm, T: Committable> Worker<C, T> {
             comm: nt,
             tx,
             rx,
-            round: RoundNumber::genesis(),
             buffer: BTreeMap::new(),
             timer: {
                 let mut i = time::interval(Duration::from_secs(1));
@@ -284,6 +280,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                                 }
                             }
                         }
+                        Some(Command::Gc(round)) => {
+                            debug!(node = %self.label, r = %round, "garbage collect");
+                            self.buffer.retain(|r, _| *r >= round);
+
+                        }
                         None => {
                             debug!(node = %self.label, "rbc shutdown detected");
                             return
@@ -352,17 +353,6 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
         let proto = Protocol::Propose(Cow::Borrowed(&vertex));
         let bytes = serialize(&proto)?;
         let digest = Digest::of_vertex(&vertex);
-
-        // We track the max. round number to know when it is safe to remove
-        // old messages from our buffer.
-        self.round = max(self.round, *vertex.data().round().data());
-
-        // Remove buffer entries that are too old to be relevant.
-        self.buffer.retain(|r, _| {
-            let n = self.config.committee.size().get() as u64;
-            let t = self.config.committee.threshold().get() as u64;
-            *r + n + t >= self.round
-        });
 
         let now = Instant::now();
 

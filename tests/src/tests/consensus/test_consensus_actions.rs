@@ -20,8 +20,11 @@ async fn test_single_node_advance() {
     let edges = manager.edges_for_round(expected_round, &committee, false);
     let vertex_proposal = node_handle.expected_vertex_proposal(expected_round, edges, None);
     node_handle.insert_expected_actions(vec![
+        Action::Gc(0.into()),
         Action::ResetTimer(expected_round),
         Action::SendProposal(vertex_proposal),
+        Action::Gc(0.into()),
+        Action::Gc(0.into()),
     ]);
 
     // Setup up consensus state
@@ -123,6 +126,7 @@ async fn test_single_node_timeout_cert() {
         Some(expected_cert),
     );
     node_handle.insert_expected_actions(vec![
+        Action::Gc(0.into()),
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert.clone()),
         Action::SendNoVote(committee.leader(*expected_round as usize + 1), no_vote),
