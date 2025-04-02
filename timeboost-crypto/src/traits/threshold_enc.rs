@@ -1,7 +1,7 @@
 use ark_std::rand::Rng;
 use thiserror::Error;
 
-use crate::Keyset;
+use crate::{Keyset, KeysetId};
 
 /// A Threshold Encryption Scheme.
 pub trait ThresholdEncScheme {
@@ -23,7 +23,7 @@ pub trait ThresholdEncScheme {
     /// Encrypt a `message` using the encryption key `pk`.
     fn encrypt<R: Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;

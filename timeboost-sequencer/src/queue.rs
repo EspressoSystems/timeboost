@@ -11,7 +11,7 @@ use tracing::trace;
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
-pub struct TransactionQueue(Arc<Mutex<Inner>>);
+pub struct BundleQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
@@ -33,7 +33,7 @@ impl Inner {
     }
 }
 
-impl TransactionQueue {
+impl BundleQueue {
     pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
@@ -86,7 +86,7 @@ impl TransactionQueue {
         }
     }
 
-    pub fn update_transactions(&self, incl: &InclusionList, retry: RetryList) {
+    pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
         let mut inner = self.0.lock();
 
         // Retain priority bundles not in the inclusion list.
@@ -131,7 +131,7 @@ impl TransactionQueue {
     }
 }
 
-impl DataSource for TransactionQueue {
+impl DataSource for BundleQueue {
     type Data = CandidateList;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
