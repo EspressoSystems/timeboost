@@ -223,8 +223,7 @@ impl Drop for Decrypter {
     }
 }
 
-type Incubator = BTreeMap<DecShareKey, Vec<DecShare>>;
-
+type Incubator = BTreeMap<DecShareKey, BTreeMap<u32, DecShare>>;
 /// Worker is responsible for "hatching" ciphertexts.
 ///
 /// When ciphertexts in a round have received t+1 decryption shares
@@ -376,16 +375,21 @@ impl Worker {
         let kids = share_info.kids();
         let cids = share_info.cids();
         let shares = share_info.dec_shares();
-        // add shares to the map using round, keyset id and nonce as key.
-        (0..cids.len()).try_for_each(|i| {
+        // add shares to the incubator using round, keyset id and nonce as key.
+        (0..cids.len()).try_for_each(|i| -> Result<(), DecryptError> {
             let kid = *kids.get(i).ok_or(DecryptError::InvalidMessage)?;
             let cid = cids.get(i).ok_or(DecryptError::InvalidMessage)?;
-            let s = shares
+            let share = shares
                 .get(i)
                 .ok_or(DecryptError::InvalidMessage)?
                 .to_owned();
-            let k = DecShareKey::new(share_info.round(), *cid, kid);
-            self.shares.entry(k).or_default().push(s);
+            let key = DecShareKey::new(share_info.round(), *cid, kid);
+            self.shares
+                .entry(key)
+                .and_modify(|shares| {
+                    shares.insert(share.index(), share.clone());
+                })
+                .or_insert_with(|| [(share.index(), share)].into_iter().collect());
             Ok(())
         })
     }
@@ -424,7 +428,7 @@ impl Worker {
                 let decrypted_data = DecryptionScheme::combine(
                     &self.committee,
                     self.dec_sk.combkey(),
-                    shares.iter().collect::<Vec<_>>(),
+                    shares.values().collect::<Vec<_>>(),
                     ciphertext,
                 )
                 .map_err(DecryptError::Decryption)?;
@@ -527,12 +531,20 @@ mod tests {
         let tx_message = b"The slow brown fox jumps over the lazy dog".to_vec();
         let ptx_plaintext = Plaintext::new(ptx_message.clone());
         let tx_plaintext = Plaintext::new(tx_message.clone());
-        let ptx_ciphertext =
-            DecryptionScheme::encrypt(&mut test_rng(), &keyset, &encryption_key, &ptx_plaintext)
-                .unwrap();
-        let tx_ciphertext =
-            DecryptionScheme::encrypt(&mut test_rng(), &keyset, &encryption_key, &tx_plaintext)
-                .unwrap();
+        let ptx_ciphertext = DecryptionScheme::encrypt(
+            &mut test_rng(),
+            &keyset.id(),
+            &encryption_key,
+            &ptx_plaintext,
+        )
+        .unwrap();
+        let tx_ciphertext = DecryptionScheme::encrypt(
+            &mut test_rng(),
+            &keyset.id(),
+            &encryption_key,
+            &tx_plaintext,
+        )
+        .unwrap();
         let ptx_ciphertext_bytes =
             bincode::serde::encode_to_vec(&ptx_ciphertext, bincode::config::standard())
                 .expect("Failed to encode ciphertext");

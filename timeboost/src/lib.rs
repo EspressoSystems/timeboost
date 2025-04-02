@@ -7,6 +7,8 @@ use api::metrics::serve_metrics_api;
 use cliquenet::Address;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
+use timeboost_crypto::DecryptionScheme;
+use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
 use timeboost_types::{BundleVariant, DecryptionKey};
 use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
@@ -15,7 +17,7 @@ use tokio::select;
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tokio::time::interval;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 use multisig::{Keypair, PublicKey};
@@ -26,6 +28,8 @@ pub use timeboost_types as types;
 pub mod api;
 pub mod keyset;
 pub mod metrics;
+
+type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
 pub struct TimeboostConfig {
     /// The port to bind the RPC server to.
@@ -95,8 +99,11 @@ impl Timeboost {
         )));
 
         if self.init.tps > 0 {
-            self.children
-                .push(spawn(gen_bundles(self.init.tps, self.init.sender.clone())));
+            self.children.push(spawn(gen_bundles(
+                self.init.tps,
+                self.init.dec_sk.pubkey().clone(),
+                self.init.sender.clone(),
+            )));
         }
 
         loop {
@@ -120,11 +127,16 @@ impl Timeboost {
     }
 }
 
-async fn gen_bundles(tps: u32, tx: Sender<BundleVariant>) {
+async fn gen_bundles(tps: u32, pubkey: EncKey, tx: Sender<BundleVariant>) {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     loop {
         interval.tick().await;
-        if tx.send(make_bundle()).await.is_err() {
+        let Ok(b) = make_bundle(&pubkey) else {
+            warn!("error generating bundle");
+            continue;
+        };
+        if tx.send(b).await.is_err() {
+            error!("unable to send bundle");
             return;
         }
     }

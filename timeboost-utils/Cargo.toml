@@ -11,9 +11,13 @@ test = ["committable", "crossbeam-queue", "sailfish-types"]
 [dependencies]
 anyhow = { workspace = true }
 arbitrary = { workspace = true }
+ark-std = { workspace = true }
 async-trait = { workspace = true }
-bs58 = { workspace = true }
+bincode = { workspace = true }
 blake3 = { workspace = true }
+bs58 = { workspace = true }
+bytes = { workspace = true }
+ethereum_ssz = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
@@ -21,8 +25,9 @@ parking_lot = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
-ethereum_ssz = { workspace = true }
+serde = { workspace = true }
 tide-disco = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }
 tracing = { workspace = true }

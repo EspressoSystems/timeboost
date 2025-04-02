@@ -74,6 +74,11 @@ impl Bundle {
         self.data = d;
         self.update_hash()
     }
+
+    pub fn set_kid(&mut self, kid: KeysetId) {
+        self.kid = Some(kid);
+        self.update_hash()
+    }
 }
 
 #[cfg(feature = "arbitrary")]
