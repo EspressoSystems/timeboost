@@ -21,7 +21,7 @@ parking_lot = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
-serde = { workspace = true }
+ethereum_ssz = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }
