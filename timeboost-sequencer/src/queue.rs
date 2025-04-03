@@ -4,51 +4,51 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_crypto::KeysetId;
-use timeboost_types::{Address, Epoch, PriorityBundle, RetryList, Transaction};
+use timeboost_types::{Address, Bundle, BundleVariant, Epoch, RetryList, SignedPriorityBundle};
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
+use tracing::trace;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
-pub struct TransactionQueue(Arc<Mutex<Inner>>);
+pub struct BundleQueue(Arc<Mutex<Inner>>);
 
 #[derive(Debug)]
 struct Inner {
     priority_addr: Address,
     time: Timestamp,
     index: DelayedInboxIndex,
-    bundles: BTreeMap<Epoch, Vec<PriorityBundle>>,
-    transactions: VecDeque<(Instant, Transaction)>,
+    priority: BTreeMap<Epoch, Vec<SignedPriorityBundle>>,
+    regular: VecDeque<(Instant, Bundle)>,
 }
 
 impl Inner {
     fn set_time(&mut self, time: Timestamp) {
         if time > self.time {
             if time.epoch() > self.time.epoch() {
-                self.bundles = self.bundles.split_off(&time.epoch());
+                self.priority = self.priority.split_off(&time.epoch());
             }
             self.time = time;
         }
     }
 }
 
-impl TransactionQueue {
+impl BundleQueue {
     pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
             index: idx,
-            bundles: BTreeMap::new(),
-            transactions: VecDeque::new(),
+            priority: BTreeMap::new(),
+            regular: VecDeque::new(),
         })))
     }
 
     pub fn len(&self) -> (usize, usize) {
         let inner = self.0.lock();
         (
-            inner.bundles.values().map(Vec::len).sum(),
-            inner.transactions.len(),
+            inner.priority.values().map(Vec::len).sum(),
+            inner.regular.len(),
         )
     }
 
@@ -57,9 +57,9 @@ impl TransactionQueue {
         self.0.lock().index = idx
     }
 
-    pub fn add_transactions<I>(&self, it: I)
+    pub fn add_bundles<I>(&self, it: I)
     where
-        I: IntoIterator<Item = Transaction>,
+        I: IntoIterator<Item = BundleVariant>,
     {
         let time = Timestamp::now();
         let now = Instant::now();
@@ -67,40 +67,34 @@ impl TransactionQueue {
         let mut inner = self.0.lock();
 
         inner.set_time(time);
-
-        for mut t in it.into_iter() {
-            if let Ok(kid) = KeysetId::try_from(t.data().as_ref()) {
-                t.set_keyset(kid);
-            } else {
-                continue;
+        let epoch_now = inner.time.epoch();
+        for b in it.into_iter() {
+            match b {
+                BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
+                BundleVariant::Priority(b) => {
+                    match b.validate(epoch_now, Some(inner.priority_addr)) {
+                        Ok(_) => {
+                            let epoch = b.bundle().epoch();
+                            inner.priority.entry(epoch).or_default().push(b);
+                        }
+                        Err(e) => {
+                            trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
+                        }
+                    }
+                }
             }
-
-            if t.to() != &inner.priority_addr {
-                inner.transactions.push_back((now, t));
-                continue;
-            }
-
-            // TODO: Check transaction signature is valid PLC signature.
-
-            let epoch = t.nonce().to_epoch();
-
-            if epoch < inner.time.epoch() || epoch > inner.time.epoch() + 1 {
-                continue;
-            }
-
-            inner.bundles.entry(epoch).or_default().push(t.into());
         }
     }
 
-    pub fn update_transactions(&self, incl: &InclusionList, retry: RetryList) {
+    pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
         let mut inner = self.0.lock();
 
         // Retain priority bundles not in the inclusion list.
-        if let Some(bundles) = inner.bundles.get_mut(&incl.epoch()) {
+        if let Some(bundles) = inner.priority.get_mut(&incl.epoch()) {
             bundles.retain(|b| {
                 if let Ok(i) = incl
                     .priority_bundles()
-                    .binary_search_by_key(&b.nonce().to_seqno(), |x| x.nonce().to_seqno())
+                    .binary_search_by_key(&b.seqno(), |x| x.seqno())
                 {
                     incl.priority_bundles()[i] != *b
                 } else {
@@ -111,33 +105,33 @@ impl TransactionQueue {
 
         // Retain transactions not in the inclusion list.
         inner
-            .transactions
-            .retain(|(_, t)| !incl.transactions().contains(t));
+            .regular
+            .retain(|(_, t)| !incl.regular_bundles().contains(t));
 
         // Process transactions and bundles that should be retried:
-        let (transactions, bundles) = retry.into_parts();
+        let (priority, regular) = retry.into_parts();
 
         let now = inner
-            .transactions
+            .regular
             .front()
             .map(|(t, _)| *t)
             .unwrap_or_else(Instant::now);
 
-        for t in transactions {
-            inner.transactions.push_front((now, t));
+        for t in regular {
+            inner.regular.push_front((now, t));
         }
 
-        for b in bundles {
+        for b in priority {
             inner
-                .bundles
-                .entry(b.nonce().to_epoch())
+                .priority
+                .entry(b.bundle().epoch())
                 .or_default()
                 .push(b)
         }
     }
 }
 
-impl DataSource for TransactionQueue {
+impl DataSource for BundleQueue {
     type Data = CandidateList;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
@@ -153,13 +147,13 @@ impl DataSource for TransactionQueue {
         inner.set_time(time);
 
         let bundles = inner
-            .bundles
+            .priority
             .get(&inner.time.epoch())
             .cloned()
             .unwrap_or_default();
 
-        let txns = inner
-            .transactions
+        let regular = inner
+            .regular
             .iter()
             .take_while(|(t, _)| now.duration_since(*t) >= MIN_WAIT_TIME)
             .map(|(_, x)| x.clone())
@@ -167,7 +161,7 @@ impl DataSource for TransactionQueue {
 
         CandidateList::builder(inner.time, inner.index)
             .with_priority_bundles(bundles)
-            .with_transactions(txns)
+            .with_regular_bundles(regular)
             .finish()
     }
 }

@@ -14,7 +14,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, DecryptionKey, Transaction};
+use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -23,7 +23,7 @@ use tracing::{Level, error, trace};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
-use queue::TransactionQueue;
+use queue::BundleQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
@@ -44,7 +44,7 @@ impl SequencerConfig {
         A: Into<net::Address>,
     {
         Self {
-            priority_addr: Address::zero(),
+            priority_addr: Address::default(),
             keypair: keyp,
             peers: Vec::new(),
             bind: bind.into(),
@@ -76,7 +76,7 @@ impl SequencerConfig {
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
-    transactions: TransactionQueue,
+    bundles: BundleQueue,
     output: Receiver<Transaction>,
 }
 
@@ -88,7 +88,7 @@ impl Drop for Sequencer {
 
 struct Task {
     label: PublicKey,
-    transactions: TransactionQueue,
+    bundles: BundleQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
     decrypter: Decrypter,
@@ -123,7 +123,7 @@ impl Sequencer {
 
         let label = cfg.keypair.public_key();
 
-        let queue = TransactionQueue::new(cfg.priority_addr, cfg.index);
+        let queue = BundleQueue::new(cfg.priority_addr, cfg.index);
         let consensus = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
             .with_metrics(cons_metrics);
 
@@ -152,7 +152,7 @@ impl Sequencer {
 
         let task = Task {
             label,
-            transactions: queue.clone(),
+            bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
             decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
@@ -163,26 +163,26 @@ impl Sequencer {
         Ok(Self {
             label,
             task: spawn(task.go()),
-            transactions: queue,
+            bundles: queue,
             output: rx,
         })
     }
 
-    pub fn add_transactions<I>(&mut self, it: I)
+    pub fn add_bundles<I>(&mut self, it: I)
     where
-        I: IntoIterator<Item = Transaction>,
+        I: IntoIterator<Item = BundleVariant>,
     {
         if tracing::enabled!(Level::TRACE) {
-            let (b, t) = self.transactions.len();
+            let (p, b) = self.bundles.len();
             trace!(
                 node = %self.label,
+                priority = %p,
                 bundles = %b,
-                transactions = %t,
-                "adding transactions to queue"
+                "adding bundles to queue"
             );
         }
 
-        self.transactions.add_transactions(it)
+        self.bundles.add_bundles(it)
     }
 
     pub async fn next_transaction(&mut self) -> Result<Transaction> {
@@ -248,7 +248,7 @@ impl Task {
                         }
                         for (round, candidates) in lists {
                             let (i, r) = self.includer.inclusion_list(round, candidates);
-                            self.transactions.update_transactions(&i, r);
+                            self.bundles.update_bundles(&i, r);
                             if let Err(err) = self.decrypter.enqueue(i).await {
                                 error!(%err, "decrypt enqueue error");
                             }

@@ -1,11 +1,14 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
-use timeboost_types::{CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, Timestamp};
-use timeboost_types::{Hash, PriorityBundle, RetryList, Transaction, math};
+use timeboost_types::{
+    Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
+    Timestamp,
+};
+use timeboost_types::{RetryList, math};
 
 #[derive(Debug)]
 pub struct Includer {
@@ -21,7 +24,7 @@ pub struct Includer {
     /// Consensus delayed inbox index.
     index: DelayedInboxIndex,
     /// Cache of transaction hashes for the previous 8 rounds.
-    cache: BTreeMap<RoundNumber, HashSet<Hash>>,
+    cache: BTreeMap<RoundNumber, HashSet<[u8; 32]>>,
 }
 
 impl Includer {
@@ -68,75 +71,74 @@ impl Includer {
             self.seqno = SeqNo::zero();
         }
 
-        let mut transactions: BTreeMap<Transaction, usize> = BTreeMap::new();
-        let mut bundles: BTreeMap<SeqNo, PriorityBundle> = BTreeMap::new();
+        let mut regular: HashMap<Bundle, usize> = HashMap::new();
+        let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 
-        for (bs, ts) in lists.into_iter().map(CandidateList::into_transactions) {
-            for t in ts {
-                *transactions.entry(t).or_default() += 1
+        for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
+            for rb in rbs {
+                *regular.entry(rb).or_default() += 1
             }
-            for b in bs {
-                let nonce = b.nonce();
-                let epoch = nonce.to_epoch();
+            for b in pbs {
+                let epoch = b.bundle().epoch();
                 if epoch < self.epoch {
                     continue;
                 }
                 if epoch == self.epoch {
-                    match bundles.entry(nonce.to_seqno()) {
+                    match priority.entry(b.seqno()) {
                         Entry::Vacant(e) => {
                             e.insert(b);
                         }
                         Entry::Occupied(mut e) => {
                             if b.digest() < e.get().digest() {
                                 let b = e.insert(b);
-                                retry.add_bundle(b);
+                                retry.add_priority(b);
                             } else {
-                                retry.add_bundle(b);
+                                retry.add_priority(b);
                             }
                         }
                     }
                     continue;
                 }
                 if epoch == self.epoch + 1 {
-                    retry.add_bundle(b)
+                    retry.add_priority(b)
                 }
             }
         }
 
-        if let Ok(seqno) = self.validate_bundles(&bundles) {
+        if let Ok(seqno) = self.validate_bundles(&priority) {
             self.seqno = seqno
         } else {
-            bundles.clear()
+            priority.clear()
         }
 
-        let bundles = bundles.into_values().collect();
+        let bundles = priority.into_values().collect();
 
         let mut include = Vec::new();
 
-        for (t, n) in transactions {
+        for (rb, n) in regular {
             if n > self.committee.threshold().get() {
-                if self.is_unknown(&t) {
+                if self.is_unknown(&rb) {
                     self.cache
                         .entry(self.round)
                         .or_default()
-                        .insert(*t.digest());
-                    include.push(t)
+                        .insert(*rb.digest());
+                    include.push(rb)
                 }
             } else {
-                retry.add_transaction(t)
+                retry.add_regular(rb)
             }
         }
 
         let mut ilist = InclusionList::new(self.round, self.time, self.index);
         ilist
             .set_priority_bundles(bundles)
-            .set_transactions(include);
+            .set_regular_bundles(include);
 
         (ilist, retry)
     }
 
-    fn is_unknown(&self, t: &Transaction) -> bool {
+    fn is_unknown(&self, t: &Bundle) -> bool {
         for hashes in self.cache.values().rev() {
             if hashes.contains(t.digest()) {
                 return false;
@@ -145,7 +147,10 @@ impl Includer {
         true
     }
 
-    fn validate_bundles(&self, bundles: &BTreeMap<SeqNo, PriorityBundle>) -> Result<SeqNo, ()> {
+    fn validate_bundles(
+        &self,
+        bundles: &BTreeMap<SeqNo, SignedPriorityBundle>,
+    ) -> Result<SeqNo, ()> {
         if bundles.is_empty() {
             return Ok(self.seqno);
         }

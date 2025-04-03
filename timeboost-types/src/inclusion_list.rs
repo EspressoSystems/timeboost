@@ -1,4 +1,4 @@
-use crate::{DelayedInboxIndex, Epoch, PriorityBundle, Timestamp, Transaction};
+use crate::{Bundle, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
 use sailfish_types::RoundNumber;
 
 #[derive(Debug, Clone)]
@@ -6,8 +6,8 @@ pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: Vec<PriorityBundle>,
-    transactions: Vec<Transaction>,
+    priority: Vec<SignedPriorityBundle>,
+    regular: Vec<Bundle>,
 }
 
 impl InclusionList {
@@ -17,26 +17,26 @@ impl InclusionList {
             time: t,
             index: i,
             priority: Vec::new(),
-            transactions: Vec::new(),
+            regular: Vec::new(),
         }
     }
 
-    pub fn set_priority_bundles(&mut self, t: Vec<PriorityBundle>) -> &mut Self {
+    pub fn set_priority_bundles(&mut self, t: Vec<SignedPriorityBundle>) -> &mut Self {
         self.priority = t;
         self
     }
 
-    pub fn set_transactions<I>(&mut self, it: I) -> &mut Self
+    pub fn set_regular_bundles<I>(&mut self, it: I) -> &mut Self
     where
-        I: IntoIterator<Item = Transaction>,
+        I: IntoIterator<Item = Bundle>,
     {
-        self.transactions.clear();
-        self.transactions.extend(it);
+        self.regular.clear();
+        self.regular.extend(it);
         self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.transactions.is_empty() && self.priority.is_empty()
+        self.regular.is_empty() && self.priority.is_empty()
     }
 
     pub fn has_priority_bundles(&self) -> bool {
@@ -56,18 +56,18 @@ impl InclusionList {
     }
 
     pub fn len(&self) -> usize {
-        self.transactions.len() + self.priority.len()
+        self.regular.len() + self.priority.len()
     }
 
-    pub fn into_transactions(self) -> (Vec<PriorityBundle>, Vec<Transaction>) {
-        (self.priority, self.transactions)
+    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>) {
+        (self.priority, self.regular)
     }
 
-    pub fn transactions(&self) -> &[Transaction] {
-        &self.transactions
+    pub fn regular_bundles(&self) -> &[Bundle] {
+        &self.regular
     }
 
-    pub fn priority_bundles(&self) -> &[PriorityBundle] {
+    pub fn priority_bundles(&self) -> &[SignedPriorityBundle] {
         &self.priority
     }
 
@@ -80,12 +80,6 @@ impl InclusionList {
         h.update(&self.round.u64().to_be_bytes());
         h.update(&u64::from(self.time).to_be_bytes());
         h.update(&u64::from(self.index).to_be_bytes());
-        for b in &self.priority {
-            h.update(&b.digest()[..]);
-        }
-        for t in &self.transactions {
-            h.update(&t.digest()[..]);
-        }
         h.finalize().into()
     }
 }
