@@ -19,7 +19,7 @@ services:
       timeboost:
         ipv4_address: 172.20.0.2
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=info
+      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_PORT=8000
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
@@ -49,7 +49,7 @@ services:
       timeboost:
         ipv4_address: 172.20.0.3
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=info
+      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_PORT=8001
       - TIMEBOOST_RPC_PORT=8801
       - TIMEBOOST_METRICS_PORT=9001
@@ -79,7 +79,7 @@ services:
       timeboost:
         ipv4_address: 172.20.0.4
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=info
+      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_PORT=8002
       - TIMEBOOST_RPC_PORT=8802
       - TIMEBOOST_METRICS_PORT=9002
@@ -109,7 +109,7 @@ services:
       timeboost:
         ipv4_address: 172.20.0.5
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=info
+      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_PORT=8003
       - TIMEBOOST_RPC_PORT=8803
       - TIMEBOOST_METRICS_PORT=9003
@@ -140,7 +140,7 @@ services:
       timeboost:
         ipv4_address: 172.20.0.6
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,timeboost_networking=info
+      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_PORT=8004
       - TIMEBOOST_RPC_PORT=8804
       - TIMEBOOST_METRICS_PORT=9004

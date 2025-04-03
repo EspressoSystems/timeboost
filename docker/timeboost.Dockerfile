@@ -31,7 +31,7 @@ RUN apt update && apt install -yqq curl
 USER timeboostuser
 
 # Set the log level to debug by default
-ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug,timeboost_networking=error}
+ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug,cliquenet=error}
 
 EXPOSE ${TIMEBOOST_PORT}
 EXPOSE ${TIMEBOOST_RPC_PORT}
