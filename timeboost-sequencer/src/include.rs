@@ -10,6 +10,15 @@ use timeboost_types::{
 };
 use timeboost_types::{RetryList, math};
 
+const CACHE_SIZE: usize = 8;
+
+#[derive(Debug)]
+pub struct Outcome {
+    pub(crate) ilist: InclusionList,
+    pub(crate) retry: RetryList,
+    pub(crate) is_valid: bool,
+}
+
 #[derive(Debug)]
 pub struct Includer {
     committee: Committee,
@@ -40,18 +49,17 @@ impl Includer {
         }
     }
 
-    pub fn inclusion_list(
-        &mut self,
-        round: RoundNumber,
-        lists: Vec<CandidateList>,
-    ) -> (InclusionList, RetryList) {
+    pub fn inclusion_list(&mut self, round: RoundNumber, lists: Vec<CandidateList>) -> Outcome {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
 
-        while self.cache.len() > 8 {
+        while self.cache.len() > CACHE_SIZE {
             self.cache.pop_first();
         }
+
+        // Ensure cache has an entry for this round.
+        self.cache.entry(self.round).or_default();
 
         self.time = {
             let mut times = lists.iter().map(|cl| cl.timestamp()).collect::<Vec<_>>();
@@ -135,7 +143,11 @@ impl Includer {
             .set_priority_bundles(bundles)
             .set_regular_bundles(include);
 
-        (ilist, retry)
+        Outcome {
+            ilist,
+            retry,
+            is_valid: self.is_valid_cache(),
+        }
     }
 
     fn is_unknown(&self, t: &Bundle) -> bool {
@@ -178,5 +190,18 @@ impl Includer {
             .last_key_value()
             .expect("non-empty bundle sequence => last entry")
             .0)
+    }
+
+    /// Check if the cache is valid, i.e. ends with at least 8 consecutive rounds.
+    fn is_valid_cache(&self) -> bool {
+        if self.cache.len() < CACHE_SIZE {
+            return false;
+        }
+        self.cache
+            .keys()
+            .rev()
+            .zip(self.cache.keys().rev().skip(1))
+            .take(CACHE_SIZE)
+            .all(|(a, b)| a.saturating_sub(1) == **b)
     }
 }
