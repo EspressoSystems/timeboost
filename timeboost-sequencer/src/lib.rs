@@ -299,7 +299,7 @@ impl Task {
                     }
                     // Unless we passively observe, stop execution if
                     // garbage collection goes past our latest processed round.
-                    Action::Gc(r) if self.mode.is_active() && self.round < r => {
+                    Action::Gc(r) if self.mode.is_active() && r >= self.round => {
                         self.actions.push_front(action);
                         debug!(node = %self.label, round = %r, "gc cutoff reached");
                         break 'outer;
