@@ -21,7 +21,7 @@ use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
@@ -264,7 +264,7 @@ impl Task {
     async fn execute(&mut self) -> Result<()> {
         let mut lists = Vec::new();
 
-        while !self.actions.is_empty() {
+        'outer: while !self.actions.is_empty() {
             // Collect all consecutive deliveries:
             let mut round = RoundNumber::genesis();
             let mut candidates = Vec::new();
@@ -301,7 +301,8 @@ impl Task {
                     // garbage collection goes past our latest processed round.
                     Action::Gc(r) if self.mode.is_active() && self.round < r => {
                         self.actions.push_front(action);
-                        break;
+                        debug!(node = %self.label, round = %r, "gc cutoff reached");
+                        break 'outer;
                     }
                     _ => {
                         if let Err(err) = self.sailfish.execute(action).await {
