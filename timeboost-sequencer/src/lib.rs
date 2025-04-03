@@ -21,7 +21,6 @@ use timeboost_types::{CandidateList, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tokio::time::Instant;
 use tracing::error;
 
 use decrypt::{DecryptError, Decrypter};
@@ -90,6 +89,7 @@ impl Drop for Sequencer {
 }
 
 struct Task {
+    label: PublicKey,
     bundles: BundleQueue,
     sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
     includer: Includer,
@@ -158,6 +158,7 @@ impl Sequencer {
         let (tx, rx) = mpsc::channel(1024);
 
         let task = Task {
+            label,
             bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
@@ -204,77 +205,106 @@ impl Sequencer {
 }
 
 impl Task {
+    /// Max. number of rounds Sailfish can get ahead of Timeboost.
+    const MAX_DELTA: RoundNumber = RoundNumber::new(3);
+
     async fn go(mut self) -> Result<()> {
         let mut actions: VecDeque<_> = self.sailfish.init().into();
 
+        let mut sailfish_round = self.execute(RoundNumber::genesis(), &mut actions).await?;
+        let mut timeboost_round = RoundNumber::genesis();
+
         loop {
-            while !actions.is_empty() {
-                while let Some(a) = actions.pop_front() {
-                    if a.is_deliver() {
-                        actions.push_front(a);
-                        break;
+            select! {
+                result = self.sailfish.next(), if sailfish_round - timeboost_round <= Self::MAX_DELTA => {
+                    match result {
+                        Ok(a) => {
+                            actions.append(&mut a.into());
+                            self.metrics.sailfish_actions.set(actions.len());
+                            sailfish_round = self.execute(sailfish_round, &mut actions).await?;
+                            self.metrics.sailfish_round.set(u64::from(sailfish_round) as usize);
+                        },
+                        Err(err) => {
+                            error!(node = %self.label, %err, "coordinator error");
+                        }
                     }
-                    self.sailfish.execute(a).await?
-                }
-
-                if actions.is_empty() {
-                    break;
-                }
-
-                debug_assert!(actions.front().expect("non-empty actions").is_deliver());
-
-                let mut round = RoundNumber::genesis();
-                let mut lists = Vec::new();
-
-                while let Some(action) = actions.pop_front() {
-                    if let Action::Deliver(payload) = action {
-                        round = payload.round();
-                        lists.push(payload.into_data())
-                    } else {
-                        actions.push_front(action);
-                        break;
+                },
+                result = self.decrypter.next() => match result {
+                    Ok(incl) => {
+                        timeboost_round = incl.round();
+                        self.metrics.timeboost_round.set(u64::from(timeboost_round) as usize);
+                        for t in self.sorter.sort(incl) {
+                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
+                        }
                     }
-                }
-
-                if lists.is_empty() {
-                    continue;
-                }
-
-                let (inc, retry) = self.includer.inclusion_list(round, lists);
-
-                self.metrics.round.set(u64::from(round) as usize);
-                self.metrics
-                    .included_priority
-                    .set(inc.priority_bundles().len());
-                self.metrics
-                    .included_regular
-                    .set(inc.regular_bundles().len());
-                self.metrics
-                    .retry_priority
-                    .set(retry.priority_bundles().len());
-                self.metrics
-                    .retry_regular
-                    .set(retry.regular_bundles().len());
-
-                self.bundles.update_bundles(&inc, retry);
-
-                let now = Instant::now();
-                self.decrypter.enqueue(inc).await?;
-                let inc = self.decrypter.next().await?;
-
-                self.metrics
-                    .decrypt_duration
-                    .add_point(now.elapsed().as_secs_f64() / 1000.0);
-
-                for trx in self.sorter.sort(inc) {
-                    self.output
-                        .send(trx)
-                        .await
-                        .map_err(|_| TimeboostError::ChannelClosed)?
+                    Err(err) => {
+                        error!(node = %self.label, %err);
+                    }
                 }
             }
-            actions.extend(self.sailfish.next().await?)
         }
+    }
+
+    async fn execute(
+        &mut self,
+        current: RoundNumber,
+        actions: &mut VecDeque<Action<CandidateList>>,
+    ) -> Result<RoundNumber> {
+        let mut lists = Vec::new();
+        let mut round = current;
+
+        while !actions.is_empty() {
+            // Collect all consecutive deliveries:
+            let mut candidates = Vec::new();
+            while let Some(action) = actions.pop_front() {
+                if let Action::Deliver(payload) = action {
+                    round = payload.round();
+                    candidates.push(payload.into_data())
+                } else {
+                    actions.push_front(action);
+                    break;
+                }
+            }
+
+            // At this point no more deliveries are expected.
+            debug_assert!(!matches!(actions.front(), Some(&Action::Deliver(_))));
+
+            // Associate the candidate lists delivered with their highest round
+            // number. (There may be multiple round numbers in a consecutive
+            // delivery sequence because late arrivals may be delivered in front
+            // of the next DAG frontier)
+            if !candidates.is_empty() {
+                lists.push((round, candidates))
+            }
+
+            // Stop executing other actions beyond the max. allowed number of rounds.
+            if round - current > Self::MAX_DELTA {
+                break;
+            }
+
+            // Execute all actions up to the next delivery sequence.
+            while let Some(action) = actions.pop_front() {
+                if let Action::Deliver(_) = action {
+                    actions.push_front(action);
+                    break;
+                }
+                if let Err(err) = self.sailfish.execute(action).await {
+                    error!(node = %self.label, %err, "coordinator error");
+                    return Err(err.into());
+                }
+            }
+        }
+
+        // Submit the collected candidate lists to the next phases.
+        for (round, candidates) in lists {
+            let (i, r) = self.includer.inclusion_list(round, candidates);
+            self.bundles.update_bundles(&i, r);
+            if let Err(err) = self.decrypter.enqueue(i).await {
+                error!(node = %self.label, %err, "decrypt enqueue error");
+            }
+        }
+
+        Ok(round)
     }
 }
 
