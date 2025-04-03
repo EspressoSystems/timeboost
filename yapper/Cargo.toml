@@ -10,7 +10,7 @@ clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 reqwest = { workspace = true }
 timeboost = { path = "../timeboost" }
+timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-utils = { path = "../timeboost-utils" }
 tracing = { workspace = true }
 tokio = { workspace = true }
-url = { workspace = true }
