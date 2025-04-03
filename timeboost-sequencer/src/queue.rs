@@ -8,6 +8,8 @@ use timeboost_types::{Address, Bundle, BundleVariant, Epoch, RetryList, SignedPr
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 use tracing::trace;
 
+use crate::metrics::SequencerMetrics;
+
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
@@ -20,6 +22,7 @@ struct Inner {
     index: DelayedInboxIndex,
     priority: BTreeMap<Epoch, Vec<SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
+    metrics: Arc<SequencerMetrics>,
 }
 
 impl Inner {
@@ -29,27 +32,21 @@ impl Inner {
                 self.priority = self.priority.split_off(&time.epoch());
             }
             self.time = time;
+            self.metrics.time.set(u64::from(self.time) as usize);
         }
     }
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, idx: DelayedInboxIndex) -> Self {
+    pub fn new(prio: Address, idx: DelayedInboxIndex, metrics: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
             index: idx,
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
+            metrics,
         })))
-    }
-
-    pub fn len(&self) -> (usize, usize) {
-        let inner = self.0.lock();
-        (
-            inner.priority.values().map(Vec::len).sum(),
-            inner.regular.len(),
-        )
     }
 
     #[allow(unused)]
@@ -84,6 +81,12 @@ impl BundleQueue {
                 }
             }
         }
+
+        inner
+            .metrics
+            .queued_priority
+            .set(inner.priority.values().map(Vec::len).sum());
+        inner.metrics.queued_regular.set(inner.regular.len());
     }
 
     pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
@@ -138,6 +141,12 @@ impl BundleQueue {
                 .or_default()
                 .push(b)
         }
+
+        inner
+            .metrics
+            .queued_priority
+            .set(inner.priority.values().map(Vec::len).sum());
+        inner.metrics.queued_regular.set(inner.regular.len());
     }
 }
 
