@@ -114,6 +114,10 @@ impl Mode {
     fn is_active(self) -> bool {
         matches!(self, Self::Active)
     }
+
+    fn is_passive(self) -> bool {
+        matches!(self, Self::Passive)
+    }
 }
 
 impl Sequencer {
@@ -318,8 +322,10 @@ impl Task {
                 info!(node = %self.label, %round, "passive mode");
                 continue;
             } else {
+                if self.mode.is_passive() {
+                    info!(node = %self.label, %round, "entering active mode");
+                }
                 self.mode = Mode::Active;
-                info!(node = %self.label, %round, "active mode");
             }
             if let Err(err) = self.decrypter.enqueue(outcome.ilist).await {
                 error!(node = %self.label, %err, "decrypt enqueue error");
