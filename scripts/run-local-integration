@@ -19,7 +19,7 @@ for i in {0..4}; do
     SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
     DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
 
-    RUST_LOG=timeboost=debug,sailfish=debug,timeboost_networking=info \
+    RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=info \
     TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
     TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
     ./target/${1:-debug}/timeboost \

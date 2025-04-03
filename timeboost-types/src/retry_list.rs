@@ -20,6 +20,14 @@ impl RetryList {
         self.priority.insert(b);
     }
 
+    pub fn priority_bundles(&self) -> &HashSet<SignedPriorityBundle> {
+        &self.priority
+    }
+
+    pub fn regular_bundles(&self) -> &HashSet<Bundle> {
+        &self.regular
+    }
+
     pub fn into_parts(self) -> (HashSet<SignedPriorityBundle>, HashSet<Bundle>) {
         (self.priority, self.regular)
     }
