@@ -19,9 +19,8 @@ async fn send_transaction(
 
     match bundle {
         BundleVariant::Regular(bundle) => {
-            let submision_url =
-                Url::parse(&format!("http://{}/v0/submit-regular", addr.to_string()))
-                    .context(format!("parsing {} into a url", addr.to_string()))?;
+            let submision_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
+                .context(format!("parsing {} into a url", addr))?;
 
             client
                 .post(submision_url)
@@ -34,9 +33,8 @@ async fn send_transaction(
                 .context("sending request to the submit-regular endpoint")
         }
         BundleVariant::Priority(signed_priority_bundle) => {
-            let submision_url =
-                Url::parse(&format!("http://{}/v0/submit-priority", addr.to_string()))
-                    .context(format!("parsing {} into a url", addr.to_string()))?;
+            let submision_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
+                .context(format!("parsing {} into a url", addr))?;
             client
                 .post(submision_url)
                 .body(bincode::serde::encode_to_vec(

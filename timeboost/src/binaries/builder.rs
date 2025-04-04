@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
 use std::{
