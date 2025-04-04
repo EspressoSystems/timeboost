@@ -44,7 +44,7 @@ impl PublicDecInfo {
 }
 
 impl KeysetConfig {
-    pub fn read_keyset(path: &PathBuf) -> Result<Self> {
+    pub fn read_keyset(path: &Path) -> Result<Self> {
         ensure!(path.exists(), "File not found: {:?}", path);
         let data = fs::read_to_string(&path).context("Failed to read file")?;
         let keyset: KeysetConfig = from_str(&data).context("Failed to parse JSON")?;
