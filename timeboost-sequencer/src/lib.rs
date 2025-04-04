@@ -17,11 +17,11 @@ use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
-use timeboost_types::{CandidateList, DelayedInboxIndex};
+use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
@@ -29,6 +29,7 @@ use queue::BundleQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
+type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
 
 #[derive(Debug)]
 pub struct SequencerConfig {
@@ -97,8 +98,6 @@ struct Task {
     sorter: Sorter,
     output: Sender<Transaction>,
     mode: Mode,
-    round: RoundNumber,
-    actions: VecDeque<Action<CandidateList>>,
 }
 
 /// Mode of operation.
@@ -111,10 +110,6 @@ enum Mode {
 }
 
 impl Mode {
-    fn is_active(self) -> bool {
-        matches!(self, Self::Active)
-    }
-
     fn is_passive(self) -> bool {
         matches!(self, Self::Passive)
     }
@@ -186,9 +181,7 @@ impl Sequencer {
             decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
-            round: RoundNumber::genesis(),
             mode: Mode::Passive,
-            actions: VecDeque::new(),
         };
 
         Ok(Self {
@@ -228,95 +221,114 @@ impl Sequencer {
 }
 
 impl Task {
+    /// Run sequencing logic.
+    //
+    // Processing takes place as follows:
+    //
+    // 1. Sailfish actions are executed and outputs collected in
+    //    round-indexed sequences of candidate lists.
+    // 2. Candidates are handed to the inclusion phase and produce the
+    //    next inclusion list.
+    // 3. If the decrypter has capacity the inclusion list is passed on
+    //    and processing continues with the next candidates.
+    // 4. Otherwise we buffer the inclusion list and pause Sailfish execution.
+    // 5. When the decrypter produces outputs we hand it to the ordering
+    //    phase and if it then has capacity we resume with the buffered
+    //    inclusion list from (4) and process the remaining candidates.
+    // 6. The logic continues at step (1).
+    //
+    // NB that if Sailfish does not produce outputs (i.e. candidate lists)
+    // processing its actions continues unhindered.
     async fn go(mut self) -> Result<()> {
-        self.actions = self.sailfish.init().into();
-        self.execute().await?;
+        let mut pending = None;
+        let mut candidates = Candidates::new();
+
+        if !self.sailfish.is_init() {
+            let actions = self.sailfish.init();
+            candidates = self.execute(actions).await?;
+        }
 
         loop {
-            select! {
-                result = self.sailfish.next(), if self.actions.is_empty() => {
-                    match result {
-                        Ok(a) => {
-                            self.actions = a.into();
-                            self.execute().await?;
-                        },
-                        Err(err) => {
-                            error!(node = %self.label, %err, "coordinator error");
-                        }
+            if pending.is_none() {
+                while let Some(ilist) = self.next_inclusion(&mut candidates) {
+                    if !self.decrypter.has_capacity() {
+                        pending = Some(ilist);
+                        break;
                     }
+                    if let Err(err) = self.decrypter.enqueue(ilist).await {
+                        error!(node = %self.label, %err, "decrypt enqueue error");
+                    }
+                }
+            }
+            select! {
+                result = self.sailfish.next(), if pending.is_none() => match result {
+                    Ok(actions) => {
+                        debug_assert!(candidates.is_empty());
+                        candidates = self.execute(actions).await?
+                    },
+                    Err(err) => {
+                        error!(node = %self.label, %err, "coordinator error");
+                    },
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
-                        self.round = incl.round();
                         for t in self.sorter.sort(incl) {
                             self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
                         }
-                        self.execute().await?
+                        if self.decrypter.has_capacity() {
+                            let Some(ilist) = pending.take() else {
+                                continue
+                            };
+                            if let Err(err) = self.decrypter.enqueue(ilist).await {
+                                error!(node = %self.label, %err, "decrypt enqueue error");
+                            }
+                        }
                     }
                     Err(err) => {
-                        error!(node = %self.label, %err, "decrypt error");
+                        error!(node = %self.label, %err);
                     }
                 }
             }
         }
     }
 
-    async fn execute(&mut self) -> Result<()> {
-        let mut lists = Vec::new();
-
-        'outer: while !self.actions.is_empty() {
-            // Collect all consecutive deliveries:
+    /// Execute Sailfish actions and collect candidate lists.
+    async fn execute(&mut self, actions: Vec<Action<CandidateList>>) -> Result<Candidates> {
+        let mut actions = VecDeque::from(actions);
+        let mut candidates = Vec::new();
+        while !actions.is_empty() {
             let mut round = RoundNumber::genesis();
-            let mut candidates = Vec::new();
-            while let Some(action) = self.actions.pop_front() {
+            let mut lists = Vec::new();
+            while let Some(action) = actions.pop_front() {
                 if let Action::Deliver(payload) = action {
                     round = payload.round();
-                    candidates.push(payload.into_data())
+                    lists.push(payload.into_data())
                 } else {
-                    self.actions.push_front(action);
+                    actions.push_front(action);
                     break;
                 }
             }
-
-            // At this point no more deliveries are expected.
-            debug_assert!(!matches!(self.actions.front(), Some(&Action::Deliver(_))));
-
-            // Associate the candidate lists delivered with their highest round
-            // number. (There may be multiple round numbers in a consecutive
-            // delivery sequence because late arrivals may be delivered in front
-            // of the next DAG frontier)
-            if !candidates.is_empty() {
-                lists.push((round, candidates))
+            if !lists.is_empty() {
+                candidates.push((round, lists))
             }
-
-            // Execute all actions up to the next delivery sequence.
-            while let Some(action) = self.actions.pop_front() {
-                match action {
-                    // Next delivery sequence starts => stop execution
-                    Action::Deliver(_) => {
-                        self.actions.push_front(action);
-                        break;
-                    }
-                    // Unless we passively observe, stop execution if
-                    // garbage collection goes past our latest processed round.
-                    Action::Gc(r) if self.mode.is_active() && r >= self.round => {
-                        self.actions.push_front(action);
-                        debug!(node = %self.label, round = %r, "gc cutoff reached");
-                        break 'outer;
-                    }
-                    _ => {
-                        if let Err(err) = self.sailfish.execute(action).await {
-                            error!(node = %self.label, %err, "coordinator error");
-                            return Err(err.into());
-                        }
-                    }
+            while let Some(action) = actions.pop_front() {
+                if let Action::Deliver(_) = action {
+                    actions.push_front(action);
+                    break;
+                }
+                if let Err(err) = self.sailfish.execute(action).await {
+                    error!(node = %self.label, %err, "coordinator error");
+                    return Err(err.into());
                 }
             }
         }
+        Ok(candidates.into())
+    }
 
-        // Submit the collected candidate lists to the next phases.
-        for (round, candidates) in lists {
-            let outcome = self.includer.inclusion_list(round, candidates);
+    /// Handle candidate lists and return the next inclusion list.
+    fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
+        while let Some((round, lists)) = candidates.pop_front() {
+            let outcome = self.includer.inclusion_list(round, lists);
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {
                 self.mode = Mode::Passive;
@@ -328,12 +340,9 @@ impl Task {
                 }
                 self.mode = Mode::Active;
             }
-            if let Err(err) = self.decrypter.enqueue(outcome.ilist).await {
-                error!(node = %self.label, %err, "decrypt enqueue error");
-            }
+            return Some(outcome.ilist);
         }
-
-        Ok(())
+        None
     }
 }
 
