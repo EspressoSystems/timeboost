@@ -479,6 +479,7 @@ where
                 msg = self.obound.recv() => match msg {
                     // Uni-cast
                     Some((Some(to), m)) => {
+                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         if to == self.key {
                             trace!(
                                 node  = %self.key,
@@ -508,6 +509,7 @@ where
                     }
                     // Multi-cast
                     Some((None, m)) => {
+                        self.metrics.sent_message_len.add_point(m.len() as f64);
                         trace!(
                             node  = %self.key,
                             to    = %self.key,
