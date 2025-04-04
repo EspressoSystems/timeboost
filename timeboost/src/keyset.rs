@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use cliquenet::Address;
@@ -11,7 +16,7 @@ type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct KeysetConfig {
     keyset: Vec<PublicNodeInfo>,
     dec_keyset: PublicDecInfo,
@@ -37,10 +42,16 @@ pub struct PublicDecInfo {
     combkey: String,
 }
 
+impl PublicDecInfo {
+    pub fn pubkey(&self) -> Result<PublicKey> {
+        PublicKey::try_from(self.pubkey.as_str()).context("Failed to parse public key from keyset")
+    }
+}
+
 impl KeysetConfig {
-    pub fn read_keyset(path: PathBuf) -> Result<Self> {
+    pub fn read_keyset(path: &Path) -> Result<Self> {
         ensure!(path.exists(), "File not found: {:?}", path);
-        let data = fs::read_to_string(&path).context("Failed to read file")?;
+        let data = fs::read_to_string(path).context("Failed to read file")?;
         let keyset: KeysetConfig = from_str(&data).context("Failed to parse JSON")?;
         Ok(keyset)
     }
@@ -55,6 +66,10 @@ impl KeysetConfig {
 
     pub fn keyset(&self) -> &[PublicNodeInfo] {
         &self.keyset
+    }
+
+    pub fn dec_keyset(&self) -> &PublicDecInfo {
+        &self.dec_keyset
     }
 }
 
