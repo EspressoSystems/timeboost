@@ -102,13 +102,10 @@ async fn main() -> Result<()> {
         all_hosts_as_addresses.push(address);
     }
 
-    // Generate a key pair for this node
-    let keypair = Keypair::generate();
-
     // Spawn a new thread per host and let em rip.
     for address in all_hosts_as_addresses {
         tokio::spawn(async move {
-            if let Err(err) = tx_sender(cli.tps, address, keypair.public_key()).await {
+            if let Err(err) = tx_sender(cli.tps, address /*KEY */).await {
                 error!(%err, "tx sender failed");
             }
         });
