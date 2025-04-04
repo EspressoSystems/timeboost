@@ -10,7 +10,6 @@ use anyhow::{Context, Result};
 use cliquenet::Address;
 
 use clap::Parser;
-use multisig::Keypair;
 use timeboost::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::types::logging::init_logging;
 use tracing::error;
@@ -22,7 +21,7 @@ mod tx;
 struct Cli {
     /// The number of nodes that are being run in this instance.
     #[clap(long)]
-    nodes: Option<usize>,
+    nodes: usize,
 
     /// Path to file containing the keyset description.
     ///
@@ -44,9 +43,6 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // The total number of nodes that are running.
-    let num = cli.nodes.unwrap_or(4);
-
     // Unpack the keyset file which has the urls
     let keyset = KeysetConfig::read_keyset(&cli.keyset_file).context(format!(
         "opening the keyfile at path {}",
@@ -62,7 +58,7 @@ async fn main() -> Result<()> {
         // So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
         // 4, 5, 6, 7, then we need to offset this otherwise we'd
         // attribute us-east-2 nodes to us-west-2.
-        let take_from_group = num / 4;
+        let take_from_group = cli.nodes / 4;
 
         Box::new(
             keyset
@@ -73,7 +69,7 @@ async fn main() -> Result<()> {
     } else {
         // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
         // on the same host.
-        Box::new(keyset.keyset().iter().take(num))
+        Box::new(keyset.keyset().iter().take(cli.nodes))
     };
 
     let mut all_hosts_as_addresses = Vec::new();
@@ -104,9 +100,13 @@ async fn main() -> Result<()> {
 
     // Spawn a new thread per host and let em rip.
     for address in all_hosts_as_addresses {
-        tokio::spawn(async move {
-            if let Err(err) = tx_sender(cli.tps, address /*KEY */).await {
-                error!(%err, "tx sender failed");
+        tokio::spawn({
+            let keyset = keyset.clone();
+            let pubkey = keyset.dec_keyset().pubkey()?;
+            async move {
+                if let Err(err) = tx_sender(cli.tps, address, pubkey).await {
+                    error!(%err, "tx sender failed");
+                }
             }
         });
     }
