@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
 
     // Read public key material
     let keyset =
-        KeysetConfig::read_keyset(&cli.keyset_file).expect("keyfile to exist and be valid");
+        KeysetConfig::read_keyset(&cli.keyset_file).context("keyfile to exist and be valid")?;
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset
