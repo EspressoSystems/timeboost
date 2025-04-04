@@ -75,7 +75,7 @@ struct Cli {
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
-    nodes: Option<usize>,
+    nodes: usize,
 
     /// Path to file containing private keys.
     ///
@@ -122,12 +122,6 @@ async fn main() -> Result<()> {
 
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
-
-    // The total number of nodes in the set
-    let num = cli.nodes.unwrap_or(4);
-
-    ensure!(num > 0, "number of nodes must be greater than zero");
-    ensure!(num < 20, "number of nodes must be less 20");
 
     // Read public key material
     let keyset =
@@ -194,7 +188,7 @@ async fn main() -> Result<()> {
         // The number of nodes to take from the group. The layout of the nodes is such that (in the cloud) each region
         // continues sequentially from the prior region. So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
         // 4, 5, 6, 7, then we need to offset this otherwise we'd attribute us-east-2 nodes to us-west-2.
-        let take_from_group = num / 4;
+        let take_from_group = cli.nodes / 4;
 
         Box::new(
             keyset
@@ -205,7 +199,7 @@ async fn main() -> Result<()> {
     } else {
         // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
         // on the same host.
-        Box::new(keyset.keyset().iter().take(num))
+        Box::new(keyset.keyset().iter().take(cli.nodes))
     };
 
     // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.

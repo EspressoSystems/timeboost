@@ -60,7 +60,7 @@ struct Cli {
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
-    nodes: Option<usize>,
+    nodes: usize,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -191,7 +191,6 @@ async fn main() -> Result<()> {
     logging::init_logging();
 
     let cli = Cli::parse();
-    let num = cli.nodes.unwrap_or(4);
 
     let keyset =
         KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
@@ -255,7 +254,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = {
         let mut urls = Vec::new();
-        for ph in keyset.keyset().iter().take(num) {
+        for ph in keyset.keyset().iter().take(cli.nodes) {
             let url = format!("http://{}", ph.url)
                 .parse()
                 .context(format!("Failed to parse URL: http://{}", ph.url))?;
@@ -291,7 +290,7 @@ async fn main() -> Result<()> {
         // (in the cloud) each region continues sequentially from the prior region. So if us-east-2
         // has nodes 0, 1, 2, 3 and us-west-2 has nodes 4, 5, 6, 7, then we need to offset this
         // otherwise we'd attribute us-east-2 nodes to us-west-2.
-        let take_from_group = num / 4;
+        let take_from_group = cli.nodes / 4;
 
         Box::new(
             keyset
@@ -302,7 +301,7 @@ async fn main() -> Result<()> {
     } else {
         // Fallback behavior for multi regions, we just take the first n nodes if we're running on
         // a single region or all on the same host.
-        Box::new(keyset.keyset().iter().take(num))
+        Box::new(keyset.keyset().iter().take(cli.nodes))
     };
 
     // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys
