@@ -464,7 +464,8 @@ where
                             if e.is_cancelled() {
                                 // If one half completes we cancel the other, so there is
                                 // nothing else to do here, except to remove the cancelled
-                                // tasks's ID.
+                                // tasks's ID. Same if we kill the connection, both tasks
+                                // get cancelled.
                                 self.task2key.remove(&e.id());
                                 continue
                             }
@@ -501,7 +502,7 @@ where
                             );
                             if task.tx.try_send(Message::Data(m)).is_err() {
                                 warn!(node = %self.key, %to, "channel full => reconnecting");
-                                self.spawn_connect(to)
+                                self.reconnect(to)
                             }
                         }
                     }
@@ -532,7 +533,7 @@ where
                             }
                         }
                         for k in reconnect {
-                            self.spawn_connect(k)
+                            self.reconnect(k)
                         }
                     }
                     None => {
@@ -582,6 +583,17 @@ where
         } else {
             debug!(node = %self.key, peer = %k, "i/o task was previously replaced");
         }
+    }
+
+    /// Unless already connecting, drop the active connection and connect again.
+    fn reconnect(&mut self, k: PublicKey) {
+        if self.connecting.contains_key(&k) {
+            debug!(node = %self.key, peer = %k, "connect task in progress");
+            return;
+        }
+        self.active.remove(&k);
+        debug!(node = %self.key, peer = %k, "reconnecting");
+        self.spawn_connect(k)
     }
 
     /// Spawns a new connection task to a peer identified by public key.
