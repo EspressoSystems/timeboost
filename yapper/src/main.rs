@@ -10,8 +10,11 @@ use anyhow::{Context, Result};
 use cliquenet::Address;
 
 use clap::Parser;
+use multisig::Keypair;
 use timeboost::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::types::logging::init_logging;
+use tracing::error;
+use tx::tx_sender;
 
 mod tx;
 
@@ -99,7 +102,17 @@ async fn main() -> Result<()> {
         all_hosts_as_addresses.push(address);
     }
 
+    // Generate a key pair for this node
+    let keypair = Keypair::generate();
+
     // Spawn a new thread per host and let em rip.
+    for address in all_hosts_as_addresses {
+        tokio::spawn(async move {
+            if let Err(err) = tx_sender(cli.tps, address, keypair.public_key()).await {
+                error!(%err, "tx sender failed");
+            }
+        });
+    }
 
     Ok(())
 }
