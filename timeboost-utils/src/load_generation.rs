@@ -14,10 +14,10 @@ pub fn make_bundle(_pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
     let max_seqno = 10;
     let bundle = Bundle::arbitrary(&mut u)?;
 
-    if rng.gen_bool(0.1) {
+    if rng.gen_bool(0.5) {
         // priority
         let auction = Address::default();
-        let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
+        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
         let signer = Signer::default();
         let priority = PriorityBundle::new(bundle, auction, seqno);
         let signed_priority = priority.sign(signer)?;
