@@ -247,7 +247,7 @@ struct Worker {
     committee: Keyset,
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
-    cid2ct: BiMap<Nonce, Ciphertext>,
+    cid2ct: BiMap<(RoundNumber, Nonce), Ciphertext>,
     shares: Incubator,
 }
 
@@ -367,7 +367,7 @@ impl Worker {
 
             // establish mappings
             let cid = ciphertext.nonce();
-            self.cid2ct.insert(cid, ciphertext.clone());
+            self.cid2ct.insert((round, cid), ciphertext.clone());
             self.cid2idx.insert(cid, idx);
 
             let dec_share = <DecryptionScheme as ThresholdEncScheme>::decrypt(
@@ -439,7 +439,7 @@ impl Worker {
             .map(|(k, shares)| {
                 let ciphertext = self
                     .cid2ct
-                    .get_by_left(k.cid())
+                    .get_by_left(&(round, *k.cid()))
                     .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
 
                 let idx = *self
@@ -469,7 +469,7 @@ impl Worker {
                 .remove(&cid)
                 .ok_or(DecryptError::MissingIndex(cid))?;
             self.cid2ct
-                .remove_by_left(&cid)
+                .remove_by_left(&(round, cid))
                 .ok_or(DecryptError::MissingCiphertext(cid))?;
         }
 
