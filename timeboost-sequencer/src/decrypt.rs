@@ -37,6 +37,8 @@ struct EncryptedItem(KeysetId, Bytes);
 struct DecryptedItem(Bytes);
 
 pub struct Decrypter {
+    /// Label of the node
+    label: PublicKey,
     /// Incoming (encrypted) incl lists.
     incls: BTreeMap<RoundNumber, Status>,
     /// Store encrypted items info.
@@ -55,15 +57,16 @@ impl Decrypter {
     pub fn new(label: PublicKey, net: Network, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
         let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
-        let decrypter = Worker::new(net, keyset, dec_sk);
+        let decrypter = Worker::new(label, net, keyset, dec_sk);
 
         Self {
+            label,
             enc_tx,
             dec_tx: dec_tx.clone(),
             dec_rx,
             incls: BTreeMap::new(),
             modified: BTreeMap::new(),
-            jh: spawn(decrypter.go(label, enc_rx, dec_tx)),
+            jh: spawn(decrypter.go(enc_rx, dec_tx)),
         }
     }
 
@@ -71,6 +74,7 @@ impl Decrypter {
     /// encrypted data to the worker for hatching.
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<(), DecryptError> {
         let round = incl.round();
+        let total_items = incl.len();
         let (encrypted_pb_idx, encrypted_pb_data): (Vec<_>, Vec<_>) = incl
             .priority_bundles()
             .iter()
@@ -99,6 +103,7 @@ impl Decrypter {
             .chain(encrypted_rb_data)
             .collect();
 
+        let enc_items = encrypted_data.len();
         if encrypted_data.is_empty() {
             // short-circuit if no encrypted txns
             self.incls.insert(round, Status::Decrypted(incl));
@@ -116,6 +121,13 @@ impl Decrypter {
             self.modified
                 .insert(round, (encrypted_pb_idx, encrypted_rb_idx));
         }
+        trace!(
+            node   = %self.label,
+            round  = %round,
+            enc_items    = %enc_items,
+            total_items  = %total_items,
+            "enqueued"
+        );
         Ok(())
     }
 
@@ -229,6 +241,7 @@ type Incubator = BTreeMap<DecShareKey, BTreeMap<u32, DecShare>>;
 /// When ciphertexts in a round have received t+1 decryption shares
 /// the shares can be combined to decrypt the ciphertext (hatching).
 struct Worker {
+    label: PublicKey,
     net: Network,
     committee: Keyset,
     dec_sk: DecryptionKey,
@@ -238,8 +251,9 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
+            label,
             net,
             committee,
             dec_sk,
@@ -251,14 +265,13 @@ impl Worker {
 
     pub async fn go(
         mut self,
-        label: PublicKey,
         mut enc_rx: Receiver<(RoundNumber, Vec<EncryptedItem>)>,
         dec_tx: Sender<(RoundNumber, Vec<DecryptedItem>)>,
     ) {
         loop {
             let r;
             trace!(
-                node   = %label,
+                node   = %self.label,
                 round  = %self.shares.keys().next().map(|k| k.round()).unwrap_or(RoundNumber::genesis()),
                 shares = %self.shares.len(),
                 cids   = %self.cid2ct.len(),
@@ -266,7 +279,7 @@ impl Worker {
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 Ok((remote_pk, bytes)) = self.net.receive() => {
-                    if remote_pk == label {
+                    if remote_pk == self.label {
                         continue;
                     }
                     if let Ok((s, _)) = bincode::serde::decode_from_slice::<ShareInfo, _>(&bytes, bincode::config::standard()) {
@@ -362,8 +375,8 @@ impl Worker {
         Ok(ShareInfo::new(round, kids, cids, dec_shares))
     }
 
-    async fn broadcast(&self, share: &ShareInfo) -> Result<(), DecryptError> {
-        let share_bytes = bincode::serde::encode_to_vec(share, bincode::config::standard())
+    async fn broadcast(&self, share_info: &ShareInfo) -> Result<(), DecryptError> {
+        let share_bytes = bincode::serde::encode_to_vec(share_info, bincode::config::standard())
             .map_err(DecryptError::BincodeEncode)?;
         self.net
             .multicast(share_bytes.into())
