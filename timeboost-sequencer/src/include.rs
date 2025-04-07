@@ -125,8 +125,8 @@ impl Includer {
                         .insert(*rb.digest());
                     include.push(rb)
                 }
-            } else {
-                retry.add_regular(rb)
+            } else if self.is_unknown(&rb) {
+                retry.add_regular(rb);
             }
         }
 
