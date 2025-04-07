@@ -2,7 +2,7 @@ use bimap::BiMap;
 use cliquenet::Network;
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
 use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo};
@@ -191,6 +191,7 @@ fn assemble_incl(
     let mut new_incl =
         InclusionList::new(incl.round(), incl.timestamp(), incl.delayed_inbox_index());
     let (mut priority_bundles, regular_bundles) = incl.into_bundles();
+    let pm_len = modified_priority_bundles.len();
     if modified_priority_bundles.len() + modified_regular_bundles.len() != dec.len() {
         return Err(DecryptError::State);
     }
@@ -214,7 +215,7 @@ fn assemble_incl(
     for (i, tx) in encrypted_bundles.into_iter().enumerate() {
         let mut decrypted_bundles = new_bundles.take(&tx).ok_or(DecryptError::InvalidMessage)?;
         let data = dec
-            .get(i + priority_bundles.len())
+            .get(i + pm_len)
             .ok_or(DecryptError::InvalidMessage)?
             .0
             .clone();
@@ -245,7 +246,7 @@ struct Worker {
     net: Network,
     committee: Keyset,
     dec_sk: DecryptionKey,
-    idx2cid: BiMap<usize, Nonce>,
+    cid2idx: HashMap<Nonce, usize>,
     cid2ct: BiMap<Nonce, Ciphertext>,
     shares: Incubator,
 }
@@ -257,7 +258,7 @@ impl Worker {
             net,
             committee,
             dec_sk,
-            idx2cid: BiMap::new(),
+            cid2idx: HashMap::new(),
             cid2ct: BiMap::new(),
             shares: Incubator::default(),
         }
@@ -269,10 +270,15 @@ impl Worker {
         dec_tx: Sender<(RoundNumber, Vec<DecryptedItem>)>,
     ) {
         loop {
-            let r;
+            let mut r = self
+                .shares
+                .keys()
+                .next()
+                .map(|k| k.round())
+                .unwrap_or(RoundNumber::genesis());
             trace!(
                 node   = %self.label,
-                round  = %self.shares.keys().next().map(|k| k.round()).unwrap_or(RoundNumber::genesis()),
+                round  = %r,
                 shares = %self.shares.len(),
                 cids   = %self.cid2ct.len(),
             );
@@ -283,10 +289,13 @@ impl Worker {
                         continue;
                     }
                     if let Ok((s, _)) = bincode::serde::decode_from_slice::<ShareInfo, _>(&bytes, bincode::config::standard()) {
+                        if s.round() < r {
+                            continue;
+                        }
+
                         r = s.round();
                         if let Err(e) = self.insert_shares(s) {
                             warn!("failed to insert shares from remote: {:?}", e);
-                            continue;
                         }
 
                     } else {
@@ -359,7 +368,7 @@ impl Worker {
             // establish mappings
             let cid = ciphertext.nonce();
             self.cid2ct.insert(cid, ciphertext.clone());
-            self.idx2cid.insert(idx, cid);
+            self.cid2idx.insert(cid, idx);
 
             let dec_share = <DecryptionScheme as ThresholdEncScheme>::decrypt(
                 self.dec_sk.privkey(),
@@ -434,9 +443,9 @@ impl Worker {
                     .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
 
                 let idx = *self
-                    .idx2cid
-                    .get_by_right(k.cid())
-                    .ok_or(DecryptError::MissingCiphertext(*k.cid()))?;
+                    .cid2idx
+                    .get(k.cid())
+                    .ok_or(DecryptError::MissingIndex(*k.cid()))?;
 
                 let decrypted_data = DecryptionScheme::combine(
                     &self.committee,
@@ -456,8 +465,8 @@ impl Worker {
         // clean up
         self.shares.retain(|k, _| k.round() != round);
         for cid in to_remove {
-            self.idx2cid
-                .remove_by_right(&cid)
+            self.cid2idx
+                .remove(&cid)
                 .ok_or(DecryptError::MissingIndex(cid))?;
             self.cid2ct
                 .remove_by_left(&cid)
