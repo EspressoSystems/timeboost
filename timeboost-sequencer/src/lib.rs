@@ -17,11 +17,11 @@ use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
-use timeboost_types::{CandidateList, DelayedInboxIndex};
+use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::error;
+use tracing::{error, warn};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
@@ -91,7 +91,7 @@ impl Drop for Sequencer {
 struct Task {
     label: PublicKey,
     bundles: BundleQueue,
-    sailfish: Coordinator<CandidateList, Rbc<CandidateList>>,
+    sailfish: Coordinator<CandidateListBytes, Rbc<CandidateListBytes>>,
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
@@ -154,6 +154,9 @@ impl Sequencer {
             NetworkMetrics::default(),
         )
         .await?;
+
+        // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
+        queue.max_data_len(network.max_message_size() - 128 * 1024);
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -248,7 +251,7 @@ impl Task {
     async fn execute(
         &mut self,
         current: RoundNumber,
-        actions: &mut VecDeque<Action<CandidateList>>,
+        actions: &mut VecDeque<Action<CandidateListBytes>>,
     ) -> Result<RoundNumber> {
         let mut lists = Vec::new();
         let mut round = current;
@@ -259,7 +262,17 @@ impl Task {
             while let Some(action) = actions.pop_front() {
                 if let Action::Deliver(payload) = action {
                     round = payload.round();
-                    candidates.push(payload.into_data())
+                    match CandidateList::try_from(payload.data().as_ref()) {
+                        Ok(data) => candidates.push(data),
+                        Err(err) => {
+                            warn!(
+                                node = %self.label,
+                                err  = %err,
+                                src  = %payload.source(),
+                                "failed to deserialize candidate list"
+                            );
+                        }
+                    }
                 } else {
                     actions.push_front(action);
                     break;
