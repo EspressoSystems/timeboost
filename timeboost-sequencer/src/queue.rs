@@ -126,7 +126,7 @@ impl BundleQueue {
         let current_epoch = inner.time.epoch();
 
         for b in regular {
-            if b.epoch() < current_epoch {
+            if b.epoch() + 1 < current_epoch {
                 // Transactions that have not progressed in the protocol for
                 // over a minute can be discarded.
                 continue;
