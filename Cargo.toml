@@ -30,7 +30,7 @@ opt-level = 3
 aes-gcm = { version = "0.10.3" }
 alloy-chains = "0.1.69"
 alloy-consensus = { version = "0.13.0", features = ["arbitrary", "k256"] }
-alloy-primitives = { version = "0.8.25", features = ["serde", "rlp"] }
+alloy-primitives = { version = "1.0.0", features = ["serde", "rlp"] }
 alloy-rlp = { version = "0.3.11", features = ["derive"] }
 alloy-signer = "0.13.0"
 alloy-signer-local = "0.13.0"
