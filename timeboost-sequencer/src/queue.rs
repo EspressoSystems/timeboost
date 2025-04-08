@@ -1,15 +1,19 @@
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
-use timeboost_types::{Address, Bundle, BundleVariant, Epoch, RetryList, SignedPriorityBundle};
+use timeboost_types::{
+    Address, Bundle, BundleVariant, Epoch, RetryList, SeqNo, SignedPriorityBundle,
+};
 use timeboost_types::{
     CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
 };
 use tracing::{error, trace};
 
+use super::Mode;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -22,10 +26,11 @@ struct Inner {
     priority_addr: Address,
     time: Timestamp,
     index: DelayedInboxIndex,
-    priority: BTreeMap<Epoch, Vec<SignedPriorityBundle>>,
+    priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
+    mode: Mode,
 }
 
 impl Inner {
@@ -50,6 +55,7 @@ impl BundleQueue {
             regular: VecDeque::new(),
             metrics,
             max_len: usize::MAX,
+            mode: Mode::Passive,
         })))
     }
 
@@ -58,7 +64,11 @@ impl BundleQueue {
         self.0.lock().index = idx
     }
 
-    pub fn max_data_len(&self, n: usize) {
+    pub fn set_mode(&self, m: Mode) {
+        self.0.lock().mode = m
+    }
+
+    pub fn set_max_data_len(&self, n: usize) {
         self.0.lock().max_len = n
     }
 
@@ -80,7 +90,11 @@ impl BundleQueue {
                     match b.validate(epoch_now, Some(inner.priority_addr)) {
                         Ok(_) => {
                             let epoch = b.bundle().epoch();
-                            inner.priority.entry(epoch).or_default().push(b);
+                            inner
+                                .priority
+                                .entry(epoch)
+                                .or_default()
+                                .insert(b.seqno(), b);
                         }
                         Err(e) => {
                             trace!(signer = ?b.sender(), err = %e, "bundle validation failed")
@@ -93,57 +107,72 @@ impl BundleQueue {
         inner
             .metrics
             .queued_priority
-            .set(inner.priority.values().map(Vec::len).sum());
+            .set(inner.priority.values().map(BTreeMap::len).sum());
         inner.metrics.queued_regular.set(inner.regular.len());
     }
 
     pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
+        let time = Timestamp::now();
+
         let mut inner = self.0.lock();
+
+        inner.set_time(time);
 
         // Retain priority bundles not in the inclusion list.
         if let Some(bundles) = inner.priority.get_mut(&incl.epoch()) {
-            bundles.retain(|b| {
-                if let Ok(i) = incl
-                    .priority_bundles()
-                    .binary_search_by_key(&b.seqno(), |x| x.seqno())
-                {
-                    incl.priority_bundles()[i] != *b
-                } else {
-                    true
-                }
+            incl.priority_bundles().iter().for_each(|b| {
+                bundles.remove(&b.seqno());
             });
         }
 
-        // Retain transactions not in the inclusion list.
+        // Retain regular bundles not in the inclusion list.
         inner
             .regular
             .retain(|(_, t)| !incl.regular_bundles().contains(t));
 
-        // Process transactions and bundles that should be retried:
+        // Process bundles that should be retried:
         let (priority, regular) = retry.into_parts();
 
-        let now = inner
+        let earliest = inner
             .regular
             .front()
             .map(|(t, _)| *t)
             .unwrap_or_else(Instant::now);
 
-        for t in regular {
-            inner.regular.push_front((now, t));
+        let current_epoch = inner.time.epoch();
+
+        for b in regular {
+            if b.epoch() + 1 < current_epoch {
+                // Transactions that have not progressed in the protocol for
+                // over a minute can be discarded.
+                continue;
+            }
+            inner.regular.push_front((earliest, b));
         }
 
         for b in priority {
-            inner
-                .priority
-                .entry(b.bundle().epoch())
-                .or_default()
-                .push(b)
+            match inner.priority.entry(b.bundle().epoch()) {
+                Entry::Occupied(mut bundles) => match bundles.get_mut().entry(b.seqno()) {
+                    Entry::Vacant(e) => {
+                        e.insert(b);
+                    }
+                    Entry::Occupied(mut e) => {
+                        let sb = e.get_mut();
+                        if b.digest() < sb.digest() {
+                            *sb = b;
+                        }
+                    }
+                },
+                Entry::Vacant(bundles) => {
+                    bundles.insert([(b.seqno(), b)].into());
+                }
+            }
         }
 
         inner
             .metrics
             .queued_priority
-            .set(inner.priority.values().map(Vec::len).sum());
+            .set(inner.priority.values().map(BTreeMap::len).sum());
         inner.metrics.queued_regular.set(inner.regular.len());
     }
 }
@@ -152,19 +181,6 @@ impl DataSource for BundleQueue {
     type Data = CandidateListBytes;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
-        if r.is_genesis() {
-            match CandidateList::builder(Timestamp::now(), 0)
-                .finish()
-                .try_into()
-            {
-                Ok(list) => return list,
-                Err(err) => {
-                    error!(%err, "candidate list serialization error");
-                    return CandidateListBytes::default();
-                }
-            }
-        }
-
         let time = Timestamp::now();
         let now = Instant::now();
 
@@ -172,10 +188,20 @@ impl DataSource for BundleQueue {
 
         inner.set_time(time);
 
+        if r.is_genesis() || inner.mode.is_passive() {
+            return CandidateList::builder(Timestamp::now(), inner.index)
+                .finish()
+                .try_into()
+                .unwrap_or_else(|err| {
+                    error!(%err, "candidate list serialization error");
+                    CandidateListBytes::default()
+                });
+        }
+
         let mut size_budget = inner.max_len;
 
         let mut priority = Vec::new();
-        for b in inner
+        for (_, b) in inner
             .priority
             .get(&inner.time.epoch())
             .into_iter()
@@ -202,18 +228,15 @@ impl DataSource for BundleQueue {
             regular.push(b.clone())
         }
 
-        let cl = CandidateList::builder(inner.time, inner.index)
+        CandidateList::builder(inner.time, inner.index)
             .with_priority_bundles(priority)
             .with_regular_bundles(regular)
-            .finish();
-
-        match cl.try_into() {
-            Ok(list) => list,
-            Err(err) => {
+            .finish()
+            .try_into()
+            .unwrap_or_else(|err| {
                 error!(%err, "candidate list serialization error");
                 CandidateListBytes::default()
-            }
-        }
+            })
     }
 }
 
