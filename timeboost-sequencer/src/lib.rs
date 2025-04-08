@@ -332,13 +332,14 @@ impl Task {
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {
                 self.mode = Mode::Passive;
+                self.bundles.set_mode(self.mode);
                 info!(node = %self.label, %round, "passive mode");
                 continue;
-            } else {
-                if self.mode.is_passive() {
-                    info!(node = %self.label, %round, "entering active mode");
-                }
+            }
+            if self.mode.is_passive() {
+                info!(node = %self.label, %round, "entering active mode");
                 self.mode = Mode::Active;
+                self.bundles.set_mode(self.mode);
             }
             return Some(outcome.ilist);
         }

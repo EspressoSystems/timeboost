@@ -8,6 +8,7 @@ use timeboost_types::{Address, Bundle, BundleVariant, Epoch, RetryList, SignedPr
 use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
 use tracing::trace;
 
+use super::Mode;
 use crate::metrics::SequencerMetrics;
 
 const MIN_WAIT_TIME: Duration = Duration::from_millis(250);
@@ -23,6 +24,7 @@ struct Inner {
     priority: BTreeMap<Epoch, Vec<SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
     metrics: Arc<SequencerMetrics>,
+    mode: Mode,
 }
 
 impl Inner {
@@ -46,6 +48,7 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             metrics,
+            mode: Mode::Passive,
         })))
     }
 
@@ -87,6 +90,10 @@ impl BundleQueue {
             .queued_priority
             .set(inner.priority.values().map(Vec::len).sum());
         inner.metrics.queued_regular.set(inner.regular.len());
+    }
+
+    pub fn set_mode(&self, m: Mode) {
+        self.0.lock().mode = m
     }
 
     pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
@@ -154,16 +161,16 @@ impl DataSource for BundleQueue {
     type Data = CandidateList;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
-        if r.is_genesis() {
-            return CandidateList::builder(Timestamp::now(), 0).finish();
-        }
-
         let time = Timestamp::now();
         let now = Instant::now();
 
         let mut inner = self.0.lock();
 
         inner.set_time(time);
+
+        if r.is_genesis() || inner.mode.is_passive() {
+            return CandidateList::builder(time, inner.index).finish();
+        }
 
         let bundles = inner
             .priority
