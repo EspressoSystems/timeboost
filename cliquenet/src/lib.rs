@@ -45,7 +45,7 @@ const MAX_NOISE_HANDSHAKE_SIZE: usize = 1024;
 /// Max. message size using noise protocol.
 const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
-/// Max. number of bytes for payload data.
+/// Max. number of bytes for payload data of a frame.
 const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 
 /// Max. number of bytes for a message (potentially consisting of several frames).
@@ -78,6 +78,8 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Network {
     /// Log label.
     label: PublicKey,
+    /// Max. size of messages than can be sent or received.
+    max_msg_size: usize,
     /// MPSC sender of messages to be sent to remote parties.
     ///
     /// If a public key is present, it will result in a uni-cast,
@@ -301,10 +303,16 @@ impl Network {
 
         Ok(Self {
             label,
+            max_msg_size: MAX_TOTAL_SIZE,
             rx: irx,
             tx: otx,
             srv: spawn(server.run(listener)),
         })
+    }
+
+    /// Get max. supported message size in bytes.
+    pub fn max_message_size(&self) -> usize {
+        self.max_msg_size
     }
 
     /// Send a message to a party, identified by the given public key.
