@@ -143,21 +143,22 @@ impl BundleQueue {
         }
 
         for b in priority {
-            inner
-                .priority
-                .entry(b.bundle().epoch())
-                .and_modify(|bundles| match bundles.entry(b.seqno()) {
+            match inner.priority.entry(b.bundle().epoch()) {
+                Entry::Occupied(mut bundles) => match bundles.get_mut().entry(b.seqno()) {
                     Entry::Vacant(e) => {
-                        e.insert(b.clone());
+                        e.insert(b);
                     }
                     Entry::Occupied(mut e) => {
                         let sb = e.get_mut();
                         if b.digest() < sb.digest() {
-                            *sb = b.clone();
+                            *sb = b;
                         }
                     }
-                })
-                .or_insert([(b.seqno(), b)].into());
+                },
+                Entry::Vacant(bundles) => {
+                    bundles.insert([(b.seqno(), b)].into());
+                }
+            }
         }
 
         inner
