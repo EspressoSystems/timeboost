@@ -18,6 +18,13 @@ use traits::threshold_enc::ThresholdEncScheme;
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
+impl Committable for Nonce {
+    fn commit(&self) -> Commitment<Self> {
+        let builder = RawCommitmentBuilder::new("Nonce");
+        builder.fixed_size_bytes(&self.0.to_be_bytes()).finalize()
+    }
+}
+
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -123,7 +130,7 @@ pub struct Ciphertext<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DecShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     w: C,
@@ -263,6 +270,21 @@ impl<C: CurveGroup> Ciphertext<C> {
 impl<C: CurveGroup> DecShare<C> {
     pub fn index(&self) -> u32 {
         self.index
+    }
+}
+
+impl<C: CurveGroup> DecShare<C> {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing decshare")
+    }
+}
+
+impl<C: CurveGroup> Committable for DecShare<C> {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("DecShare")
+            .var_size_bytes(&self.as_bytes())
+            .finalize()
     }
 }
 

@@ -171,6 +171,9 @@ impl Sequencer {
         )
         .await?;
 
+        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
+        let drbc = Rbc::new(network, rcf.with_metrics(RbcMetrics::default()));
+
         let (tx, rx) = mpsc::channel(1024);
 
         let task = Task {
@@ -178,7 +181,7 @@ impl Sequencer {
             bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
-            decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
+            decrypter: Decrypter::new(cfg.keypair.public_key(), drbc, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
             mode: Mode::Passive,

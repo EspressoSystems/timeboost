@@ -16,6 +16,8 @@ metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 sailfish = { path = "../sailfish" }
+sailfish-rbc = { path = "../sailfish-rbc" }
+sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
