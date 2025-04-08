@@ -345,16 +345,13 @@ impl Worker {
                             }
                             if hatched_rounds.is_empty() {
                                 // fast-forward
-                                if let Some(last_round) = self
-                                    .shares
-                                    .keys()
-                                    .filter(|k| k.round() < round)
-                                    .max()
-                                {
-                                    // mark all earlier rounds as hatched
-                                    let removed = self.shares.split_off(&last_round.clone());
-                                    hatched_rounds.extend(removed.keys().map(|k| k.round()));
-                                }
+                                self.shares.retain(|k, _| {
+                                    let old = k.round() < round;
+                                    if old {
+                                        hatched_rounds.insert(k.round());
+                                    }
+                                    !old
+                                });
                             }
                         }
                         Err(e) => {
@@ -462,11 +459,12 @@ impl Worker {
         &mut self,
         round: RoundNumber,
     ) -> Result<Option<(RoundNumber, Vec<DecryptedItem>)>, DecryptError> {
-        let hatched = self
-            .shares
-            .iter()
-            .filter(|(k, _)| k.round() == round)
-            .all(|(_, v)| self.committee.threshold().get() < v.len());
+        let hatched = !self.shares.is_empty()
+            && self
+                .shares
+                .iter()
+                .filter(|(k, _)| k.round() == round)
+                .all(|(_, v)| self.committee.threshold().get() < v.len());
 
         if !hatched {
             // ciphertexts are not ready to be decrypted.
