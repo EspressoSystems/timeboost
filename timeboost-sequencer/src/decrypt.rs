@@ -67,6 +67,10 @@ impl Decrypter {
         }
     }
 
+    pub fn has_capacity(&mut self) -> bool {
+        self.dec_tx.capacity() > 0 && self.enc_tx.capacity() > 0
+    }
+
     /// Identifies encrypted txns in inclusion lists and sends the
     /// encrypted data to the worker for hatching.
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<(), DecryptError> {
