@@ -422,7 +422,7 @@ impl Worker {
     async fn broadcast(&mut self, share_info: &ShareInfo) -> Result<()> {
         let share_bytes = serialize(share_info)?;
         self.net
-            .send(None, share_bytes.into())
+            .send(None, share_bytes)
             .await
             .map(|_| ())
             .map_err(DecryptError::net)
@@ -511,10 +511,10 @@ impl Worker {
 }
 
 /// Serialize a given data type into `Bytes`
-fn serialize<T: Serialize>(d: &T) -> Result<bytes::Bytes> {
+fn serialize<T: Serialize>(d: &T) -> Result<bytes::BytesMut> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().freeze())
+    Ok(b.into_inner())
 }
 
 /// Deserialize from `Bytes` into a given data type.
