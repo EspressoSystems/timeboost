@@ -137,36 +137,36 @@ impl Network {
     }
 
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
-        let (src, mut bytes) = self.net.receive().await?;
+        loop {
+            let (src, mut bytes) = self.net.receive().await?;
 
-        if bytes.len() < 8 {
-            warn!(node = %self.this, "received unexpected message");
-            return Ok((src, bytes));
-        }
+            if bytes.len() < 8 {
+                warn!(node = %self.this, "received unexpected message");
+                return Ok((src, bytes));
+            }
 
-        let tail: [u8; 8] = bytes
-            .split_off(bytes.len() - 8)
-            .as_ref()
-            .try_into()
-            .expect("bytes len checked above");
+            let tail: [u8; 8] = bytes
+                .split_off(bytes.len() - 8)
+                .as_ref()
+                .try_into()
+                .expect("bytes len checked above");
 
-        if !bytes.is_empty() {
-            // Send the Id value back as acknowledgement:
-            self.net.unicast(src, Bytes::copy_from_slice(&tail)).await?;
-            return Ok((src, bytes));
-        }
+            if !bytes.is_empty() {
+                // Send the Id value back as acknowledgement:
+                self.net.unicast(src, Bytes::copy_from_slice(&tail)).await?;
+                return Ok((src, bytes));
+            }
 
-        let id = SeqId(u64::from_be_bytes(tail));
+            let id = SeqId(u64::from_be_bytes(tail));
 
-        let mut messages = self.buffer.0.lock();
-        if let Some(m) = messages.get_mut(&id) {
-            m.remaining.retain(|k| *k != src);
-            if m.remaining.is_empty() {
-                messages.remove(&id);
+            let mut messages = self.buffer.0.lock();
+            if let Some(m) = messages.get_mut(&id) {
+                m.remaining.retain(|k| *k != src);
+                if m.remaining.is_empty() {
+                    messages.remove(&id);
+                }
             }
         }
-
-        Ok((src, bytes))
     }
 
     pub fn gc(&mut self, id: SeqId) {
