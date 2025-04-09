@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
-use tokio::time::{self, Duration, Instant, Interval};
+use tokio::time::{self, Duration, Instant};
 use tracing::warn;
 
 use crate::{Address, NetworkError, NetworkMetrics, unreliable};
