@@ -39,7 +39,7 @@ impl NetworkMetrics {
             1024.0 * 1024.0,
             2048.0 * 1024.0,
             4096.0 * 1024.0,
-            crate::MAX_TOTAL_SIZE as f64,
+            5120.0 * 1024.0,
         ];
 
         Self {

@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use cliquenet as net;
-use cliquenet::{Network, NetworkError, NetworkMetrics};
+use cliquenet::{NetworkError, NetworkMetrics, unreliable::Network};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::Coordinator;

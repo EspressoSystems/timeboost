@@ -33,11 +33,12 @@ pub trait Comm<T: Committable> {
 /// of `Message`s.
 #[async_trait]
 pub trait RawComm {
+    type Id;
     type Err: Error + Send + Sync + 'static;
 
-    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err>;
+    async fn broadcast(&mut self, msg: Bytes) -> Result<Self::Id, Self::Err>;
 
-    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err>;
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<Self::Id, Self::Err>;
 
     async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err>;
 }
@@ -61,13 +62,14 @@ impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
 
 #[async_trait]
 impl<T: RawComm + Send> RawComm for Box<T> {
+    type Id = T::Id;
     type Err = T::Err;
 
-    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
+    async fn broadcast(&mut self, msg: Bytes) -> Result<Self::Id, Self::Err> {
         (**self).broadcast(msg).await
     }
 
-    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
+    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<Self::Id, Self::Err> {
         (**self).send(to, msg).await
     }
 

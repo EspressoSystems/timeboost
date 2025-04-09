@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use cliquenet::{Address, Network, NetworkMetrics};
+use cliquenet::{Address, NetworkMetrics, unreliable::Network};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};

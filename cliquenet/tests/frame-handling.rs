@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::Bytes;
-use cliquenet::{Network, NetworkMetrics};
+use cliquenet::{NetworkMetrics, unreliable::Network};
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};

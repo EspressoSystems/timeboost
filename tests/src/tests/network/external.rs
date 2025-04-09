@@ -2,7 +2,7 @@ pub mod test_simple_network;
 
 use std::collections::HashMap;
 
-use cliquenet::{Network, NetworkMetrics};
+use cliquenet::{NetworkMetrics, unreliable::Network};
 use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
