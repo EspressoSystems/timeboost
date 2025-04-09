@@ -5,9 +5,6 @@ use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated,
 };
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::{
-    DecryptionScheme, KeysetId, Nonce, traits::threshold_enc::ThresholdEncScheme,
-};
 use tracing::warn;
 
 use crate::{RoundNumber, Vertex};
@@ -25,9 +22,6 @@ pub enum Message<T: Committable, Status = Validated> {
 
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
-
-    /// A decryption share message from a node.
-    ShareInfo(ShareInfo),
 }
 
 impl<T: Committable, S> Message<T, S> {
@@ -37,7 +31,6 @@ impl<T: Committable, S> Message<T, S> {
             Self::Timeout(t) => t.data().timeout().data().round(),
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
-            Self::ShareInfo(s) => s.round(),
         }
     }
 
@@ -47,7 +40,6 @@ impl<T: Committable, S> Message<T, S> {
             Self::Timeout(e) => Some(e.signing_key()),
             Self::NoVote(e) => Some(e.signing_key()),
             Self::TimeoutCert(_) => None,
-            Self::ShareInfo(_) => None,
         }
     }
 
@@ -231,10 +223,6 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 Some(Message::TimeoutCert(crt))
-            }
-            Self::ShareInfo(s) => {
-                // No validation of share information:
-                Some(Message::ShareInfo(s))
             }
         }
     }
@@ -474,46 +462,6 @@ impl NoVoteMessage {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ShareInfo {
-    round: RoundNumber,
-    kids: Vec<KeysetId>,
-    cids: Vec<Nonce>,
-    dec_shares: Vec<<DecryptionScheme as ThresholdEncScheme>::DecShare>,
-}
-
-impl ShareInfo {
-    pub fn new(
-        round: RoundNumber,
-        kids: Vec<KeysetId>,
-        cids: Vec<Nonce>,
-        dec_shares: Vec<<DecryptionScheme as ThresholdEncScheme>::DecShare>,
-    ) -> Self {
-        ShareInfo {
-            round,
-            kids,
-            cids,
-            dec_shares,
-        }
-    }
-
-    pub fn round(&self) -> RoundNumber {
-        self.round
-    }
-
-    pub fn kids(&self) -> &[KeysetId] {
-        &self.kids
-    }
-
-    pub fn cids(&self) -> &[Nonce] {
-        &self.cids
-    }
-
-    pub fn dec_shares(&self) -> &[<DecryptionScheme as ThresholdEncScheme>::DecShare] {
-        &self.dec_shares
-    }
-}
-
 impl<'a, T: Committable + Deserialize<'a>> Message<T, Unchecked> {
     pub fn decode(bytes: &'a [u8]) -> Option<Self> {
         bincode::serde::borrow_decode_from_slice(bytes, bincode::config::standard())
@@ -554,9 +502,6 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
             }
             Self::TimeoutCert(c) => {
                 write!(f, "TimeoutCert({})", c.data().round)
-            }
-            Self::ShareInfo(s) => {
-                write!(f, "ShareInfo(r={},c={})", s.round, s.cids().len())
             }
         }
     }
@@ -618,7 +563,6 @@ impl<T: Committable, S> Committable for Message<T, S> {
             Self::Timeout(e) => builder.field("timeout", e.commit()).finalize(),
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
-            Self::ShareInfo(s) => builder.field("share-info", s.commit()).finalize(),
         }
     }
 }
@@ -630,25 +574,5 @@ impl<T: Committable> Committable for Payload<T> {
             .fixed_size_field("source", &self.source.as_bytes())
             .field("data", self.data.commit())
             .finalize()
-    }
-}
-
-impl Committable for ShareInfo {
-    fn commit(&self) -> Commitment<Self> {
-        let mut builder =
-            RawCommitmentBuilder::new("ShareInfo").field("round", self.round.commit());
-        builder = self
-            .kids
-            .iter()
-            .fold(builder, |b, e| b.field("kid", e.commit()));
-        builder = self
-            .cids
-            .iter()
-            .fold(builder, |b, e| b.field("nonce", e.commit()));
-        builder = self
-            .dec_shares
-            .iter()
-            .fold(builder, |b, e| b.field("dec_share", e.commit()));
-        builder.finalize()
     }
 }

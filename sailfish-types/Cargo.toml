@@ -12,6 +12,5 @@ bytes = { workspace = true }
 committable = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
-timeboost-crypto = { path = "../timeboost-crypto" }
 thiserror = { workspace = true }
 tracing = { workspace = true }

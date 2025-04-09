@@ -170,7 +170,6 @@ where
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
-            Message::ShareInfo(_) => unreachable!(),
         }
     }
 

@@ -1,17 +1,20 @@
 use bimap::BiMap;
+use bytes::{BufMut, BytesMut};
+use cliquenet::reliable::Network;
 use multisig::PublicKey;
-use sailfish::rbc::Rbc;
 use sailfish::types::RoundNumber;
-use sailfish_types::{Comm, Message, ShareInfo};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
-use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList};
+use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
+type Result<T> = std::result::Result<T, DecryptError>;
+type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
@@ -42,8 +45,8 @@ pub struct Decrypter {
     label: PublicKey,
     /// Incoming (encrypted) incl lists.
     incls: BTreeMap<RoundNumber, Status>,
-    /// Store encrypted items info.
-    modified: BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
+    /// Store encrypted state info.
+    modified: StateDiff,
     /// Send encrypted data.
     enc_tx: Sender<(RoundNumber, Vec<EncryptedItem>)>,
     /// Send decrypted data.
@@ -55,12 +58,7 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(
-        label: PublicKey,
-        net: Rbc<ShareInfo>,
-        keyset: Keyset,
-        dec_sk: DecryptionKey,
-    ) -> Self {
+    pub fn new(label: PublicKey, net: Network, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
         let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
         let decrypter = Worker::new(label, net, keyset, dec_sk);
@@ -80,9 +78,10 @@ impl Decrypter {
         self.dec_tx.capacity() > 0 && self.enc_tx.capacity() > 0
     }
 
-    /// Identifies encrypted txns in inclusion lists and sends the
+    /// Identifies encrypted bundles in inclusion lists,
+    /// computes the expected state diff, then sends the
     /// encrypted data to the worker for hatching.
-    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<(), DecryptError> {
+    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
         let round = incl.round();
         let total_items = incl.len();
         let (encrypted_pb_idx, encrypted_pb_data): (Vec<_>, Vec<_>) = incl
@@ -147,7 +146,7 @@ impl Decrypter {
     ///  2. reassemble incl list and mark round as "decrypted".
     ///  3. if r is next round, then return list, otherwise, goto (1).
     ///
-    pub async fn next(&mut self) -> Result<InclusionList, DecryptError> {
+    pub async fn next(&mut self) -> Result<InclusionList> {
         while let Some((r, dec)) = self.dec_rx.recv().await {
             if let Some(status) = self.incls.get_mut(&r) {
                 match status {
@@ -169,6 +168,7 @@ impl Decrypter {
                     }
                     Status::Encrypted(_) => {
                         debug!(
+                            node = %self.label,
                             "received decrypted txns for r={} but the next round is r={}",
                             r,
                             entry.key()
@@ -183,7 +183,7 @@ impl Decrypter {
 
 /// Re-assemble inclusion list using the decrypted items.
 ///
-/// Modified entries (`modified`) points to the entries
+/// The state diff (`modified`) points to the entries
 /// where encrypted data should be replaced.
 ///
 /// Decrypted items (`dec`) is output from the Decrypter.
@@ -193,8 +193,8 @@ fn assemble_incl(
     r: RoundNumber,
     incl: InclusionList,
     dec: Vec<DecryptedItem>,
-    modified: &mut BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>,
-) -> Result<InclusionList, DecryptError> {
+    modified: &mut StateDiff,
+) -> Result<InclusionList> {
     let (modified_priority_bundles, modified_regular_bundles) = modified
         .remove(&r)
         .expect("encrypted incl => modified entry");
@@ -256,7 +256,7 @@ type Incubator = BTreeMap<DecShareKey, BTreeMap<u32, DecShare>>;
 /// the shares can be combined to decrypt the ciphertext (hatching).
 struct Worker {
     label: PublicKey,
-    net: Rbc<ShareInfo>,
+    net: Network,
     committee: Keyset,
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
@@ -265,12 +265,7 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(
-        label: PublicKey,
-        net: Rbc<ShareInfo>,
-        committee: Keyset,
-        dec_sk: DecryptionKey,
-    ) -> Self {
+    pub fn new(label: PublicKey, net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
             label,
             net,
@@ -304,23 +299,26 @@ impl Worker {
             );
             tokio::select! {
                 // received batch of decryption shares from remote node.
-                Ok(Message::ShareInfo(msg)) = self.net.receive() => {
-                    trace!(
-                        node   = %self.label,
-                        round  = %msg.round(),
-                        data   = %msg.cids().len(),
-                        "receive"
-                    );
-                    if hatched_rounds.contains(&msg.round()) || msg.round() < r {
-                        // shares for which the ciphertexts have already hatched
-                        // or shares that are older than the first ciphertext in
-                        // the incubator are not inserted.
-                        continue;
-                    }
+                Ok((remote_pk, bytes)) = self.net.receive() => {
+                    if remote_pk == self.label { continue; }
+                    if let Ok(s) = deserialize::<ShareInfo>(&bytes) {
+                        trace!(
+                            node   = %self.label,
+                            round  = %s.round(),
+                            data   = %s.cids().len(),
+                            "receive"
+                        );
+                        if hatched_rounds.contains(&s.round()) || s.round() < r {
+                            // shares for which the ciphertexts have already hatched
+                            // or shares that are older than the first ciphertext in
+                            // the incubator are not inserted.
+                            continue;
+                        }
 
-                    r = msg.round();
-                    if let Err(e) = self.insert_shares(msg) {
-                        warn!("failed to insert shares from remote: {:?}", e);
+                        r = s.round();
+                        if let Err(e) = self.insert_shares(s) {
+                            warn!("failed to insert shares from remote: {:?}", e);
+                        }
                     }
                 }
 
@@ -336,7 +334,7 @@ impl Worker {
                     r = round;
                     match self.decrypt(round, enc_data).await {
                         Ok(s) => {
-                            if let Err(e) = self.broadcast(s.clone()).await {
+                            if let Err(e) = self.broadcast(&s).await {
                                 warn!("failed to send share info: {:?}", e);
                             }
                             if let Err(e) = self.insert_shares(s) {
@@ -394,17 +392,13 @@ impl Worker {
         &mut self,
         round: RoundNumber,
         encrypted_items: Vec<EncryptedItem>,
-    ) -> Result<ShareInfo, DecryptError> {
+    ) -> Result<ShareInfo> {
         let mut cids = vec![];
         let mut kids = vec![];
         let mut dec_shares = vec![];
 
         for (idx, EncryptedItem(kid, data)) in encrypted_items.iter().enumerate() {
-            let (ciphertext, _) = bincode::serde::decode_from_slice::<Ciphertext, _>(
-                data,
-                bincode::config::standard(),
-            )
-            .map_err(DecryptError::BincodeDecode)?;
+            let ciphertext = deserialize::<Ciphertext>(data)?;
 
             // establish mappings
             let cid = ciphertext.nonce();
@@ -425,19 +419,21 @@ impl Worker {
         Ok(ShareInfo::new(round, kids, cids, dec_shares))
     }
 
-    async fn broadcast(&mut self, share_info: ShareInfo) -> Result<(), DecryptError> {
+    async fn broadcast(&mut self, share_info: &ShareInfo) -> Result<()> {
+        let share_bytes = serialize(share_info)?;
         self.net
-            .broadcast(Message::ShareInfo(share_info))
+            .send(None, share_bytes.into())
             .await
+            .map(|_| ())
             .map_err(DecryptError::net)
     }
 
-    fn insert_shares(&mut self, share_info: ShareInfo) -> Result<(), DecryptError> {
+    fn insert_shares(&mut self, share_info: ShareInfo) -> Result<()> {
         let kids = share_info.kids();
         let cids = share_info.cids();
         let shares = share_info.dec_shares();
         // add shares to the incubator using round, keyset id and nonce as key.
-        (0..cids.len()).try_for_each(|i| -> Result<(), DecryptError> {
+        (0..cids.len()).try_for_each(|i| {
             let kid = *kids.get(i).ok_or(DecryptError::InvalidMessage)?;
             let cid = cids.get(i).ok_or(DecryptError::InvalidMessage)?;
             let share = shares
@@ -455,10 +451,7 @@ impl Worker {
         })
     }
 
-    fn hatch(
-        &mut self,
-        round: RoundNumber,
-    ) -> Result<Option<(RoundNumber, Vec<DecryptedItem>)>, DecryptError> {
+    fn hatch(&mut self, round: RoundNumber) -> Result<Option<(RoundNumber, Vec<DecryptedItem>)>> {
         let hatched = !self.shares.is_empty()
             && self
                 .shares
@@ -500,7 +493,7 @@ impl Worker {
                     DecryptedItem(Bytes::from(<Vec<u8>>::from(decrypted_data))),
                 ))
             })
-            .collect::<Result<_, DecryptError>>()?;
+            .collect::<Result<_>>()?;
 
         // clean up
         self.shares.retain(|k, _| k.round() != round);
@@ -515,6 +508,20 @@ impl Worker {
 
         Ok(Some((round, decrypted.into_values().collect())))
     }
+}
+
+/// Serialize a given data type into `Bytes`
+fn serialize<T: Serialize>(d: &T) -> Result<bytes::Bytes> {
+    let mut b = BytesMut::new().writer();
+    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
+    Ok(b.into_inner().freeze())
+}
+
+/// Deserialize from `Bytes` into a given data type.
+fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
+    bincode::serde::decode_from_slice(d, bincode::config::standard())
+        .map(|(msg, _)| msg)
+        .map_err(Into::into)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -556,7 +563,6 @@ impl DecryptError {
 
 #[cfg(test)]
 mod tests {
-    use sailfish_rbc::{Rbc, RbcConfig, RbcMetrics};
     use std::{
         net::{Ipv4Addr, SocketAddr},
         num::NonZeroUsize,
@@ -565,8 +571,7 @@ mod tests {
     use timeboost_utils::types::logging;
 
     use ark_std::test_rng;
-    use cliquenet::{NetworkMetrics, unreliable::Network};
-    use multisig::Committee;
+    use cliquenet::{NetworkMetrics, reliable::Network};
     use multisig::SecretKey;
     use sailfish::types::RoundNumber;
     use timeboost_crypto::{
@@ -715,13 +720,6 @@ mod tests {
             })
             .collect();
 
-        let committee = Committee::new(
-            peers
-                .iter()
-                .map(|(k, _)| *k)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
-        );
         // Create decrypters for each node
         let mut decrypters = Vec::new();
         for i in 0..usize::from(keyset.size()) {
@@ -737,12 +735,9 @@ mod tests {
             .await
             .expect("starting network");
 
-            let rcf = RbcConfig::new(sig_key.clone().into(), committee.clone());
-            let rbc = Rbc::new(network, rcf.with_metrics(RbcMetrics::default()));
-
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
-                rbc,
+                network,
                 keyset.clone(),
                 decryption_keys[i].clone(),
             );

@@ -7,7 +7,7 @@ mod sort;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use cliquenet as net;
+use cliquenet::{self as net, reliable};
 use cliquenet::{NetworkError, NetworkMetrics, unreliable::Network};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
@@ -163,16 +163,13 @@ impl Sequencer {
             cfg.bind.with_port(p)
         };
 
-        let network = Network::create(
+        let network = reliable::Network::create(
             addr,
             cfg.keypair.clone(), // same auth
             peers,
             NetworkMetrics::default(),
         )
         .await?;
-
-        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
-        let drbc = Rbc::new(network, rcf.with_metrics(RbcMetrics::default()));
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -181,7 +178,7 @@ impl Sequencer {
             bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee, cfg.index),
-            decrypter: Decrypter::new(cfg.keypair.public_key(), drbc, keyset, cfg.dec_sk),
+            decrypter: Decrypter::new(cfg.keypair.public_key(), network, keyset, cfg.dec_sk),
             sorter: Sorter::new(),
             output: tx,
             mode: Mode::Passive,

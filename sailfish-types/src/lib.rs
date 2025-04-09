@@ -6,7 +6,7 @@ mod vertex;
 
 pub use comm::{Comm, CommError, RawComm};
 pub use message::{Action, Evidence, Payload};
-pub use message::{Message, NoVote, NoVoteMessage, ShareInfo, Timeout, TimeoutMessage};
+pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::RoundNumber;
 pub use vertex::Vertex;

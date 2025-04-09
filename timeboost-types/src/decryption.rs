@@ -7,6 +7,7 @@ use timeboost_crypto::{
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 
 #[derive(Debug, Clone)]
 pub struct DecryptionKey {
@@ -34,6 +35,46 @@ impl DecryptionKey {
 
     pub fn privkey(&self) -> &KeyShare {
         &self.privkey
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShareInfo {
+    round: RoundNumber,
+    kids: Vec<KeysetId>,
+    cids: Vec<Nonce>,
+    dec_shares: Vec<DecShare>,
+}
+
+impl ShareInfo {
+    pub fn new(
+        round: RoundNumber,
+        kids: Vec<KeysetId>,
+        cids: Vec<Nonce>,
+        dec_shares: Vec<DecShare>,
+    ) -> Self {
+        ShareInfo {
+            round,
+            kids,
+            cids,
+            dec_shares,
+        }
+    }
+
+    pub fn round(&self) -> RoundNumber {
+        self.round
+    }
+
+    pub fn kids(&self) -> &[KeysetId] {
+        &self.kids
+    }
+
+    pub fn cids(&self) -> &[Nonce] {
+        &self.cids
+    }
+
+    pub fn dec_shares(&self) -> &[DecShare] {
+        &self.dec_shares
     }
 }
 
