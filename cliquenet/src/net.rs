@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 
 /// Max. number of bytes for a message (potentially consisting of several frames).
-const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
+pub(crate) const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
 /// Max. number of messages to queue for a peer.
 const PEER_CAPACITY: usize = 256;
@@ -67,6 +67,10 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Network {
     /// Log label.
     label: PublicKey,
+
+    /// The network participants.
+    parties: HashSet<PublicKey>,
+
     /// MPSC sender of messages to be sent to remote parties.
     ///
     /// If a public key is present, it will result in a uni-cast,
@@ -85,28 +89,6 @@ pub struct Network {
 impl Drop for Network {
     fn drop(&mut self) {
         self.srv.abort()
-    }
-}
-
-/// Optionally, implement sailfish's `RawComm` trait.
-///
-/// *Requires feature* `"sailfish"`.
-#[cfg(feature = "sailfish")]
-#[async_trait::async_trait]
-impl sailfish_types::RawComm for Network {
-    type Id = ();
-    type Err = NetworkError;
-
-    async fn broadcast(&mut self, msg: Bytes) -> Result<()> {
-        self.multicast(msg).await
-    }
-
-    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<()> {
-        self.unicast(to, msg).await
-    }
-
-    async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
-        self.receive().await
     }
 }
 
@@ -258,10 +240,12 @@ impl Network {
 
         debug!(n = %label, a = %listener.local_addr()?, "listening");
 
+        let mut parties = HashSet::new();
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
         for (k, a) in group {
+            parties.insert(k);
             index.insert(k, x25519::PublicKey::try_from(k)?);
             peers.insert(k, a.into());
         }
@@ -291,10 +275,19 @@ impl Network {
 
         Ok(Self {
             label,
+            parties,
             rx: irx,
             tx: otx,
             srv: spawn(server.run(listener)),
         })
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.label
+    }
+
+    pub fn parties(&self) -> impl Iterator<Item = &PublicKey> {
+        self.parties.iter()
     }
 
     /// Send a message to a party, identified by the given public key.

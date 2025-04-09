@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
+use cliquenet::Overlay;
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Evidence, Message, RawComm, RoundNumber, Vertex};
+use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -27,18 +28,13 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     /// it has been received (or the protocol moved on).
     Send(Cow<'a, Message<T, Status>>),
 
-    /// An acknowledgement reply of a message.
-    Ack(Digest),
-
     // RBC section ////////////////////////////////////////////////////////////
 
     /// An RBC proposal.
     Propose(Cow<'a, Envelope<Vertex<T>, Status>>),
 
     /// A vote for an RBC proposal.
-    ///
-    /// The boolean flag indicates if the sender has received enough votes.
-    Vote(Envelope<Digest, Status>, Evidence, bool),
+    Vote(Envelope<Digest, Status>, Evidence),
 
     /// A quorum certificate for an RBC proposal.
     Cert(Certificate<Digest>),
@@ -133,10 +129,10 @@ impl<T: Committable> Drop for Rbc<T> {
 }
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
-    pub fn new<C: RawComm + Send + 'static>(n: C, c: RbcConfig) -> Self {
+    pub fn new(net: Overlay, c: RbcConfig) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
-        let worker = Worker::new(ibound_tx, obound_rx, c, n);
+        let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,
             tx: obound_tx,
