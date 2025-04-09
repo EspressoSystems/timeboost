@@ -7,7 +7,7 @@ mod sort;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use cliquenet as net;
+use cliquenet::{self as net, reliable};
 use cliquenet::{NetworkError, NetworkMetrics, unreliable::Network};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
@@ -163,7 +163,7 @@ impl Sequencer {
             cfg.bind.with_port(p)
         };
 
-        let network = Network::create(
+        let network = reliable::Network::create(
             addr,
             cfg.keypair.clone(), // same auth
             peers,

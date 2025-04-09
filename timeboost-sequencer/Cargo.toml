@@ -10,6 +10,7 @@ alloy-consensus = { workspace = true }
 blake3 = { workspace = true }
 bincode = { workspace = true }
 bimap = { workspace = true }
+bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }

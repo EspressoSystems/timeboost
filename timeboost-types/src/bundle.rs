@@ -120,7 +120,7 @@ impl Committable for Bundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct PriorityBundle {
     bundle: Bundle,
     auction: Address,
@@ -128,7 +128,7 @@ pub struct PriorityBundle {
     hash: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct SignedPriorityBundle {
     priority: PriorityBundle,
     signature: Signature,
@@ -333,7 +333,7 @@ impl Transaction {
 }
 
 // Address wrapper
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy_primitives::Address);
 
