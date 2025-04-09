@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use cliquenet::{Address, Network, NetworkMetrics};
+use cliquenet::{Address, NetworkMetrics, unreliable::Network};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{

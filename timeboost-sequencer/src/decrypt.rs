@@ -1,5 +1,5 @@
 use bimap::BiMap;
-use cliquenet::Network;
+use cliquenet::unreliable::Network;
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use std::collections::{BTreeMap, BTreeSet};
@@ -506,7 +506,7 @@ mod tests {
     use timeboost_utils::types::logging;
 
     use ark_std::test_rng;
-    use cliquenet::{Network, NetworkMetrics};
+    use cliquenet::{NetworkMetrics, unreliable::Network};
     use multisig::SecretKey;
     use sailfish::types::RoundNumber;
     use timeboost_crypto::{

@@ -1021,11 +1021,11 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                                     self.comm
                                         .send(to, bytes.clone())
                                         .await
-                                        .map_err(RbcError::net)?
+                                        .map_err(RbcError::net)?;
                                 }
                             } else {
                                 debug!(node = %self.label, %digest, "broadcasting our message (again)");
-                                self.comm.broadcast(bytes).await.map_err(RbcError::net)?
+                                self.comm.broadcast(bytes).await.map_err(RbcError::net)?;
                             }
                         }
                         let evidence = msg.data().evidence().clone();
@@ -1123,7 +1123,7 @@ impl<C: RawComm, T: Clone + Committable + Serialize + DeserializeOwned> Worker<C
                 self.comm
                     .send(*party, acks.msg.clone())
                     .await
-                    .map_err(RbcError::net)?
+                    .map_err(RbcError::net)?;
             }
             acks.retries = acks.retries.saturating_add(1);
             self.config.metrics.retries.add(1);
