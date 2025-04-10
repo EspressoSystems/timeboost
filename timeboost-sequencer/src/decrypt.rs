@@ -282,8 +282,8 @@ impl Worker {
         mut enc_rx: Receiver<(RoundNumber, Vec<EncryptedItem>)>,
         dec_tx: Sender<(RoundNumber, Vec<DecryptedItem>)>,
     ) {
+        let mut catching_up = true;
         let mut hatched_rounds = BTreeSet::new();
-        let mut decrypted_rounds = BTreeSet::new();
 
         loop {
             let mut r = self
@@ -343,18 +343,17 @@ impl Worker {
                                 warn!("failed to insert local shares: {:?}", e);
                                 continue;
                             }
-                            if decrypted_rounds.is_empty() {
+                            if catching_up {
                                 // fast-forward
                                 self.shares.retain(|k, _| {
                                     let old = k.round() < round;
                                     if old {
-                                        decrypted_rounds.insert(k.round());
                                         hatched_rounds.insert(k.round());
                                     }
                                     !old
                                 });
+                                catching_up = false;
                             }
-                            decrypted_rounds.insert(round);
                         }
                         Err(e) => {
                             warn!("failed to decrypt data: {:?}", e);
@@ -374,7 +373,6 @@ impl Worker {
                     hatched_rounds.insert(r);
                     while hatched_rounds.len() > MAX_ROUNDS {
                         hatched_rounds.pop_first();
-                        decrypted_rounds.pop_first();
                     }
                 }
                 Err(e) => match e {
