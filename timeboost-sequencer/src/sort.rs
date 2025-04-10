@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use ssz::decode_list_of_variable_length_items as ssz_decode;
-use timeboost_types::{Bytes, InclusionList, Timestamp, Transaction};
+use timeboost_types::{Bytes, InclusionList, SortedTransaction, Transaction};
 use tracing::warn;
 
 const MAX_BUNDLE_TXS: usize = 1024;
@@ -15,13 +15,13 @@ impl Sorter {
         Self {}
     }
 
-    pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = (Timestamp, Transaction)> {
+    pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = SortedTransaction> {
         let timestamp = list.timestamp();
         let seed = list.digest();
 
         let (priority, regular) = list.into_bundles();
         let mut ptx = Vec::new();
-        let mut rtx: Vec<Transaction> = Vec::new();
+        let mut rtx = Vec::new();
 
         for (b, priority) in priority
             .iter()
@@ -37,10 +37,14 @@ impl Sorter {
                         }
                         match Transaction::decode(&t) {
                             Ok(tx) => {
+                                let Ok(signer) = tx.tx().recover_signer() else {
+                                    warn!("failed to recover signer");
+                                    continue;
+                                };
                                 if priority {
-                                    ptx.push(tx)
+                                    ptx.push(SortedTransaction::new(signer.into(), timestamp, tx))
                                 } else {
-                                    rtx.push(tx)
+                                    rtx.push(SortedTransaction::new(signer.into(), timestamp, tx))
                                 }
                             }
                             Err(err) => {
@@ -56,24 +60,22 @@ impl Sorter {
         }
 
         rtx.sort_unstable_by(|x, y| compare(&seed, x, y));
-        ptx.into_iter().chain(rtx).map(move |t| (timestamp, t))
+        ptx.into_iter().chain(rtx)
     }
 }
 
 #[rustfmt::skip]
-fn compare(seed: &[u8], x: &Transaction, y: &Transaction) -> Ordering {
+fn compare(seed: &[u8], x: &SortedTransaction, y: &SortedTransaction) -> Ordering {
     use alloy_consensus::transaction::Transaction;
     let mut hx = blake3::Hasher::new();
     let mut hy = blake3::Hasher::new();
 
     hx.update(seed);
     hy.update(seed);
-    if let (Ok(x_addr), Ok(y_addr)) = (x.tx().recover_signer(), y.tx().recover_signer()) {
-        hx.update(&x_addr[..]);
-        hy.update(&y_addr[..]);
-    }
+    hx.update(x.address().as_slice());
+    hy.update(y.address().as_slice());
 
     hx.finalize().as_bytes().cmp(hy.finalize().as_bytes())
         .then_with(|| x.tx().nonce().cmp(&y.tx().nonce()))
-        .then_with(|| x.hash().cmp(y.hash()))
+        .then_with(|| x.tx().hash().cmp(y.tx().hash()))
 }

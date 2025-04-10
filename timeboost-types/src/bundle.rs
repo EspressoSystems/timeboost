@@ -14,7 +14,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
 
-use crate::{Bytes, Epoch, SeqNo};
+use crate::{Bytes, Epoch, SeqNo, Timestamp};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
@@ -377,10 +377,49 @@ impl Transaction {
     }
 }
 
+pub struct SortedTransaction {
+    address: Address,
+    timestamp: Timestamp,
+    tx: Transaction,
+}
+
+impl SortedTransaction {
+    pub fn new(address: Address, timestamp: Timestamp, tx: Transaction) -> Self {
+        Self {
+            address,
+            timestamp,
+            tx,
+        }
+    }
+
+    pub fn address(&self) -> &Address {
+        &self.address
+    }
+
+    pub fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+
+    pub fn tx(&self) -> &Transaction {
+        &self.tx
+    }
+
+    pub fn into_tx(self) -> Transaction {
+        self.tx
+    }
+}
+
 // Address wrapper
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy_primitives::Address);
+
+impl std::ops::Deref for Address {
+    type Target = alloy_primitives::Address;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl Default for Address {
     fn default() -> Self {
