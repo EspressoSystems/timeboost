@@ -28,12 +28,12 @@ opt-level = 3
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy-chains = "0.1.69"
-alloy-consensus = { version = "0.13.0", features = ["arbitrary", "k256"] }
-alloy-primitives = { version = "0.8.25", features = ["serde", "rlp"] }
+alloy-chains = "0.2.0"
+alloy-consensus = { version = "0.14.0", features = ["arbitrary", "k256"] }
+alloy-primitives = { version = "1.0.0", features = ["serde", "rlp"] }
 alloy-rlp = { version = "0.3.11", features = ["derive"] }
-alloy-signer = "0.13.0"
-alloy-signer-local = "0.13.0"
+alloy-signer = "0.14.0"
+alloy-signer-local = "0.14.0"
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 ark-bn254 = "0.5"
@@ -61,7 +61,7 @@ dotenvy = "0.15.7"
 dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
 either = "1.13.0"
-ethereum_ssz = "0.8.3"
+ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 multiaddr = "0.18.2"
 parking_lot = "0.12.3"
