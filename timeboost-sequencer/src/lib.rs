@@ -192,6 +192,10 @@ impl Sequencer {
         })
     }
 
+    pub fn public_key(&self) -> PublicKey {
+        self.label
+    }
+
     pub fn add_bundles<I>(&mut self, it: I)
     where
         I: IntoIterator<Item = BundleVariant>,
