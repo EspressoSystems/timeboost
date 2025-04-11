@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use cliquenet::{
     Overlay,
     overlay::{Data, SeqId},
@@ -19,7 +19,7 @@ use tracing::{debug, trace, warn};
 use crate::RbcError;
 use crate::digest::Digest;
 
-use super::{Command, Protocol, RbcConfig};
+use super::{Command, Protocol, RbcConfig, serialize};
 
 type Result<T> = std::result::Result<T, RbcError>;
 type Sender<T> = mpsc::Sender<Message<T, Validated>>;
@@ -205,27 +205,24 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 },
                 cmd = self.rx.recv() => {
                     match cmd {
-                        Some(Command::RbcBroadcast(v, tx)) => {
-                            match self.on_outbound(v).await {
-                                Ok(()) => {
-                                    let _ = tx.send(Ok(()));
-                                }
+                        Some(Command::RbcBroadcast(v, data)) => {
+                            match self.on_outbound(v, data).await {
+                                Ok(()) => {}
                                 Err(err) => {
                                     warn!(node = %self.key, %err, "error rbc broadcasting message");
-                                    let _ = tx.send(Err(err));
                                 }
                             }
                         }
                         // Best-effort sending to a peer without RBC properties.
-                        Some(Command::Send(to, msg)) => {
-                            match self.on_send(to, msg).await {
+                        Some(Command::Send(to, msg, data)) => {
+                            match self.on_send(to, msg, data).await {
                                 Ok(()) => {}
                                 Err(err) => warn!(node = %self.key, %err, "error sending message")
                             }
                         }
                         // Best-effort broadcast without RBC properties.
-                        Some(Command::Broadcast(msg)) => {
-                            match self.on_broadcast(msg).await {
+                        Some(Command::Broadcast(msg, data)) => {
+                            match self.on_broadcast(msg, data).await {
                                 Ok(()) => {}
                                 Err(err) => {
                                     warn!(node = %self.key, %err, "error broadcasting message")
@@ -250,30 +247,33 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Best effort broadcast.
-    async fn on_broadcast(&mut self, msg: Message<T, Validated>) -> Result<()> {
-        let proto = Protocol::Send(Cow::Borrowed(&msg));
-        let bytes = serialize(&proto)?;
+    async fn on_broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> Result<()> {
         let digest = Digest::of_msg(&msg);
-        self.comm.broadcast(bytes).await?;
+        self.comm.broadcast(data).await?;
         debug!(node = %self.key, %digest, "best-effort broadcast");
         Ok(())
     }
 
     /// 1:1 communication.
-    async fn on_send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<()> {
-        let proto = Protocol::Send(Cow::Borrowed(&msg));
-        let bytes = serialize(&proto)?;
+    async fn on_send(
+        &mut self,
+        to: PublicKey,
+        msg: Message<T, Validated>,
+        data: Data,
+    ) -> Result<()> {
         let digest = Digest::of_msg(&msg);
-        self.comm.unicast(to, bytes).await?;
+        self.comm.unicast(to, data).await?;
         debug!(node = %self.key, %to, %digest, "best-effort send");
         Ok(())
     }
 
     /// Start RBC broadcast.
-    async fn on_outbound(&mut self, vertex: Envelope<Vertex<T>, Validated>) -> Result<()> {
+    async fn on_outbound(
+        &mut self,
+        vertex: Envelope<Vertex<T>, Validated>,
+        data: Data,
+    ) -> Result<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
-        let proto = Protocol::Propose(Cow::Borrowed(&vertex));
-        let bytes = serialize(&proto)?;
         let digest = Digest::of_vertex(&vertex);
 
         let tracker = Tracker {
@@ -284,7 +284,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             status: Status::Initiated,
         };
 
-        let id = self.comm.broadcast(bytes).await?;
+        let id = self.comm.broadcast(data).await?;
         debug!(node = %self.key, %digest, "message broadcasted");
 
         let messages = self.buffer.entry(digest.round()).or_default();
@@ -386,7 +386,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
                 // Now that we have the message corresponding to the voter quorum we can
                 // broadcast the certificate as well:
-                let cert = tracker.votes.certificate().expect("requested message => certificate");
+                let cert = tracker
+                    .votes
+                    .certificate()
+                    .expect("requested message => certificate");
                 let cert_digest = Digest::of_cert(cert);
                 let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
                 let b = serialize(&m)?;
@@ -621,7 +624,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .and_then(|m| m.map.get_mut(&digest))
             .and_then(|t| t.message.item.as_ref())
         {
-            return respond(&mut self.comm, src, msg).await;
+            let proto = Protocol::GetResponse(Cow::Borrowed(msg));
+            let bytes = serialize(&proto)?;
+            self.comm.unicast(src, bytes).await?;
+            return Ok(());
         }
 
         warn!(node = %self.key, %src, "ignoring get request for data we do not have");
@@ -667,23 +673,4 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         Ok(())
     }
-}
-
-/// Factored out of `Worker` to help with borrowing.
-async fn respond<T: Clone + Committable + Serialize>(
-    net: &mut Overlay,
-    to: PublicKey,
-    vertex: &Envelope<Vertex<T>, Validated>,
-) -> Result<()> {
-    let proto = Protocol::GetResponse(Cow::Borrowed(vertex));
-    let bytes = serialize(&proto)?;
-    net.unicast(to, bytes).await?;
-    Ok(())
-}
-
-/// Serialize a given data type into `BytesMut`
-fn serialize<T: Serialize>(d: &T) -> Result<Data> {
-    let mut b = BytesMut::new().writer();
-    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().try_into()?)
 }
