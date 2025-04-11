@@ -5,7 +5,7 @@ use std::fmt;
 use bytes::Bytes;
 use cliquenet::{
     Overlay,
-    overlay::{Data, SeqId},
+    overlay::{Data, NetworkDown, SeqId},
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
@@ -21,7 +21,8 @@ use crate::digest::Digest;
 
 use super::{Command, Protocol, RbcConfig, serialize};
 
-type Result<T> = std::result::Result<T, RbcError>;
+type RbcResult<T> = std::result::Result<T, RbcError>;
+type SendResult<T> = std::result::Result<T, NetworkDown>;
 type Sender<T> = mpsc::Sender<Message<T, Validated>>;
 type Receiver<T> = mpsc::Receiver<Command<T>>;
 
@@ -199,34 +200,35 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             }
                         }
                         Err(err) => {
-                            warn!(node = %self.key, %err, "error receiving message from network")
+                            let _: NetworkDown = err;
+                            debug!(node = %self.key, "network went down");
+                            return
                         }
                     }
                 },
                 cmd = self.rx.recv() => {
                     match cmd {
                         Some(Command::RbcBroadcast(v, data)) => {
-                            match self.on_outbound(v, data).await {
-                                Ok(()) => {}
-                                Err(err) => {
-                                    warn!(node = %self.key, %err, "error rbc broadcasting message");
-                                }
+                            if let Err(err) = self.propose(v, data).await {
+                                let _: NetworkDown = err;
+                                debug!(node = %self.key, "network went down");
+                                return
                             }
                         }
                         // Best-effort sending to a peer without RBC properties.
                         Some(Command::Send(to, msg, data)) => {
-                            match self.on_send(to, msg, data).await {
-                                Ok(()) => {}
-                                Err(err) => warn!(node = %self.key, %err, "error sending message")
+                            if let Err(err) = self.send(to, msg, data).await {
+                                let _: NetworkDown = err;
+                                debug!(node = %self.key, "network went down");
+                                return
                             }
                         }
                         // Best-effort broadcast without RBC properties.
                         Some(Command::Broadcast(msg, data)) => {
-                            match self.on_broadcast(msg, data).await {
-                                Ok(()) => {}
-                                Err(err) => {
-                                    warn!(node = %self.key, %err, "error broadcasting message")
-                                }
+                            if let Err(err) = self.broadcast(msg, data).await {
+                                let _: NetworkDown = err;
+                                debug!(node = %self.key, "network went down");
+                                return
                             }
                         }
                         Some(Command::Gc(round)) => {
@@ -247,7 +249,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Best effort broadcast.
-    async fn on_broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> Result<()> {
+    async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
         let digest = Digest::of_msg(&msg);
         self.comm.broadcast(data).await?;
         debug!(node = %self.key, %digest, "best-effort broadcast");
@@ -255,12 +257,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// 1:1 communication.
-    async fn on_send(
-        &mut self,
-        to: PublicKey,
-        msg: Message<T, Validated>,
-        data: Data,
-    ) -> Result<()> {
+    async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
         let digest = Digest::of_msg(&msg);
         self.comm.unicast(to, data).await?;
         debug!(node = %self.key, %to, %digest, "best-effort send");
@@ -268,11 +265,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Start RBC broadcast.
-    async fn on_outbound(
-        &mut self,
-        vertex: Envelope<Vertex<T>, Validated>,
-        data: Data,
-    ) -> Result<()> {
+    async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> SendResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
 
@@ -295,7 +288,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// We received a message from the network.
-    async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<()> {
+    async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> RbcResult<()> {
         trace!(node = %self.key, %src, buf = %self.buffer.len(), "inbound message");
         match bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?.0 {
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
@@ -310,7 +303,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// A non-RBC message has been received which we deliver directly to the application.
-    async fn on_message(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> Result<()> {
+    async fn on_message(&mut self, src: PublicKey, msg: Message<T, Unchecked>) -> RbcResult<()> {
         debug!(node = %self.key, %src, %msg, digest = %Digest::of_msg(&msg), "message received");
         if msg.is_vertex() {
             warn!(node = %self.key, %src, "received rbc message as non-rbc message");
@@ -324,11 +317,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// An RBC message proposal has been received.
-    async fn on_propose(
-        &mut self,
-        src: PublicKey,
-        vertex: Envelope<Vertex<T>, Unchecked>,
-    ) -> Result<()> {
+    async fn on_propose(&mut self, src: PublicKey, vertex: Envelope<Vertex<T>, Unchecked>) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %Digest::of_vertex(&vertex), "proposal received");
         let Some(vertex) = vertex.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
@@ -445,12 +434,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// A proposal vote has been received.
-    async fn on_vote(
-        &mut self,
-        src: PublicKey,
-        env: Envelope<Digest, Unchecked>,
-        evi: Evidence,
-    ) -> Result<()> {
+    async fn on_vote(&mut self, src: PublicKey, env: Envelope<Digest, Unchecked>, evi: Evidence) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %env.data(), "vote received");
         let Some(env) = env.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);
@@ -549,7 +533,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// We received a vote certificate.
-    async fn on_cert(&mut self, src: PublicKey, crt: Certificate<Digest>) -> Result<()> {
+    async fn on_cert(&mut self, src: PublicKey, crt: Certificate<Digest>) -> RbcResult<()> {
         let digest = *crt.data();
         let cert_digest = Digest::of_cert(&crt);
 
@@ -615,7 +599,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// One of our peers is asking for a message proposal.
-    async fn on_get_request(&mut self, src: PublicKey, digest: Digest) -> Result<()> {
+    async fn on_get_request(&mut self, src: PublicKey, digest: Digest) -> RbcResult<()> {
         debug!(node = %self.key, %src, %digest, "get request received");
 
         if let Some(msg) = self
@@ -636,11 +620,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// We received a response to our get request.
-    async fn on_get_response(
-        &mut self,
-        src: PublicKey,
-        vertex: Envelope<Vertex<T>, Unchecked>,
-    ) -> Result<()> {
+    async fn on_get_response(&mut self, src: PublicKey, vertex: Envelope<Vertex<T>, Unchecked>) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %Digest::of_vertex(&vertex), "get response received");
         let Some(vertex) = vertex.validated(&self.config.committee) else {
             return Err(RbcError::InvalidMessage);

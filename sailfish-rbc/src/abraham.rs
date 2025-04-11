@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use crate::digest::Digest;
 use crate::{RbcError, RbcMetrics};
 
+#[rustfmt::skip]
 mod worker;
 
 use worker::Worker;
