@@ -1,16 +1,19 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
+use bytes::{BufMut, BytesMut};
+use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Evidence, Message, RawComm, RoundNumber, Vertex};
+use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::digest::Digest;
 use crate::{RbcError, RbcMetrics};
 
+#[rustfmt::skip]
 mod worker;
 
 use worker::Worker;
@@ -27,18 +30,13 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     /// it has been received (or the protocol moved on).
     Send(Cow<'a, Message<T, Status>>),
 
-    /// An acknowledgement reply of a message.
-    Ack(Digest),
-
     // RBC section ////////////////////////////////////////////////////////////
 
     /// An RBC proposal.
     Propose(Cow<'a, Envelope<Vertex<T>, Status>>),
 
     /// A vote for an RBC proposal.
-    ///
-    /// The boolean flag indicates if the sender has received enough votes.
-    Vote(Envelope<Digest, Status>, Evidence, bool),
+    Vote(Envelope<Digest, Status>, Evidence),
 
     /// A quorum certificate for an RBC proposal.
     Cert(Certificate<Digest>),
@@ -53,14 +51,11 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
 /// Worker command
 enum Command<T: Committable> {
     /// Send message to a party identified by the given public key.
-    Send(PublicKey, Message<T, Validated>),
+    Send(PublicKey, Message<T, Validated>, Data),
     /// Do a best-effort broadcast of the given message.
-    Broadcast(Message<T, Validated>),
+    Broadcast(Message<T, Validated>, Data),
     /// Do a byzantine reliable broadcast of the given message.
-    RbcBroadcast(
-        Envelope<Vertex<T>, Validated>,
-        oneshot::Sender<Result<(), RbcError>>,
-    ),
+    RbcBroadcast(Envelope<Vertex<T>, Validated>, Data),
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
 }
@@ -133,10 +128,10 @@ impl<T: Committable> Drop for Rbc<T> {
 }
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
-    pub fn new<C: RawComm + Send + 'static>(n: C, c: RbcConfig) -> Self {
+    pub fn new(net: Overlay, c: RbcConfig) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
-        let worker = Worker::new(ibound_tx, obound_rx, c, n);
+        let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,
             tx: obound_tx,
@@ -146,32 +141,26 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
 }
 
 #[async_trait]
-impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
+impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     type Err = RbcError;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
-
-        // If this message requires RBC we hand it to the worker and wait for its
-        // acknowlegement by the worker before returning. Once the message has been
-        // handed over to the worker it will be eventually delivered.
         if let Message::Vertex(v) = msg {
-            let (tx, rx) = oneshot::channel();
+            let data = serialize(&Protocol::Propose(Cow::Borrowed(&v)))?;
             self.tx
-                .send(Command::RbcBroadcast(v, tx))
+                .send(Command::RbcBroadcast(v, data))
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
-            return rx.await.map_err(|_| RbcError::Shutdown)?;
+        } else {
+            let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
+            self.tx
+                .send(Command::Broadcast(msg, data))
+                .await
+                .map_err(|_| RbcError::Shutdown)?;
         }
-
-        // Anything else is on a best-effort basis.
-        self.tx
-            .send(Command::Broadcast(msg))
-            .await
-            .map_err(|_| RbcError::Shutdown)?;
-
         Ok(())
     }
 
@@ -179,8 +168,9 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
         if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
+        let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
         self.tx
-            .send(Command::Send(to, msg))
+            .send(Command::Send(to, msg, data))
             .await
             .map_err(|_| RbcError::Shutdown)?;
         Ok(())
@@ -196,4 +186,11 @@ impl<T: Committable + Send + 'static> Comm<T> for Rbc<T> {
             .await
             .map_err(|_| RbcError::Shutdown)
     }
+}
+
+/// Serialize a given value into overlay `Data`.
+fn serialize<T: Serialize>(d: &T) -> Result<Data, RbcError> {
+    let mut b = BytesMut::new().writer();
+    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
+    Ok(b.into_inner().try_into()?)
 }

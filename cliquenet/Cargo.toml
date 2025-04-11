@@ -5,9 +5,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[features]
-sailfish = ["async-trait", "sailfish-types"]
-
 [dependencies]
 bimap = { workspace = true }
 bytes = { workspace = true }
@@ -20,8 +17,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional:
-async-trait = { workspace = true, optional = true }
-sailfish-types = { path = "../sailfish-types", optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]

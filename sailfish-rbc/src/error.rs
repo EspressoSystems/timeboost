@@ -1,8 +1,10 @@
+use cliquenet::overlay::{DataError, NetworkDown};
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RbcError {
-    #[error("network error: {0}")]
-    Net(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("data error: {0}")]
+    DataError(#[from] DataError),
 
     #[error("serialization error: {0}")]
     Serialization(#[from] bincode::error::EncodeError),
@@ -20,8 +22,8 @@ pub enum RbcError {
     Shutdown,
 }
 
-impl RbcError {
-    pub(crate) fn net<E: std::error::Error + Send + Sync + 'static>(e: E) -> Self {
-        Self::Net(Box::new(e))
+impl From<NetworkDown> for RbcError {
+    fn from(_: NetworkDown) -> Self {
+        Self::Shutdown
     }
 }
