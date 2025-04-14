@@ -20,7 +20,7 @@ pub fn make_bundle(pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
     let kid = KeysetId::from(1);
     let mut bundle = Bundle::arbitrary(&mut u)?;
 
-    if rng.gen_bool(0.1) {
+    if rng.gen_bool(0.5) {
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
@@ -29,17 +29,17 @@ pub fn make_bundle(pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
         bundle.set_data(encoded.into());
         bundle.set_kid(kid);
     }
-    if rng.gen_bool(0.1) {
+    if rng.gen_bool(0.5) {
         // priority
         let auction = Address::default();
-        let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
+        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
         let signer = Signer::default();
         let priority = PriorityBundle::new(bundle, auction, seqno);
         let signed_priority = priority.sign(signer)?;
         Ok(BundleVariant::Priority(signed_priority))
     } else {
         // non-priority
-        Ok(BundleVariant::Regular(Bundle::arbitrary(&mut u)?))
+        Ok(BundleVariant::Regular(bundle))
     }
 }
 

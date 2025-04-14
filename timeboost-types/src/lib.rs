@@ -15,7 +15,7 @@ pub use bundle::{
     Transaction,
 };
 pub use bytes::Bytes;
-pub use candidate_list::CandidateList;
+pub use candidate_list::{CandidateList, CandidateListBytes};
 pub use decryption::{DecShareKey, DecryptionKey, ShareInfo};
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;

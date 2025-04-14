@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use cliquenet::{Address, Network, NetworkMetrics};
+use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::{
@@ -355,7 +355,7 @@ async fn main() -> Result<()> {
     );
 
     let cfg = RbcConfig::new(keypair.clone(), committee.clone());
-    let rbc = Rbc::new(network, cfg.with_metrics(rbc_metrics));
+    let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
 
     let consensus =
         Consensus::new(keypair, committee, repeat_with(Block::random)).with_metrics(sf_metrics);

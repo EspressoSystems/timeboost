@@ -1,5 +1,7 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
+use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -117,6 +119,45 @@ impl Committable for CandidateList {
             .regular
             .iter()
             .fold(builder, |b, rb| b.var_size_bytes(rb.commit().as_ref()))
+            .finalize()
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CandidateListBytes(pub Bytes);
+
+impl Deref for CandidateListBytes {
+    type Target = Bytes;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TryFrom<CandidateList> for CandidateListBytes {
+    type Error = bincode::error::EncodeError;
+
+    fn try_from(val: CandidateList) -> Result<Self, Self::Error> {
+        let mut w = BytesMut::new().writer();
+        bincode::serde::encode_into_std_write(val, &mut w, bincode::config::standard())?;
+        Ok(CandidateListBytes(w.into_inner().freeze()))
+    }
+}
+
+impl TryFrom<&[u8]> for CandidateList {
+    type Error = bincode::error::DecodeError;
+
+    fn try_from(val: &[u8]) -> Result<Self, Self::Error> {
+        let (this, _) = bincode::serde::decode_from_slice(val, bincode::config::standard())?;
+        Ok(this)
+    }
+}
+
+impl Committable for CandidateListBytes {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("CandidateListBytes")
+            .var_size_bytes(&self.0)
             .finalize()
     }
 }
