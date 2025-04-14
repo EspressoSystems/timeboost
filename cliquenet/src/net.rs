@@ -290,6 +290,10 @@ impl Network {
         self.parties.iter()
     }
 
+    pub fn max_message_size(&self) -> usize {
+        MAX_TOTAL_SIZE
+    }
+
     /// Send a message to a party, identified by the given public key.
     pub async fn unicast(&self, to: PublicKey, msg: Bytes) -> Result<()> {
         if msg.len() > MAX_TOTAL_SIZE {

@@ -8,8 +8,10 @@ use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
     Address, Bundle, BundleVariant, Epoch, RetryList, SeqNo, SignedPriorityBundle,
 };
-use timeboost_types::{CandidateList, DelayedInboxIndex, InclusionList, Timestamp};
-use tracing::trace;
+use timeboost_types::{
+    CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
+};
+use tracing::{error, trace};
 
 use super::Mode;
 use crate::metrics::SequencerMetrics;
@@ -27,6 +29,7 @@ struct Inner {
     priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
     metrics: Arc<SequencerMetrics>,
+    max_len: usize,
     mode: Mode,
 }
 
@@ -51,6 +54,7 @@ impl BundleQueue {
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             metrics,
+            max_len: usize::MAX,
             mode: Mode::Passive,
         })))
     }
@@ -58,6 +62,14 @@ impl BundleQueue {
     #[allow(unused)]
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
         self.0.lock().index = idx
+    }
+
+    pub fn set_mode(&self, m: Mode) {
+        self.0.lock().mode = m
+    }
+
+    pub fn set_max_data_len(&self, n: usize) {
+        self.0.lock().max_len = n
     }
 
     pub fn add_bundles<I>(&self, it: I)
@@ -97,10 +109,6 @@ impl BundleQueue {
             .queued_priority
             .set(inner.priority.values().map(BTreeMap::len).sum());
         inner.metrics.queued_regular.set(inner.regular.len());
-    }
-
-    pub fn set_mode(&self, m: Mode) {
-        self.0.lock().mode = m
     }
 
     pub fn update_bundles(&self, incl: &InclusionList, retry: RetryList) {
@@ -170,7 +178,7 @@ impl BundleQueue {
 }
 
 impl DataSource for BundleQueue {
-    type Data = CandidateList;
+    type Data = CandidateListBytes;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data {
         let time = Timestamp::now();
@@ -181,26 +189,66 @@ impl DataSource for BundleQueue {
         inner.set_time(time);
 
         if r.is_genesis() || inner.mode.is_passive() {
-            return CandidateList::builder(time, inner.index).finish();
+            return CandidateList::builder(Timestamp::now(), inner.index)
+                .finish()
+                .try_into()
+                .unwrap_or_else(|err| {
+                    error!(%err, "candidate list serialization error");
+                    CandidateListBytes::default()
+                });
         }
 
-        let bundles = inner
+        let mut size_budget = inner.max_len;
+
+        let mut priority = Vec::new();
+        for (_, b) in inner
             .priority
             .get(&inner.time.epoch())
-            .cloned()
-            .map(|map| map.into_values().collect::<Vec<_>>())
-            .unwrap_or_default();
+            .into_iter()
+            .flatten()
+        {
+            let Ok(n) = bincode_len(b) else { continue };
+            if n > size_budget {
+                break;
+            }
+            size_budget -= n;
+            priority.push(b.clone())
+        }
 
-        let regular = inner
-            .regular
-            .iter()
-            .take_while(|(t, _)| now.duration_since(*t) >= MIN_WAIT_TIME)
-            .map(|(_, x)| x.clone())
-            .collect();
+        let mut regular = Vec::new();
+        for (t, b) in &inner.regular {
+            if now.duration_since(*t) < MIN_WAIT_TIME {
+                break;
+            }
+            let Ok(n) = bincode_len(b) else { continue };
+            if n > size_budget {
+                break;
+            }
+            size_budget -= n;
+            regular.push(b.clone())
+        }
 
         CandidateList::builder(inner.time, inner.index)
-            .with_priority_bundles(bundles)
+            .with_priority_bundles(priority)
             .with_regular_bundles(regular)
             .finish()
+            .try_into()
+            .unwrap_or_else(|err| {
+                error!(%err, "candidate list serialization error");
+                CandidateListBytes::default()
+            })
     }
+}
+
+fn bincode_len<T>(val: T) -> Result<usize, bincode::error::EncodeError>
+where
+    T: serde::Serialize,
+{
+    use bincode::config::standard;
+    use bincode::enc::write::SizeWriter;
+    use bincode::serde::BorrowCompat;
+
+    let mut w = SizeWriter::default();
+    bincode::encode_into_writer(BorrowCompat(val), &mut w, standard())?;
+    Ok(w.bytes_written)
 }
