@@ -4,7 +4,7 @@ mod payload;
 mod round;
 mod vertex;
 
-pub use comm::{Comm, CommError, RawComm};
+pub use comm::{Comm, CommError};
 pub use message::{Action, Evidence, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;

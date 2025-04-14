@@ -16,7 +16,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{debug, info, warn};
 
 type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
@@ -53,11 +53,13 @@ async fn transaction_order() {
                         Err(err) => panic!("{err}")
                     },
                     t = s.next_transaction() => {
+                        debug!(node = %s.public_key(), transactions = %i);
                         i += 1;
                         tx.send(t.unwrap()).unwrap()
                     }
                 }
             }
+            info!(node = %s.public_key(), "done")
         });
         rxs.push(rx)
     }
@@ -72,7 +74,11 @@ async fn transaction_order() {
         }
     }
 
-    while tasks.join_next().await.is_some() {}
+    while let Some(result) = tasks.join_next().await {
+        if let Err(err) = result {
+            panic!("task panic: {err}")
+        }
+    }
 }
 
 fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<SequencerConfig> {

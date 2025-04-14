@@ -2,7 +2,7 @@ pub mod test_simple_network;
 
 use std::collections::HashMap;
 
-use cliquenet::{Network, NetworkMetrics};
+use cliquenet::{Network, NetworkMetrics, Overlay};
 use multisig::PublicKey;
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
@@ -62,7 +62,7 @@ impl TestableNetwork for BasicNetworkTest {
             .await
             .expect("failed to make network");
             let cfg = RbcConfig::new(kpr.clone(), committee.clone());
-            let net = Rbc::new(net, cfg);
+            let net = Rbc::new(Overlay::new(net), cfg);
             tracing::debug!(%i, "created rbc");
             let test_net = TestNet::new(net, i as u64, self.interceptor.clone());
             let messages = test_net.messages();

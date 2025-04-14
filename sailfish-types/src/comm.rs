@@ -1,7 +1,6 @@
 use std::error::Error;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
 
@@ -27,21 +26,6 @@ pub trait Comm<T: Committable> {
     }
 }
 
-/// Types that provide broadcast and 1:1 message communication.
-///
-/// In contrast to `Comm` this trait operates on raw byte vectors instead
-/// of `Message`s.
-#[async_trait]
-pub trait RawComm {
-    type Err: Error + Send + Sync + 'static;
-
-    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err>;
-
-    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err>;
-
-    async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err>;
-}
-
 #[async_trait]
 impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
     type Err = T::Err;
@@ -55,23 +39,6 @@ impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
     }
 
     async fn receive(&mut self) -> Result<Message<A, Validated>, Self::Err> {
-        (**self).receive().await
-    }
-}
-
-#[async_trait]
-impl<T: RawComm + Send> RawComm for Box<T> {
-    type Err = T::Err;
-
-    async fn broadcast(&mut self, msg: Bytes) -> Result<(), Self::Err> {
-        (**self).broadcast(msg).await
-    }
-
-    async fn send(&mut self, to: PublicKey, msg: Bytes) -> Result<(), Self::Err> {
-        (**self).send(to, msg).await
-    }
-
-    async fn receive(&mut self) -> Result<(PublicKey, Bytes), Self::Err> {
         (**self).receive().await
     }
 }
