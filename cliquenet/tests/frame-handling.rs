@@ -55,7 +55,7 @@ async fn multiple_frames() {
 /// Generate a vector with random data and random length (within bounds).
 fn gen_message() -> Data {
     let mut g = rand::rng();
-    let mut v = vec![0; g.random_range(1..4 * 1024 * 1024)];
+    let mut v = vec![0; g.random_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
     BytesMut::from(&v[..]).try_into().unwrap()
 }
