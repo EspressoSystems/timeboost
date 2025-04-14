@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
-use bytes::Bytes;
-use cliquenet::{NetworkMetrics, unreliable::Network};
+use bytes::BytesMut;
+use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
@@ -24,22 +24,26 @@ async fn multiple_frames() {
         ),
     ];
 
-    let mut net_a = Network::create(
-        all_parties[0].1,
-        party_a,
-        all_parties,
-        NetworkMetrics::default(),
-    )
-    .await
-    .unwrap();
-    let mut net_b = Network::create(
-        all_parties[1].1,
-        party_b,
-        all_parties,
-        NetworkMetrics::default(),
-    )
-    .await
-    .unwrap();
+    let mut net_a = Overlay::new(
+        Network::create(
+            all_parties[0].1,
+            party_a,
+            all_parties,
+            NetworkMetrics::default(),
+        )
+        .await
+        .unwrap(),
+    );
+    let mut net_b = Overlay::new(
+        Network::create(
+            all_parties[1].1,
+            party_b,
+            all_parties,
+            NetworkMetrics::default(),
+        )
+        .await
+        .unwrap(),
+    );
 
     let sender = all_parties[0].0;
 
@@ -49,25 +53,25 @@ async fn multiple_frames() {
 }
 
 /// Generate a vector with random data and random length (within bounds).
-fn gen_message() -> Bytes {
+fn gen_message() -> Data {
     let mut g = rand::rng();
     let mut v = vec![0; g.random_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
-    v.into()
+    BytesMut::from(&v[..]).try_into().unwrap()
 }
 
 /// Multicast a message and receive them in both networks.
 ///
-/// Since `Network` is essentially unreliable, this will retry multicasting
+/// Since `Network` is essentially unordered, this will retry multicasting
 /// until the expected message has been received by both parties.
-async fn send_recv(sender: PublicKey, net_a: &mut Network, net_b: &mut Network, data: Bytes) {
+async fn send_recv(sender: PublicKey, net_a: &mut Overlay, net_b: &mut Overlay, data: Data) {
     'main: loop {
-        net_a.multicast(data.clone()).await.unwrap();
+        net_a.broadcast(data.clone()).await.unwrap();
 
         for net in [&mut *net_a, net_b] {
             if let Ok(Ok((k, x))) = timeout(Duration::from_millis(5), net.receive()).await {
                 assert_eq!(k, sender);
-                if x != data {
+                if *x != *data {
                     continue 'main;
                 }
             } else {

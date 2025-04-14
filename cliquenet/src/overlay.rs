@@ -1,31 +1,34 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
-use multisig::{Keypair, PublicKey};
+use multisig::PublicKey;
 use parking_lot::Mutex;
+use thiserror::Error;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, Instant};
 use tracing::warn;
 
-use crate::{Address, NetworkError, NetworkMetrics, unreliable};
+use crate::Network;
 
-type Result<T> = std::result::Result<T, NetworkError>;
+type Result<T> = std::result::Result<T, NetworkDown>;
 
 #[derive(Debug)]
-pub struct Network {
+pub struct Overlay {
     this: PublicKey,
-    net: unreliable::Network,
+    net: Network,
+    sender: Sender<(Option<PublicKey>, Bytes)>,
     parties: Vec<PublicKey>,
     buffer: Buffer,
     id: SeqId,
     retry: JoinHandle<Infallible>,
 }
 
-impl Drop for Network {
+impl Drop for Overlay {
     fn drop(&mut self) {
         self.retry.abort()
     }
@@ -33,6 +36,9 @@ impl Drop for Network {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SeqId(u64);
+
+#[derive(Debug, Clone)]
+pub struct Data(BytesMut);
 
 #[derive(Debug, Clone, Default)]
 struct Buffer(Arc<Mutex<BTreeMap<SeqId, Message>>>);
@@ -45,100 +51,32 @@ struct Message {
     remaining: Vec<PublicKey>,
 }
 
-impl Network {
-    pub async fn create<P, A1, A2>(
-        bind_to: A1,
-        kp: Keypair,
-        group: P,
-        metrics: NetworkMetrics,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        let lbl = kp.public_key();
-        let mut parties = Vec::new();
-        let mut peers = Vec::new();
-        for (k, a) in group {
-            parties.push(k);
-            peers.push((k, a));
-        }
-        let net = unreliable::Network::create(bind_to, kp, peers, metrics).await?;
-        let buf = Buffer::default();
-        let tsk = spawn(retry(buf.clone(), net.sender()));
-        Ok(Self {
-            this: lbl,
+impl Overlay {
+    pub fn new(net: Network) -> Self {
+        let buffer = Buffer::default();
+        let retry = spawn(retry(buffer.clone(), net.sender()));
+        Self {
+            this: net.public_key(),
+            parties: net.parties().copied().collect(),
+            sender: net.sender(),
             net,
-            parties,
-            buffer: buf,
+            buffer,
             id: SeqId(0),
-            retry: tsk,
-        })
+            retry,
+        }
     }
 
-    #[cfg(feature = "turmoil")]
-    pub async fn create_turmoil<P, A1, A2>(
-        bind_to: A1,
-        kp: Keypair,
-        group: P,
-        metrics: NetworkMetrics,
-    ) -> Result<Self>
-    where
-        P: IntoIterator<Item = (PublicKey, A2)>,
-        A1: Into<Address>,
-        A2: Into<Address>,
-    {
-        let lbl = kp.public_key();
-        let mut parties = Vec::new();
-        let mut peers = Vec::new();
-        for (k, a) in group {
-            parties.push(k);
-            peers.push((k, a));
-        }
-        let net = unreliable::Network::create_turmoil(bind_to, kp, peers, metrics).await?;
-        let buf = Buffer::default();
-        let tsk = spawn(retry(buf.clone(), net.sender()));
-        Ok(Self {
-            this: lbl,
-            net,
-            parties,
-            buffer: buf,
-            id: SeqId(0),
-            retry: tsk,
-        })
+    pub async fn broadcast(&mut self, data: Data) -> Result<SeqId> {
+        self.send(None, data).await
     }
 
-    pub async fn send(&mut self, to: Option<PublicKey>, mut msg: BytesMut) -> Result<SeqId> {
-        let id = self.next_id();
-
-        msg.extend_from_slice(&id.0.to_be_bytes());
-        let msg = msg.freeze();
-
-        let rem = if let Some(to) = to {
-            self.net.unicast(to, msg.clone()).await?;
-            vec![to]
-        } else {
-            self.net.multicast(msg.clone()).await?;
-            self.parties.clone()
-        };
-
-        self.buffer.0.lock().insert(
-            id,
-            Message {
-                data: msg,
-                time: Instant::now(),
-                retries: 0,
-                remaining: rem,
-            },
-        );
-
-        Ok(id)
+    pub async fn unicast(&mut self, to: PublicKey, data: Data) -> Result<SeqId> {
+        self.send(Some(to), data).await
     }
 
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
         loop {
-            let (src, mut bytes) = self.net.receive().await?;
+            let (src, mut bytes) = self.net.receive().await.map_err(|_| NetworkDown(()))?;
 
             if bytes.len() < 8 {
                 warn!(node = %self.this, "received unexpected message");
@@ -153,7 +91,11 @@ impl Network {
 
             if !bytes.is_empty() {
                 // Send the Id value back as acknowledgement:
-                self.net.unicast(src, Bytes::copy_from_slice(&tail)).await?;
+                let ack = Bytes::copy_from_slice(&tail);
+                self.sender
+                    .send((Some(src), ack))
+                    .await
+                    .map_err(|_| NetworkDown(()))?;
                 return Ok((src, bytes));
             }
 
@@ -173,6 +115,43 @@ impl Network {
         self.buffer.0.lock().retain(|i, _| *i >= id);
     }
 
+    async fn send(&mut self, to: Option<PublicKey>, data: Data) -> Result<SeqId> {
+        let id = self.next_id();
+
+        let mut msg = data.0;
+
+        msg.extend_from_slice(&id.0.to_be_bytes());
+        let msg = msg.freeze();
+
+        let now = Instant::now();
+
+        let rem = if let Some(to) = to {
+            self.sender
+                .send((Some(to), msg.clone()))
+                .await
+                .map_err(|_| NetworkDown(()))?;
+            vec![to]
+        } else {
+            self.sender
+                .send((None, msg.clone()))
+                .await
+                .map_err(|_| NetworkDown(()))?;
+            self.parties.clone()
+        };
+
+        self.buffer.0.lock().insert(
+            id,
+            Message {
+                data: msg,
+                time: now,
+                retries: 0,
+                remaining: rem,
+            },
+        );
+
+        Ok(id)
+    }
+
     fn next_id(&mut self) -> SeqId {
         let id = self.id;
         self.id = SeqId(self.id.0 + 1);
@@ -181,7 +160,7 @@ impl Network {
 }
 
 async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Bytes)>) -> Infallible {
-    const DELAYS: [u64; 4] = [3, 5, 10, 15];
+    const DELAYS: [u64; 4] = [1, 3, 5, 15];
 
     let mut i = time::interval(Duration::from_secs(1));
     i.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -203,6 +182,7 @@ async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Bytes)>) -> Infallib
                 let Some(m) = buf.get_mut(&id) else { continue };
 
                 let delay = DELAYS.get(m.retries).copied().unwrap_or(30);
+
                 if now.saturating_duration_since(m.time) < Duration::from_secs(delay) {
                     continue;
                 }
@@ -218,5 +198,35 @@ async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Bytes)>) -> Infallib
                 let _ = net.send((Some(p), message.clone())).await;
             }
         }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("network down")]
+pub struct NetworkDown(());
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum DataError {
+    #[error("data size exceeds allowed maximum")]
+    MaxSize,
+}
+
+impl TryFrom<BytesMut> for Data {
+    type Error = DataError;
+
+    fn try_from(val: BytesMut) -> std::result::Result<Self, Self::Error> {
+        if val.len() > crate::net::MAX_TOTAL_SIZE {
+            return Err(DataError::MaxSize);
+        }
+        Ok(Self(val))
+    }
+}
+
+impl Deref for Data {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
     }
 }

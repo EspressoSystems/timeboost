@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }

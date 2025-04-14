@@ -1,6 +1,9 @@
 use bimap::BiMap;
 use bytes::{BufMut, BytesMut};
-use cliquenet::reliable::Network;
+use cliquenet::{
+    Overlay,
+    overlay::{Data, DataError},
+};
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use serde::Serialize;
@@ -58,7 +61,7 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(label: PublicKey, net: Network, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Overlay, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
         let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
         let decrypter = Worker::new(label, net, keyset, dec_sk);
@@ -256,7 +259,7 @@ type Incubator = BTreeMap<DecShareKey, BTreeMap<u32, DecShare>>;
 /// the shares can be combined to decrypt the ciphertext (hatching).
 struct Worker {
     label: PublicKey,
-    net: Network,
+    net: Overlay,
     committee: Keyset,
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
@@ -265,7 +268,7 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(label: PublicKey, net: Network, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Overlay, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
             label,
             net,
@@ -425,7 +428,7 @@ impl Worker {
     async fn broadcast(&mut self, share_info: &ShareInfo) -> Result<()> {
         let share_bytes = serialize(share_info)?;
         self.net
-            .send(None, share_bytes)
+            .broadcast(share_bytes)
             .await
             .map(|_| ())
             .map_err(DecryptError::net)
@@ -514,10 +517,10 @@ impl Worker {
 }
 
 /// Serialize a given data type into `Bytes`
-fn serialize<T: Serialize>(d: &T) -> Result<bytes::BytesMut> {
+fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner())
+    Ok(b.into_inner().try_into()?)
 }
 
 /// Deserialize from `Bytes` into a given data type.
@@ -538,6 +541,9 @@ pub enum DecryptError {
 
     #[error("bincode decode error: {0}")]
     BincodeDecode(#[from] bincode::error::DecodeError),
+
+    #[error("data error: {0}")]
+    DataError(#[from] DataError),
 
     #[error("decryption error: {0}")]
     Decryption(#[from] ThresholdEncError),
@@ -574,7 +580,7 @@ mod tests {
     use timeboost_utils::types::logging;
 
     use ark_std::test_rng;
-    use cliquenet::{NetworkMetrics, reliable::Network};
+    use cliquenet::{Network, NetworkMetrics, Overlay};
     use multisig::SecretKey;
     use sailfish::types::RoundNumber;
     use timeboost_crypto::{
@@ -740,7 +746,7 @@ mod tests {
 
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
-                network,
+                Overlay::new(network),
                 keyset.clone(),
                 decryption_keys[i].clone(),
             );

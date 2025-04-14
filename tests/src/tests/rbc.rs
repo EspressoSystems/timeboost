@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use cliquenet::{Address, NetworkMetrics, unreliable::Network};
+use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
@@ -53,7 +53,7 @@ fn mk_host<A, const N: usize>(
         let p = peers.clone();
         async move {
             let comm = Network::create_turmoil(a, k.clone(), p, NetworkMetrics::default()).await?;
-            let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+            let rbc = Rbc::new(Overlay::new(comm), RbcConfig::new(k.clone(), c.clone()));
             let cons = Consensus::new(k, c, EmptyBlocks);
             let mut coor = Coordinator::new(rbc, cons);
             let mut actions = coor.init();
@@ -75,7 +75,7 @@ fn small_committee() {
     let mut sim = turmoil::Builder::new()
         .enable_random_order()
         .fail_rate(0.05)
-        .simulation_duration(Duration::from_secs(500))
+        .simulation_duration(Duration::from_secs(5000))
         .tcp_capacity(256)
         .build();
 
@@ -98,7 +98,7 @@ fn small_committee() {
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let rbc = Rbc::new(Overlay::new(comm), RbcConfig::new(k.clone(), c.clone()));
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
@@ -154,7 +154,7 @@ fn medium_committee() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let rbc = Rbc::new(Overlay::new(comm), RbcConfig::new(k.clone(), c.clone()));
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
@@ -209,7 +209,7 @@ fn medium_committee_partition_network() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
-        let rbc = Rbc::new(comm, RbcConfig::new(k.clone(), c.clone()));
+        let rbc = Rbc::new(Overlay::new(comm), RbcConfig::new(k.clone(), c.clone()));
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
