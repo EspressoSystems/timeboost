@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -66,6 +67,7 @@ pub struct RbcConfig {
     keypair: Keypair,
     committee: Committee,
     early_delivery: bool,
+    journal: Option<PathBuf>,
     metrics: RbcMetrics,
 }
 
@@ -75,6 +77,7 @@ impl RbcConfig {
             keypair: k,
             committee: c,
             early_delivery: true,
+            journal: None,
             metrics: RbcMetrics::default(),
         }
     }
@@ -89,6 +92,11 @@ impl RbcConfig {
     /// Set the RBC metrics value to use.
     pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
         self.metrics = m;
+        self
+    }
+
+    pub fn with_journal<P: AsRef<Path>>(mut self, path: Option<P>) -> Self {
+        self.journal = path.map(|p| p.as_ref().into());
         self
     }
 }

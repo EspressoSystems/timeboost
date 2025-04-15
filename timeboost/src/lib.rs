@@ -1,5 +1,6 @@
 use std::iter::once;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
@@ -61,6 +62,8 @@ pub struct TimeboostConfig {
 
     /// Transactions per second
     pub tps: u32,
+
+    pub journal: Option<PathBuf>,
 }
 
 pub struct Timeboost {
@@ -76,7 +79,8 @@ impl Timeboost {
     pub async fn new(init: TimeboostConfig) -> Result<Self> {
         let scf =
             SequencerConfig::new(init.keypair.clone(), init.dec_sk.clone(), init.bind_address)
-                .with_peers(init.peers.clone());
+                .with_peers(init.peers.clone())
+                .with_journal(init.journal.clone());
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(scf, &*pro).await?;
         let met = Arc::new(TimeboostMetrics::new(&*pro));

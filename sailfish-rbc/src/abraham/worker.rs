@@ -12,6 +12,8 @@ use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
 use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
@@ -41,6 +43,7 @@ pub struct Worker<T: Committable> {
     rx: Receiver<T>,
     /// The tracking information per message.
     buffer: BTreeMap<RoundNumber, Messages<T>>,
+    journal: Option<File>,
 }
 
 /// Messages of a single round.
@@ -165,6 +168,17 @@ impl fmt::Display for Status {
 
 impl<T: Committable> Worker<T> {
     pub fn new(tx: Sender<T>, rx: Receiver<T>, cfg: RbcConfig, net: Overlay) -> Self {
+        let journal = if let Some(path) = &cfg.journal {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open(path)
+                .unwrap();
+            Some(File::from_std(file))
+        } else {
+            None
+        };
         Self {
             key: cfg.keypair.public_key(),
             config: cfg,
@@ -172,6 +186,7 @@ impl<T: Committable> Worker<T> {
             tx,
             rx,
             buffer: BTreeMap::new(),
+            journal
         }
     }
 }
@@ -251,6 +266,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// Best effort broadcast.
     async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
         let digest = Digest::of_msg(&msg);
+        if let Some(j) = &mut self.journal {
+            j.write_all(&data).await.unwrap();
+            j.sync_data().await.unwrap()
+        }
         self.comm.broadcast(data).await?;
         debug!(node = %self.key, %digest, "best-effort broadcast");
         Ok(())
@@ -259,6 +278,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// 1:1 communication.
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
         let digest = Digest::of_msg(&msg);
+        if let Some(j) = &mut self.journal {
+            j.write_all(&data).await.unwrap();
+            j.sync_data().await.unwrap()
+        }
         self.comm.unicast(to, data).await?;
         debug!(node = %self.key, %to, %digest, "best-effort send");
         Ok(())
@@ -268,6 +291,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> SendResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
+
+        if let Some(j) = &mut self.journal {
+            j.write_all(&data).await.unwrap();
+            j.sync_data().await.unwrap()
+        }
 
         let tracker = Tracker {
             source: Some(self.config.keypair.public_key()),
@@ -329,6 +357,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         let digest = Digest::of_vertex(&vertex);
+
+        if let Some(j) = &mut self.journal {
+            j.write_all(&serialize(&digest).unwrap()).await.unwrap();
+            j.sync_data().await.unwrap()
+        }
 
         if let Some(messages) = self.buffer.get(&digest.round()) {
             if let Some(d) = messages.digest(&src) {
@@ -547,6 +580,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if !crt.is_valid_par(&self.config.committee) {
             return Err(RbcError::InvalidMessage);
+        }
+
+        if let Some(j) = &mut self.journal {
+            j.write_all(&serialize(&crt).unwrap()).await.unwrap();
+            j.sync_data().await.unwrap()
         }
 
         let commit = digest.commit();

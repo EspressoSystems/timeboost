@@ -7,6 +7,7 @@ rounds=1000
 late_start=false
 keyset_file="test-configs/local.json"
 tps=1
+journal=
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,6 +29,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -t|--tps)
             tps="$2"
+            shift 2
+            ;;
+        -j|--journal)
+            journal="$2"
             shift 2
             ;;
         *)
@@ -74,6 +79,10 @@ for (( i=0; i<$nodes; i++ )); do
         --keyset-file $keyset_file
         --tps $tps
         --watchdog-timeout $rounds)
+
+    if [[ $i = 0 && $journal ]]; then
+        cmd+=(--journal "${journal}.$i")
+    fi
 
     if $late_start; then
         cmd+=(--late-start --late-start-node-id 0)

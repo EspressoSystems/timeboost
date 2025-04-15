@@ -114,6 +114,9 @@ struct Cli {
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
     multi_region: bool,
+
+    #[clap(long)]
+    journal: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -252,6 +255,7 @@ async fn main() -> Result<()> {
         sender: tb_app_tx,
         receiver: tb_app_rx,
         tps: cli.tps,
+        journal: cli.journal,
     };
 
     let timeboost = Timeboost::new(init).await?;
