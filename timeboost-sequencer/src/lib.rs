@@ -255,11 +255,12 @@ impl Task {
     // processing its actions continues unhindered.
     async fn go(mut self) -> Result<()> {
         let mut pending = None;
+        let mut gc_round = None;
         let mut candidates = Candidates::new();
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
-            candidates = self.execute(actions).await?;
+            (_, candidates) = self.execute(actions).await?;
         }
 
         loop {
@@ -269,7 +270,7 @@ impl Task {
                         pending = Some(ilist);
                         break;
                     }
-                    if let Err(err) = self.decrypter.enqueue(ilist).await {
+                    if let Err(err) = self.decrypter.enqueue(gc_round, ilist).await {
                         error!(node = %self.label, %err, "decrypt enqueue error");
                     }
                 }
@@ -278,7 +279,7 @@ impl Task {
                 result = self.sailfish.next(), if pending.is_none() => match result {
                     Ok(actions) => {
                         debug_assert!(candidates.is_empty());
-                        candidates = self.execute(actions).await?
+                        (gc_round, candidates) = self.execute(actions).await?
                     },
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
@@ -293,7 +294,7 @@ impl Task {
                             let Some(ilist) = pending.take() else {
                                 continue
                             };
-                            if let Err(err) = self.decrypter.enqueue(ilist).await {
+                            if let Err(err) = self.decrypter.enqueue(gc_round, ilist).await {
                                 error!(node = %self.label, %err, "decrypt enqueue error");
                             }
                         }
@@ -307,8 +308,12 @@ impl Task {
     }
 
     /// Execute Sailfish actions and collect candidate lists.
-    async fn execute(&mut self, actions: Vec<Action<CandidateListBytes>>) -> Result<Candidates> {
+    async fn execute(
+        &mut self,
+        actions: Vec<Action<CandidateListBytes>>,
+    ) -> Result<(Option<RoundNumber>, Candidates)> {
         let mut actions = VecDeque::from(actions);
+        let mut gc_round = None;
         let mut candidates = Vec::new();
         while !actions.is_empty() {
             let mut round = RoundNumber::genesis();
@@ -327,6 +332,10 @@ impl Task {
                             );
                         }
                     }
+                } else if let Action::Gc(r) = action {
+                    gc_round = Some(r);
+                    actions.push_front(action);
+                    break;
                 } else {
                     actions.push_front(action);
                     break;
@@ -346,7 +355,7 @@ impl Task {
                 }
             }
         }
-        Ok(candidates.into())
+        Ok((gc_round, candidates.into()))
     }
 
     /// Handle candidate lists and return the next inclusion list.
