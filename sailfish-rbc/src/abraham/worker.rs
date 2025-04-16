@@ -100,8 +100,6 @@ impl<T: Committable> Default for Messages<T> {
 
 /// Tracking information about a message and its status.
 struct Tracker<T: Committable> {
-    /// Are we the producer of this message?
-    ours: bool,
     /// The time when this info was created.
     start: Instant,
     /// The message (if any).
@@ -126,6 +124,9 @@ impl<T: Committable> Tracker<T> {
 struct Item<T> {
     /// This item's value, i.e. the message.
     item: Option<T>,
+    prop: Option<Data>,
+    vote: Option<Data>,
+    cert: Option<Data>,
     /// If `true`, this item was delivered early.
     ///
     /// The flag is used for performance reasons to avoid duplicate delivery
@@ -137,6 +138,9 @@ impl<T> Item<T> {
     fn none() -> Self {
         Self {
             item: None,
+            prop: None,
+            vote: None,
+            cert: None,
             early: false,
         }
     }
@@ -144,6 +148,9 @@ impl<T> Item<T> {
     fn some(item: T) -> Self {
         Self {
             item: Some(item),
+            prop: None,
+            vote: None,
+            cert: None,
             early: false,
         }
     }
@@ -306,8 +313,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         self.round = (*vertex.data().round().data(), vertex.data().evidence().clone());
 
-        let tracker = Tracker {
-            ours: true,
+        let mut tracker = Tracker {
             start: Instant::now(),
             message: Item::some(vertex),
             votes: VoteAccumulator::new(self.config.committee.clone()),
@@ -316,14 +322,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round()).or_default();
-        messages.map.insert(digest, tracker);
 
         if !can_send {
+            tracker.message.prop = Some(data);
+            messages.map.insert(digest, tracker);
             debug!(node = %self.key, %digest, "suppressing proposal");
             return Ok(())
         }
 
         let id = self.comm.broadcast(data).await?;
+        messages.map.insert(digest, tracker);
         messages.last = Some(id);
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
@@ -401,32 +409,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 return Ok(())
             }
 
-            if let Some(messages) = self.buffer.get_mut(&barrier) {
+            for (_, messages) in self.buffer.range_mut(barrier ..) {
                 for (digest, tracker) in &mut messages.map {
                     match tracker.status {
-                        Status::Requested | Status::Delivered => continue,
+                        Status::Requested | Status::Delivered => {
+                            if let Some(cert) = tracker.message.cert.take() {
+                                self.comm.broadcast(cert).await?;
+                                debug!(node = %self.key, %digest, "cert broadcasted");
+                            }
+                        }
                         Status::Initiated => {
-                            if let Some(vertex) = &tracker.message.item {
-                                if tracker.ours {
-                                    let data = serialize(&Protocol::Propose(Cow::Borrowed(vertex)))?;
-                                    let id = self.comm.broadcast(data).await?;
-                                    messages.last = Some(id);
-                                    debug!(node = %self.key, %digest, "proposal broadcasted");
-                                }
-                                if let Some(cert) = tracker.votes.certificate() {
-                                    let cert_digest = Digest::of_cert(cert);
-                                    let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
-                                    let b = serialize(&m)?;
-                                    self.comm.broadcast(b).await?;
-                                    debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
-                                } else {
-                                    let evi = vertex.data().evidence().clone();
-                                    let env = Envelope::signed(*digest, &self.config.keypair, false);
-                                    let vote = Protocol::<'_, T, Validated>::Vote(env, evi);
-                                    let bytes = serialize(&vote)?;
-                                    self.comm.broadcast(bytes).await?;
-                                    debug!(node = %self.key, %digest, "vote broadcasted");
-                                }
+                            if let Some(proposal) = tracker.message.prop.take() {
+                                let id = self.comm.broadcast(proposal).await?;
+                                messages.last = Some(id);
+                                debug!(node = %self.key, %digest, "proposal broadcasted");
+                            }
+                            if let Some(vote) = tracker.message.vote.take() {
+                                self.comm.broadcast(vote).await?;
+                                debug!(node = %self.key, %digest, "vote broadcasted");
+                            }
+                            if let Some(cert) = tracker.message.cert.take() {
+                                self.comm.broadcast(cert).await?;
+                                debug!(node = %self.key, %digest, "cert broadcasted");
                             }
                         }
                     }
@@ -479,7 +483,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let messages = self.buffer.entry(digest.round()).or_default();
 
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            ours: false,
             start: Instant::now(),
             message: Item::none(),
             votes: VoteAccumulator::new(self.config.committee.clone()),
@@ -490,18 +493,18 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // If this is a new message or we received our own we vote for it.
             Status::Initiated => {
                 if tracker.message.item.is_none() || src == self.key {
+                    let env = Envelope::signed(digest, &self.config.keypair, false);
+                    let vote = Protocol::<'_, T, Validated>::Vote(env, evidence);
+                    let bytes = serialize(&vote)?;
                     if can_send {
-                        let env = Envelope::signed(digest, &self.config.keypair, false);
-                        let vote = Protocol::<'_, T, Validated>::Vote(env, evidence);
-                        let bytes = serialize(&vote)?;
                         self.comm.broadcast(bytes).await?;
                         debug!(node = %self.key, %digest, "vote broadcasted");
                     } else {
+                        tracker.message.vote = Some(bytes);
                         debug!(node = %self.key, %digest, "suppressing vote");
                     }
                 }
                 if tracker.message.item.is_none() {
-                    tracker.ours = src == self.key;
                     tracker.message = Item::some(vertex);
                 }
             }
@@ -510,22 +513,23 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // it to the application.
             Status::Requested => {
                 debug_assert!(tracker.message.item.is_none());
-                tracker.ours = src == self.key;
                 tracker.message = Item::some(vertex.clone());
 
+                // Now that we have the message corresponding to the voter quorum we can
+                // broadcast the certificate as well:
+                let cert = tracker
+                    .votes
+                    .certificate()
+                    .expect("requested message => certificate");
+                let cert_digest = Digest::of_cert(cert);
+                let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
+                let b = serialize(&m)?;
+
                 if can_send {
-                    // Now that we have the message corresponding to the voter quorum we can
-                    // broadcast the certificate as well:
-                    let cert = tracker
-                        .votes
-                        .certificate()
-                        .expect("requested message => certificate");
-                    let cert_digest = Digest::of_cert(cert);
-                    let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
-                    let b = serialize(&m)?;
                     self.comm.broadcast(b).await?;
                     debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                 } else {
+                    tracker.message.cert = Some(b);
                     debug!(node = %self.key, %digest, "suppressing cert");
                 }
 
@@ -616,7 +620,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let messages = self.buffer.entry(digest.round()).or_default();
 
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            ours: false,
             start: Instant::now(),
             message: Item::none(),
             votes: VoteAccumulator::new(self.config.committee.clone()),
@@ -632,13 +635,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             Status::Initiated => match tracker.votes.add(env.into_signed()) {
                 Ok(Some(cert)) => {
                     if let Some(vertex) = &tracker.message.item {
+                        let cert_digest = Digest::of_cert(cert);
+                        let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
+                        let b = serialize(&m)?;
                         if can_send {
-                            let cert_digest = Digest::of_cert(cert);
-                            let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
-                            let b = serialize(&m)?;
                             self.comm.broadcast(b).await?;
                             debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                         } else {
+                            tracker.message.cert = Some(b);
                             debug!(node = %self.key, %digest, "suppressing cert");
                         }
                         if !tracker.message.early {
@@ -702,7 +706,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round()).or_default();
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            ours: false,
             start: Instant::now(),
             message: Item::none(),
             votes: VoteAccumulator::new(self.config.committee.clone()),
@@ -716,12 +719,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             Status::Initiated => {
                 tracker.votes.set_certificate(crt.clone());
                 if let Some(vertex) = &tracker.message.item {
+                    let m = Protocol::<'_, T, Validated>::Cert(crt);
+                    let b = serialize(&m)?;
                     if can_send {
-                        let m = Protocol::<'_, T, Validated>::Cert(crt);
-                        let b = serialize(&m)?;
                         self.comm.broadcast(b).await?;
                         debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                     } else {
+                        tracker.message.cert = Some(b);
                         debug!(node = %self.key, %digest, "suppressing cert");
                     }
                     if !tracker.message.early {
