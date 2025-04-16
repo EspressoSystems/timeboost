@@ -472,7 +472,7 @@ impl Worker {
             .broadcast(share_bytes)
             .await
             .map(|seqid| {
-                self.round2seqs.insert(share_info.round(), seqid);
+                self.round2seqs.entry(share_info.round()).or_insert(seqid);
             })
             .map_err(DecryptError::net)
     }
