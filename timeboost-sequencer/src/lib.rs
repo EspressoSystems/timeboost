@@ -255,12 +255,11 @@ impl Task {
     // processing its actions continues unhindered.
     async fn go(mut self) -> Result<()> {
         let mut pending = None;
-        let mut gc_round = None;
         let mut candidates = Candidates::new();
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
-            (_, candidates) = self.execute(actions).await?;
+            candidates = self.execute(actions).await?;
         }
 
         loop {
@@ -270,7 +269,7 @@ impl Task {
                         pending = Some(ilist);
                         break;
                     }
-                    if let Err(err) = self.decrypter.enqueue(gc_round, ilist).await {
+                    if let Err(err) = self.decrypter.enqueue(ilist).await {
                         error!(node = %self.label, %err, "decrypt enqueue error");
                     }
                 }
@@ -279,7 +278,7 @@ impl Task {
                 result = self.sailfish.next(), if pending.is_none() => match result {
                     Ok(actions) => {
                         debug_assert!(candidates.is_empty());
-                        (gc_round, candidates) = self.execute(actions).await?
+                        candidates = self.execute(actions).await?
                     },
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
@@ -294,7 +293,7 @@ impl Task {
                             let Some(ilist) = pending.take() else {
                                 continue
                             };
-                            if let Err(err) = self.decrypter.enqueue(gc_round, ilist).await {
+                            if let Err(err) = self.decrypter.enqueue(ilist).await {
                                 error!(node = %self.label, %err, "decrypt enqueue error");
                             }
                         }
@@ -308,46 +307,52 @@ impl Task {
     }
 
     /// Execute Sailfish actions and collect candidate lists.
-    async fn execute(
-        &mut self,
-        actions: Vec<Action<CandidateListBytes>>,
-    ) -> Result<(Option<RoundNumber>, Candidates)> {
+    async fn execute(&mut self, actions: Vec<Action<CandidateListBytes>>) -> Result<Candidates> {
         let mut actions = VecDeque::from(actions);
-        let mut gc_round = None;
         let mut candidates = Vec::new();
         while !actions.is_empty() {
             let mut round = RoundNumber::genesis();
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
-                if let Action::Deliver(payload) = action {
-                    round = payload.round();
-                    match CandidateList::try_from(payload.data().as_ref()) {
-                        Ok(data) => lists.push(data),
-                        Err(err) => {
-                            warn!(
-                                node = %self.label,
-                                err  = %err,
-                                src  = %payload.source(),
-                                "failed to deserialize candidate list"
-                            );
+                match action {
+                    Action::Deliver(payload) => {
+                        round = payload.round();
+                        match CandidateList::try_from(payload.data().as_ref()) {
+                            Ok(data) => lists.push(data),
+                            Err(err) => {
+                                warn!(
+                                    node = %self.label,
+                                    err  = %err,
+                                    src  = %payload.source(),
+                                    "failed to deserialize candidate list"
+                                );
+                            }
                         }
                     }
-                } else if let Action::Gc(r) = action {
-                    gc_round = Some(r);
-                    actions.push_front(action);
-                    break;
-                } else {
-                    actions.push_front(action);
-                    break;
+                    Action::Gc(r) => {
+                        self.decrypter.gc(r).await?;
+                        actions.push_front(action);
+                        break;
+                    }
+                    _ => {
+                        actions.push_front(action);
+                        break;
+                    }
                 }
             }
             if !lists.is_empty() {
                 candidates.push((round, lists))
             }
             while let Some(action) = actions.pop_front() {
-                if let Action::Deliver(_) = action {
-                    actions.push_front(action);
-                    break;
+                match action {
+                    Action::Deliver(_) => {
+                        actions.push_front(action);
+                        break;
+                    }
+                    Action::Gc(r) => {
+                        self.decrypter.gc(r).await?;
+                    }
+                    _ => {}
                 }
                 if let Err(err) = self.sailfish.execute(action).await {
                     error!(node = %self.label, %err, "coordinator error");
@@ -355,7 +360,7 @@ impl Task {
                 }
             }
         }
-        Ok((gc_round, candidates.into()))
+        Ok(candidates.into())
     }
 
     /// Handle candidate lists and return the next inclusion list.

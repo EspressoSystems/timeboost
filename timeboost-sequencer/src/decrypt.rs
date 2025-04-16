@@ -88,14 +88,17 @@ impl Decrypter {
         self.dec_tx.capacity() > 0 && self.enc_tx.capacity() > 0
     }
 
+    pub async fn gc(&mut self, r: RoundNumber) -> Result<()> {
+        self.enc_tx
+            .send(WorkerCommand::Gc(r))
+            .await
+            .map_err(|_| DecryptError::Shutdown)
+    }
+
     /// Identifies encrypted bundles in inclusion lists,
     /// computes the expected state diff, then sends the
     /// encrypted data to the worker for hatching.
-    pub async fn enqueue(
-        &mut self,
-        gc_round: Option<RoundNumber>,
-        incl: InclusionList,
-    ) -> Result<()> {
+    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
         let round = incl.round();
         let total_items = incl.len();
         let (encrypted_pb_idx, encrypted_pb_data): (Vec<_>, Vec<_>) = incl
@@ -143,12 +146,6 @@ impl Decrypter {
             self.incls.insert(round, Status::Encrypted(incl));
             self.modified
                 .insert(round, (encrypted_pb_idx, encrypted_rb_idx));
-        }
-        if let Some(r) = gc_round {
-            self.enc_tx
-                .send(WorkerCommand::Gc(r))
-                .await
-                .map_err(|_| DecryptError::Shutdown)?;
         }
         trace!(
             node   = %self.label,
@@ -691,7 +688,7 @@ mod tests {
 
         // Enqueue inclusion lists to each decrypter
         for d in decrypters.iter_mut() {
-            if let Err(e) = d.enqueue(None, incl_list.clone()).await {
+            if let Err(e) = d.enqueue(incl_list.clone()).await {
                 warn!("failed to enqueue inclusion list: {:?}", e);
             }
         }
