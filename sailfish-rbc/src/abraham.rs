@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -46,6 +47,10 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
 
     /// The reply to a get request.
     GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
+
+    InfoRequest(Nonce),
+
+    InfoResponse(Nonce, RoundNumber, Cow<'a, Evidence>)
 }
 
 /// Worker command
@@ -193,4 +198,20 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data, RbcError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
     Ok(b.into_inner().try_into()?)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+struct Nonce(u64);
+
+impl Nonce {
+    fn new() -> Self {
+        Self(rand::random())
+    }
+}
+
+impl fmt::Display for Nonce {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
