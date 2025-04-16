@@ -388,17 +388,20 @@ impl Worker {
                     }
                     Some(WorkerCommand::Gc(round)) => {
                         let gc_round: RoundNumber = round.saturating_sub(MAX_ROUNDS as u64).into();
-                        trace!(
-                            node      = %self.label,
-                            gc_round  = %gc_round,
-                            "gc"
-                        );
-                        if let Some(seqid) = self.round2seqs.get(&gc_round) {
-                            self.net.gc(*seqid);
+                        // gc only if activity in the incubator.
+                        if RoundNumber::genesis() < gc_round && RoundNumber::genesis() < r {
+                            trace!(
+                                node      = %self.label,
+                                gc_round  = %gc_round,
+                                "gc"
+                            );
+                            if let Some(seqid) = self.round2seqs.get(&gc_round) {
+                                self.net.gc(*seqid);
+                            }
+                            self.round2seqs.retain(|r, _| gc_round <= *r);
+                            hatched_rounds.retain(|r| gc_round <= *r);
+                            continue;
                         }
-                        self.round2seqs.retain(|r, _| gc_round <= *r);
-                        hatched_rounds.retain(|r| gc_round <= *r);
-                        continue;
                     }
                     None => {
                         debug!(node = %self.label, "decrypter shutdown detected");
