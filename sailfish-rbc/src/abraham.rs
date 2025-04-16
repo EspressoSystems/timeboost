@@ -182,7 +182,7 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     }
 
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
-        Ok(self.rx.recv().await.unwrap())
+        self.rx.recv().await.ok_or(RbcError::Shutdown)
     }
 
     async fn gc(&mut self, r: RoundNumber) -> Result<(), Self::Err> {

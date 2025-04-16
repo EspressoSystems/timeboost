@@ -402,12 +402,33 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             }
 
             if let Some(messages) = self.buffer.get_mut(&barrier) {
-                if let Some((digest, tracker)) = messages.map.iter_mut().find(|(_, t)| t.ours) {
-                    if let Some(vertex) = &tracker.message.item {
-                        let data = serialize(&Protocol::Propose(Cow::Borrowed(vertex)))?;
-                        let id = self.comm.broadcast(data).await?;
-                        messages.last = Some(id);
-                        debug!(node = %self.key, %digest, "proposal broadcasted");
+                for (digest, tracker) in &mut messages.map {
+                    match tracker.status {
+                        Status::Requested | Status::Delivered => continue,
+                        Status::Initiated => {
+                            if let Some(vertex) = &tracker.message.item {
+                                if tracker.ours {
+                                    let data = serialize(&Protocol::Propose(Cow::Borrowed(vertex)))?;
+                                    let id = self.comm.broadcast(data).await?;
+                                    messages.last = Some(id);
+                                    debug!(node = %self.key, %digest, "proposal broadcasted");
+                                }
+                                if let Some(cert) = tracker.votes.certificate() {
+                                    let cert_digest = Digest::of_cert(cert);
+                                    let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
+                                    let b = serialize(&m)?;
+                                    self.comm.broadcast(b).await?;
+                                    debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
+                                } else {
+                                    let evi = vertex.data().evidence().clone();
+                                    let env = Envelope::signed(*digest, &self.config.keypair, false);
+                                    let vote = Protocol::<'_, T, Validated>::Vote(env, evi);
+                                    let bytes = serialize(&vote)?;
+                                    self.comm.broadcast(bytes).await?;
+                                    debug!(node = %self.key, %digest, "vote broadcasted");
+                                }
+                            }
+                        }
                     }
                 }
             }
