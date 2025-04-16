@@ -49,7 +49,19 @@ pub struct Worker<T: Committable> {
 }
 
 enum WorkerState {
+    /// The worker has started and is collecting round number information.
+    ///
+    /// While in this state, no messages will be sent to other parties,
+    /// but inbound messages will be processed and delivered to the
+    /// application as normal.
+    ///
+    /// Proposals, votes and certificates that would normally be sent are
+    /// stored and once the round number barrier for participation has been
+    /// determined, the deferred messages from that round number onwards will
+    /// be sent out.
     Start(Nonce, HashMap<PublicKey, RoundNumber>),
+    /// This is the normal running state with the round number barrier
+    /// restricting what messages are eligible for sending.
     Barrier(RoundNumber),
 }
 
@@ -124,9 +136,8 @@ impl<T: Committable> Tracker<T> {
 struct Item<T> {
     /// This item's value, i.e. the message.
     item: Option<T>,
-    prop: Option<Data>,
-    vote: Option<Data>,
-    cert: Option<Data>,
+    /// The deferred proposals, votes or certificates (if any).
+    defer: Deferred,
     /// If `true`, this item was delivered early.
     ///
     /// The flag is used for performance reasons to avoid duplicate delivery
@@ -138,9 +149,7 @@ impl<T> Item<T> {
     fn none() -> Self {
         Self {
             item: None,
-            prop: None,
-            vote: None,
-            cert: None,
+            defer: Deferred::default(),
             early: false,
         }
     }
@@ -148,12 +157,20 @@ impl<T> Item<T> {
     fn some(item: T) -> Self {
         Self {
             item: Some(item),
-            prop: None,
-            vote: None,
-            cert: None,
+            defer: Deferred::default(),
             early: false,
         }
     }
+}
+
+#[derive(Default)]
+struct Deferred {
+    /// A deferred proposal.
+    prop: Option<Data>,
+    /// A deferred vote.
+    vote: Option<Data>,
+    /// A deferred certificate.
+    cert: Option<Data>,
 }
 
 /// Message status.
@@ -324,7 +341,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let messages = self.buffer.entry(digest.round()).or_default();
 
         if !can_send {
-            tracker.message.prop = Some(data);
+            tracker.message.defer.prop = Some(data);
             messages.map.insert(digest, tracker);
             debug!(node = %self.key, %digest, "suppressing proposal");
             return Ok(())
@@ -385,7 +402,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        if !e.is_genesis() && (e.round() + 1 != r || !e.is_valid(&self.config.committee)) {
+        let is_valid = || {
+            if e.is_genesis() {
+                return r.is_genesis()
+            }
+            e.round() + 1 == r && e.is_valid(&self.config.committee)
+        };
+
+        if !is_valid() {
             warn!(node = %self.key, %src, "invalid round evidence");
             return Err(RbcError::InvalidMessage);
         }
@@ -405,30 +429,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
             debug!(node = %self.key, %barrier, "round number info collected");
 
-            if !barrier.is_genesis() {
-                return Ok(())
-            }
-
             for (_, messages) in self.buffer.range_mut(barrier ..) {
                 for (digest, tracker) in &mut messages.map {
                     match tracker.status {
+                        // A quorum has been formed already => just send the certificate.
                         Status::Requested | Status::Delivered => {
-                            if let Some(cert) = tracker.message.cert.take() {
+                            if let Some(cert) = tracker.message.defer.cert.take() {
                                 self.comm.broadcast(cert).await?;
                                 debug!(node = %self.key, %digest, "cert broadcasted");
                             }
                         }
+                        // Send all deferred values.
                         Status::Initiated => {
-                            if let Some(proposal) = tracker.message.prop.take() {
+                            if let Some(proposal) = tracker.message.defer.prop.take() {
                                 let id = self.comm.broadcast(proposal).await?;
                                 messages.last = Some(id);
                                 debug!(node = %self.key, %digest, "proposal broadcasted");
                             }
-                            if let Some(vote) = tracker.message.vote.take() {
+                            if let Some(vote) = tracker.message.defer.vote.take() {
                                 self.comm.broadcast(vote).await?;
                                 debug!(node = %self.key, %digest, "vote broadcasted");
                             }
-                            if let Some(cert) = tracker.message.cert.take() {
+                            if let Some(cert) = tracker.message.defer.cert.take() {
                                 self.comm.broadcast(cert).await?;
                                 debug!(node = %self.key, %digest, "cert broadcasted");
                             }
@@ -500,7 +522,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         self.comm.broadcast(bytes).await?;
                         debug!(node = %self.key, %digest, "vote broadcasted");
                     } else {
-                        tracker.message.vote = Some(bytes);
+                        tracker.message.defer.vote = Some(bytes);
                         debug!(node = %self.key, %digest, "suppressing vote");
                     }
                 }
@@ -529,7 +551,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     self.comm.broadcast(b).await?;
                     debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                 } else {
-                    tracker.message.cert = Some(b);
+                    tracker.message.defer.cert = Some(b);
                     debug!(node = %self.key, %digest, "suppressing cert");
                 }
 
@@ -642,7 +664,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             self.comm.broadcast(b).await?;
                             debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                         } else {
-                            tracker.message.cert = Some(b);
+                            tracker.message.defer.cert = Some(b);
                             debug!(node = %self.key, %digest, "suppressing cert");
                         }
                         if !tracker.message.early {
@@ -725,7 +747,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         self.comm.broadcast(b).await?;
                         debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                     } else {
-                        tracker.message.cert = Some(b);
+                        tracker.message.defer.cert = Some(b);
                         debug!(node = %self.key, %digest, "suppressing cert");
                     }
                     if !tracker.message.early {
