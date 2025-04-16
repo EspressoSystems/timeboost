@@ -2,7 +2,7 @@ use bimap::BiMap;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{
     Overlay,
-    overlay::{Data, DataError, SeqId},
+    overlay::{Data, DataError, NetworkDown, SeqId},
 };
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
@@ -278,7 +278,7 @@ struct Worker {
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
     cid2ct: BiMap<(RoundNumber, Nonce), Ciphertext>,
-    round2seqs: BTreeMap<RoundNumber, Vec<SeqId>>,
+    round2seqs: BTreeMap<RoundNumber, SeqId>,
     shares: Incubator,
 }
 
@@ -316,82 +316,95 @@ impl Worker {
             );
             tokio::select! {
                 // received batch of decryption shares from remote node.
-                Ok((remote_pk, bytes)) = self.net.receive() => {
-                    if remote_pk == self.label { continue; }
-                    if let Ok(s) = deserialize::<ShareInfo>(&bytes) {
-                        trace!(
-                            node   = %self.label,
-                            round  = %s.round(),
-                            data   = %s.cids().len(),
-                            "receive"
-                        );
-                        if hatched_rounds.contains(&s.round()) || s.round() < r {
-                            // shares for which the ciphertexts have already hatched
-                            // or shares that are older than the first ciphertext in
-                            // the incubator are not inserted.
+                val = self.net.receive() => match val {
+                    Ok((remote_pk, bytes)) => {
+                        if remote_pk == self.label {
                             continue;
                         }
+                        if let Ok(s) = deserialize::<ShareInfo>(&bytes) {
+                            trace!(
+                                node   = %self.label,
+                                round  = %s.round(),
+                                data   = %s.cids().len(),
+                                "receive"
+                            );
+                            if hatched_rounds.contains(&s.round()) || s.round() < r {
+                                // shares for which the ciphertexts have already hatched
+                                // or shares that are older than the first ciphertext in
+                                // the incubator are not inserted.
+                                continue;
+                            }
 
-                        r = s.round();
-                        if let Err(e) = self.insert_shares(s) {
-                            warn!("failed to insert shares from remote: {:?}", e);
+                            r = s.round();
+                            if let Err(e) = self.insert_shares(s) {
+                                warn!("failed to insert shares from remote: {:?}", e);
+                            }
                         }
+                    },
+                    Err(err) => {
+                        let _: NetworkDown = err;
+                        debug!(node = %self.label, "network went down");
+                        return;
                     }
-                }
+                },
 
                 // received batch of encrypted data from local inclusion list.
-                Some(command) = enc_rx.recv() => {
-                    match command {
-                        WorkerCommand::Decrypt(round, enc_data) => {
-                            trace!(
-                                node  = %self.label,
-                                round = %round,
-                                data  = %enc_data.len(),
-                                "decrypt"
-                            );
+                val = enc_rx.recv() => match val {
+                    Some(WorkerCommand::Decrypt(round, enc_data)) => {
+                        trace!(
+                            node  = %self.label,
+                            round = %round,
+                            data  = %enc_data.len(),
+                            "decrypt"
+                        );
 
-                            r = round;
-                            match self.decrypt(round, enc_data).await {
-                                Ok(s) => {
-                                    if let Err(e) = self.broadcast(&s).await {
-                                        warn!("failed to send share info: {:?}", e);
-                                    }
-                                    if let Err(e) = self.insert_shares(s) {
-                                        warn!("failed to insert local shares: {:?}", e);
-                                        continue;
-                                    }
-                                    if catching_up {
-                                        // fast-forward
-                                        self.shares.retain(|k, _| {
-                                            let old = k.round() < round;
-                                            if old {
-                                                hatched_rounds.insert(k.round());
-                                            }
-                                            !old
-                                        });
-                                        catching_up = false;
-                                    }
+                        r = round;
+                        match self.decrypt(round, enc_data).await {
+                            Ok(s) => {
+                                if let Err(e) = self.broadcast(&s).await {
+                                    warn!("failed to send share info: {:?}", e);
                                 }
-                                Err(e) => {
-                                    warn!("failed to decrypt data: {:?}", e);
+                                if let Err(e) = self.insert_shares(s) {
+                                    warn!("failed to insert local shares: {:?}", e);
                                     continue;
                                 }
+                                if catching_up {
+                                    // fast-forward
+                                    self.shares.retain(|k, _| {
+                                        let old = k.round() < round;
+                                        if old {
+                                            hatched_rounds.insert(k.round());
+                                        }
+                                        !old
+                                    });
+                                    catching_up = false;
+                                }
                             }
-                        },
-                        WorkerCommand::Gc(round) => {
-                            let gc_round: RoundNumber = round.saturating_sub(MAX_ROUNDS as u64).into();
-                            self.round2seqs.retain(|r,_| gc_round <= *r );
-                            hatched_rounds.retain(|r| gc_round <= *r );
-                            trace!(
-                                node    = %self.label,
-                                %round,
-                                seqids  = %self.round2seqs.values().flatten().count(),
-                                "gc"
-                            );
-                            continue;
-                        },
+                            Err(e) => {
+                                warn!("failed to decrypt data: {:?}", e);
+                                continue;
+                            }
+                        }
                     }
-                }
+                    Some(WorkerCommand::Gc(round)) => {
+                        let gc_round: RoundNumber = round.saturating_sub(MAX_ROUNDS as u64).into();
+                        trace!(
+                            node      = %self.label,
+                            gc_round  = %gc_round,
+                            "gc"
+                        );
+                        if let Some(seqid) = self.round2seqs.get(&gc_round) {
+                            self.net.gc(*seqid);
+                        }
+                        self.round2seqs.retain(|r, _| gc_round <= *r);
+                        hatched_rounds.retain(|r| gc_round <= *r);
+                        continue;
+                    }
+                    None => {
+                        debug!(node = %self.label, "decrypter shutdown detected");
+                        return;
+                    }
+                },
             }
 
             // check for hatched ciphertexts
@@ -452,15 +465,13 @@ impl Worker {
 
     async fn broadcast(&mut self, share_info: &ShareInfo) -> Result<()> {
         let share_bytes = serialize(share_info)?;
-        let b = self.net.broadcast(share_bytes).await;
-        if let Ok(seqid) = b {
-            self.round2seqs
-                .entry(share_info.round())
-                .or_default()
-                .push(seqid);
-            return Ok(());
-        }
-        b.map(|_| ()).map_err(DecryptError::net)
+        self.net
+            .broadcast(share_bytes)
+            .await
+            .map(|seqid| {
+                self.round2seqs.insert(share_info.round(), seqid);
+            })
+            .map_err(DecryptError::net)
     }
 
     fn insert_shares(&mut self, share_info: ShareInfo) -> Result<()> {
