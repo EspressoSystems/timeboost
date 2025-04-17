@@ -95,21 +95,14 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // The following checks do not apply to the genesis round:
+                // Validate the previous round evidence:
+                if !e.data().evidence().is_valid(*e.data().round().data(), c) {
+                    warn!(%signer, "invalid evidence in vertex");
+                    return None;
+                }
+
+                // The following check does not apply to the genesis round:
                 if *e.data().round().data() != RoundNumber::genesis() {
-                    // Validate the signature of the previous round evidence:
-                    if !e.data().evidence().is_valid(c) {
-                        warn!(%signer, "invalid evidence in vertex");
-                        return None;
-                    }
-
-                    // The evidence should apply to the immediate predecessor of the
-                    // current vertex round:
-                    if e.data().evidence().round() + 1 != *e.data().round().data() {
-                        warn!(%signer, "evidence in vertex applies to invalid round");
-                        return None;
-                    }
-
                     // The number of vertex edges must be >= to the committee quorum:
                     if e.data().num_edges() < c.quorum_size().get() {
                         warn!(%signer, "vertex has not enough edges");
@@ -158,20 +151,14 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // The following checks do not apply to the genesis round:
-                if e.data().timeout().data().round() != RoundNumber::genesis() {
-                    // Validate the signature of the previous round evidence:
-                    if !e.data().evidence().is_valid(c) {
-                        warn!(%signer, "invalid timeout evidence");
-                        return None;
-                    }
-
-                    // The evidence should apply to the immediate predecessor of the
-                    // current timeout round:
-                    if e.data().evidence().round() + 1 != e.data().timeout().data().round() {
-                        warn!(%signer, "timeout evidence applies to invalid round");
-                        return None;
-                    }
+                // Validate the signature of the previous round evidence:
+                if !e
+                    .data()
+                    .evidence()
+                    .is_valid(e.data().timeout().data().round(), c)
+                {
+                    warn!(%signer, "invalid timeout evidence");
+                    return None;
                 }
 
                 Some(Message::Timeout(e))
@@ -374,11 +361,11 @@ impl Evidence {
         }
     }
 
-    pub fn is_valid(&self, c: &Committee) -> bool {
+    pub fn is_valid(&self, r: RoundNumber, c: &Committee) -> bool {
         match self {
-            Self::Genesis => false,
-            Self::Regular(x) => x.is_valid_par(c),
-            Self::Timeout(x) => x.is_valid_par(c),
+            Self::Genesis => r.is_genesis(),
+            Self::Regular(x) => self.round() + 1 == r && x.is_valid_par(c),
+            Self::Timeout(x) => self.round() + 1 == r && x.is_valid_par(c),
         }
     }
 

@@ -164,8 +164,8 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert_eq!(x.is_valid(c), y.is_valid(c));
             let xv = x.data();
             let yv = y.data();
-            let xe = xv.evidence().is_valid(c);
-            let ye = yv.evidence().is_valid(c);
+            let xe = xv.evidence().is_valid(*xv.round().data(), c);
+            let ye = yv.evidence().is_valid(*yv.round().data(), c);
             let xn = xv.no_vote_cert().map(|crt| crt.is_valid(c));
             let yn = yv.no_vote_cert().map(|crt| crt.is_valid(c));
             let xve = xv.edges().copied().collect::<BTreeSet<_>>();
@@ -185,8 +185,8 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             let xt = x.data();
             let yt = y.data();
             assert_eq!(xt.timeout(), yt.timeout());
-            let xe = xt.evidence().is_valid(c);
-            let ye = yt.evidence().is_valid(c);
+            let xe = xt.evidence().is_valid(xt.timeout().data().round(), c);
+            let ye = yt.evidence().is_valid(yt.timeout().data().round(), c);
             assert_eq!(xe, ye);
         }
         (Action::SendNoVote(xto, x), Action::SendNoVote(yto, y)) => {
