@@ -402,14 +402,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        let is_valid = || {
-            if e.is_genesis() {
-                return r.is_genesis()
-            }
-            e.round() + 1 == r && e.is_valid(&self.config.committee)
-        };
-
-        if !is_valid() {
+        if !e.is_valid(r, &self.config.committee) {
             warn!(node = %self.key, %src, "invalid round evidence");
             return Err(RbcError::InvalidMessage);
         }
@@ -627,15 +620,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .map(|(r, _)| *r)
             .unwrap_or_else(RoundNumber::genesis);
 
-        if digest.round() > latest_round + 1 {
-            if evi.round() + 1 != digest.round() && !digest.round().is_genesis() {
-                warn!(node = %self.key, %src, "invalid vote evidence round");
-                return Err(RbcError::InvalidMessage);
-            }
-            if !evi.is_valid(&self.config.committee) {
-                warn!(node = %self.key, %src, "invalid vote evidence");
-                return Err(RbcError::InvalidMessage);
-            }
+        if digest.round() > latest_round + 1 && !evi.is_valid(digest.round(), &self.config.committee) {
+            warn!(node = %self.key, %src, "invalid vote evidence");
+            return Err(RbcError::InvalidMessage);
         }
 
         let can_send = self.barrier().is_le();
