@@ -48,7 +48,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     /// The reply to a get request.
     GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
 
-    /// A direct request to retries the current round number of a party.
+    /// A direct request to retrieve the current round number of a party.
     InfoRequest(Nonce),
 
     /// The reply to an info request with round number an evidence.
