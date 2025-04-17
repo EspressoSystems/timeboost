@@ -424,13 +424,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         rounds.insert(src, r);
 
         if rounds.len() >= self.config.committee.quorum_size().get() {
-            let round = rounds.values().max().copied().expect("|rounds| >= quorum > 0");
-
-            let barrier = if round.is_genesis() {
-                round
-            } else {
-                round.saturating_add(2).into()
-            };
+            let barrier = rounds
+                .values()
+                .max()
+                .copied()
+                .expect("|rounds| >= quorum > 0")
+                .saturating_add(2)
+                .into();
 
             self.state = WorkerState::Barrier(barrier);
 
