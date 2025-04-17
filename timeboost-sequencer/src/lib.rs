@@ -81,6 +81,10 @@ impl SequencerConfig {
         self.recover = val;
         self
     }
+
+    pub fn is_recover(&self) -> bool {
+        self.recover
+    }
 }
 
 pub struct Sequencer {
