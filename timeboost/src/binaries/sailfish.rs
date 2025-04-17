@@ -105,6 +105,10 @@ struct Cli {
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
     multi_region: bool,
+
+    /// Path to a file that this process creates or reads as execution proof.
+    #[clap(long)]
+    stamp: PathBuf,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -355,12 +359,18 @@ async fn main() -> Result<()> {
             .map(|(i, key)| (i as u8, key)),
     );
 
-    let cfg = RbcConfig::new(keypair.clone(), committee.clone());
+    // If the stamp file exists we need to recover from a previous run.
+    let recover = tokio::fs::try_exists(&cli.stamp).await?;
+
+    let cfg = RbcConfig::new(keypair.clone(), committee.clone()).recover(recover);
     let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
 
     let consensus =
         Consensus::new(keypair, committee, repeat_with(Block::random)).with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
+
+    // Create proof of execution.
+    tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
 
     // Kickstart the network.
     for a in coordinator.init() {

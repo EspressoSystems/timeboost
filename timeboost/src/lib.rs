@@ -1,5 +1,6 @@
 use std::iter::once;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
@@ -61,6 +62,9 @@ pub struct TimeboostConfig {
 
     /// Transactions per second
     pub tps: u32,
+
+    /// Path to a file that this process creates or reads as execution proof.
+    pub stamp: PathBuf,
 }
 
 pub struct Timeboost {
@@ -74,8 +78,10 @@ pub struct Timeboost {
 
 impl Timeboost {
     pub async fn new(init: TimeboostConfig) -> Result<Self> {
+        let recover = tokio::fs::try_exists(&init.stamp).await?;
         let scf =
             SequencerConfig::new(init.keypair.clone(), init.dec_sk.clone(), init.bind_address)
+                .recover(recover)
                 .with_peers(init.peers.clone());
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(scf, &*pro).await?;
@@ -105,6 +111,11 @@ impl Timeboost {
                 self.init.sender.clone(),
             )));
         }
+
+        tokio::fs::File::create(self.init.stamp)
+            .await?
+            .sync_all()
+            .await?;
 
         loop {
             select! { biased;
