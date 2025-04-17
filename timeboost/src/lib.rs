@@ -65,6 +65,9 @@ pub struct TimeboostConfig {
 
     /// Path to a file that this process creates or reads as execution proof.
     pub stamp: PathBuf,
+
+    /// Ignore any existing stamp file and start with genesis round.
+    pub ignore_stamp: bool,
 }
 
 pub struct Timeboost {
@@ -78,7 +81,12 @@ pub struct Timeboost {
 
 impl Timeboost {
     pub async fn new(init: TimeboostConfig) -> Result<Self> {
-        let recover = tokio::fs::try_exists(&init.stamp).await?;
+        let recover = if init.ignore_stamp {
+            false
+        } else {
+            tokio::fs::try_exists(&init.stamp).await?
+        };
+
         let scf =
             SequencerConfig::new(init.keypair.clone(), init.dec_sk.clone(), init.bind_address)
                 .recover(recover)

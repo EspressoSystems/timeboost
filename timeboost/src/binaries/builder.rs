@@ -118,6 +118,10 @@ struct Cli {
     /// Path to a file that this process creates or reads as execution proof.
     #[clap(long)]
     stamp: PathBuf,
+
+    /// Ignore any existing stamp file and start from genesis.
+    #[clap(long, default_value_t = false)]
+    ignore_stamp: bool,
 }
 
 #[tokio::main]
@@ -257,6 +261,7 @@ async fn main() -> Result<()> {
         receiver: tb_app_rx,
         tps: cli.tps,
         stamp: cli.stamp,
+        ignore_stamp: cli.ignore_stamp,
     };
 
     let timeboost = Timeboost::new(init).await?;

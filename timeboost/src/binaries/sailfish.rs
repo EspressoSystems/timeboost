@@ -109,6 +109,9 @@ struct Cli {
     /// Path to a file that this process creates or reads as execution proof.
     #[clap(long)]
     stamp: PathBuf,
+
+    #[clap(long, default_value_t = false)]
+    ignore_stamp: bool,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -360,7 +363,11 @@ async fn main() -> Result<()> {
     );
 
     // If the stamp file exists we need to recover from a previous run.
-    let recover = tokio::fs::try_exists(&cli.stamp).await?;
+    let recover = if cli.ignore_stamp {
+        false
+    } else {
+        tokio::fs::try_exists(&cli.stamp).await?
+    };
 
     let cfg = RbcConfig::new(keypair.clone(), committee.clone()).recover(recover);
     let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
