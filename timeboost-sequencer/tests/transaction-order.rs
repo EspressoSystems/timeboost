@@ -96,7 +96,10 @@ fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<Sequencer
     let mut cfgs = Vec::new();
     for (kpair, addr, share) in parts.clone() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
-        cfgs.push(SequencerConfig::new(kpair, dkey, addr).with_peers(peers.clone()))
+        let cfg = SequencerConfig::new(kpair, dkey, addr)
+            .with_peers(peers.clone())
+            .recover(false);
+        cfgs.push(cfg)
     }
     cfgs
 }
