@@ -70,6 +70,7 @@ enum Command<T: Committable> {
 pub struct RbcConfig {
     keypair: Keypair,
     committee: Committee,
+    recover: bool,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
@@ -79,6 +80,7 @@ impl RbcConfig {
         Self {
             keypair: k,
             committee: c,
+            recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
         }
@@ -94,6 +96,12 @@ impl RbcConfig {
     /// Set the RBC metrics value to use.
     pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
         self.metrics = m;
+        self
+    }
+
+    /// Should we recover from a previous run?
+    pub fn recover(mut self, val: bool) -> Self {
+        self.recover = val;
         self
     }
 }

@@ -49,7 +49,11 @@ pub struct Worker<T: Committable> {
 }
 
 enum WorkerState {
-    /// The worker has started and is collecting round number information.
+    /// The first run of this worker.
+    ///
+    /// No round number information is collected.
+    Genesis,
+    /// The worker did run previously and should collect round number information.
     ///
     /// While in this state, no messages will be sent to other parties,
     /// but inbound messages will be processed and delivered to the
@@ -59,9 +63,9 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// determined, the deferred messages from that round number onwards will
     /// be sent out.
-    Start(Nonce, HashMap<PublicKey, RoundNumber>),
-    /// This is the normal running state with the round number barrier
-    /// restricting what messages are eligible for sending.
+    Recover(Nonce, HashMap<PublicKey, RoundNumber>),
+    /// This is the normal running state after recovery, with the round number barrier
+    /// restricting when messages are eligible for sending.
     Barrier(RoundNumber),
 }
 
@@ -201,13 +205,17 @@ impl<T: Committable> Worker<T> {
     pub fn new(tx: Sender<T>, rx: Receiver<T>, cfg: RbcConfig, net: Overlay) -> Self {
         Self {
             key: cfg.keypair.public_key(),
-            config: cfg,
             comm: net,
             tx,
             rx,
             buffer: BTreeMap::new(),
             round: (RoundNumber::genesis(), Evidence::Genesis),
-            state: WorkerState::Start(Nonce::new(), HashMap::new())
+            state: if cfg.recover {
+                WorkerState::Recover(Nonce::new(), HashMap::new())
+            } else {
+                WorkerState::Genesis
+            },
+            config: cfg
         }
     }
 }
@@ -288,9 +296,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
     }
 
-    /// Request round number information in startup.
+    /// Request round number information when recovering.
     async fn startup(&mut self) -> RbcResult<()> {
-        if let WorkerState::Start(nonce, _) = &self.state {
+        if let WorkerState::Recover(nonce, _) = &self.state {
             let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
             let bytes = serialize(&req)?;
             self.comm.broadcast(bytes).await?;
@@ -376,6 +384,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// We receveived a round number information request.
     async fn on_info_request(&mut self, src: PublicKey, n: Nonce) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, "info request received");
+
+        if self.barrier().is_gt() {
+            debug!(node = %self.key, %src, nonce = %n, "suppressed info response");
+            return Ok(())
+        }
+
         let (r, e) = &self.round;
         let proto = Protocol::<'_, T, Validated>::InfoResponse(n, *r, Cow::Borrowed(e));
         let bytes = serialize(&proto)?;
@@ -387,8 +401,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn on_info_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, %r, "info response received");
 
-        let WorkerState::Start(nonce, rounds) = &mut self.state else {
-            debug!(node = %self.key, %src, nonce = %n, %r, "startup phase already completed");
+        let WorkerState::Recover(nonce, rounds) = &mut self.state else {
+            debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
 
@@ -827,9 +841,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     fn barrier(&self) -> Ordering {
-        if let WorkerState::Barrier(r) = self.state {
-            return r.cmp(&self.round.0)
+        match self.state {
+            WorkerState::Genesis => Ordering::Less,
+            WorkerState::Recover(..) => Ordering::Greater,
+            WorkerState::Barrier(rn) => rn.cmp(&self.round.0)
         }
-        Ordering::Greater
     }
 }

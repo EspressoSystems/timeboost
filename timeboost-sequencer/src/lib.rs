@@ -39,6 +39,7 @@ pub struct SequencerConfig {
     bind: net::Address,
     index: DelayedInboxIndex,
     dec_sk: DecryptionKey,
+    recover: bool,
 }
 
 impl SequencerConfig {
@@ -53,6 +54,7 @@ impl SequencerConfig {
             bind: bind.into(),
             index: DelayedInboxIndex::default(),
             dec_sk,
+            recover: true,
         }
     }
 
@@ -72,6 +74,11 @@ impl SequencerConfig {
 
     pub fn with_delayed_inbox_index(mut self, i: DelayedInboxIndex) -> Self {
         self.index = i;
+        self
+    }
+
+    pub fn recover(mut self, val: bool) -> Self {
+        self.recover = val;
         self
     }
 }
@@ -141,7 +148,7 @@ impl Sequencer {
         )
         .await?;
 
-        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone());
+        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone()).recover(cfg.recover);
         let rbc = Rbc::new(Overlay::new(network), rcf.with_metrics(rbc_metrics));
 
         let label = cfg.keypair.public_key();
