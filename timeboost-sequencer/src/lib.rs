@@ -321,31 +321,45 @@ impl Task {
             let mut round = RoundNumber::genesis();
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
-                if let Action::Deliver(payload) = action {
-                    round = payload.round();
-                    match CandidateList::try_from(payload.data().as_ref()) {
-                        Ok(data) => lists.push(data),
-                        Err(err) => {
-                            warn!(
-                                node = %self.label,
-                                err  = %err,
-                                src  = %payload.source(),
-                                "failed to deserialize candidate list"
-                            );
+                match action {
+                    Action::Deliver(payload) => {
+                        round = payload.round();
+                        match CandidateList::try_from(payload.data().as_ref()) {
+                            Ok(data) => lists.push(data),
+                            Err(err) => {
+                                warn!(
+                                    node = %self.label,
+                                    err  = %err,
+                                    src  = %payload.source(),
+                                    "failed to deserialize candidate list"
+                                );
+                            }
                         }
                     }
-                } else {
-                    actions.push_front(action);
-                    break;
+                    Action::Gc(r) => {
+                        self.decrypter.gc(r).await?;
+                        actions.push_front(action);
+                        break;
+                    }
+                    _ => {
+                        actions.push_front(action);
+                        break;
+                    }
                 }
             }
             if !lists.is_empty() {
                 candidates.push((round, lists))
             }
             while let Some(action) = actions.pop_front() {
-                if let Action::Deliver(_) = action {
-                    actions.push_front(action);
-                    break;
+                match action {
+                    Action::Deliver(_) => {
+                        actions.push_front(action);
+                        break;
+                    }
+                    Action::Gc(r) => {
+                        self.decrypter.gc(r).await?;
+                    }
+                    _ => {}
                 }
                 if let Err(err) = self.sailfish.execute(action).await {
                     error!(node = %self.label, %err, "coordinator error");
