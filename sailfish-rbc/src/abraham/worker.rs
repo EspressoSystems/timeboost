@@ -44,7 +44,7 @@ pub struct Worker<T: Committable> {
     buffer: BTreeMap<RoundNumber, Messages<T>>,
     /// The state the worker is in.
     state: WorkerState,
-    /// The latest round number this worker is in.
+    /// The latest round number this worker proposed.
     round: (RoundNumber, Evidence)
 }
 
@@ -61,11 +61,12 @@ enum WorkerState {
     ///
     /// Proposals, votes and certificates that would normally be sent are
     /// stored and once the round number barrier for participation has been
-    /// determined, the deferred messages from that round number onwards will
+    /// reached, the deferred messages from that round number onwards will
     /// be sent out.
     Recover(Nonce, HashMap<PublicKey, RoundNumber>),
-    /// This is the normal running state after recovery, with the round number barrier
-    /// restricting when messages are eligible for sending.
+    /// This is the normal running state after round numbers have been collected.
+    /// The barrier is the maximum of at least 2t + 1 reported round numbers and
+    /// restricts when messages are eligible for sending.
     Barrier(RoundNumber),
 }
 

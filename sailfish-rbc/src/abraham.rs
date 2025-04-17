@@ -51,7 +51,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     /// A direct request to retrieve the current round number of a party.
     InfoRequest(Nonce),
 
-    /// The reply to an info request with round number an evidence.
+    /// The reply to an info request with round number and evidence.
     InfoResponse(Nonce, RoundNumber, Cow<'a, Evidence>)
 }
 
