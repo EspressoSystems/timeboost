@@ -24,7 +24,7 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, NetworkError, NetworkMetrics};
+use crate::{Address, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -36,9 +36,6 @@ const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
 /// Max. number of bytes for payload data.
 const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
-
-/// Max. number of bytes for a message (potentially consisting of several frames).
-pub(crate) const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
 /// Max. number of messages to queue for a peer.
 const PEER_CAPACITY: usize = 256;
@@ -290,13 +287,9 @@ impl Network {
         self.parties.iter()
     }
 
-    pub fn max_message_size(&self) -> usize {
-        MAX_TOTAL_SIZE
-    }
-
     /// Send a message to a party, identified by the given public key.
     pub async fn unicast(&self, to: PublicKey, msg: Bytes) -> Result<()> {
-        if msg.len() > MAX_TOTAL_SIZE {
+        if msg.len() > MAX_MESSAGE_SIZE {
             warn!(node = %self.label, %to, len = %msg.len(), "message too large to send");
             return Err(NetworkError::MessageTooLarge);
         }
@@ -308,7 +301,7 @@ impl Network {
 
     /// Send a message to all parties.
     pub async fn multicast(&self, msg: Bytes) -> Result<()> {
-        if msg.len() > MAX_TOTAL_SIZE {
+        if msg.len() > MAX_MESSAGE_SIZE {
             warn!(node = %self.label, len = %msg.len(), "message too large to broadcast");
             return Err(NetworkError::MessageTooLarge);
         }
@@ -826,7 +819,7 @@ where
                                     if !h.is_partial() {
                                         break;
                                     }
-                                    if msg.len() > MAX_TOTAL_SIZE {
+                                    if msg.len() > MAX_MESSAGE_SIZE {
                                         return Err(NetworkError::MessageTooLarge);
                                     }
                                 }
