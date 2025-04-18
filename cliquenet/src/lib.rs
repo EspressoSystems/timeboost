@@ -12,6 +12,7 @@ pub use addr::{Address, InvalidAddress};
 pub use error::NetworkError;
 pub use metrics::NetworkMetrics;
 pub use net::Network;
+pub use net::PEER_CAPACITY;
 pub use overlay::Overlay;
 
 /// Max. number of bytes for a message (potentially consisting of several frames).

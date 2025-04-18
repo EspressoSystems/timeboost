@@ -1,6 +1,7 @@
 mod decrypt;
 mod include;
 mod metrics;
+mod multiplex;
 mod queue;
 mod sort;
 
@@ -25,6 +26,7 @@ use tracing::{error, info, warn};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
+use multiplex::Multiplex;
 use queue::BundleQueue;
 use sort::Sorter;
 
@@ -174,6 +176,7 @@ impl Sequencer {
             cfg.bind.with_port(p)
         };
 
+        let public_key = cfg.keypair.public_key();
         let network = Network::create(
             addr,
             cfg.keypair.clone(), // same auth
@@ -185,12 +188,12 @@ impl Sequencer {
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
-        let decrypter = Decrypter::new(
-            cfg.keypair.public_key(),
-            Overlay::new(network),
-            keyset,
-            cfg.dec_sk,
-        );
+        // Demultiplexing of Timeboost network messages.
+        let (dec_rx, _block_rx, multiplex) =
+            Multiplex::go(public_key, committee.clone(), Overlay::new(network));
+
+        let decrypter =
+            Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex.tx.clone());
 
         let (tx, rx) = mpsc::channel(1024);
 
