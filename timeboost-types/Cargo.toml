@@ -19,6 +19,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
+multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
