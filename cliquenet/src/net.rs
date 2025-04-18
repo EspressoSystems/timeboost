@@ -41,7 +41,7 @@ const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
 pub(crate) const MAX_TOTAL_SIZE: usize = 5 * 1024 * 1024;
 
 /// Max. number of messages to queue for a peer.
-const PEER_CAPACITY: usize = 256;
+pub const PEER_CAPACITY: usize = 256;
 
 /// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
