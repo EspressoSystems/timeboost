@@ -46,9 +46,9 @@ impl KeysetConfig {
     }
 
     pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionKey> {
-        let pubkey = PublicKey::try_from(self.dec_keyset.pubkey.as_str())
+        let pubkey = PublicKey::try_from_str::<8192>(self.dec_keyset.pubkey.as_str())
             .context("Failed to parse public key from keyset")?;
-        let combkey = CombKey::try_from(self.dec_keyset.combkey.as_str())
+        let combkey = CombKey::try_from_str::<8192>(self.dec_keyset.combkey.as_str())
             .context("Failed to parse combination key from keyset")?;
         Ok(DecryptionKey::new(pubkey, combkey, deckey))
     }
@@ -84,10 +84,10 @@ pub fn private_keys(
         let bytes = &bs58::decode(dec_key)
             .into_vec()
             .context("unable to decode bs58")?;
-        let dec_key: KeyShare =
-            bincode::serde::decode_from_slice(bytes, bincode::config::standard())
-                .map(|(val, _)| val)
-                .expect("unable to read bytes into keyshare");
+        let config = bincode::config::standard().with_limit::<8192>();
+        let dec_key: KeyShare = bincode::serde::decode_from_slice(bytes, config)
+            .map(|(val, _)| val)
+            .expect("unable to read bytes into keyshare");
 
         Ok((sig_key, dec_key))
     } else {

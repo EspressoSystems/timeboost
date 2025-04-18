@@ -45,14 +45,14 @@ impl Scheme {
             Self::Decryption => {
                 let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num);
                 debug!("generating new threshold encryption keyset");
-                let pub_key = bs58_encode(&pub_key.as_bytes());
-                let comb_key = bs58_encode(&comb_key.as_bytes());
+                let pub_key = bs58_encode(&pub_key.to_bytes());
+                let comb_key = bs58_encode(&comb_key.to_bytes());
 
                 for index in 0..num.into() {
                     let key_share = key_shares
                         .get(index)
                         .expect("key share should exist in generated material");
-                    let key_share = bs58_encode(&key_share.as_bytes());
+                    let key_share = bs58_encode(&key_share.to_bytes());
                     let path = out.join(format!("{index}.env"));
                     let mut env_file = File::options().append(true).create(true).open(&path)?;
                     writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;

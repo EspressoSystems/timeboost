@@ -145,12 +145,11 @@ impl TryFrom<CandidateList> for CandidateListBytes {
     }
 }
 
-impl TryFrom<&[u8]> for CandidateList {
-    type Error = bincode::error::DecodeError;
-
-    fn try_from(val: &[u8]) -> Result<Self, Self::Error> {
-        let (this, _) = bincode::serde::decode_from_slice(val, bincode::config::standard())?;
-        Ok(this)
+impl CandidateListBytes {
+    pub fn decode<const N: usize>(&self) -> Result<CandidateList, bincode::error::DecodeError> {
+        let config = bincode::config::standard().with_limit::<N>();
+        let (list, _) = bincode::serde::decode_from_slice(&self.0, config)?;
+        Ok(list)
     }
 }
 

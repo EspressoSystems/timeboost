@@ -216,7 +216,7 @@ impl TryFrom<BytesMut> for Data {
     type Error = DataError;
 
     fn try_from(val: BytesMut) -> std::result::Result<Self, Self::Error> {
-        if val.len() > crate::net::MAX_TOTAL_SIZE {
+        if val.len() > crate::MAX_MESSAGE_SIZE {
             return Err(DataError::MaxSize);
         }
         Ok(Self(val))
