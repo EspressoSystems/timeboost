@@ -1,4 +1,6 @@
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Unchecked};
+use multisig::{
+    Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Unchecked, VoteAccumulator,
+};
 use std::collections::VecDeque;
 use timeboost_types::{Block, BlockHash, MultiplexMessage, Timestamp, Transaction};
 use tokio::spawn;
@@ -16,6 +18,7 @@ pub struct BlockProducer {
     /// Keypair of the node.
     label: Keypair,
     /// Incoming transactions
+    committee: Committee,
     queue: VecDeque<(Timestamp, Transaction)>,
     /// Block count
     count: usize,
@@ -36,11 +39,12 @@ impl BlockProducer {
     ) -> Self {
         let (block_tx, block_rx) = channel(100);
         let (cert_tx, cert_rx) = channel(100);
-        let certifier = Worker::new(label.clone(), committee);
+        let certifier = Worker::new(label.clone(), committee.clone());
 
         Self {
             label,
             count: 0,
+            committee,
             queue: VecDeque::new(),
             block_tx,
             cert_rx,
@@ -74,7 +78,23 @@ impl BlockProducer {
     }
 
     pub async fn next(&mut self) -> Result<(Certificate<BlockHash>, Block)> {
-        todo!()
+        // TODO: cheating certificate for now
+        let mut acc = VoteAccumulator::new(Committee::new(
+            self.committee
+                .entries()
+                .filter(|(_, public_key)| **public_key == self.label.public_key())
+                .map(|(key_id, public_key)| (key_id, *public_key))
+                .collect::<Vec<_>>(),
+        ));
+        let block = Block::default();
+        let block_header = block.header.clone();
+        let block_hash = BlockHash::from(*block_header.hash_slow());
+        let signed = Signed::new(block_hash, &self.label, true);
+        match acc.add(signed) {
+            Ok(Some(cert)) => Ok((cert.clone(), block)),
+            Ok(None) => Err(ProducerError::General),
+            Err(_) => Err(ProducerError::General),
+        }
     }
 }
 
