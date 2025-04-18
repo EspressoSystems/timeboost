@@ -78,7 +78,7 @@ async fn transaction_order() {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
             let t = rx.recv().await.unwrap();
-            assert_eq!(first.0.commitment(), t.0.commitment())
+            assert_eq!(first.0.data(), t.0.data())
         }
     }
 
