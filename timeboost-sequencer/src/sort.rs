@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use ssz::decode_list_of_variable_length_items as ssz_decode;
-use timeboost_types::{Bytes, InclusionList, Transaction};
+use timeboost_types::{Bytes, InclusionList, Timestamp, Transaction};
 use tracing::warn;
 
 const MAX_BUNDLE_TXS: usize = 1024;
@@ -15,11 +15,11 @@ impl Sorter {
         Self {}
     }
 
-    pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = Transaction> {
+    pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = (Timestamp, Transaction)> {
+        let timestamp = list.timestamp();
         let seed = list.digest();
 
         let (priority, regular) = list.into_bundles();
-
         let mut ptx = Vec::new();
         let mut rtx: Vec<Transaction> = Vec::new();
 
@@ -56,7 +56,7 @@ impl Sorter {
         }
 
         rtx.sort_unstable_by(|x, y| compare(&seed, x, y));
-        ptx.into_iter().chain(rtx)
+        ptx.into_iter().chain(rtx).map(move |t| (timestamp, t))
     }
 }
 
