@@ -2,6 +2,8 @@ mod decrypt;
 mod include;
 mod metrics;
 mod multiplex;
+#[allow(dead_code)]
+mod produce;
 mod queue;
 mod sort;
 
@@ -11,13 +13,14 @@ use std::sync::Arc;
 use cliquenet as net;
 use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Certificate, Committee, Keypair, PublicKey};
+use produce::BlockProducer;
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
+use timeboost_types::{Address, Block, BlockHash, BundleVariant, DecryptionKey};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -93,7 +96,7 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
-    output: Receiver<Transaction>,
+    output: Receiver<(Certificate<BlockHash>, Block)>,
 }
 
 impl Drop for Sequencer {
@@ -109,7 +112,8 @@ struct Task {
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
-    output: Sender<Transaction>,
+    producer: BlockProducer,
+    output: Sender<(Certificate<BlockHash>, Block)>,
     mode: Mode,
 }
 
@@ -189,7 +193,7 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         // Demultiplexing of Timeboost network messages.
-        let (dec_rx, _block_rx, multiplex) =
+        let (dec_rx, block_rx, multiplex) =
             Multiplex::go(public_key, committee.clone(), Overlay::new(network));
 
         let decrypter =
@@ -201,9 +205,10 @@ impl Sequencer {
             label,
             bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
-            includer: Includer::new(committee, cfg.index),
+            includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
+            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.tx.clone()),
             output: tx,
             mode: Mode::Passive,
         };
@@ -227,9 +232,9 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transaction(&mut self) -> Result<Transaction> {
+    pub async fn next_block(&mut self) -> Result<(Certificate<BlockHash>, Block)> {
         select! {
-            trx = self.output.recv() => trx.ok_or(TimeboostError::ChannelClosed),
+            cert = self.output.recv() => cert.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
                 Ok(Ok(())) => {
                     error!(node = %self.label, "unexpected task termination");
@@ -301,7 +306,7 @@ impl Task {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         for t in self.sorter.sort(incl) {
-                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
+                            self.producer.enqueue(t).await.map_err(|_| TimeboostError::ChannelClosed)?
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -311,6 +316,14 @@ impl Task {
                                 error!(node = %self.label, %err, "decrypt enqueue error");
                             }
                         }
+                    }
+                    Err(err) => {
+                        error!(node = %self.label, %err);
+                    }
+                },
+                result = self.producer.next() => match result {
+                    Ok(block) => {
+                        self.output.send(block).await.map_err(|_| TimeboostError::ChannelClosed)?;
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);

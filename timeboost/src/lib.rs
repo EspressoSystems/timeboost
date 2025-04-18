@@ -127,10 +127,9 @@ impl Timeboost {
 
         loop {
             select! { biased;
-                trx = self.sequencer.next_transaction() => match trx {
-                    Ok(trx) => {
-                        info!(node = %self.label, trx = %trx.tx().hash(), "transaction");
-                        // TODO: block building phase
+                block = self.sequencer.next_block() => match block {
+                    Ok(block) => {
+                        info!(node = %self.label, block = ?block.0.data(), "block");
                     }
                     Err(err) => {
                         return Err(err.into())

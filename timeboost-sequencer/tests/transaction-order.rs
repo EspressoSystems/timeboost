@@ -60,7 +60,7 @@ async fn transaction_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transaction() => {
+                    t = s.next_block() => {
                         debug!(node = %s.public_key(), transactions = %i);
                         i += 1;
                         tx.send(t.unwrap()).unwrap()
@@ -78,7 +78,7 @@ async fn transaction_order() {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
             let t = rx.recv().await.unwrap();
-            assert_eq!(first.hash(), t.hash())
+            assert_eq!(first.0.commitment(), t.0.commitment())
         }
     }
 
