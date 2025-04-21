@@ -2,7 +2,6 @@ mod decrypt;
 mod include;
 mod metrics;
 mod multiplex;
-#[allow(dead_code)]
 mod produce;
 mod queue;
 mod sort;
@@ -193,11 +192,12 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         // Demultiplexing of Timeboost network messages.
-        let (dec_rx, block_rx, multiplex) =
-            Multiplex::go(public_key, committee.clone(), Overlay::new(network));
+        let multiplex = Multiplex::new(public_key, committee.clone(), Overlay::new(network));
+        let multiplex_tx = multiplex.tx();
+        let (dec_rx, block_rx) = multiplex.go();
 
         let decrypter =
-            Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex.tx.clone());
+            Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex_tx.clone());
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -208,7 +208,7 @@ impl Sequencer {
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.tx.clone()),
+            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex_tx),
             output: tx,
             mode: Mode::Passive,
         };
@@ -306,7 +306,10 @@ impl Task {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         for t in self.sorter.sort(incl) {
-                            self.producer.enqueue(t).await.map_err(|_| TimeboostError::ChannelClosed)?
+                            if let Err(err) = self.producer.enqueue(t).await {
+                                error!(node = %self.label, %err, "failed to enqueue transaction");
+                                return Err(TimeboostError::ChannelClosed);
+                            }
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -323,7 +326,10 @@ impl Task {
                 },
                 result = self.producer.next() => match result {
                     Ok(block) => {
-                        self.output.send(block).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        if let Err(err) = self.output.send(block).await {
+                            error!(node = %self.label, %err, "failed to send block");
+                            return Err(TimeboostError::ChannelClosed);
+                        }
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);

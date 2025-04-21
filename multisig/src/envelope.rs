@@ -71,6 +71,15 @@ impl<D: Committable, S> Envelope<D, S> {
     }
 }
 
+impl<D: Committable> From<Envelope<D, Validated>> for Envelope<D, Unchecked> {
+    fn from(value: Envelope<D, Validated>) -> Self {
+        Envelope {
+            signed: value.signed,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<D: Committable, S> Deref for Envelope<D, S> {
     type Target = Signed<D>;
 

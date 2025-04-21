@@ -15,43 +15,64 @@ type BlockReceiver = Receiver<(PublicKey, Envelope<BlockHash, Unchecked>)>;
 
 #[derive(Debug)]
 pub struct Multiplex {
+    /// Public key of the node.
+    label: PublicKey,
+    /// Committee of the node.
+    committee: Committee,
+    /// Overlay network.
+    net: Overlay,
     /// Sender for outbound messages to be multiplexed.
-    pub tx: mpsc::Sender<MultiplexMessage>,
+    tx: mpsc::Sender<MultiplexMessage>,
+    /// Receiver for outbound messages to be multiplexed.
+    rx: mpsc::Receiver<MultiplexMessage>,
 }
 
 impl Multiplex {
-    pub fn go(
-        label: PublicKey,
-        committee: Committee,
-        mut net: Overlay,
-    ) -> (DecryptReceiver, BlockReceiver, Self) {
-        let channel_size = committee.size().get() * PEER_CAPACITY;
+    pub fn new(label: PublicKey, committee: Committee, net: Overlay) -> Self {
         // Channel for multiplexed messages to/from the overlay network.
-        let (obound_tx, mut obound_rx) = mpsc::channel(channel_size);
+        let (obound_tx, obound_rx) = mpsc::channel(committee.size().get() * PEER_CAPACITY);
+        Self {
+            label,
+            committee,
+            net,
+            tx: obound_tx,
+            rx: obound_rx,
+        }
+    }
+}
+
+impl Multiplex {
+    pub fn go(mut self) -> (DecryptReceiver, BlockReceiver) {
+        let capacity = self.committee.size().get() * PEER_CAPACITY;
         // Channel reserved for the decrypter
-        let (dec_tx, dec_rx) = mpsc::channel(channel_size);
+        let (dec_tx, dec_rx) = mpsc::channel(capacity);
         // Channel reserved for the block producer
-        let (block_tx, block_rx) = mpsc::channel(channel_size);
+        let (block_tx, block_rx) = mpsc::channel(capacity);
 
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    Some(message) = obound_rx.recv() => {
-                        match serialize(&message) {
-                            Ok(data) => {
-                                if let Err(e) = net.broadcast(data).await {
-                                    debug!(node = %label, "network shutdown detected {}", e);
-                                    return;
-                                }
+                    Some(message) = self.rx.recv() => {
+                        let data = match serialize(&message) {
+                            Ok(data) => data,
+                            Err(e) => {
+                                debug!(node = %self.label, "serialization error: {}", e);
+                                return;
+                            }
+                        };
+                        match self.net.broadcast(data).await {
+                            Ok(_seqid) => {
+                                // TODO: store seqids for garbage collection.
                             }
                             Err(e) => {
-                                error!("failed to serialize message: {}", e);
+                                debug!(node = %self.label, "network shutdown detected {}", e);
+                                return;
                             }
                         }
                     }
 
-                    Ok((public_key, bytes)) = net.receive() => {
-                        if public_key == label {
+                    Ok((public_key, bytes)) = self.net.receive() => {
+                        if public_key == self.label {
                             continue;
                         }
                         let msg = match deserialize(&bytes) {
@@ -75,14 +96,21 @@ impl Multiplex {
                             }
                         }
                     } else => {
-                        debug!(node = %label, "network shutdown detected");
+                        debug!(node = %self.label, "network shutdown detected");
                         return;
                     }
                 }
             }
         });
+        (dec_rx, block_rx)
+    }
 
-        (dec_rx, block_rx, Self { tx: obound_tx })
+    pub fn tx(&self) -> mpsc::Sender<MultiplexMessage> {
+        self.tx.clone()
+    }
+
+    pub fn _gc(&mut self) {
+        // TODO: garbage collect when interface stabilize.
     }
 }
 

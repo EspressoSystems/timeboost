@@ -744,18 +744,19 @@ mod tests {
             )
             .await
             .expect("starting network");
-
-            let (dec_rx, _block_rx, multiplexer) = Multiplex::go(
+            let multiplex = Multiplex::new(
                 sig_key.public_key(),
                 committee.clone(),
                 Overlay::new(network),
             );
+            let tx = multiplex.tx();
+            let (dec_rx, _block_rx) = multiplex.go();
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 keyset.clone(),
                 decryption_keys[i].clone(),
                 dec_rx,
-                multiplexer.tx.clone(),
+                tx,
             );
             decrypters.push(decrypter);
         }
