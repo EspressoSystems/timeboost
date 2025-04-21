@@ -61,7 +61,7 @@ impl BlockProducer {
     pub async fn enqueue(&mut self, tx: (Timestamp, Transaction)) -> Result<()> {
         self.queue.push_back(tx);
 
-        // TODO: produce blocks deterministically according to specification.
+        // TODO: produce blocks deterministically according to spec.
         // Useful links:
         // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/execution/gethexec/sequencer.go#L1001
         // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/arbos/block_processor.go#L164

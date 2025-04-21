@@ -110,7 +110,7 @@ impl Multiplex {
     }
 
     pub fn _gc(&mut self) {
-        // TODO: garbage collect when interface stabilize.
+        // TODO: garbage collect when interface stabilizes.
     }
 }
 

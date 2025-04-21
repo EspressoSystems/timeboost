@@ -92,6 +92,7 @@ impl Decrypter {
     }
 
     pub async fn gc(&mut self, _r: RoundNumber) -> Result<()> {
+        // TODO: Implement gc when interface stabilizes.
         Ok(())
     }
 
