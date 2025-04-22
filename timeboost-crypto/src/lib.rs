@@ -3,10 +3,11 @@ pub mod sg_encryption;
 pub mod traits;
 
 use ark_ec::CurveGroup;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
 use digest::{generic_array::GenericArray, typenum};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
@@ -156,90 +157,68 @@ impl From<Nonce> for GenericArray<u8, typenum::U12> {
 }
 
 impl<C: CurveGroup> CombKey<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing combkey")
     }
-}
 
-impl<C: CurveGroup> TryFrom<&str> for CombKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        try_from_bytes::<Self, N>(value)
     }
-}
 
-impl<C: CurveGroup> TryFrom<&[u8]> for CombKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::serde::decode_from_slice(value, bincode::config::standard())
-            .map(|(val, _)| val)
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        try_from_str::<Self, N>(value)
     }
 }
 
 impl<C: CurveGroup> PublicKey<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing public key")
     }
-}
 
-impl<C: CurveGroup> TryFrom<&str> for PublicKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        try_from_bytes::<Self, N>(value)
     }
-}
 
-impl<C: CurveGroup> TryFrom<&[u8]> for PublicKey<C> {
-    type Error = ark_serialize::SerializationError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::serde::decode_from_slice(value, bincode::config::standard())
-            .map(|(val, _)| val)
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        try_from_str::<Self, N>(value)
     }
 }
 
 impl<C: CurveGroup> KeyShare<C> {
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing key share")
     }
-}
 
-impl<C: CurveGroup> TryFrom<&str> for KeyShare<C> {
-    type Error = ark_serialize::SerializationError;
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        try_from_bytes::<Self, N>(value)
+    }
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let v = bs58::decode(value)
-            .into_vec()
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)?;
-        let b = v.as_slice();
-        Self::try_from(b)
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        try_from_str::<Self, N>(value)
     }
 }
 
-impl<C: CurveGroup> TryFrom<&[u8]> for KeyShare<C> {
-    type Error = ark_serialize::SerializationError;
+fn try_from_bytes<T, const N: usize>(value: &[u8]) -> Result<T, SerializationError>
+where
+    T: DeserializeOwned,
+{
+    let conf = bincode::config::standard().with_limit::<N>();
+    bincode::serde::decode_from_slice(value, conf)
+        .map(|(val, _)| val)
+        .map_err(|_| SerializationError::InvalidData)
+}
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::serde::decode_from_slice(value, bincode::config::standard())
-            .map(|(val, _)| val)
-            .map_err(|_| ark_serialize::SerializationError::InvalidData)
-    }
+fn try_from_str<T, const N: usize>(value: &str) -> Result<T, SerializationError>
+where
+    T: DeserializeOwned,
+{
+    let v = bs58::decode(value)
+        .into_vec()
+        .map_err(|_| SerializationError::InvalidData)?;
+    try_from_bytes::<T, N>(&v)
 }
 
 impl Plaintext {
