@@ -8,6 +8,8 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace};
 
+use crate::MAX_SIZE;
+
 type Result<T> = std::result::Result<T, ProducerError>;
 
 #[derive(Clone)]
@@ -43,8 +45,8 @@ impl BlockProducer {
         rx: Receiver<(PublicKey, Envelope<BlockHash, Unchecked>)>,
         tx: Sender<MultiplexMessage>,
     ) -> Self {
-        let (block_tx, block_rx) = channel(1000);
-        let (cert_tx, cert_rx) = channel(1000);
+        let (block_tx, block_rx) = channel(MAX_SIZE);
+        let (cert_tx, cert_rx) = channel(MAX_SIZE);
         let certifier = Worker::new(label.clone(), committee.clone());
 
         Self {

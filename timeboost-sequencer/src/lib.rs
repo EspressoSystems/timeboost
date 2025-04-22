@@ -35,6 +35,8 @@ use sort::Sorter;
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
 
+const MAX_SIZE: usize = 100;
+
 #[derive(Debug)]
 pub struct SequencerConfig {
     priority_addr: Address,

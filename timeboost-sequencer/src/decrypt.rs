@@ -15,12 +15,12 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
+use crate::MAX_SIZE;
+
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
-
-const MAX_ROUNDS: usize = 100;
 
 /// Status of the inclusion list
 enum Status {
@@ -71,8 +71,8 @@ impl Decrypter {
         ibound: Receiver<(PublicKey, ShareInfo)>,
         obound: Sender<MultiplexMessage>,
     ) -> Self {
-        let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
-        let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
+        let (enc_tx, enc_rx) = channel(MAX_SIZE);
+        let (dec_tx, dec_rx) = channel(MAX_SIZE);
         let decrypter = Worker::new(label, committee, dec_sk);
 
         Self {
