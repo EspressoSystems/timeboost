@@ -6,7 +6,7 @@ use timeboost_types::{Block, BlockHash, BlockNumber, MultiplexMessage, Timestamp
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
 
@@ -28,11 +28,11 @@ pub struct BlockProducer {
     queue: VecDeque<(Timestamp, Transaction)>,
     /// Last block produced.
     parent: Option<(BlockNumber, BlockHash)>,
-    /// block lists.
+    /// Blocks subject to certification.
     blocks: BTreeMap<(BlockNumber, BlockHash), Status>,
-    /// Send worker request.
+    /// Sender for worker request.
     block_tx: Sender<WorkerRequest>,
-    /// Receive worker response
+    /// Receiver for worker response.
     cert_rx: Receiver<WorkerResponse>,
     /// Worker task handle.
     jh: JoinHandle<()>,
@@ -47,7 +47,7 @@ impl BlockProducer {
     ) -> Self {
         let (block_tx, block_rx) = channel(MAX_SIZE);
         let (cert_tx, cert_rx) = channel(MAX_SIZE);
-        let certifier = Worker::new(label.clone(), committee.clone());
+        let worker = Worker::new(label.clone(), committee.clone());
 
         Self {
             label,
@@ -56,7 +56,7 @@ impl BlockProducer {
             blocks: BTreeMap::new(),
             block_tx,
             cert_rx,
-            jh: spawn(certifier.go(block_rx, cert_tx, rx, tx)),
+            jh: spawn(worker.go(block_rx, cert_tx, rx, tx)),
         }
     }
 
@@ -67,30 +67,29 @@ impl BlockProducer {
         // Useful links:
         // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/execution/gethexec/sequencer.go#L1001
         // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/arbos/block_processor.go#L164
-        if self.queue.len() >= 10 {
-            let mut txs = Vec::new();
-            for _ in 0..10 {
-                if let Some(transaction) = self.queue.pop_front() {
-                    txs.push(transaction);
+        const BLOCK_SIZE: usize = 10;
+
+        if self.queue.len() >= BLOCK_SIZE {
+            let txs: Vec<_> = self.queue.drain(..BLOCK_SIZE).map(|(_, t)| t).collect();
+
+            let (num, block) = match self.parent {
+                Some((num, parent)) => {
+                    let block = Block::new(parent, txs);
+                    (num + 1, block)
                 }
-            }
-            let (num, block) = if let Some((num, parent)) = self.parent {
-                let block = Block::new(parent, txs.into_iter().map(|(_, t)| t).collect());
-                (num + 1, block)
-            } else {
-                let block = Block::new(
-                    BlockHash::default(),
-                    txs.into_iter().map(|(_, t)| t).collect(),
-                );
-                (BlockNumber::genesis(), block)
+                None => {
+                    let block = Block::new(BlockHash::default(), txs);
+                    (BlockNumber::genesis(), block)
+                }
             };
-            let hash = BlockHash::from(*(block.hash_slow()));
+
+            let hash = BlockHash::from(*block.hash_slow());
             self.blocks
                 .insert((num, hash), Status::Uncertified(block.clone()));
             self.block_tx
                 .send(WorkerRequest(num, hash))
                 .await
-                .map_err(|_| ProducerError::General)?;
+                .map_err(|_| ProducerError::Shutdown)?;
             self.parent = Some((num, hash));
 
             trace!(
@@ -118,27 +117,21 @@ impl BlockProducer {
                 }
             };
 
-            if let Some(entry) = self.blocks.first_entry() {
-                match entry.get() {
-                    Status::Certified(_, _) => {
-                        let (cert, block) = match entry.remove() {
-                            Status::Certified(cert, block) => (cert, block),
-                            _ => unreachable!(),
-                        };
-                        return Ok((cert, block));
-                    }
-                    Status::Uncertified(_) => {
-                        debug!(
-                            node = %self.label.public_key(),
-                            "received certified block {} but the next block num is {}",
-                            num,
-                            entry.key().0
-                        );
-                    }
+            if let Some((block_info, status)) = self.blocks.pop_first() {
+                if let Status::Certified(cert, block) = status {
+                    return Ok((cert, block));
+                } else {
+                    debug!(
+                        node = %self.label.public_key(),
+                        "received certified block {} but the next block is {}",
+                        num,
+                        block_info.0
+                    );
+                    self.blocks.insert(block_info, status);
                 }
             }
         }
-        Err(ProducerError::General)
+        Err(ProducerError::Shutdown)
     }
 }
 
@@ -146,13 +139,6 @@ impl Drop for BlockProducer {
     fn drop(&mut self) {
         self.jh.abort()
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ProducerError {
-    #[error("an error occurred")]
-    General,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -226,7 +212,7 @@ impl Worker {
                         obound.send(MultiplexMessage::Block(env.into())).await.ok();
                     },
                     None => {
-                        debug!(node = %label, "block request channel closed");
+                        debug!(node = %label, "worker request channel closed");
                         return;
                     }
                 },
@@ -243,6 +229,7 @@ impl Worker {
                     status: CertStatus::Unknown,
                 });
             if let Some(num) = block_num {
+                // Block number provided => block produced/signed by the local node.
                 tracker.num = Some(num);
                 tracker.status = CertStatus::Signed;
             }
@@ -251,19 +238,32 @@ impl Worker {
                 continue;
             }
 
-            if let Ok(cert) = tracker.votes.add(block_hash.into_signed()) {
-                if let Some(cert) = cert {
+            match tracker.votes.add(block_hash.into_signed()) {
+                Ok(Some(cert)) => {
                     if let Some(num) = tracker.num {
-                        cert_tx.send(WorkerResponse(num, cert.clone())).await.ok();
+                        if cert_tx
+                            .send(WorkerResponse(num, cert.clone()))
+                            .await
+                            .is_err()
+                        {
+                            error!(node = %label, "failed to send certified block");
+                            return;
+                        }
                         tracker.status = CertStatus::Certified;
                     }
                 }
-            } else {
-                tracing::warn!(
-                    node = %label,
-                    "failed to add vote to tracker"
-                );
+                Err(_) => {
+                    warn!(node = %label, "failed to add vote to tracker");
+                }
+                _ => {}
             }
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ProducerError {
+    #[error("an error occurred")]
+    Shutdown,
 }
