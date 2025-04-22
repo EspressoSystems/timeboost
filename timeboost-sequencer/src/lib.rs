@@ -387,12 +387,9 @@ impl Task {
                 candidates.push((round, lists))
             }
             while let Some(action) = actions.pop_front() {
-                match action {
-                    Action::Deliver(_) => {
-                        actions.push_front(action);
-                        break;
-                    }
-                    _ => {}
+                if let Action::Deliver(_) = action {
+                    actions.push_front(action);
+                    break;
                 }
                 if let Err(err) = self.sailfish.execute(action).await {
                     error!(node = %self.label, %err, "coordinator error");
