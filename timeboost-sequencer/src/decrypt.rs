@@ -332,7 +332,6 @@ impl Worker {
                         if let Err(e) = self.insert_shares(s) {
                             warn!("failed to insert shares from remote: {:?}", e);
                         }
-
                     },
                     None => {
                         debug!(node = %self.label, "multiplexer shutdown detected");
@@ -354,7 +353,7 @@ impl Worker {
                         match self.decrypt(round, enc_data).await {
                             Ok(s) => {
                                 if let Err(e) = obound.send(MultiplexMessage::Decrypt(s.clone())).await {
-                                    error!("failed write decrypted message to multiplexer: {:?}", e);
+                                    warn!("failed write decrypted message to multiplexer: {:?}", e);
                                     continue;
                                 }
                                 if let Err(e) = self.insert_shares(s) {
@@ -400,10 +399,10 @@ impl Worker {
                         debug!(node = %self.label, round  = %r, "missing ciphertext for cid: {:?}", cid);
                     }
                     DecryptError::MissingIndex(cid) => {
-                        debug!(node = %self.label, round  = %r, "missing index mapping for cid: {:?}", cid);
+                        warn!(node = %self.label, round  = %r, "missing index mapping for cid: {:?}", cid);
                     }
                     _ => {
-                        debug!(node = %self.label, round  = %r, "failed to decrypt shares for round {}: {:?}", r, e);
+                        warn!(node = %self.label, round  = %r, "failed to decrypt shares for round {}: {:?}", r, e);
                     }
                 },
                 _ => {}
