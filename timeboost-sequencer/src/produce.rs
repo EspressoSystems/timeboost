@@ -1,14 +1,15 @@
-use multisig::{
-    Certificate, Committee, Envelope, Keypair, PublicKey, Unchecked, Validated, VoteAccumulator,
-};
+use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use std::collections::{BTreeMap, VecDeque};
-use timeboost_types::{Block, BlockHash, BlockNumber, MultiplexMessage, Timestamp, Transaction};
+use timeboost_types::{
+    Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Timestamp, Transaction,
+};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
+use crate::multiplex::MultiplexMessage;
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
@@ -42,7 +43,7 @@ impl BlockProducer {
     pub fn new(
         label: Keypair,
         committee: Committee,
-        rx: Receiver<(PublicKey, Envelope<BlockHash, Unchecked>)>,
+        rx: Receiver<(PublicKey, BlockInfo)>,
         tx: Sender<MultiplexMessage>,
     ) -> Self {
         let (block_tx, block_rx) = channel(MAX_SIZE);
@@ -103,7 +104,7 @@ impl BlockProducer {
         Ok(())
     }
 
-    pub async fn next(&mut self) -> Result<(Certificate<BlockHash>, Block)> {
+    pub async fn next(&mut self) -> Result<CertifiedBlock> {
         while let Some(WorkerResponse(num, cert)) = self.cert_rx.recv().await {
             trace!(
                 node = %self.label.public_key(),
@@ -119,7 +120,7 @@ impl BlockProducer {
 
             if let Some((block_info, status)) = self.blocks.pop_first() {
                 if let Status::Certified(cert, block) = status {
-                    return Ok((cert, block));
+                    return Ok(CertifiedBlock::new(num, cert, block));
                 } else {
                     debug!(
                         node = %self.label.public_key(),
@@ -173,7 +174,7 @@ impl Worker {
         mut self,
         mut block_rx: Receiver<WorkerRequest>,
         cert_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<(PublicKey, Envelope<BlockHash, Unchecked>)>,
+        mut ibound: Receiver<(PublicKey, BlockInfo)>,
         obound: Sender<MultiplexMessage>,
     ) {
         let label = self.keypair.public_key();
@@ -181,14 +182,17 @@ impl Worker {
         loop {
             tokio::select! {
                 val = ibound.recv() => match val {
-                    Some((remote, e)) => {
+                    Some((remote, b)) => {
+                        let num = b.number();
+                        let env = b.into_envelope();
                         trace!(
                             node   = %label,
-                            vote   = ?e.data(),
+                            num    = %num,
+                            vote   = ?env.data(),
                             from   = %remote,
                             "receive"
                         );
-                        if let Some(e) = e.validated(&self.committee) {
+                        if let Some(e) = env.validated(&self.committee) {
                             recv_block = (None, e);
                         } else {
                             continue;
@@ -209,7 +213,8 @@ impl Worker {
                         );
                         let env = Envelope::signed(hash, &self.keypair, false);
                         recv_block = (Some(num), env.clone());
-                        obound.send(MultiplexMessage::Block(env.into())).await.ok();
+                        let block_info = BlockInfo::new(num, env.into());
+                        obound.send(MultiplexMessage::Block(block_info)).await.ok();
                     },
                     None => {
                         debug!(node = %label, "worker request channel closed");

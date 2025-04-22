@@ -7,15 +7,14 @@ use sailfish::types::RoundNumber;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce};
-use timeboost_types::{
-    Bytes, DecShareKey, DecryptionKey, InclusionList, MultiplexMessage, ShareInfo,
-};
+use timeboost_types::{Bytes, DecShareKey, DecryptionKey, InclusionList, ShareInfo};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
+use crate::multiplex::MultiplexMessage;
 
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
@@ -88,11 +87,6 @@ impl Decrypter {
 
     pub fn has_capacity(&mut self) -> bool {
         self.dec_tx.capacity() > 0 && self.enc_tx.capacity() > 0
-    }
-
-    pub async fn gc(&mut self, _r: RoundNumber) -> Result<()> {
-        // TODO: Implement gc when interface stabilizes.
-        Ok(())
     }
 
     /// Identifies encrypted bundles in inclusion lists,
@@ -588,7 +582,7 @@ mod tests {
         let encryption_key: PublicKey<_> =
             decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
 
-        let mut decrypters = build_decrypters(keyset.clone()).await;
+        let (mut decrypters, mut _multiplexers) = setup(keyset.clone()).await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
@@ -669,7 +663,7 @@ mod tests {
         }
     }
 
-    async fn build_decrypters(keyset: Keyset) -> Vec<Decrypter> {
+    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<Multiplex>) {
         let signature_private_keys = [
             "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
             "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
@@ -723,7 +717,8 @@ mod tests {
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        // Create decrypters for each node
+        // Create multiplexer and decrypter for each node
+        let mut multiplexers = Vec::new();
         let mut decrypters = Vec::new();
         for i in 0..usize::from(keyset.size()) {
             let sig_key = signature_keys[i].clone();
@@ -737,13 +732,14 @@ mod tests {
             )
             .await
             .expect("starting network");
-            let multiplex = Multiplex::new(
+            let (dec_rx, _, multiplex) = Multiplex::new(
                 sig_key.public_key(),
                 committee.clone(),
                 Overlay::new(network),
             );
-            let tx = multiplex.tx();
-            let (dec_rx, _block_rx) = multiplex.go();
+            let tx = multiplex.tx().clone();
+            multiplexers.push(multiplex);
+
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 keyset.clone(),
@@ -755,7 +751,7 @@ mod tests {
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-        decrypters
+        (decrypters, multiplexers)
     }
 
     fn decode_bs58(encoded: &str) -> Vec<u8> {

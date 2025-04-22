@@ -9,17 +9,17 @@ mod sort;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use cliquenet as net;
-use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Overlay};
+use cliquenet::{self as net, MAX_MESSAGE_SIZE};
+use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
-use multisig::{Certificate, Committee, Keypair, PublicKey};
+use multisig::{Committee, Keypair, PublicKey};
 use produce::BlockProducer;
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, Block, BlockHash, BundleVariant, DecryptionKey};
+use timeboost_types::{Address, BundleVariant, CertifiedBlock, DecryptionKey};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -97,7 +97,7 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
-    output: Receiver<(Certificate<BlockHash>, Block)>,
+    output: Receiver<CertifiedBlock>,
 }
 
 impl Drop for Sequencer {
@@ -114,7 +114,8 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     producer: BlockProducer,
-    output: Sender<(Certificate<BlockHash>, Block)>,
+    multiplex: Multiplex,
+    output: Sender<CertifiedBlock>,
     mode: Mode,
 }
 
@@ -194,12 +195,16 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         // Demultiplexing of Timeboost network messages.
-        let multiplex = Multiplex::new(public_key, committee.clone(), Overlay::new(network));
-        let multiplex_tx = multiplex.tx();
-        let (dec_rx, block_rx) = multiplex.go();
+        let (dec_rx, block_rx, multiplex) =
+            Multiplex::new(public_key, committee.clone(), Overlay::new(network));
 
-        let decrypter =
-            Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex_tx.clone());
+        let decrypter = Decrypter::new(
+            public_key,
+            keyset,
+            cfg.dec_sk,
+            dec_rx,
+            multiplex.tx().clone(),
+        );
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -210,7 +215,8 @@ impl Sequencer {
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex_tx),
+            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.tx().clone()),
+            multiplex,
             output: tx,
             mode: Mode::Passive,
         };
@@ -234,7 +240,7 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_block(&mut self) -> Result<(Certificate<BlockHash>, Block)> {
+    pub async fn next_block(&mut self) -> Result<CertifiedBlock> {
         select! {
             cert = self.output.recv() => cert.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
@@ -327,11 +333,13 @@ impl Task {
                     }
                 },
                 result = self.producer.next() => match result {
-                    Ok(block) => {
-                        if let Err(err) = self.output.send(block).await {
+                    Ok(cert_block) => {
+                        let num = cert_block.num();
+                        if let Err(err) = self.output.send(cert_block).await {
                             error!(node = %self.label, %err, "failed to send block");
                             return Err(TimeboostError::ChannelClosed);
                         }
+                        self.multiplex.block_gc(num).await;
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);
@@ -365,7 +373,7 @@ impl Task {
                         }
                     }
                     Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
+                        self.multiplex.decrypt_gc(r).await;
                         actions.push_front(action);
                         break;
                     }
@@ -383,9 +391,6 @@ impl Task {
                     Action::Deliver(_) => {
                         actions.push_front(action);
                         break;
-                    }
-                    Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
                     }
                     _ => {}
                 }

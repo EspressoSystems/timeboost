@@ -24,7 +24,7 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics};
+use crate::{Address, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -36,9 +36,6 @@ const MAX_NOISE_MESSAGE_SIZE: usize = 64 * 1024;
 
 /// Max. number of bytes for payload data.
 const MAX_PAYLOAD_SIZE: usize = 63 * 1024;
-
-/// Max. number of messages to queue for a peer.
-pub const PEER_CAPACITY: usize = 256;
 
 /// Noise parameters to initialize the builders.
 const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";

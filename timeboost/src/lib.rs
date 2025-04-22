@@ -129,7 +129,7 @@ impl Timeboost {
             select! { biased;
                 block = self.sequencer.next_block() => match block {
                     Ok(block) => {
-                        info!(node = %self.label, block = ?block.0.data(), "block");
+                        info!(node = %self.label, block = ?block.cert().data(), "block");
                     }
                     Err(err) => {
                         return Err(err.into())

@@ -4,6 +4,7 @@ use std::ops::{Add, Deref};
 use alloy_consensus::{Header, proofs::calculate_transaction_root};
 use alloy_primitives::{Address, B64, B256, Bloom};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::{Certificate, Envelope, Unchecked};
 use serde::{Deserialize, Serialize};
 
 use crate::Transaction;
@@ -142,5 +143,56 @@ impl Committable for BlockHash {
         RawCommitmentBuilder::new("BlockHash")
             .fixed_size_field("block-hash", &self.0)
             .finalize()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BlockInfo {
+    num: BlockNumber,
+    envelope: Envelope<BlockHash, Unchecked>,
+}
+
+impl BlockInfo {
+    pub fn new(num: BlockNumber, signed: Envelope<BlockHash, Unchecked>) -> Self {
+        Self {
+            num,
+            envelope: signed,
+        }
+    }
+
+    pub fn number(&self) -> BlockNumber {
+        self.num
+    }
+
+    pub fn envelope(&self) -> &Envelope<BlockHash, Unchecked> {
+        &self.envelope
+    }
+
+    pub fn into_envelope(self) -> Envelope<BlockHash, Unchecked> {
+        self.envelope
+    }
+}
+
+pub struct CertifiedBlock {
+    num: BlockNumber,
+    cert: Certificate<BlockHash>,
+    data: Block,
+}
+
+impl CertifiedBlock {
+    pub fn new(num: BlockNumber, cert: Certificate<BlockHash>, data: Block) -> Self {
+        Self { num, cert, data }
+    }
+
+    pub fn num(&self) -> BlockNumber {
+        self.num
+    }
+
+    pub fn cert(&self) -> &Certificate<BlockHash> {
+        &self.cert
+    }
+
+    pub fn data(&self) -> &Block {
+        &self.data
     }
 }
