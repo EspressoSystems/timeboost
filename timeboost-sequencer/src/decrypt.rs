@@ -466,7 +466,8 @@ impl Worker {
         self.net
             .broadcast(*share_info.round(), share_bytes)
             .await
-            .map_err(DecryptError::net)
+            .map_err(DecryptError::net)?;
+        Ok(())
     }
 
     fn insert_shares(&mut self, share_info: ShareInfo) -> Result<()> {

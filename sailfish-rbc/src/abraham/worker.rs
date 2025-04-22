@@ -7,7 +7,7 @@ use bytes::Bytes;
 use cliquenet::{
     Overlay,
     MAX_MESSAGE_SIZE,
-    overlay::{Data, NetworkDown},
+    overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
@@ -64,7 +64,7 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// reached, the deferred messages from that round number onwards will
     /// be sent out.
-    Recover(Nonce, HashMap<PublicKey, RoundNumber>),
+    Recover(Nonce, Option<overlay::Id>, HashMap<PublicKey, RoundNumber>),
     /// This is the normal running state after round numbers have been collected.
     /// The barrier is the maximum of at least 2t + 1 reported round numbers and
     /// restricts when messages are eligible for sending.
@@ -205,7 +205,7 @@ impl<T: Committable> Worker<T> {
             buffer: BTreeMap::new(),
             round: (RoundNumber::genesis(), Evidence::Genesis),
             state: if cfg.recover {
-                WorkerState::Recover(Nonce::new(), HashMap::new())
+                WorkerState::Recover(Nonce::new(), None, HashMap::new())
             } else {
                 WorkerState::Genesis
             },
@@ -290,10 +290,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
     /// Request round number information when recovering.
     async fn startup(&mut self) -> RbcResult<()> {
-        if let WorkerState::Recover(nonce, _) = &self.state {
+        if let WorkerState::Recover(nonce, id@None, _) = &mut self.state {
             let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
             let bytes = serialize(&req)?;
-            self.comm.broadcast(*self.round.0, bytes).await?;
+            *id = Some(self.comm.broadcast(overlay::MAX_BUCKET, bytes).await?);
             debug!(node = %self.key, %nonce, "info request broadcasted");
         }
         Ok(())
@@ -393,7 +393,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn on_info_response(&mut self, src: PublicKey, n: Nonce, r: RoundNumber, e: Evidence) -> RbcResult<()> {
         debug!(node = %self.key, %src, nonce = %n, %r, "info response received");
 
-        let WorkerState::Recover(nonce, rounds) = &mut self.state else {
+        let WorkerState::Recover(nonce, id, rounds) = &mut self.state else {
             debug!(node = %self.key, %src, nonce = %n, %r, "round number info already complete");
             return Ok(())
         };
@@ -423,6 +423,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 .expect("|rounds| >= quorum > 0")
                 .saturating_add(2)
                 .into();
+
+            if let Some(id) = id {
+                self.comm.rm(overlay::MAX_BUCKET, *id);
+            } else {
+                error!(node = %self.key, "missing info request message id")
+            }
 
             self.state = WorkerState::Barrier(barrier);
 
