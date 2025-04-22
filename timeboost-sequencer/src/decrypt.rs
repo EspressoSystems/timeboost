@@ -148,10 +148,10 @@ impl Decrypter {
                 .insert(round, (encrypted_pb_idx, encrypted_rb_idx));
         }
         trace!(
-            node   = %self.label,
-            round  = %round,
-            enc_items    = %enc_items,
-            total_items  = %total_items,
+            node        = %self.label,
+            round       = %round,
+            enc_items   = %enc_items,
+            total_items = %total_items,
             "enqueued"
         );
         Ok(())
@@ -166,31 +166,25 @@ impl Decrypter {
     pub async fn next(&mut self) -> Result<InclusionList> {
         while let Some(WorkerResponse(r, dec)) = self.dec_rx.recv().await {
             if let Some(status) = self.incls.get_mut(&r) {
-                match status {
-                    Status::Encrypted(incl) => {
-                        // reassemble inclusion list for round r
-                        let dec_incl = assemble_incl(r, incl.to_owned(), dec, &mut self.modified)?;
-                        *status = Status::Decrypted(dec_incl);
-                    }
-                    Status::Decrypted(_) => {}
+                if let Status::Encrypted(incl) = status {
+                    // reassemble inclusion list for round r
+                    let dec_incl = assemble_incl(r, incl.to_owned(), dec, &mut self.modified)?;
+                    *status = Status::Decrypted(dec_incl);
                 }
             };
 
-            // inclusion lists are processed in order; return if next round is decrypted.
-            if let Some(entry) = self.incls.first_entry() {
-                match entry.get() {
-                    Status::Decrypted(_) => {
-                        let incl = entry.remove().into();
-                        return Ok(incl);
-                    }
-                    Status::Encrypted(_) => {
-                        debug!(
-                            node = %self.label,
-                            "received decrypted txns for r={} but the next round is r={}",
-                            r,
-                            entry.key()
-                        );
-                    }
+            // Process inclusion lists in order and return the next round if decrypted.
+            if let Some((round, status)) = self.incls.pop_first() {
+                if let Status::Decrypted(incl) = status {
+                    return Ok(incl);
+                } else {
+                    debug!(
+                        node = %self.label,
+                        "received decrypted txns for r={} but the next round is r={}",
+                        r,
+                        round
+                    );
+                    self.incls.insert(round, status);
                 }
             }
         }
