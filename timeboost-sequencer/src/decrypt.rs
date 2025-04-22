@@ -23,7 +23,6 @@ type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 const MAX_ROUNDS: usize = 100;
 
 /// Status of the inclusion list
-#[derive(Clone)]
 enum Status {
     Encrypted(InclusionList),
     Decrypted(InclusionList),
