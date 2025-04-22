@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use cliquenet as net;
-use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
+use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish::Coordinator;
@@ -183,7 +183,7 @@ impl Sequencer {
         .await?;
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
-        queue.set_max_data_len(network.max_message_size() - 128 * 1024);
+        queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         let decrypter = Decrypter::new(
             cfg.keypair.public_key(),
@@ -328,7 +328,7 @@ impl Task {
                 match action {
                     Action::Deliver(payload) => {
                         round = payload.round();
-                        match CandidateList::try_from(payload.data().as_ref()) {
+                        match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                             Ok(data) => lists.push(data),
                             Err(err) => {
                                 warn!(

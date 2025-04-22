@@ -6,6 +6,7 @@ use std::fmt;
 use bytes::Bytes;
 use cliquenet::{
     Overlay,
+    MAX_MESSAGE_SIZE,
     overlay::{Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
@@ -357,7 +358,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// We received a message from the network.
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> RbcResult<()> {
         trace!(node = %self.key, %src, buf = %self.buffer.len(), "inbound message");
-        match bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?.0 {
+        let conf = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
+        match bincode::serde::decode_from_slice(&bytes, conf)?.0 {
             Protocol::Send(msg) => self.on_message(src, msg.into_owned()).await?,
             Protocol::Propose(msg) => self.on_propose(src, msg.into_owned()).await?,
             Protocol::Vote(env, evi) => self.on_vote(src, env, evi).await?,

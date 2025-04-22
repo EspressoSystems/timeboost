@@ -1,7 +1,7 @@
 use bimap::BiMap;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{
-    Overlay,
+    MAX_MESSAGE_SIZE, Overlay,
     overlay::{Data, DataError, NetworkDown},
 };
 use multisig::PublicKey;
@@ -560,7 +560,8 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data> {
 
 /// Deserialize from `Bytes` into a given data type.
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
-    bincode::serde::decode_from_slice(d, bincode::config::standard())
+    let c = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
+    bincode::serde::decode_from_slice(d, c)
         .map(|(msg, _)| msg)
         .map_err(Into::into)
 }
@@ -797,7 +798,8 @@ mod tests {
     }
 
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
-        bincode::serde::decode_from_slice(&decode_bs58(encoded), bincode::config::standard())
+        let conf = bincode::config::standard().with_limit::<{ 1024 * 1024 }>();
+        bincode::serde::decode_from_slice(&decode_bs58(encoded), conf)
             .unwrap()
             .0
     }
