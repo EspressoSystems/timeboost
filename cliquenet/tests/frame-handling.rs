@@ -66,7 +66,7 @@ fn gen_message() -> Data {
 /// until the expected message has been received by both parties.
 async fn send_recv(sender: PublicKey, net_a: &mut Overlay, net_b: &mut Overlay, data: Data) {
     'main: loop {
-        net_a.broadcast(data.clone()).await.unwrap();
+        net_a.broadcast(0, data.clone()).await.unwrap();
 
         for net in [&mut *net_a, net_b] {
             if let Ok(Ok((k, x))) = timeout(Duration::from_millis(5), net.receive()).await {

@@ -6,7 +6,7 @@ use std::fmt;
 use bytes::Bytes;
 use cliquenet::{
     Overlay,
-    overlay::{Data, NetworkDown, SeqId},
+    overlay::{Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
@@ -82,13 +82,6 @@ struct Messages<T: Committable> {
     early: bool,
     /// Tracking info per message.
     map: BTreeMap<Digest, Tracker<T>>,
-    /// The last sequence ID used when we proposed a message.
-    ///
-    /// This ties our own garbage collection to the one on the overlay network,
-    /// i.e. when we garbage collect a round we also garbage collect the
-    /// overlay network up to this sequence ID. It is set whenever we send out
-    /// a proposal.
-    last: Option<SeqId>,
 }
 
 impl<T: Committable> Messages<T> {
@@ -110,7 +103,6 @@ impl<T: Committable> Default for Messages<T> {
         Self {
             early: false,
             map: Default::default(),
-            last: None,
         }
     }
 }
@@ -282,9 +274,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         }
                         Some(Command::Gc(round)) => {
                             debug!(node = %self.key, r = %round, "garbage collect");
-                            if let Some(id) = self.buffer.get(&round).and_then(|m| m.last) {
-                                self.comm.gc(id)
-                            }
+                            self.comm.gc(*round);
                             self.buffer.retain(|r, _| *r >= round);
                         }
                         None => {
@@ -302,7 +292,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         if let WorkerState::Recover(nonce, _) = &self.state {
             let req = Protocol::<'_, T, Validated>::InfoRequest(*nonce);
             let bytes = serialize(&req)?;
-            self.comm.broadcast(bytes).await?;
+            self.comm.broadcast(*self.round.0, bytes).await?;
             debug!(node = %self.key, %nonce, "info request broadcasted");
         }
         Ok(())
@@ -315,7 +305,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
         let digest = Digest::of_msg(&msg);
-        self.comm.broadcast(data).await?;
+        self.comm.broadcast(*msg.round(), data).await?;
         debug!(node = %self.key, %digest, "message broadcasted");
         Ok(())
     }
@@ -327,7 +317,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
         let digest = Digest::of_msg(&msg);
-        self.comm.unicast(to, data).await?;
+        self.comm.unicast(to, *msg.round(), data).await?;
         debug!(node = %self.key, %to, %digest, "direct send");
         Ok(())
     }
@@ -356,9 +346,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        let id = self.comm.broadcast(data).await?;
+        self.comm.broadcast(*digest.round(), data).await?;
         messages.map.insert(digest, tracker);
-        messages.last = Some(id);
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
 
@@ -394,7 +383,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let (r, e) = &self.round;
         let proto = Protocol::<'_, T, Validated>::InfoResponse(n, *r, Cow::Borrowed(e));
         let bytes = serialize(&proto)?;
-        self.comm.unicast(src, bytes).await?;
+        self.comm.unicast(src, **r, bytes).await?;
         Ok(())
     }
 
@@ -437,29 +426,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
             debug!(node = %self.key, %barrier, "round number info collected");
 
-            for (_, messages) in self.buffer.range_mut(barrier ..) {
+            for (round, messages) in self.buffer.range_mut(barrier ..) {
                 for (digest, tracker) in &mut messages.map {
                     match tracker.status {
                         // A quorum has been formed already => just send the certificate.
                         Status::Requested | Status::Delivered => {
                             if let Some(cert) = tracker.message.defer.cert.take() {
-                                self.comm.broadcast(cert).await?;
+                                self.comm.broadcast(**round, cert).await?;
                                 debug!(node = %self.key, %digest, "cert broadcasted");
                             }
                         }
                         // Send all deferred values.
                         Status::Initiated => {
                             if let Some(proposal) = tracker.message.defer.prop.take() {
-                                let id = self.comm.broadcast(proposal).await?;
-                                messages.last = Some(id);
+                                self.comm.broadcast(**round, proposal).await?;
                                 debug!(node = %self.key, %digest, "proposal broadcasted");
                             }
                             if let Some(vote) = tracker.message.defer.vote.take() {
-                                self.comm.broadcast(vote).await?;
+                                self.comm.broadcast(**round, vote).await?;
                                 debug!(node = %self.key, %digest, "vote broadcasted");
                             }
                             if let Some(cert) = tracker.message.defer.cert.take() {
-                                self.comm.broadcast(cert).await?;
+                                self.comm.broadcast(**round, cert).await?;
                                 debug!(node = %self.key, %digest, "cert broadcasted");
                             }
                         }
@@ -527,7 +515,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     let vote = Protocol::<'_, T, Validated>::Vote(env, evidence);
                     let bytes = serialize(&vote)?;
                     if can_send {
-                        self.comm.broadcast(bytes).await?;
+                        self.comm.broadcast(*digest.round(), bytes).await?;
                         debug!(node = %self.key, %digest, "vote broadcasted");
                     } else {
                         tracker.message.defer.vote = Some(bytes);
@@ -556,7 +544,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 let b = serialize(&m)?;
 
                 if can_send {
-                    self.comm.broadcast(b).await?;
+                    self.comm.broadcast(*cert_digest.round(), b).await?;
                     debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                 } else {
                     tracker.message.defer.cert = Some(b);
@@ -663,7 +651,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         let m = Protocol::<'_, T, Validated>::Cert(cert.clone());
                         let b = serialize(&m)?;
                         if can_send {
-                            self.comm.broadcast(b).await?;
+                            self.comm.broadcast(*cert_digest.round(), b).await?;
                             debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                         } else {
                             tracker.message.defer.cert = Some(b);
@@ -684,7 +672,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         let m = Protocol::<'_, T, Validated>::GetRequest(digest);
                         let b = serialize(&m)?;
                         let s = tracker.choose_voter(&commit).expect("certificate => voter");
-                        self.comm.unicast(s, b).await?;
+                        self.comm.unicast(s, *digest.round(), b).await?;
                         tracker.status = Status::Requested;
                         debug!(node = %self.key, from = %s, %digest, "message requested")
                     }
@@ -746,7 +734,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     let m = Protocol::<'_, T, Validated>::Cert(crt);
                     let b = serialize(&m)?;
                     if can_send {
-                        self.comm.broadcast(b).await?;
+                        self.comm.broadcast(*digest.round(), b).await?;
                         debug!(node = %self.key, %digest, cert = %cert_digest, "cert broadcasted");
                     } else {
                         tracker.message.defer.cert = Some(b);
@@ -767,7 +755,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     let m = Protocol::<'_, T, Validated>::GetRequest(digest);
                     let b = serialize(&m)?;
                     let s = tracker.choose_voter(&commit).expect("certificate => voter");
-                    self.comm.unicast(s, b).await?;
+                    self.comm.unicast(s, *digest.round(), b).await?;
                     tracker.status = Status::Requested;
                     debug!(node = %self.key, from = %s, %digest, "message requested");
                 }
@@ -797,7 +785,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         {
             let proto = Protocol::GetResponse(Cow::Borrowed(msg));
             let bytes = serialize(&proto)?;
-            self.comm.unicast(src, bytes).await?;
+            self.comm.unicast(src, *digest.round(), bytes).await?;
             return Ok(());
         }
 
