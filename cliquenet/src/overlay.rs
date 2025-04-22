@@ -17,6 +17,9 @@ use crate::Network;
 
 type Result<T> = std::result::Result<T, NetworkDown>;
 
+/// Max. bucket number.
+pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
+
 /// `Overlay` wraps a [`Network`] and returns acknowledgements to senders.
 ///
 /// It also retries messages until either an acknowledgement has been received
@@ -61,7 +64,7 @@ pub struct Bucket(u64);
 
 /// A message ID uniquely identifies as message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Id(u64);
+pub struct Id(u64);
 
 /// Messages are associated with IDs and put into buckets.
 ///
@@ -98,14 +101,14 @@ impl Overlay {
         }
     }
 
-    pub async fn broadcast<B>(&mut self, b: B, data: Data) -> Result<()>
+    pub async fn broadcast<B>(&mut self, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
         self.send(b.into(), None, data).await
     }
 
-    pub async fn unicast<B>(&mut self, to: PublicKey, b: B, data: Data) -> Result<()>
+    pub async fn unicast<B>(&mut self, to: PublicKey, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
@@ -157,7 +160,13 @@ impl Overlay {
         self.buffer.0.lock().retain(|b, _| *b >= bucket);
     }
 
-    async fn send(&mut self, b: Bucket, to: Option<PublicKey>, data: Data) -> Result<()> {
+    pub fn rm(&mut self, bucket: Bucket, id: Id) {
+        if let Some(messages) = self.buffer.0.lock().get_mut(&bucket) {
+            messages.remove(&id);
+        }
+    }
+
+    async fn send(&mut self, b: Bucket, to: Option<PublicKey>, data: Data) -> Result<Id> {
         let i = self.next_id();
 
         let mut msg = data.0;
@@ -191,7 +200,7 @@ impl Overlay {
             },
         );
 
-        Ok(())
+        Ok(i)
     }
 
     fn next_id(&mut self) -> Id {
