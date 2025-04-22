@@ -2,7 +2,7 @@ use bimap::BiMap;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{
     MAX_MESSAGE_SIZE, Overlay,
-    overlay::{Data, DataError, NetworkDown, SeqId},
+    overlay::{Data, DataError, NetworkDown},
 };
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
@@ -278,7 +278,6 @@ struct Worker {
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
     cid2ct: BiMap<(RoundNumber, Nonce), Ciphertext>,
-    round2seqs: BTreeMap<RoundNumber, SeqId>,
     shares: Incubator,
 }
 
@@ -291,7 +290,6 @@ impl Worker {
             dec_sk,
             cid2idx: HashMap::default(),
             cid2ct: BiMap::default(),
-            round2seqs: BTreeMap::default(),
             shares: Incubator::default(),
         }
     }
@@ -395,10 +393,7 @@ impl Worker {
                                 gc_round  = %gc_round,
                                 "gc"
                             );
-                            if let Some(seqid) = self.round2seqs.get(&gc_round) {
-                                self.net.gc(*seqid);
-                            }
-                            self.round2seqs.retain(|r, _| gc_round <= *r);
+                            self.net.gc(*round);
                             hatched_rounds.retain(|r| gc_round <= *r);
                             continue;
                         }
@@ -469,11 +464,8 @@ impl Worker {
     async fn broadcast(&mut self, share_info: &ShareInfo) -> Result<()> {
         let share_bytes = serialize(share_info)?;
         self.net
-            .broadcast(share_bytes)
+            .broadcast(*share_info.round(), share_bytes)
             .await
-            .map(|seqid| {
-                self.round2seqs.entry(share_info.round()).or_insert(seqid);
-            })
             .map_err(DecryptError::net)
     }
 
