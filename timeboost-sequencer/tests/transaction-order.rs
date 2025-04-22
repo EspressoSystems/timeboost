@@ -44,7 +44,7 @@ async fn transaction_order() {
     // all of them. Each sequencer pushes the transaction it produced into an
     // unbounded channel which we later compare with each other.
     for c in cfg {
-        let (cert_tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
         tasks.spawn(async move {
             if c.is_recover() {
@@ -63,7 +63,7 @@ async fn transaction_order() {
                     b = s.next_block() => {
                         debug!(node = %s.public_key(), block = %i);
                         i += 1;
-                        cert_tx.send(b.unwrap()).unwrap()
+                        tx.send(b.unwrap()).unwrap()
                     }
                 }
             }
