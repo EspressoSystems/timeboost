@@ -19,6 +19,8 @@ for (( i=0; i<$nodes; i++ )); do
         --metrics-port $((9000 + $i))
         --keyset-file test-configs/local.json
         --nodes $nodes
+        --stamp "${TMPDIR:-/tmp}/stamp-$i.sf"
+        --ignore-stamp
         --until 300
     )
 

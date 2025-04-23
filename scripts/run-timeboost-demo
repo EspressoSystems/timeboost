@@ -6,6 +6,9 @@ just build_release --features until
 nodes=5
 nitro_node_url=""
 late_start=false
+stamp=
+ignore_stamp=false
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -l|--late)
@@ -24,6 +27,14 @@ while [[ $# -gt 0 ]]; do
             nitro_node_url="$2"
             shift 2
             ;;
+        -s|--stamp)
+            stamp="$2"
+            shift 2
+            ;;
+        --ignore-stamp)
+            ignore_stamp=true
+            shift
+            ;;
         *)
             echo "Unknown: $1"
             echo "Usage: $0 [-l|--late] [-url|--url <NITRO_URL>] [-n|--nodes <NUMBER>]"
@@ -31,6 +42,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [ ! $stamp ]; then
+    echo "Missing -s | --stamp <PATH prefix>"
+    exit 1
+fi
 
 if [ -n "$nitro_node_url" ]; then
     nitro_node_url="--nitro-node-url $nitro_node_url"
@@ -59,8 +75,14 @@ for i in $(seq 0 $((nodes - 1))); do
         $nitro_node_url \
         --tps 5 \
         --nodes $nodes \
+        --stamp \"$stamp-$i.sf\" \
         --keyset-file test-configs/local.json \
         --watchdog-timeout 300"
+
+    if $ignore_stamp; then
+        cmd="$cmd --ignore-stamp"
+    fi
+
     if $late_start; then
         cmd="$cmd --late-start --late-start-node-id 0"
     fi
