@@ -180,7 +180,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             tokio::select! {
                 val = self.comm.receive(), if self.tx.capacity() > 0 => {
                     match val {
-                        Ok((key, bytes)) => {
+                        Ok((key, bytes, _)) => {
                             match self.on_inbound(key, bytes).await {
                                 Ok(()) => {}
                                 Err(RbcError::Shutdown) => {

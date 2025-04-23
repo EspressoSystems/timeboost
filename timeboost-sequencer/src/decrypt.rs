@@ -315,7 +315,7 @@ impl Worker {
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 val = self.net.receive() => match val {
-                    Ok((remote_pk, bytes)) => {
+                    Ok((remote_pk, bytes, _)) => {
                         if remote_pk == self.label {
                             continue;
                         }

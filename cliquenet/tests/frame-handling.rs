@@ -69,7 +69,7 @@ async fn send_recv(sender: PublicKey, net_a: &mut Overlay, net_b: &mut Overlay, 
         net_a.broadcast(0, data.clone()).await.unwrap();
 
         for net in [&mut *net_a, net_b] {
-            if let Ok(Ok((k, x))) = timeout(Duration::from_millis(5), net.receive()).await {
+            if let Ok(Ok((k, x, _))) = timeout(Duration::from_millis(5), net.receive()).await {
                 assert_eq!(k, sender);
                 if *x != *data {
                     continue 'main;
