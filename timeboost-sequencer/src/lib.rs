@@ -35,6 +35,8 @@ use sort::Sorter;
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
 
+/// Channel capacity between the Decrypter/Producer and Worker.
+/// Effectively, the length of the leash between Sailfish and Timeboost.
 const MAX_SIZE: usize = 100;
 
 #[derive(Debug)]
