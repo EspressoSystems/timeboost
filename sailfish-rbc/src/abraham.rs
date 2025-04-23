@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -46,6 +47,12 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
 
     /// The reply to a get request.
     GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
+
+    /// A direct request to retrieve the current round number of a party.
+    InfoRequest(Nonce),
+
+    /// The reply to an info request with round number and evidence.
+    InfoResponse(Nonce, RoundNumber, Cow<'a, Evidence>)
 }
 
 /// Worker command
@@ -65,6 +72,7 @@ enum Command<T: Committable> {
 pub struct RbcConfig {
     keypair: Keypair,
     committee: Committee,
+    recover: bool,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
@@ -74,6 +82,7 @@ impl RbcConfig {
         Self {
             keypair: k,
             committee: c,
+            recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
         }
@@ -89,6 +98,12 @@ impl RbcConfig {
     /// Set the RBC metrics value to use.
     pub fn with_metrics(mut self, m: RbcMetrics) -> Self {
         self.metrics = m;
+        self
+    }
+
+    /// Should we recover from a previous run?
+    pub fn recover(mut self, val: bool) -> Self {
+        self.recover = val;
         self
     }
 }
@@ -177,7 +192,7 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     }
 
     async fn receive(&mut self) -> Result<Message<T, Validated>, Self::Err> {
-        Ok(self.rx.recv().await.unwrap())
+        self.rx.recv().await.ok_or(RbcError::Shutdown)
     }
 
     async fn gc(&mut self, r: RoundNumber) -> Result<(), Self::Err> {
@@ -193,4 +208,20 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data, RbcError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
     Ok(b.into_inner().try_into()?)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+struct Nonce(u64);
+
+impl Nonce {
+    fn new() -> Self {
+        Self(rand::random())
+    }
+}
+
+impl fmt::Display for Nonce {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
 }
