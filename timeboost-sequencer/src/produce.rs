@@ -1,4 +1,8 @@
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use bytes::{BufMut, BytesMut};
+use cliquenet::MAX_MESSAGE_SIZE;
+use cliquenet::overlay::{Data, DataError};
+use multisig::{Certificate, Committee, Envelope, Keypair, Validated, VoteAccumulator};
+use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use timeboost_types::{
     Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Timestamp, Transaction,
@@ -9,7 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::MultiplexMessage;
+use crate::multiplex::{BlockInbound, BlockOutbound};
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
@@ -43,8 +47,8 @@ impl BlockProducer {
     pub fn new(
         label: Keypair,
         committee: Committee,
-        rx: Receiver<(PublicKey, BlockInfo)>,
-        tx: Sender<MultiplexMessage>,
+        rx: Receiver<BlockInbound>,
+        tx: Sender<BlockOutbound>,
     ) -> Self {
         let (block_tx, block_rx) = channel(MAX_SIZE);
         let (cert_tx, cert_rx) = channel(MAX_SIZE);
@@ -174,22 +178,29 @@ impl Worker {
         mut self,
         mut block_rx: Receiver<WorkerRequest>,
         cert_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<(PublicKey, BlockInfo)>,
-        obound: Sender<MultiplexMessage>,
+        mut ibound: Receiver<BlockInbound>,
+        obound: Sender<BlockOutbound>,
     ) {
         let label = self.keypair.public_key();
         let mut recv_block: (Option<BlockNumber>, Envelope<BlockHash, Validated>);
         loop {
             tokio::select! {
                 val = ibound.recv() => match val {
-                    Some((remote, b)) => {
+                    Some(BlockInbound{src, data}) => {
+                        let b = match deserialize::<BlockInfo>(&data) {
+                            Ok(block) => block,
+                            Err(e) => {
+                                warn!("deserialization error: {}", e);
+                                continue;
+                            }
+                        };
                         let num = b.number();
                         let env = b.into_envelope();
                         trace!(
                             node   = %label,
                             num    = %num,
                             vote   = ?env.data(),
-                            from   = %remote,
+                            from   = %src,
                             "receive"
                         );
                         if let Some(e) = env.validated(&self.committee) {
@@ -213,8 +224,15 @@ impl Worker {
                         );
                         let env = Envelope::signed(hash, &self.keypair, false);
                         recv_block = (Some(num), env.clone());
-                        let block_info = BlockInfo::new(num, env.into());
-                        obound.send(MultiplexMessage::Block(block_info)).await.ok();
+                        let b = BlockInfo::new(num, env.into());
+                        let data = match serialize(&b) {
+                            Ok(data) => data,
+                            Err(e) => {
+                                warn!(node = %label, "serialization error: {}", e);
+                                continue;
+                            }
+                        };
+                        obound.send(BlockOutbound::new(num, data.to_vec().into())).await.ok();
                     },
                     None => {
                         debug!(node = %label, "worker request channel closed");
@@ -266,9 +284,33 @@ impl Worker {
     }
 }
 
+fn serialize<T: Serialize>(d: &T) -> Result<Data> {
+    let mut b = BytesMut::new().writer();
+    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
+    Ok(b.into_inner().try_into()?)
+}
+
+fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
+    bincode::serde::decode_from_slice(
+        d,
+        bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
+    )
+    .map(|(msg, _)| msg)
+    .map_err(Into::into)
+}
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ProducerError {
+    #[error("bincode encode error: {0}")]
+    BincodeEncode(#[from] bincode::error::EncodeError),
+
+    #[error("bincode decode error: {0}")]
+    BincodeDecode(#[from] bincode::error::DecodeError),
+
+    #[error("data error: {0}")]
+    DataError(#[from] DataError),
+
     #[error("an error occurred")]
     Shutdown,
 }

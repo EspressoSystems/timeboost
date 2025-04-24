@@ -1,8 +1,11 @@
 use bimap::BiMap;
+use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
+use cliquenet::overlay::{Data, DataError};
 use multisig::PublicKey;
 
 use sailfish::types::RoundNumber;
+use serde::Serialize;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
@@ -14,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::MultiplexMessage;
+use crate::multiplex::{DecryptInbound, DecryptOutbound};
 
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
@@ -67,8 +70,8 @@ impl Decrypter {
         label: PublicKey,
         committee: Keyset,
         dec_sk: DecryptionKey,
-        ibound: Receiver<(PublicKey, ShareInfo)>,
-        obound: Sender<MultiplexMessage>,
+        ibound: Receiver<DecryptInbound>,
+        obound: Sender<DecryptOutbound>,
     ) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_SIZE);
         let (dec_tx, dec_rx) = channel(MAX_SIZE);
@@ -284,8 +287,8 @@ impl Worker {
         mut self,
         mut enc_rx: Receiver<WorkerRequest>,
         dec_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<(PublicKey, ShareInfo)>,
-        obound: Sender<MultiplexMessage>,
+        mut ibound: Receiver<DecryptInbound>,
+        obound: Sender<DecryptOutbound>,
     ) {
         let mut catching_up = true;
         let mut hatched_rounds = BTreeSet::new();
@@ -307,12 +310,19 @@ impl Worker {
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 val = ibound.recv() => match val {
-                    Some((remote, s)) => {
+                    Some(DecryptInbound {src, data}) => {
+                        let s = match deserialize::<ShareInfo>(&data) {
+                            Ok(share) => share,
+                            Err(e) => {
+                                warn!("deserialization error: {}", e);
+                                continue;
+                            }
+                        };
                         trace!(
                             node   = %self.label,
                             round  = %s.round(),
                             data   = %s.cids().len(),
-                            from   = %remote,
+                            from   = %src,
                             "receive"
                         );
                         if hatched_rounds.contains(&s.round()) || s.round() < r {
@@ -346,7 +356,14 @@ impl Worker {
                         r = round;
                         match self.decrypt(round, enc_data).await {
                             Ok(s) => {
-                                if let Err(e) = obound.send(MultiplexMessage::Decrypt(s.clone())).await {
+                                let data = match serialize(&s) {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        warn!(node = %self.label, "serialization error: {}", e);
+                                        continue;
+                                    }
+                                };
+                                if let Err(e) = obound.send(DecryptOutbound::new(round, data.to_vec().into())).await {
                                     warn!("failed write decrypted message to multiplexer: {:?}", e);
                                     continue;
                                 }
@@ -517,12 +534,19 @@ impl Worker {
     }
 }
 
-/// Deserialize from `Bytes` into a given data type.
+fn serialize<T: Serialize>(d: &T) -> Result<Data> {
+    let mut b = BytesMut::new().writer();
+    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
+    Ok(b.into_inner().try_into()?)
+}
+
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
-    let c = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
-    bincode::serde::decode_from_slice(d, c)
-        .map(|(msg, _)| msg)
-        .map_err(Into::into)
+    bincode::serde::decode_from_slice(
+        d,
+        bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
+    )
+    .map(|(msg, _)| msg)
+    .map_err(Into::into)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -531,8 +555,14 @@ pub enum DecryptError {
     #[error("decryption error: {0}")]
     Decryption(#[from] ThresholdEncError),
 
+    #[error("bincode encode error: {0}")]
+    BincodeEncode(#[from] bincode::error::EncodeError),
+
     #[error("bincode decode error: {0}")]
     BincodeDecode(#[from] bincode::error::DecodeError),
+
+    #[error("data error: {0}")]
+    DataError(#[from] DataError),
 
     #[error("decrypter has shut down")]
     Shutdown,
@@ -737,7 +767,7 @@ mod tests {
                 committee.clone(),
                 Overlay::new(network),
             );
-            let tx = multiplex.tx().clone();
+            let tx = multiplex.dec_tx().clone();
             multiplexers.push(multiplex);
 
             let decrypter = Decrypter::new(

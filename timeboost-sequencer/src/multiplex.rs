@@ -1,31 +1,28 @@
-use bytes::{BufMut, BytesMut};
+use crate::MAX_SIZE;
+use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::{
     Overlay, PEER_CAPACITY,
-    overlay::{Bucket, Data, DataError},
+    overlay::{Bucket, DataError},
 };
 use multisig::{Committee, PublicKey};
 use sailfish::types::RoundNumber;
-use serde::{Deserialize, Serialize};
-use timeboost_types::{BlockInfo, BlockNumber, ShareInfo};
+use timeboost_types::BlockNumber;
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
 };
 use tracing::{debug, error, trace, warn};
 
-use crate::MAX_SIZE;
+const DECRYPT_TAG: u8 = 0xDE;
+const BLOCK_TAG: u8 = 0xB0;
 
 type Result<T> = std::result::Result<T, MultiplexError>;
-type DecryptReceiver = Receiver<(PublicKey, ShareInfo)>;
-type BlockReceiver = Receiver<(PublicKey, BlockInfo)>;
 
 struct BlockBucket(u64);
 
 impl From<u64> for BlockBucket {
     fn from(value: u64) -> Self {
-        let mut bucket = value;
-        bucket ^= 1 << 63;
-        Self(bucket)
+        Self(value ^ (1 << 63))
     }
 }
 
@@ -35,18 +32,51 @@ impl From<BlockBucket> for Bucket {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum MultiplexMessage {
-    Decrypt(ShareInfo),
-    Block(BlockInfo),
+pub enum TimeboostInbound {
+    Decrypt(DecryptInbound),
+    Block(BlockInbound),
+}
+
+pub struct DecryptOutbound {
+    pub num: RoundNumber,
+    pub data: Bytes,
+}
+
+impl DecryptOutbound {
+    pub fn new(num: RoundNumber, data: Bytes) -> Self {
+        Self { num, data }
+    }
+}
+
+pub struct DecryptInbound {
+    pub src: PublicKey,
+    pub data: Bytes,
+}
+
+pub struct BlockOutbound {
+    pub num: BlockNumber,
+    pub data: Bytes,
+}
+
+impl BlockOutbound {
+    pub fn new(num: BlockNumber, data: Bytes) -> Self {
+        Self { num, data }
+    }
+}
+
+pub struct BlockInbound {
+    pub src: PublicKey,
+    pub data: Bytes,
 }
 
 #[derive(Debug)]
 pub struct Multiplex {
     /// Label of the node.
     label: PublicKey,
-    /// Sender to the multiplexer.
-    tx: Sender<MultiplexMessage>,
+    /// Sender decryption data to the multiplexer.
+    dec_tx: Sender<DecryptOutbound>,
+    /// Sender block data to the multiplexer.
+    block_tx: Sender<BlockOutbound>,
     /// Sender to signal for gc.
     gc_tx: Sender<Bucket>,
     /// Join handle for worker.
@@ -58,32 +88,37 @@ impl Multiplex {
         label: PublicKey,
         committee: Committee,
         net: Overlay,
-    ) -> (DecryptReceiver, BlockReceiver, Self) {
+    ) -> (Receiver<DecryptInbound>, Receiver<BlockInbound>, Self) {
         let capacity = committee.size().get() * PEER_CAPACITY;
-        // Channel for multiplexed messages to/from the overlay network.
-        let (tx, rx) = mpsc::channel(capacity);
-        // Channel reserved for the decrypter
-        let (dec_tx, dec_rx) = mpsc::channel(capacity);
-        // Channel reserved for the block producer
-        let (block_tx, block_rx) = mpsc::channel(capacity);
+        // Channels reserved for the decrypter
+        let (dec_itx, dec_irx) = mpsc::channel(capacity);
+        let (dec_otx, dec_orx) = mpsc::channel(capacity);
+        // Channels reserved for the block producer
+        let (block_itx, block_irx) = mpsc::channel(capacity);
+        let (block_otx, block_orx) = mpsc::channel(capacity);
         // Channel reserved for garbage collection signal.
         let (gc_tx, gc_rx) = mpsc::channel(capacity);
 
-        let worker = Worker::new(label, net, dec_tx, block_tx, rx, gc_rx);
+        let worker = Worker::new(label, net, dec_itx, dec_orx, block_itx, block_orx, gc_rx);
         (
-            dec_rx,
-            block_rx,
+            dec_irx,
+            block_irx,
             Self {
                 label,
-                tx,
+                dec_tx: dec_otx,
+                block_tx: block_otx,
                 gc_tx,
                 jh: tokio::spawn(worker.go()),
             },
         )
     }
 
-    pub fn tx(&self) -> &Sender<MultiplexMessage> {
-        &self.tx
+    pub fn dec_tx(&self) -> &Sender<DecryptOutbound> {
+        &self.dec_tx
+    }
+
+    pub fn block_tx(&self) -> &Sender<BlockOutbound> {
+        &self.block_tx
     }
 
     pub async fn decrypt_gc(&mut self, round: RoundNumber) {
@@ -126,12 +161,14 @@ struct Worker {
     label: PublicKey,
     /// Overlay network.
     net: Overlay,
-    /// Sender to decrypter.
-    dec_tx: Sender<(PublicKey, ShareInfo)>,
-    /// Sender to block producer.
-    block_tx: Sender<(PublicKey, BlockInfo)>,
-    /// Receiver for multiplexer.
-    rx: Receiver<MultiplexMessage>,
+    /// Send inbound messages to decrypter.
+    dec_itx: Sender<DecryptInbound>,
+    /// Receive obound messages from decrypter.
+    dec_orx: Receiver<DecryptOutbound>,
+    /// Send inbound messages to block producer.
+    block_itx: Sender<BlockInbound>,
+    /// Receive obound messages from block producer.
+    block_orx: Receiver<BlockOutbound>,
     /// Receiver for gc signals.
     gc_rx: Receiver<Bucket>,
 }
@@ -140,73 +177,82 @@ impl Worker {
     pub fn new(
         label: PublicKey,
         net: Overlay,
-        dec_tx: Sender<(PublicKey, ShareInfo)>,
-        block_tx: Sender<(PublicKey, BlockInfo)>,
-        rx: Receiver<MultiplexMessage>,
+        dec_itx: Sender<DecryptInbound>,
+        dec_orx: Receiver<DecryptOutbound>,
+        block_itx: Sender<BlockInbound>,
+        block_orx: Receiver<BlockOutbound>,
         gc_rx: Receiver<Bucket>,
     ) -> Self {
         Self {
             label,
             net,
-            dec_tx,
-            block_tx,
-            rx,
+            dec_itx,
+            dec_orx,
+            block_itx,
+            block_orx,
             gc_rx,
         }
     }
     pub async fn go(mut self) {
         loop {
             tokio::select! {
-                Some(message) = self.rx.recv() => {
-                    let data = match serialize(&message) {
-                        Ok(data) => data,
+                Some(DecryptOutbound { num, data }) = self.dec_orx.recv() => {
+                    let mut tagged_data = BytesMut::with_capacity(data.len() + 1);
+                    tagged_data.put_u8(DECRYPT_TAG);
+                    tagged_data.extend_from_slice(&data);
+                    match tagged_data.try_into() {
+                        Ok(data) => {
+                            if let Err(e) = self.net.broadcast(Bucket::from(*num), data).await {
+                                error!(node = %self.label, "network broadcast error: {}", e);
+                                return;
+                            }
+                        }
                         Err(e) => {
-                            warn!(node = %self.label, "serialization error: {}", e);
-                            continue;
+                            error!(node = %self.label, "failed to convert tagged data: {}", e);
+                            return;
                         }
-                    };
-
-                    let bucket = match &message {
-                        MultiplexMessage::Decrypt(share_info) => {
-                            Bucket::from(*share_info.round())
+                    }
+                }
+                Some(BlockOutbound { num, data }) = self.block_orx.recv() => {
+                    let mut tagged_data = BytesMut::with_capacity(data.len() + 1);
+                    tagged_data.put_u8(BLOCK_TAG);
+                    tagged_data.extend_from_slice(&data);
+                    match tagged_data.try_into() {
+                        Ok(data) => {
+                            if let Err(e) = self.net.broadcast(Bucket::from(*num), data).await {
+                                error!(node = %self.label, "network broadcast error: {}", e);
+                                return;
+                            }
                         }
-                        MultiplexMessage::Block(block_info) => {
-                            BlockBucket::from(*block_info.number()).into()
+                        Err(e) => {
+                            error!(node = %self.label, "failed to convert tagged data: {}", e);
+                            return;
                         }
-                    };
-
-                    if let Err(e) = self.net.broadcast(bucket, data).await {
-                        error!(node = %self.label, "network broadcast error: {}", e);
-                        return;
                     }
                 }
 
-                Ok((public_key, bytes)) = self.net.receive() => {
-                    if public_key == self.label {
+                Ok(msg) = self.net.receive() => {
+                    if msg.0 == self.label {
                         continue;
                     }
-                    let msg = match deserialize(&bytes) {
-                        Ok(message) => message,
+                    match decode(msg) {
+                        Ok(TimeboostInbound::Decrypt(message)) => {
+                            if let Err(e) = self.dec_itx.send(message).await {
+                                error!("failed to send decrypt message: {}", e);
+                                return;
+                            }
+                        }
+                        Ok(TimeboostInbound::Block(message)) => {
+                            if let Err(e) = self.block_itx.send(message).await {
+                                error!("failed to send block message: {}", e);
+                                return;
+                            }
+                        }
                         Err(e) => {
                             warn!("failed to deserialize message: {}", e);
                             continue;
                         }
                     };
-
-                    match msg {
-                        MultiplexMessage::Decrypt(share_info) => {
-                            if let Err(e) = self.dec_tx.send((public_key, share_info)).await {
-                                error!("failed to send decrypt message: {}", e);
-                                return;
-                            }
-                        }
-                        MultiplexMessage::Block(envelope) => {
-                            if let Err(e) = self.block_tx.send((public_key, envelope)).await {
-                                error!("failed to send block message: {}", e);
-                                return;
-                            }
-                        }
-                    }
                 }
                 Some(bucket) = self.gc_rx.recv() => {
                     trace!(node = %self.label, "received gc signal for bucket: {:?}", bucket);
@@ -221,18 +267,23 @@ impl Worker {
     }
 }
 
-/// Serialize a given data type into `Bytes`
-fn serialize<T: Serialize>(d: &T) -> Result<Data> {
-    let mut b = BytesMut::new().writer();
-    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().try_into()?)
-}
+fn decode(inbound_msg: (PublicKey, bytes::Bytes)) -> Result<TimeboostInbound> {
+    let (public_key, data) = inbound_msg;
+    if data.is_empty() {
+        return Err(MultiplexError::InvalidTag);
+    }
 
-/// Deserialize from `Bytes` into a given data type.
-fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
-    bincode::serde::decode_from_slice(d, bincode::config::standard())
-        .map(|(msg, _)| msg)
-        .map_err(Into::into)
+    match data[0] {
+        DECRYPT_TAG => Ok(TimeboostInbound::Decrypt(DecryptInbound {
+            src: public_key,
+            data: data.slice(1..),
+        })),
+        BLOCK_TAG => Ok(TimeboostInbound::Block(BlockInbound {
+            src: public_key,
+            data: data.slice(1..),
+        })),
+        _ => Err(MultiplexError::InvalidTag),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -246,4 +297,7 @@ pub enum MultiplexError {
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
+
+    #[error("invalid tag error")]
+    InvalidTag,
 }

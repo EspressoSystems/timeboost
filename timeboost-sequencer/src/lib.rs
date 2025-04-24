@@ -205,7 +205,7 @@ impl Sequencer {
             keyset,
             cfg.dec_sk,
             dec_rx,
-            multiplex.tx().clone(),
+            multiplex.dec_tx().clone(),
         );
 
         let (tx, rx) = mpsc::channel(1024);
@@ -217,7 +217,12 @@ impl Sequencer {
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.tx().clone()),
+            producer: BlockProducer::new(
+                cfg.keypair,
+                committee,
+                block_rx,
+                multiplex.block_tx().clone(),
+            ),
             multiplex,
             output: tx,
             mode: Mode::Passive,
