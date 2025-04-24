@@ -20,7 +20,7 @@ use tracing::{debug, info, warn};
 
 type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
-const NUM_OF_TRANSACTIONS: usize = 500;
+const NUM_OF_BLOCKS: usize = 50;
 const RECOVER_INDEX: usize = 2;
 
 /// Run some timboost sequencer instances and check that they produce the
@@ -53,17 +53,17 @@ async fn transaction_order() {
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut i = 0;
-            while i < NUM_OF_TRANSACTIONS {
+            while i < NUM_OF_BLOCKS {
                 select! {
                     t = brx.recv() => match t {
                         Ok(trx) => s.add_bundles(once(trx)),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transaction() => {
-                        debug!(node = %s.public_key(), transactions = %i);
+                    b = s.next_block() => {
+                        debug!(node = %s.public_key(), block = %i);
                         i += 1;
-                        tx.send(t.unwrap()).unwrap()
+                        tx.send(b.unwrap()).unwrap()
                     }
                 }
             }
@@ -74,11 +74,11 @@ async fn transaction_order() {
 
     tasks.spawn(gen_bundles(dec.0, bcast.clone()));
 
-    for _ in 0..NUM_OF_TRANSACTIONS {
+    for _ in 0..NUM_OF_BLOCKS {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
-            let t = rx.recv().await.unwrap();
-            assert_eq!(first.hash(), t.hash())
+            let b = rx.recv().await.unwrap();
+            assert_eq!(first.cert().data(), b.cert().data())
         }
     }
 
