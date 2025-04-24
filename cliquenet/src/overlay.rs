@@ -180,9 +180,13 @@ impl Overlay {
         }
     }
 
-    pub fn gc<B: Into<Bucket>>(&mut self, bucket: B) {
+    pub fn gc<B: Into<Bucket>>(&mut self, bucket: B, mask: Option<B>) {
         let bucket = bucket.into();
-        self.buffer.0.lock().retain(|b, _| *b >= bucket);
+        let mask = mask.map(|m| m.into()).unwrap_or(Bucket(0));
+        self.buffer
+            .0
+            .lock()
+            .retain(|b, _| b.0 & mask.0 == mask.0 && *b >= bucket);
     }
 
     pub fn rm(&mut self, bucket: Bucket, id: Id) {
@@ -339,9 +343,27 @@ impl From<u64> for Bucket {
     }
 }
 
+impl From<Bucket> for u64 {
+    fn from(val: Bucket) -> Self {
+        val.0
+    }
+}
+
 impl From<u8> for Tag {
     fn from(val: u8) -> Self {
         Self(val)
+    }
+}
+
+impl From<Tag> for u8 {
+    fn from(val: Tag) -> Self {
+        val.0
+    }
+}
+
+impl From<Tag> for u64 {
+    fn from(val: Tag) -> Self {
+        val.0.into()
     }
 }
 
@@ -352,6 +374,17 @@ impl Data {
 
     pub fn set_tag(&mut self, t: Tag) {
         self.tag = t
+    }
+
+    pub fn with_tag(mut self, t: Tag) -> Self {
+        self.tag = t;
+        self
+    }
+}
+
+impl Tag {
+    pub const fn new(n: u8) -> Self {
+        Self(n)
     }
 }
 

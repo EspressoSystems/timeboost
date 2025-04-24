@@ -393,7 +393,7 @@ impl Worker {
                                 gc_round  = %gc_round,
                                 "gc"
                             );
-                            self.net.gc(*round);
+                            self.net.gc(*round, None);
                             hatched_rounds.retain(|r| gc_round <= *r);
                             continue;
                         }

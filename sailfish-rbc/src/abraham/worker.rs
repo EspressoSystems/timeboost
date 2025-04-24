@@ -275,7 +275,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         }
                         Some(Command::Gc(round)) => {
                             debug!(node = %self.key, r = %round, "garbage collect");
-                            self.comm.gc(*round);
+                            self.comm.gc(*round, None);
                             self.buffer.retain(|r, _| *r >= round);
                         }
                         None => {
