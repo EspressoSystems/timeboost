@@ -137,15 +137,17 @@ impl Multiplex {
     }
 
     pub async fn block_gc(&mut self, block_num: BlockNumber) {
-        let bucket = BlockBucket::from(*block_num);
-        trace!(
-            node   = %self.label,
-            block  = %block_num,
-            bucket = %bucket.0,
-            "block-gc"
-        );
-        if let Err(e) = self.gc_tx.send(bucket.into()).await {
-            error!("failed to send gc signal: {}", e);
+        let gc_block: BlockNumber = block_num.saturating_sub(MAX_SIZE as u64).into();
+        if BlockNumber::genesis() < gc_block {
+            let bucket = BlockBucket::from(*gc_block);
+            trace!(
+                node   = %self.label,
+                gc_block  = %block_num,
+                "block-gc"
+            );
+            if let Err(e) = self.gc_tx.send(bucket.into()).await {
+                error!("failed to send gc signal: {}", e);
+            }
         }
     }
 }
