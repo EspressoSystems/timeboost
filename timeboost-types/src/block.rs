@@ -147,9 +147,9 @@ impl Committable for BlockHash {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BlockInfo {
+pub struct BlockInfo<S> {
     num: BlockNumber,
-    envelope: Envelope<BlockHash, Unchecked>,
+    envelope: Envelope<BlockHash, S>,
 }
 
 impl BlockInfo {
