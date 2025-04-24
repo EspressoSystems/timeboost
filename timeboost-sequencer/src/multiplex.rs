@@ -22,7 +22,7 @@ struct BlockBucket(u64);
 
 impl From<u64> for BlockBucket {
     fn from(value: u64) -> Self {
-        Self(value ^ (1 << 63))
+        Self(value | (1 << 63))
     }
 }
 
