@@ -4,7 +4,7 @@ use std::ops::{Add, Deref};
 use alloy_consensus::{Header, proofs::calculate_transaction_root};
 use alloy_primitives::{Address, B64, B256, Bloom};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Envelope, Unchecked};
+use multisig::{Certificate, Envelope};
 use serde::{Deserialize, Serialize};
 
 use crate::Transaction;
@@ -147,13 +147,13 @@ impl Committable for BlockHash {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BlockInfo<S> {
+pub struct BlockInfo<S: Clone> {
     num: BlockNumber,
     envelope: Envelope<BlockHash, S>,
 }
 
-impl BlockInfo {
-    pub fn new(num: BlockNumber, signed: Envelope<BlockHash, Unchecked>) -> Self {
+impl<S: Clone> BlockInfo<S> {
+    pub fn new(num: BlockNumber, signed: Envelope<BlockHash, S>) -> Self {
         Self {
             num,
             envelope: signed,
@@ -164,11 +164,11 @@ impl BlockInfo {
         self.num
     }
 
-    pub fn envelope(&self) -> &Envelope<BlockHash, Unchecked> {
+    pub fn envelope(&self) -> &Envelope<BlockHash, S> {
         &self.envelope
     }
 
-    pub fn into_envelope(self) -> Envelope<BlockHash, Unchecked> {
+    pub fn into_envelope(self) -> Envelope<BlockHash, S> {
         self.envelope
     }
 }

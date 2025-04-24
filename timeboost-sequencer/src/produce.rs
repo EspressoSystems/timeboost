@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::overlay::{Data, DataError};
-use multisig::{Certificate, Committee, Envelope, Keypair, Validated, VoteAccumulator};
+use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use timeboost_types::{
@@ -187,7 +187,7 @@ impl Worker {
             tokio::select! {
                 val = ibound.recv() => match val {
                     Some(BlockInbound{src, data}) => {
-                        let b = match deserialize::<BlockInfo>(&data) {
+                        let b = match deserialize::<BlockInfo<Unchecked>>(&data) {
                             Ok(block) => block,
                             Err(e) => {
                                 warn!("deserialization error: {}", e);
@@ -224,7 +224,7 @@ impl Worker {
                         );
                         let env = Envelope::signed(hash, &self.keypair, false);
                         recv_block = (Some(num), env.clone());
-                        let b = BlockInfo::new(num, env.into());
+                        let b = BlockInfo::new(num, env);
                         let data = match serialize(&b) {
                             Ok(data) => data,
                             Err(e) => {
