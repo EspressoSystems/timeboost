@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
+use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -21,6 +22,9 @@ type Result<T> = std::result::Result<T, NetworkDown>;
 
 /// Max. bucket number.
 pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
+
+/// Default tag.
+pub const DEFAULT_TAG: Tag = Tag::new(0);
 
 /// `Overlay` wraps a [`Network`] and returns acknowledgements to senders.
 ///
@@ -57,11 +61,11 @@ impl Drop for Overlay {
     }
 }
 
-/// Newtype wrapping some length-checked bytes.
+/// Data wraps some length-checked, tagged bytes.
 ///
 /// This exists to allow clients to construct a message item that will
 /// not be rejected by the network due to size violations (see the
-/// `TryFrom<BytesMut>` impl for details).
+/// `TryFrom<(Tag, BytesMut)>` impl for details).
 #[derive(Debug, Clone)]
 pub struct Data {
     bytes: BytesMut,
@@ -86,7 +90,8 @@ pub struct Tag(u8);
 /// explicitly by specifying the bucket up to which to remove messages.
 /// Buckets often correspond to rounds elsewhere.
 #[derive(Debug, Clone, Default)]
-struct Buffer(Arc<Mutex<BTreeMap<Bucket, HashMap<Id, Message>>>>);
+#[allow(clippy::type_complexity)]
+struct Buffer(Arc<Mutex<BTreeMap<(Tag, Bucket), HashMap<Id, Message>>>>);
 
 #[derive(Debug)]
 struct Message {
@@ -169,7 +174,7 @@ impl Overlay {
 
             let mut messages = self.buffer.0.lock();
 
-            if let Some(buckets) = messages.get_mut(&trailer.bucket) {
+            if let Some(buckets) = messages.get_mut(&(trailer.tag, trailer.bucket)) {
                 if let Some(m) = buckets.get_mut(&trailer.id) {
                     m.remaining.retain(|k| *k != src);
                     if m.remaining.is_empty() {
@@ -180,17 +185,17 @@ impl Overlay {
         }
     }
 
-    pub fn gc<B: Into<Bucket>>(&mut self, bucket: B, mask: Option<B>) {
+    pub fn gc<B: Into<Bucket>>(&mut self, tag: Tag, bucket: B) {
         let bucket = bucket.into();
-        let mask = mask.map(|m| m.into()).unwrap_or(Bucket(0));
         self.buffer
             .0
             .lock()
-            .retain(|b, _| b.0 & mask.0 == mask.0 && *b >= bucket);
+            .retain(|(t, b), _| *t == tag && *b >= bucket);
     }
 
-    pub fn rm(&mut self, bucket: Bucket, id: Id) {
-        if let Some(messages) = self.buffer.0.lock().get_mut(&bucket) {
+    pub fn rm<B: Into<Bucket>>(&mut self, tag: Tag, bucket: B, id: Id) {
+        let key = (tag, bucket.into());
+        if let Some(messages) = self.buffer.0.lock().get_mut(&key) {
             messages.remove(&id);
         }
     }
@@ -228,15 +233,20 @@ impl Overlay {
             self.parties.clone()
         };
 
-        self.buffer.0.lock().entry(b).or_default().insert(
-            id,
-            Message {
-                data: msg,
-                time: now,
-                retries: 0,
-                remaining: rem,
-            },
-        );
+        self.buffer
+            .0
+            .lock()
+            .entry((data.tag, b))
+            .or_default()
+            .insert(
+                id,
+                Message {
+                    data: msg,
+                    time: now,
+                    retries: 0,
+                    remaining: rem,
+                },
+            );
 
         Ok(id)
     }
@@ -315,16 +325,16 @@ pub enum DataError {
     MaxSize,
 }
 
-impl TryFrom<BytesMut> for Data {
+impl TryFrom<(Tag, BytesMut)> for Data {
     type Error = DataError;
 
-    fn try_from(val: BytesMut) -> std::result::Result<Self, Self::Error> {
-        if val.len() > crate::MAX_MESSAGE_SIZE {
+    fn try_from(val: (Tag, BytesMut)) -> std::result::Result<Self, Self::Error> {
+        if val.1.len() > crate::MAX_MESSAGE_SIZE {
             return Err(DataError::MaxSize);
         }
         Ok(Self {
-            bytes: val,
-            tag: Tag::default(),
+            tag: val.0,
+            bytes: val.1,
         })
     }
 }
@@ -385,6 +395,18 @@ impl Data {
 impl Tag {
     pub const fn new(n: u8) -> Self {
         Self(n)
+    }
+}
+
+impl fmt::Display for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for Bucket {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
