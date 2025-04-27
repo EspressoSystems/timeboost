@@ -64,7 +64,7 @@ enum WorkerState {
     /// stored and once the round number barrier for participation has been
     /// reached, the deferred messages from that round number onwards will
     /// be sent out.
-    Recover(Nonce, Option<overlay::Id>, HashMap<PublicKey, RoundNumber>),
+    Recover(Nonce, Option<cliquenet::Id>, HashMap<PublicKey, RoundNumber>),
     /// This is the normal running state after round numbers have been collected.
     /// The barrier is the maximum of at least 2t + 1 reported round numbers and
     /// restricts when messages are eligible for sending.
