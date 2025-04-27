@@ -1,12 +1,15 @@
 use std::ops::{Deref, DerefMut};
 
-use alloy_consensus::TxEnvelope;
+use alloy_consensus::{Sealed, TxEnvelope};
 
+use alloy_eips::{Encodable2718, Typed2718};
+use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
+use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
@@ -307,6 +310,48 @@ impl Committable for ChainId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Transaction(TxEnvelope);
+
+// Boilerplate for ensuring trait compatibility
+impl Typed2718 for Transaction {
+    fn ty(&self) -> u8 {
+        self.0.ty()
+    }
+}
+
+impl Encodable2718 for Transaction {
+    fn encode_2718_len(&self) -> usize {
+        self.0.encode_2718_len()
+    }
+
+    fn encode_2718(&self, out: &mut dyn BufMut) {
+        self.0.encode_2718(out);
+    }
+
+    fn type_flag(&self) -> Option<u8> {
+        self.0.type_flag()
+    }
+
+    fn encoded_2718(&self) -> Vec<u8> {
+        self.0.encoded_2718()
+    }
+
+    fn trie_hash(&self) -> B256 {
+        self.0.trie_hash()
+    }
+
+    fn seal(self) -> Sealed<Self> {
+        let hash = self.0.trie_hash();
+        Sealed::new_unchecked(self, hash)
+    }
+
+    fn network_len(&self) -> usize {
+        self.0.network_len()
+    }
+
+    fn network_encode(&self, out: &mut dyn BufMut) {
+        self.0.network_encode(out);
+    }
+}
 
 impl Transaction {
     pub fn decode(bytes: &[u8]) -> Result<Self, alloy_rlp::Error> {

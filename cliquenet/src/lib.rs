@@ -16,3 +16,6 @@ pub use overlay::Overlay;
 
 /// Max. number of bytes for a message (potentially consisting of several frames).
 pub const MAX_MESSAGE_SIZE: usize = 5 * 1024 * 1024;
+
+/// Max. number of messages to queue for a peer.
+pub const PEER_CAPACITY: usize = 256;

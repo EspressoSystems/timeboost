@@ -1,22 +1,25 @@
 mod decrypt;
 mod include;
 mod metrics;
+mod multiplex;
+mod produce;
 mod queue;
 mod sort;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use cliquenet as net;
-use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Overlay};
+use cliquenet::{self as net, MAX_MESSAGE_SIZE};
+use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
+use produce::BlockProducer;
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
+use timeboost_types::{Address, BundleVariant, CertifiedBlock, DecryptionKey};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -25,11 +28,16 @@ use tracing::{error, info, warn};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
+use multiplex::Multiplex;
 use queue::BundleQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
+
+/// Channel capacity between the Decrypter/Producer and Worker.
+/// Effectively, the length of the leash between Sailfish and Timeboost.
+const MAX_SIZE: usize = 100;
 
 #[derive(Debug)]
 pub struct SequencerConfig {
@@ -91,7 +99,7 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
-    output: Receiver<Transaction>,
+    output: Receiver<CertifiedBlock>,
 }
 
 impl Drop for Sequencer {
@@ -107,7 +115,9 @@ struct Task {
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
-    output: Sender<Transaction>,
+    producer: BlockProducer,
+    multiplex: Multiplex,
+    output: Sender<CertifiedBlock>,
     mode: Mode,
 }
 
@@ -174,6 +184,7 @@ impl Sequencer {
             cfg.bind.with_port(p)
         };
 
+        let public_key = cfg.keypair.public_key();
         let network = Network::create(
             addr,
             cfg.keypair.clone(), // same auth
@@ -185,11 +196,16 @@ impl Sequencer {
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
+        // Demultiplexing of Timeboost network messages.
+        let (dec_rx, block_rx, multiplex) =
+            Multiplex::new(public_key, committee.clone(), Overlay::new(network));
+
         let decrypter = Decrypter::new(
-            cfg.keypair.public_key(),
-            Overlay::new(network),
+            public_key,
             keyset,
             cfg.dec_sk,
+            dec_rx,
+            multiplex.dec_tx().clone(),
         );
 
         let (tx, rx) = mpsc::channel(1024);
@@ -198,9 +214,16 @@ impl Sequencer {
             label,
             bundles: queue.clone(),
             sailfish: Coordinator::new(rbc, consensus),
-            includer: Includer::new(committee, cfg.index),
+            includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
+            producer: BlockProducer::new(
+                cfg.keypair,
+                committee,
+                block_rx,
+                multiplex.block_tx().clone(),
+            ),
+            multiplex,
             output: tx,
             mode: Mode::Passive,
         };
@@ -224,9 +247,9 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transaction(&mut self) -> Result<Transaction> {
+    pub async fn next_block(&mut self) -> Result<CertifiedBlock> {
         select! {
-            trx = self.output.recv() => trx.ok_or(TimeboostError::ChannelClosed),
+            cert = self.output.recv() => cert.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
                 Ok(Ok(())) => {
                     error!(node = %self.label, "unexpected task termination");
@@ -298,7 +321,10 @@ impl Task {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         for t in self.sorter.sort(incl) {
-                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
+                            if let Err(err) = self.producer.enqueue(t).await {
+                                error!(node = %self.label, %err, "failed to enqueue transaction");
+                                return Err(TimeboostError::ChannelClosed);
+                            }
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -308,6 +334,19 @@ impl Task {
                                 error!(node = %self.label, %err, "decrypt enqueue error");
                             }
                         }
+                    }
+                    Err(err) => {
+                        error!(node = %self.label, %err);
+                    }
+                },
+                result = self.producer.next() => match result {
+                    Ok(cert_block) => {
+                        let num = cert_block.num();
+                        if let Err(err) = self.output.send(cert_block).await {
+                            error!(node = %self.label, %err, "failed to send block");
+                            return Err(TimeboostError::ChannelClosed);
+                        }
+                        self.multiplex.block_gc(num).await;
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);
@@ -341,7 +380,7 @@ impl Task {
                         }
                     }
                     Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
+                        self.multiplex.decrypt_gc(r).await;
                         actions.push_front(action);
                         break;
                     }
@@ -361,7 +400,7 @@ impl Task {
                         break;
                     }
                     Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
+                        self.multiplex.decrypt_gc(r).await;
                     }
                     _ => {}
                 }

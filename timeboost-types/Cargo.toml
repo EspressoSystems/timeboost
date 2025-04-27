@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 alloy-consensus = { workspace = true }
 alloy-primitives = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
@@ -19,6 +20,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
+multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
