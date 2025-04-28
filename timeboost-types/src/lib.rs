@@ -1,3 +1,4 @@
+mod block;
 mod bundle;
 mod bytes;
 mod candidate_list;
@@ -10,6 +11,7 @@ mod time;
 
 pub mod math;
 
+pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
     Address, Bundle, BundleVariant, ChainId, PriorityBundle, SignedPriorityBundle, Signer,
     Transaction,

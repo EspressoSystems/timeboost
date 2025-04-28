@@ -20,10 +20,14 @@ use tracing::{debug, info, warn};
 
 type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
-const NUM_OF_TRANSACTIONS: usize = 500;
+const NUM_OF_BLOCKS: usize = 50;
+const RECOVER_INDEX: usize = 2;
 
 /// Run some timboost sequencer instances and check that they produce the
 /// same sequence of transaction.
+///
+/// We include testing for round info recovery of a node by delaying the start
+/// of one sequencer and configuring it to recover.
 #[tokio::test]
 async fn transaction_order() {
     init_logging();
@@ -43,19 +47,23 @@ async fn transaction_order() {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
         tasks.spawn(async move {
+            if c.is_recover() {
+                // delay start of a recovering node:
+                sleep(Duration::from_secs(5)).await
+            }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut i = 0;
-            while i < NUM_OF_TRANSACTIONS {
+            while i < NUM_OF_BLOCKS {
                 select! {
                     t = brx.recv() => match t {
                         Ok(trx) => s.add_bundles(once(trx)),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transaction() => {
-                        debug!(node = %s.public_key(), transactions = %i);
+                    b = s.next_block() => {
+                        debug!(node = %s.public_key(), block = %i);
                         i += 1;
-                        tx.send(t.unwrap()).unwrap()
+                        tx.send(b.unwrap()).unwrap()
                     }
                 }
             }
@@ -66,11 +74,11 @@ async fn transaction_order() {
 
     tasks.spawn(gen_bundles(dec.0, bcast.clone()));
 
-    for _ in 0..NUM_OF_TRANSACTIONS {
+    for _ in 0..NUM_OF_BLOCKS {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
-            let t = rx.recv().await.unwrap();
-            assert_eq!(first.hash(), t.hash())
+            let b = rx.recv().await.unwrap();
+            assert_eq!(first.cert().data(), b.cert().data())
         }
     }
 
@@ -94,9 +102,12 @@ fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<Sequencer
     let peers = parts.iter().map(|(k, a, _)| (k.public_key(), *a));
 
     let mut cfgs = Vec::new();
-    for (kpair, addr, share) in parts.clone() {
+    for (i, (kpair, addr, share)) in parts.clone().into_iter().enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
-        cfgs.push(SequencerConfig::new(kpair, dkey, addr).with_peers(peers.clone()))
+        let cfg = SequencerConfig::new(kpair, dkey, addr)
+            .with_peers(peers.clone())
+            .recover(i == RECOVER_INDEX);
+        cfgs.push(cfg)
     }
     cfgs
 }
