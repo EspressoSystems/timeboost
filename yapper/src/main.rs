@@ -10,7 +10,8 @@ use anyhow::{Context, Result};
 use cliquenet::Address;
 
 use clap::Parser;
-use timeboost::keyset::{KeysetConfig, wait_for_live_peer};
+use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
+use timeboost_utils::select_peer_hosts;
 use timeboost_utils::types::logging::init_logging;
 use tracing::error;
 use tx::tx_sender;
@@ -50,27 +51,7 @@ async fn main() -> Result<()> {
     ))?;
 
     // TODO: make this selection a helper.
-    // Rust is *really* picky about mixing iterators, so we just erase the type.
-    let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
-        // The number of nodes to take from the group. The layout of the nodes
-        // is such that (in the cloud) each region
-        // continues sequentially from the prior region.
-        // So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
-        // 4, 5, 6, 7, then we need to offset this otherwise we'd
-        // attribute us-east-2 nodes to us-west-2.
-        let take_from_group = cli.nodes / 4;
-
-        Box::new(
-            keyset
-                .keyset()
-                .chunks(4)
-                .flat_map(move |v| v.iter().take(take_from_group)),
-        )
-    } else {
-        // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
-        // on the same host.
-        Box::new(keyset.keyset().iter().take(cli.nodes))
-    };
+    let peer_host_iter = select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
     let mut all_hosts_as_addresses = Vec::new();
     for peer_host in peer_host_iter {

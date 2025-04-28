@@ -27,7 +27,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 pub use timeboost_types as types;
 
 pub mod api;
-pub mod keyset;
 pub mod metrics;
 
 type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
