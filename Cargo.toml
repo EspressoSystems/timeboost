@@ -34,7 +34,7 @@ alloy-eips = { version = "0.14.0" }
 alloy-primitives = { version = "1.0.0", features = ["serde", "rlp"] }
 alloy-rlp = { version = "0.3.11", features = ["derive"] }
 alloy-signer = "0.14.0"
-alloy-signer-local = "0.14.0"
+alloy-signer-local = "0.15.6"
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 ark-bn254 = "0.5"
