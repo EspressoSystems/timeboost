@@ -117,12 +117,6 @@ impl Committable for Bundle {
         RawCommitmentBuilder::new("Bundle")
             .var_size_field("digest", self.digest())
             .finalize()
-        // RawCommitmentBuilder::new("PriorityBundle")
-        //     .field("chain", self.chain_id().commit())
-        //     .field("epoch", self.epoch().commit())
-        //     .var_size_field("data", self.data())
-        //     .field("keysetid", self.kid().unwrap_or_default().commit())
-        //     .finalize()
     }
 }
 
@@ -286,12 +280,6 @@ impl Committable for SignedPriorityBundle {
         RawCommitmentBuilder::new("PriorityBundle")
             .var_size_field("digest", self.digest())
             .finalize()
-        // RawCommitmentBuilder::new("PriorityBundle")
-        //     .field("bundle", self.bundle.commit())
-        //     .field("auction", self.auction.commit())
-        //     .field("seqno", self.seqno.commit())
-        //     .field("signature", self.signature().commit())
-        //     .finalize()
     }
 }
 
