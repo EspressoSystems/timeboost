@@ -5,20 +5,20 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
-use timeboost::{
-    Timeboost, TimeboostConfig, rpc_api,
-};
+use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
 
 #[cfg(feature = "until")]
+use anyhow::ensure;
+#[cfg(feature = "until")]
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
-use timeboost_utils::types::logging;
 use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
+use timeboost_utils::types::logging;
 use tracing::warn;
 
 #[cfg(feature = "until")]
@@ -189,11 +189,8 @@ async fn main() -> Result<()> {
         .map(|ph| format!("http://{}", ph.url).parse().unwrap())
         .collect();
 
-    let peer_host_iter = timeboost_utils::select_peer_hosts(
-        keyset.keyset(),
-        cli.nodes,
-        cli.multi_region,
-    );
+    let peer_host_iter =
+        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
     let mut peer_hosts_and_keys = Vec::new();
 
