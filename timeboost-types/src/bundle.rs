@@ -277,7 +277,7 @@ impl SignedPriorityBundle {
 
 impl Committable for SignedPriorityBundle {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("PriorityBundle")
+        RawCommitmentBuilder::new("SignedPriorityBundle")
             .var_size_field("digest", self.digest())
             .finalize()
     }
