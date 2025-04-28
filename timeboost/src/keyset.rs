@@ -44,7 +44,8 @@ pub struct PublicDecInfo {
 
 impl PublicDecInfo {
     pub fn pubkey(&self) -> Result<PublicKey> {
-        PublicKey::try_from(self.pubkey.as_str()).context("Failed to parse public key from keyset")
+        PublicKey::try_from_str::<8192>(self.pubkey.as_str())
+            .context("Failed to parse public key from keyset")
     }
 }
 
