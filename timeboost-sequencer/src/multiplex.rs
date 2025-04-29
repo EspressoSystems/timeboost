@@ -1,8 +1,7 @@
-use crate::MAX_SIZE;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use cliquenet::{
     Overlay, PEER_CAPACITY,
-    overlay::{Bucket, DataError},
+    overlay::{Data, Tag},
 };
 use multisig::{Committee, PublicKey};
 use sailfish::types::RoundNumber;
@@ -13,37 +12,16 @@ use tokio::{
 };
 use tracing::{debug, error, trace, warn};
 
-const DECRYPT_TAG: u8 = 0xDE;
-const BLOCK_TAG: u8 = 0xB0;
-
-type Result<T> = std::result::Result<T, MultiplexError>;
-
-struct BlockBucket(u64);
-
-impl From<u64> for BlockBucket {
-    fn from(value: u64) -> Self {
-        Self(value | (1 << 63))
-    }
-}
-
-impl From<BlockBucket> for Bucket {
-    fn from(bucket: BlockBucket) -> Self {
-        bucket.0.into()
-    }
-}
-
-pub enum TimeboostInbound {
-    Decrypt(DecryptInbound),
-    Block(BlockInbound),
-}
+pub(crate) const DECRYPT_TAG: Tag = Tag::new(0xDE);
+pub(crate) const BLOCK_TAG: Tag = Tag::new(0xB0);
 
 pub struct DecryptOutbound {
-    pub num: RoundNumber,
-    pub data: Bytes,
+    num: RoundNumber,
+    data: Data,
 }
 
 impl DecryptOutbound {
-    pub fn new(num: RoundNumber, data: Bytes) -> Self {
+    pub fn new(num: RoundNumber, data: Data) -> Self {
         Self { num, data }
     }
 }
@@ -54,12 +32,12 @@ pub struct DecryptInbound {
 }
 
 pub struct BlockOutbound {
-    pub num: BlockNumber,
-    pub data: Bytes,
+    num: BlockNumber,
+    data: Data,
 }
 
 impl BlockOutbound {
-    pub fn new(num: BlockNumber, data: Bytes) -> Self {
+    pub fn new(num: BlockNumber, data: Data) -> Self {
         Self { num, data }
     }
 }
@@ -78,7 +56,7 @@ pub struct Multiplex {
     /// Sender block data to the multiplexer.
     block_tx: Sender<BlockOutbound>,
     /// Sender to signal for gc.
-    gc_tx: Sender<Bucket>,
+    gc_tx: Sender<(Tag, u64)>,
     /// Join handle for worker.
     jh: JoinHandle<()>,
 }
@@ -121,33 +99,9 @@ impl Multiplex {
         &self.block_tx
     }
 
-    pub async fn decrypt_gc(&mut self, round: RoundNumber) {
-        let bucket = Bucket::from(*round);
-        let gc_round: RoundNumber = round.saturating_sub(MAX_SIZE as u64).into();
-        if RoundNumber::genesis() < gc_round {
-            trace!(
-                node      = %self.label,
-                gc_round  = %gc_round,
-                "decrypt-gc"
-            );
-            if let Err(e) = self.gc_tx.send(bucket).await {
-                error!("failed to send gc signal: {}", e);
-            }
-        }
-    }
-
-    pub async fn block_gc(&mut self, block_num: BlockNumber) {
-        let gc_block: BlockNumber = block_num.saturating_sub(MAX_SIZE as u64).into();
-        if BlockNumber::genesis() < gc_block {
-            let bucket = BlockBucket::from(*gc_block);
-            trace!(
-                node   = %self.label,
-                gc_block  = %block_num,
-                "block-gc"
-            );
-            if let Err(e) = self.gc_tx.send(bucket.into()).await {
-                error!("failed to send gc signal: {}", e);
-            }
+    pub async fn gc<N: Into<u64>>(&mut self, t: Tag, n: N) {
+        if let Err(err) = self.gc_tx.send((t, n.into())).await {
+            error!(node = %self.label, %err, "failed to send gc signal");
         }
     }
 }
@@ -172,7 +126,7 @@ struct Worker {
     /// Receive obound messages from block producer.
     block_orx: Receiver<BlockOutbound>,
     /// Receiver for gc signals.
-    gc_rx: Receiver<Bucket>,
+    gc_rx: Receiver<(Tag, u64)>,
 }
 
 impl Worker {
@@ -183,7 +137,7 @@ impl Worker {
         dec_orx: Receiver<DecryptOutbound>,
         block_itx: Sender<BlockInbound>,
         block_orx: Receiver<BlockOutbound>,
-        gc_rx: Receiver<Bucket>,
+        gc_rx: Receiver<(Tag, u64)>,
     ) -> Self {
         Self {
             label,
@@ -199,66 +153,44 @@ impl Worker {
         loop {
             tokio::select! {
                 Some(DecryptOutbound { num, data }) = self.dec_orx.recv() => {
-                    let mut tagged_data = BytesMut::with_capacity(data.len() + 1);
-                    tagged_data.put_u8(DECRYPT_TAG);
-                    tagged_data.extend_from_slice(&data);
-                    match tagged_data.try_into() {
-                        Ok(data) => {
-                            if let Err(e) = self.net.broadcast(Bucket::from(*num), data).await {
-                                error!(node = %self.label, "network broadcast error: {}", e);
-                                return;
-                            }
-                        }
-                        Err(e) => {
-                            error!(node = %self.label, "failed to convert tagged data: {}", e);
-                            return;
-                        }
+                    if let Err(e) = self.net.broadcast(*num, data).await {
+                        error!(node = %self.label, err = %e, "network broadcast error");
+                        return;
                     }
                 }
                 Some(BlockOutbound { num, data }) = self.block_orx.recv() => {
-                    let mut tagged_data = BytesMut::with_capacity(data.len() + 1);
-                    tagged_data.put_u8(BLOCK_TAG);
-                    tagged_data.extend_from_slice(&data);
-                    match tagged_data.try_into() {
-                        Ok(data) => {
-                            if let Err(e) = self.net.broadcast(Bucket::from(*num), data).await {
-                                error!(node = %self.label, "network broadcast error: {}", e);
-                                return;
-                            }
-                        }
-                        Err(e) => {
-                            error!(node = %self.label, "failed to convert tagged data: {}", e);
-                            return;
-                        }
+                    if let Err(e) = self.net.broadcast(*num, data).await {
+                        error!(node = %self.label, err = %e, "network broadcast error");
+                        return;
                     }
                 }
 
-                Ok(msg) = self.net.receive() => {
-                    if msg.0 == self.label {
+                Ok((src, data, tag)) = self.net.receive() => {
+                    if src == self.label {
                         continue;
                     }
-                    match decode(msg) {
-                        Ok(TimeboostInbound::Decrypt(message)) => {
-                            if let Err(e) = self.dec_itx.send(message).await {
-                                error!("failed to send decrypt message: {}", e);
+                    match tag {
+                        DECRYPT_TAG => {
+                            if let Err(err) = self.dec_itx.send(DecryptInbound { src, data }).await {
+                                error!(node = %self.label, %err, "failed to send decrypt message");
                                 return;
                             }
                         }
-                        Ok(TimeboostInbound::Block(message)) => {
-                            if let Err(e) = self.block_itx.send(message).await {
-                                error!("failed to send block message: {}", e);
+                        BLOCK_TAG => {
+                            if let Err(err) = self.block_itx.send(BlockInbound { src, data }).await {
+                                error!(node = %self.label, %err, "failed to send block message");
                                 return;
                             }
                         }
-                        Err(e) => {
-                            warn!("failed to deserialize message: {}", e);
+                        _ => {
+                            warn!(tag = u8::from(tag), "failed to classify message");
                             continue;
                         }
-                    };
+                    }
                 }
-                Some(bucket) = self.gc_rx.recv() => {
-                    trace!(node = %self.label, "received gc signal for bucket: {:?}", bucket);
-                    self.net.gc(bucket);
+                Some((t, n)) = self.gc_rx.recv() => {
+                    trace!(node = %self.label, tag = %t, bucket = %n, "received gc signal");
+                    self.net.gc(t, n);
                 }
                 else => {
                     debug!(node = %self.label, "network shutdown detected");
@@ -267,39 +199,4 @@ impl Worker {
             }
         }
     }
-}
-
-fn decode(inbound_msg: (PublicKey, bytes::Bytes)) -> Result<TimeboostInbound> {
-    let (public_key, data) = inbound_msg;
-    if data.is_empty() {
-        return Err(MultiplexError::InvalidTag);
-    }
-
-    match data[0] {
-        DECRYPT_TAG => Ok(TimeboostInbound::Decrypt(DecryptInbound {
-            src: public_key,
-            data: data.slice(1..),
-        })),
-        BLOCK_TAG => Ok(TimeboostInbound::Block(BlockInbound {
-            src: public_key,
-            data: data.slice(1..),
-        })),
-        _ => Err(MultiplexError::InvalidTag),
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum MultiplexError {
-    #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
-
-    #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
-
-    #[error("data error: {0}")]
-    DataError(#[from] DataError),
-
-    #[error("invalid tag error")]
-    InvalidTag,
 }

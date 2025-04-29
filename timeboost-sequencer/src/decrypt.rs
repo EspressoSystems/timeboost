@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{DecryptInbound, DecryptOutbound};
+use crate::multiplex::{DECRYPT_TAG, DecryptInbound, DecryptOutbound};
 
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
@@ -363,7 +363,7 @@ impl Worker {
                                         continue;
                                     }
                                 };
-                                if let Err(e) = obound.send(DecryptOutbound::new(round, data.to_vec().into())).await {
+                                if let Err(e) = obound.send(DecryptOutbound::new(round, data)).await {
                                     warn!("failed write decrypted message to multiplexer: {:?}", e);
                                     continue;
                                 }
@@ -537,7 +537,7 @@ impl Worker {
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().try_into()?)
+    Ok(Data::try_from((DECRYPT_TAG, b.into_inner()))?)
 }
 
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {

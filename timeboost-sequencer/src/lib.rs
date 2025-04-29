@@ -346,7 +346,10 @@ impl Task {
                             error!(node = %self.label, %err, "failed to send block");
                             return Err(TimeboostError::ChannelClosed);
                         }
-                        self.multiplex.block_gc(num).await;
+                        let n = num.saturating_sub(MAX_SIZE as u64);
+                        if n > 0 {
+                            self.multiplex.gc(multiplex::BLOCK_TAG, n).await;
+                        }
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);
@@ -380,7 +383,10 @@ impl Task {
                         }
                     }
                     Action::Gc(r) => {
-                        self.multiplex.decrypt_gc(r).await;
+                        let n = r.saturating_sub(MAX_SIZE as u64);
+                        if n > 0 {
+                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
+                        }
                         actions.push_front(action);
                         break;
                     }
@@ -400,7 +406,10 @@ impl Task {
                         break;
                     }
                     Action::Gc(r) => {
-                        self.multiplex.decrypt_gc(r).await;
+                        let n = r.saturating_sub(MAX_SIZE as u64);
+                        if n > 0 {
+                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
+                        }
                     }
                     _ => {}
                 }

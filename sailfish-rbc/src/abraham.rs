@@ -3,7 +3,10 @@ use std::fmt;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use cliquenet::{Overlay, overlay::Data};
+use cliquenet::{
+    Overlay,
+    overlay::{DEFAULT_TAG, Data, Tag},
+};
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
@@ -74,6 +77,7 @@ pub struct RbcConfig {
     committee: Committee,
     recover: bool,
     early_delivery: bool,
+    tag: Tag,
     metrics: RbcMetrics,
 }
 
@@ -84,6 +88,7 @@ impl RbcConfig {
             committee: c,
             recover: true,
             early_delivery: true,
+            tag: DEFAULT_TAG,
             metrics: RbcMetrics::default(),
         }
     }
@@ -104,6 +109,12 @@ impl RbcConfig {
     /// Should we recover from a previous run?
     pub fn recover(mut self, val: bool) -> Self {
         self.recover = val;
+        self
+    }
+
+    /// Set the data tag to use.
+    pub fn with_tag(mut self, t: Tag) -> Self {
+        self.tag = t;
         self
     }
 }
@@ -128,6 +139,8 @@ impl RbcConfig {
 ///        (arXiv:2102.07240v3)
 #[derive(Debug)]
 pub struct Rbc<T: Committable> {
+    // The tag used for serialized data.
+    tag: Tag,
     // Inbound, RBC-delivered messages.
     rx: mpsc::Receiver<Message<T, Validated>>,
     // Directives to the RBC worker.
@@ -146,8 +159,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
     pub fn new(net: Overlay, c: RbcConfig) -> Self {
         let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
         let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+        let tag = c.tag;
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
+            tag,
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
@@ -164,13 +179,13 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
             return Err(RbcError::Shutdown);
         }
         if let Message::Vertex(v) = msg {
-            let data = serialize(&Protocol::Propose(Cow::Borrowed(&v)))?;
+            let data = serialize(self.tag, &Protocol::Propose(Cow::Borrowed(&v)))?;
             self.tx
                 .send(Command::RbcBroadcast(v, data))
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
         } else {
-            let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
+            let data = serialize(self.tag, &Protocol::Send(Cow::Borrowed(&msg)))?;
             self.tx
                 .send(Command::Broadcast(msg, data))
                 .await
@@ -183,7 +198,7 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
         if self.rx.is_closed() {
             return Err(RbcError::Shutdown);
         }
-        let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
+        let data = serialize(self.tag, &Protocol::Send(Cow::Borrowed(&msg)))?;
         self.tx
             .send(Command::Send(to, msg, data))
             .await
@@ -204,10 +219,10 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
 }
 
 /// Serialize a given value into overlay `Data`.
-fn serialize<T: Serialize>(d: &T) -> Result<Data, RbcError> {
+fn serialize<T: Serialize>(t: Tag, d: &T) -> Result<Data, RbcError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().try_into()?)
+    Ok(Data::try_from((t, b.into_inner()))?)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
