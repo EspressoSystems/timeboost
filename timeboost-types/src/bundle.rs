@@ -115,7 +115,10 @@ impl<'a> Arbitrary<'a> for Bundle {
 impl Committable for Bundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Bundle")
-            .var_size_field("digest", self.digest())
+            .field("chain", self.chain_id().commit())
+            .field("epoch", self.epoch().commit())
+            .var_size_field("data", self.data())
+            .field("keysetid", self.kid().unwrap_or_default().commit())
             .finalize()
     }
 }
@@ -278,7 +281,10 @@ impl SignedPriorityBundle {
 impl Committable for SignedPriorityBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("SignedPriorityBundle")
-            .var_size_field("digest", self.digest())
+            .field("bundle", self.bundle.commit())
+            .field("auction", self.auction.commit())
+            .field("seqno", self.seqno.commit())
+            .field("signature", self.signature().commit())
             .finalize()
     }
 }
