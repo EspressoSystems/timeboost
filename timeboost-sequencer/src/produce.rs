@@ -247,7 +247,11 @@ impl Worker {
                 .trackers
                 .entry(*block_hash.data())
                 .or_insert_with(|| Tracker {
-                    votes: VoteAccumulator::new(self.committee.clone()),
+                    votes: {
+                        let mut va = VoteAccumulator::new(self.committee.clone());
+                        va.cert_on_threshold(true);
+                        va
+                    },
                     num: None,
                     status: CertStatus::Unknown,
                 });

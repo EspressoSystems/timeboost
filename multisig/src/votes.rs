@@ -11,6 +11,7 @@ pub struct VoteAccumulator<D: Committable> {
     committee: Committee,
     votes: HashMap<Commitment<D>, Entry<D>>,
     cert: Option<Certificate<D>>,
+    cert_on_threshold: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,11 +35,21 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             committee,
             votes: HashMap::new(),
             cert: None,
+            cert_on_threshold: false,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.votes.is_empty()
+    }
+
+    /// When to generate a certificate.
+    ///
+    /// By default the quorum of `2t + 1` votes is required for a certificate.
+    /// Calling this method with `true` allows the certificate to be generated
+    /// when `t + 1` votes have been collected.
+    pub fn cert_on_threshold(&mut self, v: bool) {
+        self.cert_on_threshold = v
     }
 
     /// Return the amount of signatures for a given commmitment.
@@ -109,7 +120,13 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 
         entry.sigs.insert(ix, sig);
 
-        if entry.sigs.len() < self.committee.quorum_size().get() {
+        let ready = if self.cert_on_threshold {
+            entry.sigs.len() >= self.committee.threshold().get()
+        } else {
+            entry.sigs.len() >= self.committee.quorum_size().get()
+        };
+
+        if !ready {
             return Ok(None);
         }
 
