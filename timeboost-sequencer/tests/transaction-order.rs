@@ -1,6 +1,7 @@
 use std::iter::once;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use metrics::NoMetrics;
@@ -13,7 +14,7 @@ use timeboost_utils::load_generation::make_bundle;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Barrier, broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
@@ -39,6 +40,7 @@ async fn transaction_order() {
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
+    let finish = Arc::new(Barrier::new(5));
 
     // We spawn each sequencer into a task and broadcast new transactions to
     // all of them. Each sequencer pushes the transaction it produced into an
@@ -46,6 +48,7 @@ async fn transaction_order() {
     for c in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
+        let finish = finish.clone();
         tasks.spawn(async move {
             if c.is_recover() {
                 // delay start of a recovering node:
@@ -67,6 +70,7 @@ async fn transaction_order() {
                     }
                 }
             }
+            finish.wait().await;
             info!(node = %s.public_key(), "done")
         });
         rxs.push(rx)
