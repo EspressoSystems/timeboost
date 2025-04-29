@@ -189,7 +189,7 @@ impl Worker {
                     }
                 }
                 Some((t, n)) = self.gc_rx.recv() => {
-                    trace!(node = %self.label, "received gc signal");
+                    trace!(node = %self.label, tag = %t, bucket = %n, "received gc signal");
                     self.net.gc(t, n);
                 }
                 else => {
