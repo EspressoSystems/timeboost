@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::{Add, Deref};
+use std::ops::{Add, Deref, Sub};
 
 use alloy_consensus::{Header, proofs::calculate_transaction_root};
 use alloy_primitives::{Address, B64, B256, Bloom};
@@ -51,6 +51,14 @@ impl Add<u64> for BlockNumber {
 
     fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for BlockNumber {
+    type Output = BlockNumber;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Self(self.0 - rhs)
     }
 }
 
