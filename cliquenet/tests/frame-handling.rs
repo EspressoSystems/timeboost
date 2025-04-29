@@ -1,7 +1,10 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::BytesMut;
-use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
+use cliquenet::{
+    Network, NetworkMetrics, Overlay,
+    overlay::{DEFAULT_TAG, Data},
+};
 use multisig::{Keypair, PublicKey};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
@@ -57,7 +60,7 @@ fn gen_message() -> Data {
     let mut g = rand::rng();
     let mut v = vec![0; g.random_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
-    BytesMut::from(&v[..]).try_into().unwrap()
+    Data::try_from((DEFAULT_TAG, BytesMut::from(&v[..]))).unwrap()
 }
 
 /// Multicast a message and receive them in both networks.
@@ -69,7 +72,7 @@ async fn send_recv(sender: PublicKey, net_a: &mut Overlay, net_b: &mut Overlay, 
         net_a.broadcast(0, data.clone()).await.unwrap();
 
         for net in [&mut *net_a, net_b] {
-            if let Ok(Ok((k, x))) = timeout(Duration::from_millis(5), net.receive()).await {
+            if let Ok(Ok((k, x, _))) = timeout(Duration::from_millis(5), net.receive()).await {
                 assert_eq!(k, sender);
                 if *x != *data {
                     continue 'main;

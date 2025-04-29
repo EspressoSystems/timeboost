@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{BlockInbound, BlockOutbound};
+use crate::multiplex::{BLOCK_TAG, BlockInbound, BlockOutbound};
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
@@ -236,7 +236,7 @@ impl Worker {
                                 continue;
                             }
                         };
-                        obound.send(BlockOutbound::new(num, data.to_vec().into())).await.ok();
+                        obound.send(BlockOutbound::new(num, data)).await.ok();
                     },
                     None => {
                         debug!(node = %label, "worker request channel closed");
@@ -291,7 +291,8 @@ impl Worker {
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().try_into()?)
+    let bytes = b.into_inner();
+    Ok(Data::try_from((BLOCK_TAG, bytes))?)
 }
 
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
