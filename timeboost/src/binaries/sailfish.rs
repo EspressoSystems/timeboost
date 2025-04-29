@@ -16,8 +16,8 @@ use sailfish::{
     types::Action,
 };
 use serde::{Deserialize, Serialize};
-use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 use timeboost::{metrics_api, rpc_api};
+use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::signal;
@@ -289,11 +289,8 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let peer_host_iter = timeboost_utils::select_peer_hosts(
-        keyset.keyset(),
-        cli.nodes,
-        cli.multi_region,
-    );
+    let peer_host_iter =
+        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
     let mut peer_hosts_and_keys = Vec::new();
 
