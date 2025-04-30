@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{DECRYPT_TAG, DecryptMessage, Multiplex};
+use crate::multiplex::{self, DECRYPT_TAG, DecryptMessage, Multiplex};
 
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
@@ -71,7 +71,7 @@ impl Decrypter {
         committee: Keyset,
         dec_sk: DecryptionKey,
         ibound: Receiver<DecryptMessage>,
-        mplex: Multiplex,
+        mplex: Multiplex<multiplex::Decrypt>,
     ) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_SIZE);
         let (dec_tx, dec_rx) = channel(MAX_SIZE);
@@ -288,7 +288,7 @@ impl Worker {
         mut enc_rx: Receiver<WorkerRequest>,
         dec_tx: Sender<WorkerResponse>,
         mut ibound: Receiver<DecryptMessage>,
-        mplex: Multiplex,
+        mplex: Multiplex<multiplex::Decrypt>,
     ) {
         let mut catching_up = true;
         let mut hatched_rounds = BTreeSet::new();
@@ -363,7 +363,7 @@ impl Worker {
                                         continue;
                                     }
                                 };
-                                if let Err(e) = mplex.send_decrypt(round, data).await {
+                                if let Err(e) = mplex.send(round, data).await {
                                     warn!("failed write decrypted message to multiplexer: {:?}", e);
                                     continue;
                                 }
@@ -602,7 +602,10 @@ mod tests {
     };
     use tracing::warn;
 
-    use crate::{decrypt::Decrypter, multiplex::Multiplex};
+    use crate::{
+        decrypt::Decrypter,
+        multiplex::{self, Multiplex},
+    };
 
     #[tokio::test]
     async fn test_with_encrypted_data() {
@@ -693,7 +696,7 @@ mod tests {
         }
     }
 
-    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<Multiplex>) {
+    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<Multiplex<multiplex::Decrypt>>) {
         let signature_private_keys = [
             "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
             "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",

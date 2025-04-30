@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{BLOCK_TAG, BlockMessage, Multiplex};
+use crate::multiplex::{self, BLOCK_TAG, BlockMessage, Multiplex};
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
@@ -49,7 +49,7 @@ impl BlockProducer {
         label: Keypair,
         committee: Committee,
         rx: Receiver<BlockMessage>,
-        mplex: Multiplex,
+        mplex: Multiplex<multiplex::Produce>,
     ) -> Self {
         let (block_tx, block_rx) = channel(MAX_SIZE);
         let (cert_tx, cert_rx) = channel(MAX_SIZE);
@@ -173,7 +173,7 @@ impl Worker {
         mut block_rx: Receiver<WorkerRequest>,
         cert_tx: Sender<WorkerResponse>,
         mut ibound: Receiver<BlockMessage>,
-        mplex: Multiplex,
+        mplex: Multiplex<multiplex::Produce>,
     ) {
         let label = self.keypair.public_key();
         let mut recv_block: (Option<BlockNumber>, Envelope<BlockHash, Validated>);
@@ -222,7 +222,7 @@ impl Worker {
                                 continue;
                             }
                         };
-                        mplex.send_block(num, data).await.ok();
+                        mplex.send(num, data).await.ok();
                     },
                     None => {
                         debug!(node = %label, "worker request channel closed");

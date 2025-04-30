@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -17,18 +18,28 @@ use tracing::{debug, error, trace, warn};
 pub(crate) const DECRYPT_TAG: Tag = Tag::new(0xDE);
 pub(crate) const BLOCK_TAG: Tag = Tag::new(0xB0);
 
+/// Marker type for decryption specific API parts.
+#[derive(Debug, Clone)]
+pub enum Decrypt {}
+
+/// Marker type for block production specific API parts.
+#[derive(Debug, Clone)]
+pub enum Produce {}
+
+/// Inbound decrypt message.
 pub struct DecryptMessage {
     pub src: PublicKey,
     pub data: Bytes,
 }
 
+/// Inbound block produce message.
 pub struct BlockMessage {
     pub src: PublicKey,
     pub data: Bytes,
 }
 
 #[derive(Debug, Clone)]
-pub struct Multiplex(Arc<Inner>);
+pub struct Multiplex<T>(Arc<Inner>, PhantomData<fn(T)>);
 
 #[derive(Debug)]
 struct Inner {
@@ -50,7 +61,7 @@ enum Command {
     Gc { tag: Tag, bucket: u64 },
 }
 
-impl Multiplex {
+impl<T> Multiplex<T> {
     pub fn new(
         label: PublicKey,
         committee: Committee,
@@ -70,29 +81,16 @@ impl Multiplex {
         let worker = Worker::new(label, net, cmd_rx, dec_tx, block_tx);
 
         (
-            Self(Arc::new(Inner {
-                cmd: cmd_tx,
-                jh: tokio::spawn(worker.go()),
-            })),
+            Self(
+                Arc::new(Inner {
+                    cmd: cmd_tx,
+                    jh: tokio::spawn(worker.go()),
+                }),
+                PhantomData,
+            ),
             dec_rx,
             block_rx,
         )
-    }
-
-    pub async fn send_decrypt(&self, r: RoundNumber, d: Data) -> Result<(), MultiplexError> {
-        self.0
-            .cmd
-            .send(Command::SendDecrypt { num: r, data: d })
-            .await
-            .map_err(|_| MultiplexError::Closed)
-    }
-
-    pub async fn send_block(&self, b: BlockNumber, d: Data) -> Result<(), MultiplexError> {
-        self.0
-            .cmd
-            .send(Command::SendBlock { num: b, data: d })
-            .await
-            .map_err(|_| MultiplexError::Closed)
     }
 
     pub async fn gc<N: Into<u64>>(&self, t: Tag, n: N) -> Result<(), MultiplexError> {
@@ -102,6 +100,32 @@ impl Multiplex {
                 tag: t,
                 bucket: n.into(),
             })
+            .await
+            .map_err(|_| MultiplexError::Closed)
+    }
+}
+
+impl Multiplex<()> {
+    pub fn cast<T>(self) -> Multiplex<T> {
+        Multiplex(self.0, PhantomData)
+    }
+}
+
+impl Multiplex<Decrypt> {
+    pub async fn send(&self, r: RoundNumber, d: Data) -> Result<(), MultiplexError> {
+        self.0
+            .cmd
+            .send(Command::SendDecrypt { num: r, data: d })
+            .await
+            .map_err(|_| MultiplexError::Closed)
+    }
+}
+
+impl Multiplex<Produce> {
+    pub async fn send(&self, b: BlockNumber, d: Data) -> Result<(), MultiplexError> {
+        self.0
+            .cmd
+            .send(Command::SendBlock { num: b, data: d })
             .await
             .map_err(|_| MultiplexError::Closed)
     }

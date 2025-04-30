@@ -116,7 +116,7 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     producer: BlockProducer,
-    multiplex: Multiplex,
+    multiplex: Multiplex<()>,
     output: Sender<CertifiedBlock>,
     mode: Mode,
 }
@@ -197,10 +197,11 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         // Demultiplexing of Timeboost network messages.
-        let (multiplex, dec_rx, block_rx) =
+        let (mplex, dec_rx, block_rx) =
             Multiplex::new(public_key, committee.clone(), Overlay::new(network));
 
-        let decrypter = Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex.clone());
+        let decrypter =
+            Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, mplex.clone().cast());
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -211,8 +212,8 @@ impl Sequencer {
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.clone()),
-            multiplex,
+            producer: BlockProducer::new(cfg.keypair, committee, block_rx, mplex.clone().cast()),
+            multiplex: mplex,
             output: tx,
             mode: Mode::Passive,
         };
