@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{BLOCK_TAG, BlockInbound, BlockOutbound};
+use crate::multiplex::{BLOCK_TAG, BlockMessage, Multiplex};
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
@@ -48,8 +48,8 @@ impl BlockProducer {
     pub fn new(
         label: Keypair,
         committee: Committee,
-        rx: Receiver<BlockInbound>,
-        tx: Sender<BlockOutbound>,
+        rx: Receiver<BlockMessage>,
+        mplex: Multiplex,
     ) -> Self {
         let (block_tx, block_rx) = channel(MAX_SIZE);
         let (cert_tx, cert_rx) = channel(MAX_SIZE);
@@ -62,7 +62,7 @@ impl BlockProducer {
             blocks: BTreeMap::new(),
             block_tx,
             cert_rx,
-            jh: spawn(worker.go(block_rx, cert_tx, rx, tx)),
+            jh: spawn(worker.go(block_rx, cert_tx, rx, mplex)),
         }
     }
 
@@ -172,15 +172,15 @@ impl Worker {
         mut self,
         mut block_rx: Receiver<WorkerRequest>,
         cert_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<BlockInbound>,
-        obound: Sender<BlockOutbound>,
+        mut ibound: Receiver<BlockMessage>,
+        mplex: Multiplex,
     ) {
         let label = self.keypair.public_key();
         let mut recv_block: (Option<BlockNumber>, Envelope<BlockHash, Validated>);
         loop {
             tokio::select! {
                 val = ibound.recv() => match val {
-                    Some(BlockInbound{src, data}) => {
+                    Some(BlockMessage { src, data }) => {
                         let b = match deserialize::<BlockInfo<Unchecked>>(&data) {
                             Ok(block) => block,
                             Err(err) => {
@@ -222,7 +222,7 @@ impl Worker {
                                 continue;
                             }
                         };
-                        obound.send(BlockOutbound::new(num, data)).await.ok();
+                        mplex.send_block(num, data).await.ok();
                     },
                     None => {
                         debug!(node = %label, "worker request channel closed");

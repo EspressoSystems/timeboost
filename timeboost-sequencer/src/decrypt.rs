@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::MAX_SIZE;
-use crate::multiplex::{DECRYPT_TAG, DecryptInbound, DecryptOutbound};
+use crate::multiplex::{DECRYPT_TAG, DecryptMessage, Multiplex};
 
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
@@ -70,8 +70,8 @@ impl Decrypter {
         label: PublicKey,
         committee: Keyset,
         dec_sk: DecryptionKey,
-        ibound: Receiver<DecryptInbound>,
-        obound: Sender<DecryptOutbound>,
+        ibound: Receiver<DecryptMessage>,
+        mplex: Multiplex,
     ) -> Self {
         let (enc_tx, enc_rx) = channel(MAX_SIZE);
         let (dec_tx, dec_rx) = channel(MAX_SIZE);
@@ -84,7 +84,7 @@ impl Decrypter {
             dec_rx,
             incls: BTreeMap::new(),
             modified: BTreeMap::new(),
-            jh: spawn(decrypter.go(enc_rx, dec_tx, ibound, obound)),
+            jh: spawn(decrypter.go(enc_rx, dec_tx, ibound, mplex)),
         }
     }
 
@@ -287,8 +287,8 @@ impl Worker {
         mut self,
         mut enc_rx: Receiver<WorkerRequest>,
         dec_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<DecryptInbound>,
-        obound: Sender<DecryptOutbound>,
+        mut ibound: Receiver<DecryptMessage>,
+        mplex: Multiplex,
     ) {
         let mut catching_up = true;
         let mut hatched_rounds = BTreeSet::new();
@@ -310,7 +310,7 @@ impl Worker {
             tokio::select! {
                 // received batch of decryption shares from remote node.
                 val = ibound.recv() => match val {
-                    Some(DecryptInbound {src, data}) => {
+                    Some(DecryptMessage { src, data }) => {
                         let s = match deserialize::<ShareInfo>(&data) {
                             Ok(share) => share,
                             Err(e) => {
@@ -363,7 +363,7 @@ impl Worker {
                                         continue;
                                     }
                                 };
-                                if let Err(e) = obound.send(DecryptOutbound::new(round, data)).await {
+                                if let Err(e) = mplex.send_decrypt(round, data).await {
                                     warn!("failed write decrypted message to multiplexer: {:?}", e);
                                     continue;
                                 }
@@ -762,20 +762,19 @@ mod tests {
             )
             .await
             .expect("starting network");
-            let (dec_rx, _, multiplex) = Multiplex::new(
+            let (multiplex, dec_rx, _) = Multiplex::new(
                 sig_key.public_key(),
                 committee.clone(),
                 Overlay::new(network),
             );
-            let tx = multiplex.dec_tx().clone();
-            multiplexers.push(multiplex);
+            multiplexers.push(multiplex.clone());
 
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 keyset.clone(),
                 decryption_keys[i].clone(),
                 dec_rx,
-                tx,
+                multiplex,
             );
             decrypters.push(decrypter);
         }

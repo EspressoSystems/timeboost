@@ -197,16 +197,10 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         // Demultiplexing of Timeboost network messages.
-        let (dec_rx, block_rx, multiplex) =
+        let (multiplex, dec_rx, block_rx) =
             Multiplex::new(public_key, committee.clone(), Overlay::new(network));
 
-        let decrypter = Decrypter::new(
-            public_key,
-            keyset,
-            cfg.dec_sk,
-            dec_rx,
-            multiplex.dec_tx().clone(),
-        );
+        let decrypter = Decrypter::new(public_key, keyset, cfg.dec_sk, dec_rx, multiplex.clone());
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -217,12 +211,7 @@ impl Sequencer {
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(
-                cfg.keypair,
-                committee,
-                block_rx,
-                multiplex.block_tx().clone(),
-            ),
+            producer: BlockProducer::new(cfg.keypair, committee, block_rx, multiplex.clone()),
             multiplex,
             output: tx,
             mode: Mode::Passive,
@@ -348,7 +337,7 @@ impl Task {
                         }
                         let n = num.saturating_sub(MAX_SIZE as u64);
                         if n > 0 {
-                            self.multiplex.gc(multiplex::BLOCK_TAG, n).await;
+                            let _ = self.multiplex.gc(multiplex::BLOCK_TAG, n).await;
                         }
                     }
                     Err(err) => {
@@ -385,7 +374,7 @@ impl Task {
                     Action::Gc(r) => {
                         let n = r.saturating_sub(MAX_SIZE as u64);
                         if n > 0 {
-                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
+                            let _ = self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
                         }
                         actions.push_front(action);
                         break;
@@ -408,7 +397,7 @@ impl Task {
                     Action::Gc(r) => {
                         let n = r.saturating_sub(MAX_SIZE as u64);
                         if n > 0 {
-                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
+                            let _ = self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
                         }
                     }
                     _ => {}

@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use bytes::Bytes;
 use cliquenet::{
     Overlay, PEER_CAPACITY,
-    overlay::{Data, Tag},
+    overlay::{Data, NetworkDown, Tag},
 };
 use multisig::{Committee, PublicKey};
 use sailfish::types::RoundNumber;
@@ -15,50 +17,37 @@ use tracing::{debug, error, trace, warn};
 pub(crate) const DECRYPT_TAG: Tag = Tag::new(0xDE);
 pub(crate) const BLOCK_TAG: Tag = Tag::new(0xB0);
 
-pub struct DecryptOutbound {
-    num: RoundNumber,
-    data: Data,
-}
-
-impl DecryptOutbound {
-    pub fn new(num: RoundNumber, data: Data) -> Self {
-        Self { num, data }
-    }
-}
-
-pub struct DecryptInbound {
+pub struct DecryptMessage {
     pub src: PublicKey,
     pub data: Bytes,
 }
 
-pub struct BlockOutbound {
-    num: BlockNumber,
-    data: Data,
-}
-
-impl BlockOutbound {
-    pub fn new(num: BlockNumber, data: Data) -> Self {
-        Self { num, data }
-    }
-}
-
-pub struct BlockInbound {
+pub struct BlockMessage {
     pub src: PublicKey,
     pub data: Bytes,
 }
+
+#[derive(Debug, Clone)]
+pub struct Multiplex(Arc<Inner>);
 
 #[derive(Debug)]
-pub struct Multiplex {
-    /// Label of the node.
-    label: PublicKey,
-    /// Sender decryption data to the multiplexer.
-    dec_tx: Sender<DecryptOutbound>,
-    /// Sender block data to the multiplexer.
-    block_tx: Sender<BlockOutbound>,
-    /// Sender to signal for gc.
-    gc_tx: Sender<(Tag, u64)>,
+struct Inner {
+    /// Sender of commands to worker.
+    cmd: Sender<Command>,
     /// Join handle for worker.
     jh: JoinHandle<()>,
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        self.jh.abort()
+    }
+}
+
+enum Command {
+    SendDecrypt { num: RoundNumber, data: Data },
+    SendBlock { num: BlockNumber, data: Data },
+    Gc { tag: Tag, bucket: u64 },
 }
 
 impl Multiplex {
@@ -66,49 +55,55 @@ impl Multiplex {
         label: PublicKey,
         committee: Committee,
         net: Overlay,
-    ) -> (Receiver<DecryptInbound>, Receiver<BlockInbound>, Self) {
+    ) -> (Self, Receiver<DecryptMessage>, Receiver<BlockMessage>) {
         let capacity = committee.size().get() * PEER_CAPACITY;
-        // Channels reserved for the decrypter
-        let (dec_itx, dec_irx) = mpsc::channel(capacity);
-        let (dec_otx, dec_orx) = mpsc::channel(capacity);
-        // Channels reserved for the block producer
-        let (block_itx, block_irx) = mpsc::channel(capacity);
-        let (block_otx, block_orx) = mpsc::channel(capacity);
-        // Channel reserved for garbage collection signal.
-        let (gc_tx, gc_rx) = mpsc::channel(capacity);
 
-        let worker = Worker::new(label, net, dec_itx, dec_orx, block_itx, block_orx, gc_rx);
+        // Channel reserved for the decrypter
+        let (dec_tx, dec_rx) = mpsc::channel(capacity);
+
+        // Channel reserved for the block producer
+        let (block_tx, block_rx) = mpsc::channel(capacity);
+
+        // Command channel.
+        let (cmd_tx, cmd_rx) = mpsc::channel(capacity);
+
+        let worker = Worker::new(label, net, cmd_rx, dec_tx, block_tx);
+
         (
-            dec_irx,
-            block_irx,
-            Self {
-                label,
-                dec_tx: dec_otx,
-                block_tx: block_otx,
-                gc_tx,
+            Self(Arc::new(Inner {
+                cmd: cmd_tx,
                 jh: tokio::spawn(worker.go()),
-            },
+            })),
+            dec_rx,
+            block_rx,
         )
     }
 
-    pub fn dec_tx(&self) -> &Sender<DecryptOutbound> {
-        &self.dec_tx
+    pub async fn send_decrypt(&self, r: RoundNumber, d: Data) -> Result<(), MultiplexError> {
+        self.0
+            .cmd
+            .send(Command::SendDecrypt { num: r, data: d })
+            .await
+            .map_err(|_| MultiplexError::Closed)
     }
 
-    pub fn block_tx(&self) -> &Sender<BlockOutbound> {
-        &self.block_tx
+    pub async fn send_block(&self, b: BlockNumber, d: Data) -> Result<(), MultiplexError> {
+        self.0
+            .cmd
+            .send(Command::SendBlock { num: b, data: d })
+            .await
+            .map_err(|_| MultiplexError::Closed)
     }
 
-    pub async fn gc<N: Into<u64>>(&mut self, t: Tag, n: N) {
-        if let Err(err) = self.gc_tx.send((t, n.into())).await {
-            error!(node = %self.label, %err, "failed to send gc signal");
-        }
-    }
-}
-
-impl Drop for Multiplex {
-    fn drop(&mut self) {
-        self.jh.abort()
+    pub async fn gc<N: Into<u64>>(&self, t: Tag, n: N) -> Result<(), MultiplexError> {
+        self.0
+            .cmd
+            .send(Command::Gc {
+                tag: t,
+                bucket: n.into(),
+            })
+            .await
+            .map_err(|_| MultiplexError::Closed)
     }
 }
 
@@ -117,86 +112,94 @@ struct Worker {
     label: PublicKey,
     /// Overlay network.
     net: Overlay,
+    cmd: Receiver<Command>,
     /// Send inbound messages to decrypter.
-    dec_itx: Sender<DecryptInbound>,
-    /// Receive obound messages from decrypter.
-    dec_orx: Receiver<DecryptOutbound>,
+    dec_tx: Sender<DecryptMessage>,
     /// Send inbound messages to block producer.
-    block_itx: Sender<BlockInbound>,
-    /// Receive obound messages from block producer.
-    block_orx: Receiver<BlockOutbound>,
-    /// Receiver for gc signals.
-    gc_rx: Receiver<(Tag, u64)>,
+    block_tx: Sender<BlockMessage>,
 }
 
 impl Worker {
     pub fn new(
         label: PublicKey,
         net: Overlay,
-        dec_itx: Sender<DecryptInbound>,
-        dec_orx: Receiver<DecryptOutbound>,
-        block_itx: Sender<BlockInbound>,
-        block_orx: Receiver<BlockOutbound>,
-        gc_rx: Receiver<(Tag, u64)>,
+        cmd: Receiver<Command>,
+        dec_tx: Sender<DecryptMessage>,
+        block_tx: Sender<BlockMessage>,
     ) -> Self {
         Self {
             label,
             net,
-            dec_itx,
-            dec_orx,
-            block_itx,
-            block_orx,
-            gc_rx,
+            cmd,
+            dec_tx,
+            block_tx,
         }
     }
     pub async fn go(mut self) {
         loop {
             tokio::select! {
-                Some(DecryptOutbound { num, data }) = self.dec_orx.recv() => {
-                    if let Err(e) = self.net.broadcast(*num, data).await {
-                        error!(node = %self.label, err = %e, "network broadcast error");
-                        return;
-                    }
-                }
-                Some(BlockOutbound { num, data }) = self.block_orx.recv() => {
-                    if let Err(e) = self.net.broadcast(*num, data).await {
-                        error!(node = %self.label, err = %e, "network broadcast error");
-                        return;
-                    }
-                }
-
-                Ok((src, data, tag)) = self.net.receive() => {
-                    if src == self.label {
-                        continue;
-                    }
-                    match tag {
-                        DECRYPT_TAG => {
-                            if let Err(err) = self.dec_itx.send(DecryptInbound { src, data }).await {
-                                error!(node = %self.label, %err, "failed to send decrypt message");
-                                return;
-                            }
+                cmd = self.cmd.recv() => match cmd {
+                    Some(Command::SendDecrypt { num, data }) => {
+                        if let Err(e) = self.net.broadcast(*num, data).await {
+                            error!(node = %self.label, err = %e, "network broadcast error");
+                            return;
                         }
-                        BLOCK_TAG => {
-                            if let Err(err) = self.block_itx.send(BlockInbound { src, data }).await {
-                                error!(node = %self.label, %err, "failed to send block message");
-                                return;
-                            }
+                    }
+                    Some(Command::SendBlock { num, data }) => {
+                        if let Err(e) = self.net.broadcast(*num, data).await {
+                            error!(node = %self.label, err = %e, "network broadcast error");
+                            return;
                         }
-                        _ => {
-                            warn!(tag = u8::from(tag), "failed to classify message");
+                    }
+                    Some(Command::Gc { tag, bucket }) => {
+                        trace!(node = %self.label, %tag, %bucket, "received gc signal");
+                        self.net.gc(tag, bucket);
+                    }
+                    None => {
+                        debug!(node = %self.label, "command channel closed");
+                        return
+                    }
+                },
+                data = self.net.receive() => match data {
+                    Ok((src, data, tag)) => {
+                        if src == self.label {
                             continue;
                         }
+                        match tag {
+                            DECRYPT_TAG => {
+                                let msg = DecryptMessage { src, data };
+                                if let Err(err) = self.dec_tx.send(msg).await {
+                                    error!(node = %self.label, %err, "failed to send decrypt message");
+                                    return;
+                                }
+                            }
+                            BLOCK_TAG => {
+                                let msg = BlockMessage { src, data };
+                                if let Err(err) = self.block_tx.send(msg).await {
+                                    error!(node = %self.label, %err, "failed to send block message");
+                                    return;
+                                }
+                            }
+                            _ => {
+                                warn!(node = %self.label, %tag, "failed to classify message");
+                                continue;
+                            }
+                        }
                     }
-                }
-                Some((t, n)) = self.gc_rx.recv() => {
-                    trace!(node = %self.label, tag = %t, bucket = %n, "received gc signal");
-                    self.net.gc(t, n);
-                }
-                else => {
-                    debug!(node = %self.label, "network shutdown detected");
-                    return;
+                    Err(e) => {
+                        let _: NetworkDown = e;
+                        debug!(node = %self.label, "network shutdown detected");
+                        return
+                    }
                 }
             }
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum MultiplexError {
+    #[error("multiplexer closed")]
+    Closed,
 }
