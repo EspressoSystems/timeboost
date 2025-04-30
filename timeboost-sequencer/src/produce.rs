@@ -22,6 +22,7 @@ enum Status {
     Uncertified(Block),
     Certified(Certificate<BlockHash>, Block),
 }
+
 struct WorkerRequest(BlockNumber, BlockHash);
 
 struct WorkerResponse(BlockNumber, Certificate<BlockHash>);
@@ -101,12 +102,7 @@ impl BlockProducer {
                 .map_err(|_| ProducerError::Shutdown)?;
             self.parent = Some((num, hash));
 
-            trace!(
-                node  = %self.label.public_key(),
-                num   = %num,
-                block = ?hash,
-                "certifying"
-            );
+            trace!(node = %self.label.public_key(), %num, block = ?hash, "certifying");
         }
 
         Ok(())
@@ -125,7 +121,6 @@ impl BlockProducer {
                     *status = Status::Certified(cert, block.to_owned());
                 }
             };
-
             if let Some((block_info, status)) = self.blocks.pop_first() {
                 if let Status::Certified(cert, block) = status {
                     return Ok(CertifiedBlock::new(num, cert, block));
@@ -153,7 +148,6 @@ impl Drop for BlockProducer {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum CertStatus {
     Unknown,
-    Signed,
     Certified,
 }
 
@@ -193,8 +187,8 @@ impl Worker {
                     Some(BlockInbound{src, data}) => {
                         let b = match deserialize::<BlockInfo<Unchecked>>(&data) {
                             Ok(block) => block,
-                            Err(e) => {
-                                warn!("deserialization error: {}", e);
+                            Err(err) => {
+                                warn!(node = %label, %err, "deserialization error");
                                 continue;
                             }
                         };
@@ -221,18 +215,14 @@ impl Worker {
 
                 val = block_rx.recv() => match val {
                     Some(WorkerRequest(num, hash)) => {
-                        trace!(
-                            node = %label,
-                            hash = ?hash,
-                            "produced"
-                        );
+                        trace!(node = %label, %num, hash = ?hash, "produced");
                         let env = Envelope::signed(hash, &self.keypair, false);
                         recv_block = (Some(num), env.clone());
                         let b = BlockInfo::new(num, env);
                         let data = match serialize(&b) {
                             Ok(data) => data,
-                            Err(e) => {
-                                warn!(node = %label, "serialization error: {}", e);
+                            Err(err) => {
+                                warn!(node = %label, %err, %num, ?hash, "serialization error");
                                 continue;
                             }
                         };
@@ -255,14 +245,14 @@ impl Worker {
                     num: None,
                     status: CertStatus::Unknown,
                 });
+
+            if tracker.status == CertStatus::Certified {
+                continue;
+            }
+
             if let Some(num) = block_num {
                 // Block number provided => block produced/signed by the local node.
                 tracker.num = Some(num);
-                tracker.status = CertStatus::Signed;
-            }
-
-            if tracker.status != CertStatus::Signed {
-                continue;
             }
 
             match tracker.votes.add(block_hash.into_signed()) {

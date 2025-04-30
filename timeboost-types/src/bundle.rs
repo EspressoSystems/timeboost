@@ -114,7 +114,7 @@ impl<'a> Arbitrary<'a> for Bundle {
 
 impl Committable for Bundle {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("PriorityBundle")
+        RawCommitmentBuilder::new("Bundle")
             .field("chain", self.chain_id().commit())
             .field("epoch", self.epoch().commit())
             .var_size_field("data", self.data())
@@ -280,7 +280,7 @@ impl SignedPriorityBundle {
 
 impl Committable for SignedPriorityBundle {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("PriorityBundle")
+        RawCommitmentBuilder::new("SignedPriorityBundle")
             .field("bundle", self.bundle.commit())
             .field("auction", self.auction.commit())
             .field("seqno", self.seqno.commit())
