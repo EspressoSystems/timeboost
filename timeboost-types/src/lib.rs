@@ -14,7 +14,7 @@ pub mod math;
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
     Address, Bundle, BundleVariant, ChainId, PriorityBundle, SignedPriorityBundle, Signer,
-    SortedTransaction, Transaction,
+    Transaction,
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};

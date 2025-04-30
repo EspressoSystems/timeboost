@@ -5,7 +5,7 @@ use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, 
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use timeboost_types::{
-    Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, SortedTransaction,
+    Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Timestamp, Transaction,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -31,7 +31,7 @@ pub struct BlockProducer {
     /// Keypair of the node.
     label: Keypair,
     /// Incoming transactions
-    queue: VecDeque<SortedTransaction>,
+    queue: VecDeque<(Timestamp, Transaction)>,
     /// Last block produced.
     parent: Option<(BlockNumber, BlockHash)>,
     /// Blocks subject to certification.
@@ -66,7 +66,7 @@ impl BlockProducer {
         }
     }
 
-    pub async fn enqueue(&mut self, tx: SortedTransaction) -> Result<()> {
+    pub async fn enqueue(&mut self, tx: (Timestamp, Transaction)) -> Result<()> {
         self.queue.push_back(tx);
 
         // TODO: produce blocks deterministically according to spec.
@@ -76,11 +76,7 @@ impl BlockProducer {
         const BLOCK_SIZE: usize = 10;
 
         if self.queue.len() >= BLOCK_SIZE {
-            let txs: Vec<_> = self
-                .queue
-                .drain(..BLOCK_SIZE)
-                .map(|t| t.into_tx())
-                .collect();
+            let txs: Vec<_> = self.queue.drain(..BLOCK_SIZE).map(|(_, t)| t).collect();
 
             let (num, block) = match self.parent {
                 Some((num, parent)) => {

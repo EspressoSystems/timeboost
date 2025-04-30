@@ -216,7 +216,7 @@ impl Sequencer {
             sailfish: Coordinator::new(rbc, consensus),
             includer: Includer::new(committee.clone(), cfg.index),
             decrypter,
-            sorter: Sorter::new(),
+            sorter: Sorter::new(label),
             producer: BlockProducer::new(
                 cfg.keypair,
                 committee,
