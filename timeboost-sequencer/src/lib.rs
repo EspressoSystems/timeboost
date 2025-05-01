@@ -228,7 +228,7 @@ impl Sequencer {
             sailfish,
             includer: Includer::new(committee, cfg.index),
             decrypter,
-            sorter: Sorter::new(),
+            sorter: Sorter::new(public_key),
             producer,
             output: tx,
             mode: Mode::Passive,
