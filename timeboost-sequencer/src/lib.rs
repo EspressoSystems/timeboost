@@ -1,7 +1,6 @@
 mod decrypt;
 mod include;
 mod metrics;
-mod multiplex;
 mod produce;
 mod queue;
 mod sort;
@@ -28,16 +27,12 @@ use tracing::{error, info, warn};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
-use multiplex::Multiplex;
+use produce::ProducerError;
 use queue::BundleQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
-
-/// Channel capacity between the Decrypter/Producer and Worker.
-/// Effectively, the length of the leash between Sailfish and Timeboost.
-const MAX_SIZE: usize = 100;
 
 #[derive(Debug)]
 pub struct SequencerConfig {
@@ -116,7 +111,6 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     producer: BlockProducer,
-    multiplex: Multiplex,
     output: Sender<CertifiedBlock>,
     mode: Mode,
 }
@@ -154,82 +148,94 @@ impl Sequencer {
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let network = Network::create(
-            cfg.bind.clone(),
-            cfg.keypair.clone(),
-            cfg.peers.clone(),
-            net_metrics,
-        )
-        .await?;
-
-        let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone()).recover(cfg.recover);
-        let rbc = Rbc::new(Overlay::new(network), rcf.with_metrics(rbc_metrics));
-
-        let label = cfg.keypair.public_key();
+        let public_key = cfg.keypair.public_key();
 
         let queue = BundleQueue::new(cfg.priority_addr, cfg.index, seq_metrics.clone());
-        let consensus = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
-            .with_metrics(cons_metrics);
-
-        let keyset = Keyset::new(1, committee.size());
-
-        let peers: Vec<_> = cfg
-            .peers
-            .iter()
-            .map(|(k, a)| (*k, a.clone().with_port(a.port() + 250)))
-            .collect();
-
-        let addr = {
-            let p = cfg.bind.port() + 250;
-            cfg.bind.with_port(p)
-        };
-
-        let public_key = cfg.keypair.public_key();
-        let network = Network::create(
-            addr,
-            cfg.keypair.clone(), // same auth
-            peers,
-            NetworkMetrics::default(),
-        )
-        .await?;
-
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
-        // Demultiplexing of Timeboost network messages.
-        let (dec_rx, block_rx, multiplex) =
-            Multiplex::new(public_key, committee.clone(), Overlay::new(network));
+        let sailfish = {
+            let net = Network::create(
+                cfg.bind.clone(),
+                cfg.keypair.clone(),
+                cfg.peers.clone(),
+                net_metrics,
+            )
+            .await?;
 
-        let decrypter = Decrypter::new(
-            public_key,
-            keyset,
-            cfg.dec_sk,
-            dec_rx,
-            multiplex.dec_tx().clone(),
-        );
+            let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone()).recover(cfg.recover);
+            let rbc = Rbc::new(Overlay::new(net), rcf.with_metrics(rbc_metrics));
+
+            let cons = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
+                .with_metrics(cons_metrics);
+
+            Coordinator::new(rbc, cons)
+        };
+
+        let decrypter = {
+            let keyset = Keyset::new(1, committee.size());
+
+            let peers: Vec<_> = cfg
+                .peers
+                .iter()
+                .map(|(k, a)| (*k, a.clone().with_port(a.port() + 250)))
+                .collect();
+
+            let addr = {
+                let p = cfg.bind.port() + 250;
+                cfg.bind.clone().with_port(p)
+            };
+
+            let net = Network::create(
+                addr,
+                cfg.keypair.clone(), // same auth
+                peers,
+                NetworkMetrics::default(),
+            )
+            .await?;
+
+            Decrypter::new(public_key, Overlay::new(net), keyset, cfg.dec_sk)
+        };
+
+        let producer = {
+            let peers: Vec<_> = cfg
+                .peers
+                .iter()
+                .map(|(k, a)| (*k, a.clone().with_port(a.port() + 500)))
+                .collect();
+
+            let addr = {
+                let p = cfg.bind.port() + 500;
+                cfg.bind.with_port(p)
+            };
+
+            let net = Network::create(
+                addr,
+                cfg.keypair.clone(), // same auth
+                peers,
+                NetworkMetrics::default(),
+            )
+            .await?;
+
+            BlockProducer::new(cfg.keypair, Overlay::new(net), committee.clone())
+        };
 
         let (tx, rx) = mpsc::channel(1024);
 
         let task = Task {
-            label,
+            label: public_key,
             bundles: queue.clone(),
-            sailfish: Coordinator::new(rbc, consensus),
-            includer: Includer::new(committee.clone(), cfg.index),
+            sailfish,
+            includer: Includer::new(committee, cfg.index),
             decrypter,
             sorter: Sorter::new(),
-            producer: BlockProducer::new(
-                cfg.keypair,
-                committee,
-                block_rx,
-                multiplex.block_tx().clone(),
-            ),
-            multiplex,
+            producer,
             output: tx,
             mode: Mode::Passive,
         };
 
         Ok(Self {
-            label,
+            label: public_key,
             task: spawn(task.go()),
             bundles: queue,
             output: rx,
@@ -346,10 +352,7 @@ impl Task {
                             error!(node = %self.label, %err, "failed to send block");
                             return Err(TimeboostError::ChannelClosed);
                         }
-                        let n = num.saturating_sub(MAX_SIZE as u64);
-                        if n > 0 {
-                            self.multiplex.gc(multiplex::BLOCK_TAG, n).await;
-                        }
+                        self.producer.gc(num).await?
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);
@@ -383,10 +386,7 @@ impl Task {
                         }
                     }
                     Action::Gc(r) => {
-                        let n = r.saturating_sub(MAX_SIZE as u64);
-                        if n > 0 {
-                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
-                        }
+                        self.decrypter.gc(r).await?;
                         actions.push_front(action);
                         break;
                     }
@@ -406,10 +406,7 @@ impl Task {
                         break;
                     }
                     Action::Gc(r) => {
-                        let n = r.saturating_sub(MAX_SIZE as u64);
-                        if n > 0 {
-                            self.multiplex.gc(multiplex::DECRYPT_TAG, n).await;
-                        }
+                        self.decrypter.gc(r).await?;
                     }
                     _ => {}
                 }
@@ -461,4 +458,7 @@ pub enum TimeboostError {
 
     #[error("decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
+
+    #[error("producer error: {0}")]
+    Produce(#[from] ProducerError),
 }
