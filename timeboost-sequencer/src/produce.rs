@@ -14,6 +14,8 @@ use tracing::{debug, error, trace, warn};
 
 type Result<T> = std::result::Result<T, ProducerError>;
 
+const MAX_ROUNDS: usize = 100;
+
 #[derive(Clone)]
 enum Status {
     Uncertified(Block),
@@ -46,8 +48,8 @@ pub struct BlockProducer {
 
 impl BlockProducer {
     pub fn new(label: Keypair, net: Overlay, committee: Committee) -> Self {
-        let (block_tx, block_rx) = channel(100);
-        let (cert_tx, cert_rx) = channel(100);
+        let (block_tx, block_rx) = channel(MAX_ROUNDS);
+        let (cert_tx, cert_rx) = channel(MAX_ROUNDS);
         let worker = Worker::new(label.clone(), net, committee.clone());
 
         Self {
@@ -124,10 +126,10 @@ impl BlockProducer {
                     return Ok(CertifiedBlock::new(num, cert, block));
                 } else {
                     debug!(
-                        node = %self.label.public_key(),
-                        "received certified block {} but the next block is {}",
-                        num,
-                        block_info.0
+                        node  = %self.label.public_key(),
+                        block = %num,
+                        next  = %block_info.0,
+                        "received future certified block",
                     );
                     self.blocks.insert(block_info, status);
                 }
@@ -193,10 +195,10 @@ impl Worker {
                         let num = b.number();
                         let env = b.into_envelope();
                         trace!(
-                            node   = %label,
-                            num    = %num,
-                            vote   = ?env.data(),
-                            from   = %src,
+                            node = %label,
+                            num  = %num,
+                            vote = ?env.data(),
+                            from = %src,
                             "receive"
                         );
                         if let Some(e) = env.validated(&self.committee) {
@@ -207,7 +209,7 @@ impl Worker {
                     }
                     Err(e) => {
                         let _: NetworkDown = e;
-                        debug!(node = %label, "network is down");
+                        debug!(node = %label, "network down");
                         return;
                     }
                 },
@@ -228,7 +230,7 @@ impl Worker {
                         self.net.broadcast(*num, data).await.ok();
                     },
                     Some(WorkerCommand::Gc(num)) => {
-                        let num = num.saturating_sub(100);
+                        let num = num.saturating_sub(MAX_ROUNDS as u64);
                         if num > 0 {
                             self.net.gc(num)
                         }
@@ -275,8 +277,8 @@ impl Worker {
                         tracker.status = CertStatus::Certified;
                     }
                 }
-                Err(_) => {
-                    warn!(node = %label, "failed to add vote to tracker");
+                Err(err) => {
+                    warn!(node = %label, %err, "failed to add vote to tracker");
                 }
                 _ => {}
             }

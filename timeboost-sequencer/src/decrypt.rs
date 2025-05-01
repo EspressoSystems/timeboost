@@ -179,10 +179,10 @@ impl Decrypter {
                     return Ok(incl);
                 } else {
                     debug!(
-                        node = %self.label,
-                        "received decrypted txns for r={} but the next round is r={}",
-                        r,
-                        round
+                        node  = %self.label,
+                        round = %r,
+                        next  = %round,
+                        "received decrypted txns future round",
                     );
                     self.incls.insert(round, status);
                 }
@@ -316,8 +316,8 @@ impl Worker {
                         }
                         let s = match deserialize::<ShareInfo>(&data) {
                             Ok(share) => share,
-                            Err(e) => {
-                                warn!("deserialization error: {}", e);
+                            Err(err) => {
+                                warn!(node = %self.label, %err, "deserialization error");
                                 continue;
                             }
                         };
@@ -336,8 +336,8 @@ impl Worker {
                         }
 
                         r = s.round();
-                        if let Err(e) = self.insert_shares(s) {
-                            warn!("failed to insert shares from remote: {:?}", e);
+                        if let Err(err) = self.insert_shares(s) {
+                            warn!(node = %self.label, %err, "failed to insert shares from remote");
                         }
                     },
                     Err(e) => {
@@ -362,8 +362,8 @@ impl Worker {
                             Ok(s) => {
                                 let data = match serialize(&s) {
                                     Ok(data) => data,
-                                    Err(e) => {
-                                        warn!(node = %self.label, "serialization error: {}", e);
+                                    Err(err) => {
+                                        warn!(node = %self.label, %err, "serialization error");
                                         continue;
                                     }
                                 };
@@ -372,8 +372,8 @@ impl Worker {
                                     debug!(node = %self.label, "network down");
                                     return
                                 }
-                                if let Err(e) = self.insert_shares(s) {
-                                    warn!("failed to insert local shares: {:?}", e);
+                                if let Err(err) = self.insert_shares(s) {
+                                    warn!(node = %self.label, %err, "failed to insert local shares");
                                     continue;
                                 }
                                 if catching_up {
@@ -388,8 +388,8 @@ impl Worker {
                                     catching_up = false;
                                 }
                             }
-                            Err(e) => {
-                                warn!("failed to decrypt data: {:?}", e);
+                            Err(err) => {
+                                warn!(node = %self.label, %err, "failed to decrypt data");
                                 continue;
                             }
                         }
@@ -405,7 +405,7 @@ impl Worker {
                         }
                     }
                     None => {
-                        debug!(node = %self.label, "decrypter shutdown detected");
+                        debug!(node = %self.label, "decrypter shutdown");
                         return;
                     }
                 },
@@ -414,21 +414,21 @@ impl Worker {
             // check for hatched ciphertexts
             match self.hatch(r) {
                 Ok(Some((dec_round, dec_items))) => {
-                    if let Err(e) = dec_tx.send(WorkerResponse(dec_round, dec_items)).await {
-                        error!("failed to send decrypted data: {:?}", e);
+                    if let Err(err) = dec_tx.send(WorkerResponse(dec_round, dec_items)).await {
+                        error!(node = %self.label, %err, "failed to send decrypted data");
                         return;
                     }
                     hatched_rounds.insert(r);
                 }
-                Err(e) => match e {
+                Err(err) => match err {
                     DecryptError::MissingCiphertext(cid) => {
-                        debug!(node = %self.label, round  = %r, "missing ciphertext for cid: {:?}", cid);
+                        debug!(node = %self.label, round  = %r, ?cid, "missing ciphertext");
                     }
                     DecryptError::MissingIndex(cid) => {
-                        warn!(node = %self.label, round  = %r, "missing index mapping for cid: {:?}", cid);
+                        warn!(node = %self.label, round  = %r, ?cid, "missing index mapping");
                     }
                     _ => {
-                        warn!(node = %self.label, round  = %r, "failed to decrypt shares for round {}: {:?}", r, e);
+                        warn!(node = %self.label, round  = %r, %err, "failed to decrypt shares");
                     }
                 },
                 _ => {}
