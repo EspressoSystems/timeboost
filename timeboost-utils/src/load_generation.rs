@@ -1,4 +1,4 @@
-use arbitrary::{Arbitrary, Unstructured};
+use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};

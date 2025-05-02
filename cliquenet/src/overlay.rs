@@ -23,9 +23,6 @@ type Result<T> = std::result::Result<T, NetworkDown>;
 /// Max. bucket number.
 pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
 
-/// Default tag.
-pub const DEFAULT_TAG: Tag = Tag::new(0);
-
 /// `Overlay` wraps a [`Network`] and returns acknowledgements to senders.
 ///
 /// It also retries messages until either an acknowledgement has been received
@@ -69,16 +66,11 @@ impl Drop for Overlay {
 #[derive(Debug, Clone)]
 pub struct Data {
     bytes: BytesMut,
-    tag: Tag,
 }
 
 /// Buckets conceptionally contain messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
 pub struct Bucket(u64);
-
-/// A tag that can be attached to `Data` to allow classification.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
-pub struct Tag(u8);
 
 /// Messages are associated with IDs and put into buckets.
 ///
@@ -87,7 +79,7 @@ pub struct Tag(u8);
 /// Buckets often correspond to rounds elsewhere.
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::type_complexity)]
-struct Buffer(Arc<Mutex<BTreeMap<(Tag, Bucket), HashMap<Id, Message>>>>);
+struct Buffer(Arc<Mutex<BTreeMap<Bucket, HashMap<Id, Message>>>>);
 
 #[derive(Debug)]
 struct Message {
@@ -108,8 +100,6 @@ struct Trailer {
     bucket: Bucket,
     /// The message ID.
     id: Id,
-    /// The tag of a message.
-    tag: Tag,
 }
 
 impl Overlay {
@@ -142,7 +132,7 @@ impl Overlay {
         self.send(b.into(), Some(to), data).await
     }
 
-    pub async fn receive(&mut self) -> Result<(PublicKey, Bytes, Tag)> {
+    pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
         loop {
             let (src, mut bytes) = self.net.receive().await.map_err(|_| NetworkDown(()))?;
 
@@ -165,12 +155,12 @@ impl Overlay {
                     .send((Some(src), None, trailer_bytes))
                     .await
                     .map_err(|_| NetworkDown(()))?;
-                return Ok((src, bytes, trailer.tag));
+                return Ok((src, bytes));
             }
 
             let mut messages = self.buffer.0.lock();
 
-            if let Some(buckets) = messages.get_mut(&(trailer.tag, trailer.bucket)) {
+            if let Some(buckets) = messages.get_mut(&trailer.bucket) {
                 if let Some(m) = buckets.get_mut(&trailer.id) {
                     m.remaining.retain(|k| *k != src);
                     if m.remaining.is_empty() {
@@ -181,17 +171,14 @@ impl Overlay {
         }
     }
 
-    pub fn gc<B: Into<Bucket>>(&mut self, tag: Tag, bucket: B) {
+    pub fn gc<B: Into<Bucket>>(&mut self, bucket: B) {
         let bucket = bucket.into();
-        self.buffer
-            .0
-            .lock()
-            .retain(|(t, b), _| *t == tag && *b >= bucket);
+        self.buffer.0.lock().retain(|b, _| *b >= bucket);
     }
 
-    pub fn rm<B: Into<Bucket>>(&mut self, tag: Tag, bucket: B, id: Id) {
-        let key = (tag, bucket.into());
-        if let Some(messages) = self.buffer.0.lock().get_mut(&key) {
+    pub fn rm<B: Into<Bucket>>(&mut self, bucket: B, id: Id) {
+        let bucket = bucket.into();
+        if let Some(messages) = self.buffer.0.lock().get_mut(&bucket) {
             messages.remove(&id);
         }
     }
@@ -199,11 +186,7 @@ impl Overlay {
     async fn send(&mut self, b: Bucket, to: Option<PublicKey>, data: Data) -> Result<Id> {
         let id = self.next_id();
 
-        let trailer = Trailer {
-            bucket: b,
-            id,
-            tag: data.tag,
-        };
+        let trailer = Trailer { bucket: b, id };
 
         let trailer_bytes = trailer.encode(&mut self.encoded);
 
@@ -229,20 +212,15 @@ impl Overlay {
             self.parties.clone()
         };
 
-        self.buffer
-            .0
-            .lock()
-            .entry((data.tag, b))
-            .or_default()
-            .insert(
-                id,
-                Message {
-                    data: msg,
-                    time: now,
-                    retries: 0,
-                    remaining: rem,
-                },
-            );
+        self.buffer.0.lock().entry(b).or_default().insert(
+            id,
+            Message {
+                data: msg,
+                time: now,
+                retries: 0,
+                remaining: rem,
+            },
+        );
 
         Ok(id)
     }
@@ -321,17 +299,14 @@ pub enum DataError {
     MaxSize,
 }
 
-impl TryFrom<(Tag, BytesMut)> for Data {
+impl TryFrom<BytesMut> for Data {
     type Error = DataError;
 
-    fn try_from(val: (Tag, BytesMut)) -> std::result::Result<Self, Self::Error> {
-        if val.1.len() > crate::MAX_MESSAGE_SIZE {
+    fn try_from(val: BytesMut) -> std::result::Result<Self, Self::Error> {
+        if val.len() > crate::MAX_MESSAGE_SIZE {
             return Err(DataError::MaxSize);
         }
-        Ok(Self {
-            tag: val.0,
-            bytes: val.1,
-        })
+        Ok(Self { bytes: val })
     }
 }
 
@@ -352,51 +327,6 @@ impl From<u64> for Bucket {
 impl From<Bucket> for u64 {
     fn from(val: Bucket) -> Self {
         val.0
-    }
-}
-
-impl From<u8> for Tag {
-    fn from(val: u8) -> Self {
-        Self(val)
-    }
-}
-
-impl From<Tag> for u8 {
-    fn from(val: Tag) -> Self {
-        val.0
-    }
-}
-
-impl From<Tag> for u64 {
-    fn from(val: Tag) -> Self {
-        val.0.into()
-    }
-}
-
-impl Data {
-    pub fn tag(&self) -> Tag {
-        self.tag
-    }
-
-    pub fn set_tag(&mut self, t: Tag) {
-        self.tag = t
-    }
-
-    pub fn with_tag(mut self, t: Tag) -> Self {
-        self.tag = t;
-        self
-    }
-}
-
-impl Tag {
-    pub const fn new(n: u8) -> Self {
-        Self(n)
-    }
-}
-
-impl fmt::Display for Tag {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
 
