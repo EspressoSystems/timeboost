@@ -15,7 +15,7 @@ use timeboost_crypto::KeysetId;
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
 
-use crate::{Bytes, Epoch, SeqNo};
+use crate::{Bytes, Epoch, SeqNo, Timestamp};
 
 const DOMAIN: &str = "TIMEBOOST_BID";
 
@@ -310,6 +310,7 @@ impl Committable for ChainId {
 pub struct Transaction {
     tx: TxEnvelope,
     addr: Address,
+    time: Timestamp,
 }
 
 // Boilerplate for ensuring trait compatibility
@@ -355,9 +356,10 @@ impl Encodable2718 for Transaction {
 }
 
 impl Transaction {
-    pub fn decode(bytes: &[u8]) -> Result<Self, InvalidTransaction> {
+    pub fn decode(t: Timestamp, bytes: &[u8]) -> Result<Self, InvalidTransaction> {
         let mut buf = bytes;
-        TxEnvelope::decode(&mut buf)?.try_into()
+        let tx = TxEnvelope::decode(&mut buf)?;
+        Self::try_from((t, tx))
     }
 
     pub fn address(&self) -> &Address {
@@ -366,18 +368,21 @@ impl Transaction {
 
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
-        TxEnvelope::arbitrary(u)?.try_into()
+        let tx = TxEnvelope::arbitrary(u)?;
+        let tm = Timestamp::arbitrary(u)?;
+        Self::try_from((tm, tx))
     }
 }
 
-impl TryFrom<TxEnvelope> for Transaction {
+impl TryFrom<(Timestamp, TxEnvelope)> for Transaction {
     type Error = InvalidTransaction;
 
-    fn try_from(tx: TxEnvelope) -> Result<Self, Self::Error> {
-        let addr = tx.recover_signer()?;
+    fn try_from(val: (Timestamp, TxEnvelope)) -> Result<Self, Self::Error> {
+        let addr = val.1.recover_signer()?;
         Ok(Self {
-            tx,
+            tx: val.1,
             addr: addr.into(),
+            time: val.0,
         })
     }
 }

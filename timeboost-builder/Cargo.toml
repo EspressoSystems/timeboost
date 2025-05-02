@@ -1,0 +1,30 @@
+[package]
+name = "timeboost-builder"
+description = "Timeboost block builder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+alloy-consensus = { workspace = true }
+blake3 = { workspace = true }
+bincode = { workspace = true }
+bimap = { workspace = true }
+bytes = { workspace = true }
+cliquenet = { path = "../cliquenet" }
+ethereum_ssz = { workspace = true }
+metrics = { path = "../metrics" }
+multisig = { path = "../multisig" }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-types = { path = "../timeboost-types" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+ark-std = { workspace = true }
+bs58 = { workspace = true }
+portpicker = { workspace = true }
+timeboost-utils = { path = "../timeboost-utils" }

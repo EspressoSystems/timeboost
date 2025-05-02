@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use cliquenet::Address;
 use metrics::NoMetrics;
 use multisig::Keypair;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
@@ -21,7 +22,7 @@ use tracing::{debug, info, warn};
 
 type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
-const NUM_OF_BLOCKS: usize = 50;
+const NUM_OF_TRANSACTIONS: usize = 500;
 const RECOVER_INDEX: usize = 2;
 
 /// Run some timboost sequencer instances and check that they produce the
@@ -56,17 +57,17 @@ async fn transaction_order() {
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut i = 0;
-            while i < NUM_OF_BLOCKS {
+            while i < NUM_OF_TRANSACTIONS {
                 select! {
                     t = brx.recv() => match t {
                         Ok(trx) => s.add_bundles(once(trx)),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    b = s.next_block() => {
-                        debug!(node = %s.public_key(), block = %i);
+                    t = s.next_transaction() => {
+                        debug!(node = %s.public_key(), transactions = %i);
                         i += 1;
-                        tx.send(b.unwrap()).unwrap()
+                        tx.send(t.unwrap()).unwrap()
                     }
                 }
             }
@@ -78,11 +79,11 @@ async fn transaction_order() {
 
     tasks.spawn(gen_bundles(dec.0, bcast.clone()));
 
-    for _ in 0..NUM_OF_BLOCKS {
+    for _ in 0..NUM_OF_TRANSACTIONS {
         let first = rxs[0].recv().await.unwrap();
         for rx in &mut rxs[1..] {
-            let b = rx.recv().await.unwrap();
-            assert_eq!(first.cert().data(), b.cert().data())
+            let t = rx.recv().await.unwrap();
+            assert_eq!(first.hash(), t.hash())
         }
     }
 
@@ -97,22 +98,36 @@ fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<Sequencer
     let parts = shares
         .iter()
         .cloned()
-        .map(|share| {
-            let p = portpicker::pick_unused_port().unwrap();
-            (Keypair::generate(), (Ipv4Addr::LOCALHOST, p), share)
+        .map(|s| {
+            let p1 = portpicker::pick_unused_port().unwrap();
+            let p2 = portpicker::pick_unused_port().unwrap();
+            let a1 = Address::from((Ipv4Addr::LOCALHOST, p1));
+            let a2 = Address::from((Ipv4Addr::LOCALHOST, p2));
+            (Keypair::generate(), a1, a2, s)
         })
         .collect::<Vec<_>>();
 
-    let peers = parts.iter().map(|(k, a, _)| (k.public_key(), *a));
+    let sailfish_peers = parts
+        .iter()
+        .map(|(kp, sa, ..)| (kp.public_key(), sa.clone()))
+        .collect::<Vec<_>>();
+
+    let decrypt_peers = parts
+        .iter()
+        .map(|(kp, _, da, ..)| (kp.public_key(), da.clone()))
+        .collect::<Vec<_>>();
 
     let mut cfgs = Vec::new();
-    for (i, (kpair, addr, share)) in parts.clone().into_iter().enumerate() {
-        let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
-        let cfg = SequencerConfig::new(kpair, dkey, addr)
-            .with_peers(peers.clone())
+
+    for (i, (kpair, sa, da, share)) in parts.iter().cloned().enumerate() {
+        let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
+        let cfg = SequencerConfig::new(kpair, dkey, sa, da)
+            .with_sailfish_peers(sailfish_peers.clone())
+            .with_decrypt_peers(decrypt_peers.clone())
             .recover(i == RECOVER_INDEX);
         cfgs.push(cfg)
     }
+
     cfgs
 }
 
