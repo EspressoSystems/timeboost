@@ -10,6 +10,8 @@ pub trait ThresholdEncScheme {
     type CombKey;
     type KeyShare;
     type Plaintext;
+    // see <https://en.wikipedia.org/wiki/Authenticated_encryption#Authenticated_encryption_with_associated_data>
+    type AssociatedData;
     type Ciphertext;
     type DecShare;
 
@@ -26,12 +28,14 @@ pub trait ThresholdEncScheme {
         kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Ciphertext, ThresholdEncError>;
 
     /// Partial decrypt a `ciphertext` using key share `sk`.
     fn decrypt(
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, ThresholdEncError>;
 
     /// Combine a set of `dec_shares` using `comb_key` into a plaintext message.
@@ -40,6 +44,7 @@ pub trait ThresholdEncScheme {
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError>;
 }
 

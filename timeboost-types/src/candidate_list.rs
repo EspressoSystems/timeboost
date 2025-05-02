@@ -113,12 +113,12 @@ impl Committable for CandidateList {
             .0
             .priority
             .iter()
-            .fold(builder, |b, pb| b.var_size_bytes(pb.commit().as_ref()));
+            .fold(builder, |b, pb| b.var_size_bytes(pb.digest()));
         builder = builder.u64_field("regular", self.regular_bundles().len() as u64);
         self.0
             .regular
             .iter()
-            .fold(builder, |b, rb| b.var_size_bytes(rb.commit().as_ref()))
+            .fold(builder, |b, rb| b.var_size_bytes(rb.digest()))
             .finalize()
     }
 }

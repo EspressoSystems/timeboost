@@ -7,12 +7,13 @@ use alloy_primitives::B256;
 use alloy_rlp::Decodable;
 use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
-#[cfg(feature = "arbitrary")]
-use arbitrary::{Arbitrary, Result, Unstructured};
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
+
+#[cfg(feature = "arbitrary")]
+use arbitrary::{Arbitrary, Result, Unstructured};
 
 use crate::{Bytes, Epoch, SeqNo};
 
@@ -82,16 +83,14 @@ impl Bundle {
         self.kid = Some(kid);
         self.update_hash()
     }
-}
 
-#[cfg(feature = "arbitrary")]
-impl<'a> Arbitrary<'a> for Bundle {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
         use alloy_rlp::Encodable;
 
         let t: Transaction = loop {
-            let candidate: Transaction = Arbitrary::arbitrary(u)?;
-            if let TxEnvelope::Eip4844(ref eip4844) = candidate.0 {
+            let candidate = Transaction::arbitrary(u)?;
+            if let TxEnvelope::Eip4844(ref eip4844) = candidate.tx {
                 if eip4844.tx().clone().try_into_4844_with_sidecar().is_ok() {
                     // Avoid generating 4844 Tx with blobs of size 131 KB
                     continue;
@@ -114,7 +113,7 @@ impl<'a> Arbitrary<'a> for Bundle {
 
 impl Committable for Bundle {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("PriorityBundle")
+        RawCommitmentBuilder::new("Bundle")
             .field("chain", self.chain_id().commit())
             .field("epoch", self.epoch().commit())
             .var_size_field("data", self.data())
@@ -266,7 +265,7 @@ impl SignedPriorityBundle {
     pub fn arbitrary(
         u: &mut arbitrary::Unstructured<'_>,
         max_seqno: u64,
-    ) -> arbitrary::Result<SignedPriorityBundle> {
+    ) -> Result<SignedPriorityBundle, InvalidTransaction> {
         let bundle = Bundle::arbitrary(u)?;
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(1..=max_seqno)?);
@@ -280,7 +279,7 @@ impl SignedPriorityBundle {
 
 impl Committable for SignedPriorityBundle {
     fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("PriorityBundle")
+        RawCommitmentBuilder::new("SignedPriorityBundle")
             .field("bundle", self.bundle.commit())
             .field("auction", self.auction.commit())
             .field("seqno", self.seqno.commit())
@@ -308,72 +307,86 @@ impl Committable for ChainId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Transaction(TxEnvelope);
+pub struct Transaction {
+    tx: TxEnvelope,
+    addr: Address,
+}
 
 // Boilerplate for ensuring trait compatibility
 impl Typed2718 for Transaction {
     fn ty(&self) -> u8 {
-        self.0.ty()
+        self.tx.ty()
     }
 }
 
 impl Encodable2718 for Transaction {
     fn encode_2718_len(&self) -> usize {
-        self.0.encode_2718_len()
+        self.tx.encode_2718_len()
     }
 
     fn encode_2718(&self, out: &mut dyn BufMut) {
-        self.0.encode_2718(out);
+        self.tx.encode_2718(out);
     }
 
     fn type_flag(&self) -> Option<u8> {
-        self.0.type_flag()
+        self.tx.type_flag()
     }
 
     fn encoded_2718(&self) -> Vec<u8> {
-        self.0.encoded_2718()
+        self.tx.encoded_2718()
     }
 
     fn trie_hash(&self) -> B256 {
-        self.0.trie_hash()
+        self.tx.trie_hash()
     }
 
     fn seal(self) -> Sealed<Self> {
-        let hash = self.0.trie_hash();
+        let hash = self.tx.trie_hash();
         Sealed::new_unchecked(self, hash)
     }
 
     fn network_len(&self) -> usize {
-        self.0.network_len()
+        self.tx.network_len()
     }
 
     fn network_encode(&self, out: &mut dyn BufMut) {
-        self.0.network_encode(out);
+        self.tx.network_encode(out);
     }
 }
 
 impl Transaction {
-    pub fn decode(bytes: &[u8]) -> Result<Self, alloy_rlp::Error> {
+    pub fn decode(bytes: &[u8]) -> Result<Self, InvalidTransaction> {
         let mut buf = bytes;
-        TxEnvelope::decode(&mut buf).map(Transaction)
+        TxEnvelope::decode(&mut buf)?.try_into()
+    }
+
+    pub fn address(&self) -> &Address {
+        &self.addr
+    }
+
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
+        TxEnvelope::arbitrary(u)?.try_into()
+    }
+}
+
+impl TryFrom<TxEnvelope> for Transaction {
+    type Error = InvalidTransaction;
+
+    fn try_from(tx: TxEnvelope) -> Result<Self, Self::Error> {
+        let addr = tx.recover_signer()?;
+        Ok(Self {
+            tx,
+            addr: addr.into(),
+        })
     }
 }
 
 impl std::ops::Deref for Transaction {
     type Target = TxEnvelope;
+
     fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Transaction {
-    pub fn new(tx: TxEnvelope) -> Self {
-        Transaction(tx)
-    }
-
-    pub fn tx(&self) -> &TxEnvelope {
-        &self.0
+        &self.tx
     }
 }
 
@@ -381,6 +394,14 @@ impl Transaction {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Address(alloy_primitives::Address);
+
+impl std::ops::Deref for Address {
+    type Target = alloy_primitives::Address;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl Default for Address {
     fn default() -> Self {
@@ -456,6 +477,20 @@ impl From<alloy_signer_local::PrivateKeySigner> for Signer {
     fn from(signer: alloy_signer_local::PrivateKeySigner) -> Self {
         Signer(signer)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum InvalidTransaction {
+    #[error("invalid signature: {0}")]
+    Signature(#[from] alloy_primitives::SignatureError),
+
+    #[error("invalid rlp encoding: {0}")]
+    Rlp(#[from] alloy_rlp::Error),
+
+    #[cfg(feature = "arbitrary")]
+    #[error("arbitrary error: {0}")]
+    Arbitrary(#[from] arbitrary::Error),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

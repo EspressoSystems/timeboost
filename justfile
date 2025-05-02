@@ -2,6 +2,8 @@ set export
 
 export RUSTDOCFLAGS := '-D warnings'
 
+LOG_LEVELS := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
+
 ####################
 ###BUILD COMMANDS###
 ####################
@@ -86,8 +88,8 @@ test *ARGS:
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
-  RUST_LOG=sailfish=debug,tests=debug cargo nextest run --workspace --retries 3 {{ARGS}}
-  RUST_LOG=sailfish=debug,tests=debug cargo test --doc {{ARGS}}
+  env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace --retries 3 {{ARGS}}
+  env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
 test-individually:
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \

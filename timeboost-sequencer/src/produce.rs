@@ -1,6 +1,6 @@
 use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
-use cliquenet::overlay::{Data, DataError};
+use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
@@ -12,10 +12,9 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
-use crate::MAX_SIZE;
-use crate::multiplex::{BLOCK_TAG, BlockInbound, BlockOutbound};
-
 type Result<T> = std::result::Result<T, ProducerError>;
+
+const MAX_ROUNDS: usize = 100;
 
 #[derive(Clone)]
 enum Status {
@@ -23,9 +22,12 @@ enum Status {
     Certified(Certificate<BlockHash>, Block),
 }
 
-struct WorkerRequest(BlockNumber, BlockHash);
-
 struct WorkerResponse(BlockNumber, Certificate<BlockHash>);
+
+enum WorkerCommand {
+    Send(BlockNumber, BlockHash),
+    Gc(BlockNumber),
+}
 
 pub struct BlockProducer {
     /// Keypair of the node.
@@ -37,7 +39,7 @@ pub struct BlockProducer {
     /// Blocks subject to certification.
     blocks: BTreeMap<(BlockNumber, BlockHash), Status>,
     /// Sender for worker request.
-    block_tx: Sender<WorkerRequest>,
+    block_tx: Sender<WorkerCommand>,
     /// Receiver for worker response.
     cert_rx: Receiver<WorkerResponse>,
     /// Worker task handle.
@@ -45,15 +47,10 @@ pub struct BlockProducer {
 }
 
 impl BlockProducer {
-    pub fn new(
-        label: Keypair,
-        committee: Committee,
-        rx: Receiver<BlockInbound>,
-        tx: Sender<BlockOutbound>,
-    ) -> Self {
-        let (block_tx, block_rx) = channel(MAX_SIZE);
-        let (cert_tx, cert_rx) = channel(MAX_SIZE);
-        let worker = Worker::new(label.clone(), committee.clone());
+    pub fn new(label: Keypair, net: Overlay, committee: Committee) -> Self {
+        let (block_tx, block_rx) = channel(MAX_ROUNDS);
+        let (cert_tx, cert_rx) = channel(MAX_ROUNDS);
+        let worker = Worker::new(label.clone(), net, committee.clone());
 
         Self {
             label,
@@ -62,8 +59,15 @@ impl BlockProducer {
             blocks: BTreeMap::new(),
             block_tx,
             cert_rx,
-            jh: spawn(worker.go(block_rx, cert_tx, rx, tx)),
+            jh: spawn(worker.go(block_rx, cert_tx)),
         }
+    }
+
+    pub async fn gc(&mut self, r: BlockNumber) -> Result<()> {
+        self.block_tx
+            .send(WorkerCommand::Gc(r))
+            .await
+            .map_err(|_| ProducerError::Shutdown)
     }
 
     pub async fn enqueue(&mut self, tx: (Timestamp, Transaction)) -> Result<()> {
@@ -93,7 +97,7 @@ impl BlockProducer {
             self.blocks
                 .insert((num, hash), Status::Uncertified(block.clone()));
             self.block_tx
-                .send(WorkerRequest(num, hash))
+                .send(WorkerCommand::Send(num, hash))
                 .await
                 .map_err(|_| ProducerError::Shutdown)?;
             self.parent = Some((num, hash));
@@ -122,10 +126,10 @@ impl BlockProducer {
                     return Ok(CertifiedBlock::new(num, cert, block));
                 } else {
                     debug!(
-                        node = %self.label.public_key(),
-                        "received certified block {} but the next block is {}",
-                        num,
-                        block_info.0
+                        node  = %self.label.public_key(),
+                        block = %num,
+                        next  = %block_info.0,
+                        "received future certified block",
                     );
                     self.blocks.insert(block_info, status);
                 }
@@ -155,14 +159,16 @@ struct Tracker {
 
 struct Worker {
     keypair: Keypair,
+    net: Overlay,
     committee: Committee,
     trackers: BTreeMap<BlockHash, Tracker>,
 }
 
 impl Worker {
-    pub fn new(keypair: Keypair, committee: Committee) -> Self {
+    pub fn new(keypair: Keypair, net: Overlay, committee: Committee) -> Self {
         Self {
             keypair,
+            net,
             committee,
             trackers: BTreeMap::new(),
         }
@@ -170,17 +176,15 @@ impl Worker {
 
     pub async fn go(
         mut self,
-        mut block_rx: Receiver<WorkerRequest>,
+        mut block_rx: Receiver<WorkerCommand>,
         cert_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<BlockInbound>,
-        obound: Sender<BlockOutbound>,
     ) {
         let label = self.keypair.public_key();
         let mut recv_block: (Option<BlockNumber>, Envelope<BlockHash, Validated>);
         loop {
             tokio::select! {
-                val = ibound.recv() => match val {
-                    Some(BlockInbound{src, data}) => {
+                val = self.net.receive() => match val {
+                    Ok((src, data)) => {
                         let b = match deserialize::<BlockInfo<Unchecked>>(&data) {
                             Ok(block) => block,
                             Err(err) => {
@@ -191,10 +195,10 @@ impl Worker {
                         let num = b.number();
                         let env = b.into_envelope();
                         trace!(
-                            node   = %label,
-                            num    = %num,
-                            vote   = ?env.data(),
-                            from   = %src,
+                            node = %label,
+                            num  = %num,
+                            vote = ?env.data(),
+                            from = %src,
                             "receive"
                         );
                         if let Some(e) = env.validated(&self.committee) {
@@ -203,14 +207,15 @@ impl Worker {
                             continue;
                         }
                     }
-                    None => {
-                        debug!(node = %label, "multiplexer shutdown detected");
+                    Err(e) => {
+                        let _: NetworkDown = e;
+                        debug!(node = %label, "network down");
                         return;
                     }
                 },
 
                 val = block_rx.recv() => match val {
-                    Some(WorkerRequest(num, hash)) => {
+                    Some(WorkerCommand::Send(num, hash)) => {
                         trace!(node = %label, %num, hash = ?hash, "produced");
                         let env = Envelope::signed(hash, &self.keypair, false);
                         recv_block = (Some(num), env.clone());
@@ -222,8 +227,15 @@ impl Worker {
                                 continue;
                             }
                         };
-                        obound.send(BlockOutbound::new(num, data)).await.ok();
+                        self.net.broadcast(*num, data).await.ok();
                     },
+                    Some(WorkerCommand::Gc(num)) => {
+                        let num = num.saturating_sub(MAX_ROUNDS as u64);
+                        if num > 0 {
+                            self.net.gc(num)
+                        }
+                        continue;
+                    }
                     None => {
                         debug!(node = %label, "worker request channel closed");
                         return;
@@ -265,8 +277,8 @@ impl Worker {
                         tracker.status = CertStatus::Certified;
                     }
                 }
-                Err(_) => {
-                    warn!(node = %label, "failed to add vote to tracker");
+                Err(err) => {
+                    warn!(node = %label, %err, "failed to add vote to tracker");
                 }
                 _ => {}
             }
@@ -278,7 +290,7 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
     let bytes = b.into_inner();
-    Ok(Data::try_from((BLOCK_TAG, bytes))?)
+    Ok(Data::try_from(bytes)?)
 }
 
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
