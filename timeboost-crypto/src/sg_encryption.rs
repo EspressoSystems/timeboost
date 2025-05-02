@@ -7,7 +7,7 @@ use ark_ff::{
 };
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
-use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
+use ark_poly::{DenseUVPolynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
@@ -66,12 +66,8 @@ where
             .ok_or_else(|| ThresholdEncError::Internal(anyhow!("Unable to create eval domain")))?;
 
         let mut alpha_0 = poly[0];
-        let evals: Vec<_> = (0..committee_size)
-            .map(|i| {
-                let x = domain.element(i);
-                poly.evaluate(&x)
-            })
-            .collect();
+        let mut evals: Vec<_> = domain.fft(&poly);
+        evals.truncate(committee_size); // FFT might produce to next_power_of_two(committee_size)
 
         let u_0 = generator * alpha_0;
         let pub_key = PublicKey { key: u_0 };
