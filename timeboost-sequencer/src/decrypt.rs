@@ -1,7 +1,7 @@
 use bimap::BiMap;
 use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
-use cliquenet::overlay::{Data, DataError};
+use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use multisig::PublicKey;
 
 use sailfish::types::RoundNumber;
@@ -16,13 +16,12 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
-use crate::MAX_SIZE;
-use crate::multiplex::{DECRYPT_TAG, DecryptInbound, DecryptOutbound};
-
 type Result<T> = std::result::Result<T, DecryptError>;
 type StateDiff = BTreeMap<RoundNumber, (Vec<usize>, Vec<usize>)>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
+
+const MAX_ROUNDS: usize = 100;
 
 /// Status of the inclusion list
 enum Status {
@@ -44,7 +43,10 @@ struct EncryptedItem(KeysetId, Bytes);
 /// Decrypted item (Worker -> Decrypter)
 struct DecryptedItem(Bytes);
 
-struct WorkerRequest(RoundNumber, Vec<EncryptedItem>);
+enum WorkerCommand {
+    Decrypt(RoundNumber, Vec<EncryptedItem>),
+    Gc(RoundNumber),
+}
 
 struct WorkerResponse(RoundNumber, Vec<DecryptedItem>);
 
@@ -56,7 +58,7 @@ pub struct Decrypter {
     /// Store encrypted state info.
     modified: StateDiff,
     /// Send worker commands.
-    enc_tx: Sender<WorkerRequest>,
+    enc_tx: Sender<WorkerCommand>,
     /// Send decrypted data.
     dec_tx: Sender<WorkerResponse>,
     /// Receive decrypted data.
@@ -66,16 +68,10 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(
-        label: PublicKey,
-        committee: Keyset,
-        dec_sk: DecryptionKey,
-        ibound: Receiver<DecryptInbound>,
-        obound: Sender<DecryptOutbound>,
-    ) -> Self {
-        let (enc_tx, enc_rx) = channel(MAX_SIZE);
-        let (dec_tx, dec_rx) = channel(MAX_SIZE);
-        let decrypter = Worker::new(label, committee, dec_sk);
+    pub fn new(label: PublicKey, net: Overlay, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+        let (enc_tx, enc_rx) = channel(MAX_ROUNDS);
+        let (dec_tx, dec_rx) = channel(MAX_ROUNDS);
+        let decrypter = Worker::new(label, net, committee, dec_sk);
 
         Self {
             label,
@@ -84,12 +80,19 @@ impl Decrypter {
             dec_rx,
             incls: BTreeMap::new(),
             modified: BTreeMap::new(),
-            jh: spawn(decrypter.go(enc_rx, dec_tx, ibound, obound)),
+            jh: spawn(decrypter.go(enc_rx, dec_tx)),
         }
     }
 
     pub fn has_capacity(&mut self) -> bool {
         self.dec_tx.capacity() > 0 && self.enc_tx.capacity() > 0
+    }
+
+    pub async fn gc(&mut self, r: RoundNumber) -> Result<()> {
+        self.enc_tx
+            .send(WorkerCommand::Gc(r))
+            .await
+            .map_err(|_| DecryptError::Shutdown)
     }
 
     /// Identifies encrypted bundles in inclusion lists,
@@ -136,7 +139,7 @@ impl Decrypter {
                 .map_err(|_| DecryptError::Shutdown)?;
         } else {
             self.enc_tx
-                .send(WorkerRequest(round, encrypted_data))
+                .send(WorkerCommand::Decrypt(round, encrypted_data))
                 .await
                 .map_err(|_| DecryptError::Shutdown)?;
             // bookkeeping for reassembling inclusion list.
@@ -176,10 +179,10 @@ impl Decrypter {
                     return Ok(incl);
                 } else {
                     debug!(
-                        node = %self.label,
-                        "received decrypted txns for r={} but the next round is r={}",
-                        r,
-                        round
+                        node  = %self.label,
+                        round = %r,
+                        next  = %round,
+                        "received decrypted txns future round",
                     );
                     self.incls.insert(round, status);
                 }
@@ -258,12 +261,14 @@ impl Drop for Decrypter {
 }
 
 type Incubator = BTreeMap<DecShareKey, BTreeMap<u32, DecShare>>;
+
 /// Worker is responsible for "hatching" ciphertexts.
 ///
 /// When ciphertexts in a round have received t+1 decryption shares
 /// the shares can be combined to decrypt the ciphertext (hatching).
 struct Worker {
     label: PublicKey,
+    net: Overlay,
     committee: Keyset,
     dec_sk: DecryptionKey,
     cid2idx: HashMap<Nonce, usize>,
@@ -272,9 +277,10 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(label: PublicKey, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Overlay, committee: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
             label,
+            net,
             committee,
             dec_sk,
             cid2idx: HashMap::default(),
@@ -283,13 +289,7 @@ impl Worker {
         }
     }
 
-    pub async fn go(
-        mut self,
-        mut enc_rx: Receiver<WorkerRequest>,
-        dec_tx: Sender<WorkerResponse>,
-        mut ibound: Receiver<DecryptInbound>,
-        obound: Sender<DecryptOutbound>,
-    ) {
+    pub async fn go(mut self, mut enc_rx: Receiver<WorkerCommand>, dec_tx: Sender<WorkerResponse>) {
         let mut catching_up = true;
         let mut hatched_rounds = BTreeSet::new();
 
@@ -309,12 +309,15 @@ impl Worker {
             );
             tokio::select! {
                 // received batch of decryption shares from remote node.
-                val = ibound.recv() => match val {
-                    Some(DecryptInbound {src, data}) => {
+                val = self.net.receive() => match val {
+                    Ok((src, data)) => {
+                        if src == self.label {
+                            continue;
+                        }
                         let s = match deserialize::<ShareInfo>(&data) {
                             Ok(share) => share,
-                            Err(e) => {
-                                warn!("deserialization error: {}", e);
+                            Err(err) => {
+                                warn!(node = %self.label, %err, "deserialization error");
                                 continue;
                             }
                         };
@@ -333,19 +336,20 @@ impl Worker {
                         }
 
                         r = s.round();
-                        if let Err(e) = self.insert_shares(s) {
-                            warn!("failed to insert shares from remote: {:?}", e);
+                        if let Err(err) = self.insert_shares(s) {
+                            warn!(node = %self.label, %err, "failed to insert shares from remote");
                         }
                     },
-                    None => {
-                        debug!(node = %self.label, "multiplexer shutdown detected");
+                    Err(e) => {
+                        let _: NetworkDown = e;
+                        debug!(node = %self.label, "network down");
                         return;
                     }
                 },
 
                 // received batch of encrypted data from local inclusion list.
                 val = enc_rx.recv() => match val {
-                    Some(WorkerRequest(round, enc_data)) => {
+                    Some(WorkerCommand::Decrypt(round, enc_data)) => {
                         trace!(
                             node  = %self.label,
                             round = %round,
@@ -358,17 +362,18 @@ impl Worker {
                             Ok(s) => {
                                 let data = match serialize(&s) {
                                     Ok(data) => data,
-                                    Err(e) => {
-                                        warn!(node = %self.label, "serialization error: {}", e);
+                                    Err(err) => {
+                                        warn!(node = %self.label, %err, "serialization error");
                                         continue;
                                     }
                                 };
-                                if let Err(e) = obound.send(DecryptOutbound::new(round, data)).await {
-                                    warn!("failed write decrypted message to multiplexer: {:?}", e);
-                                    continue;
+                                if let Err(e) = self.net.broadcast(*round, data).await {
+                                    let _: NetworkDown = e;
+                                    debug!(node = %self.label, "network down");
+                                    return
                                 }
-                                if let Err(e) = self.insert_shares(s) {
-                                    warn!("failed to insert local shares: {:?}", e);
+                                if let Err(err) = self.insert_shares(s) {
+                                    warn!(node = %self.label, %err, "failed to insert local shares");
                                     continue;
                                 }
                                 if catching_up {
@@ -383,14 +388,24 @@ impl Worker {
                                     catching_up = false;
                                 }
                             }
-                            Err(e) => {
-                                warn!("failed to decrypt data: {:?}", e);
+                            Err(err) => {
+                                warn!(node = %self.label, %err, "failed to decrypt data");
                                 continue;
                             }
                         }
                     }
+                    Some(WorkerCommand::Gc(round)) => {
+                        let round = round.saturating_sub(MAX_ROUNDS as u64);
+                        // gc only if activity in the incubator.
+                        if round > 0 && !r.is_genesis() {
+                            trace!(node = %self.label, round, "gc");
+                            self.net.gc(round);
+                            hatched_rounds.retain(|r| round <= **r);
+                            continue;
+                        }
+                    }
                     None => {
-                        debug!(node = %self.label, "decrypter shutdown detected");
+                        debug!(node = %self.label, "decrypter shutdown");
                         return;
                     }
                 },
@@ -399,21 +414,21 @@ impl Worker {
             // check for hatched ciphertexts
             match self.hatch(r) {
                 Ok(Some((dec_round, dec_items))) => {
-                    if let Err(e) = dec_tx.send(WorkerResponse(dec_round, dec_items)).await {
-                        error!("failed to send decrypted data: {:?}", e);
+                    if let Err(err) = dec_tx.send(WorkerResponse(dec_round, dec_items)).await {
+                        error!(node = %self.label, %err, "failed to send decrypted data");
                         return;
                     }
                     hatched_rounds.insert(r);
                 }
-                Err(e) => match e {
+                Err(err) => match err {
                     DecryptError::MissingCiphertext(cid) => {
-                        debug!(node = %self.label, round  = %r, "missing ciphertext for cid: {:?}", cid);
+                        debug!(node = %self.label, round  = %r, ?cid, "missing ciphertext");
                     }
                     DecryptError::MissingIndex(cid) => {
-                        warn!(node = %self.label, round  = %r, "missing index mapping for cid: {:?}", cid);
+                        warn!(node = %self.label, round  = %r, ?cid, "missing index mapping");
                     }
                     _ => {
-                        warn!(node = %self.label, round  = %r, "failed to decrypt shares for round {}: {:?}", r, e);
+                        warn!(node = %self.label, round  = %r, %err, "failed to decrypt shares");
                     }
                 },
                 _ => {}
@@ -539,7 +554,7 @@ impl Worker {
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(Data::try_from((DECRYPT_TAG, b.into_inner()))?)
+    Ok(Data::try_from(b.into_inner())?)
 }
 
 fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
@@ -593,7 +608,7 @@ mod tests {
 
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::{Committee, SecretKey};
+    use multisig::SecretKey;
     use sailfish::types::RoundNumber;
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
@@ -604,7 +619,7 @@ mod tests {
     };
     use tracing::warn;
 
-    use crate::{decrypt::Decrypter, multiplex::Multiplex};
+    use crate::decrypt::Decrypter;
 
     #[tokio::test]
     async fn test_with_encrypted_data() {
@@ -614,7 +629,7 @@ mod tests {
         let encryption_key: PublicKey<_> =
             decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
 
-        let (mut decrypters, mut _multiplexers) = setup(keyset.clone()).await;
+        let mut decrypters = setup(keyset.clone()).await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
@@ -697,7 +712,7 @@ mod tests {
         }
     }
 
-    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<Multiplex>) {
+    async fn setup(keyset: Keyset) -> Vec<Decrypter> {
         let signature_private_keys = [
             "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
             "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
@@ -743,16 +758,6 @@ mod tests {
             })
             .collect();
 
-        let committee = Committee::new(
-            peers
-                .iter()
-                .map(|(k, _)| *k)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
-        );
-
-        // Create multiplexer and decrypter for each node
-        let mut multiplexers = Vec::new();
         let mut decrypters = Vec::new();
         for i in 0..usize::from(keyset.size()) {
             let sig_key = signature_keys[i].clone();
@@ -766,26 +771,18 @@ mod tests {
             )
             .await
             .expect("starting network");
-            let (dec_rx, _, multiplex) = Multiplex::new(
-                sig_key.public_key(),
-                committee.clone(),
-                Overlay::new(network),
-            );
-            let tx = multiplex.dec_tx().clone();
-            multiplexers.push(multiplex);
 
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
+                Overlay::new(network),
                 keyset.clone(),
                 decryption_keys[i].clone(),
-                dec_rx,
-                tx,
             );
             decrypters.push(decrypter);
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-        (decrypters, multiplexers)
+        decrypters
     }
 
     fn decode_bs58(encoded: &str) -> Vec<u8> {
