@@ -441,6 +441,7 @@ impl Worker {
             let dec_share = <DecryptionScheme as ThresholdEncScheme>::decrypt(
                 self.dec_sk.privkey(),
                 &ciphertext,
+                &vec![],
             )
             .map_err(DecryptError::Decryption)?;
 
@@ -509,6 +510,7 @@ impl Worker {
                     self.dec_sk.combkey(),
                     shares.values().collect::<Vec<_>>(),
                     ciphertext,
+                    &vec![],
                 )
                 .map_err(DecryptError::Decryption)?;
                 to_remove.push(*k.cid());
@@ -624,6 +626,7 @@ mod tests {
             &keyset.id(),
             &encryption_key,
             &ptx_plaintext,
+            &vec![],
         )
         .unwrap();
         let tx_ciphertext = DecryptionScheme::encrypt(
@@ -631,6 +634,7 @@ mod tests {
             &keyset.id(),
             &encryption_key,
             &tx_plaintext,
+            &vec![],
         )
         .unwrap();
         let ptx_ciphertext_bytes =

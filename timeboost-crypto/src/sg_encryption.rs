@@ -1,4 +1,4 @@
-use aes_gcm::{AeadCore, Aes256Gcm};
+use aes_gcm::{AeadCore, Aes256Gcm, aead};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
@@ -50,6 +50,7 @@ where
     type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
     type Plaintext = Plaintext;
+    type AssociatedData = Vec<u8>;
     type Ciphertext = Ciphertext<C>;
     type DecShare = DecShare<C>;
 
@@ -94,6 +95,7 @@ where
         kid: &KeysetId,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Ciphertext, ThresholdEncError> {
         let beta = C::ScalarField::rand(rng);
         let generator = C::generator();
@@ -110,9 +112,13 @@ where
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
         let nonce = Nonce::from(Aes256Gcm::generate_nonce(OsRng));
-        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), message.0.as_ref()).map_err(
-            |e| ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e)),
-        )?;
+        let payload = aead::Payload {
+            msg: &message.0,
+            aad,
+        };
+        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), payload).map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
+        })?;
         let u_hat = hash_to_curve::<C, H>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
@@ -135,7 +141,10 @@ where
     fn decrypt(
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
+        _aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, ThresholdEncError> {
+        // NOTE: our scheme can optionally reject decryption request based on the `aad` value
+        // e.g. `aad` includes an invalid credential, coming from an unauthorized prying combiner
         let generator = C::generator();
         let alpha = sk.share;
         let (v, e, w_hat, pi) = (
@@ -169,6 +178,7 @@ where
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = committee.size.get();
         let threshold = committee.threshold().get();
@@ -247,7 +257,8 @@ where
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, data.as_ref());
+        let payload = aead::Payload { msg: &data, aad };
+        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, payload);
         plaintext
             .map(Plaintext)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Decryption failed: {:?}", e)))
@@ -320,24 +331,42 @@ mod test {
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
+        let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let check_message =
-            ShoupGennaro::<G, H, D>::combine(&committee, &comb_key, dec_shares_refs, &ciphertext)
-                .unwrap();
+        let check_message = ShoupGennaro::<G, H, D>::combine(
+            &committee,
+            &comb_key,
+            dec_shares_refs.clone(),
+            &ciphertext,
+            &aad,
+        )
+        .unwrap();
         assert_eq!(
             message, check_message.0,
             "encrypted message:{:?} should be the same as the output of combine: {:?}",
             message, check_message.0
+        );
+
+        // make sure that wrong associated data will fail decryption
+        assert!(
+            ShoupGennaro::<G, H, D>::combine(
+                &committee,
+                &comb_key,
+                dec_shares_refs,
+                &ciphertext,
+                b"cred~bad".to_vec().as_ref(),
+            )
+            .is_err()
         );
     }
 
@@ -350,21 +379,27 @@ mod test {
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
+        let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
 
         let threshold = committee.threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .take(threshold - 1) // not enough shares to combine
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let result =
-            ShoupGennaro::<G, H, D>::combine(&committee, &comb_key, dec_shares_refs, &ciphertext);
+        let result = ShoupGennaro::<G, H, D>::combine(
+            &committee,
+            &comb_key,
+            dec_shares_refs,
+            &ciphertext,
+            &aad,
+        );
         assert!(
             result.is_err(),
             "Should fail to combine; insufficient amount of shares"
@@ -380,12 +415,13 @@ mod test {
         let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
+        let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext).unwrap();
+            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
 
         let mut dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
+            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
@@ -397,6 +433,7 @@ mod test {
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
+            &aad,
         )
         .unwrap();
         assert_eq!(
@@ -419,6 +456,7 @@ mod test {
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
+            &aad,
         );
         assert!(
             result.is_err(),
@@ -432,6 +470,7 @@ mod test {
             &comb_key,
             dec_shares.iter().collect(),
             &ciphertext,
+            &aad,
         );
         assert!(
             result.is_ok(),
