@@ -2,7 +2,7 @@ use aes_gcm::{AeadCore, Aes256Gcm, aead};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
-    One, PrimeField, UniformRand, Zero,
+    One, PrimeField, UniformRand, batch_inversion,
     field_hashers::{DefaultFieldHasher, HashToField},
 };
 use ark_poly::EvaluationDomain;
@@ -225,43 +225,53 @@ where
             .map(|share| domain.element(share.index as usize))
             .collect::<Vec<_>>();
 
-        // Calculating lambdas
-        let mut nom = vec![C::ScalarField::one(); threshold];
-        let mut denom = vec![C::ScalarField::one(); threshold];
-        let mut l = vec![C::ScalarField::zero(); threshold];
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..threshold {
-            let x_i = x[i];
-            for j in 0..threshold {
-                if j == i {
-                    continue;
-                } else {
-                    let x_j = x[j];
-                    nom[i] *= C::ScalarField::zero() - x_j;
-                    denom[i] *= x_i - x_j;
+        // Calculate lagrange coefficients using barycentric form
+        let l = {
+            // l(0) = \prod {0-x_i} is common to all basis
+            let l_common = x[..threshold]
+                .iter()
+                .fold(C::ScalarField::one(), |acc, x_i| acc * (-*x_i));
+
+            // w: barycentric weights
+            let mut w = vec![C::ScalarField::one(); threshold];
+            for i in 0..threshold {
+                for j in 0..threshold {
+                    if i != j {
+                        w[i] *= x[i] - x[j];
+                    }
                 }
             }
-            l[i] = nom[i] / denom[i];
-        }
+            batch_inversion(&mut w);
+
+            x.iter()
+                .zip(w.iter())
+                .map(|(x_i, w_i)| l_common * w_i / (-*x_i))
+                .collect::<Vec<_>>()
+        };
 
         // Lagrange interpolation in the exponent
-        let mut w = C::zero();
-        for d in 0..threshold {
-            let w_i = dec_shares[d].w;
-            let l_i = l[d];
-            w += w_i * l_i;
-        }
+        let w = C::msm(
+            &dec_shares[..threshold]
+                .iter()
+                .map(|share| share.w.into_affine())
+                .collect::<Vec<_>>(),
+            &l,
+        )
+        .map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Interpolate in the exponent failed: {:?}", e))
+        })?;
 
         // Hash to symmetric key `k`
         let key = hash_to_key::<C, H>(v, w, committee.id.into())
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
+
         let payload = aead::Payload { msg: &data, aad };
-        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, payload);
-        plaintext
-            .map(Plaintext)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Decryption failed: {:?}", e)))
+        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, payload).map_err(|e| {
+            ThresholdEncError::Internal(anyhow!("Symmetric decrypt failed: {:?}", e))
+        })?;
+        Ok(Plaintext(plaintext))
     }
 }
 
