@@ -15,6 +15,7 @@ use sha2::Sha256;
 use spongefish::DigestBridge;
 use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
@@ -101,7 +102,7 @@ pub struct PublicKey<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct KeyShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,

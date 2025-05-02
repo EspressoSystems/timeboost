@@ -2,26 +2,27 @@ use aes_gcm::{AeadCore, Aes256Gcm};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
-    One, PrimeField, UniformRand, Zero,
     field_hashers::{DefaultFieldHasher, HashToField},
+    One, PrimeField, UniformRand, Zero,
 };
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
-use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
-use ark_std::rand::Rng;
+use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
 use ark_std::rand::rngs::OsRng;
-use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
+use ark_std::rand::Rng;
+use digest::{generic_array::GenericArray, Digest, DynDigest, FixedOutputReset};
 use spongefish::DuplexSpongeInterface;
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
+use zeroize::Zeroize;
 
 use crate::{
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
 };
 
 /// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
@@ -59,12 +60,12 @@ where
         let committee_size = committee.size.get();
         let degree = committee.threshold().get();
         let generator = C::generator();
-        let poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
+        let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
         let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size)
             .ok_or_else(|| ThresholdEncError::Internal(anyhow!("Unable to create eval domain")))?;
 
-        let alpha_0 = poly[0];
+        let mut alpha_0 = poly[0];
         let evals: Vec<_> = (0..committee_size)
             .map(|i| {
                 let x = domain.element(i);
@@ -87,6 +88,8 @@ where
             })
             .collect();
 
+        alpha_0.zeroize();
+        poly.coeffs.zeroize();
         Ok((pub_key, comb_key, key_shares))
     }
 
