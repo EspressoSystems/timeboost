@@ -71,6 +71,12 @@ curl --request GET \
 just lint
 ```
 
+We recommend enforcing git pre-commit to ensure linting is done before each commit:
+
+``` shell
+ln -s ../../scripts/pre-commit .git/hooks/pre-commit
+```
+
 ## Test
 
 ```shell
