@@ -2,27 +2,27 @@ use aes_gcm::{AeadCore, Aes256Gcm};
 use anyhow::anyhow;
 use ark_ec::CurveGroup;
 use ark_ff::{
-    field_hashers::{DefaultFieldHasher, HashToField},
     One, PrimeField, UniformRand, Zero,
+    field_hashers::{DefaultFieldHasher, HashToField},
 };
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
-use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
-use ark_std::rand::rngs::OsRng;
+use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
-use digest::{generic_array::GenericArray, Digest, DynDigest, FixedOutputReset};
+use ark_std::rand::rngs::OsRng;
+use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
 use spongefish::DuplexSpongeInterface;
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 use zeroize::Zeroize;
 
 use crate::{
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
         threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     },
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
 };
 
 /// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
@@ -58,7 +58,7 @@ where
         committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size.get();
-        let degree = committee.threshold().get();
+        let degree = committee.threshold().get() - 1;
         let generator = C::generator();
         let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
@@ -175,7 +175,7 @@ where
         ciphertext: &Self::Ciphertext,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = committee.size.get();
-        let threshold = committee.threshold().get() + 1;
+        let threshold = committee.threshold().get();
         let generator = C::generator();
 
         if dec_shares.len() < threshold {
@@ -362,7 +362,7 @@ mod test {
             .iter()
             .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext))
             .filter_map(|res| res.ok())
-            .take(threshold) // not enough shares to combine
+            .take(threshold - 1) // not enough shares to combine
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
@@ -408,12 +408,12 @@ mod test {
             "Combine should be indifferent to the order of incoming shares"
         );
 
-        // 2. Invalidate n - t shares
+        // 2. Invalidate n - t + 1 shares
         let c_size = committee.size().get();
         let c_threshold = committee.threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
-        (0..(c_size - c_threshold)).for_each(|i| {
+        (0..(c_size - c_threshold + 1)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
