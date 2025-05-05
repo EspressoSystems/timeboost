@@ -329,8 +329,11 @@ async fn main() -> Result<()> {
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
-    let net_metrics =
-        NetworkMetrics::new(prom.as_ref(), peer_hosts_and_keys.iter().map(|(k, _)| *k));
+    let net_metrics = NetworkMetrics::new(
+        "sailfish",
+        prom.as_ref(),
+        peer_hosts_and_keys.iter().map(|(k, _)| *k),
+    );
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         bind_address,

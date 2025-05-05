@@ -87,7 +87,9 @@ for (( i=0; i<$nodes; i++ )); do
     dec_priv_key="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
     cmd=(target/release/timeboost
         --id $i
-        --port $((8000 + $i))
+        --sailfish-addr "127.0.0.1:$((8000 + $i))"
+        --decrypt-addr "127.0.0.1:$((9500 + $i))"
+        --producer-addr "127.0.0.1:$((10000 + $i))"
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds

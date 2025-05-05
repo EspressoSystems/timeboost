@@ -60,7 +60,7 @@ impl BlockProducer {
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let net_metrics = NetworkMetrics::new(metrics, cfg.peers.iter().map(|(k, _)| *k));
+        let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, _)| *k));
 
         let net = Network::create(
             cfg.bind.clone(),

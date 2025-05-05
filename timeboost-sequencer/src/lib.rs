@@ -164,7 +164,11 @@ impl Sequencer {
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         let sailfish = {
-            let met = NetworkMetrics::new(metrics, cfg.sailfish_peers.iter().map(|(k, _)| *k));
+            let met = NetworkMetrics::new(
+                "sailfish",
+                metrics,
+                cfg.sailfish_peers.iter().map(|(k, _)| *k),
+            );
 
             let net = Network::create(
                 cfg.sailfish_bind,
@@ -186,7 +190,11 @@ impl Sequencer {
         let decrypter = {
             let keyset = Keyset::new(1, committee.size());
 
-            let met = NetworkMetrics::new(metrics, cfg.decrypt_peers.iter().map(|(k, _)| *k));
+            let met = NetworkMetrics::new(
+                "decrypt",
+                metrics,
+                cfg.decrypt_peers.iter().map(|(k, _)| *k),
+            );
 
             let net = Network::create(
                 cfg.decrypt_bind,
