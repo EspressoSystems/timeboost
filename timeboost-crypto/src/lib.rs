@@ -15,6 +15,7 @@ use sha2::Sha256;
 use spongefish::DigestBridge;
 use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
@@ -101,7 +102,7 @@ pub struct PublicKey<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct KeyShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
@@ -277,6 +278,7 @@ impl ThresholdEncScheme for DecryptionScheme {
     type CombKey = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::CombKey;
     type KeyShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::KeyShare;
     type Plaintext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Plaintext;
+    type AssociatedData = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::AssociatedData;
     type Ciphertext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Ciphertext;
     type DecShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::DecShare;
 
@@ -295,15 +297,17 @@ impl ThresholdEncScheme for DecryptionScheme {
         kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, kid, pk, message)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, kid, pk, message, aad)
     }
 
     fn decrypt(
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::decrypt(sk, ciphertext)
+        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::decrypt(sk, ciphertext, aad)
     }
 
     fn combine(
@@ -311,9 +315,10 @@ impl ThresholdEncScheme for DecryptionScheme {
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, traits::threshold_enc::ThresholdEncError> {
         <ShoupGennaro<G, H, D> as ThresholdEncScheme>::combine(
-            committee, comb_key, dec_shares, ciphertext,
+            committee, comb_key, dec_shares, ciphertext, aad,
         )
     }
 }
