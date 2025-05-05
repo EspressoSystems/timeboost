@@ -129,6 +129,9 @@ impl BlockProducer {
     }
 
     pub async fn next_block(&mut self) -> Result<CertifiedBlock, ProducerDown> {
+        if let Some(cb) = self.first_certified() {
+            return Ok(cb);
+        }
         while let Some(WorkerResponse(num, cert)) = self.cert_rx.recv().await {
             trace!(
                 node = %self.label.public_key(),
@@ -141,21 +144,27 @@ impl BlockProducer {
                     *status = Status::Certified(cert, block.to_owned());
                 }
             };
-            if let Some((block_info, status)) = self.blocks.pop_first() {
-                if let Status::Certified(cert, block) = status {
-                    return Ok(CertifiedBlock::new(num, cert, block));
-                } else {
-                    debug!(
-                        node  = %self.label.public_key(),
-                        block = %num,
-                        next  = %block_info.0,
-                        "received certified block of future round",
-                    );
-                    self.blocks.insert(block_info, status);
-                }
+            if let Some(cb) = self.first_certified() {
+                return Ok(cb);
+            } else {
+                debug!(node = %self.label.public_key(), %num, "received future certified block");
             }
         }
         Err(ProducerDown(()))
+    }
+
+    /// Pop the first certified block.
+    fn first_certified(&mut self) -> Option<CertifiedBlock> {
+        let entry = self.blocks.first_entry()?;
+        if matches!(entry.get(), Status::Certified(..)) {
+            let ((num, _hash), status) = entry.remove_entry();
+            let Status::Certified(cert, block) = status else {
+                unreachable!("`Status::Certified` has been checked above.");
+            };
+            Some(CertifiedBlock::new(num, cert, block))
+        } else {
+            None
+        }
     }
 }
 
@@ -224,6 +233,7 @@ impl Worker {
                         if let Some(e) = env.validated(&self.committee) {
                             recv_block = (None, e);
                         } else {
+                            warn!(node = %label, %num, "invalid block info received");
                             continue;
                         }
                     }
