@@ -149,7 +149,7 @@ impl BlockProducer {
                         node  = %self.label.public_key(),
                         block = %num,
                         next  = %block_info.0,
-                        "received future certified block",
+                        "received certified block of future round",
                     );
                     self.blocks.insert(block_info, status);
                 }

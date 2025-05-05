@@ -182,7 +182,7 @@ impl Decrypter {
                         node  = %self.label,
                         round = %r,
                         next  = %round,
-                        "received decrypted txns future round",
+                        "received decrypted txns of future round",
                     );
                     self.incls.insert(round, status);
                 }
