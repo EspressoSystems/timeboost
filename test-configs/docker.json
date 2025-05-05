@@ -1,83 +1,123 @@
 {
     "keyset": [
         {
-            "url": "172.20.0.2:8000",
+            "sailfish_url": "172.20.0.2:8000",
+            "decrypt_url": "172.20.0.2:10000",
+            "producer_url": "172.20.0.2:11000",
             "pubkey": "HCVAkbpaXjt4NqHem1Qz2mHqKRbGFCHUf4VMbiB7jAYE"
         },
         {
-            "url": "172.20.0.3:8001",
+            "sailfish_url": "172.20.0.3:8001",
+            "decrypt_url": "172.20.0.3:10001",
+            "producer_url": "172.20.0.3:11001",
             "pubkey": "6v8B9RK6Noa6SX8rE6RXK972v6KFfVaLjC5sbCT9VoJn"
         },
         {
-            "url": "172.20.0.4:8002",
+            "sailfish_url": "172.20.0.4:8002",
+            "decrypt_url": "172.20.0.4:10002",
+            "producer_url": "172.20.0.4:11002",
             "pubkey": "7MMmoPcqd8DnqD5Ji1xNUgkvkCtNoFEHwRPuYBqeF8Ni"
         },
         {
-            "url": "172.20.0.5:8003",
+            "sailfish_url": "172.20.0.5:8003",
+            "decrypt_url": "172.20.0.5:10003",
+            "producer_url": "172.20.0.5:11003",
             "pubkey": "EofyDbHJGLFNG8D1J6xKj9XpSfooKTim982RU726Qnn4"
         },
         {
-            "url": "172.20.0.6:8004",
+            "sailfish_url": "172.20.0.6:8004",
+            "decrypt_url": "172.20.0.6:10004",
+            "producer_url": "172.20.0.6:11004",
             "pubkey": "86R3D2VHNUTN1eNS1SiPQiegDs88PKUewqc1zizH6vVD"
         },
         {
-            "url": "172.20.0.7:8005",
+            "sailfish_url": "172.20.0.7:8005",
+            "decrypt_url": "172.20.0.7:10005",
+            "producer_url": "172.20.0.7:11005",
             "pubkey": "24pdM4mDRSHnk5d7uzztwmCT3e8jzYTafGMTVUmsYvEU"
         },
         {
-            "url": "172.20.0.8:8006",
+            "sailfish_url": "172.20.0.8:8006",
+            "decrypt_url": "172.20.0.8:10006",
+            "producer_url": "172.20.0.8:11006",
             "pubkey": "HTuCvHG1CADdKsuLSZ1TWBL9QmFAXGWdgzmbBtYMWM2G"
         },
         {
-            "url": "172.20.0.9:8007",
+            "sailfish_url": "172.20.0.9:8007",
+            "decrypt_url": "172.20.0.9:10007",
+            "producer_url": "172.20.0.9:11007",
             "pubkey": "G9SsebpexnFLMqWkzCBDVKhPHHn8JdsFq6PgQAFBTXfP"
         },
         {
-            "url": "172.20.0.10:8008",
+            "sailfish_url": "172.20.0.10:8008",
+            "decrypt_url": "172.20.0.10:10008",
+            "producer_url": "172.20.0.10:11008",
             "pubkey": "47P5dRX6aHpw17zjkXPXWVyy5aaUBc1CCT2ukM1RSAcy"
         },
         {
-            "url": "172.20.0.11:8009",
+            "sailfish_url": "172.20.0.11:8009",
+            "decrypt_url": "172.20.0.11:10009",
+            "producer_url": "172.20.0.11:11009",
             "pubkey": "DNFTMMt6CCAponjhLdHJMdEhPteVXTXPbT1gC125Vfg6"
         },
         {
-            "url": "172.20.0.12:8010",
+            "sailfish_url": "172.20.0.12:8010",
+            "decrypt_url": "172.20.0.12:10010",
+            "producer_url": "172.20.0.12:11010",
             "pubkey": "2TpRWBrURjjCDEMTdoF2hicyhKUT7M39W6oxNzp99chd"
         },
         {
-            "url": "172.20.0.13:8011",
+            "sailfish_url": "172.20.0.13:8011",
+            "decrypt_url": "172.20.0.13:10011",
+            "producer_url": "172.20.0.13:11011",
             "pubkey": "DGbaGsY2THd4oHxTKBRJBEurGKb9KgQeLFY13eMapinC"
         },
         {
-            "url": "172.20.0.14:8012",
+            "sailfish_url": "172.20.0.14:8012",
+            "decrypt_url": "172.20.0.14:10012",
+            "producer_url": "172.20.0.14:11012",
             "pubkey": "2x23JLWVwNbjNxM8snwKYUdKtoHgj7zN1gyPHbgsUazd"
         },
         {
-            "url": "172.20.0.15:8013",
+            "sailfish_url": "172.20.0.15:8013",
+            "decrypt_url": "172.20.0.15:10013",
+            "producer_url": "172.20.0.15:11013",
             "pubkey": "CX51n5zs2kuQteiNRUVR25KZF9kA27UeWccFodfbLMWS"
         },
         {
-            "url": "172.20.0.16:8014",
+            "sailfish_url": "172.20.0.16:8014",
+            "decrypt_url": "172.20.0.16:10014",
+            "producer_url": "172.20.0.16:11014",
             "pubkey": "9owjFAaWhFcT9GqJ9c3idqndxHXcfyVPQrNnEvxG72Hs"
         },
         {
-            "url": "172.20.0.17:8015",
+            "sailfish_url": "172.20.0.17:8015",
+            "decrypt_url": "172.20.0.17:10015",
+            "producer_url": "172.20.0.17:11015",
             "pubkey": "8jTeAaPGTxkPwrFkqTUj5fMP57BLLdeuLmwx2ZxvHdPt"
         },
         {
-            "url": "172.20.0.18:8016",
+            "sailfish_url": "172.20.0.18:8016",
+            "decrypt_url": "172.20.0.18:10016",
+            "producer_url": "172.20.0.18:11016",
             "pubkey": "D4WziQyUH5TFGhu5f33wvRzhTatRFb5v9x1H58NWmRVJ"
         },
         {
-            "url": "172.20.0.19:8017",
+            "sailfish_url": "172.20.0.19:8017",
+            "decrypt_url": "172.20.0.19:10017",
+            "producer_url": "172.20.0.19:11017",
             "pubkey": "2iHXCZwkerF3JtWG4Q633dfjHnmruJ23hgKNATTsFFkZ"
         },
         {
-            "url": "172.20.0.20:8018",
+            "sailfish_url": "172.20.0.20:8018",
+            "decrypt_url": "172.20.0.20:10018",
+            "producer_url": "172.20.0.20:11018",
             "pubkey": "5qP4wyDetRcVzQZs3qcxyafxXYowBTdcSVQJbHXcZsji"
         },
         {
-            "url": "172.20.0.21:8019",
+            "sailfish_url": "172.20.0.21:8019",
+            "decrypt_url": "172.20.0.21:10019",
+            "producer_url": "172.20.0.21:11019",
             "pubkey": "8ajJBphKsQHeWBLm1dzySBJPJcdt7aFS77sFDVUK5vE4"
         }
     ],

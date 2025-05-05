@@ -88,8 +88,8 @@ for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/timeboost
         --id $i
         --sailfish-addr "127.0.0.1:$((8000 + $i))"
-        --decrypt-addr "127.0.0.1:$((9500 + $i))"
-        --producer-addr "127.0.0.1:$((10000 + $i))"
+        --decrypt-addr "127.0.0.1:$((10000 + $i))"
+        --producer-addr "127.0.0.1:$((11000 + $i))"
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds
