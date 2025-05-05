@@ -1,26 +1,20 @@
 use std::iter::once;
-use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use cliquenet::Address;
 use metrics::NoMetrics;
-use multisig::Keypair;
-use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
-use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
-use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::{BundleVariant, DecryptionKey};
-use timeboost_utils::load_generation::make_bundle;
+use timeboost_crypto::DecryptionScheme;
+use timeboost_sequencer::Sequencer;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Barrier, broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+use super::{gen_bundles, make_configs};
 
 const NUM_OF_TRANSACTIONS: usize = 500;
 const RECOVER_INDEX: usize = 2;
@@ -36,7 +30,7 @@ async fn transaction_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let dec = DecryptionScheme::trusted_keygen(num);
-    let cfg = make_configs(&dec);
+    let cfg = make_configs(&dec, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -46,7 +40,7 @@ async fn transaction_order() {
     // We spawn each sequencer into a task and broadcast new transactions to
     // all of them. Each sequencer pushes the transaction it produced into an
     // unbounded channel which we later compare with each other.
-    for c in cfg {
+    for c in cfg.into_iter().map(|(c, _)| c) {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
@@ -91,57 +85,5 @@ async fn transaction_order() {
         if let Err(err) = result {
             panic!("task panic: {err}")
         }
-    }
-}
-
-fn make_configs((pubkey, combkey, shares): &TrustedKeyMaterial) -> Vec<SequencerConfig> {
-    let parts = shares
-        .iter()
-        .cloned()
-        .map(|s| {
-            let p1 = portpicker::pick_unused_port().unwrap();
-            let p2 = portpicker::pick_unused_port().unwrap();
-            let a1 = Address::from((Ipv4Addr::LOCALHOST, p1));
-            let a2 = Address::from((Ipv4Addr::LOCALHOST, p2));
-            (Keypair::generate(), a1, a2, s)
-        })
-        .collect::<Vec<_>>();
-
-    let sailfish_peers = parts
-        .iter()
-        .map(|(kp, sa, ..)| (kp.public_key(), sa.clone()))
-        .collect::<Vec<_>>();
-
-    let decrypt_peers = parts
-        .iter()
-        .map(|(kp, _, da, ..)| (kp.public_key(), da.clone()))
-        .collect::<Vec<_>>();
-
-    let mut cfgs = Vec::new();
-
-    for (i, (kpair, sa, da, share)) in parts.iter().cloned().enumerate() {
-        let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
-        let cfg = SequencerConfig::new(kpair, dkey, sa, da)
-            .with_sailfish_peers(sailfish_peers.clone())
-            .with_decrypt_peers(decrypt_peers.clone())
-            .recover(i == RECOVER_INDEX);
-        cfgs.push(cfg)
-    }
-
-    cfgs
-}
-
-/// Generate random bundles at a fixed frequency.
-async fn gen_bundles(pubkey: EncKey, tx: broadcast::Sender<BundleVariant>) {
-    loop {
-        let Ok(b) = make_bundle(&pubkey) else {
-            warn!("Failed to generate bundle");
-            continue;
-        };
-        if tx.send(b).is_err() {
-            warn!("Failed to broadcast bundle");
-            return;
-        }
-        sleep(Duration::from_millis(10)).await
     }
 }
