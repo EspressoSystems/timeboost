@@ -136,6 +136,6 @@ done
 
 if [ -n "$tps" ] && [ "$tps" -gt 0 ]; then
     echo "Attempting to kill yapper..."
-    pkill -f yapper
+    pkill yapper
 fi
 

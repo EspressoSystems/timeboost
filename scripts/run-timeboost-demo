@@ -119,11 +119,11 @@ done
 
 if [ -n "$nitro_node_url" ]; then
     echo "Attempting to kill nitro..."
-    pkill -f nitro
+    pkill nitro
 fi
 if [ -n "$keyset_file" ]; then
     echo "Attempting to kill yapper..."
-    pkill -f yapper
+    pkill yapper
 fi
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
