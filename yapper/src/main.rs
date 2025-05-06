@@ -13,7 +13,7 @@ use clap::Parser;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::select_peer_hosts;
 use timeboost_utils::types::logging::init_logging;
-use tracing::error;
+use tracing::{error, info};
 use tx::tx_sender;
 
 mod tx;
@@ -42,6 +42,7 @@ struct Cli {
 async fn main() -> Result<()> {
     init_logging();
 
+    info!("Starting yapper");
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
@@ -69,19 +70,19 @@ async fn main() -> Result<()> {
                 peer_host.url
             ))?
             .parse::<u16>()
-            .context("parsing port into u16")?
-            + 800u16;
-        let address = Address::from((host, port));
+            .context("parsing port into u16")?;
+        let mut address = Address::from((host, port));
 
         // Wait for the peeer to come online so we know it's valid.
         wait_for_live_peer(address.clone()).await?;
-
+        address.set_port(800 + address.port());
         all_hosts_as_addresses.push(address);
     }
 
+    let mut jhs = Vec::new();
     // Spawn a new thread per host and let em rip.
     for address in all_hosts_as_addresses {
-        tokio::spawn({
+        jhs.push(tokio::spawn({
             let keyset = keyset.clone();
             let pubkey = keyset.dec_keyset().pubkey()?;
             async move {
@@ -89,8 +90,21 @@ async fn main() -> Result<()> {
                     error!(%err, "tx sender failed");
                 }
             }
-        });
+        }));
     }
 
+    let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("Failed to install SIGTERM handler");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received Ctrl+C, shutting down yapper...");
+        },
+        _ = signal.recv() => {
+            info!("Received SIGTERM, shutting down yapper...");
+        },
+    }
+    for jh in jhs {
+        jh.abort();
+    }
     Ok(())
 }

@@ -90,8 +90,8 @@ jobs:
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Run tests
-      run: just run_demo -url http://localhost:8547 -s /tmp/stamp --ignore-stamp
+      run: just run_demo -s /tmp/stamp --ignore-stamp
     - name: Run tests with late-start node
-      run: just run_demo -l -url http://localhost:8547 -s /tmp/stamp --ignore-stamp
+      run: just run_demo -l -s /tmp/stamp --ignore-stamp
     - name: Run sailfish demo
       run: just run_sailfish_demo

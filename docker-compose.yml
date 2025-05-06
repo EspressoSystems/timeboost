@@ -6,6 +6,8 @@ services:
         "/app/timeboost",
         "--id",
         "0",
+        "--nodes",
+        "5",
         "--port",
         "8000",
         "--rpc-port",
@@ -14,6 +16,9 @@ services:
         "9000",
         "--keyset-file",
         "docker.json",
+        "--stamp",
+        "/tmp/stamp",
+        "--ignore-stamp"
       ]
     networks:
       timeboost:
@@ -36,6 +41,8 @@ services:
         "/app/timeboost",
         "--id",
         "1",
+        "--nodes",
+        "5",
         "--port",
         "8001",
         "--rpc-port",
@@ -44,6 +51,9 @@ services:
         "9001",
         "--keyset-file",
         "docker.json",
+        "--stamp",
+        "/tmp/stamp",
+        "--ignore-stamp"
       ]
     networks:
       timeboost:
@@ -68,12 +78,17 @@ services:
         "2",
         "--port",
         "8002",
+        "--nodes",
+        "5",
         "--rpc-port",
         "8802",
         "--metrics-port",
         "9002",
         "--keyset-file",
         "docker.json",
+        "--stamp",
+        "/tmp/stamp",
+        "--ignore-stamp"
       ]
     networks:
       timeboost:
@@ -98,12 +113,17 @@ services:
         "3",
         "--port",
         "8003",
+        "--nodes",
+        "5",
         "--rpc-port",
         "8803",
         "--metrics-port",
         "9003",
         "--keyset-file",
         "docker.json",
+        "--stamp",
+        "/tmp/stamp",
+        "--ignore-stamp"
       ]
     networks:
       timeboost:
@@ -127,6 +147,8 @@ services:
         "/app/timeboost",
         "--id",
         "4",
+        "--nodes",
+        "5",
         "--port",
         "8004",
         "--rpc-port",
@@ -135,6 +157,9 @@ services:
         "9004",
         "--keyset-file",
         "docker.json",
+        "--stamp",
+        "/tmp/stamp",
+        "--ignore-stamp"
       ]
     networks:
       timeboost:
@@ -159,6 +184,21 @@ services:
       timeboost:
         ipv4_address: 172.20.0.12
     command: --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug
+  yapper:
+    image: yapper:latest
+    command:
+      [
+        "/app/yapper",
+        "--tps",
+        "1",
+        "--nodes",
+        "5",
+        "--keyset-file",
+        "docker.json",
+      ]
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.13
 
 networks:
   timeboost:

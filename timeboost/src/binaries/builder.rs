@@ -62,11 +62,6 @@ struct Cli {
     #[clap(long, short, action = clap::ArgAction::SetTrue)]
     late_start: bool,
 
-    /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
-    /// Set this to 0 for no load generation.
-    #[clap(long, short, default_value_t = 1)]
-    tps: u32,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
@@ -237,7 +232,6 @@ async fn main() -> Result<()> {
         nitro_url: cli.nitro_node_url,
         sender: tb_app_tx,
         receiver: tb_app_rx,
-        tps: cli.tps,
         stamp: cli.stamp,
         ignore_stamp: cli.ignore_stamp,
     };

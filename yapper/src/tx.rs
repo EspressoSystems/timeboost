@@ -24,10 +24,7 @@ async fn send_transaction(
 
             client
                 .post(submision_url)
-                .body(bincode::serde::encode_to_vec(
-                    bundle,
-                    bincode::config::standard(),
-                )?)
+                .json(&bundle)
                 .send()
                 .await
                 .context("sending request to the submit-regular endpoint")
@@ -37,10 +34,7 @@ async fn send_transaction(
                 .context(format!("parsing {} into a url", addr))?;
             client
                 .post(submision_url)
-                .body(bincode::serde::encode_to_vec(
-                    signed_priority_bundle,
-                    bincode::config::standard(),
-                )?)
+                .json(&signed_priority_bundle)
                 .send()
                 .await
                 .context("sending request to the submit-priority endpoint")
@@ -54,6 +48,7 @@ pub async fn tx_sender(
     pubkey: <DecryptionScheme as ThresholdEncScheme>::PublicKey,
 ) -> Result<()> {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let client = ClientBuilder::new()
         .timeout(Duration::from_secs(1))
         .build()
@@ -67,6 +62,7 @@ pub async fn tx_sender(
             }
             _ = tokio::signal::ctrl_c() => {
                 warn!("sender for {addr} received shutdown signal");
+                return Ok(());
             }
         }
     }

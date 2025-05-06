@@ -8,6 +8,7 @@ nitro_node_url=""
 late_start=false
 stamp=
 ignore_stamp=false
+keyset_file=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,6 +30,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s|--stamp)
             stamp="$2"
+            shift 2
+            ;;
+        --yapper)
+            keyset_file="$2"
             shift 2
             ;;
         --ignore-stamp)
@@ -73,7 +78,6 @@ for i in $(seq 0 $((nodes - 1))); do
         --metrics-port $((9000 + $i)) \
         --until 300 \
         $nitro_node_url \
-        --tps 5 \
         --nodes $nodes \
         --stamp \"$stamp-$i.sf\" \
         --keyset-file test-configs/local.json \
@@ -91,6 +95,15 @@ for i in $(seq 0 $((nodes - 1))); do
     pids+=($!)
 done
 
+if [ -n "$keyset_file" ]; then
+    cmd="RUST_LOG=yapper=info \
+    ./target/release/yapper \
+        --tps 5 \
+        --nodes $nodes \
+        --keyset-file $keyset_file"
+    eval $cmd &
+fi
+
 failed=false
 for pid in "${pids[@]}"; do
     wait $pid
@@ -107,6 +120,10 @@ done
 if [ -n "$nitro_node_url" ]; then
     echo "Attempting to kill nitro..."
     pkill -f nitro
+fi
+if [ -n "$keyset_file" ]; then
+    echo "Attempting to kill yapper..."
+    pkill -f yapper
 fi
 duration=$SECONDS
 echo "All processes have finished (duration: $((duration)) sec)."
