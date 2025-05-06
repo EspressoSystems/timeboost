@@ -764,6 +764,7 @@ mod tests {
             let (_, addr) = peers[i];
 
             let network = Network::create(
+                "decrypt",
                 addr,
                 sig_key.clone().into(),
                 peers.clone(),

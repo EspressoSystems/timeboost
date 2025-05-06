@@ -171,6 +171,7 @@ impl Sequencer {
             );
 
             let net = Network::create(
+                "sailfish",
                 cfg.sailfish_bind,
                 cfg.keypair.clone(),
                 cfg.sailfish_peers,
@@ -197,6 +198,7 @@ impl Sequencer {
             );
 
             let net = Network::create(
+                "decrypt",
                 cfg.decrypt_bind,
                 cfg.keypair.clone(), // same auth
                 cfg.decrypt_peers,

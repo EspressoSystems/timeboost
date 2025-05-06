@@ -26,6 +26,7 @@ async fn multiple_frames() {
 
     let mut net_a = Overlay::new(
         Network::create(
+            "f1",
             all_parties[0].1,
             party_a,
             all_parties,
@@ -36,6 +37,7 @@ async fn multiple_frames() {
     );
     let mut net_b = Overlay::new(
         Network::create(
+            "f2",
             all_parties[1].1,
             party_b,
             all_parties,
