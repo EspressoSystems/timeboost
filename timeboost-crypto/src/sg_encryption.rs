@@ -27,6 +27,10 @@ use crate::{
 
 /// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
 /// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
+///
+/// NOTE:
+/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful `combine()`
+///    in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
 pub struct ShoupGennaro<C, H, D>
 where
     C: CurveGroup,
@@ -59,7 +63,7 @@ where
         committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size.get();
-        let degree = committee.threshold().get() - 1;
+        let degree = committee.one_honest_threshold().get() - 1;
         let generator = C::generator();
         let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
@@ -181,7 +185,7 @@ where
         aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = committee.size.get();
-        let threshold = committee.threshold().get();
+        let threshold = committee.one_honest_threshold().get();
         let generator = C::generator();
 
         if dec_shares.len() < threshold {
@@ -393,7 +397,7 @@ mod test {
         let ciphertext =
             ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
 
-        let threshold = committee.threshold().get();
+        let threshold = committee.one_honest_threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
             .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
@@ -453,7 +457,7 @@ mod test {
 
         // 2. Invalidate n - t + 1 shares
         let c_size = committee.size().get();
-        let c_threshold = committee.threshold().get();
+        let c_threshold = committee.one_honest_threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify n - t shares
         (0..(c_size - c_threshold + 1)).for_each(|i| {
