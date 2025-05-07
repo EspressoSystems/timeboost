@@ -1,6 +1,7 @@
 use ark_std::rand::Rng;
 use thiserror::Error;
 
+use crate::traits::dleq_proof::DleqProofError;
 use crate::{Keyset, KeysetId};
 
 /// A Threshold Encryption Scheme.
@@ -55,6 +56,8 @@ pub enum ThresholdEncError {
     Argument(String),
     #[error("Not enough decryption shares")]
     NotEnoughShares,
+    #[error(transparent)]
+    DleqError(DleqProofError),
     #[error("Internal Error: {0}")]
     Internal(anyhow::Error),
     #[error(transparent)]

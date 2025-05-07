@@ -107,6 +107,7 @@ where
         let w = pub_key.key * beta;
 
         // hash to symmetric key `k`
+        // TODO: (alex) consider moving kid as part of `aad` instead
         let key = hash_to_key::<C, H>(v, w, (*kid).into())
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
@@ -145,30 +146,22 @@ where
     fn decrypt(
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
-        _aad: &Self::AssociatedData,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, ThresholdEncError> {
         // NOTE: our scheme can optionally reject decryption request based on the `aad` value
         // e.g. `aad` includes an invalid credential, coming from an unauthorized prying combiner
         let generator = C::generator();
         let alpha = sk.share;
-        let (v, e, w_hat, pi) = (
-            ciphertext.v,
-            ciphertext.e.clone(),
-            ciphertext.w_hat,
-            ciphertext.pi.clone(),
-        );
-        let u_hat = hash_to_curve::<C, H>(v, e)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
-        let tuple = DleqTuple::new(generator, v, u_hat, w_hat);
-        ChaumPedersen::<C, D>::verify(tuple, &pi)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
+        let v = ciphertext.v;
+
+        // check ciphertext integrity against associated data
+        Self::ct_check(ciphertext, aad)?;
 
         let w = v * alpha;
         let u_i = generator * alpha;
         let tuple = DleqTuple::new(generator, u_i, v, w);
-        let phi = ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(|e| {
-            ThresholdEncError::Internal(anyhow!("Decrypt: Proof generation failed {:?}", e))
-        })?;
+        let phi =
+            ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(ThresholdEncError::DleqError)?;
 
         Ok(DecShare {
             w,
@@ -187,6 +180,9 @@ where
         let committee_size: usize = committee.size.get();
         let threshold = committee.one_honest_threshold().get();
         let generator = C::generator();
+
+        // check ciphertext integrity against associated data
+        Self::ct_check(ciphertext, aad)?;
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
@@ -276,6 +272,34 @@ where
             ThresholdEncError::Internal(anyhow!("Symmetric decrypt failed: {:?}", e))
         })?;
         Ok(Plaintext(plaintext))
+    }
+}
+
+impl<C, H, D> ShoupGennaro<C, H, D>
+where
+    C: CurveGroup,
+    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    D: DuplexSpongeInterface,
+{
+    /// Check correctness of ciphertext against its associated data (or "Label" in [SG01])
+    /// through Dleq proof verification.
+    /// This check verifies integrity of the ciphertext w.r.t. the associated data: keyset_id
+    fn ct_check(
+        ct: &Ciphertext<C>,
+        _aad: &<Self as ThresholdEncScheme>::AssociatedData,
+    ) -> Result<(), ThresholdEncError> {
+        let g = C::generator();
+        let (v, e, w_hat, pi) = (ct.v, ct.e.clone(), ct.w_hat, ct.pi.clone());
+
+        // dev note: currently our scheme binds the keyset_id associated data not through `aad`
+        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds `keyset_id`,
+        // which is why `aad` is left unused. Technically, keyset_id is part of aad, we should use aad to derive u_hat
+        let u_hat = hash_to_curve::<C, H>(v, e)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
+        let tuple = DleqTuple::new(g, v, u_hat, w_hat);
+        ChaumPedersen::<C, D>::verify(tuple, &pi).map_err(ThresholdEncError::DleqError)?;
+
+        Ok(())
     }
 }
 
