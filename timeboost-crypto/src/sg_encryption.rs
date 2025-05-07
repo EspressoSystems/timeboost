@@ -27,6 +27,10 @@ use crate::{
 
 /// Shoup-Gennaro [[SG01]](https://www.shoup.net/papers/thresh1.pdf) threshold encryption scheme (TDH2)
 /// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
+///
+/// NOTE:
+/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful `combine()`
+///    in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
 pub struct ShoupGennaro<C, H, D>
 where
     C: CurveGroup,
@@ -59,7 +63,7 @@ where
         committee: &Keyset,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
         let committee_size = committee.size.get();
-        let degree = committee.threshold().get() - 1;
+        let degree = committee.one_honest_threshold().get() - 1;
         let generator = C::generator();
         let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
@@ -103,6 +107,7 @@ where
         let w = pub_key.key * beta;
 
         // hash to symmetric key `k`
+        // TODO: (alex) consider moving kid as part of `aad` instead
         let key = hash_to_key::<C, H>(v, w, (*kid).into())
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
@@ -141,30 +146,22 @@ where
     fn decrypt(
         sk: &Self::KeyShare,
         ciphertext: &Self::Ciphertext,
-        _aad: &Self::AssociatedData,
+        aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, ThresholdEncError> {
         // NOTE: our scheme can optionally reject decryption request based on the `aad` value
         // e.g. `aad` includes an invalid credential, coming from an unauthorized prying combiner
         let generator = C::generator();
         let alpha = sk.share;
-        let (v, e, w_hat, pi) = (
-            ciphertext.v,
-            ciphertext.e.clone(),
-            ciphertext.w_hat,
-            ciphertext.pi.clone(),
-        );
-        let u_hat = hash_to_curve::<C, H>(v, e)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
-        let tuple = DleqTuple::new(generator, v, u_hat, w_hat);
-        ChaumPedersen::<C, D>::verify(tuple, &pi)
-            .map_err(|e| ThresholdEncError::Internal(anyhow!("Invalid proof: {:?}", e)))?;
+        let v = ciphertext.v;
+
+        // check ciphertext integrity against associated data
+        Self::ct_check(ciphertext, aad)?;
 
         let w = v * alpha;
         let u_i = generator * alpha;
         let tuple = DleqTuple::new(generator, u_i, v, w);
-        let phi = ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(|e| {
-            ThresholdEncError::Internal(anyhow!("Decrypt: Proof generation failed {:?}", e))
-        })?;
+        let phi =
+            ChaumPedersen::<C, D>::prove(tuple, &alpha).map_err(ThresholdEncError::DleqError)?;
 
         Ok(DecShare {
             w,
@@ -181,8 +178,11 @@ where
         aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
         let committee_size: usize = committee.size.get();
-        let threshold = committee.threshold().get();
+        let threshold = committee.one_honest_threshold().get();
         let generator = C::generator();
+
+        // check ciphertext integrity against associated data
+        Self::ct_check(ciphertext, aad)?;
 
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
@@ -202,21 +202,27 @@ where
         );
         let pk_comb = comb_key.key.clone();
 
-        // Verify DLEQ proofs
-        let valid_shares: Vec<_> = dec_shares
-            .iter()
-            .filter_map(|share| {
-                let (w, phi) = (share.w, share.phi.clone());
-                let u = pk_comb[share.index as usize];
-                let tuple = DleqTuple::new(generator, u, v, w);
-                ChaumPedersen::<C, D>::verify(tuple, &phi)
-                    .ok()
-                    .map(|_| *share)
-            })
-            .collect();
+        // Verify DLEQ proofs to ensure correctness of the decryption share w_i
+        // keeping a list of faulty shares (their node indices) to blame
+        let mut valid_shares = Vec::new();
+        let mut faulty_shares = Vec::new();
+        for share in &dec_shares {
+            let (w, phi) = (share.w, &share.phi);
+            let u = pk_comb.get(share.index as usize).ok_or_else(|| {
+                ThresholdEncError::Argument(format!("CombKey missing idx: {}", share.index))
+            })?;
 
+            let tuple = DleqTuple::new(generator, *u, v, w);
+            if ChaumPedersen::<C, D>::verify(tuple, phi).is_ok() {
+                valid_shares.push(share);
+            } else {
+                faulty_shares.push(share);
+            }
+        }
+
+        let faulty_subset: Vec<_> = faulty_shares.into_iter().map(|s| s.index).collect();
         if valid_shares.len() < threshold {
-            return Err(ThresholdEncError::NotEnoughShares);
+            return Err(ThresholdEncError::FaultySubset(faulty_subset));
         }
 
         // Collect eval points for decryption shares
@@ -275,6 +281,34 @@ where
     }
 }
 
+impl<C, H, D> ShoupGennaro<C, H, D>
+where
+    C: CurveGroup,
+    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    D: DuplexSpongeInterface,
+{
+    /// Check correctness of ciphertext against its associated data (or "Label" in [SG01])
+    /// through Dleq proof verification.
+    /// This check verifies integrity of the ciphertext w.r.t. the associated data: keyset_id
+    fn ct_check(
+        ct: &Ciphertext<C>,
+        _aad: &<Self as ThresholdEncScheme>::AssociatedData,
+    ) -> Result<(), ThresholdEncError> {
+        let g = C::generator();
+        let (v, e, w_hat, pi) = (ct.v, ct.e.clone(), ct.w_hat, ct.pi.clone());
+
+        // dev note: currently our scheme binds the keyset_id associated data not through `aad`
+        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds `keyset_id`,
+        // which is why `aad` is left unused. Technically, keyset_id is part of aad, we should use aad to derive u_hat
+        let u_hat = hash_to_curve::<C, H>(v, e)
+            .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
+        let tuple = DleqTuple::new(g, v, u_hat, w_hat);
+        ChaumPedersen::<C, D>::verify(tuple, &pi).map_err(ThresholdEncError::DleqError)?;
+
+        Ok(())
+    }
+}
+
 // TODO: Replace with actual hash to curve
 // (see. https://datatracker.ietf.org/doc/rfc9380/)
 fn hash_to_curve<C, H>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
@@ -320,7 +354,7 @@ mod test {
     use crate::{
         cp_proof::Proof,
         sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
-        traits::threshold_enc::ThresholdEncScheme,
+        traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     };
 
     use ark_std::rand::seq::SliceRandom;
@@ -393,7 +427,7 @@ mod test {
         let ciphertext =
             ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
 
-        let threshold = committee.threshold().get();
+        let threshold = committee.one_honest_threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
             .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
@@ -417,6 +451,10 @@ mod test {
     }
 
     #[test]
+    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully decrypt,
+    // in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes. In the original spec,
+    // authors used `t+1` shares to decrypt, but here, we are testing SG01 scheme purely from the perspective
+    // of the standalone cryptographic scheme, so be aware of the slight mismatch of notation.
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
@@ -451,13 +489,15 @@ mod test {
             "Combine should be indifferent to the order of incoming shares"
         );
 
-        // 2. Invalidate n - t + 1 shares
+        // 2. Invalidate n - t + 1 shares (left with t-1 valid shares)
         let c_size = committee.size().get();
-        let c_threshold = committee.threshold().get();
+        let c_threshold = committee.one_honest_threshold().get();
         let first_correct_share = dec_shares[0].clone();
-        // modify n - t shares
+        // modify the first n - t + 1 shares
+        let mut expected_faulty_subset = vec![];
         (0..(c_size - c_threshold + 1)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
+            expected_faulty_subset.push(share.index);
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
@@ -468,12 +508,17 @@ mod test {
             &ciphertext,
             &aad,
         );
-        assert!(
-            result.is_err(),
-            "Should fail due to not enough valid shares"
-        );
+        match result {
+            Err(ThresholdEncError::FaultySubset(set)) => {
+                assert!(
+                    set.iter()
+                        .all(|faulty_node_idx| expected_faulty_subset.contains(faulty_node_idx))
+                )
+            }
+            _ => panic!("Should fail with faulty subset to blame"),
+        };
         // 3. Reattach the first correct share to the combining set
-        // to obtain exactly t+1 correct shares (enough to combine)
+        // to obtain exactly t correct shares (enough to combine)
         dec_shares[0] = first_correct_share;
         let result = ShoupGennaro::<G, H, D>::combine(
             &committee,

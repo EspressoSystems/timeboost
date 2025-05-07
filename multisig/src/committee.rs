@@ -28,8 +28,8 @@ impl Committee {
         NonZeroUsize::new(self.parties.len()).expect("committee is not empty")
     }
 
-    /// Returns the threshold for consensus, which is `ceil(n/3)` where `n` is the committee size.
-    pub fn threshold(&self) -> NonZeroUsize {
+    /// Returns the at-least-one-honest threshold for consensus, which is `ceil(n/3)` where `n` is the committee size.
+    pub fn one_honest_threshold(&self) -> NonZeroUsize {
         let t = self.parties.len().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
     }
