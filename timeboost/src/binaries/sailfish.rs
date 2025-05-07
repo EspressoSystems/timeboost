@@ -2,6 +2,7 @@ use std::{
     iter::repeat_with,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -262,9 +263,9 @@ async fn main() -> Result<()> {
     let peer_urls: Vec<reqwest::Url> = {
         let mut urls = Vec::new();
         for ph in keyset.keyset().iter().take(cli.nodes) {
-            let url = format!("http://{}", ph.url)
+            let url = format!("http://{}", ph.sailfish_url)
                 .parse()
-                .context(format!("Failed to parse URL: http://{}", ph.url))?;
+                .context(format!("Failed to parse URL: http://{}", ph.sailfish_url))?;
             urls.push(url);
         }
         urls
@@ -295,20 +296,7 @@ async fn main() -> Result<()> {
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
-        let mut spl = peer_host.url.splitn(3, ":");
-        let p0 = spl
-            .next()
-            .context("Invalid URL format: missing host part")?;
-
-        let p1_str = spl
-            .next()
-            .context("Invalid URL format: missing port part")?;
-
-        let p1: u16 = p1_str
-            .parse()
-            .context(format!("Failed to parse port number: {}", p1_str))?;
-
-        let peer_address = Address::from((p0, p1));
+        let peer_address = Address::from_str(&peer_host.sailfish_url)?;
         wait_for_live_peer(peer_address.clone()).await?;
 
         let pubkey = PublicKey::try_from(peer_host.pubkey.as_str()).context(format!(
@@ -321,10 +309,14 @@ async fn main() -> Result<()> {
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
-    let net_metrics =
-        NetworkMetrics::new(prom.as_ref(), peer_hosts_and_keys.iter().map(|(k, _)| *k));
+    let net_metrics = NetworkMetrics::new(
+        "sailfish",
+        prom.as_ref(),
+        peer_hosts_and_keys.iter().map(|(k, _)| *k),
+    );
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
+        "sailfish",
         bind_address,
         keypair.clone(),
         peer_hosts_and_keys.clone(),

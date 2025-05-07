@@ -24,7 +24,9 @@ pub struct KeysetConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PublicNodeInfo {
-    pub url: String,
+    pub sailfish_url: String,
+    pub decrypt_url: String,
+    pub producer_url: String,
     pub pubkey: String,
 
     /// The optional signature private key for this node.

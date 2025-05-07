@@ -56,10 +56,10 @@ async fn main() -> Result<()> {
 
     let mut all_hosts_as_addresses = Vec::new();
     for peer_host in peer_host_iter {
-        let mut raw_url_split = peer_host.url.splitn(3, ":");
+        let mut raw_url_split = peer_host.sailfish_url.splitn(3, ":");
         let host = raw_url_split.next().context(format!(
             "fetching host from peer host url {}",
-            peer_host.url
+            peer_host.sailfish_url
         ))?;
 
         // This is a hack
@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
             .next()
             .context(format!(
                 "extracting port from peer host url {}",
-                peer_host.url
+                peer_host.sailfish_url
             ))?
             .parse::<u16>()
             .context("parsing port into u16")?;

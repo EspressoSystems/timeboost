@@ -1,7 +1,10 @@
 #!/bin/bash
 
 set -a; source .env; set +a;
-just build_release --features until
+if ! cargo build --release --features until; then
+    echo "Error: Build failed" >&2
+    exit 1
+fi
 
 nodes=5
 nitro_node_url=""
@@ -73,7 +76,9 @@ for i in $(seq 0 $((nodes - 1))); do
     TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
     ./target/release/timeboost \
         --id $i \
-        --port $((8000 + $i)) \
+        --sailfish-addr \"0.0.0.0:$((8000 + $i))\"
+        --decrypt-addr \"0.0.0.0:$((10000 + $i))\"
+        --producer-addr \"0.0.0.0:$((11000 + $i))\"
         --rpc-port $((8800 + $i)) \
         --metrics-port $((9000 + $i)) \
         --until 300 \
