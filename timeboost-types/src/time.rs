@@ -44,6 +44,7 @@ impl Committable for Epoch {
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
 )]
 #[serde(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Timestamp(u64);
 
 impl Timestamp {

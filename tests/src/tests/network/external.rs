@@ -54,6 +54,7 @@ impl TestableNetwork for BasicNetworkTest {
                 .get(&kpr.public_key())
                 .expect("own public key to be present");
             let net = Network::create(
+                "test",
                 addr,
                 kpr.clone(),
                 self.group.peers.clone(),

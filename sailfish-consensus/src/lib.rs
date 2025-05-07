@@ -395,7 +395,7 @@ where
 
         // Have we received more than f timeouts?
         if votes != accum.votes(&commit)
-            && accum.votes(&commit) == self.committee.threshold().get() + 1
+            && accum.votes(&commit) == self.committee.one_honest_threshold().get()
         {
             let t = TimeoutMessage::new(evidence, &self.keypair, self.deterministic);
             let e = Envelope::signed(t, &self.keypair, self.deterministic);

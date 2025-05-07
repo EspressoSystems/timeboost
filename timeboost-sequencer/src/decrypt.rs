@@ -182,7 +182,7 @@ impl Decrypter {
                         node  = %self.label,
                         round = %r,
                         next  = %round,
-                        "received decrypted txns future round",
+                        "received decrypted txns of future round",
                     );
                     self.incls.insert(round, status);
                 }
@@ -456,6 +456,7 @@ impl Worker {
             let dec_share = <DecryptionScheme as ThresholdEncScheme>::decrypt(
                 self.dec_sk.privkey(),
                 &ciphertext,
+                &vec![],
             )
             .map_err(DecryptError::Decryption)?;
 
@@ -496,7 +497,7 @@ impl Worker {
                 .shares
                 .iter()
                 .filter(|(k, _)| k.round() == round)
-                .all(|(_, v)| self.committee.threshold().get() < v.len());
+                .all(|(_, v)| self.committee.one_honest_threshold().get() < v.len());
 
         if !hatched {
             // ciphertexts are not ready to be decrypted.
@@ -524,6 +525,7 @@ impl Worker {
                     self.dec_sk.combkey(),
                     shares.values().collect::<Vec<_>>(),
                     ciphertext,
+                    &vec![],
                 )
                 .map_err(DecryptError::Decryption)?;
                 to_remove.push(*k.cid());
@@ -639,6 +641,7 @@ mod tests {
             &keyset.id(),
             &encryption_key,
             &ptx_plaintext,
+            &vec![],
         )
         .unwrap();
         let tx_ciphertext = DecryptionScheme::encrypt(
@@ -646,6 +649,7 @@ mod tests {
             &keyset.id(),
             &encryption_key,
             &tx_plaintext,
+            &vec![],
         )
         .unwrap();
         let ptx_ciphertext_bytes =
@@ -760,6 +764,7 @@ mod tests {
             let (_, addr) = peers[i];
 
             let network = Network::create(
+                "decrypt",
                 addr,
                 sig_key.clone().into(),
                 peers.clone(),

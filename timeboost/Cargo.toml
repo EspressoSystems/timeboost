@@ -32,6 +32,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
 tide-disco = { workspace = true }
+timeboost-builder = { path = "../timeboost-builder" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }

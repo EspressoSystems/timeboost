@@ -4,6 +4,9 @@ use std::net::{Ipv4Addr, SocketAddr};
 use multisig::{Committee, Keypair, PublicKey};
 use timeboost_utils::unsafe_zero_keypair;
 
+#[cfg(test)]
+mod tests;
+
 #[allow(unused)]
 pub(crate) mod prelude {
     use committable::{Commitment, Committable, RawCommitmentBuilder};
@@ -45,9 +48,6 @@ pub(crate) mod prelude {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 pub struct Group {
     pub size: usize,

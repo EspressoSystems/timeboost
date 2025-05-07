@@ -52,7 +52,8 @@ fn mk_host<A, const N: usize>(
         let a = addr.clone();
         let p = peers.clone();
         async move {
-            let comm = Network::create_turmoil(a, k.clone(), p, NetworkMetrics::default()).await?;
+            let comm =
+                Network::create_turmoil("test", a, k.clone(), p, NetworkMetrics::default()).await?;
             let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
             let rbc = Rbc::new(Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
@@ -98,7 +99,7 @@ fn small_committee() {
 
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
-        let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("C", addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -155,7 +156,7 @@ fn medium_committee() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -211,7 +212,7 @@ fn medium_committee_partition_network() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil(addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.clone(), peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);

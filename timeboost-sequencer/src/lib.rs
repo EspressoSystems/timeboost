@@ -1,7 +1,6 @@
 mod decrypt;
 mod include;
 mod metrics;
-mod produce;
 mod queue;
 mod sort;
 
@@ -12,13 +11,12 @@ use cliquenet::{self as net, MAX_MESSAGE_SIZE};
 use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey};
-use produce::BlockProducer;
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, RoundNumber};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, BundleVariant, CertifiedBlock, DecryptionKey};
+use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -27,7 +25,6 @@ use tracing::{error, info, warn};
 
 use decrypt::{DecryptError, Decrypter};
 use include::Includer;
-use produce::ProducerError;
 use queue::BundleQueue;
 use sort::Sorter;
 
@@ -38,23 +35,27 @@ type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
 pub struct SequencerConfig {
     priority_addr: Address,
     keypair: Keypair,
-    peers: Vec<(PublicKey, net::Address)>,
-    bind: net::Address,
+    sailfish_peers: Vec<(PublicKey, net::Address)>,
+    sailfish_bind: net::Address,
+    decrypt_bind: net::Address,
+    decrypt_peers: Vec<(PublicKey, net::Address)>,
     index: DelayedInboxIndex,
     dec_sk: DecryptionKey,
     recover: bool,
 }
 
 impl SequencerConfig {
-    pub fn new<A>(keyp: Keypair, dec_sk: DecryptionKey, bind: A) -> Self
+    pub fn new<A>(keyp: Keypair, dec_sk: DecryptionKey, sf_bind: A, dec_bind: A) -> Self
     where
         A: Into<net::Address>,
     {
         Self {
             priority_addr: Address::default(),
             keypair: keyp,
-            peers: Vec::new(),
-            bind: bind.into(),
+            sailfish_peers: Vec::new(),
+            decrypt_peers: Vec::new(),
+            sailfish_bind: sf_bind.into(),
+            decrypt_bind: dec_bind.into(),
             index: DelayedInboxIndex::default(),
             dec_sk,
             recover: true,
@@ -66,12 +67,21 @@ impl SequencerConfig {
         self
     }
 
-    pub fn with_peers<I, A>(mut self, it: I) -> Self
+    pub fn with_sailfish_peers<I, A>(mut self, it: I) -> Self
     where
         I: IntoIterator<Item = (PublicKey, A)>,
         A: Into<net::Address>,
     {
-        self.peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
+        self.sailfish_peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
+        self
+    }
+
+    pub fn with_decrypt_peers<I, A>(mut self, it: I) -> Self
+    where
+        I: IntoIterator<Item = (PublicKey, A)>,
+        A: Into<net::Address>,
+    {
+        self.decrypt_peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
         self
     }
 
@@ -94,7 +104,7 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
-    output: Receiver<CertifiedBlock>,
+    output: Receiver<Transaction>,
 }
 
 impl Drop for Sequencer {
@@ -110,8 +120,7 @@ struct Task {
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
-    producer: BlockProducer,
-    output: Sender<CertifiedBlock>,
+    output: Sender<Transaction>,
     mode: Mode,
 }
 
@@ -137,11 +146,10 @@ impl Sequencer {
     {
         let cons_metrics = ConsensusMetrics::new(metrics);
         let rbc_metrics = RbcMetrics::new(metrics);
-        let net_metrics = NetworkMetrics::new(metrics, cfg.peers.iter().map(|(k, _)| *k));
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let committee = Committee::new(
-            cfg.peers
+            cfg.sailfish_peers
                 .iter()
                 .map(|(k, _)| *k)
                 .enumerate()
@@ -151,15 +159,23 @@ impl Sequencer {
         let public_key = cfg.keypair.public_key();
 
         let queue = BundleQueue::new(cfg.priority_addr, cfg.index, seq_metrics.clone());
+
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         let sailfish = {
+            let met = NetworkMetrics::new(
+                "sailfish",
+                metrics,
+                cfg.sailfish_peers.iter().map(|(k, _)| *k),
+            );
+
             let net = Network::create(
-                cfg.bind.clone(),
+                "sailfish",
+                cfg.sailfish_bind,
                 cfg.keypair.clone(),
-                cfg.peers.clone(),
-                net_metrics,
+                cfg.sailfish_peers,
+                met,
             )
             .await?;
 
@@ -175,49 +191,22 @@ impl Sequencer {
         let decrypter = {
             let keyset = Keyset::new(1, committee.size());
 
-            let peers: Vec<_> = cfg
-                .peers
-                .iter()
-                .map(|(k, a)| (*k, a.clone().with_port(a.port() + 250)))
-                .collect();
-
-            let addr = {
-                let p = cfg.bind.port() + 250;
-                cfg.bind.clone().with_port(p)
-            };
+            let met = NetworkMetrics::new(
+                "decrypt",
+                metrics,
+                cfg.decrypt_peers.iter().map(|(k, _)| *k),
+            );
 
             let net = Network::create(
-                addr,
+                "decrypt",
+                cfg.decrypt_bind,
                 cfg.keypair.clone(), // same auth
-                peers,
-                NetworkMetrics::default(),
+                cfg.decrypt_peers,
+                met,
             )
             .await?;
 
             Decrypter::new(public_key, Overlay::new(net), keyset, cfg.dec_sk)
-        };
-
-        let producer = {
-            let peers: Vec<_> = cfg
-                .peers
-                .iter()
-                .map(|(k, a)| (*k, a.clone().with_port(a.port() + 500)))
-                .collect();
-
-            let addr = {
-                let p = cfg.bind.port() + 500;
-                cfg.bind.with_port(p)
-            };
-
-            let net = Network::create(
-                addr,
-                cfg.keypair.clone(), // same auth
-                peers,
-                NetworkMetrics::default(),
-            )
-            .await?;
-
-            BlockProducer::new(cfg.keypair, Overlay::new(net), committee.clone())
         };
 
         let (tx, rx) = mpsc::channel(1024);
@@ -229,7 +218,6 @@ impl Sequencer {
             includer: Includer::new(committee, cfg.index),
             decrypter,
             sorter: Sorter::new(public_key),
-            producer,
             output: tx,
             mode: Mode::Passive,
         };
@@ -253,9 +241,9 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_block(&mut self) -> Result<CertifiedBlock> {
+    pub async fn next_transaction(&mut self) -> Result<Transaction> {
         select! {
-            cert = self.output.recv() => cert.ok_or(TimeboostError::ChannelClosed),
+            trx = self.output.recv() => trx.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
                 Ok(Ok(())) => {
                     error!(node = %self.label, "unexpected task termination");
@@ -327,10 +315,7 @@ impl Task {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         for t in self.sorter.sort(incl) {
-                            if let Err(err) = self.producer.enqueue(t).await {
-                                error!(node = %self.label, %err, "failed to enqueue transaction");
-                                return Err(TimeboostError::ChannelClosed);
-                            }
+                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -340,19 +325,6 @@ impl Task {
                                 error!(node = %self.label, %err, "decrypt enqueue error");
                             }
                         }
-                    }
-                    Err(err) => {
-                        error!(node = %self.label, %err);
-                    }
-                },
-                result = self.producer.next() => match result {
-                    Ok(cert_block) => {
-                        let num = cert_block.num();
-                        if let Err(err) = self.output.send(cert_block).await {
-                            error!(node = %self.label, %err, "failed to send block");
-                            return Err(TimeboostError::ChannelClosed);
-                        }
-                        self.producer.gc(num).await?
                     }
                     Err(err) => {
                         error!(node = %self.label, %err);
@@ -458,7 +430,4 @@ pub enum TimeboostError {
 
     #[error("decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
-
-    #[error("producer error: {0}")]
-    Produce(#[from] ProducerError),
 }
