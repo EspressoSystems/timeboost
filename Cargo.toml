@@ -9,6 +9,7 @@ members = [
     "sailfish-types",
     "tests",
     "timeboost",
+    "timeboost-builder",
     "timeboost-sequencer",
     "timeboost-crypto",
     "timeboost-types",

@@ -1,20 +1,18 @@
 use bytes::{BufMut, BytesMut};
-use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
+use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
 use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
-use timeboost_types::{
-    Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Timestamp, Transaction,
-};
+use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Transaction};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
-type Result<T> = std::result::Result<T, ProducerError>;
+use crate::BlockProducerConfig;
 
-const MAX_ROUNDS: usize = 100;
+const MAX_BLOCKS: usize = 100;
 
 #[derive(Clone)]
 enum Status {
@@ -33,7 +31,7 @@ pub struct BlockProducer {
     /// Keypair of the node.
     label: Keypair,
     /// Incoming transactions
-    queue: VecDeque<(Timestamp, Transaction)>,
+    queue: VecDeque<Transaction>,
     /// Last block produced.
     parent: Option<(BlockNumber, BlockHash)>,
     /// Blocks subject to certification.
@@ -47,30 +45,53 @@ pub struct BlockProducer {
 }
 
 impl BlockProducer {
-    pub fn new(label: Keypair, net: Overlay, committee: Committee) -> Self {
-        let (block_tx, block_rx) = channel(MAX_ROUNDS);
-        let (cert_tx, cert_rx) = channel(MAX_ROUNDS);
-        let worker = Worker::new(label.clone(), net, committee.clone());
+    pub async fn new<M>(cfg: BlockProducerConfig, metrics: &M) -> Result<Self, ProducerError>
+    where
+        M: metrics::Metrics,
+    {
+        let (block_tx, block_rx) = channel(MAX_BLOCKS);
+        let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
 
-        Self {
-            label,
+        let committee = Committee::new(
+            cfg.peers
+                .iter()
+                .map(|(k, _)| *k)
+                .enumerate()
+                .map(|(i, key)| (i as u8, key)),
+        );
+
+        let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, _)| *k));
+
+        let net = Network::create(
+            "block",
+            cfg.bind.clone(),
+            cfg.keypair.clone(),
+            cfg.peers.clone(),
+            net_metrics,
+        )
+        .await?;
+
+        let worker = Worker::new(cfg.keypair.clone(), Overlay::new(net), committee);
+
+        Ok(Self {
+            label: cfg.keypair,
             queue: VecDeque::new(),
             parent: None,
             blocks: BTreeMap::new(),
             block_tx,
             cert_rx,
             jh: spawn(worker.go(block_rx, cert_tx)),
-        }
+        })
     }
 
-    pub async fn gc(&mut self, r: BlockNumber) -> Result<()> {
+    pub async fn gc(&mut self, r: BlockNumber) -> Result<(), ProducerDown> {
         self.block_tx
             .send(WorkerCommand::Gc(r))
             .await
-            .map_err(|_| ProducerError::Shutdown)
+            .map_err(|_| ProducerDown(()))
     }
 
-    pub async fn enqueue(&mut self, tx: (Timestamp, Transaction)) -> Result<()> {
+    pub async fn enqueue(&mut self, tx: Transaction) -> Result<(), ProducerDown> {
         self.queue.push_back(tx);
 
         // TODO: produce blocks deterministically according to spec.
@@ -80,7 +101,7 @@ impl BlockProducer {
         const BLOCK_SIZE: usize = 10;
 
         if self.queue.len() >= BLOCK_SIZE {
-            let txs: Vec<_> = self.queue.drain(..BLOCK_SIZE).map(|(_, t)| t).collect();
+            let txs: Vec<_> = self.queue.drain(..BLOCK_SIZE).collect();
 
             let (num, block) = match self.parent {
                 Some((num, parent)) => {
@@ -99,7 +120,7 @@ impl BlockProducer {
             self.block_tx
                 .send(WorkerCommand::Send(num, hash))
                 .await
-                .map_err(|_| ProducerError::Shutdown)?;
+                .map_err(|_| ProducerDown(()))?;
             self.parent = Some((num, hash));
 
             trace!(node = %self.label.public_key(), %num, block = ?hash, "certifying");
@@ -108,7 +129,10 @@ impl BlockProducer {
         Ok(())
     }
 
-    pub async fn next(&mut self) -> Result<CertifiedBlock> {
+    pub async fn next_block(&mut self) -> Result<CertifiedBlock, ProducerDown> {
+        if let Some(cb) = self.first_certified() {
+            return Ok(cb);
+        }
         while let Some(WorkerResponse(num, cert)) = self.cert_rx.recv().await {
             trace!(
                 node = %self.label.public_key(),
@@ -121,21 +145,27 @@ impl BlockProducer {
                     *status = Status::Certified(cert, block.to_owned());
                 }
             };
-            if let Some((block_info, status)) = self.blocks.pop_first() {
-                if let Status::Certified(cert, block) = status {
-                    return Ok(CertifiedBlock::new(num, cert, block));
-                } else {
-                    debug!(
-                        node  = %self.label.public_key(),
-                        block = %num,
-                        next  = %block_info.0,
-                        "received future certified block",
-                    );
-                    self.blocks.insert(block_info, status);
-                }
+            if let Some(cb) = self.first_certified() {
+                return Ok(cb);
+            } else {
+                debug!(node = %self.label.public_key(), %num, "received future certified block");
             }
         }
-        Err(ProducerError::Shutdown)
+        Err(ProducerDown(()))
+    }
+
+    /// Pop the first certified block.
+    fn first_certified(&mut self) -> Option<CertifiedBlock> {
+        let entry = self.blocks.first_entry()?;
+        if matches!(entry.get(), Status::Certified(..)) {
+            let ((num, _hash), status) = entry.remove_entry();
+            let Status::Certified(cert, block) = status else {
+                unreachable!("`Status::Certified` has been checked above.");
+            };
+            Some(CertifiedBlock::new(num, cert, block))
+        } else {
+            None
+        }
     }
 }
 
@@ -204,6 +234,7 @@ impl Worker {
                         if let Some(e) = env.validated(&self.committee) {
                             recv_block = (None, e);
                         } else {
+                            warn!(node = %label, %num, "invalid block info received");
                             continue;
                         }
                     }
@@ -230,7 +261,7 @@ impl Worker {
                         self.net.broadcast(*num, data).await.ok();
                     },
                     Some(WorkerCommand::Gc(num)) => {
-                        let num = num.saturating_sub(MAX_ROUNDS as u64);
+                        let num = num.saturating_sub(MAX_BLOCKS as u64);
                         if num > 0 {
                             self.net.gc(num)
                         }
@@ -286,14 +317,14 @@ impl Worker {
     }
 }
 
-fn serialize<T: Serialize>(d: &T) -> Result<Data> {
+fn serialize<T: Serialize>(d: &T) -> Result<Data, ProducerError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
     let bytes = b.into_inner();
     Ok(Data::try_from(bytes)?)
 }
 
-fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
+fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T, ProducerError> {
     bincode::serde::decode_from_slice(
         d,
         bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
@@ -303,8 +334,15 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("producer down")]
+pub struct ProducerDown(());
+
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ProducerError {
+    #[error("network error: {0}")]
+    Net(#[from] NetworkError),
+
     #[error("bincode encode error: {0}")]
     BincodeEncode(#[from] bincode::error::EncodeError),
 
@@ -313,7 +351,4 @@ pub enum ProducerError {
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
-
-    #[error("an error occurred")]
-    Shutdown,
 }

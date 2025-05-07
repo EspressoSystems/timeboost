@@ -106,6 +106,14 @@ impl std::str::FromStr for Address {
     }
 }
 
+impl TryFrom<&str> for Address {
+    type Error = InvalidAddress;
+
+    fn try_from(val: &str) -> Result<Self, Self::Error> {
+        val.parse()
+    }
+}
+
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("invalid address")]
 pub struct InvalidAddress(());

@@ -182,7 +182,7 @@ impl Decrypter {
                         node  = %self.label,
                         round = %r,
                         next  = %round,
-                        "received decrypted txns future round",
+                        "received decrypted txns of future round",
                     );
                     self.incls.insert(round, status);
                 }
@@ -764,6 +764,7 @@ mod tests {
             let (_, addr) = peers[i];
 
             let network = Network::create(
+                "decrypt",
                 addr,
                 sig_key.clone().into(),
                 peers.clone(),

@@ -88,7 +88,7 @@ test *ARGS:
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test_ci *ARGS:
-  env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace --retries 3 {{ARGS}}
+  env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
 test-individually:

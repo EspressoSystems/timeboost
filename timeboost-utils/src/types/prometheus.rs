@@ -9,6 +9,8 @@ use parking_lot::RwLock;
 use prometheus::{Encoder, HistogramOpts, TextEncoder};
 use tide_disco::method::ReadState;
 
+pub type Result<T> = std::result::Result<T, PrometheusError>;
+
 #[derive(Clone, Debug)]
 pub struct TimeboostCounter(prometheus::Counter);
 
@@ -19,12 +21,10 @@ impl Counter for TimeboostCounter {
 }
 
 impl TimeboostCounter {
-    pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
-        let counter = prometheus::Counter::with_opts(opts).expect("failed to create counter");
-        registry
-            .register(Box::new(counter.clone()))
-            .expect("failed to register counter");
-        Self(counter)
+    pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Result<Self> {
+        let counter = prometheus::Counter::with_opts(opts)?;
+        registry.register(Box::new(counter.clone()))?;
+        Ok(Self(counter))
     }
 }
 
@@ -38,12 +38,10 @@ impl Histogram for TimeboostHistogram {
 }
 
 impl TimeboostHistogram {
-    pub fn new(registry: &prometheus::Registry, opts: prometheus::HistogramOpts) -> Self {
-        let histogram = prometheus::Histogram::with_opts(opts).expect("failed to create histogram");
-        registry
-            .register(Box::new(histogram.clone()))
-            .expect("failed to register histogram");
-        Self(histogram)
+    pub fn new(registry: &prometheus::Registry, opts: prometheus::HistogramOpts) -> Result<Self> {
+        let histogram = prometheus::Histogram::with_opts(opts)?;
+        registry.register(Box::new(histogram.clone()))?;
+        Ok(Self(histogram))
     }
 }
 
@@ -61,12 +59,10 @@ impl Gauge for TimeboostGauge {
 }
 
 impl TimeboostGauge {
-    pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Self {
-        let gauge = prometheus::Gauge::with_opts(opts).expect("failed to create gauge");
-        registry
-            .register(Box::new(gauge.clone()))
-            .expect("failed to register gauge");
-        Self(gauge)
+    pub fn new(registry: &prometheus::Registry, opts: prometheus::Opts) -> Result<Self> {
+        let gauge = prometheus::Gauge::with_opts(opts)?;
+        registry.register(Box::new(gauge.clone()))?;
+        Ok(Self(gauge))
     }
 }
 
@@ -109,7 +105,7 @@ impl PrometheusMetrics {
 impl tide_disco::metrics::Metrics for PrometheusMetrics {
     type Error = PrometheusError;
 
-    fn export(&self) -> Result<String, Self::Error> {
+    fn export(&self) -> Result<String> {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = vec![];
@@ -139,7 +135,12 @@ impl ReadState for PrometheusMetrics {
 impl Metrics for PrometheusMetrics {
     fn create_counter(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Counter> {
         let opts = self.metric_opts(name, unit_label);
-        let counter = TimeboostCounter::new(&self.registry, opts);
+        let counter = match TimeboostCounter::new(&self.registry, opts) {
+            Ok(ctr) => ctr,
+            Err(er) => {
+                panic!("Failed to create counter \"{name}\": {er}")
+            }
+        };
         self.counters
             .write()
             .insert(name.to_string(), counter.clone());
@@ -148,7 +149,12 @@ impl Metrics for PrometheusMetrics {
 
     fn create_gauge(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Gauge> {
         let opts = self.metric_opts(name, unit_label);
-        let gauge = TimeboostGauge::new(&self.registry, opts);
+        let gauge = match TimeboostGauge::new(&self.registry, opts) {
+            Ok(gau) => gau,
+            Err(er) => {
+                panic!("Failed to create gauge \"{name}\": {er}")
+            }
+        };
         self.gauges.write().insert(name.to_string(), gauge.clone());
         Box::new(gauge)
     }
@@ -167,7 +173,12 @@ impl Metrics for PrometheusMetrics {
                 buckets: b.to_vec(),
             },
         );
-        let histogram = TimeboostHistogram::new(&self.registry, histogram_opts);
+        let histogram = match TimeboostHistogram::new(&self.registry, histogram_opts) {
+            Ok(hs) => hs,
+            Err(e) => {
+                panic!("Failed to create histogram \"{name}\": {e}")
+            }
+        };
         self.historgrams
             .write()
             .insert(name.to_string(), histogram.clone());

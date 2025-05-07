@@ -16,12 +16,12 @@ pub struct NetworkMetrics {
 
 impl Default for NetworkMetrics {
     fn default() -> Self {
-        Self::new(&NoMetrics, std::iter::empty())
+        Self::new("default", &NoMetrics, std::iter::empty())
     }
 }
 
 impl NetworkMetrics {
-    pub fn new<M: Metrics, P>(m: &M, parties: P) -> Self
+    pub fn new<M: Metrics, P>(label: &str, m: &M, parties: P) -> Self
     where
         P: IntoIterator<Item = PublicKey>,
     {
@@ -43,14 +43,18 @@ impl NetworkMetrics {
         ];
 
         Self {
-            latency: m.create_histogram("latency", Some("ms"), Some(latencies)),
-            connections: m.create_gauge("connections", None),
-            sent_message_len: m.create_histogram("sent_msg_len", Some("bytes"), Some(sizes)),
-            sent: m.create_counter("messages_sent", None),
-            received: m.create_counter("messages_received", None),
+            latency: m.create_histogram(&format!("{label}_latency"), Some("ms"), Some(latencies)),
+            connections: m.create_gauge(&format!("{label}_connections"), None),
+            sent_message_len: m.create_histogram(
+                &format!("{label}_sent_msg_len"),
+                Some("bytes"),
+                Some(sizes),
+            ),
+            sent: m.create_counter(&format!("{label}_messages_sent"), None),
+            received: m.create_counter(&format!("{label}_messages_received"), None),
             connects: parties
                 .into_iter()
-                .map(|k| (k, m.create_counter(&format!("peer_id_{k}"), None)))
+                .map(|k| (k, m.create_counter(&format!("{label}_peer_id_{k}"), None)))
                 .collect(),
         }
     }

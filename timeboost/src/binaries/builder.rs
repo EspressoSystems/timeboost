@@ -1,10 +1,7 @@
 use anyhow::{Context, Result, ensure};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-};
+use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use timeboost::{
     keyset::{KeysetConfig, private_keys, wait_for_live_peer},
     {Timeboost, TimeboostConfig, rpc_api},
@@ -30,9 +27,17 @@ struct Cli {
     #[clap(long)]
     id: u16,
 
-    /// The port of the node to build.
+    /// The listen address of the sailfish node.
     #[clap(long)]
-    port: u16,
+    sailfish_addr: String,
+
+    /// The listen address of the decrypt node.
+    #[clap(long)]
+    decrypt_addr: String,
+
+    /// The listen address of the producer node.
+    #[clap(long)]
+    producer_addr: String,
 
     /// The port of the RPC API.
     #[clap(long)]
@@ -176,6 +181,7 @@ async fn main() -> Result<()> {
     };
 
     let keypair = Keypair::from(sig_key);
+
     let dec_sk = keyset
         .build_decryption_material(dec_sk)
         .expect("parse keyset");
@@ -191,10 +197,12 @@ async fn main() -> Result<()> {
         .keyset()
         .iter()
         .take(num)
-        .map(|ph| format!("http://{}", ph.url).parse().unwrap())
+        .map(|ph| format!("http://{}", ph.sailfish_url).parse().unwrap())
         .collect();
 
-    let mut peer_hosts_and_keys = Vec::new();
+    let mut sailfish_peer_hosts_and_keys = Vec::new();
+    let mut decrypt_peer_hosts_and_keys = Vec::new();
+    let mut producer_peer_hosts_and_keys = Vec::new();
 
     // Rust is *really* picky about mixing iterators, so we just erase the type.
     let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
@@ -217,22 +225,29 @@ async fn main() -> Result<()> {
 
     // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.
     for peer_host in peer_host_iter {
-        let mut spl = peer_host.url.splitn(3, ":");
-        let p0 = spl.next().expect("valid url");
-        let p1: u16 = spl
-            .next()
-            .expect("valid port")
-            .parse()
-            .expect("integer port");
-        let peer_address = Address::from((p0, p1));
-        wait_for_live_peer(peer_address.clone()).await?;
+        let sailfish_address = Address::from_str(&peer_host.sailfish_url)?;
+        let decrypt_address = Address::from_str(&peer_host.decrypt_url)?;
+        let producer_address = Address::from_str(&peer_host.producer_url)?;
 
-        let pubkey =
-            PublicKey::try_from(peer_host.pubkey.as_str()).expect("derive public signature key");
-        peer_hosts_and_keys.push((pubkey, peer_address));
+        wait_for_live_peer(sailfish_address.clone()).await?;
+
+        let pubkey = PublicKey::try_from(&*peer_host.pubkey)
+            .context("failed to derive public signature key")?;
+
+        sailfish_peer_hosts_and_keys.push((pubkey, sailfish_address));
+        decrypt_peer_hosts_and_keys.push((pubkey, decrypt_address));
+        producer_peer_hosts_and_keys.push((pubkey, producer_address));
     }
 
-    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
+    let sailfish_address =
+        SocketAddr::from_str(&cli.sailfish_addr).context("failed to parse sailfish address")?;
+
+    let decrypt_address =
+        SocketAddr::from_str(&cli.decrypt_addr).context("failed to parse decrypt address")?;
+
+    let producer_address =
+        SocketAddr::from_str(&cli.producer_addr).context("failed to parse producer address")?;
+
     #[cfg(feature = "until")]
     let handle = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
@@ -252,10 +267,14 @@ async fn main() -> Result<()> {
     let init = TimeboostConfig {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
-        peers: peer_hosts_and_keys,
+        sailfish_peers: sailfish_peer_hosts_and_keys,
+        decrypt_peers: decrypt_peer_hosts_and_keys,
+        producer_peers: producer_peer_hosts_and_keys,
         keypair,
         dec_sk,
-        bind_address,
+        sailfish_address,
+        decrypt_address,
+        producer_address,
         nitro_url: cli.nitro_node_url,
         sender: tb_app_tx,
         receiver: tb_app_rx,

@@ -1,0 +1,19 @@
+[package]
+name = "timeboost-builder"
+description = "Timeboost block builder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bincode = { workspace = true }
+bytes = { workspace = true }
+cliquenet = { path = "../cliquenet" }
+metrics = { path = "../metrics" }
+multisig = { path = "../multisig" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+timeboost-types = { path = "../timeboost-types" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
