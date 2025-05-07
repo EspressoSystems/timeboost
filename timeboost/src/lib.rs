@@ -158,9 +158,9 @@ impl Timeboost {
                         self.sequencer.add_bundles(once(t))
                     }
                 },
-                trx = self.sequencer.next_transaction() => match trx {
+                trx = self.sequencer.next_transactions() => match trx {
                     Ok(trx) => {
-                        info!(node = %self.label, trx = %trx.hash(), "transaction");
+                        info!(node = %self.label, len = %trx.len(), "next batch of transactions");
                         let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
                         res?
                     }

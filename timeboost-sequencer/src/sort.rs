@@ -18,7 +18,7 @@ impl Sorter {
         Self { key }
     }
 
-    pub fn sort(&mut self, list: InclusionList) -> impl Iterator<Item = Transaction> {
+    pub fn sort(&mut self, list: InclusionList) -> Vec<Transaction> {
         let timestamp = list.timestamp();
         let seed = list.digest();
 
@@ -63,7 +63,8 @@ impl Sorter {
         }
 
         rtx.sort_unstable_by(|x, y| compare(&seed, x, y));
-        ptx.into_iter().chain(rtx)
+        ptx.extend(rtx);
+        ptx
     }
 }
 
