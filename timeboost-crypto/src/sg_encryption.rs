@@ -204,13 +204,21 @@ where
 
         // Verify DLEQ proofs to ensure correctness of the decryption share w_i
         // keeping a list of faulty shares (their node indices) to blame
-        let (valid_shares, faulty_shares): (Vec<&Self::DecShare>, Vec<_>) =
-            dec_shares.iter().partition(|share| {
-                let (w, phi) = (share.w, share.phi.clone());
-                let u = pk_comb[share.index as usize];
-                let tuple = DleqTuple::new(generator, u, v, w);
-                ChaumPedersen::<C, D>::verify(tuple, &phi).is_ok()
-            });
+        let mut valid_shares = Vec::new();
+        let mut faulty_shares = Vec::new();
+        for share in &dec_shares {
+            let (w, phi) = (share.w, &share.phi);
+            let u = pk_comb.get(share.index as usize).ok_or_else(|| {
+                ThresholdEncError::Argument(format!("CombKey missing idx: {}", share.index))
+            })?;
+
+            let tuple = DleqTuple::new(generator, *u, v, w);
+            if ChaumPedersen::<C, D>::verify(tuple, phi).is_ok() {
+                valid_shares.push(share);
+            } else {
+                faulty_shares.push(share);
+            }
+        }
 
         let faulty_subset: Vec<_> = faulty_shares.into_iter().map(|s| s.index).collect();
         if valid_shares.len() < threshold {
