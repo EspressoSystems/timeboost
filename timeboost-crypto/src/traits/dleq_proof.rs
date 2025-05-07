@@ -1,6 +1,12 @@
 use spongefish::{DomainSeparatorMismatch, ProofError};
 use thiserror::Error;
 
+/// Proof of Discrete-log Equality Relation:
+/// Given a tuple (g, g_hat, h, h_hat) prove that DLOG_{g}(g_hat) == DLOG_{h}(h_hat).
+///
+/// In the literature, it's also referred as "DH-triple" relation where g is implicitly
+/// the group generator, and h=g^y for some y, and the proof is attesting to the Diffie-Hellman
+/// triple (g_hat, h, h_hat) = (g^x, g^y, g^{x*y}) for some x.
 pub trait DleqProofScheme {
     type DleqTuple;
     type Scalar;

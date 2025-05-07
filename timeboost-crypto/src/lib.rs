@@ -81,7 +81,8 @@ impl Keyset {
         self.size
     }
 
-    pub fn threshold(&self) -> NonZeroUsize {
+    /// threshold where at least one is honest (=f+1) where f is faulty (inclusive) upperbound
+    pub fn one_honest_threshold(&self) -> NonZeroUsize {
         let t = self.size().get().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
     }

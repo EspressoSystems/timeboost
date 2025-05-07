@@ -497,7 +497,7 @@ impl Worker {
                 .shares
                 .iter()
                 .filter(|(k, _)| k.round() == round)
-                .all(|(_, v)| self.committee.threshold().get() < v.len());
+                .all(|(_, v)| self.committee.one_honest_threshold().get() < v.len());
 
         if !hatched {
             // ciphertexts are not ready to be decrypted.
