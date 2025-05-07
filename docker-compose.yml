@@ -4,23 +4,15 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id",
-        "0",
-        "--sailfish-addr",
-        "0.0.0.0:8000",
-        "--decrypt-addr",
-        "0.0.0.0:10000",
-        "--producer-addr",
-        "0.0.0.0:11000",
-        "--rpc-port",
-        "8800",
-        "--metrics-port",
-        "9000",
-        "--keyset-file",
-        "docker.json",
-         "--stamp",
-        "/tmp/stamp",
-        "--ignore-stamp"
+        "--id", "0",
+        "--nodes", "5",
+        "--sailfish-addr", "0.0.0.0:8000",
+        "--decrypt-addr", "0.0.0.0:8001",
+        "--producer-addr", "0.0.0.0:8002",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "docker.json",
+        "--stamp", "/tmp/timeboost.stamp"
       ]
     networks:
       timeboost:
@@ -28,184 +20,148 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=10000
-      - TIMEBOOST_PRODUCER_PORT=11000
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
       - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_0
       - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_0
     ports:
       - "8000:8000"
+      - "8030:8001"
+      - "8060:8002"
       - "8800:8800"
       - "9000:9000"
-      - "10000:10000"
-      - "11000:11000"
   node1:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
-        "--id",
-        "1",
-        "--sailfish-addr",
-        "0.0.0.0:8001",
-        "--decrypt-addr",
-        "0.0.0.0:10001",
-        "--producer-addr",
-        "0.0.0.0:11001",
-        "--rpc-port",
-        "8801",
-        "--metrics-port",
-        "9001",
-        "--keyset-file",
-        "docker.json",
-        "--stamp",
-        "/tmp/stamp",
-        "--ignore-stamp"
+        "--id", "1",
+        "--nodes", "5",
+        "--sailfish-addr", "0.0.0.0:8000",
+        "--decrypt-addr", "0.0.0.0:8001",
+        "--producer-addr", "0.0.0.0:8002",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "docker.json",
+        "--stamp", "/tmp/timeboost.stamp"
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.3
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8001
-      - TIMEBOOST_DECRYPT_PORT=10001
-      - TIMEBOOST_PRODUCER_PORT=11001
-      - TIMEBOOST_RPC_PORT=8801
-      - TIMEBOOST_METRICS_PORT=9001
+      - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=8001
+      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
       - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_1
       - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_1
     ports:
-      - "8001:8001"
-      - "8801:8801"
-      - "9001:9001"
-      - "10001:10001"
-      - "11001:11001"
+      - "8001:8000"
+      - "8031:8001"
+      - "8061:8002"
+      - "8801:8800"
+      - "9001:9000"
   node2:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
-        "--id",
-        "2",
-        "--sailfish-addr",
-        "0.0.0.0:8002",
-        "--decrypt-addr",
-        "0.0.0.0:10002",
-        "--producer-addr",
-        "0.0.0.0:11002",
-        "--rpc-port",
-        "8802",
-        "--metrics-port",
-        "9002",
-        "--keyset-file",
-        "docker.json",
-        "--stamp",
-        "/tmp/stamp",
-        "--ignore-stamp"
+        "--id", "2",
+        "--nodes", "5",
+        "--sailfish-addr", "0.0.0.0:8000",
+        "--decrypt-addr", "0.0.0.0:8001",
+        "--producer-addr", "0.0.0.0:8002",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "docker.json",
+        "--stamp", "/tmp/timeboost.stamp"
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.4
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8002
-      - TIMEBOOST_DECRYPT_PORT=10002
-      - TIMEBOOST_PRODUCER_PORT=11002
-      - TIMEBOOST_RPC_PORT=8802
-      - TIMEBOOST_METRICS_PORT=9002
+      - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=8001
+      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
       - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_2
       - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_2
     ports:
-      - "8002:8002"
-      - "8802:8802"
-      - "9002:9002"
-      - "10002:10002"
-      - "11002:11002"
+      - "8002:8000"
+      - "8032:8001"
+      - "8062:8002"
+      - "8802:8800"
+      - "9002:9000"
   node3:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
-        "--id",
-        "3",
-        "--sailfish-addr",
-        "0.0.0.0:8003",
-        "--decrypt-addr",
-        "0.0.0.0:10003",
-        "--producer-addr",
-        "0.0.0.0:11003",
-        "--rpc-port",
-        "8803",
-        "--metrics-port",
-        "9003",
-        "--keyset-file",
-        "docker.json",
-        "--stamp",
-        "/tmp/stamp",
-        "--ignore-stamp"
+        "--id", "3",
+        "--nodes", "5",
+        "--sailfish-addr", "0.0.0.0:8000",
+        "--decrypt-addr", "0.0.0.0:8001",
+        "--producer-addr", "0.0.0.0:8002",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "docker.json",
+        "--stamp", "/tmp/timeboost.stamp"
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.5
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8003
-      - TIMEBOOST_DECRYPT_PORT=10003
-      - TIMEBOOST_PRODUCER_PORT=11003
-      - TIMEBOOST_RPC_PORT=8803
-      - TIMEBOOST_METRICS_PORT=9003
+      - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=8001
+      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
       - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_3
       - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_3
     ports:
-      - "8003:8003"
-      - "8803:8803"
-      - "9003:9003"
-      - "10003:10003"
-      - "11003:11003"
-
+      - "8003:8000"
+      - "8033:8001"
+      - "8063:8002"
+      - "8803:8800"
+      - "9003:9000"
   node4:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
-        "--id",
-        "4",
-        "--sailfish-addr",
-        "0.0.0.0:8004",
-        "--decrypt-addr",
-        "0.0.0.0:10004",
-        "--producer-addr",
-        "0.0.0.0:11004",
-        "--rpc-port",
-        "8804",
-        "--metrics-port",
-        "9004",
-        "--keyset-file",
-        "docker.json",
-        "--stamp",
-        "/tmp/stamp",
-        "--ignore-stamp"
+        "--id", "4",
+        "--nodes", "5",
+        "--sailfish-addr", "0.0.0.0:8000",
+        "--decrypt-addr", "0.0.0.0:8001",
+        "--producer-addr", "0.0.0.0:8002",
+        "--rpc-port", "8800",
+        "--metrics-port", "9000",
+        "--keyset-file", "docker.json",
+        "--stamp", "/tmp/timeboost.stamp"
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.6
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8004
-      - TIMEBOOST_DECRYPT_PORT=10004
-      - TIMEBOOST_PRODUCER_PORT=11004
-      - TIMEBOOST_RPC_PORT=8804
-      - TIMEBOOST_METRICS_PORT=9004
+      - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=8001
+      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_RPC_PORT=8800
+      - TIMEBOOST_METRICS_PORT=9000
       - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_4
       - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_4
-
     ports:
-      - "8004:8004"
-      - "8804:8804"
-      - "9004:9004"
-      - "10004:10004"
-      - "11004:11004"
+      - "8004:8000"
+      - "8034:8001"
+      - "8064:8002"
+      - "8804:8800"
+      - "9004:9000"
   nitro-dev:
     image: offchainlabs/nitro-node:v3.2.1-d81324d
     ports:
