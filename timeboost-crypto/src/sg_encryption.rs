@@ -202,21 +202,19 @@ where
         );
         let pk_comb = comb_key.key.clone();
 
-        // Verify DLEQ proofs
-        let valid_shares: Vec<_> = dec_shares
-            .iter()
-            .filter_map(|share| {
+        // Verify DLEQ proofs to ensure correctness of the decryption share w_i
+        // keeping a list of faulty shares (their node indices) to blame
+        let (valid_shares, faulty_shares): (Vec<&Self::DecShare>, Vec<_>) =
+            dec_shares.iter().partition(|share| {
                 let (w, phi) = (share.w, share.phi.clone());
                 let u = pk_comb[share.index as usize];
                 let tuple = DleqTuple::new(generator, u, v, w);
-                ChaumPedersen::<C, D>::verify(tuple, &phi)
-                    .ok()
-                    .map(|_| *share)
-            })
-            .collect();
+                ChaumPedersen::<C, D>::verify(tuple, &phi).is_ok()
+            });
 
+        let faulty_subset: Vec<_> = faulty_shares.into_iter().map(|s| s.index).collect();
         if valid_shares.len() < threshold {
-            return Err(ThresholdEncError::NotEnoughShares);
+            return Err(ThresholdEncError::FaultySubset(faulty_subset));
         }
 
         // Collect eval points for decryption shares
@@ -348,7 +346,7 @@ mod test {
     use crate::{
         cp_proof::Proof,
         sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
-        traits::threshold_enc::ThresholdEncScheme,
+        traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     };
 
     use ark_std::rand::seq::SliceRandom;
@@ -445,6 +443,10 @@ mod test {
     }
 
     #[test]
+    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully decrypt,
+    // in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes. In the original spec,
+    // authors used `t+1` shares to decrypt, but here, we are testing SG01 scheme purely from the perspective
+    // of the standalone cryptographic scheme, so be aware of the slight mismatch of notation.
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
@@ -479,13 +481,15 @@ mod test {
             "Combine should be indifferent to the order of incoming shares"
         );
 
-        // 2. Invalidate n - t + 1 shares
+        // 2. Invalidate n - t + 1 shares (left with t-1 valid shares)
         let c_size = committee.size().get();
         let c_threshold = committee.one_honest_threshold().get();
         let first_correct_share = dec_shares[0].clone();
-        // modify n - t shares
+        // modify the first n - t + 1 shares
+        let mut expected_faulty_subset = vec![];
         (0..(c_size - c_threshold + 1)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
+            expected_faulty_subset.push(share.index);
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
@@ -496,12 +500,17 @@ mod test {
             &ciphertext,
             &aad,
         );
-        assert!(
-            result.is_err(),
-            "Should fail due to not enough valid shares"
-        );
+        match result {
+            Err(ThresholdEncError::FaultySubset(set)) => {
+                assert!(
+                    set.iter()
+                        .all(|faulty_node_idx| expected_faulty_subset.contains(faulty_node_idx))
+                )
+            }
+            _ => panic!("Should fail with faulty subset to blame"),
+        };
         // 3. Reattach the first correct share to the combining set
-        // to obtain exactly t+1 correct shares (enough to combine)
+        // to obtain exactly t correct shares (enough to combine)
         dec_shares[0] = first_correct_share;
         let result = ShoupGennaro::<G, H, D>::combine(
             &committee,

@@ -64,4 +64,6 @@ pub enum ThresholdEncError {
     IOError(#[from] std::io::Error),
     #[error(transparent)]
     SerializationError(#[from] ark_serialize::SerializationError),
+    #[error("Faulty node indices: {0:?}")]
+    FaultySubset(Vec<u32>),
 }
