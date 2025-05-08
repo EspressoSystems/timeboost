@@ -67,6 +67,7 @@ either = "1.13.0"
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 multiaddr = "0.18.2"
+nohash-hasher = "0.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.14"

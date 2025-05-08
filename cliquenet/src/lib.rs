@@ -1,6 +1,8 @@
 mod addr;
+mod chan;
 mod error;
 mod frame;
+mod id;
 mod metrics;
 mod net;
 mod tcp;
@@ -10,6 +12,7 @@ pub mod overlay;
 
 pub use addr::{Address, InvalidAddress};
 pub use error::NetworkError;
+pub use id::Id;
 pub use metrics::NetworkMetrics;
 pub use net::Network;
 pub use overlay::Overlay;
