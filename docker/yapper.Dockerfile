@@ -7,7 +7,7 @@ COPY . .
 
 RUN cargo install just
 
-RUN just build_release
+RUN cargo build --release --bin yapper
 
 # Non-root app container stage
 FROM debian:bullseye-slim
