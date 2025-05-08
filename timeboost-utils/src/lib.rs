@@ -33,11 +33,11 @@ pub fn bs58_encode(b: &[u8]) -> String {
 /// - `multi_region` determines whether to use region chunking logic
 ///
 /// Returns a boxed iterator over the selected PublicNodeInfo references.
-pub fn select_peer_hosts<'a>(
-    keyset: &'a [PublicNodeInfo],
+pub fn select_peer_hosts(
+    keyset: &[PublicNodeInfo],
     nodes: usize,
     multi_region: bool,
-) -> Box<dyn Iterator<Item = &'a PublicNodeInfo> + 'a> {
+) -> impl Iterator<Item = &PublicNodeInfo> {
     if multi_region {
         let take_from_group = nodes / 4;
         Box::new(
