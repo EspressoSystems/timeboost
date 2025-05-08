@@ -5,7 +5,6 @@ WORKDIR /app
 
 COPY . .
 
-RUN cargo install just
 
 RUN cargo build --release --bin yapper
 
