@@ -46,6 +46,6 @@ pub fn select_peer_hosts<'a>(
                 .flat_map(move |v| v.iter().take(take_from_group)),
         )
     } else {
-        Box::new(keyset.iter().take(nodes))
+        Box::new(keyset.iter().take(nodes)) as Box<dyn Iterator<Item = _>>
     }
 }
