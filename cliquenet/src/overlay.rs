@@ -16,7 +16,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, Instant};
 use tracing::warn;
 
-use crate::Network;
+use crate::{Id, Network};
 
 type Result<T> = std::result::Result<T, NetworkDown>;
 
@@ -44,7 +44,7 @@ pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
 pub struct Overlay {
     this: PublicKey,
     net: Network,
-    sender: Sender<(Option<PublicKey>, Bytes)>,
+    sender: Sender<(Option<PublicKey>, Option<Id>, Bytes)>,
     parties: Vec<PublicKey>,
     id: Id,
     buffer: Buffer,
@@ -71,10 +71,6 @@ pub struct Data {
 /// Buckets conceptionally contain messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
 pub struct Bucket(u64);
-
-/// A message ID uniquely identifies as message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
-pub struct Id(u64);
 
 /// Messages are associated with IDs and put into buckets.
 ///
@@ -117,7 +113,7 @@ impl Overlay {
             net,
             buffer,
             encoded: [0; Trailer::MAX_LEN],
-            id: Id(0),
+            id: Id::from(0),
             retry,
         }
     }
@@ -156,7 +152,7 @@ impl Overlay {
             if !bytes.is_empty() {
                 // Send the trailer back as acknowledgement:
                 self.sender
-                    .send((Some(src), trailer_bytes))
+                    .send((Some(src), None, trailer_bytes))
                     .await
                     .map_err(|_| NetworkDown(()))?;
                 return Ok((src, bytes));
@@ -204,13 +200,13 @@ impl Overlay {
 
         let rem = if let Some(to) = to {
             self.sender
-                .send((Some(to), msg.clone()))
+                .send((Some(to), Some(id), msg.clone()))
                 .await
                 .map_err(|_| NetworkDown(()))?;
             vec![to]
         } else {
             self.sender
-                .send((None, msg.clone()))
+                .send((None, Some(id), msg.clone()))
                 .await
                 .map_err(|_| NetworkDown(()))?;
             self.parties.clone()
@@ -231,12 +227,12 @@ impl Overlay {
 
     fn next_id(&mut self) -> Id {
         let id = self.id;
-        self.id = Id(self.id.0 + 1);
+        self.id = (u64::from(self.id) + 1).into();
         id
     }
 }
 
-async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Bytes)>) -> Infallible {
+async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Option<Id>, Bytes)>) -> Infallible {
     const DELAYS: [u64; 4] = [1, 3, 5, 15];
 
     let mut i = time::interval(Duration::from_secs(1));
@@ -285,7 +281,7 @@ async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Bytes)>) -> Infallib
                 }
 
                 for p in remaining {
-                    let _ = net.send((Some(p), message.clone())).await;
+                    let _ = net.send((Some(p), Some(id), message.clone())).await;
                 }
             }
         }
