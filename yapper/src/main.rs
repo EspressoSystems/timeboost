@@ -5,23 +5,20 @@
 //! due to the requirement of Timeboost.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use cliquenet::Address;
 
 use clap::Parser;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
-use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use timeboost_utils::select_peer_hosts;
 use timeboost_utils::types::logging::init_logging;
 use tokio::signal::{
     ctrl_c,
     unix::{SignalKind, signal},
 };
-use tokio::time::interval;
-use tracing::{error, info};
-use tx::{send_bundle_to_node, setup_clients_and_urls};
+use tracing::info;
+use tx::yap;
 
 mod tx;
 
@@ -86,46 +83,9 @@ async fn main() -> Result<()> {
         all_hosts_as_addresses.push(address);
     }
 
-    let mut interval = interval(Duration::from_millis(tps_to_millis(cli.tps)));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
     let jh = tokio::spawn({
-        let keyset = keyset.clone();
-        let pubkey = keyset.dec_keyset().pubkey()?;
-        let client_and_urls = setup_clients_and_urls(&all_hosts_as_addresses)
-            .expect("Failed to setup clients and URLs");
-        async move {
-            loop {
-                // create a bundle, and send this bundle to each host
-                let result = make_bundle(&pubkey);
-                interval.tick().await;
-
-                match result {
-                    Ok(bundle) => {
-                        let send_txns_futs = client_and_urls.iter().map(
-                            |(client, regular_url, priority_url)| async {
-                                send_bundle_to_node(
-                                    &bundle,
-                                    client,
-                                    regular_url.as_str(),
-                                    priority_url.as_str(),
-                                )
-                                .await
-                            },
-                        );
-                        let results = futures::future::join_all(send_txns_futs).await;
-                        for result in results {
-                            if let Err(err) = result {
-                                error!(%err, "failed to send");
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        error!(%err, "failed to generate bundle");
-                    }
-                }
-            }
-        }
+        let pub_key = keyset.dec_keyset().pubkey()?;
+        async move { yap(&all_hosts_as_addresses, &pub_key, cli.tps).await }
     });
 
     let mut signal = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");

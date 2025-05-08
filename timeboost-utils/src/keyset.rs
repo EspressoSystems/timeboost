@@ -16,7 +16,7 @@ type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
-#[derive(Clone, Deserialize)]
+#[derive(Deserialize)]
 pub struct KeysetConfig {
     keyset: Vec<PublicNodeInfo>,
     dec_keyset: PublicDecInfo,
