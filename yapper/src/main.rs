@@ -5,16 +5,23 @@
 //! due to the requirement of Timeboost.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use cliquenet::Address;
 
 use clap::Parser;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
+use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use timeboost_utils::select_peer_hosts;
 use timeboost_utils::types::logging::init_logging;
+use tokio::signal::{
+    ctrl_c,
+    unix::{SignalKind, signal},
+};
+use tokio::time::interval;
 use tracing::{error, info};
-use tx::tx_sender;
+use tx::{send_bundle_to_node, setup_clients_and_urls};
 
 mod tx;
 
@@ -73,37 +80,63 @@ async fn main() -> Result<()> {
         let mut address = Address::from((host, port));
 
         // Wait for the peeer to come online so we know it's valid.
+        info!("waiting for peer: {}", address);
         wait_for_live_peer(address.clone()).await?;
         address.set_port(800 + address.port());
         all_hosts_as_addresses.push(address);
     }
 
-    let mut jhs = Vec::new();
-    // Spawn a new thread per host and let em rip.
-    for address in all_hosts_as_addresses {
-        jhs.push(tokio::spawn({
-            let keyset = keyset.clone();
-            let pubkey = keyset.dec_keyset().pubkey()?;
-            async move {
-                if let Err(err) = tx_sender(cli.tps, address, pubkey).await {
-                    error!(%err, "tx sender failed");
+    let mut interval = interval(Duration::from_millis(tps_to_millis(cli.tps)));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    let jh = tokio::spawn({
+        let keyset = keyset.clone();
+        let pubkey = keyset.dec_keyset().pubkey()?;
+        let client_and_urls = setup_clients_and_urls(&all_hosts_as_addresses)
+            .expect("Failed to setup clients and URLs");
+        async move {
+            loop {
+                // create a bundle, and send this bundle to each host
+                let result = make_bundle(&pubkey);
+                interval.tick().await;
+
+                match result {
+                    Ok(bundle) => {
+                        let send_txns_futs = client_and_urls.iter().map(
+                            |(client, regular_url, priority_url)| async {
+                                send_bundle_to_node(
+                                    &bundle,
+                                    client,
+                                    regular_url.as_str(),
+                                    priority_url.as_str(),
+                                )
+                                .await
+                            },
+                        );
+                        let results = futures::future::join_all(send_txns_futs).await;
+                        for result in results {
+                            if let Err(err) = result {
+                                error!(%err, "failed to send");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        error!(%err, "failed to generate bundle");
+                    }
                 }
             }
-        }));
-    }
+        }
+    });
 
-    let mut signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .expect("Failed to install SIGTERM handler");
+    let mut signal = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
+        _ = ctrl_c() => {
             info!("Received Ctrl+C, shutting down yapper...");
         },
         _ = signal.recv() => {
             info!("Received SIGTERM, shutting down yapper...");
         },
     }
-    for jh in jhs {
-        jh.abort();
-    }
+    jh.abort();
     Ok(())
 }

@@ -5,7 +5,6 @@ WORKDIR /app
 
 COPY . .
 
-
 RUN cargo build --release --bin yapper
 
 # Non-root app container stage

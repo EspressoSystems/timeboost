@@ -1,69 +1,58 @@
-use reqwest::{Client, ClientBuilder, Response, Url};
+use reqwest::{Client, Url};
 use std::time::Duration;
 use timeboost::types::BundleVariant;
-use timeboost_crypto::DecryptionScheme;
-use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 
 use anyhow::{Context, Result};
 use cliquenet::Address;
-use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
-use tokio::time::interval;
-use tracing::{error, warn};
+use tracing::error;
 
-async fn send_transaction(
-    client: Client,
-    addr: &Address,
-    pubkey: &<DecryptionScheme as ThresholdEncScheme>::PublicKey,
-) -> Result<Response> {
-    let bundle = make_bundle(pubkey)?;
+pub fn setup_clients_and_urls(
+    all_hosts_as_addresses: &[Address],
+) -> Result<Vec<(Client, Url, Url)>> {
+    let mut clients_and_urls = Vec::new();
 
-    match bundle {
-        BundleVariant::Regular(bundle) => {
-            let submision_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
-                .context(format!("parsing {} into a url", addr))?;
+    for addr in all_hosts_as_addresses {
+        // Create a new client for each address
+        let client = Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .context("building the reqwest client")?;
 
-            client
-                .post(submision_url)
-                .json(&bundle)
-                .send()
-                .await
-                .context("sending request to the submit-regular endpoint")
-        }
-        BundleVariant::Priority(signed_priority_bundle) => {
-            let submision_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
-                .context(format!("parsing {} into a url", addr))?;
-            client
-                .post(submision_url)
-                .json(&signed_priority_bundle)
-                .send()
-                .await
-                .context("sending request to the submit-priority endpoint")
-        }
+        let regular_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
+            .with_context(|| format!("parsing {} into a url", addr))?;
+        let priority_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
+            .with_context(|| format!("parsing {} into a url", addr))?;
+
+        clients_and_urls.push((client, regular_url, priority_url));
     }
+
+    Ok(clients_and_urls)
 }
 
-pub async fn tx_sender(
-    tps: u32,
-    addr: Address,
-    pubkey: <DecryptionScheme as ThresholdEncScheme>::PublicKey,
+pub async fn send_bundle_to_node(
+    bundle: &BundleVariant,
+    client: &Client,
+    regular_url: &str,
+    priority_url: &str,
 ) -> Result<()> {
-    let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_secs(1))
-        .build()
-        .context("building the reqwest client")?;
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                if let Err(err) = send_transaction(client.clone(), &addr, &pubkey).await {
-                    error!(%err, "failed to send transaction");
-                }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                warn!("sender for {addr} received shutdown signal");
-                return Ok(());
-            }
-        }
+    let result = match bundle {
+        BundleVariant::Regular(bundle) => client
+            .post(regular_url)
+            .json(&bundle)
+            .send()
+            .await
+            .context("sending request to the submit-regular endpoint"),
+        BundleVariant::Priority(signed_priority_bundle) => client
+            .post(priority_url)
+            .json(&signed_priority_bundle)
+            .send()
+            .await
+            .context("sending request to the submit-priority endpoint"),
+    };
+
+    if let Err(err) = result {
+        error!(%err, "failed to send transaction");
+        return Err(err);
     }
+    Ok(())
 }
