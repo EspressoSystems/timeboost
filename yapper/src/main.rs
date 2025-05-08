@@ -51,7 +51,6 @@ async fn main() -> Result<()> {
         cli.keyset_file.to_string_lossy(),
     ))?;
 
-    // TODO: make this selection a helper.
     let peer_host_iter = select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
     let mut all_hosts_as_addresses = Vec::new();
