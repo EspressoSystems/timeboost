@@ -20,11 +20,12 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+use crate::chan;
 use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -72,7 +73,7 @@ pub struct Network {
     ///
     /// If a public key is present, it will result in a uni-cast,
     /// otherwise the message will be sent to all parties.
-    tx: Sender<(Option<PublicKey>, Bytes)>,
+    tx: Sender<(Option<PublicKey>, Option<Id>, Bytes)>,
 
     /// MPSC receiver of messages from a remote party.
     ///
@@ -110,7 +111,7 @@ struct Server<T: tcp::Listener> {
     /// MPSC receiver for messages to be sent to remote parties.
     ///
     /// (see `Network` for the accompanying sender).
-    obound: Receiver<(Option<PublicKey>, Bytes)>,
+    obound: Receiver<(Option<PublicKey>, Option<Id>, Bytes)>,
 
     /// All parties of the network and their addresses.
     peers: HashMap<PublicKey, Address>,
@@ -167,7 +168,7 @@ struct IoTask {
     wh: AbortHandle,
 
     /// MPSC sender of outgoing messages to the remote.
-    tx: Sender<Message>,
+    tx: chan::Sender<Message>,
 }
 
 // Make sure all tasks are stopped when `IoTask` is dropped.
@@ -179,6 +180,7 @@ impl Drop for IoTask {
 }
 
 /// Unify the various data types we want to send to the writer task.
+#[derive(Debug)]
 enum Message {
     Data(Bytes),
     Ping(Timestamp),
@@ -311,7 +313,7 @@ impl Network {
             return Err(NetworkError::MessageTooLarge);
         }
         self.tx
-            .send((Some(to), msg))
+            .send((Some(to), None, msg))
             .await
             .map_err(|_| NetworkError::ChannelClosed)
     }
@@ -328,7 +330,7 @@ impl Network {
             return Err(NetworkError::MessageTooLarge);
         }
         self.tx
-            .send((None, msg))
+            .send((None, None, msg))
             .await
             .map_err(|_| NetworkError::ChannelClosed)
     }
@@ -339,7 +341,7 @@ impl Network {
     }
 
     /// Get a clone of the MPSC sender.
-    pub(crate) fn sender(&self) -> Sender<(Option<PublicKey>, Bytes)> {
+    pub(crate) fn sender(&self) -> Sender<(Option<PublicKey>, Option<Id>, Bytes)> {
         self.tx.clone()
     }
 }
@@ -513,7 +515,7 @@ where
                 // A new message to send out has been given to us:
                 msg = self.obound.recv() => match msg {
                     // Uni-cast
-                    Some((Some(to), m)) => {
+                    Some((Some(to), id, m)) => {
                         self.metrics.sent_message_len.add_point(m.len() as f64);
                         if to == self.key {
                             trace!(
@@ -542,7 +544,7 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
-                            if task.tx.try_send(Message::Data(m)).is_err() {
+                            if task.tx.try_send(id, Message::Data(m)).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -554,7 +556,7 @@ where
                         }
                     }
                     // Multi-cast
-                    Some((None, m)) => {
+                    Some((None, id, m)) => {
                         self.metrics.sent_message_len.add_point(m.len() as f64);
                         trace!(
                             name  = %self.name,
@@ -581,7 +583,7 @@ where
                                 queue = task.tx.capacity(),
                                 "sending message"
                             );
-                            if task.tx.try_send(Message::Data(m.clone())).is_err() {
+                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
                                 warn!(
                                     name = %self.name,
                                     node = %self.key,
@@ -602,7 +604,7 @@ where
                 _ = self.ping_interval.tick() => {
                     let now = Timestamp::now();
                     for task in self.active.values() {
-                        let _ = task.tx.try_send(Message::Ping(now));
+                        let _ = task.tx.try_send(None, Message::Ping(now));
                     }
                 }
             }
@@ -720,7 +722,7 @@ where
             addr = ?s.peer_addr().ok(),
             "starting i/o tasks"
         );
-        let (to_remote, from_remote) = mpsc::channel(PEER_CAPACITY);
+        let (to_remote, from_remote) = chan::channel(PEER_CAPACITY);
         let (r, w) = s.into_split();
         let t1 = Arc::new(Mutex::new(t));
         let t2 = t1.clone();
@@ -878,7 +880,7 @@ async fn recv_loop<R>(
     mut reader: R,
     state: Arc<Mutex<TransportState>>,
     to_deliver: Sender<(PublicKey, Bytes)>,
-    to_writer: Sender<Message>,
+    to_writer: chan::Sender<Message>,
     metrics: Arc<NetworkMetrics>,
     mut countdown: Countdown,
 ) -> Result<()>
@@ -899,7 +901,7 @@ where
                                     // Received ping message; sending pong to writer
                                     let n = state.lock().read_message(&f, &mut buf)?;
                                     if let Some(ping) = Timestamp::try_from_slice(&buf[..n]) {
-                                        let _ = to_writer.try_send(Message::Pong(ping));
+                                        let _ = to_writer.try_send(None, Message::Pong(ping));
                                     }
                                 }
                                 Ok(Type::Pong) => {
@@ -948,7 +950,7 @@ where
 async fn send_loop<W>(
     mut writer: W,
     state: Arc<Mutex<TransportState>>,
-    mut rx: Receiver<Message>,
+    rx: chan::Receiver<Message>,
     metrics: Arc<NetworkMetrics>,
     countdown: Countdown,
 ) -> Result<()>
