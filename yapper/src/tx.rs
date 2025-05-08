@@ -79,12 +79,6 @@ pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) {
             .map(|(client, regular_url, priority_url)| async {
                 send_bundle_to_node(&b, client, regular_url.as_str(), priority_url.as_str()).await
             });
-        for result in join_all(futs).await {
-            if let Err(err) = result {
-                error!(%err, "failed to send");
-            } else {
-                error!("YAPPPP!!!!");
-            }
-        }
+        let _ = join_all(futs).await;
     }
 }
