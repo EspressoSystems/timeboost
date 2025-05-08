@@ -91,8 +91,11 @@ impl BlockProducer {
             .map_err(|_| ProducerDown(()))
     }
 
-    pub async fn enqueue(&mut self, tx: Transaction) -> Result<(), ProducerDown> {
-        self.queue.push_back(tx);
+    pub async fn enqueue<I>(&mut self, txs: I) -> Result<(), ProducerDown>
+    where
+        I: IntoIterator<Item = Transaction>,
+    {
+        self.queue.extend(txs);
 
         // TODO: produce blocks deterministically according to spec.
         // Useful links:

@@ -53,15 +53,18 @@ async fn transaction_order() {
             let mut i = 0;
             while i < NUM_OF_TRANSACTIONS {
                 select! {
-                    t = brx.recv() => match t {
+                    trx = brx.recv() => match trx {
                         Ok(trx) => s.add_bundles(once(trx)),
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transaction() => {
+                    txs = s.next_transactions() => {
                         debug!(node = %s.public_key(), transactions = %i);
-                        i += 1;
-                        tx.send(t.unwrap()).unwrap()
+                        let txs = txs.unwrap();
+                        i += txs.len();
+                        for t in txs {
+                            tx.send(t).unwrap()
+                        }
                     }
                 }
             }
