@@ -22,7 +22,8 @@ pub enum Validated {}
 ///```compile_fail
 /// use multisig::{Envelope, Signature, Validated};
 ///
-/// let _: Envelope<Signature, Validated> = bincode::deserialize(&[]).unwrap();
+/// let _: Envelope<Signature, Validated> =
+///     bincode::serde::decode_from_slice(&[], bincode::config::standard()).unwrap().0;
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
