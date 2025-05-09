@@ -1,7 +1,7 @@
 use std::iter::once;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use anyhow::Result;
 use api::metrics::serve_metrics_api;
@@ -9,17 +9,13 @@ use cliquenet::Address;
 use metrics::TimeboostMetrics;
 use reqwest::Url;
 use timeboost_builder::{BlockProducer, BlockProducerConfig, ProducerDown};
-use timeboost_crypto::DecryptionScheme;
-use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::{Sequencer, SequencerConfig};
 use timeboost_types::{BundleVariant, DecryptionKey};
-use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
-use tokio::time::interval;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument};
 use vbs::version::StaticVersion;
 
 use multisig::{Keypair, PublicKey};
@@ -28,10 +24,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 pub use timeboost_types as types;
 
 pub mod api;
-pub mod keyset;
 pub mod metrics;
-
-type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
 pub struct TimeboostConfig {
     /// The port to bind the RPC server to.
@@ -72,9 +65,6 @@ pub struct TimeboostConfig {
 
     /// The receiver for transactions.
     pub receiver: Receiver<BundleVariant>,
-
-    /// Transactions per second
-    pub tps: u32,
 
     /// Path to a file that this process creates or reads as execution proof.
     pub stamp: PathBuf,
@@ -138,14 +128,6 @@ impl Timeboost {
             self.init.metrics_port,
         )));
 
-        if self.init.tps > 0 {
-            self.children.push(spawn(gen_bundles(
-                self.init.tps,
-                self.init.dec_sk.pubkey().clone(),
-                self.init.sender.clone(),
-            )));
-        }
-
         tokio::fs::File::create(self.init.stamp)
             .await?
             .sync_all()
@@ -180,21 +162,6 @@ impl Timeboost {
                     }
                 }
             }
-        }
-    }
-}
-
-async fn gen_bundles(tps: u32, pubkey: EncKey, tx: Sender<BundleVariant>) {
-    let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
-    loop {
-        interval.tick().await;
-        let Ok(b) = make_bundle(&pubkey) else {
-            warn!("error generating bundle");
-            continue;
-        };
-        if tx.send(b).await.is_err() {
-            error!("unable to send bundle");
-            return;
         }
     }
 }

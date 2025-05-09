@@ -17,6 +17,8 @@ bincode = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+cliquenet = { path = "../cliquenet" }
+dotenvy = { workspace = true }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
@@ -26,6 +28,7 @@ prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, path::PathBuf, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use cliquenet::Address;
@@ -39,10 +44,17 @@ pub struct PublicDecInfo {
     combkey: String,
 }
 
+impl PublicDecInfo {
+    pub fn pubkey(&self) -> Result<PublicKey> {
+        PublicKey::try_from_str::<8192>(self.pubkey.as_str())
+            .context("Failed to parse public key from keyset")
+    }
+}
+
 impl KeysetConfig {
-    pub fn read_keyset(path: PathBuf) -> Result<Self> {
+    pub fn read_keyset(path: &Path) -> Result<Self> {
         ensure!(path.exists(), "File not found: {:?}", path);
-        let data = fs::read_to_string(&path).context("Failed to read file")?;
+        let data = fs::read_to_string(path).context("Failed to read file")?;
         let keyset: KeysetConfig = from_str(&data).context("Failed to parse JSON")?;
         Ok(keyset)
     }
@@ -57,6 +69,10 @@ impl KeysetConfig {
 
     pub fn keyset(&self) -> &[PublicNodeInfo] {
         &self.keyset
+    }
+
+    pub fn dec_keyset(&self) -> &PublicDecInfo {
+        &self.dec_keyset
     }
 }
 
@@ -126,7 +142,7 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
                     return Ok(());
                 }
             }
-            Err(e) => tracing::error!("Failed to send request: {}", e),
+            Err(e) => tracing::error!("failed to send request: {}", e),
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;

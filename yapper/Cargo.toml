@@ -1,0 +1,18 @@
+[package]
+name = "yapper"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+bincode = { workspace = true }
+clap = { workspace = true }
+cliquenet = { path = "../cliquenet" }
+futures = { workspace = true }
+reqwest = { workspace = true }
+timeboost = { path = "../timeboost" }
+timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-utils = { path = "../timeboost-utils" }
+tracing = { workspace = true }
+tokio = { workspace = true }

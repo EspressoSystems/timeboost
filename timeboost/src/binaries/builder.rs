@@ -1,20 +1,20 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use cliquenet::Address;
 use multisig::{Keypair, PublicKey};
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
-use timeboost::{
-    keyset::{KeysetConfig, private_keys, wait_for_live_peer},
-    {Timeboost, TimeboostConfig, rpc_api},
-};
+use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
 
 #[cfg(feature = "until")]
+use anyhow::ensure;
+#[cfg(feature = "until")]
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
+use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -67,11 +67,6 @@ struct Cli {
     #[clap(long, short, action = clap::ArgAction::SetTrue)]
     late_start: bool,
 
-    /// NON PRODUCTION: An internal load generator will generate at a rate of X per second.
-    /// Set this to 0 for no load generation.
-    #[clap(long, short, default_value_t = 1)]
-    tps: u32,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
@@ -80,7 +75,7 @@ struct Cli {
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
-    nodes: Option<usize>,
+    nodes: usize,
 
     /// Path to file containing private keys.
     ///
@@ -136,14 +131,9 @@ async fn main() -> Result<()> {
     // Parse the CLI arguments for the node ID and port
     let cli = Cli::parse();
 
-    // The total number of nodes in the set
-    let num = cli.nodes.unwrap_or(4);
-
-    ensure!(num > 0, "number of nodes must be greater than zero");
-    ensure!(num < 20, "number of nodes must be less 20");
-
     // Read public key material
-    let keyset = KeysetConfig::read_keyset(cli.keyset_file).expect("keyfile to exist and be valid");
+    let keyset =
+        KeysetConfig::read_keyset(&cli.keyset_file).context("keyfile to exist and be valid")?;
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset
@@ -196,34 +186,17 @@ async fn main() -> Result<()> {
     let peer_urls: Vec<reqwest::Url> = keyset
         .keyset()
         .iter()
-        .take(num)
+        .take(cli.nodes)
         .map(|ph| format!("http://{}", ph.sailfish_url).parse().unwrap())
         .collect();
+
+    let peer_host_iter =
+        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut producer_peer_hosts_and_keys = Vec::new();
 
-    // Rust is *really* picky about mixing iterators, so we just erase the type.
-    let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
-        // The number of nodes to take from the group. The layout of the nodes is such that (in the cloud) each region
-        // continues sequentially from the prior region. So if us-east-2 has nodes 0, 1, 2, 3 and us-west-2 has nodes
-        // 4, 5, 6, 7, then we need to offset this otherwise we'd attribute us-east-2 nodes to us-west-2.
-        let take_from_group = num / 4;
-
-        Box::new(
-            keyset
-                .keyset()
-                .chunks(4)
-                .flat_map(move |v| v.iter().take(take_from_group)),
-        )
-    } else {
-        // Fallback behavior for multi regions, we just take the first n nodes if we're running on a single region or all
-        // on the same host.
-        Box::new(keyset.keyset().iter().take(num))
-    };
-
-    // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys from each chunk.
     for peer_host in peer_host_iter {
         let sailfish_address = Address::from_str(&peer_host.sailfish_url)?;
         let decrypt_address = Address::from_str(&peer_host.decrypt_url)?;
@@ -278,7 +251,6 @@ async fn main() -> Result<()> {
         nitro_url: cli.nitro_node_url,
         sender: tb_app_tx,
         receiver: tb_app_rx,
-        tps: cli.tps,
         stamp: cli.stamp,
         ignore_stamp: cli.ignore_stamp,
     };

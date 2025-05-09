@@ -82,6 +82,7 @@ set +a;
 
 just build_release --features="until"
 
+pids=()
 for (( i=0; i<$nodes; i++ )); do
     sig_priv_key="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
     dec_priv_key="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
@@ -95,7 +96,6 @@ for (( i=0; i<$nodes; i++ )); do
         --until $rounds
         --nodes $nodes
         --keyset-file $keyset_file
-        --tps $tps
         --stamp "${stamp}-$i.sf"
         --watchdog-timeout $rounds)
 
@@ -111,7 +111,16 @@ for (( i=0; i<$nodes; i++ )); do
     TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!sig_priv_key} \
     TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!dec_priv_key} \
     "${cmd[@]}" &
+    pids+=($!)
 done
 
-wait
+if [ "$tps" -gt 0 ]; then
+    target/release/yapper --tps $tps --nodes $nodes --keyset-file $keyset_file &
+fi
+
+wait "${pids[@]}"
+
+if [ "$tps" -gt 0 ]; then
+    pkill yapper
+fi
 

@@ -16,6 +16,7 @@ build_release *ARGS:
 
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
+  docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
 
 ####################
 ###CHECK COMMANDS###

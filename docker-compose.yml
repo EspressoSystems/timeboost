@@ -170,6 +170,21 @@ services:
       timeboost:
         ipv4_address: 172.20.0.12
     command: --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug
+  yapper:
+    image: yapper:latest
+    command:
+      [
+        "/app/yapper",
+        "--tps",
+        "1",
+        "--nodes",
+        "5",
+        "--keyset-file",
+        "docker.json",
+      ]
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.13
 
 networks:
   timeboost:
