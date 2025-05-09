@@ -3,8 +3,10 @@
 use std::time::{Duration, Instant};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Committee, Keypair, Signed, VoteAccumulator};
+use multisig::{Certificate, Committee, Keypair, Signed, Version, VoteAccumulator};
 use serde::Serialize;
+
+const VERSION: Version = Version::new(1);
 
 const SIZES: [usize; 9] = [1, 2, 3, 10, 20, 30, 60, 100, 150];
 
@@ -31,14 +33,16 @@ fn bench_vote_accumulator() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            VERSION,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
         let duration = simple_bench(|| {
-            let mut accu = VoteAccumulator::<Message>::new(comm.clone());
+            let mut accu = VoteAccumulator::<Message>::new(comm.latest());
             for k in &mut keys[..] {
-                accu.add(Signed::new(Message, k, false)).unwrap();
+                accu.add(Signed::new((VERSION, Message).into(), k, false))
+                    .unwrap();
             }
             accu.certificate().is_some()
         });
@@ -47,9 +51,10 @@ fn bench_vote_accumulator() {
 }
 
 fn mk_cert(keys: &mut [Keypair], comm: Committee) -> Certificate<Message> {
-    let mut accu = VoteAccumulator::<Message>::new(comm);
+    let mut accu = VoteAccumulator::<Message>::new(comm.latest());
     for k in &mut keys[..] {
-        accu.add(Signed::new(Message, k, false)).unwrap();
+        accu.add(Signed::new((VERSION, Message).into(), k, false))
+            .unwrap();
     }
     accu.certificate().unwrap().clone()
 }
@@ -59,6 +64,7 @@ fn bench_certificate_is_valid() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            1,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -74,6 +80,7 @@ fn bench_certificate_is_valid_par() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            1,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -89,6 +96,7 @@ fn certificate_sizes() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            1,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),

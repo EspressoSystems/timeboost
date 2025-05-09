@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Version(u32);
 
+impl Version {
+    pub const fn new(v: u32) -> Self {
+        Self(v)
+    }
+}
+
 impl From<u32> for Version {
     fn from(val: u32) -> Self {
         Self(val)
@@ -34,6 +40,10 @@ impl Committable for Version {
 pub struct Versioned<T>(Version, T);
 
 impl<T> Versioned<T> {
+    pub fn new<V: Into<Version>>(v: V, x: T) -> Self {
+        Self(v.into(), x)
+    }
+
     pub fn version(&self) -> Version {
         self.0
     }

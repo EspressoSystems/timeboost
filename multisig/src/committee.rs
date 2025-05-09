@@ -7,6 +7,8 @@ use bimap::BiBTreeMap;
 use super::{KeyId, PublicKey, Version};
 use parking_lot::RwLock;
 
+const DEFAULT_MAX_VERSIONS: usize = 5;
+
 #[derive(Debug, Clone)]
 pub struct Committee {
     parties: Arc<RwLock<BTreeMap<Version, CommitteeView>>>,
@@ -29,17 +31,29 @@ impl Committee {
     /// # Panics
     ///
     /// If the given iterator of parties is empty.
-    pub fn new<I, T>(max_versions: usize, v: Version, it: I) -> Self
+    pub fn new<I, T, V>(v: V, it: I) -> Self
     where
         I: IntoIterator<Item = (T, PublicKey)>,
         T: Into<KeyId>,
+        V: Into<Version>,
     {
         let this = Self {
             parties: Default::default(),
-            max_versions,
+            max_versions: DEFAULT_MAX_VERSIONS,
         };
         this.try_add(v, it).expect("empty map => no version error");
         this
+    }
+
+    /// Set the max. number of supported versions.
+    ///
+    /// This will also remove all entries that exceed the new maximum.
+    pub fn set_max_versions(&mut self, m: NonZeroUsize) {
+        let mut parties = self.parties.write();
+        while parties.len() > m.get() {
+            parties.pop_first();
+        }
+        self.max_versions = m.get()
     }
 
     /// View a committee at the given version.
@@ -63,11 +77,13 @@ impl Committee {
     /// # Panics
     ///
     /// If the given iterator of parties is empty.
-    pub fn try_add<I, T>(&self, v: Version, it: I) -> Result<(), VersionError>
+    pub fn try_add<I, T, V>(&self, v: V, it: I) -> Result<(), VersionError>
     where
         I: IntoIterator<Item = (T, PublicKey)>,
         T: Into<KeyId>,
+        V: Into<Version>,
     {
+        let v = v.into();
         let map = BiBTreeMap::from_iter(it.into_iter().map(|(i, k)| (i.into(), k)));
         assert!(!map.is_empty());
         let view = CommitteeView {
@@ -75,8 +91,8 @@ impl Committee {
             parties: Arc::new(map),
         };
         let mut parties = self.parties.write();
-        let latest = *parties.last_key_value().expect("some committee exists").0;
-        if v <= latest {
+        let latest = parties.last_key_value().map(|entry| entry.0).copied();
+        if Some(v) <= latest {
             return Err(VersionError::Collision);
         }
         parties.insert(v, view);
