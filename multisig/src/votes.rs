@@ -4,12 +4,12 @@ use std::iter;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, CommitteeView, KeyId, PublicKey, Signature, Signed};
+use crate::{Certificate, CommitteeView, KeyId, PublicKey, Signature, Signed, Version, Versioned};
 
 #[derive(Debug, Clone)]
 pub struct VoteAccumulator<D: Committable> {
     committee: CommitteeView,
-    votes: HashMap<Commitment<D>, Entry<D>>,
+    votes: HashMap<Commitment<Versioned<D>>, Entry<Versioned<D>>>,
     cert: Option<Certificate<D>>,
 }
 
@@ -37,17 +37,21 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         }
     }
 
+    pub fn version(&self) -> Version {
+        self.committee.version()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.votes.is_empty()
     }
 
     /// Return the amount of signatures for a given commmitment.
-    pub fn votes(&self, c: &Commitment<D>) -> usize {
+    pub fn votes(&self, c: &Commitment<Versioned<D>>) -> usize {
         self.votes.get(c).map(|e| e.sigs.len()).unwrap_or(0)
     }
 
     /// Return iterator for each public key for a given committment.
-    pub fn voters(&self, c: &Commitment<D>) -> impl Iterator<Item = &PublicKey> {
+    pub fn voters(&self, c: &Commitment<Versioned<D>>) -> impl Iterator<Item = &PublicKey> {
         if let Some(e) = self.votes.get(c) {
             Either::Right(e.sigs.keys().filter_map(|i| self.committee.get_key(*i)))
         } else {
@@ -66,7 +70,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     }
 
     /// Set the certificate.
-    pub fn set_certificate(&mut self, c: Certificate<D>) {
+    pub fn set_certificate(&mut self, c: Certificate<D>) -> Result<(), Error> {
+        if c.data().version() != self.version() {
+            return Err(Error::VersionMismatch(c.data().version(), self.version()));
+        }
         self.clear();
         self.votes.insert(
             *c.commitment(),
@@ -75,7 +82,8 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
                 sigs: c.signatures().clone(),
             },
         );
-        self.cert = Some(c)
+        self.cert = Some(c);
+        Ok(())
     }
 
     /// Clear all accumulated votes and the certificate.
@@ -90,7 +98,12 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     /// - Validate the public key of sender
     /// - Add the signature into the accumulator if we have not seen it yet
     /// - Create a certificate if we have 2f + 1 signatures
-    pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
+    pub fn add(&mut self, signed: Signed<Versioned<D>>) -> Result<Option<&Certificate<D>>, Error> {
+        if signed.data().version() != self.version() {
+            let e = Error::VersionMismatch(signed.data().version(), self.version());
+            return Err(e);
+        }
+
         let Some(ix) = self.committee.get_index(signed.signing_key()) else {
             return Err(Error::UnknownSigningKey);
         };
@@ -113,8 +126,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             return Ok(None);
         }
 
-        let ver = self.committee.version();
-        let crt = Certificate::new(ver, entry.data.clone(), commit, entry.sigs.clone());
+        let crt = Certificate::new(entry.data.clone(), commit, entry.sigs.clone());
         self.cert = Some(crt);
 
         Ok(self.certificate())
@@ -126,4 +138,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 pub enum Error {
     #[error("unknown signing key")]
     UnknownSigningKey,
+
+    #[error("version mismatch: {0} != {1}")]
+    VersionMismatch(Version, Version),
 }

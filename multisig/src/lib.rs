@@ -3,6 +3,7 @@ mod committee;
 mod envelope;
 mod signed;
 mod util;
+mod version;
 mod votes;
 
 pub mod x25519;
@@ -18,6 +19,7 @@ pub use cert::Certificate;
 pub use committee::{Committee, CommitteeView};
 pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
+pub use version::{Version, Versioned};
 pub use votes::VoteAccumulator;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -43,21 +45,6 @@ impl From<KeyId> for usize {
 
 impl From<KeyId> for u64 {
     fn from(val: KeyId) -> Self {
-        val.0.into()
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Version(u32);
-
-impl From<u32> for Version {
-    fn from(val: u32) -> Self {
-        Self(val)
-    }
-}
-
-impl From<Version> for u64 {
-    fn from(val: Version) -> Self {
         val.0.into()
     }
 }
