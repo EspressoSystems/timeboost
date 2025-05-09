@@ -23,7 +23,7 @@ COPY --from=builder /app/test-configs .
 RUN chown -R yapperuser:appgroup /app && chmod +x /app/yapper
 
 # We need curl for the healthcheck
-RUN apt update && apt install -yqq curl
+RUN apt update && apt-get install -y openssl
 
 # Switch to non-root user
 USER yapperuser

@@ -5,26 +5,22 @@ use timeboost::types::BundleVariant;
 use timeboost_utils::load_generation::{EncKey, make_bundle, tps_to_millis};
 use tokio::time::interval;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cliquenet::Address;
-use tracing::{error, warn};
+use tracing::warn;
 
-fn setup_clients_and_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Client, Url, Url)>> {
+fn setup_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Url, Url)>> {
     let mut clients_and_urls = Vec::new();
 
     for addr in all_hosts_as_addresses {
         // Create a new client for each address
-        let client = Client::builder()
-            .timeout(Duration::from_secs(1))
-            .build()
-            .context("building the reqwest client")?;
 
         let regular_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
             .with_context(|| format!("parsing {} into a url", addr))?;
         let priority_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
             .with_context(|| format!("parsing {} into a url", addr))?;
 
-        clients_and_urls.push((client, regular_url, priority_url));
+        clients_and_urls.push((regular_url, priority_url));
     }
 
     Ok(clients_and_urls)
@@ -33,34 +29,43 @@ fn setup_clients_and_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Cli
 async fn send_bundle_to_node(
     bundle: &BundleVariant,
     client: &Client,
-    regular_url: &str,
-    priority_url: &str,
+    regular_url: &Url,
+    priority_url: &Url,
 ) -> Result<()> {
     let result = match bundle {
-        BundleVariant::Regular(bundle) => client
-            .post(regular_url)
-            .json(&bundle)
-            .send()
-            .await
-            .context("sending request to the submit-regular endpoint"),
-        BundleVariant::Priority(signed_priority_bundle) => client
-            .post(priority_url)
-            .json(&signed_priority_bundle)
-            .send()
-            .await
-            .context("sending request to the submit-priority endpoint"),
+        BundleVariant::Regular(bundle) => {
+            client.post(regular_url.clone()).json(&bundle).send().await
+        }
+        BundleVariant::Priority(signed_priority_bundle) => {
+            client
+                .post(priority_url.clone())
+                .json(&signed_priority_bundle)
+                .send()
+                .await
+        }
     };
 
-    if let Err(err) = result {
-        error!(%err, "failed to send transaction");
-        return Err(err);
+    match result {
+        Ok(response) => {
+            if !response.status().is_success() {
+                warn!("response status: {}", response.status());
+                return Err(anyhow!("response status: {}", response.status()));
+            }
+        }
+        Err(err) => {
+            warn!(%err, "failed to send bundle");
+            return Err(anyhow!("failed to send bundle: {}", err));
+        }
     }
     Ok(())
 }
 
 pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) {
-    let client_and_urls =
-        setup_clients_and_urls(addresses).expect("failed to setup clients and urls");
+    let c = Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .expect("reqwest client to be built");
+    let urls = setup_urls(addresses).expect("failed to setup clients and urls");
 
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -74,14 +79,9 @@ pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) {
 
         interval.tick().await;
 
-        join_all(
-            client_and_urls
-                .iter()
-                .map(|(client, regular_url, priority_url)| async {
-                    send_bundle_to_node(&b, client, regular_url.as_str(), priority_url.as_str())
-                        .await
-                }),
-        )
+        join_all(urls.iter().map(|(regular_url, priority_url)| async {
+            send_bundle_to_node(&b, &c, regular_url, priority_url).await
+        }))
         .await;
     }
 }

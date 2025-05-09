@@ -142,7 +142,7 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
                     return Ok(());
                 }
             }
-            Err(e) => tracing::error!("Failed to send request: {}", e),
+            Err(e) => tracing::error!("failed to send request: {}", e),
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
