@@ -17,7 +17,7 @@ use tokio::signal::{
     ctrl_c,
     unix::{SignalKind, signal},
 };
-use tracing::info;
+use tracing::{info, warn};
 use tx::yap;
 
 mod tx;
@@ -34,6 +34,7 @@ struct Cli {
     #[clap(long)]
     keyset_file: PathBuf,
 
+    /// Specify how many transactions per second to send to each node
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
@@ -55,39 +56,27 @@ async fn main() -> Result<()> {
         cli.keyset_file.to_string_lossy(),
     ))?;
 
-    let peer_host_iter = select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
+    let nodes = select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
 
-    let mut all_hosts_as_addresses = Vec::new();
-    for peer_host in peer_host_iter {
-        let mut raw_url_split = peer_host.sailfish_url.splitn(3, ":");
-        let host = raw_url_split.next().context(format!(
-            "fetching host from peer host url {}",
-            peer_host.sailfish_url
-        ))?;
-
-        // This is a hack
-        let port: u16 = raw_url_split
-            .next()
-            .context(format!(
-                "extracting port from peer host url {}",
-                peer_host.sailfish_url
-            ))?
-            .parse::<u16>()
-            .context("parsing port into u16")?;
-        let mut address = Address::from((host, port));
+    let mut addresses = Vec::new();
+    for node in nodes {
+        info!("waiting for peer: {}", node.sailfish_url);
+        let mut addr = node
+            .sailfish_url
+            .parse::<Address>()
+            .expect("failed to parse saiflish url to address");
 
         // Wait for the peeer to come online so we know it's valid.
-        info!("waiting for peer: {}", address);
-        wait_for_live_peer(address.clone()).await?;
-        address.set_port(800 + address.port());
-        all_hosts_as_addresses.push(address);
+        wait_for_live_peer(addr.clone()).await?;
+        addr.set_port(800 + addr.port());
+        addresses.push(addr);
     }
 
     let pub_key = keyset
         .dec_keyset()
         .pubkey()
         .expect("failed to get public key from keyset");
-    let jh = tokio::spawn(async move { yap(&all_hosts_as_addresses, &pub_key, cli.tps).await });
+    let mut jh = tokio::spawn(async move { yap(&addresses, &pub_key, cli.tps).await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {
@@ -97,6 +86,9 @@ async fn main() -> Result<()> {
         _ = signal.recv() => {
             info!("received sigterm, shutting down yapper...");
         },
+        r = &mut jh => {
+            warn!("yapping task was terminated, reason: {:?}", r);
+        }
     }
     jh.abort();
     Ok(())
