@@ -46,7 +46,7 @@ struct Cli {
 async fn main() -> Result<()> {
     init_logging();
 
-    info!("Starting yapper");
+    info!("starting yapper");
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
@@ -83,13 +83,11 @@ async fn main() -> Result<()> {
         all_hosts_as_addresses.push(address);
     }
 
-    let jh = tokio::spawn({
-        let pub_key = keyset
-            .dec_keyset()
-            .pubkey()
-            .expect("failed to get public key from keyset");
-        async move { yap(&all_hosts_as_addresses, &pub_key, cli.tps).await }
-    });
+    let pub_key = keyset
+        .dec_keyset()
+        .pubkey()
+        .expect("failed to get public key from keyset");
+    let jh = tokio::spawn(async move { yap(&all_hosts_as_addresses, &pub_key, cli.tps).await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {
