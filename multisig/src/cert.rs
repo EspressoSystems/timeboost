@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
 use crate::{Committee, KeyId, PublicKey, Signature};
@@ -41,6 +42,7 @@ impl<D: Committable> Certificate<D> {
     }
 
     pub fn is_valid(&self, committee: &Committee) -> bool {
+        let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
         let n: usize = self
             .signatures
             .iter()
@@ -52,7 +54,7 @@ impl<D: Committable> Certificate<D> {
             })
             .sum();
 
-        n >= committee.quorum_size().get()
+        d && n >= committee.quorum_size().get()
     }
 
     pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
@@ -63,6 +65,8 @@ impl<D: Committable> Certificate<D> {
 impl<D: Committable + Sync> Certificate<D> {
     pub fn is_valid_par(&self, committee: &Committee) -> bool {
         use rayon::prelude::*;
+
+        let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
 
         let n: usize = self
             .signatures
@@ -75,7 +79,7 @@ impl<D: Committable + Sync> Certificate<D> {
             })
             .sum();
 
-        n >= committee.quorum_size().get()
+        d && n >= committee.quorum_size().get()
     }
 }
 
