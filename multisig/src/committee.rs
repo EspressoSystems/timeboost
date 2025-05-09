@@ -1,26 +1,109 @@
+use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use bimap::BiBTreeMap;
 
-use super::{KeyId, PublicKey};
+use super::{KeyId, PublicKey, Version};
+use parking_lot::RwLock;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Committee {
+    parties: Arc<RwLock<BTreeMap<Version, CommitteeView>>>,
+    max_versions: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct CommitteeView {
+    version: Version,
     parties: Arc<BiBTreeMap<KeyId, PublicKey>>,
 }
 
 impl Committee {
-    pub fn new<I, T>(it: I) -> Self
+    /// Create a new committee with a given version.
+    ///
+    /// Also configure how many versions can exist at most.
+    /// `Committee::try_add` will automatically remove the oldest version
+    /// when approaching the limit.
+    ///
+    /// # Panics
+    ///
+    /// If the given iterator of parties is empty.
+    pub fn new<I, T>(max_versions: usize, v: Version, it: I) -> Self
+    where
+        I: IntoIterator<Item = (T, PublicKey)>,
+        T: Into<KeyId>,
+    {
+        let this = Self {
+            parties: Default::default(),
+            max_versions,
+        };
+        this.try_add(v, it).expect("empty map => no version error");
+        this
+    }
+
+    /// View a committee at the given version.
+    pub fn at(&self, v: Version) -> Option<CommitteeView> {
+        let p = self.parties.read();
+        p.get(&v).cloned()
+    }
+
+    /// Get the latest committee version.
+    pub fn latest(&self) -> CommitteeView {
+        let p = self.parties.read();
+        p.last_key_value().expect("some committee exists").1.clone()
+    }
+
+    /// Try to add a new committee.
+    ///
+    /// The version needs to be greater than the latest version. This will
+    /// also remove the oldest version, if more than the configured max. number
+    /// of versions exist.
+    ///
+    /// # Panics
+    ///
+    /// If the given iterator of parties is empty.
+    pub fn try_add<I, T>(&self, v: Version, it: I) -> Result<(), VersionError>
     where
         I: IntoIterator<Item = (T, PublicKey)>,
         T: Into<KeyId>,
     {
         let map = BiBTreeMap::from_iter(it.into_iter().map(|(i, k)| (i.into(), k)));
         assert!(!map.is_empty());
-        Self {
+        let view = CommitteeView {
+            version: v,
             parties: Arc::new(map),
+        };
+        let mut parties = self.parties.write();
+        let latest = *parties.last_key_value().expect("some committee exists").0;
+        if v <= latest {
+            return Err(VersionError::Collision);
         }
+        parties.insert(v, view);
+        while parties.len() > self.max_versions {
+            parties.pop_first();
+        }
+        Ok(())
+    }
+
+    /// Try to delete a committee by version.
+    ///
+    /// All versions other than the latest can be removed.
+    pub fn try_remove(&self, v: Version) -> Result<(), VersionError> {
+        let mut parties = self.parties.write();
+        let latest = *parties.last_key_value().expect("some committee exists").0;
+        if v == latest {
+            return Err(VersionError::RemoveLastestVersion);
+        }
+        parties.remove(&v);
+        Ok(())
+    }
+}
+
+impl CommitteeView {
+    /// The version of this committee.
+    pub fn version(&self) -> Version {
+        self.version
     }
 
     /// Returns the size of the committee as a non-zero unsigned integer.
@@ -28,7 +111,8 @@ impl Committee {
         NonZeroUsize::new(self.parties.len()).expect("committee is not empty")
     }
 
-    /// Returns the at-least-one-honest threshold for consensus, which is `ceil(n/3)` where `n` is the committee size.
+    /// Returns the at-least-one-honest threshold for consensus,
+    /// which is `ceil(n/3)` where `n` is the committee size.
     pub fn one_honest_threshold(&self) -> NonZeroUsize {
         let t = self.parties.len().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
@@ -84,4 +168,14 @@ impl Committee {
             .copied()
             .expect("round % len < len")
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum VersionError {
+    #[error("version already exists")]
+    Collision,
+
+    #[error("can not remove latest version")]
+    RemoveLastestVersion,
 }

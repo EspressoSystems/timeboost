@@ -3,7 +3,7 @@ use std::{hash::Hash, marker::PhantomData, ops::Deref};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, Keypair, Signed};
+use crate::{Keypair, Signed};
 
 /// Marker type to denote envelopes whose signature has not been validated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -45,16 +45,16 @@ impl<D: Committable> Envelope<D, Validated> {
 
 impl<D: Committable, S> Envelope<D, S> {
     /// Is the signature of this envelope valid?
-    pub fn is_valid(&self, membership: &Committee) -> bool {
-        self.signed.is_valid(membership)
+    pub fn is_valid(&self) -> bool {
+        self.signed.is_valid()
     }
 
     /// Transition from an unchecked envelope to a validated one.
     ///
     /// This checks that the signature of the envelope is valid and represents
     /// the only way to get a validated envelope from an unchecked one.
-    pub fn validated(self, membership: &Committee) -> Option<Envelope<D, Validated>> {
-        if !self.is_valid(membership) {
+    pub fn validated(self) -> Option<Envelope<D, Validated>> {
+        if !self.is_valid() {
             return None;
         }
         Some(Envelope {

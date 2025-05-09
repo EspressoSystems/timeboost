@@ -4,11 +4,11 @@ use std::iter;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, Committee, KeyId, PublicKey, Signature, Signed};
+use crate::{Certificate, CommitteeView, KeyId, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
 pub struct VoteAccumulator<D: Committable> {
-    committee: Committee,
+    committee: CommitteeView,
     votes: HashMap<Commitment<D>, Entry<D>>,
     cert: Option<Certificate<D>>,
 }
@@ -29,7 +29,7 @@ impl<D> Entry<D> {
 }
 
 impl<D: Committable + Clone> VoteAccumulator<D> {
-    pub fn new(committee: Committee) -> Self {
+    pub fn new(committee: CommitteeView) -> Self {
         Self {
             committee,
             votes: HashMap::new(),
@@ -113,7 +113,8 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             return Ok(None);
         }
 
-        let crt = Certificate::new(entry.data.clone(), commit, entry.sigs.clone());
+        let ver = self.committee.version();
+        let crt = Certificate::new(ver, entry.data.clone(), commit, entry.sigs.clone());
         self.cert = Some(crt);
 
         Ok(self.certificate())

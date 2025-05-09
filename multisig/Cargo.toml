@@ -17,6 +17,7 @@ constant_time_eq = { workspace = true }
 data-encoding = { workspace = true }
 ed25519-compact = { workspace = true }
 either = { workspace = true }
+parking_lot = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }

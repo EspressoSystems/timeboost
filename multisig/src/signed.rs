@@ -2,7 +2,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, Keypair, PublicKey, Signature};
+use crate::{Keypair, PublicKey, Signature};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Signed<D: Committable> {
@@ -24,9 +24,8 @@ impl<D: Committable> Signed<D> {
         }
     }
 
-    pub fn is_valid(&self, membership: &Committee) -> bool {
-        membership.contains_key(&self.signing_key)
-            && constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
+    pub fn is_valid(&self) -> bool {
+        constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
             && self
                 .signing_key
                 .is_valid(self.commitment.as_ref(), &self.signature)
