@@ -13,8 +13,6 @@ fn setup_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Url, Url)>> {
     let mut clients_and_urls = Vec::new();
 
     for addr in all_hosts_as_addresses {
-        // Create a new client for each address
-
         let regular_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
             .with_context(|| format!("parsing {} into a url", addr))?;
         let priority_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
