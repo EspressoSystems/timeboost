@@ -60,13 +60,13 @@ async fn send_bundle_to_node(
 
 pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) {
     let client_and_urls =
-        setup_clients_and_urls(addresses).expect("failed to setup clients and URLs");
+        setup_clients_and_urls(addresses).expect("failed to setup clients and urls");
 
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        // create a bundle for next `interval.tick()`, then send this bundle to each host
+        // create a bundle for next `interval.tick()`, then send this bundle to each node
         let Ok(b) = make_bundle(pub_key) else {
             warn!("failed to generate bundle");
             continue;
@@ -74,11 +74,14 @@ pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) {
 
         interval.tick().await;
 
-        let futs = client_and_urls
-            .iter()
-            .map(|(client, regular_url, priority_url)| async {
-                send_bundle_to_node(&b, client, regular_url.as_str(), priority_url.as_str()).await
-            });
-        let _ = join_all(futs).await;
+        join_all(
+            client_and_urls
+                .iter()
+                .map(|(client, regular_url, priority_url)| async {
+                    send_bundle_to_node(&b, client, regular_url.as_str(), priority_url.as_str())
+                        .await
+                }),
+        )
+        .await;
     }
 }

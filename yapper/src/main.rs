@@ -84,17 +84,20 @@ async fn main() -> Result<()> {
     }
 
     let jh = tokio::spawn({
-        let pub_key = keyset.dec_keyset().pubkey()?;
+        let pub_key = keyset
+            .dec_keyset()
+            .pubkey()
+            .expect("failed to get public key from keyset");
         async move { yap(&all_hosts_as_addresses, &pub_key, cli.tps).await }
     });
 
-    let mut signal = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+    let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {
         _ = ctrl_c() => {
-            info!("Received Ctrl+C, shutting down yapper...");
+            info!("received Ctrl+C, shutting down yapper...");
         },
         _ = signal.recv() => {
-            info!("Received SIGTERM, shutting down yapper...");
+            info!("received sigterm, shutting down yapper...");
         },
     }
     jh.abort();
