@@ -24,6 +24,7 @@ impl<D: Committable> Signed<D> {
         }
     }
 
+    #[must_use]
     pub fn is_valid(&self, comm: &Committee) -> bool {
         comm.at(self.data.version())
             .map(|c| c.contains_key(&self.signing_key))

@@ -52,6 +52,7 @@ impl<D: Committable> Certificate<D> {
         )
     }
 
+    #[must_use]
     pub fn is_valid(&self, committee: &Committee) -> bool {
         let Some(c) = committee.at(self.data().version()) else {
             return false;
@@ -79,6 +80,7 @@ impl<D: Committable> Certificate<D> {
 }
 
 impl<D: Committable + Sync> Certificate<D> {
+    #[must_use]
     pub fn is_valid_par(&self, committee: &Committee) -> bool {
         use rayon::prelude::*;
 

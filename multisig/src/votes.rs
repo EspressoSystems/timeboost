@@ -70,9 +70,9 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     }
 
     /// Set the certificate.
-    pub fn set_certificate(&mut self, c: Certificate<D>) -> Result<(), Error> {
+    pub fn set_certificate(&mut self, c: Certificate<D>) -> Result<(), VotingError> {
         if c.data().version() != self.version() {
-            return Err(Error::VersionMismatch(c.data().version(), self.version()));
+            return Err(VotingError::VersionMismatch(c.data().version(), self.version()));
         }
         self.clear();
         self.votes.insert(
@@ -98,14 +98,14 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     /// - Validate the public key of sender
     /// - Add the signature into the accumulator if we have not seen it yet
     /// - Create a certificate if we have 2f + 1 signatures
-    pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
+    pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, VotingError> {
         if signed.data().version() != self.version() {
-            let e = Error::VersionMismatch(signed.data().version(), self.version());
+            let e = VotingError::VersionMismatch(signed.data().version(), self.version());
             return Err(e);
         }
 
         let Some(ix) = self.committee.get_index(signed.signing_key()) else {
-            return Err(Error::UnknownSigningKey);
+            return Err(VotingError::UnknownSigningKey);
         };
 
         let commit = *signed.commitment();
@@ -135,10 +135,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum VotingError {
     #[error("unknown signing key")]
     UnknownSigningKey,
 
-    #[error("version mismatch: {0} != {1}")]
+    #[error("version mismatch: {0} ≠ {1}")]
     VersionMismatch(Version, Version),
 }

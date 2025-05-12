@@ -20,7 +20,7 @@ pub use committee::{Committee, CommitteeView};
 pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use version::{Version, Versioned};
-pub use votes::VoteAccumulator;
+pub use votes::{VoteAccumulator, VotingError};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct KeyId(u8);

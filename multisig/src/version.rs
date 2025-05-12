@@ -54,6 +54,12 @@ impl<T> Versioned<T> {
     }
 }
 
+impl<T: fmt::Display> fmt::Display for Versioned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}@{}", self.1, self.0)
+    }
+}
+
 impl<T> Deref for Versioned<T> {
     type Target = T;
 

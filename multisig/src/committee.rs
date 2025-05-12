@@ -7,7 +7,7 @@ use bimap::BiBTreeMap;
 use super::{KeyId, PublicKey, Version};
 use parking_lot::RwLock;
 
-const DEFAULT_MAX_VERSIONS: usize = 5;
+const DEFAULT_MAX_VERSIONS: usize = 2;
 
 #[derive(Debug, Clone)]
 pub struct Committee {
@@ -66,6 +66,12 @@ impl Committee {
     pub fn latest(&self) -> CommitteeView {
         let p = self.parties.read();
         p.last_key_value().expect("some committee exists").1.clone()
+    }
+
+    /// Get the latest version number.
+    pub fn latest_version(&self) -> Version {
+        let p = self.parties.read();
+        *p.last_key_value().expect("some committee exists").0
     }
 
     /// Try to add a new committee.
