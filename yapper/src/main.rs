@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         let mut addr = node
             .sailfish_url
             .parse::<Address>()
-            .expect("failed to parse saiflish url to address");
+            .context("failed to parse saiflish url to address")?;
 
         // Wait for the peeer to come online so we know it's valid.
         wait_for_live_peer(addr.clone()).await?;
