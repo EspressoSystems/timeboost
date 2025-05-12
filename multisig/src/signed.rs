@@ -2,18 +2,18 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
-use crate::{Keypair, PublicKey, Signature};
+use crate::{Committee, Keypair, PublicKey, Signature, Versioned};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Signed<D: Committable> {
-    data: D,
-    commitment: Commitment<D>,
+    data: Versioned<D>,
+    commitment: Commitment<Versioned<D>>,
     signature: Signature,
     signing_key: PublicKey,
 }
 
 impl<D: Committable> Signed<D> {
-    pub fn new(d: D, keypair: &Keypair, deterministic: bool) -> Self {
+    pub fn new(d: Versioned<D>, keypair: &Keypair, deterministic: bool) -> Self {
         let c = d.commit();
         let s = keypair.sign(c.as_ref(), deterministic);
         Self {
@@ -24,8 +24,11 @@ impl<D: Committable> Signed<D> {
         }
     }
 
-    pub fn is_valid(&self) -> bool {
-        constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
+    pub fn is_valid(&self, comm: &Committee) -> bool {
+        comm.at(self.data.version())
+            .map(|c| c.contains_key(&self.signing_key))
+            .unwrap_or(false)
+            && constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
             && self
                 .signing_key
                 .is_valid(self.commitment.as_ref(), &self.signature)
@@ -39,15 +42,15 @@ impl<D: Committable> Signed<D> {
         &self.signing_key
     }
 
-    pub fn commitment(&self) -> Commitment<D> {
-        self.commitment
+    pub fn commitment(&self) -> &Commitment<Versioned<D>> {
+        &self.commitment
     }
 
-    pub fn data(&self) -> &D {
+    pub fn data(&self) -> &Versioned<D> {
         &self.data
     }
 
-    pub fn into_data(self) -> D {
+    pub fn into_data(self) -> Versioned<D> {
         self.data
     }
 }

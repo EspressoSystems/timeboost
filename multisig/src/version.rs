@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::Deref;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
@@ -53,8 +54,10 @@ impl<T> Versioned<T> {
     }
 }
 
-impl<T> AsRef<T> for Versioned<T> {
-    fn as_ref(&self) -> &T {
+impl<T> Deref for Versioned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
         &self.1
     }
 }

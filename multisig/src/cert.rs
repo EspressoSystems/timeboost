@@ -6,7 +6,7 @@ use constant_time_eq::constant_time_eq;
 use either::Either;
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, KeyId, PublicKey, Signature, Version, Versioned};
+use crate::{Committee, KeyId, PublicKey, Signature, Versioned};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Certificate<D: Committable> {
@@ -28,10 +28,6 @@ impl<D: Committable> Certificate<D> {
         }
     }
 
-    pub fn version(&self) -> Version {
-        self.data.version()
-    }
-
     pub fn data(&self) -> &Versioned<D> {
         &self.data
     }
@@ -45,7 +41,7 @@ impl<D: Committable> Certificate<D> {
     }
 
     pub fn signers(&self, comm: &Committee) -> impl Iterator<Item = PublicKey> {
-        let Some(c) = comm.at(self.version()) else {
+        let Some(c) = comm.at(self.data().version()) else {
             return Either::Left(iter::empty());
         };
         Either::Right(
@@ -57,7 +53,7 @@ impl<D: Committable> Certificate<D> {
     }
 
     pub fn is_valid(&self, committee: &Committee) -> bool {
-        let Some(c) = committee.at(self.version()) else {
+        let Some(c) = committee.at(self.data().version()) else {
             return false;
         };
 
@@ -86,7 +82,7 @@ impl<D: Committable + Sync> Certificate<D> {
     pub fn is_valid_par(&self, committee: &Committee) -> bool {
         use rayon::prelude::*;
 
-        let Some(c) = committee.at(self.version()) else {
+        let Some(c) = committee.at(self.data().version()) else {
             return false;
         };
 
@@ -110,7 +106,6 @@ impl<D: Committable + Sync> Certificate<D> {
 impl<D: Committable> Committable for Certificate<D> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Certificate")
-            .u64_field("version", self.version().into())
             .field("data", self.data.commit())
             .field("commitment", self.commitment)
             .u64_field("quorum", self.signatures.len() as u64);

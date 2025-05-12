@@ -3,7 +3,7 @@ use std::{hash::Hash, marker::PhantomData, ops::Deref};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Keypair, Signed};
+use crate::{Committee, Keypair, Signed, Versioned};
 
 /// Marker type to denote envelopes whose signature has not been validated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub struct Envelope<D: Committable, S> {
 
 impl<D: Committable> Envelope<D, Validated> {
     /// Create a (validated) envelope by signing data with a private key.
-    pub fn signed(d: D, keypair: &Keypair, deterministic: bool) -> Self {
+    pub fn signed(d: Versioned<D>, keypair: &Keypair, deterministic: bool) -> Self {
         Self {
             signed: Signed::new(d, keypair, deterministic),
             _marker: PhantomData,
@@ -45,16 +45,16 @@ impl<D: Committable> Envelope<D, Validated> {
 
 impl<D: Committable, S> Envelope<D, S> {
     /// Is the signature of this envelope valid?
-    pub fn is_valid(&self) -> bool {
-        self.signed.is_valid()
+    pub fn is_valid(&self, membership: &Committee) -> bool {
+        self.signed.is_valid(membership)
     }
 
     /// Transition from an unchecked envelope to a validated one.
     ///
     /// This checks that the signature of the envelope is valid and represents
     /// the only way to get a validated envelope from an unchecked one.
-    pub fn validated(self) -> Option<Envelope<D, Validated>> {
-        if !self.is_valid() {
+    pub fn validated(self, membership: &Committee) -> Option<Envelope<D, Validated>> {
+        if !self.is_valid(membership) {
             return None;
         }
         Some(Envelope {
@@ -67,7 +67,7 @@ impl<D: Committable, S> Envelope<D, S> {
         self.signed
     }
 
-    pub fn into_data(self) -> D {
+    pub fn into_data(self) -> Versioned<D> {
         self.signed.into_data()
     }
 }

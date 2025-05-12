@@ -98,7 +98,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     /// - Validate the public key of sender
     /// - Add the signature into the accumulator if we have not seen it yet
     /// - Create a certificate if we have 2f + 1 signatures
-    pub fn add(&mut self, signed: Signed<Versioned<D>>) -> Result<Option<&Certificate<D>>, Error> {
+    pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
         if signed.data().version() != self.version() {
             let e = Error::VersionMismatch(signed.data().version(), self.version());
             return Err(e);
@@ -108,7 +108,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
             return Err(Error::UnknownSigningKey);
         };
 
-        let commit = signed.commitment();
+        let commit = *signed.commitment();
         let sig = *signed.signature();
 
         let entry = self
