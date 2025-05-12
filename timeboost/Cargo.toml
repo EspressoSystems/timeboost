@@ -20,7 +20,6 @@ clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 dashmap = "6.1.0"
-dotenvy = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
 parking_lot = { workspace = true }
