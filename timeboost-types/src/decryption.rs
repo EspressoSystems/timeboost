@@ -9,6 +9,9 @@ type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 
+/// Key materials related to the decryption phase, including the public key for encryption,
+/// the per-node key share for decryption, and combiner key for hatching decryption shares into
+/// plaintext
 #[derive(Debug, Clone)]
 pub struct DecryptionKey {
     pubkey: PublicKey,
@@ -38,6 +41,7 @@ impl DecryptionKey {
     }
 }
 
+/// TODO: (alex) remove this? this is decryption phase specific temp struct. not exposing externally
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShareInfo {
     round: RoundNumber,
@@ -78,16 +82,19 @@ impl ShareInfo {
     }
 }
 
+/// Metadata of a decryption share, including the round number it belongs to, a ciphertext identifier
+/// (currently using the nonce inside the ciphertext since it's never reused), and the keyset id.
+// TODO: (alex) see if we can simplify this to a mere cid?
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, Ord, PartialEq, Eq, PartialOrd)]
-pub struct DecShareKey {
+pub struct DecShareMetadata {
     round: RoundNumber,
     cid: Nonce,
     kid: KeysetId,
 }
 
-impl DecShareKey {
+impl DecShareMetadata {
     pub fn new(round: RoundNumber, cid: Nonce, kid: KeysetId) -> Self {
-        DecShareKey { round, cid, kid }
+        DecShareMetadata { round, cid, kid }
     }
 
     pub fn round(&self) -> RoundNumber {

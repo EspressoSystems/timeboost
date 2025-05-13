@@ -13,6 +13,7 @@ use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
 use sha2::Sha256;
 use spongefish::DigestBridge;
+use std::fmt;
 use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -20,10 +21,19 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
+/// Idnetifier to a ciphertext
+pub type CiphertextId = Nonce;
+
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
 pub struct KeysetId(u64);
+
+impl fmt::Display for KeysetId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "KeysetId({})", self.0)
+    }
+}
 
 impl TryFrom<&[u8]> for KeysetId {
     type Error = InvalidKeysetId;
@@ -126,7 +136,7 @@ pub struct Ciphertext<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DecShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     w: C,
@@ -236,7 +246,8 @@ impl From<Plaintext> for Vec<u8> {
 }
 
 impl<C: CurveGroup> Ciphertext<C> {
-    pub fn nonce(&self) -> Nonce {
+    /// Currently using its (expectedly) unique nonce as its identifier
+    pub fn id(&self) -> CiphertextId {
         self.nonce
     }
 }
