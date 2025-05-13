@@ -25,6 +25,8 @@ pub enum BundleVariant {
     Priority(SignedPriorityBundle),
 }
 
+/// A bundle contains a list of transactions (encrypted or unencrypted, both encoded as `Bytes`).
+/// if `kid` is set to `Some<KeysetId>`, that signals an encrypted bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Bundle {
     chain: ChainId,
@@ -35,6 +37,7 @@ pub struct Bundle {
 }
 
 impl Bundle {
+    /// Constructor of bundle, when `kid.is_some()`, we assume `data` is encrypted.
     pub fn new(chain: ChainId, epoch: Epoch, data: Bytes, kid: Option<KeysetId>) -> Self {
         let mut this = Self {
             chain,
@@ -66,6 +69,11 @@ impl Bundle {
         &self.data
     }
 
+    /// Returns true if the bundle is encrypted
+    pub fn is_encrypted(&self) -> bool {
+        self.kid.is_some()
+    }
+
     pub fn kid(&self) -> Option<KeysetId> {
         self.kid
     }
@@ -74,14 +82,19 @@ impl Bundle {
         &self.hash
     }
 
-    pub fn set_data(&mut self, d: Bytes) {
+    /// Set the data payload to some ciphertext bytes, encrypted under the specified keyset
+    pub fn set_encrypted_data(&mut self, d: Bytes, kid: KeysetId) {
         self.data = d;
+        self.kid = Some(kid);
         self.update_hash()
     }
 
-    pub fn set_kid(&mut self, kid: KeysetId) {
-        self.kid = Some(kid);
-        self.update_hash()
+    /// Set the data payload to un-encrypted, plaintext data.
+    /// Use this at the end of the decryption phase
+    pub fn set_data(&mut self, d: Bytes) {
+        self.data = d;
+        self.kid = None;
+        self.update_hash();
     }
 
     #[cfg(feature = "arbitrary")]
@@ -148,6 +161,10 @@ impl PriorityBundle {
 
     pub fn bundle(&self) -> &Bundle {
         &self.bundle
+    }
+
+    pub fn bundle_mut(&mut self) -> &mut Bundle {
+        &mut self.bundle
     }
 
     pub fn auction(&self) -> Address {
