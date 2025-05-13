@@ -10,7 +10,7 @@ pub struct Digest(RoundNumber, [u8; 32]);
 
 impl Digest {
     pub fn of_vertex<T: Committable, S>(e: &Envelope<Vertex<T>, S>) -> Self {
-        Self(*e.data().round().data(), e.commit().into())
+        Self(**e.data().round().data(), e.commit().into())
     }
 
     pub fn of_msg<T: Committable, S>(d: &Message<T, S>) -> Self {

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
+use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, Versioned};
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
@@ -43,7 +43,7 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
     Cert(Certificate<Digest>),
 
     /// A direct request to retrieve a message, identified by the given digest.
-    GetRequest(Digest),
+    GetRequest(Versioned<Digest>),
 
     /// The reply to a get request.
     GetResponse(Cow<'a, Envelope<Vertex<T>, Status>>),
@@ -144,8 +144,9 @@ impl<T: Committable> Drop for Rbc<T> {
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
     pub fn new(net: Overlay, c: RbcConfig) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+        let committee_size = c.committee.latest().size().get();
+        let (obound_tx, obound_rx) = mpsc::channel(2 * committee_size);
+        let (ibound_tx, ibound_rx) = mpsc::channel(3 * committee_size);
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,

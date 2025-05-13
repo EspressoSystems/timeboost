@@ -1,4 +1,4 @@
-use multisig::{Committee, PublicKey};
+use multisig::{CommitteeView, PublicKey};
 use sailfish_types::RoundNumber;
 
 /// Information about nodes.
@@ -11,7 +11,7 @@ pub struct NodeInfo {
 }
 
 impl NodeInfo {
-    pub fn new(c: &Committee) -> Self {
+    pub fn new(c: &CommitteeView) -> Self {
         Self {
             nodes: c.parties().map(|k| (*k, RoundNumber::genesis())).collect(),
             quorum: c.quorum_size().get(),

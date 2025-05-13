@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Keypair, PublicKey, Signed};
+use multisig::{Certificate, Keypair, PublicKey, Signed, Version, Versioned};
 use serde::{Deserialize, Serialize};
 
 use super::message::NoVote;
@@ -19,31 +19,39 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair, deterministic: bool) -> Self
+    pub fn new<V, N, E>(
+        version: V,
+        round: N,
+        evidence: E,
+        payload: T,
+        kpair: &Keypair,
+        deterministic: bool,
+    ) -> Self
     where
+        V: Into<Version>,
         N: Into<RoundNumber>,
         E: Into<Evidence>,
     {
-        let r = r.into();
-        let e = e.into();
+        let round = round.into();
+        let evidence = evidence.into();
 
-        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        debug_assert!(evidence.round() + 1 == round || round == RoundNumber::genesis());
 
         Self {
-            source: k.public_key(),
-            round: Signed::new(r, k, deterministic),
+            source: kpair.public_key(),
+            round: Signed::new(Versioned::new(version, round), kpair, deterministic),
             edges: BTreeSet::new(),
-            evidence: e,
+            evidence,
             no_vote: None,
             committed: RoundNumber::genesis(),
-            payload: d,
+            payload,
         }
     }
 
     /// Is this vertex from the genesis round?
     pub fn is_genesis(&self) -> bool {
-        *self.round.data() == RoundNumber::genesis()
-            && *self.round.data() == self.evidence.round()
+        **self.round.data() == RoundNumber::genesis()
+            && **self.round.data() == self.evidence.round()
             && self.evidence.is_genesis()
             && self.edges.is_empty()
             && self.no_vote.is_none()

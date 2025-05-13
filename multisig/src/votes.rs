@@ -72,7 +72,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     /// Set the certificate.
     pub fn set_certificate(&mut self, c: Certificate<D>) -> Result<(), VotingError> {
         if c.data().version() != self.version() {
-            return Err(VotingError::VersionMismatch(c.data().version(), self.version()));
+            return Err(VotingError::VersionMismatch(
+                c.data().version(),
+                self.version(),
+            ));
         }
         self.clear();
         self.votes.insert(
@@ -141,4 +144,10 @@ pub enum VotingError {
 
     #[error("version mismatch: {0} ≠ {1}")]
     VersionMismatch(Version, Version),
+}
+
+impl VotingError {
+    pub fn is_version_mismatch(&self) -> bool {
+        matches!(self, Self::VersionMismatch(..))
+    }
 }

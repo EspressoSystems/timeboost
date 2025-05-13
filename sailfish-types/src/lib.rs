@@ -1,10 +1,12 @@
 mod comm;
+mod epochs;
 mod message;
 mod payload;
 mod round;
 mod vertex;
 
 pub use comm::{Comm, CommError};
+pub use epochs::Epochs;
 pub use message::{Action, Evidence, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
@@ -26,7 +28,7 @@ impl Committable for Empty {
 
 /// The unit type has a single value.
 ///
-/// This exists, because `committable` has no impl for `()`.
+/// This exists, because `Committable` has no impl for `()`.
 #[derive(
     Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]

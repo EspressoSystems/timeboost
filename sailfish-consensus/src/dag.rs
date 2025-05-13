@@ -35,7 +35,7 @@ impl<T: PartialEq> Dag<T> {
         debug_assert!(!self.contains(&v));
         let r = *v.round().data();
         let s = v.source();
-        let m = self.elements.entry(r).or_default();
+        let m = self.elements.entry(*r).or_default();
         debug_assert!(m.len() < self.max_keys.get());
         m.insert(*s, v);
     }
@@ -132,7 +132,7 @@ impl<T: PartialEq> Dag<T> {
         let mut current = vec![from];
         for nodes in self
             .elements
-            .range(..from.round().data())
+            .range(..**from.round().data())
             .rev()
             .map(|e| e.1)
         {

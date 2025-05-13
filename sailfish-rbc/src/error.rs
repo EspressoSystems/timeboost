@@ -1,4 +1,5 @@
 use cliquenet::overlay::{DataError, NetworkDown};
+use multisig::{Version, VotingError};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -17,6 +18,12 @@ pub enum RbcError {
 
     #[error("invalid sender")]
     InvalidSender,
+
+    #[error("no committee at version {0}")]
+    NoCommittee(Version),
+
+    #[error("voting error: {0}")]
+    Vote(#[from] VotingError),
 
     #[error("rbc has shut down")]
     Shutdown,

@@ -10,8 +10,8 @@ use cliquenet::{
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
-use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
-use multisig::{Unchecked, Validated};
+use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator, Version, Versioned};
+use multisig::{CommitteeView, Unchecked, Validated};
 use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
@@ -82,12 +82,12 @@ struct Messages<T: Committable> {
     /// be delivered.
     early: bool,
     /// Tracking info per message.
-    map: BTreeMap<Digest, Tracker<T>>,
+    map: BTreeMap<Versioned<Digest>, Tracker<T>>,
 }
 
 impl<T: Committable> Messages<T> {
     /// Get a message digest of this source, if any.
-    fn digest(&self, s: &PublicKey) -> Option<Digest> {
+    fn digest(&self, s: &PublicKey) -> Option<Versioned<Digest>> {
         for (d, t) in &self.map {
             if let Some(vertex) = &t.message.item {
                 if vertex.data().source() == s {
@@ -124,7 +124,7 @@ struct Tracker<T: Committable> {
 
 impl<T: Committable> Tracker<T> {
     /// Randomly select a voter of the given commitment.
-    fn choose_voter(&self, d: &Commitment<Digest>) -> Option<PublicKey> {
+    fn choose_voter(&self, d: &Commitment<Versioned<Digest>>) -> Option<PublicKey> {
         use rand::seq::IteratorRandom;
         self.votes.voters(d).choose(&mut rand::rng()).copied()
     }
@@ -326,14 +326,15 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// Start RBC broadcast.
     async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> SendResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
-        let digest = Digest::of_vertex(&vertex);
+        let version = vertex.data().round().data().version();
+        let digest = Versioned::new(version, Digest::of_vertex(&vertex));
 
-        self.round = (*vertex.data().round().data(), vertex.data().evidence().clone());
+        self.round = (**vertex.data().round().data(), vertex.data().evidence().clone());
 
         let mut tracker = Tracker {
             start: Instant::now(),
             message: Item::some(vertex),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
+            votes: VoteAccumulator::new(self.config.committee.latest()),
             status: Status::Initiated,
         };
 
@@ -415,7 +416,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         rounds.insert(src, r);
 
-        if rounds.len() >= self.config.committee.quorum_size().get() {
+        if rounds.len() >= self.config.committee.latest().quorum_size().get() {
             let barrier = rounds
                 .values()
                 .max()
@@ -493,7 +494,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
-        let digest = Digest::of_vertex(&vertex);
+        let version = vertex.data().round().data().version();
+        let committee = self.committee(version)?;
+        let digest = Versioned::new(version, Digest::of_vertex(&vertex));
 
         if let Some(messages) = self.buffer.get(&digest.round()) {
             if let Some(d) = messages.digest(&src) {
@@ -511,7 +514,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
             start: Instant::now(),
             message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
+            votes: VoteAccumulator::new(committee.clone()),
             status: Status::Initiated,
         });
 
@@ -583,7 +586,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 .filter(|t| t.message.item.is_some())
                 .count();
 
-            if available >= self.config.committee.quorum_size().get() {
+            if available >= committee.quorum_size().get() {
                 for tracker in messages.map.values_mut() {
                     if tracker.status == Status::Delivered {
                         continue;
@@ -620,6 +623,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         let digest = *env.data();
+        let committee = self.committee(digest.version())?;
         let commit = digest.commit();
 
         // If a vote for a round greater than our current latest round + 1 arrives,
@@ -642,7 +646,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
             start: Instant::now(),
             message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
+            votes: VoteAccumulator::new(committee),
             status: Status::Initiated,
         });
 
@@ -722,13 +726,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
+        let committee = self.committee(crt.data().version())?;
         let commit = digest.commit();
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round()).or_default();
         let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
             start: Instant::now(),
             message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
+            votes: VoteAccumulator::new(committee),
             status: Status::Initiated,
         });
 
@@ -737,7 +742,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // message to the application layer. If we are missing the message, we have to
             // ask one of our peers for it.
             Status::Initiated => {
-                tracker.votes.set_certificate(crt.clone());
+                tracker.votes.set_certificate(crt.clone())?;
                 if let Some(vertex) = &tracker.message.item {
                     let m = Protocol::<'_, T, Validated>::Cert(crt);
                     let b = serialize(&m)?;
@@ -777,7 +782,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// One of our peers is asking for a message proposal.
-    async fn on_get_request(&mut self, src: PublicKey, digest: Digest) -> RbcResult<()> {
+    async fn on_get_request(&mut self, src: PublicKey, digest: Versioned<Digest>) -> RbcResult<()> {
         debug!(node = %self.key, %src, %digest, "get request received");
 
         if self.barrier().is_gt() {
@@ -809,7 +814,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         };
 
-        let digest = Digest::of_vertex(&vertex);
+        let version = vertex.data().round().data().version();
+        let digest = Versioned::new(version, Digest::of_vertex(&vertex));
 
         let Some(tracker) = self
             .buffer
@@ -843,5 +849,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             WorkerState::Recover(..) => Ordering::Greater,
             WorkerState::Barrier(rn) => rn.cmp(&self.round.0)
         }
+    }
+
+    fn committee(&self, v: Version) -> Result<CommitteeView, RbcError> {
+        self.config.committee.at(v).ok_or(RbcError::NoCommittee(v))
     }
 }
