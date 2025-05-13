@@ -17,8 +17,8 @@ use sailfish::{
     types::Action,
 };
 use serde::{Deserialize, Serialize};
-use timeboost::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 use timeboost::{metrics_api, rpc_api};
+use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::signal;
@@ -61,7 +61,7 @@ struct Cli {
 
     /// NON PRODUCTION: Specify the number of nodes to run.
     #[clap(long)]
-    nodes: Option<usize>,
+    nodes: usize,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -199,10 +199,9 @@ async fn main() -> Result<()> {
     logging::init_logging();
 
     let cli = Cli::parse();
-    let num = cli.nodes.unwrap_or(4);
 
     let keyset =
-        KeysetConfig::read_keyset(cli.keyset_file).context("Failed to read keyset file")?;
+        KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
 
@@ -263,7 +262,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = {
         let mut urls = Vec::new();
-        for ph in keyset.keyset().iter().take(num) {
+        for ph in keyset.keyset().iter().take(cli.nodes) {
             let url = format!("http://{}", ph.sailfish_url)
                 .parse()
                 .context(format!("Failed to parse URL: http://{}", ph.sailfish_url))?;
@@ -291,30 +290,11 @@ async fn main() -> Result<()> {
         task_handle
     };
 
+    let peer_host_iter =
+        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
+
     let mut peer_hosts_and_keys = Vec::new();
 
-    // Rust is *really* picky about mixing iterators, so we just erase the type.
-    let peer_host_iter: Box<dyn Iterator<Item = &_>> = if cli.multi_region {
-        // The number of nodes to take from the group. The layout of the nodes is such that
-        // (in the cloud) each region continues sequentially from the prior region. So if us-east-2
-        // has nodes 0, 1, 2, 3 and us-west-2 has nodes 4, 5, 6, 7, then we need to offset this
-        // otherwise we'd attribute us-east-2 nodes to us-west-2.
-        let take_from_group = num / 4;
-
-        Box::new(
-            keyset
-                .keyset()
-                .chunks(4)
-                .flat_map(move |v| v.iter().take(take_from_group)),
-        )
-    } else {
-        // Fallback behavior for multi regions, we just take the first n nodes if we're running on
-        // a single region or all on the same host.
-        Box::new(keyset.keyset().iter().take(num))
-    };
-
-    // So we take chunks of 4 per region (this is ALWAYS 4), then, take `take_from_group` node keys
-    // from each chunk.
     for peer_host in peer_host_iter {
         let peer_address = Address::from_str(&peer_host.sailfish_url)?;
         wait_for_live_peer(peer_address.clone()).await?;

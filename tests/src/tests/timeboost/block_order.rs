@@ -52,7 +52,7 @@ async fn block_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transaction() => {
+                    t = s.next_transactions() => {
                         p.enqueue(t.expect("transaction")).await.unwrap()
                     }
                     b = p.next_block() => {

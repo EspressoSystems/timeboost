@@ -8,7 +8,7 @@ use timeboost_crypto::{
 };
 use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
 
-type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+pub type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
 pub fn make_bundle(pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();

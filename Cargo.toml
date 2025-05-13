@@ -14,6 +14,7 @@ members = [
     "timeboost-crypto",
     "timeboost-types",
     "timeboost-utils",
+    "yapper",
 ]
 resolver = "2"
 
@@ -54,6 +55,7 @@ bs58 = "0.5.1"
 bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
+constant_time_eq = "0.4"
 criterion = "0.5"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
@@ -66,6 +68,7 @@ either = "1.13.0"
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 multiaddr = "0.18.2"
+nohash-hasher = "0.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
 prometheus = "0.14"

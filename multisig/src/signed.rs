@@ -1,4 +1,5 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
 use crate::{Committee, Keypair, PublicKey, Signature};
@@ -25,7 +26,7 @@ impl<D: Committable> Signed<D> {
 
     pub fn is_valid(&self, membership: &Committee) -> bool {
         membership.contains_key(&self.signing_key)
-            && self.data.commit() == self.commitment
+            && constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
             && self
                 .signing_key
                 .is_valid(self.commitment.as_ref(), &self.signature)

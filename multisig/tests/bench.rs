@@ -96,7 +96,9 @@ fn certificate_sizes() {
         let cert = mk_cert(&mut keys, comm.clone());
         println!(
             "{n:3} -> {:5} bytes",
-            bincode::serialize(&cert).unwrap().len()
+            bincode::serde::encode_to_vec(&cert, bincode::config::standard())
+                .unwrap()
+                .len()
         );
     }
 }

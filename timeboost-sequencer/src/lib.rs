@@ -104,7 +104,7 @@ pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
-    output: Receiver<Transaction>,
+    output: Receiver<Vec<Transaction>>,
 }
 
 impl Drop for Sequencer {
@@ -120,7 +120,7 @@ struct Task {
     includer: Includer,
     decrypter: Decrypter,
     sorter: Sorter,
-    output: Sender<Transaction>,
+    output: Sender<Vec<Transaction>>,
     mode: Mode,
 }
 
@@ -241,9 +241,9 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transaction(&mut self) -> Result<Transaction> {
+    pub async fn next_transactions(&mut self) -> Result<Vec<Transaction>> {
         select! {
-            trx = self.output.recv() => trx.ok_or(TimeboostError::ChannelClosed),
+            txs = self.output.recv() => txs.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
                 Ok(Ok(())) => {
                     error!(node = %self.label, "unexpected task termination");
@@ -314,8 +314,9 @@ impl Task {
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
-                        for t in self.sorter.sort(incl) {
-                            self.output.send(t).await.map_err(|_| TimeboostError::ChannelClosed)?
+                        let txs = self.sorter.sort(incl);
+                        if !txs.is_empty() {
+                            self.output.send(txs).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
