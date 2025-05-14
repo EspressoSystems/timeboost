@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Keypair, PublicKey, Signed};
+use multisig::{Certificate, Indexed, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
 use super::message::NoVote;
@@ -110,6 +110,14 @@ impl<T> Vertex<T> {
 
     pub fn dbg(&self) -> String {
         format!("{} -> {:?}", self, self.edges().collect::<Vec<_>>())
+    }
+}
+
+impl<T> Indexed for Vertex<T> {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        *self.round.data()
     }
 }
 

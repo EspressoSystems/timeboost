@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::iter;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
+use either::Either;
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, KeyId, PublicKey, Signature};
+use crate::{Committee, CommitteeSeq, Indexed, InvalidSignature, KeyId, PublicKey, Signature};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Certificate<D: Committable> {
@@ -34,37 +36,59 @@ impl<D: Committable> Certificate<D> {
         &self.commitment
     }
 
-    pub fn signers<'a>(&'a self, comm: &'a Committee) -> impl Iterator<Item = &'a PublicKey> {
-        self.signatures
-            .keys()
-            .copied()
-            .filter_map(|i| comm.get_key(i))
+    pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
+        &self.signatures
+    }
+}
+
+impl<D: Committable + Indexed> Certificate<D> {
+    pub fn signers<'a>(
+        &'a self,
+        comm: &'a CommitteeSeq<D::Index>,
+    ) -> impl Iterator<Item = &'a PublicKey> {
+        let Some(c) = comm.get(self.data.index()) else {
+            return Either::Left(iter::empty());
+        };
+        Either::Right(self.signatures.keys().copied().filter_map(|i| c.get_key(i)))
     }
 
-    pub fn is_valid(&self, committee: &Committee) -> bool {
+    pub fn is_valid<'a>(
+        &self,
+        seq: &'a CommitteeSeq<D::Index>,
+    ) -> Result<&'a Committee, InvalidSignature> {
+        let Some(c) = seq.get(self.data.index()) else {
+            return Err(InvalidSignature(()));
+        };
         let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
         let n: usize = self
             .signatures
             .iter()
             .map(|(i, s)| {
-                let Some(k) = committee.get_key(*i) else {
+                let Some(k) = c.get_key(*i) else {
                     return 0;
                 };
                 k.is_valid(self.commitment.as_ref(), s) as usize
             })
             .sum();
 
-        d && n >= committee.quorum_size().get()
-    }
-
-    pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
-        &self.signatures
+        if d && n >= c.quorum_size().get() {
+            Ok(c)
+        } else {
+            Err(InvalidSignature(()))
+        }
     }
 }
 
-impl<D: Committable + Sync> Certificate<D> {
-    pub fn is_valid_par(&self, committee: &Committee) -> bool {
+impl<D: Committable + Indexed + Sync> Certificate<D> {
+    pub fn is_valid_par<'a>(
+        &self,
+        seq: &'a CommitteeSeq<D::Index>,
+    ) -> Result<&'a Committee, InvalidSignature> {
         use rayon::prelude::*;
+
+        let Some(c) = seq.get(self.data.index()) else {
+            return Err(InvalidSignature(()));
+        };
 
         let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
 
@@ -72,14 +96,18 @@ impl<D: Committable + Sync> Certificate<D> {
             .signatures
             .par_iter()
             .map(|(i, s)| {
-                let Some(k) = committee.get_key(*i) else {
+                let Some(k) = c.get_key(*i) else {
                     return 0;
                 };
                 k.is_valid(self.commitment.as_ref(), s) as usize
             })
             .sum();
 
-        d && n >= committee.quorum_size().get()
+        if d && n >= c.quorum_size().get() {
+            Ok(c)
+        } else {
+            Err(InvalidSignature(()))
+        }
     }
 }
 

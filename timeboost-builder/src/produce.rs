@@ -1,7 +1,8 @@
 use bytes::{BufMut, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
-use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
+use multisig::{Certificate, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
+use multisig::{Committee, CommitteeSeq};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
 use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Transaction};
@@ -52,12 +53,15 @@ impl BlockProducer {
         let (block_tx, block_rx) = channel(MAX_BLOCKS);
         let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
 
-        let committee = Committee::new(
-            cfg.peers
-                .iter()
-                .map(|(k, _)| *k)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
+        let committees = CommitteeSeq::new(
+            ()..,
+            Committee::new(
+                cfg.peers
+                    .iter()
+                    .map(|(k, _)| *k)
+                    .enumerate()
+                    .map(|(i, key)| (i as u8, key)),
+            ),
         );
 
         let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, _)| *k));
@@ -71,7 +75,7 @@ impl BlockProducer {
         )
         .await?;
 
-        let worker = Worker::new(cfg.keypair.clone(), Overlay::new(net), committee);
+        let worker = Worker::new(cfg.keypair.clone(), Overlay::new(net), committees);
 
         Ok(Self {
             label: cfg.keypair,
@@ -193,16 +197,16 @@ struct Tracker {
 struct Worker {
     keypair: Keypair,
     net: Overlay,
-    committee: Committee,
+    committees: CommitteeSeq<()>,
     trackers: BTreeMap<BlockHash, Tracker>,
 }
 
 impl Worker {
-    pub fn new(keypair: Keypair, net: Overlay, committee: Committee) -> Self {
+    pub fn new(keypair: Keypair, net: Overlay, committees: CommitteeSeq<()>) -> Self {
         Self {
             keypair,
             net,
-            committee,
+            committees,
             trackers: BTreeMap::new(),
         }
     }
@@ -234,7 +238,7 @@ impl Worker {
                             from = %src,
                             "receive"
                         );
-                        if let Some(e) = env.validated(&self.committee) {
+                        if let Ok((e, _)) = env.validated(&self.committees) {
                             recv_block = (None, e);
                         } else {
                             warn!(node = %label, %num, "invalid block info received");
@@ -283,7 +287,7 @@ impl Worker {
                 .trackers
                 .entry(*block_hash.data())
                 .or_insert_with(|| Tracker {
-                    votes: VoteAccumulator::new(self.committee.clone()),
+                    votes: VoteAccumulator::new((), self.committees.current().clone()),
                     num: None,
                     status: CertStatus::Unknown,
                 });

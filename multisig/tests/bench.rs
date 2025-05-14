@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Committee, Keypair, Signed, VoteAccumulator};
+use multisig::{Certificate, Committee, CommitteeSeq, Indexed, Keypair, Signed, VoteAccumulator};
 use serde::Serialize;
 
 const SIZES: [usize; 9] = [1, 2, 3, 10, 20, 30, 60, 100, 150];
@@ -26,6 +26,14 @@ impl Committable for Message {
     }
 }
 
+impl Indexed for Message {
+    type Index = ();
+
+    fn index(&self) -> Self::Index {
+        ()
+    }
+}
+
 #[test]
 fn bench_vote_accumulator() {
     for n in SIZES {
@@ -36,7 +44,7 @@ fn bench_vote_accumulator() {
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
         let duration = simple_bench(|| {
-            let mut accu = VoteAccumulator::<Message>::new(comm.clone());
+            let mut accu = VoteAccumulator::<Message>::new((), comm.clone());
             for k in &mut keys[..] {
                 accu.add(Signed::new(Message, k, false)).unwrap();
             }
@@ -47,7 +55,7 @@ fn bench_vote_accumulator() {
 }
 
 fn mk_cert(keys: &mut [Keypair], comm: Committee) -> Certificate<Message> {
-    let mut accu = VoteAccumulator::<Message>::new(comm);
+    let mut accu = VoteAccumulator::<Message>::new((), comm);
     for k in &mut keys[..] {
         accu.add(Signed::new(Message, k, false)).unwrap();
     }
@@ -63,8 +71,9 @@ fn bench_certificate_is_valid() {
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
-        let cert = mk_cert(&mut keys, comm.clone());
-        let duration = simple_bench(|| cert.is_valid(&comm));
+        let seq = CommitteeSeq::new(().., comm.clone());
+        let cert = mk_cert(&mut keys, comm);
+        let duration = simple_bench(|| cert.is_valid(&seq).is_ok());
         println!("{n:3} -> {duration:0.2?}");
     }
 }
@@ -78,8 +87,9 @@ fn bench_certificate_is_valid_par() {
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
-        let cert = mk_cert(&mut keys, comm.clone());
-        let duration = simple_bench(|| cert.is_valid_par(&comm));
+        let seq = CommitteeSeq::new(().., comm.clone());
+        let cert = mk_cert(&mut keys, comm);
+        let duration = simple_bench(|| cert.is_valid_par(&seq).is_ok());
         println!("{n:3} -> {duration:0.2?}");
     }
 }
@@ -93,7 +103,7 @@ fn certificate_sizes() {
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
-        let cert = mk_cert(&mut keys, comm.clone());
+        let cert = mk_cert(&mut keys, comm);
         println!(
             "{n:3} -> {:5} bytes",
             bincode::serde::encode_to_vec(&cert, bincode::config::standard())

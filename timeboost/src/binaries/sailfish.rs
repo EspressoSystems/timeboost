@@ -9,12 +9,12 @@ use std::{
 use anyhow::{Context, Result, bail};
 use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, CommitteeSeq, Keypair, PublicKey};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::Action,
+    types::{Action, RoundNumber},
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
@@ -326,12 +326,15 @@ async fn main() -> Result<()> {
 
     let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
 
-    let committee = Committee::new(
-        peer_hosts_and_keys
-            .iter()
-            .map(|b| b.0)
-            .enumerate()
-            .map(|(i, key)| (i as u8, key)),
+    let committee = CommitteeSeq::new(
+        RoundNumber::genesis()..,
+        Committee::new(
+            peer_hosts_and_keys
+                .iter()
+                .map(|b| b.0)
+                .enumerate()
+                .map(|(i, key)| (i as u8, key)),
+        ),
     );
 
     // If the stamp file exists we need to recover from a previous run.

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Envelope};
+use multisig::{Certificate, Envelope, Indexed};
 use sailfish_types::{Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +23,14 @@ impl Digest {
 
     pub fn round(&self) -> RoundNumber {
         self.0
+    }
+}
+
+impl Indexed for Digest {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        self.round()
     }
 }
 

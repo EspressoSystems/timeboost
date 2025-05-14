@@ -10,7 +10,7 @@ use std::sync::Arc;
 use cliquenet::{self as net, MAX_MESSAGE_SIZE};
 use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, CommitteeSeq, Keypair, PublicKey};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
@@ -148,12 +148,15 @@ impl Sequencer {
         let rbc_metrics = RbcMetrics::new(metrics);
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
-        let committee = Committee::new(
-            cfg.sailfish_peers
-                .iter()
-                .map(|(k, _)| *k)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
+        let committees = CommitteeSeq::new(
+            RoundNumber::genesis()..,
+            Committee::new(
+                cfg.sailfish_peers
+                    .iter()
+                    .map(|(k, _)| *k)
+                    .enumerate()
+                    .map(|(i, key)| (i as u8, key)),
+            ),
         );
 
         let public_key = cfg.keypair.public_key();
@@ -179,17 +182,17 @@ impl Sequencer {
             )
             .await?;
 
-            let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone()).recover(cfg.recover);
+            let rcf = RbcConfig::new(cfg.keypair.clone(), committees.clone()).recover(cfg.recover);
             let rbc = Rbc::new(Overlay::new(net), rcf.with_metrics(rbc_metrics));
 
-            let cons = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
+            let cons = Consensus::new(cfg.keypair.clone(), committees.clone(), queue.clone())
                 .with_metrics(cons_metrics);
 
             Coordinator::new(rbc, cons)
         };
 
         let decrypter = {
-            let keyset = Keyset::new(1, committee.size());
+            let keyset = Keyset::new(1, committees.current().size()); // TODO
 
             let met = NetworkMetrics::new(
                 "decrypt",
@@ -215,7 +218,7 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(committee, cfg.index),
+            includer: Includer::new(committees, cfg.index),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,

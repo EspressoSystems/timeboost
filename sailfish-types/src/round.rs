@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Sub};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::Indexed;
 use serde::{Deserialize, Serialize};
 
 /// The sailfish genesis round number.
@@ -26,6 +27,14 @@ impl RoundNumber {
 
     pub fn is_genesis(self) -> bool {
         self == GENESIS_ROUND
+    }
+}
+
+impl Indexed for RoundNumber {
+    type Index = Self;
+
+    fn index(&self) -> Self::Index {
+        *self
     }
 }
 

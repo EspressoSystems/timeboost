@@ -4,7 +4,7 @@ use std::ops::{Add, Deref, Sub};
 use alloy_consensus::{Header, proofs::calculate_transaction_root};
 use alloy_primitives::{Address, B64, B256, Bloom};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Envelope};
+use multisig::{Certificate, Envelope, Indexed};
 use serde::{Deserialize, Serialize};
 
 use crate::Transaction;
@@ -131,6 +131,15 @@ impl std::ops::Deref for Block {
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd, PartialEq, Eq)]
 pub struct BlockHash(B256);
+
+// TODO
+impl Indexed for BlockHash {
+    type Index = ();
+
+    fn index(&self) -> Self::Index {
+        ()
+    }
+}
 
 impl From<[u8; 32]> for BlockHash {
     fn from(bytes: [u8; 32]) -> Self {
