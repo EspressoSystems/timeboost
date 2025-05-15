@@ -514,6 +514,7 @@ impl Simulator {
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
                 Action::Gc(_) => {}
+                Action::NextCommittee(..) => {}
             }
         }
     }

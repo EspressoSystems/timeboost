@@ -5,11 +5,13 @@ mod round;
 mod vertex;
 
 pub use comm::{Comm, CommError};
-pub use message::{Action, Evidence, Payload};
+pub use message::{Action, Evidence, Payload, NextCommittee};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::RoundNumber;
 pub use vertex::Vertex;
+
+use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::Indexed;
@@ -44,5 +46,33 @@ impl Indexed for Unit {
 
     fn index(&self) -> Self::Index {
         Unit
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UnixTime(u64);
+
+impl UnixTime {
+    pub fn seconds(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for UnixTime {
+    fn from(seconds: u64) -> Self {
+        Self(seconds)
+    }
+}
+
+impl From<UnixTime> for u64 {
+    fn from(seconds: UnixTime) -> Self {
+        seconds.0
+    }
+}
+
+impl fmt::Display for UnixTime {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }

@@ -33,11 +33,6 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
         }
     }
 
-    /// Has this coordinator been initialized?
-    pub fn is_init(&self) -> bool {
-        self.init
-    }
-
     /// The public key of this coordinator.
     pub fn public_key(&self) -> PublicKey {
         self.consensus.public_key()
@@ -54,21 +49,6 @@ where
     C: Comm<T> + Send,
     T: Committable + Clone + PartialEq,
 {
-    /// Starts Sailfish consensus.
-    ///
-    /// This function initializes and starts consensus. The sequence of
-    /// consensus actions is returned and `Coordinator::execute` should be applied
-    /// to each one.
-    ///
-    /// # Panics
-    ///
-    /// `Coordinator::init` must only be invoked once, otherwise it will panic.
-    pub fn init(&mut self) -> Vec<Action<T>> {
-        assert!(!self.init, "Cannot call start twice");
-        self.init = true;
-        self.consensus.go(Dag::new(), Evidence::Genesis)
-    }
-
     /// Await the next sequence of consensus actions.
     ///
     /// This function will either:
@@ -76,6 +56,10 @@ where
     /// - timeout a sailfish round if no progress was made, or
     /// - process a validated consensus `Message` that was RBC-delivered over the network.
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
+        if !self.init {
+            self.init = true;
+            return Ok(self.consensus.go(Dag::new(), Evidence::Genesis));
+        }
         select! { biased;
             r = &mut self.timer => Ok(self.consensus.timeout(r)),
             m = self.comm.receive() => Ok(self.consensus.handle_message(m?)),
@@ -113,6 +97,9 @@ where
                 self.comm.gc(r).await?;
             }
             Action::Deliver(_) => {
+                // nothing to do
+            }
+            Action::NextCommittee(..) => {
                 // nothing to do
             }
         }

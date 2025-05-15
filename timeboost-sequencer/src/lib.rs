@@ -288,11 +288,6 @@ impl Task {
         let mut pending = None;
         let mut candidates = Candidates::new();
 
-        if !self.sailfish.is_init() {
-            let actions = self.sailfish.init();
-            candidates = self.execute(actions).await?;
-        }
-
         loop {
             if pending.is_none() {
                 while let Some(ilist) = self.next_inclusion(&mut candidates) {

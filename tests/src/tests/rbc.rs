@@ -59,12 +59,10 @@ fn mk_host<A, const N: usize>(
             let rbc = Rbc::new(Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
             let mut coor = Coordinator::new(rbc, cons);
-            let mut actions = coor.init();
             loop {
-                for a in actions {
+                for a in coor.next().await? {
                     coor.execute(a).await?;
                 }
-                actions = coor.next().await?
             }
         }
     });
@@ -105,9 +103,8 @@ fn small_committee() {
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
-        let mut actions = coor.init();
         loop {
-            for a in actions {
+            for a in coor.next().await? {
                 if let Action::Deliver(data) = a {
                     if data.round() >= 3.into() {
                         return Ok(());
@@ -116,7 +113,6 @@ fn small_committee() {
                     coor.execute(a).await?
                 }
             }
-            actions = coor.next().await?
         }
     });
 
@@ -162,9 +158,8 @@ fn medium_committee() {
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
-        let mut actions = coor.init();
         loop {
-            for a in actions {
+            for a in coor.next().await? {
                 if let Action::Deliver(data) = a {
                     if data.round() >= 3.into() {
                         return Ok(());
@@ -173,7 +168,6 @@ fn medium_committee() {
                     coor.execute(a).await?
                 }
             }
-            actions = coor.next().await?
         }
     });
 
@@ -218,7 +212,7 @@ fn medium_committee_partition_network() {
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
-        let mut actions = coor.init();
+        let mut actions = coor.next().await?;
         loop {
 
             for a in actions.clone() {

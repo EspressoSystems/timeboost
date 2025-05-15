@@ -1,12 +1,12 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, CommitteeSeq};
+use multisig::{Certificate, Committee, CommitteeSeq};
 use multisig::{Envelope, Indexed, Keypair, PublicKey, Signed, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{RoundNumber, Vertex};
+use crate::{RoundNumber, UnixTime, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
@@ -273,6 +273,9 @@ pub enum Action<T: Committable> {
 
     /// Signal that it is safe to garbage collect up to the given round number.
     Gc(RoundNumber),
+
+    /// Inform about the next committee to use, starting at the given round.
+    NextCommittee(RoundNumber, Committee),
 }
 
 impl<T: Committable> Action<T> {
@@ -309,6 +312,9 @@ impl<T: Committable> fmt::Display for Action<T> {
             }
             Action::Gc(r) => {
                 write!(f, "Gc({r})")
+            }
+            Action::NextCommittee(r, _) => {
+                write!(f, "NextCommittee({r})")
             }
         }
     }
@@ -480,6 +486,26 @@ impl Indexed for NoVoteMessage {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct NextCommittee {
+    time: UnixTime,
+    round: RoundNumber
+}
+
+impl NextCommittee {
+    pub fn new(t: UnixTime, r: RoundNumber) -> Self {
+        Self { time: t, round: r }
+    }
+
+    pub fn time(&self) -> UnixTime {
+        self.time
+    }
+
+    pub fn round(&self) -> RoundNumber {
+        self.round
+    }
+}
+
 impl<T: Committable, S> fmt::Display for Message<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -516,6 +542,15 @@ impl Committable for Timeout {
 impl Committable for NoVote {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("NoVote")
+            .field("round", self.round.commit())
+            .finalize()
+    }
+}
+
+impl Committable for NextCommittee {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("NextCommittee")
+            .u64_field("time", self.time.seconds())
             .field("round", self.round.commit())
             .finalize()
     }

@@ -119,9 +119,6 @@ pub trait TestableNetwork {
         conditions: &mut Vec<TestCondition>,
         msgs: MsgQueues<SailfishBlock>,
     ) -> TaskHandleResult {
-        for a in coordinator.init() {
-            let _ = coordinator.execute(a).await;
-        }
         loop {
             match coordinator.next().await {
                 Ok(actions) => {

@@ -2,6 +2,7 @@ mod dag;
 mod info;
 mod metrics;
 
+use std::cmp::max;
 use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
 
@@ -10,7 +11,7 @@ use info::NodeInfo;
 use multisig::{Certificate, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use multisig::{Committee, CommitteeSeq, Indexed};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{DataSource, Payload, RoundNumber, Vertex};
+use sailfish_types::{DataSource, Payload, RoundNumber, UnixTime, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -67,6 +68,9 @@ pub struct Consensus<T> {
 
     /// Sign deterministically?
     deterministic: bool,
+
+    /// If some, we should reach agreement of the next committee.
+    next_committee: Option<(UnixTime, RoundNumber, Committee)>,
 }
 
 impl<T> Consensus<T> {
@@ -90,6 +94,12 @@ impl<T> Consensus<T> {
 
     pub fn committed_round(&self) -> RoundNumber {
         self.committed_round
+    }
+
+    pub fn next_committee(&mut self, now: UnixTime, then: UnixTime, c: Committee) {
+        let d = then.seconds().saturating_sub(now.seconds());
+        let r = self.round + max(100, d / 4);
+        self.next_committee = Some((then, r, c))
     }
 }
 
@@ -118,6 +128,7 @@ where
             metrics: Default::default(),
             metrics_timer: Instant::now(),
             deterministic: false,
+            next_committee: None,
         }
     }
 

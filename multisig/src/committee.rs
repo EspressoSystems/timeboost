@@ -112,7 +112,9 @@ impl<T: PartialOrd> Interval<T> {
             Self::From(start) => start <= p,
         }
     }
+}
 
+impl<T> Interval<T> {
     pub fn start(&self) -> &T {
         match self {
             Self::Range(start, _) => start,
@@ -144,6 +146,11 @@ impl<I> CommitteeSeq<I> {
     /// Get the current committee.
     pub fn current(&self) -> &Committee {
         &self.curr.1
+    }
+
+    /// Get the current committee start index.
+    pub fn current_start(&self) -> &I {
+        self.curr.0.start()
     }
 
     /// Find the most-recent committee that matches the given predicate.

@@ -349,17 +349,10 @@ async fn main() -> Result<()> {
 
     let consensus =
         Consensus::new(keypair, committee, repeat_with(Block::random)).with_metrics(sf_metrics);
-    let mut coordinator = Coordinator::new(rbc, consensus);
+    let coordinator = Coordinator::new(rbc, consensus);
 
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
-
-    // Kickstart the network.
-    for a in coordinator.init() {
-        if let Err(e) = coordinator.execute(a).await {
-            tracing::error!("Error executing coordinator action: {}", e);
-        }
-    }
 
     let result = run(
         coordinator,

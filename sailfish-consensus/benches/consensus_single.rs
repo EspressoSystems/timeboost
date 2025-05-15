@@ -133,6 +133,7 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::ResetTimer(_) => None,
         Action::Deliver(..) => None,
         Action::Gc(_) => None,
+        Action::NextCommittee(..) => None,
     }
 }
 
