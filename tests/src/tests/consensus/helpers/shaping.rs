@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::{fmt, mem};
 
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, CommitteeSeq, Keypair, PublicKey};
 use rand::prelude::*;
 use sailfish::types::{Evidence, RoundNumber};
 use tracing::debug;
@@ -285,8 +285,8 @@ pub struct Simulator {
     time: Time,
     /// The duration before a timeout occurs.
     timeout: Time,
-    /// The consensus committee config.
-    committee: Committee,
+    /// The consensus committee sequence.
+    committees: CommitteeSeq<RoundNumber>,
     /// Resolve a public key to a party name.
     resolve: BTreeMap<PublicKey, Name>,
     /// The actual consensus parties.
@@ -312,11 +312,14 @@ impl Simulator {
             })
             .collect();
 
-        let committee = Committee::new(
-            keypairs
-                .iter()
-                .enumerate()
-                .map(|(i, (_, k))| (i as u8, k.public_key())),
+        let committee = (
+            RoundNumber::genesis()..,
+            Committee::new(
+                keypairs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_, k))| (i as u8, k.public_key())),
+            ),
         );
 
         let resolve = keypairs.iter().map(|(n, k)| (k.public_key(), *n)).collect();
@@ -326,7 +329,7 @@ impl Simulator {
             .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
+                    logic: Consensus::new(k, committee.clone().into(), EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -347,7 +350,7 @@ impl Simulator {
         Self {
             time: 0,
             timeout: 10,
-            committee,
+            committees: committee.into(),
             resolve,
             parties,
             rules: Vec::new(),
@@ -384,8 +387,8 @@ impl Simulator {
         self.time
     }
 
-    pub fn committee(&self) -> &Committee {
-        &self.committee
+    pub fn committees(&self) -> &CommitteeSeq<RoundNumber> {
+        &self.committees
     }
 
     pub fn round(&self) -> Option<usize> {
@@ -395,7 +398,8 @@ impl Simulator {
     }
 
     pub fn leader(&self, round: usize) -> Option<Name> {
-        let k = self.committee.leader(round);
+        let c = self.committees.get((round as u64).into())?;
+        let k = c.leader(round);
         self.resolve.get(&k).map(|n| &**n)
     }
 
@@ -532,7 +536,9 @@ impl Simulator {
         let mut actions = Vec::new();
         for (name, party) in &mut self.parties {
             if party.timeout.0 == self.time {
-                let k = self.committee.leader(*party.timeout.1 as usize);
+                let r = party.timeout.1;
+                let c = self.committees.get(r).expect("committee at timeout round");
+                let k = c.leader(*party.timeout.1 as usize);
                 let l = self.resolve.get(&k).expect("known public key");
                 self.events
                     .push(Event::Timeout(self.time, name, party.timeout.1, l));

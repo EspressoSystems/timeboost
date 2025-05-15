@@ -5,7 +5,7 @@ use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Evidence, Message, Unit};
+use sailfish_types::{Action, Evidence, Message, RoundNumber, Unit};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -42,10 +42,13 @@ impl Net {
         let MultiRoundTestSpec { nodes, rounds } = spec;
         let kps = (0..nodes).map(|_| Keypair::generate()).collect::<Vec<_>>();
 
-        let com = Committee::new(
-            kps.iter()
-                .enumerate()
-                .map(|(i, kp)| (i as u8, kp.public_key())),
+        let com = (
+            RoundNumber::genesis()..,
+            Committee::new(
+                kps.iter()
+                    .enumerate()
+                    .map(|(i, kp)| (i as u8, kp.public_key())),
+            ),
         );
 
         let mut nodes = kps
@@ -53,7 +56,7 @@ impl Net {
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, com.clone(), repeat(Unit)),
+                    Consensus::new(kp, com.clone().into(), repeat(Unit)),
                 )
             })
             .collect::<HashMap<_, _>>();

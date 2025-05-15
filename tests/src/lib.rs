@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, CommitteeSeq, Keypair, PublicKey};
+use sailfish_types::RoundNumber;
 use timeboost_utils::unsafe_zero_keypair;
 
 #[cfg(test)]
@@ -52,7 +53,7 @@ pub(crate) mod prelude {
 pub struct Group {
     pub size: usize,
     pub peers: HashMap<PublicKey, SocketAddr>,
-    pub committee: Committee,
+    pub committees: CommitteeSeq<RoundNumber>,
     pub keypairs: Vec<Keypair>,
 }
 
@@ -79,7 +80,7 @@ impl Group {
         Self {
             size,
             peers,
-            committee: Committee::new(pubks),
+            committees: (RoundNumber::genesis().., Committee::new(pubks)).into(),
             keypairs,
         }
     }

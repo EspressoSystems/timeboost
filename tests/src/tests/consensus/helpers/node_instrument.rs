@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
-use multisig::{Certificate, Committee, PublicKey};
-use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
+use multisig::{Certificate, CommitteeSeq, PublicKey};
+use multisig::{Envelope, Indexed, Keypair, Validated, VoteAccumulator};
 use sailfish::types::{NoVoteMessage, RoundNumber, Timeout, TimeoutMessage};
 
 use crate::prelude::*;
@@ -32,10 +32,10 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
-        let c = self.manager.committee();
+        let r = msg.round();
         for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
-                assert_equiv(&expected, &a, &c)
+                assert_equiv(r, &expected, &a, self.manager.committees())
             } else {
                 panic!("Action was processed but expected actions was empty");
             }
@@ -66,8 +66,8 @@ impl TestNodeInstrument {
         &mut self.node
     }
 
-    pub(crate) fn committee(&self) -> Committee {
-        self.manager.committee()
+    pub(crate) fn committees(&self) -> &CommitteeSeq<RoundNumber> {
+        self.manager.committees()
     }
 
     pub(crate) fn expected_vertex_proposal(
@@ -105,9 +105,11 @@ impl TestNodeInstrument {
 
     pub(crate) fn expected_timeout_certificate(
         &self,
+        round: RoundNumber,
         signers: Vec<Envelope<Timeout, Validated>>,
     ) -> Certificate<Timeout> {
-        let mut va = VoteAccumulator::new(self.committee().clone());
+        let c = self.committees().get(round).unwrap();
+        let mut va = VoteAccumulator::new(round, c.clone());
         for e in signers {
             va.add(e.into_signed()).unwrap();
         }
@@ -144,13 +146,13 @@ impl TestNodeInstrument {
         assert_eq!(votes, 0, "Expected no votes when accumulator is missing");
     }
 
-    pub(crate) fn sign<D: Committable>(&self, d: D) -> Envelope<D, Validated> {
+    pub(crate) fn sign<D: Committable + Indexed>(&self, d: D) -> Envelope<D, Validated> {
         Envelope::signed(d, &self.kpair, true)
     }
 }
 
-fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
-    let parties: BTreeSet<PublicKey> = c.parties().copied().collect();
+fn assert_equiv(r: RoundNumber, a: &Action, b: &Action, c: &CommitteeSeq<RoundNumber>) {
+    let parties: BTreeSet<PublicKey> = c.get(r).unwrap().parties().copied().collect();
     match (a, b) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
             assert_eq!(x, y)
@@ -161,13 +163,13 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             block_equiv(x.data(), y.data());
         }
         (Action::SendProposal(x), Action::SendProposal(y)) => {
-            assert_eq!(x.is_valid(c), y.is_valid(c));
+            assert_eq!(x.is_valid(c).ok(), y.is_valid(c).ok());
             let xv = x.data();
             let yv = y.data();
             let xe = xv.evidence().is_valid(*xv.round().data(), c);
             let ye = yv.evidence().is_valid(*yv.round().data(), c);
-            let xn = xv.no_vote_cert().map(|crt| crt.is_valid(c));
-            let yn = yv.no_vote_cert().map(|crt| crt.is_valid(c));
+            let xn = xv.no_vote_cert().and_then(|crt| crt.is_valid(c).ok());
+            let yn = yv.no_vote_cert().and_then(|crt| crt.is_valid(c).ok());
             let xve = xv.edges().copied().collect::<BTreeSet<_>>();
             let yve = yv.edges().copied().collect::<BTreeSet<_>>();
             assert_eq!(xv.round(), yv.round());
@@ -176,12 +178,12 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert_eq!(xn, yn);
             assert!(xve.is_subset(&parties));
             assert!(yve.is_subset(&parties));
-            assert!(xve.len() >= c.quorum_size().get());
-            assert!(yve.len() >= c.quorum_size().get());
+            assert!(xve.len() >= c.get(r).unwrap().quorum_size().get());
+            assert!(yve.len() >= c.get(r).unwrap().quorum_size().get());
             block_equiv(xv.payload(), yv.payload());
         }
         (Action::SendTimeout(x), Action::SendTimeout(y)) => {
-            assert_eq!(x.is_valid(c), y.is_valid(c));
+            assert_eq!(x.is_valid(c).ok(), y.is_valid(c).ok());
             let xt = x.data();
             let yt = y.data();
             assert_eq!(xt.timeout(), yt.timeout());
@@ -191,16 +193,16 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
         }
         (Action::SendNoVote(xto, x), Action::SendNoVote(yto, y)) => {
             assert_eq!(xto, yto);
-            assert_eq!(x.is_valid(c), y.is_valid(c));
+            assert_eq!(x.is_valid(c).ok(), y.is_valid(c).ok());
             let xn = x.data();
             let yn = y.data();
             assert_eq!(xn.no_vote(), yn.no_vote());
-            let xe = xn.certificate().is_valid(c);
-            let ye = yn.certificate().is_valid(c);
+            let xe = xn.certificate().is_valid(c).ok();
+            let ye = yn.certificate().is_valid(c).ok();
             assert_eq!(xe, ye);
         }
         (Action::SendTimeoutCert(x), Action::SendTimeoutCert(y)) => {
-            assert_eq!(x.is_valid(c), y.is_valid(c));
+            assert_eq!(x.is_valid(c).ok(), y.is_valid(c).ok());
             assert_eq!(x.data(), y.data());
         }
         (Action::Gc(x), Action::Gc(y)) => {

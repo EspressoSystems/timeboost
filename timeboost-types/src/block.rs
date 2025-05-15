@@ -136,9 +136,7 @@ pub struct BlockHash(B256);
 impl Indexed for BlockHash {
     type Index = ();
 
-    fn index(&self) -> Self::Index {
-        ()
-    }
+    fn index(&self) -> Self::Index {}
 }
 
 impl From<[u8; 32]> for BlockHash {

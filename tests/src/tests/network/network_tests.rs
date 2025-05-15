@@ -108,8 +108,8 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes);
-    let committee = group.committee.clone();
     let timeout_round = 3;
+    let committee = group.committees.get(timeout_round.into()).unwrap().clone();
     let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
@@ -126,7 +126,7 @@ where
         .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
-            let committee = group.committee.clone();
+            let committee = group.committees.get(timeout_round.into()).unwrap().clone();
             let mut conditions = vec![TestCondition::new(
                 "No vote vertex from leader".to_string(),
                 move |msg, _a| {
@@ -188,8 +188,8 @@ where
 
     let num_nodes = 5;
     let group = Group::new(num_nodes);
-    let committee = group.committee.clone();
     let timeout_round = *RoundNumber::genesis();
+    let committee = group.committees.get(timeout_round.into()).unwrap().clone();
     let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
         if let Message::Vertex(v) = msg {
             let round = msg.round();
@@ -206,7 +206,7 @@ where
         .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
-            let committee = group.committee.clone();
+            let committee = group.committees.get(timeout_round.into()).unwrap().clone();
             let mut conditions = vec![TestCondition::new(
                 "No vote vertex from leader".to_string(),
                 move |msg, _a| {
@@ -328,7 +328,11 @@ where
     let num_nodes = 5;
     let group = Group::new(num_nodes);
     let offline_at_round = 4;
-    let committee = group.committee.clone();
+    let committee = group
+        .committees
+        .get(offline_at_round.into())
+        .unwrap()
+        .clone();
     let node_id = 4;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round();

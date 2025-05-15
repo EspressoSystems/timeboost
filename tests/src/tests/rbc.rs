@@ -2,9 +2,10 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use cliquenet::{Address, Network, NetworkMetrics, Overlay};
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, CommitteeSeq, Keypair, PublicKey};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
+use sailfish_types::RoundNumber;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 
@@ -12,14 +13,14 @@ use crate::prelude::*;
 
 type Peers<const N: usize> = [(PublicKey, Address); N];
 
-fn fresh_keys(n: usize) -> (Vec<Keypair>, Committee) {
+fn fresh_keys(n: usize) -> (Vec<Keypair>, CommitteeSeq<RoundNumber>) {
     let ks: Vec<Keypair> = (0..n).map(|_| Keypair::generate()).collect();
     let co = Committee::new(
         ks.iter()
             .enumerate()
             .map(|(i, kp)| (i as u8, kp.public_key())),
     );
-    (ks, co)
+    (ks, (RoundNumber::genesis().., co).into())
 }
 
 fn ports(n: usize) -> Vec<u16> {
@@ -40,7 +41,7 @@ fn mk_host<A, const N: usize>(
     addr: A,
     sim: &mut turmoil::Sim,
     k: Keypair,
-    c: Committee,
+    c: CommitteeSeq<RoundNumber>,
     peers: Peers<N>,
 ) where
     A: Into<Address>,
