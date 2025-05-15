@@ -2,13 +2,9 @@ use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use multisig::PublicKey;
-
 use sailfish::types::RoundNumber;
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
-
 use std::collections::BTreeMap;
-use std::time::Duration;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce, Plaintext};
 use timeboost_types::{Bytes, DecryptionKey, InclusionList};
@@ -101,16 +97,12 @@ impl Decrypter {
         let round = incl.round();
         let incl_digest = incl.digest();
 
-        if incl.is_encrypted() {
-            let required_keysets = incl.kids();
-            if required_keysets.is_empty() {
-                debug!(%round, digeset = ?incl_digest, "Internal err: encrypted inclusion list return empty keyset ids");
-            }
-
+        let required_keysets = incl.kids();
+        if !required_keysets.is_empty() {
             // ensure encrypted inclusion list is sent to the correct decrypter
             if !required_keysets.contains(&self.committee.id()) {
                 return Err(DecryptError::WrongDecrypter(
-                    required_keysets[0],
+                    required_keysets[0], // safe index-access
                     self.committee.id(),
                 ));
             }
@@ -118,16 +110,17 @@ impl Decrypter {
             self.req_tx
                 .send(WorkerRequest::Decrypt(incl.clone()))
                 .await
-                .map_err(|_| DecryptError::Shutdown)?
-        }
-        self.incls.insert(round, incl);
+                .map_err(|_| DecryptError::Shutdown)?;
+            self.incls.insert(round, incl);
 
-        trace!(
-            node        = %self.label,
-            round       = %round,
-            digest      = ?incl_digest,
-            "enqueued InclusionList"
-        );
+            trace!(
+                node        = %self.label,
+                round       = %round,
+                digest      = ?incl_digest,
+                "enqueued InclusionList"
+            );
+        }
+
         Ok(())
     }
 
@@ -154,10 +147,10 @@ impl Decrypter {
             let round = dec_incl.round();
             // update decrypter cache of inclusion list
             info!(node = %self.label, %round, epoch = %dec_incl.epoch(), "InclusionList decrypted!");
-            // sanity check
-            if dec_incl.is_encrypted() {
-                warn!(%round, "Internal error, decrypter worker returns non-decrypted InclusionList");
-            }
+            debug_assert!(
+                !dec_incl.is_encrypted(),
+                "decrypter worker returns non-decrypted InclusionList"
+            );
             self.incls.insert(round, dec_incl);
 
             // since the newly finished/responded inclusion list might belong to a later round
@@ -299,9 +292,9 @@ impl Worker {
             let round = self.oldest_cached_round();
             match self.hatch(round) {
                 Ok(Some(incl)) => {
-                    while let Err(err) = res_tx.send(WorkerResponse::Decrypt(incl.clone())).await {
-                        error!(%node, %err, "failed to send hatched inclusion list, retrying");
-                        sleep(Duration::from_millis(50)).await;
+                    if let Err(err) = res_tx.send(WorkerResponse::Decrypt(incl.clone())).await {
+                        error!(%node, %err, "failed to send hatched inclusion list");
+                        return;
                     }
                     self.last_hatched_round = round;
                     self.gc(round);
@@ -421,11 +414,11 @@ impl Worker {
 
     /// decide if a round is ready to be hatched
     fn is_hatchable(&self, round: &RoundNumber) -> bool {
-        self.dec_shares.contains_key(round)
-            && self
-                .dec_shares
-                .get(round)
-                .unwrap() // safe unwrap
+        let Some(share) = self.dec_shares.get(round) else {
+            return false;
+        };
+        !share.is_empty()
+            && share
                 .iter()
                 .all(|shares| shares.len() >= self.committee.one_honest_threshold().get())
     }

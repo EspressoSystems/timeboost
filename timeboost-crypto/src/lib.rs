@@ -21,9 +21,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
-/// Idnetifier to a ciphertext
-pub type CiphertextId = Nonce;
-
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -242,13 +239,6 @@ impl Plaintext {
 impl From<Plaintext> for Vec<u8> {
     fn from(plaintext: Plaintext) -> Self {
         plaintext.0
-    }
-}
-
-impl<C: CurveGroup> Ciphertext<C> {
-    /// Currently using its (expectedly) unique nonce as its identifier
-    pub fn id(&self) -> CiphertextId {
-        self.nonce
     }
 }
 

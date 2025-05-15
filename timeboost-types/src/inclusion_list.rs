@@ -2,14 +2,13 @@ use std::collections::BTreeSet;
 
 use crate::{Bundle, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
 use sailfish_types::RoundNumber;
-use serde::Serialize;
 use timeboost_crypto::KeysetId;
 
 /// List of bundles to be included, selected from `CandidateList`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct InclusionList {
-    // NOTE: different from sailfish's round number, monotonically increasing at timeboost sequencer side,
-    // derived from the max sailfish round among all the `Candidates` included.
+    // NOTE: different from sailfish's round number, monotonically increasing at timeboost sequencer
+    // side, derived from the max sailfish round among all the `Candidates` included.
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
@@ -48,12 +47,10 @@ impl InclusionList {
 
     /// Returns true if any one of the bundle (either priority or regular) is encrypted
     pub fn is_encrypted(&self) -> bool {
-        let is_decrypted = self
-            .priority_bundles()
+        self.priority_bundles()
             .iter()
-            .all(|pb| !pb.bundle().is_encrypted())
-            && self.regular_bundles().iter().all(|b| !b.is_encrypted());
-        !is_decrypted
+            .any(|pb| pb.bundle().is_encrypted())
+            || self.regular_bundles().iter().any(|b| b.is_encrypted())
     }
 
     /// Returns the keysets (their IDs) required to decrypt the encryted bundles in this list, or empty vec if not encrypted.
@@ -71,7 +68,11 @@ impl InclusionList {
         }
 
         if kids.len() > 1 {
-            tracing::error!(round = %self.round, num_keysets = %kids.len(),"Expect 1 keyset per inclusion list for now.");
+            tracing::error!(
+                round = %self.round,
+                num_keysets = %kids.len(),
+                "expect 1 keyset per inclusion list for now."
+            );
         }
         kids.into_iter().collect()
     }
@@ -103,6 +104,7 @@ impl InclusionList {
     pub fn regular_bundles(&self) -> &[Bundle] {
         &self.regular
     }
+
     pub fn regular_bundles_mut(&mut self) -> &mut [Bundle] {
         &mut self.regular
     }
@@ -110,6 +112,7 @@ impl InclusionList {
     pub fn priority_bundles(&self) -> &[SignedPriorityBundle] {
         &self.priority
     }
+
     pub fn priority_bundles_mut(&mut self) -> &mut [SignedPriorityBundle] {
         &mut self.priority
     }

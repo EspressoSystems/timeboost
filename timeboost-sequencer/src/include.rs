@@ -79,8 +79,9 @@ impl Includer {
             self.seqno = SeqNo::zero();
         }
 
-        // NOTE: in timeboost spec, regular bundles are unordered set, thus technically a HashMap is sufficient.
-        // However, ordering them simplifies the decryption phase logic at no cost, thus we choose BTreeMap instead.
+        // NOTE: in timeboost spec, regular bundles are an unordered set, thus technically a HashMap
+        // is sufficient. However, ordering them simplifies the decryption phase logic at no cost,
+        // thus we choose BTreeMap instead.
         let mut regular: BTreeMap<Bundle, usize> = BTreeMap::new();
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
