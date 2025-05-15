@@ -34,7 +34,7 @@ async fn test_single_node_advance() {
     // Setup up consensus state
     let mut round = 7;
     let node = node_handle.node_mut();
-    let (dag, evidence, vertices_for_round) = manager.prepare_dag(round, &committee);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(round);
     node.go(dag, evidence);
 
     // Craft messages
@@ -81,7 +81,7 @@ async fn test_single_node_timeout() {
     // Setup up consensus state
     let mut round = 4;
     let node = node_handle.node_mut();
-    let (dag, evidence, _vertices_for_round) = manager.prepare_dag(round, &committee);
+    let (dag, evidence, _vertices_for_round) = manager.prepare_dag(round);
     node.go(dag, evidence);
 
     // Craft messages
@@ -148,7 +148,7 @@ async fn test_single_node_timeout_cert() {
 
     // Setup up consensus state
     let node = node_handle.node_mut();
-    let (dag, evidence, vertices_for_round) = manager.prepare_dag(*expected_round - 1, &committee);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(*expected_round - 1);
     node.go(dag, evidence);
 
     // Craft messages, skip leader vertex

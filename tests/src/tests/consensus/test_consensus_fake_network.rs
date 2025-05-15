@@ -213,10 +213,7 @@ fn basic_liveness() {
         .iter_mut()
         .map(|(id, node_handle)| {
             let node = node_handle.node_mut();
-            (
-                *id,
-                node.go(Dag::new(node.committee_size()), Evidence::Genesis),
-            )
+            (*id, node.go(Dag::new(), Evidence::Genesis))
         })
         .collect();
 

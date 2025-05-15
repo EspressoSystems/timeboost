@@ -339,7 +339,7 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
-        let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
+        let dag = Dag::new();
 
         let mut actions = Vec::new();
 

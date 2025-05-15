@@ -1,5 +1,5 @@
 use std::iter::repeat;
-use std::{collections::HashMap, fmt, num::NonZeroUsize};
+use std::{collections::HashMap, fmt};
 
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -61,7 +61,7 @@ impl Net {
             })
             .collect::<HashMap<_, _>>();
 
-        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
+        let dag = Dag::new();
 
         let mut messages = Vec::new();
 

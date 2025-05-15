@@ -3,7 +3,7 @@ mod info;
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
-use std::num::NonZeroUsize;
+use std::time::Instant;
 
 use committable::Committable;
 use info::NodeInfo;
@@ -91,10 +91,6 @@ impl<T> Consensus<T> {
     pub fn committed_round(&self) -> RoundNumber {
         self.committed_round
     }
-
-    pub fn committee_size(&self) -> NonZeroUsize {
-        self.committees.current().size()
-    }
 }
 
 impl<T> Consensus<T>
@@ -108,10 +104,10 @@ where
         Self {
             keypair,
             nodes: NodeInfo::new(committees.current()),
-            dag: Dag::new(committees.current().size()),
+            dag: Dag::new(),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committees.current().size()),
+            buffer: Dag::new(),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
@@ -120,7 +116,7 @@ where
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
             metrics: Default::default(),
-            metrics_timer: std::time::Instant::now(),
+            metrics_timer: Instant::now(),
             deterministic: false,
         }
     }
@@ -245,6 +241,7 @@ where
         let r = *v.round().data();
         match self.try_to_add_to_dag(&committee, v) {
             Err(v) => {
+                debug_assert!(self.buffer.size_at(r) < committee.size().get());
                 self.buffer.add(v);
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
@@ -640,6 +637,7 @@ where
 
         let is_genesis_vertex = v.is_genesis();
 
+        debug_assert!(self.dag.size_at(r) < c.size().get());
         self.dag.add(v);
         self.metrics.dag_depth.set(self.dag.depth());
 
@@ -713,6 +711,7 @@ where
                     }
                 }
                 Err(v) => {
+                    debug_assert!(self.buffer.size_at(r) < c.size().get());
                     self.buffer.add(v);
                 }
             }
