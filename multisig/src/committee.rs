@@ -180,3 +180,9 @@ impl<I: PartialOrd + Clone> CommitteeSeq<I> {
         Ok(())
     }
 }
+
+impl<I> From<(RangeFrom<I>, Committee)> for CommitteeSeq<I> {
+    fn from((i, c): (RangeFrom<I>, Committee)) -> Self {
+        Self::new(i, c)
+    }
+}
