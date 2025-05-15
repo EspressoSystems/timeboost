@@ -90,6 +90,7 @@ impl Committee {
     }
 }
 
+/// A right-open interval [i, j) where j is potentially infinity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Interval<T> {
     Range(T, T),
@@ -120,6 +121,12 @@ impl<T: PartialOrd> Interval<T> {
     }
 }
 
+/// A non-empty sequence of committees associated to non-overlapping intervals.
+///
+/// Each interval's (exclusive) upper bound is the (inclusive) lower bound
+/// of the next interval. Adding a new committee from [k, ∞) will move the
+/// current committee to the end of the previous intervals with its [i, ∞)
+/// becoming [i, k), where k must be greater than i.
 #[derive(Debug, Clone)]
 pub struct CommitteeSeq<I> {
     prev: VecDeque<(Interval<I>, Committee)>,
@@ -134,10 +141,12 @@ impl<I> CommitteeSeq<I> {
         }
     }
 
+    /// Get the current committee.
     pub fn current(&self) -> &Committee {
         &self.curr.1
     }
 
+    /// Find the most-recent committee that matches the given predicate.
     pub fn find<F>(&self, pred: F) -> Option<&(Interval<I>, Committee)>
     where
         F: Fn(&Interval<I>, &Committee) -> bool,
@@ -147,19 +156,24 @@ impl<I> CommitteeSeq<I> {
             .find(|(r, v)| pred(r, v))
     }
 
+    /// Drop committees as long as the given predicate holds true.
+    ///
+    /// NB that the current committee can never be dropped.
     pub fn drop_while<F>(&mut self, pred: F)
     where
         F: Fn(&Interval<I>, &Committee) -> bool,
     {
         while let Some((i, c)) = self.prev.front() {
-            if pred(i, c) {
-                self.prev.pop_front();
+            if !pred(i, c) {
+                break;
             }
+            self.prev.pop_front();
         }
     }
 }
 
 impl<I: PartialOrd> CommitteeSeq<I> {
+    /// Get the committee that covers the given index.
     pub fn get(&self, i: I) -> Option<&Committee> {
         self.find(|iv, _| iv.contains(&i)).map(|(_, v)| v)
     }
@@ -170,6 +184,10 @@ impl<I: PartialOrd> CommitteeSeq<I> {
 pub struct IntervalOverlap(());
 
 impl<I: PartialOrd + Clone> CommitteeSeq<I> {
+    /// Add a new committee starting from index r.
+    ///
+    /// The start index must be greater than the start index of the current
+    /// committee.
     pub fn add(&mut self, r: RangeFrom<I>, v: Committee) -> Result<(), IntervalOverlap> {
         if r.start <= *self.curr.0.start() {
             return Err(IntervalOverlap(()));
