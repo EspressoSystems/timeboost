@@ -54,7 +54,9 @@ impl FakeNetwork {
             .values()
             .next()
             .expect("at least one node exists")
-            .committee()
+            .committees()
+            .get(round)
+            .unwrap()
             .leader(*round as usize)
     }
 

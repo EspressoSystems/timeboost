@@ -203,7 +203,7 @@ mod tests {
         ]);
 
         let gen_evidence = |r: u64| {
-            let mut va = VoteAccumulator::new(com.clone());
+            let mut va = VoteAccumulator::new(r.into(), com.clone());
             va.add(Signed::new(RoundNumber::from(r), &kp1, false))
                 .unwrap();
             va.add(Signed::new(RoundNumber::from(r), &kp2, false))

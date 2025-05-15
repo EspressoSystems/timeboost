@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
+use multisig::{Certificate, CommitteeSeq, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
@@ -71,17 +71,17 @@ enum Command<T: Committable> {
 #[derive(Debug)]
 pub struct RbcConfig {
     keypair: Keypair,
-    committee: Committee,
+    committees: CommitteeSeq<RoundNumber>,
     recover: bool,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
 
 impl RbcConfig {
-    pub fn new(k: Keypair, c: Committee) -> Self {
+    pub fn new(k: Keypair, c: CommitteeSeq<RoundNumber>) -> Self {
         Self {
             keypair: k,
-            committee: c,
+            committees: c,
             recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
@@ -144,8 +144,8 @@ impl<T: Committable> Drop for Rbc<T> {
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
     pub fn new(net: Overlay, c: RbcConfig) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committees.current().size().get());
+        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committees.current().size().get());
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,

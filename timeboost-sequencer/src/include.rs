@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use multisig::Committee;
+use multisig::CommitteeSeq;
 use sailfish::types::RoundNumber;
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
@@ -21,7 +21,7 @@ pub struct Outcome {
 
 #[derive(Debug)]
 pub struct Includer {
-    committee: Committee,
+    committees: CommitteeSeq<RoundNumber>,
     /// Consensus round.
     round: RoundNumber,
     /// Consensus timestamp.
@@ -37,9 +37,9 @@ pub struct Includer {
 }
 
 impl Includer {
-    pub fn new(c: Committee, i: DelayedInboxIndex) -> Self {
+    pub fn new(c: CommitteeSeq<RoundNumber>, i: DelayedInboxIndex) -> Self {
         Self {
-            committee: c,
+            committees: c,
             round: RoundNumber::genesis(),
             time: Timestamp::default(),
             epoch: Timestamp::default().epoch(),
@@ -50,7 +50,10 @@ impl Includer {
     }
 
     pub fn inclusion_list(&mut self, round: RoundNumber, lists: Vec<CandidateList>) -> Outcome {
-        debug_assert!(lists.len() >= self.committee.quorum_size().get());
+        let Some(committee) = self.committees.get(round) else {
+            todo!()
+        };
+        debug_assert!(lists.len() >= committee.quorum_size().get());
 
         self.round = round;
 
@@ -125,7 +128,7 @@ impl Includer {
         let mut include = Vec::new();
 
         for (rb, n) in regular {
-            if n > self.committee.one_honest_threshold().get() {
+            if n > committee.one_honest_threshold().get() {
                 if self.is_unknown(&rb) {
                     self.cache
                         .entry(self.round)

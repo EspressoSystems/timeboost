@@ -44,7 +44,7 @@ impl TestableNetwork for BasicNetworkTest {
     }
 
     async fn init(&mut self) -> Vec<Self::Node> {
-        let committee = self.group.committee.clone();
+        let committee = self.group.committees.clone();
         let mut nodes = Vec::new();
         for i in 0..self.group.size {
             let kpr = self.group.keypairs[i].clone();

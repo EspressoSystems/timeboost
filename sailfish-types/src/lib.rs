@@ -12,6 +12,7 @@ pub use round::RoundNumber;
 pub use vertex::Vertex;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::Indexed;
 use serde::{Deserialize, Serialize};
 
 /// The empty type has no values.
@@ -35,5 +36,13 @@ pub struct Unit;
 impl Committable for Unit {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Unit").finalize()
+    }
+}
+
+impl Indexed for Unit {
+    type Index = Self;
+
+    fn index(&self) -> Self::Index {
+        Unit
     }
 }

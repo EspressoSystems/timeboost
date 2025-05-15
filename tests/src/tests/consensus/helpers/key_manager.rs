@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
 use committable::Committable;
-use multisig::{
-    Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
-};
+use multisig::{Certificate, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator};
+use multisig::{Committee, CommitteeSeq, Indexed};
 use sailfish::consensus::ConsensusMetrics;
 use sailfish::types::{Evidence, RoundNumber, Timeout, TimeoutMessage};
 use timeboost_utils::unsafe_zero_keypair;
@@ -14,17 +13,20 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct KeyManager {
     keys: BTreeMap<u8, Keypair>,
-    committee: Committee,
+    committees: CommitteeSeq<RoundNumber>,
 }
 
 /// Helper for all the keys in a committeee for testing purposes.
 impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
         let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
-        let committee = Committee::new(key_pairs.clone().map(|(i, k)| (i, k.public_key())));
+        let committee = (
+            RoundNumber::genesis()..,
+            Committee::new(key_pairs.clone().map(|(i, k)| (i, k.public_key()))),
+        );
         Self {
             keys: key_pairs.collect(),
-            committee,
+            committees: committee.into(),
         }
     }
 
@@ -34,7 +36,7 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
-                let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
+                let cons = Consensus::new(kpair.clone(), self.committees.clone(), EmptyBlocks)
                     .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
@@ -107,7 +109,7 @@ impl KeyManager {
     /// Create an envelope with signers for given type.
     pub(crate) fn signers<T>(&self, value: T, count: usize) -> Vec<Envelope<T, Validated>>
     where
-        T: Committable + Clone,
+        T: Committable + Indexed + Clone,
     {
         let mut envs = Vec::new();
         for kpair in self.keys.values().take(count) {
@@ -162,8 +164,8 @@ impl KeyManager {
 
     /// Craft a timeout certificate with signers from committee.
     pub(crate) fn gen_timeout_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<Timeout> {
-        let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
+        let mut va = VoteAccumulator::new(r, self.committees.get(r).unwrap().clone());
         for k in self.keys.values() {
             va.add(Signed::new(Timeout::new(r), k, true)).unwrap();
         }
@@ -172,15 +174,15 @@ impl KeyManager {
 
     /// Craft a timeout certificate with signers from committee.
     pub(crate) fn gen_round_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<RoundNumber> {
-        let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
+        let mut va = VoteAccumulator::new(r, self.committees.get(r).unwrap().clone());
         for k in self.keys.values() {
             va.add(Signed::new(r, k, true)).unwrap();
         }
         va.into_certificate().unwrap()
     }
 
-    pub(crate) fn committee(&self) -> Committee {
-        self.committee.clone()
+    pub(crate) fn committees(&self) -> &CommitteeSeq<RoundNumber> {
+        &self.committees
     }
 }

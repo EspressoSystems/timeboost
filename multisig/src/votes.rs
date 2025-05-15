@@ -4,10 +4,11 @@ use std::iter;
 use committable::{Commitment, Committable};
 use either::Either;
 
-use crate::{Certificate, Committee, KeyId, PublicKey, Signature, Signed};
+use crate::{Certificate, Committee, Indexed, KeyId, PublicKey, Signature, Signed};
 
 #[derive(Debug, Clone)]
-pub struct VoteAccumulator<D: Committable> {
+pub struct VoteAccumulator<D: Committable + Indexed> {
+    index: D::Index,
     committee: Committee,
     votes: HashMap<Commitment<D>, Entry<D>>,
     cert: Option<Certificate<D>>,
@@ -28,9 +29,10 @@ impl<D> Entry<D> {
     }
 }
 
-impl<D: Committable + Clone> VoteAccumulator<D> {
-    pub fn new(committee: Committee) -> Self {
+impl<D: Committable + Indexed + Clone> VoteAccumulator<D> {
+    pub fn new(index: D::Index, committee: Committee) -> Self {
         Self {
+            index,
             committee,
             votes: HashMap::new(),
             cert: None,
@@ -66,7 +68,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     }
 
     /// Set the certificate.
-    pub fn set_certificate(&mut self, c: Certificate<D>) {
+    pub fn set_certificate(&mut self, c: Certificate<D>) -> Result<(), Error> {
+        if self.index != c.data().index() {
+            return Err(Error::InvalidIndex);
+        }
         self.clear();
         self.votes.insert(
             *c.commitment(),
@@ -75,7 +80,8 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
                 sigs: c.signatures().clone(),
             },
         );
-        self.cert = Some(c)
+        self.cert = Some(c);
+        Ok(())
     }
 
     /// Clear all accumulated votes and the certificate.
@@ -91,6 +97,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
     /// - Add the signature into the accumulator if we have not seen it yet
     /// - Create a certificate if we have 2f + 1 signatures
     pub fn add(&mut self, signed: Signed<D>) -> Result<Option<&Certificate<D>>, Error> {
+        if self.index != signed.data().index() {
+            return Err(Error::InvalidIndex);
+        }
+
         let Some(ix) = self.committee.get_index(signed.signing_key()) else {
             return Err(Error::UnknownSigningKey);
         };
@@ -125,4 +135,13 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 pub enum Error {
     #[error("unknown signing key")]
     UnknownSigningKey,
+
+    #[error("invalid index")]
+    InvalidIndex,
+}
+
+impl Error {
+    pub fn is_invalid_index(&self) -> bool {
+        matches!(self, Self::InvalidIndex)
+    }
 }

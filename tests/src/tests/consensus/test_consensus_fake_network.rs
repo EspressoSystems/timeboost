@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use multisig::PublicKey;
+use multisig::{Indexed, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_utils::types::logging;
 use timeboost_utils::unsafe_zero_keypair;
@@ -49,7 +49,9 @@ async fn test_timeout_round_and_no_vote() {
                 if *v.data().round().data() == timeout_at_round
                     && *v.signing_key()
                         == manager
-                            .committee()
+                            .committees()
+                            .get(v.data().index())
+                            .unwrap()
                             .leader(**v.data().round().data() as usize)
                 {
                     let timeout_msgs = manager.create_timeout_msgs(timeout_at_round.into());

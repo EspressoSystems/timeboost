@@ -15,10 +15,19 @@ use ed25519_compact as ed25519;
 use serde::{Deserialize, Serialize};
 
 pub use cert::Certificate;
-pub use committee::Committee;
+pub use committee::{Committee, CommitteeSeq};
 pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use votes::VoteAccumulator;
+
+/// Class of types that have an index.
+pub trait Indexed {
+    /// The index type.
+    type Index: PartialOrd + Clone;
+
+    /// The index value.
+    fn index(&self) -> Self::Index;
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct KeyId(u8);
