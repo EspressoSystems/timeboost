@@ -632,6 +632,7 @@ where
     /// If all edges of the vertex point to other vertices in the DAG we add the
     /// vertex to the DAG. If we also have more than 2f vertices for the given
     /// round, we can try to commit the leader vertex of a round.
+    #[allow(clippy::result_large_err)]
     fn try_to_add_to_dag(
         &mut self,
         c: &Committee,

@@ -1,4 +1,4 @@
-use std::io::{self, ErrorKind};
+use std::io;
 
 use anyhow::Result;
 use async_lock::RwLock;
@@ -26,8 +26,8 @@ impl TimeboostApiState {
 
     /// Run the timeboost API.
     pub async fn run(self, url: Url) -> io::Result<()> {
-        let api = define_api::<StaticVersion<0, 1>>()
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+        let api =
+            define_api::<StaticVersion<0, 1>>().map_err(|e| io::Error::other(e.to_string()))?;
         let state = RwLock::new(self);
         let mut app = App::<RwLock<TimeboostApiState>, ServerError>::with_state(state);
         app.register_module("", api)

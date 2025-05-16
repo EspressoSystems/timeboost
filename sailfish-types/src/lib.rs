@@ -5,7 +5,7 @@ mod round;
 mod vertex;
 
 pub use comm::{Comm, CommError};
-pub use message::{Action, Evidence, Payload, NextCommittee};
+pub use message::{Action, Evidence, NextCommittee, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::RoundNumber;

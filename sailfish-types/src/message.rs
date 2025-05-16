@@ -489,7 +489,7 @@ impl Indexed for NoVoteMessage {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NextCommittee {
     time: UnixTime,
-    round: RoundNumber
+    round: RoundNumber,
 }
 
 impl NextCommittee {

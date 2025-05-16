@@ -37,7 +37,7 @@ impl<T> Vertex<T> {
             no_vote: None,
             committed: RoundNumber::genesis(),
             payload: d,
-            next_committee: None
+            next_committee: None,
         }
     }
 
