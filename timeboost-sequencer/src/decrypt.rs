@@ -6,7 +6,7 @@ use sailfish::types::RoundNumber;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
-use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Nonce, Plaintext};
+use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Plaintext};
 use timeboost_types::{Bytes, DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -48,7 +48,7 @@ pub struct Decrypter {
     /// Public key of the node. "Label" is termed to refer to node identity in SG01 decryption scheme
     label: PublicKey,
     /// Decryption committee this decrypter belongs to
-    committee: Keyset,
+    keyset: Keyset,
     /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase of timeboost
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// Sender end of the worker requests
@@ -60,14 +60,14 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(label: PublicKey, net: Overlay, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Overlay, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         let (req_tx, req_rx) = channel(MAX_ROUNDS);
         let (res_tx, res_rx) = channel(MAX_ROUNDS);
-        let worker = Worker::new(label, net, committee.clone(), dec_sk);
+        let worker = Worker::new(label, net, keyset, dec_sk);
 
         Self {
             label,
-            committee,
+            keyset,
             incls: BTreeMap::new(),
             req_tx,
             res_rx,
@@ -100,10 +100,10 @@ impl Decrypter {
         let required_keysets = incl.kids();
         if !required_keysets.is_empty() {
             // ensure encrypted inclusion list is sent to the correct decrypter
-            if !required_keysets.contains(&self.committee.id()) {
+            if !required_keysets.contains(&self.keyset.id()) {
                 return Err(DecryptError::WrongDecrypter(
                     required_keysets[0], // safe index-access
-                    self.committee.id(),
+                    self.keyset.id(),
                 ));
             }
 
@@ -180,7 +180,7 @@ struct Worker {
     /// overlay network to connect to other decrypters
     net: Overlay,
     /// keyset metadata about the decryption committee
-    committee: Keyset,
+    keyset: Keyset,
     /// round number of the first decrypter request, used to ignore received decryption shares for eariler rounds
     first_requested_round: Option<RoundNumber>,
     /// decryption key used to decrypt and combine
@@ -196,11 +196,11 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(label: PublicKey, net: Overlay, committee: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(label: PublicKey, net: Overlay, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
         Self {
             label,
             net,
-            committee,
+            keyset,
             first_requested_round: None,
             dec_sk,
             dec_shares: BTreeMap::default(),
@@ -318,6 +318,10 @@ impl Worker {
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
         let dec_shares = self.decrypt(round, incl.clone()).await?;
+        if dec_shares.is_empty() {
+            return Err(DecryptError::EmptyDecShares);
+        }
+
         self.net
             .broadcast(round.u64(), serialize(&dec_shares)?)
             .await?;
@@ -354,7 +358,7 @@ impl Worker {
     /// scan through the inclusion list and extract the relevant ciphertext from encrypted bundle/tx, preserving the order,
     /// "relevant" means encrypted under the keyset this worker belongs to.
     fn extract_ciphertexts(&self, incl: &InclusionList) -> Result<Vec<Ciphertext>> {
-        let kid = self.committee.id();
+        let kid = self.keyset.id();
         let cts = incl
             .priority_bundles()
             .iter()
@@ -374,6 +378,9 @@ impl Worker {
     /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
     /// where "relevant" means targetted to the same `KeysetId` as the current decrypter/worker.
     /// Also see [`DecShareBatch`] doc.
+    ///
+    /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
+    /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> Result<DecShareBatch> {
         let ciphertexts = self.extract_ciphertexts(&incl)?;
 
@@ -390,13 +397,17 @@ impl Worker {
         }
         Ok(DecShareBatch {
             round,
-            kid: self.committee.id(),
+            kid: self.keyset.id(),
             dec_shares,
         })
     }
 
     /// update local cache of decrypted shares
     fn insert_shares(&mut self, batch: DecShareBatch) -> Result<()> {
+        if batch.is_empty() {
+            trace!("Empty decryption share batch, skipped");
+            return Err(DecryptError::EmptyDecShares);
+        }
         // This operation is doing the following: assumme local cache for this round is:
         // [[s1a, s1b], [s2a, s2b], [s3a, s3b]]
         // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so far.
@@ -420,7 +431,7 @@ impl Worker {
         !share.is_empty()
             && share
                 .iter()
-                .all(|shares| shares.len() >= self.committee.one_honest_threshold().get())
+                .all(|shares| shares.len() >= self.keyset.one_honest_threshold().get())
     }
 
     /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if insufficient shares
@@ -458,19 +469,13 @@ impl Worker {
             .zip(per_ct_dec_shares)
             .map(|(ct, dec_shares)| {
                 let aad = vec![];
-                DecryptionScheme::combine(
-                    &self.committee,
-                    self.dec_sk.combkey(),
-                    dec_shares,
-                    ct,
-                    &aad,
-                )
-                .map_err(DecryptError::Decryption)
+                DecryptionScheme::combine(&self.keyset, self.dec_sk.combkey(), dec_shares, ct, &aad)
+                    .map_err(DecryptError::Decryption)
             })
             .collect::<Result<_>>()?;
 
         // construct/modify the inclusion list to replace with decrypted payload
-        let kid = self.committee.id();
+        let kid = self.keyset.id();
         let mut num_encrypted_priority_bundles = 0;
         incl.priority_bundles_mut()
             .iter_mut()
@@ -514,6 +519,10 @@ impl DecShareBatch {
     pub fn len(&self) -> usize {
         self.dec_shares.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.dec_shares.is_empty()
+    }
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
@@ -552,20 +561,17 @@ pub enum DecryptError {
     #[error("decrypter has shut down")]
     Shutdown,
 
-    #[error("missing ciphertext for cid: {:?}", .0)]
-    MissingCiphertext(Nonce),
-
-    #[error("missing index mapping for cid: {:?}", .0)]
-    MissingIndex(Nonce),
-
-    #[error("invalid message")]
-    InvalidMessage,
-
-    #[error("inconsistent state")]
-    State,
-
     #[error("unexpected internal err: {0}")]
     Internal(String),
+
+    #[error("empty set of valid decryption shares")]
+    EmptyDecShares,
+
+    #[error("missing evidence for round: {0}")]
+    MissingRoundEvidence(RoundNumber),
+
+    #[error("received inclusion list is outdated (already received or hatched)")]
+    OutdatedRound,
 }
 
 impl From<NetworkDown> for DecryptError {
@@ -606,7 +612,7 @@ mod tests {
         let encryption_key: PublicKey<_> =
             decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
 
-        let mut decrypters = setup(keyset.clone()).await;
+        let mut decrypters = setup(keyset).await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
@@ -753,7 +759,7 @@ mod tests {
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 Overlay::new(network),
-                keyset.clone(),
+                keyset,
                 decryption_keys[i].clone(),
             );
             decrypters.push(decrypter);

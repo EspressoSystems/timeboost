@@ -64,7 +64,7 @@ impl Committable for KeysetId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Keyset {
     id: KeysetId,
     size: NonZeroUsize,
