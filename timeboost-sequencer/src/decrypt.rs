@@ -188,7 +188,9 @@ struct Worker {
 
     /// cache of decrtyped shares (keyed by round number), each entry value is a nested vector: an ordered list of per-ciphertext decryption shares.
     /// the order is derived from the ciphertext payload from the inclusion list `self.incls` of the same round
-    dec_shares: BTreeMap<RoundNumber, Vec<Vec<DecShare>>>,
+    ///
+    /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
+    dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// the latest rounds whose ciphertexts are hatched
@@ -317,7 +319,7 @@ impl Worker {
 
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(round, incl.clone()).await?;
+        let dec_shares = self.decrypt(round, incl.clone()).await;
         if dec_shares.is_empty() {
             return Err(DecryptError::EmptyDecShares);
         }
@@ -357,10 +359,11 @@ impl Worker {
 
     /// scan through the inclusion list and extract the relevant ciphertext from encrypted bundle/tx, preserving the order,
     /// "relevant" means encrypted under the keyset this worker belongs to.
-    fn extract_ciphertexts(&self, incl: &InclusionList) -> Result<Vec<Ciphertext>> {
+    ///
+    /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
+    fn extract_ciphertexts(&self, incl: &InclusionList) -> Vec<Option<Ciphertext>> {
         let kid = self.keyset.id();
-        let cts = incl
-            .priority_bundles()
+        incl.priority_bundles()
             .iter()
             .filter(|pb| pb.bundle().kid() == Some(kid))
             .map(|pb| pb.bundle().data())
@@ -370,9 +373,8 @@ impl Worker {
                     .filter(|b| b.kid() == Some(kid))
                     .map(|b| b.data()),
             )
-            .map(|bytes| deserialize::<Ciphertext>(bytes))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(cts)
+            .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
+            .collect::<Vec<_>>()
     }
 
     /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
@@ -381,25 +383,27 @@ impl Worker {
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
-    async fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> Result<DecShareBatch> {
-        let ciphertexts = self.extract_ciphertexts(&incl)?;
+    async fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> DecShareBatch {
+        let dec_shares = self
+            .extract_ciphertexts(&incl)
+            .into_iter()
+            .map(|optional_ct| {
+                optional_ct.and_then(|ct| {
+                    <DecryptionScheme as ThresholdEncScheme>::decrypt(
+                        self.dec_sk.privkey(),
+                        &ct,
+                        &vec![],
+                    )
+                    .ok() // decryption failure result in None
+                })
+            })
+            .collect::<Vec<_>>();
 
-        let mut dec_shares = vec![];
-        for ct in ciphertexts {
-            let dec_share = <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                self.dec_sk.privkey(),
-                &ct,
-                &vec![],
-            )
-            .map_err(DecryptError::Decryption)?;
-
-            dec_shares.push(dec_share);
-        }
-        Ok(DecShareBatch {
+        DecShareBatch {
             round,
             kid: self.keyset.id(),
             dec_shares,
-        })
+        }
     }
 
     /// update local cache of decrypted shares
@@ -429,9 +433,15 @@ impl Worker {
             return false;
         };
         !share.is_empty()
-            && share
-                .iter()
-                .all(|shares| shares.len() >= self.keyset.one_honest_threshold().get())
+            && share.iter().all(|shares| {
+                let num_valid_shares = shares.iter().filter(|s| s.is_some()).count();
+                let num_invalid_shares = shares.len() - num_valid_shares;
+
+                // for valid decryption shares, as long as reaching f+1, we may try to hatch
+                // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
+                num_valid_shares >= self.keyset.one_honest_threshold().get()
+                    || num_invalid_shares >= self.keyset.honest_majority_threshold().get()
+            })
     }
 
     /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if insufficient shares
@@ -441,13 +451,8 @@ impl Worker {
             return Ok(None);
         }
 
-        let per_ct_dec_shares = self
-            .dec_shares
-            .get(&round)
-            .unwrap() // safe unwrap due to is_hatchable check above
-            .iter()
-            .map(|s| s.iter().collect::<Vec<_>>())
-            .collect::<Vec<_>>();
+        // safe unwrap due to is_hatchable check above
+        let per_ct_opt_dec_shares = self.dec_shares.get(&round).unwrap();
         // retreive ciphertext again from the original encrypted inclusion list, and some sanity check
         let mut incl = self
             .incls
@@ -456,23 +461,40 @@ impl Worker {
                 "missing inclusion list for round={round} in local cache"
             )))?
             .clone();
-        let ciphertexts = self.extract_ciphertexts(&incl)?;
-        if ciphertexts.len() != per_ct_dec_shares.len() {
-            return Err(DecryptError::Internal(
-                "unexpected mismatched length".to_string(),
-            ));
-        }
+        let ciphertexts = self.extract_ciphertexts(&incl);
+        debug_assert_eq!(
+            ciphertexts.len(),
+            per_ct_opt_dec_shares.len(),
+            "mismatched len"
+        );
 
         // hatching ciphertext
-        let decrypted: Vec<Plaintext> = ciphertexts
-            .iter()
-            .zip(per_ct_dec_shares)
-            .map(|(ct, dec_shares)| {
+        // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption share
+        // both imply "skip hatching this garbage bundle which will result in no-op during execution"
+        let mut decrypted: Vec<Option<Plaintext>> = vec![];
+        for (opt_ct, opt_dec_shares) in ciphertexts.into_iter().zip(per_ct_opt_dec_shares) {
+            // only valid ones
+            let dec_shares = opt_dec_shares
+                .iter()
+                .filter_map(|s| s.as_ref())
+                .collect::<Vec<_>>();
+
+            if opt_ct.is_none() || dec_shares.len() < self.keyset.one_honest_threshold().get() {
+                decrypted.push(None);
+            } else {
+                let ct = opt_ct.unwrap(); // safe unwrap
                 let aad = vec![];
-                DecryptionScheme::combine(&self.keyset, self.dec_sk.combkey(), dec_shares, ct, &aad)
-                    .map_err(DecryptError::Decryption)
-            })
-            .collect::<Result<_>>()?;
+                let pt = DecryptionScheme::combine(
+                    &self.keyset,
+                    self.dec_sk.combkey(),
+                    dec_shares,
+                    &ct,
+                    &aad,
+                )
+                .map_err(DecryptError::Decryption)?;
+                decrypted.push(Some(pt));
+            }
+        }
 
         // construct/modify the inclusion list to replace with decrypted payload
         let kid = self.keyset.id();
@@ -482,16 +504,24 @@ impl Worker {
             .filter(|pb| pb.bundle().kid() == Some(kid))
             .map(|pb| pb.bundle_mut())
             .zip(decrypted.clone())
-            .for_each(|(bundle, plaintext)| {
+            .for_each(|(bundle, opt_plaintext)| {
                 num_encrypted_priority_bundles += 1;
-                bundle.set_data(Bytes::from(<Vec<u8>>::from(plaintext)))
+                match opt_plaintext {
+                    Some(pt) => bundle.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
+                    None => bundle.set_data(bundle.data().clone()),
+                }
             });
         incl.regular_bundles_mut()
             .iter_mut()
             .filter(|b| b.kid() == Some(kid))
             .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
-            .for_each(|(bundle, plaintext)| {
-                bundle.set_data(Bytes::from(<Vec<u8>>::from(plaintext)))
+            .for_each(|(bundle, opt_plaintext)| {
+                match opt_plaintext {
+                    Some(pt) => bundle.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
+                    None => bundle.set_data(bundle.data().clone()),
+                }
             });
         if incl.is_encrypted() {
             return Err(DecryptError::Internal(
@@ -510,8 +540,10 @@ impl Worker {
 struct DecShareBatch {
     round: RoundNumber,
     kid: KeysetId,
-    // note: each decrpytion share is for a different ciphertext
-    dec_shares: Vec<DecShare>,
+    // note: each decrpytion share is for a different ciphertext;
+    // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
+    // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid ones
+    dec_shares: Vec<Option<DecShare>>,
 }
 
 impl DecShareBatch {
@@ -520,8 +552,12 @@ impl DecShareBatch {
         self.dec_shares.len()
     }
 
+    /// Returns true if there's no *valid* decryption share. There are three sub-cases this may be true
+    /// - empty set of ciphertext/encrypted bundle
+    /// - ciphertexts are malformed and cannot be deserialized
+    /// - ciphertexts are invalid and fail to be decrypted
     pub fn is_empty(&self) -> bool {
-        self.dec_shares.is_empty()
+        self.dec_shares.is_empty() || self.dec_shares.iter().all(|s| s.is_none())
     }
 }
 

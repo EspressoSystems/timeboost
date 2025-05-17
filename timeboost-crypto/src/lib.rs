@@ -93,6 +93,12 @@ impl Keyset {
         let t = self.size().get().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
     }
+
+    /// threshold where the majority of honest nodes will agree (>=2f+1)
+    pub fn honest_majority_threshold(&self) -> NonZeroUsize {
+        let t = self.size().get() * 2 / 3 + 1;
+        NonZeroUsize::new(t).expect("ceil(2n/3) with n > 0 never gives 0")
+    }
 }
 
 #[serde_as]
