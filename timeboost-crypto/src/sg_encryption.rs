@@ -12,8 +12,11 @@ use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
 use spongefish::DuplexSpongeInterface;
-use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
+use std::{
+    collections::BTreeSet,
+    io::{BufWriter, Write},
+};
 use zeroize::Zeroize;
 
 use crate::{
@@ -220,7 +223,10 @@ where
             }
         }
 
-        let faulty_subset: Vec<_> = faulty_shares.into_iter().map(|s| s.index).collect();
+        let mut faulty_subset = BTreeSet::new();
+        for s in faulty_shares {
+            faulty_subset.insert(s.index);
+        }
         if valid_shares.len() < threshold {
             return Err(ThresholdEncError::FaultySubset(faulty_subset));
         }
@@ -349,7 +355,7 @@ fn hash_to_key<C: CurveGroup, H: Digest>(
 
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroUsize;
+    use std::{collections::BTreeSet, num::NonZeroUsize};
 
     use crate::{
         cp_proof::Proof,
@@ -494,10 +500,10 @@ mod test {
         let c_threshold = committee.one_honest_threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify the first n - t + 1 shares
-        let mut expected_faulty_subset = vec![];
+        let mut expected_faulty_subset = BTreeSet::new();
         (0..(c_size - c_threshold + 1)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
-            expected_faulty_subset.push(share.index);
+            expected_faulty_subset.insert(share.index);
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
@@ -510,10 +516,7 @@ mod test {
         );
         match result {
             Err(ThresholdEncError::FaultySubset(set)) => {
-                assert!(
-                    set.iter()
-                        .all(|faulty_node_idx| expected_faulty_subset.contains(faulty_node_idx))
-                )
+                assert_eq!(set, expected_faulty_subset);
             }
             _ => panic!("Should fail with faulty subset to blame"),
         };
