@@ -4,7 +4,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Indexed, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use crate::{Evidence, NextCommittee, NoVote, RoundNumber, UnixTime};
+use crate::{CommitteeInfo, Evidence, NoVote, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
@@ -14,29 +14,29 @@ pub struct Vertex<T> {
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
-    next_committee: Option<NextCommittee>,
+    next_committee: Option<CommitteeInfo>,
     payload: T,
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair, deterministic: bool) -> Self
+    pub fn new<N, E>(round: N, evidence: E, data: T, kpair: &Keypair, deterministic: bool) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
     {
-        let r = r.into();
-        let e = e.into();
+        let round = round.into();
+        let evidence = evidence.into();
 
-        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        debug_assert!(evidence.round() + 1 == round || round == RoundNumber::genesis());
 
         Self {
-            source: k.public_key(),
-            round: Signed::new(r, k, deterministic),
+            source: kpair.public_key(),
+            round: Signed::new(round, kpair, deterministic),
             edges: BTreeSet::new(),
-            evidence: e,
+            evidence,
             no_vote: None,
             committed: RoundNumber::genesis(),
-            payload: d,
+            payload: data,
             next_committee: None,
         }
     }
@@ -86,7 +86,7 @@ impl<T> Vertex<T> {
         &self.payload
     }
 
-    pub fn next_committee(&self) -> Option<&NextCommittee> {
+    pub fn next_committee(&self) -> Option<&CommitteeInfo> {
         self.next_committee.as_ref()
     }
 
@@ -113,8 +113,8 @@ impl<T> Vertex<T> {
         self
     }
 
-    pub fn set_next_committee(&mut self, t: UnixTime, r: RoundNumber) -> &mut Self {
-        self.next_committee = Some(NextCommittee::new(t, r));
+    pub fn set_next_committee(&mut self, i: CommitteeInfo) -> &mut Self {
+        self.next_committee = Some(i);
         self
     }
 

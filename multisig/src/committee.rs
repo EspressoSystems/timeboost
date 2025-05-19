@@ -153,14 +153,9 @@ impl<I> CommitteeSeq<I> {
         self.curr.0.start()
     }
 
-    /// Find the most-recent committee that matches the given predicate.
-    pub fn find<F>(&self, pred: F) -> Option<&(Interval<I>, Committee)>
-    where
-        F: Fn(&Interval<I>, &Committee) -> bool,
-    {
-        once(&self.curr)
-            .chain(self.prev.iter().rev())
-            .find(|(r, v)| pred(r, v))
+    /// Iterate over committees and their intervals starting at the most recent.
+    pub fn iter(&self) -> impl Iterator<Item = &(Interval<I>, Committee)> {
+        once(&self.curr).chain(self.prev.iter().rev())
     }
 
     /// Drop committees as long as the given predicate holds true.
@@ -182,7 +177,7 @@ impl<I> CommitteeSeq<I> {
 impl<I: PartialOrd> CommitteeSeq<I> {
     /// Get the committee that covers the given index.
     pub fn get(&self, i: I) -> Option<&Committee> {
-        self.find(|iv, _| iv.contains(&i)).map(|(_, v)| v)
+        self.iter().find(|(iv, _)| iv.contains(&i)).map(|(_, v)| v)
     }
 }
 

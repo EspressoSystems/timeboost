@@ -11,6 +11,7 @@ use info::NodeInfo;
 use multisig::{Certificate, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use multisig::{Committee, CommitteeSeq, Indexed};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
+use sailfish_types::{CommitteeId, CommitteeInfo};
 use sailfish_types::{DataSource, Payload, RoundNumber, UnixTime, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
@@ -70,7 +71,7 @@ pub struct Consensus<T> {
     deterministic: bool,
 
     /// If some, we should reach agreement of the next committee.
-    next_committee: Option<(UnixTime, RoundNumber, Committee)>,
+    next_committee: Option<(CommitteeInfo, Committee)>,
 }
 
 impl<T> Consensus<T> {
@@ -96,10 +97,11 @@ impl<T> Consensus<T> {
         self.committed_round
     }
 
-    pub fn next_committee(&mut self, now: UnixTime, then: UnixTime, c: Committee) {
+    pub fn next_committee(&mut self, now: UnixTime, id: CommitteeId, then: UnixTime, c: Committee) {
         let d = then.seconds().saturating_sub(now.seconds());
         let r = self.round + max(100, d / 4);
-        self.next_committee = Some((then, r, c))
+        let i = CommitteeInfo::new(id, r);
+        self.next_committee = Some((i, c))
     }
 }
 
@@ -623,6 +625,10 @@ where
         let mut new = Vertex::new(r, e, payload, &self.keypair, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
+
+        if let Some((info, _)) = &self.next_committee {
+            new.set_next_committee(info.clone());
+        }
 
         NewVertex(new)
     }

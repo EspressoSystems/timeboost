@@ -1,11 +1,13 @@
 mod comm;
+mod info;
 mod message;
 mod payload;
 mod round;
 mod vertex;
 
 pub use comm::{Comm, CommError};
-pub use message::{Action, Evidence, NextCommittee, Payload};
+pub use info::{CommitteeId, CommitteeInfo};
+pub use message::{Action, Evidence, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::RoundNumber;
