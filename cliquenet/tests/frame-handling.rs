@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use bytes::BytesMut;
 use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
-use multisig::{Keypair, PublicKey};
+use multisig::{Keypair, PublicKey, x25519};
 use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
 use tokio::time::{Duration, timeout};
@@ -10,16 +10,21 @@ use tokio::time::{Duration, timeout};
 /// Send and receive messages of various sizes between 1 byte and 5 MiB.
 #[tokio::test]
 async fn multiple_frames() {
-    let party_a = Keypair::generate();
-    let party_b = Keypair::generate();
+    let party_a_sign = Keypair::generate();
+    let party_b_sign = Keypair::generate();
 
-    let all_parties: [(PublicKey, SocketAddr); 2] = [
+    let party_a_dh = x25519::Keypair::generate().unwrap();
+    let party_b_dh = x25519::Keypair::generate().unwrap();
+
+    let all_parties: [(PublicKey, x25519::PublicKey, SocketAddr); 2] = [
         (
-            party_a.public_key(),
+            party_a_sign.public_key(),
+            party_a_dh.public_key(),
             (Ipv4Addr::LOCALHOST, pick_unused_port().unwrap()).into(),
         ),
         (
-            party_b.public_key(),
+            party_b_sign.public_key(),
+            party_b_dh.public_key(),
             (Ipv4Addr::LOCALHOST, pick_unused_port().unwrap()).into(),
         ),
     ];
@@ -27,8 +32,9 @@ async fn multiple_frames() {
     let mut net_a = Overlay::new(
         Network::create(
             "f1",
-            all_parties[0].1,
-            party_a,
+            all_parties[0].2,
+            party_a_sign,
+            party_a_dh,
             all_parties,
             NetworkMetrics::default(),
         )
@@ -38,8 +44,9 @@ async fn multiple_frames() {
     let mut net_b = Overlay::new(
         Network::create(
             "f2",
-            all_parties[1].1,
-            party_b,
+            all_parties[1].2,
+            party_b_sign,
+            party_b_dh,
             all_parties,
             NetworkMetrics::default(),
         )

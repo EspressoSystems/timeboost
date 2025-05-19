@@ -538,7 +538,7 @@ impl<T: Committable> Committable for Payload<T> {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Payload")
             .field("round", self.round.commit())
-            .fixed_size_field("source", &self.source.as_bytes())
+            .fixed_size_field("source", &self.source.to_bytes())
             .field("data", self.data.commit())
             .finalize()
     }

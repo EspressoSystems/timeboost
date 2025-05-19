@@ -61,7 +61,7 @@ impl<D: Committable> Committable for Signed<D> {
             .field("data", self.data.commit())
             .field("commitment", self.commitment)
             .var_size_field("signature", &sig)
-            .var_size_field("signing_key", &self.signing_key.as_bytes())
+            .var_size_field("signing_key", &self.signing_key.to_bytes())
             .finalize()
     }
 }

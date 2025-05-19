@@ -7,11 +7,9 @@ mod votes;
 
 pub mod x25519;
 
-use std::cmp::Ordering;
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use ed25519_compact as ed25519;
 use serde::{Deserialize, Serialize};
 
 pub use cert::Certificate;
@@ -47,104 +45,102 @@ impl From<KeyId> for u64 {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Keypair {
-    pair: ed25519::KeyPair,
+    sk: SecretKey,
+    pk: PublicKey,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PublicKey {
-    #[serde(serialize_with = "util::encode", deserialize_with = "util::decode_pk")]
-    key: ed25519::PublicKey,
+    #[serde(serialize_with = "util::encode_secp256k1_pk")]
+    #[serde(deserialize_with = "util::decode_secp256k1_pk")]
+    key: secp256k1::PublicKey,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SecretKey {
-    #[serde(serialize_with = "util::encode", deserialize_with = "util::decode_sk")]
-    key: ed25519::SecretKey,
+    #[serde(serialize_with = "util::encode_secp256k1_sk")]
+    #[serde(deserialize_with = "util::decode_secp256k1_sk")]
+    key: secp256k1::SecretKey,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Signature {
-    #[serde(serialize_with = "util::encode", deserialize_with = "util::decode_sig")]
-    sig: ed25519::Signature,
+    sig: secp256k1::ecdsa::Signature,
 }
 
 impl Keypair {
     pub fn generate() -> Self {
-        let this = Self {
-            pair: ed25519::KeyPair::generate(),
-        };
-        assert!(!SMALL_ORDER_KEYS.contains(&&*this.pair.pk));
-        this
+        let (sk, pk) = secp256k1::generate_keypair(&mut secp256k1::rand::rng());
+        Self {
+            sk: SecretKey { key: sk },
+            pk: PublicKey { key: pk },
+        }
     }
 
     /// Generate keypair from a seed.
     pub fn from_seed(seed: [u8; 32]) -> Self {
-        let this = Self {
-            pair: ed25519::KeyPair::from_seed(ed25519::Seed::new(seed)),
-        };
-        assert!(!SMALL_ORDER_KEYS.contains(&&*this.pair.pk));
-        this
+        loop {
+            if let Ok(sk) = secp256k1::SecretKey::from_byte_array(seed) {
+                let pk = sk.public_key(secp256k1::SECP256K1);
+                return Self {
+                    sk: SecretKey { key: sk },
+                    pk: PublicKey { key: pk },
+                };
+            }
+        }
     }
 
     /// Returns ed25519 Public key.
     pub fn public_key(&self) -> PublicKey {
-        PublicKey { key: self.pair.pk }
+        self.pk
     }
 
     /// Return ed25519 secret key.
     pub fn secret_key(&self) -> SecretKey {
-        SecretKey {
-            key: self.pair.sk.clone(),
-        }
+        self.sk.clone()
     }
 
     /// Sign data with our ed25519 secret key.
     pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
-        Signature {
-            sig: self
-                .pair
-                .sk
-                .sign(data, (!deterministic).then(ed25519::Noise::generate)),
-        }
+        self.sk.sign(data, deterministic)
     }
 }
 
 impl PublicKey {
     pub fn is_valid(&self, data: &[u8], s: &Signature) -> bool {
-        self.key.verify(data, &s.sig).is_ok()
+        use secp256k1::hashes::{Hash, sha256};
+        let hash = sha256::Hash::hash(data);
+        let mesg = secp256k1::Message::from_digest(hash.to_byte_array());
+        s.sig.verify(mesg, &self.key).is_ok()
     }
 
-    pub fn as_bytes(&self) -> [u8; 32] {
-        *self.key
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.key[..]
+    pub fn to_bytes(&self) -> [u8; 33] {
+        self.key.serialize()
     }
 }
 
 impl SecretKey {
-    pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
+    pub fn sign(&self, data: &[u8], _deterministic: bool) -> Signature {
+        use secp256k1::hashes::{Hash, sha256};
+        let hash = sha256::Hash::hash(data);
+        let mesg = secp256k1::Message::from_digest(hash.to_byte_array());
         Signature {
-            sig: self
-                .key
-                .sign(data, (!deterministic).then(ed25519::Noise::generate)),
+            sig: self.key.sign_ecdsa(mesg),
         }
     }
 
     pub fn public_key(&self) -> PublicKey {
-        PublicKey {
-            key: self.key.public_key(),
-        }
+        let pk = self.key.public_key(secp256k1::SECP256K1);
+        PublicKey { key: pk }
     }
 
-    pub fn as_bytes(&self) -> [u8; 64] {
-        *self.key
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.key.secret_bytes()
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -153,30 +149,23 @@ impl SecretKey {
 }
 
 impl Signature {
-    pub fn as_bytes(&self) -> [u8; 64] {
-        *self.sig
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.sig[..]
+    pub fn to_bytes(&self) -> [u8; 64] {
+        self.sig.serialize_compact()
     }
 }
 
 impl From<SecretKey> for Keypair {
-    fn from(value: SecretKey) -> Self {
-        let pair = ed25519::KeyPair {
-            pk: value.public_key().key,
-            sk: value.key,
-        };
-        Self { pair }
+    fn from(sk: SecretKey) -> Self {
+        let pk = sk.public_key();
+        Self { sk, pk }
     }
 }
 
-impl TryFrom<&[u8]> for SecretKey {
+impl TryFrom<[u8; 32]> for SecretKey {
     type Error = InvalidSecretKey;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let k = ed25519::SecretKey::from_slice(value).map_err(|_| InvalidSecretKey(()))?;
+    fn try_from(value: [u8; 32]) -> Result<Self, Self::Error> {
+        let k = secp256k1::SecretKey::from_byte_array(value).map_err(|_| InvalidSecretKey(()))?;
         Ok(Self { key: k })
     }
 }
@@ -185,10 +174,14 @@ impl TryFrom<&str> for SecretKey {
     type Error = InvalidSecretKey;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        bs58::decode(s)
-            .into_vec()
-            .map_err(|_| InvalidSecretKey(()))
-            .and_then(|v| SecretKey::try_from(v.as_slice()))
+        let mut a = [0; 32];
+        let n = bs58::decode(s)
+            .onto(&mut a)
+            .map_err(|_| InvalidSecretKey(()))?;
+        if n != 32 {
+            return Err(InvalidSecretKey(()));
+        }
+        Self::try_from(a)
     }
 }
 
@@ -196,10 +189,7 @@ impl TryFrom<&[u8]> for PublicKey {
     type Error = InvalidPublicKey;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let k = ed25519::PublicKey::from_slice(value).map_err(|_| InvalidPublicKey(()))?;
-        if SMALL_ORDER_KEYS.contains(&&*k) {
-            return Err(InvalidPublicKey(()));
-        }
+        let k = secp256k1::PublicKey::from_slice(value).map_err(|_| InvalidPublicKey(()))?;
         Ok(Self { key: k })
     }
 }
@@ -219,32 +209,9 @@ impl TryFrom<&[u8]> for Signature {
     type Error = InvalidSignature;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let s = ed25519::Signature::from_slice(value).map_err(|_| InvalidSignature(()))?;
+        let s =
+            secp256k1::ecdsa::Signature::from_compact(value).map_err(|_| InvalidSignature(()))?;
         Ok(Self { sig: s })
-    }
-}
-
-impl Ord for PublicKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.key[..].cmp(&other.key[..])
-    }
-}
-
-impl PartialOrd for PublicKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Signature {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.sig[..].cmp(&other.sig[..])
-    }
-}
-
-impl PartialOrd for Signature {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -265,13 +232,13 @@ impl fmt::Debug for Keypair {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", bs58::encode(&self.as_bytes()).into_string())
+        write!(f, "{}", bs58::encode(&self.to_bytes()).into_string())
     }
 }
 
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", bs58::encode(&self.as_bytes()).into_string())
+        write!(f, "{}", bs58::encode(&self.to_bytes()).into_string())
     }
 }
 
@@ -290,7 +257,7 @@ impl fmt::Display for Signature {
 impl Committable for Signature {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Signature")
-            .fixed_size_field("sig", &self.as_bytes())
+            .fixed_size_field("sig", &self.to_bytes())
             .finalize()
     }
 }
@@ -310,24 +277,3 @@ pub struct InvalidPublicKey(());
 #[derive(Debug, thiserror::Error)]
 #[error("invalid signature")]
 pub struct InvalidSignature(());
-
-/// Taken from Table 6b of "Taming the many EdDSAs" (https://eprint.iacr.org/2020/1244.pdf)
-///
-/// These are small order public keys that may lead to repudiation attacks
-/// and should be rejected.
-const SMALL_ORDER_KEYS: [&[u8; 32]; 14] = [
-    b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-    b"\xEC\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F",
-    b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80",
-    b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-    b"\xC7\x17\x6A\x70\x3D\x4D\xD8\x4F\xBA\x3C\x0B\x76\x0D\x10\x67\x0F\x2A\x20\x53\xFA\x2C\x39\xCC\xC6\x4E\xC7\xFD\x77\x92\xAC\x03\x7A",
-    b"\xC7\x17\x6A\x70\x3D\x4D\xD8\x4F\xBA\x3C\x0B\x76\x0D\x10\x67\x0F\x2A\x20\x53\xFA\x2C\x39\xCC\xC6\x4E\xC7\xFD\x77\x92\xAC\x03\xFA",
-    b"\x26\xE8\x95\x8F\xC2\xB2\x27\xB0\x45\xC3\xF4\x89\xF2\xEF\x98\xF0\xD5\xDF\xAC\x05\xD3\xC6\x33\x39\xB1\x38\x02\x88\x6D\x53\xFC\x05",
-    b"\x26\xE8\x95\x8F\xC2\xB2\x27\xB0\x45\xC3\xF4\x89\xF2\xEF\x98\xF0\xD5\xDF\xAC\x05\xD3\xC6\x33\x39\xB1\x38\x02\x88\x6D\x53\xFC\x85",
-    b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80",
-    b"\xEC\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
-    b"\xEE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F",
-    b"\xEE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
-    b"\xED\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF",
-    b"\xED\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F"
-];

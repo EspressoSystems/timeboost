@@ -123,7 +123,7 @@ impl<T: Committable> Committable for Vertex<T> {
     fn commit(&self) -> Commitment<Self> {
         let builder = RawCommitmentBuilder::new("Vertex")
             .field("round", self.round.commit())
-            .fixed_size_field("source", &self.source.as_bytes())
+            .fixed_size_field("source", &self.source.to_bytes())
             .field("evidence", self.evidence.commit())
             .field("committed", self.committed.commit())
             .optional("no_vote", &self.no_vote)
@@ -131,7 +131,7 @@ impl<T: Committable> Committable for Vertex<T> {
             .u64_field("edges", self.edges.len() as u64);
         self.edges
             .iter()
-            .fold(builder, |b, e| b.var_size_bytes(e.as_slice()))
+            .fold(builder, |b, e| b.var_size_bytes(&e.to_bytes()))
             .finalize()
     }
 }

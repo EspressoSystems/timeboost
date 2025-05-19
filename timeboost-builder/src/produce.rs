@@ -55,26 +55,27 @@ impl BlockProducer {
         let committee = Committee::new(
             cfg.peers
                 .iter()
-                .map(|(k, _)| *k)
+                .map(|(k, ..)| *k)
                 .enumerate()
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, _)| *k));
+        let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, ..)| *k));
 
         let net = Network::create(
             "block",
             cfg.bind.clone(),
-            cfg.keypair.clone(),
+            cfg.sign_keypair.clone(),
+            cfg.dh_keypair.clone(),
             cfg.peers.clone(),
             net_metrics,
         )
         .await?;
 
-        let worker = Worker::new(cfg.keypair.clone(), Overlay::new(net), committee);
+        let worker = Worker::new(cfg.sign_keypair.clone(), Overlay::new(net), committee);
 
         Ok(Self {
-            label: cfg.keypair,
+            label: cfg.sign_keypair,
             queue: VecDeque::new(),
             parent: None,
             blocks: BTreeMap::new(),
