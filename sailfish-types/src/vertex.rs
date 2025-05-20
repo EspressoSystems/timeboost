@@ -4,7 +4,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Indexed, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use crate::{CommitteeInfo, Evidence, NoVote, RoundNumber};
+use crate::{Evidence, NoVote, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
@@ -14,7 +14,6 @@ pub struct Vertex<T> {
     evidence: Evidence,
     no_vote: Option<Certificate<NoVote>>,
     committed: RoundNumber,
-    next_committee: Option<CommitteeInfo>,
     payload: T,
 }
 
@@ -37,7 +36,6 @@ impl<T> Vertex<T> {
             no_vote: None,
             committed: RoundNumber::genesis(),
             payload: data,
-            next_committee: None,
         }
     }
 
@@ -86,10 +84,6 @@ impl<T> Vertex<T> {
         &self.payload
     }
 
-    pub fn next_committee(&self) -> Option<&CommitteeInfo> {
-        self.next_committee.as_ref()
-    }
-
     pub fn set_committed_round<N: Into<RoundNumber>>(&mut self, n: N) -> &mut Self {
         self.committed = n.into();
         self
@@ -110,11 +104,6 @@ impl<T> Vertex<T> {
 
     pub fn set_no_vote(&mut self, n: Certificate<NoVote>) -> &mut Self {
         self.no_vote = Some(n);
-        self
-    }
-
-    pub fn set_next_committee(&mut self, i: CommitteeInfo) -> &mut Self {
-        self.next_committee = Some(i);
         self
     }
 
@@ -144,7 +133,6 @@ impl<T: Committable> Committable for Vertex<T> {
             .fixed_size_field("source", &self.source.as_bytes())
             .field("evidence", self.evidence.commit())
             .field("committed", self.committed.commit())
-            .optional("next_committee", &self.next_committee)
             .optional("no_vote", &self.no_vote)
             .field("payload", self.payload.commit())
             .u64_field("edges", self.edges.len() as u64);

@@ -192,7 +192,7 @@ impl Sequencer {
         };
 
         let decrypter = {
-            let keyset = Keyset::new(1, committees.current().size()); // TODO
+            let keyset = Keyset::new(1, committees.last().size()); // TODO
 
             let met = NetworkMetrics::new(
                 "decrypt",

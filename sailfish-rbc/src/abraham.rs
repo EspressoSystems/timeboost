@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, CommitteeSeq, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
+use multisig::{Certificate, Committee, CommitteeSeq, Envelope, Keypair, PublicKey, Validated};
+use sailfish_types::{Comm, CommitteeInfo, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -65,6 +65,8 @@ enum Command<T: Committable> {
     RbcBroadcast(Envelope<Vertex<T>, Validated>, Data),
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
+    /// Schedule the next committee to use.
+    AddCommittee(CommitteeInfo, Committee),
 }
 
 /// RBC configuration
@@ -144,14 +146,21 @@ impl<T: Committable> Drop for Rbc<T> {
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
     pub fn new(net: Overlay, c: RbcConfig) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committees.current().size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committees.current().size().get());
+        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committees.last().size().get());
+        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committees.last().size().get());
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
         }
+    }
+
+    pub async fn add_committee(&mut self, i: CommitteeInfo, c: Committee) -> Result<(), RbcError> {
+        self.tx
+            .send(Command::AddCommittee(i, c))
+            .await
+            .map_err(|_| RbcError::Shutdown)
     }
 }
 

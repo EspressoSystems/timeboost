@@ -11,8 +11,8 @@ use cliquenet::{
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
-use multisig::{Indexed, Unchecked, Validated};
-use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
+use multisig::{Indexed, Unchecked, Validated, Committee};
+use sailfish_types::{CommitteeInfo, Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -272,9 +272,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             }
                         }
                         Some(Command::Gc(round)) => {
-                            debug!(node = %self.key, r = %round, "garbage collect");
+                            debug!(node = %self.key, %round, "garbage collect");
                             self.comm.gc(*round);
                             self.buffer.retain(|r, _| *r >= round);
+                        }
+                        Some(Command::AddCommittee(i, c)) => {
+                            self.add_committee(i, c)
                         }
                         None => {
                             debug!(node = %self.key, "rbc shutdown detected");
@@ -283,6 +286,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     }
                 }
             }
+        }
+    }
+
+    /// Schedule the next committee.
+    fn add_committee(&mut self, info: CommitteeInfo, comm: Committee) {
+        debug!(node = %self.key, committee = %info, "schedule committee");
+        if let Err(err) = self.config.committees.add(info.round() .., comm.clone()) {
+            error!(node = %self.key, committee = %info, %err, "invalid committee");
         }
     }
 
@@ -417,7 +428,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         rounds.insert(src, r);
 
-        if rounds.len() >= self.config.committees.current().quorum_size().get() {
+        if rounds.len() >= self.config.committees.last().quorum_size().get() {
             let barrier = rounds
                 .values()
                 .max()

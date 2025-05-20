@@ -287,7 +287,7 @@ impl Worker {
                 .trackers
                 .entry(*block_hash.data())
                 .or_insert_with(|| Tracker {
-                    votes: VoteAccumulator::new((), self.committees.current().clone()),
+                    votes: VoteAccumulator::new((), self.committees.last().clone()),
                     num: None,
                     status: CertStatus::Unknown,
                 });

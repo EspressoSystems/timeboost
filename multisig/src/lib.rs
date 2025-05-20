@@ -15,7 +15,7 @@ use ed25519_compact as ed25519;
 use serde::{Deserialize, Serialize};
 
 pub use cert::Certificate;
-pub use committee::{Committee, CommitteeSeq};
+pub use committee::{Committee, CommitteeSeq, IntervalOverlap};
 pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use votes::VoteAccumulator;

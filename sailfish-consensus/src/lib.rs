@@ -2,17 +2,15 @@ mod dag;
 mod info;
 mod metrics;
 
-use std::cmp::max;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::time::Instant;
 
 use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use multisig::{Committee, CommitteeSeq, Indexed};
+use multisig::{Committee, CommitteeSeq, Indexed, IntervalOverlap};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{CommitteeId, CommitteeInfo};
-use sailfish_types::{DataSource, Payload, RoundNumber, UnixTime, Vertex};
+use sailfish_types::{CommitteeInfo, DataSource, Payload, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -70,8 +68,8 @@ pub struct Consensus<T> {
     /// Sign deterministically?
     deterministic: bool,
 
-    /// If some, we should reach agreement of the next committee.
-    next_committee: Option<(CommitteeInfo, Committee)>,
+    /// Next rounds of committee changes.
+    committee_changes: VecDeque<RoundNumber>,
 }
 
 impl<T> Consensus<T> {
@@ -97,11 +95,10 @@ impl<T> Consensus<T> {
         self.committed_round
     }
 
-    pub fn next_committee(&mut self, now: UnixTime, id: CommitteeId, then: UnixTime, c: Committee) {
-        let d = then.seconds().saturating_sub(now.seconds());
-        let r = self.round + max(100, d / 4);
-        let i = CommitteeInfo::new(id, r);
-        self.next_committee = Some((i, c))
+    pub fn add_committee(&mut self, i: CommitteeInfo, c: Committee) -> Result<(), IntervalOverlap> {
+        self.committees.add(i.round().., c)?;
+        self.committee_changes.push_back(i.round());
+        Ok(())
     }
 }
 
@@ -115,7 +112,7 @@ where
     {
         Self {
             keypair,
-            nodes: NodeInfo::new(committees.current()),
+            nodes: NodeInfo::new(committees.last()),
             dag: Dag::new(),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
@@ -130,7 +127,7 @@ where
             metrics: Default::default(),
             metrics_timer: Instant::now(),
             deterministic: false,
-            next_committee: None,
+            committee_changes: VecDeque::new(),
         }
     }
 
@@ -521,6 +518,7 @@ where
             debug_assert!(v.num_edges() >= committee.quorum_size().get());
             actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
+            self.update_committee();
             self.metrics
                 .round_duration
                 .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -555,6 +553,7 @@ where
             debug_assert!(v.evidence().is_timeout());
             actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
+            self.update_committee();
             self.metrics
                 .round_duration
                 .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -598,6 +597,7 @@ where
         v.set_no_vote(nc);
         actions.extend(self.broadcast_vertex(v));
         self.clear_aggregators(self.round);
+        self.update_committee();
         self.metrics
             .round_duration
             .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -625,10 +625,6 @@ where
         let mut new = Vertex::new(r, e, payload, &self.keypair, self.deterministic);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
-
-        if let Some((info, _)) = &self.next_committee {
-            new.set_next_committee(info.clone());
-        }
 
         NewVertex(new)
     }
@@ -876,13 +872,18 @@ where
     fn is_valid(&self, v: &Vertex<T>) -> Result<&Committee, ()> {
         trace!(node = %self.public_key(), vertex = %v, "check vertex");
         if v.is_genesis() {
-            info!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vertex = %v,
-                "accepting genesis vertex"
-            );
-            return Ok(self.committees.current());
+            return if let Some(c) = self.committees.get(v.index()) {
+                info!(
+                    node   = %self.public_key(),
+                    round  = %self.round,
+                    vertex = %v,
+                    "accepting genesis vertex"
+                );
+                Ok(c)
+            } else {
+                warn!(node = %self.public_key(), vertex = %v, "no committee for vertex");
+                Err(())
+            };
         }
 
         if *v.round().data() < self.dag.min_round().unwrap_or_else(RoundNumber::genesis) {
@@ -905,11 +906,7 @@ where
         }
 
         let Some(committee) = self.committees.get(v.index()) else {
-            warn!(
-                node   = %self.public_key(),
-                vertex = %v,
-                "no committee for vertex"
-            );
+            warn!(node = %self.public_key(), vertex = %v, "no committee for vertex");
             return Err(());
         };
 
@@ -922,11 +919,7 @@ where
         }
 
         if v.no_vote_cert().is_none() {
-            warn!(
-                node   = %self.public_key(),
-                vertex = %v,
-                "vertex is missing no-vote certificate"
-            );
+            warn!(node = %self.public_key(), vertex = %v, "vertex is missing no-vote certificate");
             return Err(());
         };
 
@@ -976,8 +969,21 @@ where
         let c = self
             .committees
             .get(r)
-            .unwrap_or_else(|| self.committees.current());
+            .unwrap_or_else(|| self.committees.last());
         r.saturating_sub(c.quorum_size().get() as u64).into()
+    }
+
+    /// Act if a committee changes at the current round.
+    fn update_committee(&mut self) {
+        while let Some(&next) = self.committee_changes.front() {
+            if self.round < next {
+                return;
+            }
+            self.committee_changes.pop_front();
+            if let Some(c) = self.committees.get(next) {
+                self.nodes = NodeInfo::new(c)
+            }
+        }
     }
 }
 

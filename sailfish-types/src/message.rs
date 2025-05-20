@@ -1,12 +1,12 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Committee, CommitteeSeq};
+use multisig::{Certificate, CommitteeSeq};
 use multisig::{Envelope, Indexed, Keypair, PublicKey, Signed, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{CommitteeInfo, RoundNumber, Vertex};
+use crate::{RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
@@ -273,9 +273,6 @@ pub enum Action<T: Committable> {
 
     /// Signal that it is safe to garbage collect up to the given round number.
     Gc(RoundNumber),
-
-    /// Inform about the next committee to use.
-    NextCommittee(CommitteeInfo, Committee),
 }
 
 impl<T: Committable> Action<T> {
@@ -312,9 +309,6 @@ impl<T: Committable> fmt::Display for Action<T> {
             }
             Action::Gc(r) => {
                 write!(f, "Gc({r})")
-            }
-            Action::NextCommittee(info, _) => {
-                write!(f, "NextCommittee({info})")
             }
         }
     }

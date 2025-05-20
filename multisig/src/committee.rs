@@ -132,35 +132,30 @@ impl<T> Interval<T> {
 #[derive(Debug, Clone)]
 pub struct CommitteeSeq<I> {
     prev: VecDeque<(Interval<I>, Committee)>,
-    curr: (Interval<I>, Committee),
+    last: (Interval<I>, Committee),
 }
 
 impl<I> CommitteeSeq<I> {
     pub fn new(r: RangeFrom<I>, c: Committee) -> Self {
         Self {
             prev: VecDeque::new(),
-            curr: (Interval::From(r.start), c),
+            last: (Interval::From(r.start), c),
         }
     }
 
-    /// Get the current committee.
-    pub fn current(&self) -> &Committee {
-        &self.curr.1
-    }
-
-    /// Get the current committee start index.
-    pub fn current_start(&self) -> &I {
-        self.curr.0.start()
+    /// Get the last (most-recent) committee.
+    pub fn last(&self) -> &Committee {
+        &self.last.1
     }
 
     /// Iterate over committees and their intervals starting at the most recent.
     pub fn iter(&self) -> impl Iterator<Item = &(Interval<I>, Committee)> {
-        once(&self.curr).chain(self.prev.iter().rev())
+        once(&self.last).chain(self.prev.iter().rev())
     }
 
     /// Drop committees as long as the given predicate holds true.
     ///
-    /// NB that the current committee can never be dropped.
+    /// NB that the last committee can never be dropped.
     pub fn drop_while<F>(&mut self, pred: F)
     where
         F: Fn(&Interval<I>, &Committee) -> bool,
@@ -188,15 +183,15 @@ pub struct IntervalOverlap(());
 impl<I: PartialOrd + Clone> CommitteeSeq<I> {
     /// Add a new committee starting from index r.
     ///
-    /// The start index must be greater than the start index of the current
+    /// The start index must be greater than the start index of the last
     /// committee.
     pub fn add(&mut self, r: RangeFrom<I>, v: Committee) -> Result<(), IntervalOverlap> {
-        if r.start <= *self.curr.0.start() {
+        if r.start <= *self.last.0.start() {
             return Err(IntervalOverlap(()));
         }
-        let i = Interval::Range(self.curr.0.start().clone(), r.start.clone());
-        self.prev.push_back((i, self.curr.1.clone()));
-        self.curr = (Interval::From(r.start), v);
+        let i = Interval::Range(self.last.0.start().clone(), r.start.clone());
+        self.prev.push_back((i, self.last.1.clone()));
+        self.last = (Interval::From(r.start), v);
         Ok(())
     }
 }

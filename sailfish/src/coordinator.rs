@@ -99,9 +99,6 @@ where
             Action::Deliver(_) => {
                 // nothing to do
             }
-            Action::NextCommittee(..) => {
-                // nothing to do
-            }
         }
         Ok(())
     }
