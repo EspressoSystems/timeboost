@@ -80,12 +80,10 @@ impl FakeNetwork {
     /// Look in each node and grab their queue of messages
     /// Used for asserting in tests to make sure outputs are expected
     pub(crate) fn msgs_in_queue(&self) -> HashMap<PublicKey, &VecDeque<Message>> {
-        let nodes_msgs = self
-            .nodes
+        self.nodes
             .iter()
             .map(|(key, node_instrument)| (*key, node_instrument.msg_queue()))
-            .collect();
-        nodes_msgs
+            .collect()
     }
 
     /// Handle a message, and apply any transformations as setup in the test
