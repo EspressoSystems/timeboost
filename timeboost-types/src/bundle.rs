@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
+use alloy_consensus::transaction::SignerRecoverable;
 use alloy_consensus::{Sealed, TxEnvelope};
 
 use alloy_eips::{Encodable2718, Typed2718};
@@ -489,6 +490,9 @@ impl From<alloy_signer_local::PrivateKeySigner> for Signer {
 pub enum InvalidTransaction {
     #[error("invalid signature: {0}")]
     Signature(#[from] alloy_primitives::SignatureError),
+
+    #[error("recovery error: {0}")]
+    Recovery(#[from] alloy_consensus::crypto::RecoveryError),
 
     #[error("invalid rlp encoding: {0}")]
     Rlp(#[from] alloy_rlp::Error),

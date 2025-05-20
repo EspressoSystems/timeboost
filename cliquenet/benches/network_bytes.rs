@@ -1,5 +1,6 @@
 use bytes::Bytes;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 const ONE_KB: usize = 1024;
 const MAX_NUM_KB: usize = 64;
