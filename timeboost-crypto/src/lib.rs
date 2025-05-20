@@ -3,6 +3,9 @@ pub mod sg_encryption;
 pub mod traits;
 
 use ark_ec::CurveGroup;
+use ark_ec::hashing::curve_maps::wb::WBMap;
+use ark_ec::hashing::map_to_curve_hasher::MapToCurveBasedHasher;
+use ark_ff::field_hashers::DefaultFieldHasher;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
@@ -248,11 +251,12 @@ impl<C: CurveGroup> DecShare<C> {
 }
 
 // Type initialization for decryption scheme
-type G = ark_secp256k1::Projective;
+type G = ark_bls12_381::G1Projective;
 type H = Sha256;
 type D = DigestBridge<H>;
+type H2C = MapToCurveBasedHasher<G, DefaultFieldHasher<H>, WBMap<ark_bls12_381::g1::Config>>;
 
-pub struct DecryptionScheme(ShoupGennaro<G, H, D>);
+pub struct DecryptionScheme(ShoupGennaro<G, H, D, H2C>);
 
 pub type TrustedKeyMaterial = (
     <DecryptionScheme as ThresholdEncScheme>::PublicKey,
@@ -274,14 +278,14 @@ impl DecryptionScheme {
 }
 
 impl ThresholdEncScheme for DecryptionScheme {
-    type PublicKey = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::PublicKey;
-    type Committee = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Committee;
-    type CombKey = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::CombKey;
-    type KeyShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::KeyShare;
-    type Plaintext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Plaintext;
-    type AssociatedData = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::AssociatedData;
-    type Ciphertext = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::Ciphertext;
-    type DecShare = <ShoupGennaro<G, H, D> as ThresholdEncScheme>::DecShare;
+    type PublicKey = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::PublicKey;
+    type Committee = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::Committee;
+    type CombKey = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::CombKey;
+    type KeyShare = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::KeyShare;
+    type Plaintext = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::Plaintext;
+    type AssociatedData = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::AssociatedData;
+    type Ciphertext = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::Ciphertext;
+    type DecShare = <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::DecShare;
 
     fn keygen<R: ark_std::rand::Rng>(
         rng: &mut R,
@@ -290,7 +294,7 @@ impl ThresholdEncScheme for DecryptionScheme {
         (Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>),
         traits::threshold_enc::ThresholdEncError,
     > {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::keygen(rng, committee)
+        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::keygen(rng, committee)
     }
 
     fn encrypt<R: ark_std::rand::Rng>(
@@ -300,7 +304,7 @@ impl ThresholdEncScheme for DecryptionScheme {
         message: &Self::Plaintext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::encrypt(rng, kid, pk, message, aad)
+        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::encrypt(rng, kid, pk, message, aad)
     }
 
     fn decrypt(
@@ -308,7 +312,7 @@ impl ThresholdEncScheme for DecryptionScheme {
         ciphertext: &Self::Ciphertext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::DecShare, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::decrypt(sk, ciphertext, aad)
+        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::decrypt(sk, ciphertext, aad)
     }
 
     fn combine(
@@ -318,7 +322,7 @@ impl ThresholdEncScheme for DecryptionScheme {
         ciphertext: &Self::Ciphertext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D> as ThresholdEncScheme>::combine(
+        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::combine(
             committee, comb_key, dec_shares, ciphertext, aad,
         )
     }

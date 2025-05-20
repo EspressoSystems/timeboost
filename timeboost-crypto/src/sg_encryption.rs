@@ -1,19 +1,19 @@
 use aes_gcm::{AeadCore, Aes256Gcm, aead};
 use anyhow::anyhow;
-use ark_ec::CurveGroup;
-use ark_ff::{
-    One, PrimeField, UniformRand, batch_inversion,
-    field_hashers::{DefaultFieldHasher, HashToField},
-};
+use ark_ec::{AffineRepr, CurveGroup, hashing::HashToCurve};
+use ark_ff::{One, PrimeField, UniformRand, batch_inversion};
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{DenseUVPolynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
-use digest::{Digest, DynDigest, FixedOutputReset, generic_array::GenericArray};
+use digest::{Digest, generic_array::GenericArray};
 use spongefish::DuplexSpongeInterface;
-use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
+use std::{
+    any::TypeId,
+    io::{BufWriter, Write},
+};
 use zeroize::Zeroize;
 
 use crate::{
@@ -31,23 +31,26 @@ use crate::{
 /// NOTE:
 /// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful `combine()`
 ///    in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
-pub struct ShoupGennaro<C, H, D>
+pub struct ShoupGennaro<C, H, D, H2C>
 where
     C: CurveGroup,
-    H: Digest + Default + DynDigest + Clone,
+    H: Digest,
     D: DuplexSpongeInterface,
+    H2C: HashToCurve<C>,
 {
     _group: PhantomData<C>,
     _hash: PhantomData<H>,
     _duplex: PhantomData<D>,
+    _hash_to_curve: PhantomData<H2C>,
 }
 
-impl<C, H, D> ThresholdEncScheme for ShoupGennaro<C, H, D>
+impl<C, H, D, H2C> ThresholdEncScheme for ShoupGennaro<C, H, D, H2C>
 where
-    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    H: Digest,
     D: DuplexSpongeInterface,
     C: CurveGroup,
     C::ScalarField: PrimeField,
+    H2C: HashToCurve<C>,
 {
     type Committee = Keyset;
     type PublicKey = PublicKey<C>;
@@ -124,7 +127,7 @@ where
         let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), payload).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
         })?;
-        let u_hat = hash_to_curve::<C, H>(v, e.clone())?;
+        let u_hat = hash_to_curve::<C, H2C>(v, e.clone())?;
 
         let w_hat = u_hat * beta;
 
@@ -281,11 +284,12 @@ where
     }
 }
 
-impl<C, H, D> ShoupGennaro<C, H, D>
+impl<C, H, D, H2C> ShoupGennaro<C, H, D, H2C>
 where
     C: CurveGroup,
-    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    H: Digest,
     D: DuplexSpongeInterface,
+    H2C: HashToCurve<C>,
 {
     /// Check correctness of ciphertext against its associated data (or "Label" in [SG01])
     /// through Dleq proof verification.
@@ -300,7 +304,7 @@ where
         // dev note: currently our scheme binds the keyset_id associated data not through `aad`
         // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds `keyset_id`,
         // which is why `aad` is left unused. Technically, keyset_id is part of aad, we should use aad to derive u_hat
-        let u_hat = hash_to_curve::<C, H>(v, e)
+        let u_hat = hash_to_curve::<C, H2C>(v, e)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(g, v, u_hat, w_hat);
         ChaumPedersen::<C, D>::verify(tuple, &pi).map_err(ThresholdEncError::DleqError)?;
@@ -309,24 +313,37 @@ where
     }
 }
 
-// TODO: Replace with actual hash to curve
-// (see. https://datatracker.ietf.org/doc/rfc9380/)
-fn hash_to_curve<C, H>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
+fn hash_to_curve<C, H2C>(v: C, e: Vec<u8>) -> Result<C, ThresholdEncError>
 where
     C: CurveGroup,
-    H: Digest + Default + Clone + FixedOutputReset + 'static,
+    H2C: HashToCurve<C>,
 {
-    let generator = C::generator();
+    // first serialize preimages into bytes as input message to the HashToCurve function
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
     let _ = writer.write(&e);
     writer.flush()?;
     drop(writer);
-    let hasher = <DefaultFieldHasher<H> as HashToField<C::ScalarField>>::new(&[0u8]);
-    let scalar_from_hash: C::ScalarField = hasher.hash_to_field::<1>(&buffer)[0];
-    let u_hat = generator * scalar_from_hash;
-    Ok(u_hat)
+
+    // Currently, we only support BLS12-381's G1 as its HashToCurve is available in arkworks,
+    // will add support for more curves in the future using SW06 method
+    // <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-shallue-van-de-woestijne-me>
+    //
+    // maintenance note: update domain separator when Timeboost has minor version upgrade or there are multiple
+    // usages of HashToCurve oracle (currently we only have 1 in threshold signature, assigned with `CS01`).
+    // e.g. Timeboost upgraded to `2.4.x` and there are 3 occurences of this oracles, the full tag should be:
+    // `TIMEBOOST-V24-CS03-with-BLS12381G1_XMD:SHA-256_SSWU_RO_`
+    // See: <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-domain-separation-requireme>
+    // and <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-suite-id-naming-conventions>
+    let curve_type_id = TypeId::of::<C>();
+    if curve_type_id == TypeId::of::<ark_bls12_381::G1Projective>() {
+        let h2c_hasher =
+            H2C::new(b"TIMEBOOST-V01-CS01-with-BLS12381G1_XMD:SHA-256_SSWU_RO_".as_ref())?;
+        Ok(h2c_hasher.hash(&buffer)?.into_group())
+    } else {
+        Err(ThresholdEncError::UnsupportedCurve)
+    }
 }
 
 fn hash_to_key<C: CurveGroup, H: Digest>(
@@ -357,14 +374,18 @@ mod test {
         traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     };
 
+    use ark_bls12_381::{G1Projective, g1::Config};
+    use ark_ec::hashing::{curve_maps::wb::WBMap, map_to_curve_hasher::MapToCurveBasedHasher};
+    use ark_ff::field_hashers::DefaultFieldHasher;
     use ark_std::rand::seq::SliceRandom;
     use ark_std::test_rng;
     use sha2::Sha256;
     use spongefish::DigestBridge;
 
-    type G = ark_secp256k1::Projective;
+    type G = G1Projective;
     type H = Sha256;
     type D = DigestBridge<H>;
+    type H2C = MapToCurveBasedHasher<G, DefaultFieldHasher<H>, WBMap<Config>>;
 
     #[test]
     fn test_correctness() {
@@ -372,22 +393,24 @@ mod test {
         let committee = Keyset::new(0, NonZeroUsize::new(20).unwrap());
 
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
+        let (pk, comb_key, key_shares) =
+            ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
+            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
+                .unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
+            .map(|s| ShoupGennaro::<G, H, D, H2C>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let check_message = ShoupGennaro::<G, H, D>::combine(
+        let check_message = ShoupGennaro::<G, H, D, H2C>::combine(
             &committee,
             &comb_key,
             dec_shares_refs.clone(),
@@ -403,7 +426,7 @@ mod test {
 
         // make sure that wrong associated data will fail decryption
         assert!(
-            ShoupGennaro::<G, H, D>::combine(
+            ShoupGennaro::<G, H, D, H2C>::combine(
                 &committee,
                 &comb_key,
                 dec_shares_refs,
@@ -420,24 +443,26 @@ mod test {
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
 
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
+        let (pk, comb_key, key_shares) =
+            ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
+            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
+                .unwrap();
 
         let threshold = committee.one_honest_threshold().get();
         let dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
+            .map(|s| ShoupGennaro::<G, H, D, H2C>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .take(threshold - 1) // not enough shares to combine
             .collect::<Vec<_>>();
 
         let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
 
-        let result = ShoupGennaro::<G, H, D>::combine(
+        let result = ShoupGennaro::<G, H, D, H2C>::combine(
             &committee,
             &comb_key,
             dec_shares_refs,
@@ -460,23 +485,25 @@ mod test {
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
 
         // setup schemes
-        let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D>::keygen(rng, &committee).unwrap();
+        let (pk, comb_key, key_shares) =
+            ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee).unwrap();
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
         let ciphertext =
-            ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad).unwrap();
+            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
+                .unwrap();
 
         let mut dec_shares: Vec<_> = key_shares
             .iter()
-            .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
+            .map(|s| ShoupGennaro::<G, H, D, H2C>::decrypt(s, &ciphertext, &aad))
             .filter_map(|res| res.ok())
             .collect::<Vec<_>>();
 
         // 1. Change the order of the shares received by combiner
         dec_shares.shuffle(rng);
 
-        let check_message = ShoupGennaro::<G, H, D>::combine(
+        let check_message = ShoupGennaro::<G, H, D, H2C>::combine(
             &committee,
             &comb_key,
             dec_shares.iter().collect(),
@@ -501,7 +528,7 @@ mod test {
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
-        let result = ShoupGennaro::<G, H, D>::combine(
+        let result = ShoupGennaro::<G, H, D, H2C>::combine(
             &committee,
             &comb_key,
             dec_shares.iter().collect(),
@@ -520,7 +547,7 @@ mod test {
         // 3. Reattach the first correct share to the combining set
         // to obtain exactly t correct shares (enough to combine)
         dec_shares[0] = first_correct_share;
-        let result = ShoupGennaro::<G, H, D>::combine(
+        let result = ShoupGennaro::<G, H, D, H2C>::combine(
             &committee,
             &comb_key,
             dec_shares.iter().collect(),

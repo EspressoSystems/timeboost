@@ -1,11 +1,13 @@
 use std::num::NonZeroUsize;
 
-use ark_ec::CurveGroup;
-use ark_ff::PrimeField;
+use ark_ec::{
+    CurveGroup,
+    hashing::{HashToCurve, curve_maps::wb::WBMap, map_to_curve_hasher::MapToCurveBasedHasher},
+};
+use ark_ff::{PrimeField, field_hashers::DefaultFieldHasher};
 use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use digest::{DynDigest, FixedOutputReset};
 use sha2::{Digest, Sha256};
 use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
@@ -15,12 +17,13 @@ use timeboost_crypto::{
 const KB: usize = 1 << 10;
 const MB: usize = KB << 10;
 
-pub fn shoup_gennaro<G, H, D>(c: &mut Criterion, curve: &str)
+pub fn shoup_gennaro<G, H, D, H2C>(c: &mut Criterion, curve: &str)
 where
-    H: Digest + Default + DynDigest + Clone + FixedOutputReset + 'static,
+    H: Digest,
     D: DuplexSpongeInterface,
     G: CurveGroup,
     G::ScalarField: PrimeField,
+    H2C: HashToCurve<G>,
 {
     let committee_sizes = [5, 10, 15, 20];
     let byte_lens = [100 * KB, 200 * KB, 500 * KB, MB];
@@ -39,15 +42,21 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
-            let (pk, _, _) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
+            let (pk, _, _) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
+                .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let aad = b"cred~abcdef".to_vec();
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                        .expect("encrypt message");
+                    ShoupGennaro::<G, H, D, H2C>::encrypt(
+                        rng,
+                        &committee.id(),
+                        &pk,
+                        &plaintext,
+                        &aad,
+                    )
+                    .expect("encrypt message");
                 });
             });
         }
@@ -58,16 +67,16 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
-            let (pk, _, key_shares) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
+            let (pk, _, key_shares) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
+                .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let aad = b"cred~abcdef".to_vec();
             let ciphertext =
-                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
+                ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
                     .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::decrypt(&key_shares[0], &ciphertext, &aad)
+                    ShoupGennaro::<G, H, D, H2C>::decrypt(&key_shares[0], &ciphertext, &aad)
                         .expect("generate partial decryption share");
                 });
             });
@@ -79,22 +88,22 @@ where
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
             let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
-            let (pk, comb_key, key_shares) =
-                ShoupGennaro::<G, H, D>::keygen(rng, &committee).expect("generate key material");
+            let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
+                .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let aad = b"cred~abcdef".to_vec();
             let ciphertext =
-                ShoupGennaro::<G, H, D>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
+                ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
                     .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
-                .map(|s| ShoupGennaro::<G, H, D>::decrypt(s, &ciphertext, &aad))
+                .map(|s| ShoupGennaro::<G, H, D, H2C>::decrypt(s, &ciphertext, &aad))
                 .filter_map(|res| res.ok())
                 .collect::<Vec<_>>();
             let dec_shares_refs: Vec<&_> = dec_shares.iter().collect();
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D>::combine(
+                    ShoupGennaro::<G, H, D, H2C>::combine(
                         &committee,
                         &comb_key,
                         dec_shares_refs.clone(),
@@ -110,8 +119,16 @@ where
 }
 
 fn shoup_gennaro_main(c: &mut Criterion) {
-    shoup_gennaro::<ark_bn254::G2Projective, Sha256, DigestBridge<Sha256>>(c, "Bn254G1");
-    shoup_gennaro::<ark_secp256k1::Projective, Sha256, DigestBridge<Sha256>>(c, "secp256k1");
+    shoup_gennaro::<
+        ark_bls12_381::G1Projective,
+        Sha256,
+        DigestBridge<Sha256>,
+        MapToCurveBasedHasher<
+            ark_bls12_381::G1Projective,
+            DefaultFieldHasher<Sha256>,
+            WBMap<ark_bls12_381::g1::Config>,
+        >,
+    >(c, "Bls12-381G1");
 }
 
 criterion_group!(name = benches; config = Criterion::default().sample_size(10); targets = shoup_gennaro_main);

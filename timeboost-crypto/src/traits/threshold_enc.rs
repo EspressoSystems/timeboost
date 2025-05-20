@@ -1,3 +1,4 @@
+use ark_ec::hashing;
 use ark_std::rand::Rng;
 use thiserror::Error;
 
@@ -66,4 +67,8 @@ pub enum ThresholdEncError {
     SerializationError(#[from] ark_serialize::SerializationError),
     #[error("Faulty node indices: {0:?}")]
     FaultySubset(Vec<u32>),
+    #[error("Only support Bls12-381::G1")]
+    UnsupportedCurve,
+    #[error(transparent)]
+    H2CError(#[from] hashing::HashToCurveError),
 }
