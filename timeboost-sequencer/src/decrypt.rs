@@ -111,21 +111,21 @@ impl Decrypter {
                 .send(WorkerRequest::Decrypt(incl.clone()))
                 .await
                 .map_err(|_| DecryptError::Shutdown)?;
-            self.incls.insert(round, incl);
-
-            trace!(
-                node        = %self.label,
-                round       = %round,
-                digest      = ?incl_digest,
-                "enqueued InclusionList"
-            );
         }
+
+        self.incls.insert(round, incl);
+        trace!(
+            node        = %self.label,
+            round       = %round,
+            digest      = ?incl_digest,
+            "enqueued InclusionList"
+        );
 
         Ok(())
     }
 
     /// Try to pop the first inclusion list (w/ the smallest round number) if decrypted, else return None
-    fn first_decrypted(&mut self) -> Option<InclusionList> {
+    fn first_if_decrypted(&mut self) -> Option<InclusionList> {
         self.incls.first_entry().and_then(|entry| {
             if entry.get().is_encrypted() {
                 None
@@ -138,7 +138,7 @@ impl Decrypter {
     /// Produces decrypted inclusion lists ordered by round number
     pub async fn next(&mut self) -> Result<InclusionList> {
         // first try to return the first inclusion list if it's already decrypted
-        if let Some(incl) = self.first_decrypted() {
+        if let Some(incl) = self.first_if_decrypted() {
             return Ok(incl);
         }
 
@@ -156,7 +156,7 @@ impl Decrypter {
             // since the newly finished/responded inclusion list might belong to a later round
             // the first entry might still be unencrypted, in which case continue the loop and
             // wait until the worker finishes decrypting it.
-            if let Some(incl) = self.first_decrypted() {
+            if let Some(incl) = self.first_if_decrypted() {
                 return Ok(incl);
             }
         }
@@ -319,7 +319,7 @@ impl Worker {
 
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(round, incl.clone()).await;
+        let dec_shares = self.decrypt(round, incl.clone());
         if dec_shares.is_empty() {
             return Err(DecryptError::EmptyDecShares);
         }
@@ -383,7 +383,7 @@ impl Worker {
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
-    async fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> DecShareBatch {
+    fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> DecShareBatch {
         let dec_shares = self
             .extract_ciphertexts(&incl)
             .into_iter()
@@ -427,39 +427,36 @@ impl Worker {
         Ok(())
     }
 
-    /// decide if a round is ready to be hatched
-    fn is_hatchable(&self, round: &RoundNumber) -> bool {
-        let Some(share) = self.dec_shares.get(round) else {
-            return false;
-        };
-        !share.is_empty()
-            && share.iter().all(|shares| {
-                let num_valid_shares = shares.iter().filter(|s| s.is_some()).count();
-                let num_invalid_shares = shares.len() - num_valid_shares;
-
-                // for valid decryption shares, as long as reaching f+1, we may try to hatch
-                // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
-                num_valid_shares >= self.keyset.one_honest_threshold().get()
-                    || num_invalid_shares >= self.keyset.honest_majority_threshold().get()
-            })
-    }
-
     /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if insufficient shares
     /// dev note: this function doesn't update local states or garbage collect for hatched rounds
     fn hatch(&self, round: RoundNumber) -> Result<Option<InclusionList>> {
-        if !self.is_hatchable(&round) {
+        // first check if hatchable, if not, return Ok(None)
+        let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
+            return Ok(None);
+        };
+        if per_ct_opt_dec_shares.is_empty()
+            || per_ct_opt_dec_shares.iter().any(|opt_dec_shares| {
+                let num_valid_shares = opt_dec_shares.iter().filter(|s| s.is_some()).count();
+                let num_invalid_shares = opt_dec_shares.len() - num_valid_shares;
+
+                // for valid decryption shares, as long as reaching f+1, we may try to hatch
+                // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
+                num_valid_shares < self.keyset.one_honest_threshold().get()
+                    && num_invalid_shares < self.keyset.honest_majority_threshold().get()
+            })
+        {
             return Ok(None);
         }
 
-        // safe unwrap due to is_hatchable check above
-        let per_ct_opt_dec_shares = self.dec_shares.get(&round).unwrap();
         // retreive ciphertext again from the original encrypted inclusion list, and some sanity check
         let mut incl = self
             .incls
             .get(&round)
-            .ok_or(DecryptError::Internal(format!(
-                "missing inclusion list for round={round} in local cache"
-            )))?
+            .ok_or_else(|| {
+                DecryptError::Internal(format!(
+                    "missing inclusion list for round={round} in local cache"
+                ))
+            })?
             .clone();
         let ciphertexts = self.extract_ciphertexts(&incl);
         debug_assert_eq!(
@@ -479,10 +476,12 @@ impl Worker {
                 .filter_map(|s| s.as_ref())
                 .collect::<Vec<_>>();
 
-            if opt_ct.is_none() || dec_shares.len() < self.keyset.one_honest_threshold().get() {
+            if dec_shares.len() < self.keyset.one_honest_threshold().get() {
                 decrypted.push(None);
-            } else {
-                let ct = opt_ct.unwrap(); // safe unwrap
+                continue;
+            }
+
+            if let Some(ct) = opt_ct {
                 let aad = vec![];
                 let pt = DecryptionScheme::combine(
                     &self.keyset,
@@ -491,8 +490,10 @@ impl Worker {
                     &ct,
                     &aad,
                 )
-                .map_err(DecryptError::Decryption)?;
+                .map_err(DecryptError::Decryption)?; // FIXME(alex): wait for more correct shares?
                 decrypted.push(Some(pt));
+            } else {
+                decrypted.push(None);
             }
         }
 
@@ -502,14 +503,13 @@ impl Worker {
         incl.priority_bundles_mut()
             .iter_mut()
             .filter(|pb| pb.bundle().kid() == Some(kid))
-            .map(|pb| pb.bundle_mut())
             .zip(decrypted.clone())
-            .for_each(|(bundle, opt_plaintext)| {
+            .for_each(|(pb, opt_plaintext)| {
                 num_encrypted_priority_bundles += 1;
                 match opt_plaintext {
-                    Some(pt) => bundle.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    Some(pt) => pb.set_data(Bytes::from(<Vec<u8>>::from(pt))),
                     // None means garbage (undecryptable ciphertext), simply mark as decrypted
-                    None => bundle.set_data(bundle.data().clone()),
+                    None => pb.set_data(pb.bundle().data().clone()),
                 }
             });
         incl.regular_bundles_mut()

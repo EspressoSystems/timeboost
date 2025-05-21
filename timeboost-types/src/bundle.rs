@@ -163,10 +163,6 @@ impl PriorityBundle {
         &self.bundle
     }
 
-    pub fn bundle_mut(&mut self) -> &mut Bundle {
-        &mut self.bundle
-    }
-
     pub fn auction(&self) -> Address {
         self.auction
     }
@@ -259,8 +255,10 @@ impl SignedPriorityBundle {
         ))
     }
 
+    /// Set the data payload to un-encrypted, plaintext data.
     pub fn set_data(&mut self, d: Bytes) {
         self.bundle.data = d;
+        self.bundle.kid = None;
         self.update_hash()
     }
 
