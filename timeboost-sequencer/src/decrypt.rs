@@ -497,9 +497,15 @@ impl Worker {
         // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
         // share both imply "skip hatching this garbage bundle which will result in no-op
         // during execution"
+
         let mut decrypted: Vec<Option<Plaintext>> = vec![];
+        // a mutable ref
+        let Some(per_ct_opt_dec_shares) = self.dec_shares.get_mut(&round) else {
+            return Ok(None);
+        };
+
         for (opt_ct, opt_dec_shares) in ciphertexts.into_iter().zip(per_ct_opt_dec_shares) {
-            // only valid ones
+            // only Some(_) for valid ciphertext's decryption shares
             let dec_shares = opt_dec_shares
                 .iter()
                 .filter_map(|s| s.as_ref())
@@ -512,15 +518,31 @@ impl Worker {
 
             if let Some(ct) = opt_ct {
                 let aad = vec![];
-                let pt = DecryptionScheme::combine(
+                match DecryptionScheme::combine(
                     &self.keyset,
                     self.dec_sk.combkey(),
                     dec_shares,
                     &ct,
                     &aad,
-                )
-                .map_err(DecryptError::Decryption)?; // FIXME(alex): wait for more correct shares?
-                decrypted.push(Some(pt));
+                ) {
+                    Ok(pt) => decrypted.push(Some(pt)),
+                    // with f+1 decryption shares, which means ciphertext is valid, we just need to
+                    // remove bad decryption shares and wait for enough shares from honest nodes
+                    Err(ThresholdEncError::FaultySubset(wrong_indices)) => {
+                        opt_dec_shares.retain(|opt_s| {
+                            opt_s
+                                .clone()
+                                .is_none_or(|s| !wrong_indices.contains(&s.index()))
+                        });
+                        debug!(
+                            "combine at node={} found faulty subset indices={:?}",
+                            self.label, wrong_indices
+                        );
+                        // not ready to hatch this ciphertext, thus the containing inclusion list
+                        return Ok(None);
+                    }
+                    Err(e) => return Err(DecryptError::Decryption(e)),
+                }
             } else {
                 decrypted.push(None);
             }
