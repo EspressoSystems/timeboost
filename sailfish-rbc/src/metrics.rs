@@ -1,4 +1,4 @@
-use metrics::{Counter, Histogram, Metrics, NoMetrics};
+use metrics::{Histogram, Metrics, NoMetrics};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -8,8 +8,6 @@ pub struct RbcMetrics {
     pub delivery_duration: Box<dyn Histogram>,
     /// The time it takes for a message to be acknowledged by all parties.
     pub ack_duration: Box<dyn Histogram>,
-    /// The number of retries when sending messages or acks.
-    pub retries: Box<dyn Counter>,
 }
 
 impl Default for RbcMetrics {
@@ -23,7 +21,6 @@ impl RbcMetrics {
         Self {
             delivery_duration: m.create_histogram("delivery_duration", Some("seconds"), None),
             ack_duration: m.create_histogram("ack_duration", Some("seconds"), None),
-            retries: m.create_counter("retries", None),
         }
     }
 

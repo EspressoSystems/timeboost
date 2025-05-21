@@ -15,7 +15,7 @@ use multisig::{Unchecked, Validated};
 use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
-use tokio::time::Instant;
+use tokio::time::{self, Duration, Instant, Interval};
 use tracing::{debug, error, trace, warn};
 
 use crate::RbcError;
@@ -46,7 +46,9 @@ pub struct Worker<T: Committable> {
     /// The state the worker is in.
     state: WorkerState,
     /// The latest round number this worker proposed.
-    round: (RoundNumber, Evidence)
+    round: (RoundNumber, Evidence),
+    /// Retry timer.
+    timer: Interval,
 }
 
 enum WorkerState {
@@ -112,6 +114,8 @@ impl<T: Committable> Default for Messages<T> {
 struct Tracker<T: Committable> {
     /// The time when this info was created.
     start: Instant,
+    /// The time when this info was last updated.
+    timestamp: Instant,
     /// The message (if any).
     ///
     /// If we receive votes before the message, this item will be empty.
@@ -120,6 +124,8 @@ struct Tracker<T: Committable> {
     votes: VoteAccumulator<Digest>,
     /// The message status.
     status: Status,
+    /// The number of times we retried.
+    retries: usize,
 }
 
 impl<T: Committable> Tracker<T> {
@@ -209,7 +215,12 @@ impl<T: Committable> Worker<T> {
             } else {
                 WorkerState::Genesis
             },
-            config: cfg
+            config: cfg,
+            timer: {
+                let mut i = time::interval(Duration::from_secs(1));
+                i.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+                i
+            },
         }
     }
 }
@@ -227,6 +238,18 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
         loop {
             tokio::select! {
+                now = self.timer.tick() => {
+                    match self.retry(now).await {
+                        Ok(()) => {}
+                        Err(RbcError::Shutdown) => {
+                            debug!(node = %self.key, "rbc shutdown detected");
+                            return;
+                        }
+                        Err(err) => {
+                            warn!(node = %self.key, %err, "error retrying");
+                        }
+                    }
+                },
                 val = self.comm.receive(), if self.tx.capacity() > 0 => {
                     match val {
                         Ok((key, bytes)) => {
@@ -330,8 +353,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         self.round = (*vertex.data().round().data(), vertex.data().evidence().clone());
 
+        let now = Instant::now();
         let mut tracker = Tracker {
-            start: Instant::now(),
+            start: now,
+            timestamp: now,
+            retries: 0,
             message: Item::some(vertex),
             votes: VoteAccumulator::new(self.config.committee.clone()),
             status: Status::Initiated,
@@ -508,11 +534,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let evidence = vertex.data().evidence().clone();
         let messages = self.buffer.entry(digest.round()).or_default();
 
-        let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
-            message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
-            status: Status::Initiated,
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Initiated,
+            }
         });
 
         match tracker.status {
@@ -639,11 +670,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round()).or_default();
 
-        let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
-            message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
-            status: Status::Initiated,
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Initiated,
+            }
         });
 
         match tracker.status {
@@ -682,6 +718,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         let s = tracker.choose_voter(&commit).expect("certificate => voter");
                         self.comm.unicast(s, *digest.round(), b).await?;
                         tracker.status = Status::Requested;
+                        tracker.timestamp = Instant::now();
                         debug!(node = %self.key, from = %s, %digest, "message requested")
                     }
                 }
@@ -725,11 +762,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let commit = digest.commit();
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round()).or_default();
-        let tracker = messages.map.entry(digest).or_insert_with(|| Tracker {
-            start: Instant::now(),
-            message: Item::none(),
-            votes: VoteAccumulator::new(self.config.committee.clone()),
-            status: Status::Initiated,
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
+            let now = Instant::now();
+            Tracker {
+                start: now,
+                timestamp: now,
+                retries: 0,
+                message: Item::none(),
+                votes: VoteAccumulator::new(self.config.committee.clone()),
+                status: Status::Initiated,
+            }
         });
 
         match tracker.status {
@@ -765,6 +807,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     let s = tracker.choose_voter(&commit).expect("certificate => voter");
                     self.comm.unicast(s, *digest.round(), b).await?;
                     tracker.status = Status::Requested;
+                    tracker.timestamp = Instant::now();
                     debug!(node = %self.key, from = %s, %digest, "message requested");
                 }
             }
@@ -834,6 +877,36 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         tracker.message = Item::some(vertex);
         tracker.status = Status::Delivered;
 
+        Ok(())
+    }
+
+    /// Periodically we go over message status and retry incomplete items.
+    async fn retry(&mut self, now: Instant) -> RbcResult<()> {
+        trace!(node = %self.key, "retrying ...");
+        for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
+            if tracker.status == Status::Requested {
+                debug!(
+                    node     = %self.key,
+                    digest   = %digest,
+                    elapsed  = ?tracker.start.elapsed(),
+                    retries  = %tracker.retries,
+                    "revisiting ..."
+                );
+                let timeout = [1, 3, 6, 10, 15].get(tracker.retries).copied().unwrap_or(30);
+                if tracker.timestamp.elapsed() < Duration::from_secs(timeout) {
+                    continue;
+                }
+                debug!(node = %self.key, %digest, "requesting message again");
+                let m = Protocol::<'_, T, Validated>::GetRequest(*digest);
+                let b = serialize(&m)?;
+                let c = digest.commit();
+                let s = tracker.choose_voter(&c).expect("status = requested => voter");
+                self.comm.unicast(s, *digest.round(), b).await?;
+                tracker.timestamp = now;
+                tracker.retries = tracker.retries.saturating_add(1);
+                debug!(node = %self.key, from = %s, %digest, "message requested");
+            }
+        }
         Ok(())
     }
 
