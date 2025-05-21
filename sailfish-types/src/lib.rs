@@ -6,6 +6,8 @@ mod round;
 mod time;
 mod vertex;
 
+pub mod math;
+
 pub use comm::{Comm, CommError};
 pub use committee::{CommitteeId, CommitteeVec};
 pub use message::{Action, Evidence, Payload};
