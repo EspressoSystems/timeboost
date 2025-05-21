@@ -4,7 +4,7 @@ use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Plaintext};
 use timeboost_types::{Bytes, DecryptionKey, InclusionList};
@@ -205,6 +205,9 @@ struct Worker {
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
     dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
+    /// Acknowledgement of the set of peers whose decryption share for a round has been received
+    /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
+    acks: BTreeMap<RoundNumber, HashSet<PublicKey>>,
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// the latest rounds whose ciphertexts are hatched
@@ -220,6 +223,7 @@ impl Worker {
             first_requested_round: None,
             dec_sk,
             dec_shares: BTreeMap::default(),
+            acks: BTreeMap::default(),
             incls: BTreeMap::default(),
             last_hatched_round: RoundNumber::genesis(),
         }
@@ -276,6 +280,11 @@ impl Worker {
                         };
 
                         let round = dec_shares.round;
+                        // if already sent for this round, `src` will be re-inserted, thus returns false
+                        // in which case we skip processing this message since this peer has already sent once
+                        if !self.acks.entry(round).or_default().insert(src) {
+                            continue;
+                        };
                         trace!(%node, from=%src, %round, "receive decrypted shares");
 
                         if round <= self.last_hatched_round || round < self.oldest_cached_round() {
@@ -362,6 +371,7 @@ impl Worker {
     fn gc(&mut self, round: RoundNumber) {
         self.dec_shares.retain(|r, _| *r > round);
         self.incls.retain(|r, _| *r > round);
+        self.acks.retain(|r, _| *r > round);
     }
 
     /// logic to garbage collect a round (and all prior rounds)
