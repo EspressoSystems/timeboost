@@ -38,11 +38,12 @@ pub struct Includer {
 
 impl Includer {
     pub fn new(c: Committee, i: DelayedInboxIndex) -> Self {
+        let now = Timestamp::default();
         Self {
             committee: c,
             round: RoundNumber::genesis(),
-            time: Timestamp::default(),
-            epoch: Timestamp::default().epoch(),
+            time: now,
+            epoch: now.into(),
             seqno: SeqNo::zero(),
             index: i,
             cache: BTreeMap::new(),
@@ -74,8 +75,8 @@ impl Includer {
             max(self.index, math::median(&mut indices).unwrap_or_default())
         };
 
-        if self.epoch != self.time.epoch() {
-            self.epoch = self.time.epoch();
+        if self.epoch != self.time.into() {
+            self.epoch = self.time.into();
             self.seqno = SeqNo::zero();
         }
 

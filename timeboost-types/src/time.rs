@@ -1,8 +1,10 @@
-use std::ops::{Add, Deref, Div};
-use std::time::{Duration, SystemTime};
+use std::ops::{Add, Deref};
+use std::time::Duration;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+
+pub use sailfish_types::Timestamp;
 
 const EPOCH_DURATION: Duration = Duration::from_secs(60);
 
@@ -15,7 +17,7 @@ pub struct Epoch(u64);
 
 impl Epoch {
     pub fn now() -> Self {
-        Timestamp::now().epoch()
+        Timestamp::now().into()
     }
 }
 
@@ -39,40 +41,9 @@ impl Committable for Epoch {
     }
 }
 
-/// Unix timestamp in seconds.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
-)]
-#[serde(transparent)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Timestamp(u64);
-
-impl Timestamp {
-    pub fn now() -> Self {
-        let d = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("system time >= unix epoch");
-        Self(d.as_secs())
-    }
-
-    pub fn epoch(self) -> Epoch {
-        Epoch(self.0 / EPOCH_DURATION.as_secs())
-    }
-}
-
-impl Add for Timestamp {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Div<u64> for Timestamp {
-    type Output = Self;
-
-    fn div(self, rhs: u64) -> Self::Output {
-        Self(self.0 / rhs)
+impl From<Timestamp> for Epoch {
+    fn from(t: Timestamp) -> Self {
+        Epoch(*t / EPOCH_DURATION.as_secs())
     }
 }
 
@@ -88,27 +59,7 @@ impl From<Epoch> for u64 {
     }
 }
 
-impl From<u64> for Timestamp {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Timestamp> for u64 {
-    fn from(value: Timestamp) -> Self {
-        value.0
-    }
-}
-
 impl Deref for Epoch {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Deref for Timestamp {
     type Target = u64;
 
     fn deref(&self) -> &Self::Target {
@@ -118,12 +69,12 @@ impl Deref for Timestamp {
 
 #[cfg(test)]
 mod tests {
-    use super::Timestamp;
+    use super::{Epoch, Timestamp};
     use quickcheck::quickcheck;
 
     quickcheck! {
         fn timestamp_of_epoch(n: u32) -> bool {
-            let e: u64 = Timestamp(n.into()).epoch().into();
+            let e: u64 = Epoch::from(Timestamp::from(u64::from(n))).into();
             let t: u64 = n.into();
             e * 60 <= t && t <= e * 60 + 59
         }

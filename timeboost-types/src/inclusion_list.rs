@@ -83,7 +83,7 @@ impl InclusionList {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.time.epoch()
+        self.time.into()
     }
 
     pub fn timestamp(&self) -> Timestamp {

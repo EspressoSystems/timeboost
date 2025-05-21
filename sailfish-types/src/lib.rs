@@ -3,6 +3,7 @@ mod committee;
 mod message;
 mod payload;
 mod round;
+mod time;
 mod vertex;
 
 pub use comm::{Comm, CommError};
@@ -11,6 +12,7 @@ pub use message::{Action, Evidence, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::{Round, RoundNumber};
+pub use time::Timestamp;
 pub use vertex::Vertex;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};

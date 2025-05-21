@@ -71,7 +71,7 @@ impl CandidateList {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.0.time.epoch()
+        self.0.time.into()
     }
 
     pub fn timestamp(&self) -> Timestamp {

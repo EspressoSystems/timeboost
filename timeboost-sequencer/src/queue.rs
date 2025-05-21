@@ -36,8 +36,8 @@ struct Inner {
 impl Inner {
     fn set_time(&mut self, time: Timestamp) {
         if time > self.time {
-            if time.epoch() > self.time.epoch() {
-                self.priority = self.priority.split_off(&time.epoch());
+            if Epoch::from(time) > self.time.into() {
+                self.priority = self.priority.split_off(&time.into());
             }
             self.time = time;
             self.metrics.time.set(u64::from(self.time) as usize);
@@ -82,7 +82,7 @@ impl BundleQueue {
         let mut inner = self.0.lock();
 
         inner.set_time(time);
-        let epoch_now = inner.time.epoch();
+        let epoch_now = inner.time.into();
         for b in it.into_iter() {
             match b {
                 BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
@@ -139,7 +139,7 @@ impl BundleQueue {
             .map(|(t, _)| *t)
             .unwrap_or_else(Instant::now);
 
-        let current_epoch = inner.time.epoch();
+        let current_epoch = inner.time.into();
 
         for b in regular {
             if b.epoch() + 1 < current_epoch {
@@ -201,12 +201,7 @@ impl DataSource for BundleQueue {
         let mut size_budget = inner.max_len;
 
         let mut priority = Vec::new();
-        for (_, b) in inner
-            .priority
-            .get(&inner.time.epoch())
-            .into_iter()
-            .flatten()
-        {
+        for (_, b) in inner.priority.get(&inner.time.into()).into_iter().flatten() {
             let Ok(n) = bincode_len(b) else { continue };
             if n > size_budget {
                 break;
