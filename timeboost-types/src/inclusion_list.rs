@@ -7,8 +7,8 @@ use timeboost_crypto::KeysetId;
 /// List of bundles to be included, selected from `CandidateList`.
 #[derive(Debug, Clone)]
 pub struct InclusionList {
-    // NOTE: different from sailfish's round number, monotonically increasing at timeboost sequencer
-    // side, derived from the max sailfish round among all the `Candidates` included.
+    // NOTE: different from sailfish's round number, monotonically increasing at timeboost
+    // sequencer side, derived from the max sailfish round among all the `Candidates` included.
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
@@ -53,7 +53,8 @@ impl InclusionList {
             || self.regular_bundles().iter().any(|b| b.is_encrypted())
     }
 
-    /// Returns the keysets (their IDs) required to decrypt the encryted bundles in this list, or empty vec if not encrypted.
+    /// Returns the keysets (their IDs) required to decrypt the encryted bundles in this list, or
+    /// empty vec if not encrypted.
     pub fn kids(&self) -> Vec<KeysetId> {
         let mut kids = BTreeSet::new();
         for pb in self.priority_bundles() {

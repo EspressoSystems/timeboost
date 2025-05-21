@@ -33,23 +33,27 @@ enum WorkerResponse {
     Decrypt(InclusionList),
 }
 
-/// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to collectively
-/// threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase ("Decryption phase") of timeboost.
+/// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to
+/// collectively threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase
+/// ("Decryption phase") of timeboost.
 ///
-/// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key share),
-/// and combiner's "hatching" (using the combiner key).
+/// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key
+/// share), and combiner's "hatching" (using the combiner key).
 ///
-/// Functionality wise, the core logic of decrypt and combine, and the caching of yet-hatched decryption shares are all
-/// managed by a dedicated `Worker` thread. Upon request, the worker receive an inclusion list (potentially w/ some encrypted tx),
-/// decypt and broadcast decryption shares to other decrypter's workers, until hatching them to plaintext tx, and finally
-/// returns to the Decrypter the decrypted inclusion list, with order perserved.
-/// The actual `Decrypter` only acts as a proxy to `enqueue` or be pulled by other timeboost components.
+/// Functionality wise, the core logic of decrypt and combine, and the caching of yet-hatched
+/// decryption shares are all managed by a dedicated `Worker` thread. Upon request, the worker
+/// receive an inclusion list (potentially w/ some encrypted tx), decypt and broadcast decryption
+/// shares to other decrypter's workers, until hatching them to plaintext tx, and finally returns to
+/// the Decrypter the decrypted inclusion list, with order perserved. The actual `Decrypter` only
+/// acts as a proxy to `enqueue` or be pulled by other timeboost components.
 pub struct Decrypter {
-    /// Public key of the node. "Label" is termed to refer to node identity in SG01 decryption scheme
+    /// Public key of the node. "Label" is termed to refer to node identity in SG01 decryption
+    /// scheme
     label: PublicKey,
     /// Decryption committee this decrypter belongs to
     keyset: Keyset,
-    /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase of timeboost
+    /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
+    /// of timeboost
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// Sender end of the worker requests
     req_tx: Sender<WorkerRequest>,
@@ -91,8 +95,9 @@ impl Decrypter {
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
-    /// decrypter will process any unencrypted inclusion list, or those encrypted under the keyset this decrypter belongs to,
-    /// but will reject bundles encrypted for totally a different keyset.
+    /// decrypter will process any unencrypted inclusion list, or those encrypted under the keyset
+    /// this decrypter belongs to, but will reject bundles encrypted for totally a different
+    /// keyset.
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
         let round = incl.round();
         let incl_digest = incl.digest();
@@ -124,7 +129,8 @@ impl Decrypter {
         Ok(())
     }
 
-    /// Try to pop the first inclusion list (w/ the smallest round number) if decrypted, else return None
+    /// Try to pop the first inclusion list (w/ the smallest round number) if decrypted, else return
+    /// None
     fn first_if_decrypted(&mut self) -> Option<InclusionList> {
         self.incls.first_entry().and_then(|entry| {
             if entry.get().is_encrypted() {
@@ -181,13 +187,15 @@ struct Worker {
     net: Overlay,
     /// keyset metadata about the decryption committee
     keyset: Keyset,
-    /// round number of the first decrypter request, used to ignore received decryption shares for eariler rounds
+    /// round number of the first decrypter request, used to ignore received decryption shares for
+    /// eariler rounds
     first_requested_round: Option<RoundNumber>,
     /// decryption key used to decrypt and combine
     dec_sk: DecryptionKey,
 
-    /// cache of decrtyped shares (keyed by round number), each entry value is a nested vector: an ordered list of per-ciphertext decryption shares.
-    /// the order is derived from the ciphertext payload from the inclusion list `self.incls` of the same round
+    /// cache of decrtyped shares (keyed by round number), each entry value is a nested vector: an
+    /// ordered list of per-ciphertext decryption shares. the order is derived from the
+    /// ciphertext payload from the inclusion list `self.incls` of the same round
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
     dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
@@ -289,8 +297,9 @@ impl Worker {
                 continue;
             }
 
-            // when processing the incoming event (all steps above), we already early-return and continue the loop if any intermediate steps error.
-            // If they succeed, then some local decryption shares must have been updated, thus we try to hatch them.
+            // when processing the incoming event (all steps above), we already early-return and
+            // continue the loop if any intermediate steps error. If they succeed, then
+            // some local decryption shares must have been updated, thus we try to hatch them.
             let round = self.oldest_cached_round();
             match self.hatch(round) {
                 Ok(Some(incl)) => {
@@ -308,7 +317,8 @@ impl Worker {
         }
     }
 
-    /// returns the oldest round number in locally cached decryption shares (w/ smallest round number)
+    /// returns the oldest round number in locally cached decryption shares (w/ smallest round
+    /// number)
     fn oldest_cached_round(&self) -> RoundNumber {
         self.dec_shares
             .keys()
@@ -330,8 +340,9 @@ impl Worker {
         self.insert_shares(dec_shares)?;
         self.incls.insert(round, incl);
 
-        // edge case: when processing the first decrypt request, workers may have received decryption shares
-        // of eariler rounds from other decrypters, but this worker doesn't need those shares, thus pruning them.
+        // edge case: when processing the first decrypt request, workers may have received
+        // decryption shares of eariler rounds from other decrypters, but this worker
+        // doesn't need those shares, thus pruning them.
         if self.first_requested_round.is_none() {
             debug!(node=%self.label, %round, "set first requested round");
             self.dec_shares.retain(|k, _| k >= &round);
@@ -341,8 +352,9 @@ impl Worker {
         Ok(())
     }
 
-    /// garbage collect internally cached state. Different from `self.on_gc_request()` which deals with incoming gc request,
-    /// indicating more than just local gc, but also overlay network-wise gc.
+    /// garbage collect internally cached state. Different from `self.on_gc_request()` which deals
+    /// with incoming gc request, indicating more than just local gc, but also overlay
+    /// network-wise gc.
     fn gc(&mut self, round: RoundNumber) {
         self.dec_shares.retain(|r, _| *r > round);
         self.incls.retain(|r, _| *r > round);
@@ -357,8 +369,9 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the relevant ciphertext from encrypted bundle/tx, preserving the order,
-    /// "relevant" means encrypted under the keyset this worker belongs to.
+    /// scan through the inclusion list and extract the relevant ciphertext from encrypted
+    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset this worker
+    /// belongs to.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
     fn extract_ciphertexts(&self, incl: &InclusionList) -> Vec<Option<Ciphertext>> {
@@ -414,8 +427,8 @@ impl Worker {
         }
         // This operation is doing the following: assumme local cache for this round is:
         // [[s1a, s1b], [s2a, s2b], [s3a, s3b]]
-        // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so far.
-        // with node c's batch [s1c, s2c, s3c], the new local cache is:
+        // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so
+        // far. with node c's batch [s1c, s2c, s3c], the new local cache is:
         // [[s1a, s1b, s1c], [s2a, s2b, s2c], [s3a, s3b, s3c]]
         self.dec_shares
             .entry(batch.round)
@@ -427,8 +440,9 @@ impl Worker {
         Ok(())
     }
 
-    /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if insufficient shares
-    /// dev note: this function doesn't update local states or garbage collect for hatched rounds
+    /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if
+    /// insufficient shares dev note: this function doesn't update local states or garbage
+    /// collect for hatched rounds
     fn hatch(&self, round: RoundNumber) -> Result<Option<InclusionList>> {
         // first check if hatchable, if not, return Ok(None)
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
@@ -448,7 +462,8 @@ impl Worker {
             return Ok(None);
         }
 
-        // retreive ciphertext again from the original encrypted inclusion list, and some sanity check
+        // retreive ciphertext again from the original encrypted inclusion list, and some sanity
+        // check
         let mut incl = self
             .incls
             .get(&round)
@@ -466,8 +481,9 @@ impl Worker {
         );
 
         // hatching ciphertext
-        // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption share
-        // both imply "skip hatching this garbage bundle which will result in no-op during execution"
+        // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
+        // share both imply "skip hatching this garbage bundle which will result in no-op
+        // during execution"
         let mut decrypted: Vec<Option<Plaintext>> = vec![];
         for (opt_ct, opt_dec_shares) in ciphertexts.into_iter().zip(per_ct_opt_dec_shares) {
             // only valid ones
@@ -534,25 +550,28 @@ impl Worker {
 }
 
 /// A batch of decryption shares. Each batch is uniquely identified via (round_number, keyset_id).
-/// Each inclusion list, w/ a unique round number, may contain encrypted bundles with different keysets,
-/// those bundles are split into batches, one for each keyset.
+/// Each inclusion list, w/ a unique round number, may contain encrypted bundles with different
+/// keysets, those bundles are split into batches, one for each keyset.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
     round: RoundNumber,
     kid: KeysetId,
     // note: each decrpytion share is for a different ciphertext;
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
-    // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid ones
+    // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
+    // ones
     dec_shares: Vec<Option<DecShare>>,
 }
 
 impl DecShareBatch {
-    /// Returns the number of decryption share in this batch. Equivalently, it's the number of ciphertexts.
+    /// Returns the number of decryption share in this batch. Equivalently, it's the number of
+    /// ciphertexts.
     pub fn len(&self) -> usize {
         self.dec_shares.len()
     }
 
-    /// Returns true if there's no *valid* decryption share. There are three sub-cases this may be true
+    /// Returns true if there's no *valid* decryption share. There are three sub-cases this may be
+    /// true
     /// - empty set of ciphertext/encrypted bundle
     /// - ciphertexts are malformed and cannot be deserialized
     /// - ciphertexts are invalid and fail to be decrypted

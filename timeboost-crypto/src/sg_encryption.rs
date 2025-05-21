@@ -32,8 +32,8 @@ use crate::{
 /// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
 ///
 /// NOTE:
-/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful `combine()`
-///    in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
+/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful
+///    `combine()` in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
 pub struct ShoupGennaro<C, H, D>
 where
     C: CurveGroup,
@@ -304,8 +304,9 @@ where
         let (v, e, w_hat, pi) = (ct.v, ct.e.clone(), ct.w_hat, ct.pi.clone());
 
         // dev note: currently our scheme binds the keyset_id associated data not through `aad`
-        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds `keyset_id`,
-        // which is why `aad` is left unused. Technically, keyset_id is part of aad, we should use aad to derive u_hat
+        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds
+        // `keyset_id`, which is why `aad` is left unused. Technically, keyset_id is part of
+        // aad, we should use aad to derive u_hat
         let u_hat = hash_to_curve::<C, H>(v, e)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(g, v, u_hat, w_hat);
@@ -457,10 +458,11 @@ mod test {
     }
 
     #[test]
-    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully decrypt,
-    // in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes. In the original spec,
-    // authors used `t+1` shares to decrypt, but here, we are testing SG01 scheme purely from the perspective
-    // of the standalone cryptographic scheme, so be aware of the slight mismatch of notation.
+    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully
+    // decrypt, in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes.
+    // In the original spec, authors used `t+1` shares to decrypt, but here, we are testing SG01
+    // scheme purely from the perspective of the standalone cryptographic scheme, so be aware of
+    // the slight mismatch of notation.
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
