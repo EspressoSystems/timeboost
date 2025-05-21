@@ -33,6 +33,12 @@ enum WorkerResponse {
     Decrypt(InclusionList),
 }
 
+/// Inclusion list with status
+enum Status {
+    Encrypted,
+    Decrypted(InclusionList),
+}
+
 /// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to
 /// collectively threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase
 /// ("Decryption phase") of timeboost.
@@ -54,7 +60,7 @@ pub struct Decrypter {
     keyset: Keyset,
     /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
     /// of timeboost
-    incls: BTreeMap<RoundNumber, InclusionList>,
+    incls: BTreeMap<RoundNumber, Status>,
     /// Sender end of the worker requests
     req_tx: Sender<WorkerRequest>,
     /// Receiver end of the worker response
@@ -116,9 +122,11 @@ impl Decrypter {
                 .send(WorkerRequest::Decrypt(incl.clone()))
                 .await
                 .map_err(|_| DecryptError::Shutdown)?;
+            self.incls.insert(round, Status::Encrypted);
+        } else {
+            self.incls.insert(round, Status::Decrypted(incl));
         }
 
-        self.incls.insert(round, incl);
         trace!(
             node        = %self.label,
             round       = %round,
@@ -129,23 +137,16 @@ impl Decrypter {
         Ok(())
     }
 
-    /// Try to pop the first inclusion list (w/ the smallest round number) if decrypted, else return
-    /// None
-    fn first_if_decrypted(&mut self) -> Option<InclusionList> {
-        self.incls.first_entry().and_then(|entry| {
-            if entry.get().is_encrypted() {
-                None
-            } else {
-                Some(entry.remove())
-            }
-        })
-    }
-
     /// Produces decrypted inclusion lists ordered by round number
     pub async fn next(&mut self) -> Result<InclusionList> {
         // first try to return the first inclusion list if it's already decrypted
-        if let Some(incl) = self.first_if_decrypted() {
-            return Ok(incl);
+        if let Some((r, status)) = self.incls.pop_first() {
+            match status {
+                Status::Decrypted(incl) => return Ok(incl),
+                still_encrypted => {
+                    self.incls.insert(r, still_encrypted);
+                }
+            }
         }
 
         // normal loop: try to receive the next decrypted inclusion list
@@ -157,13 +158,18 @@ impl Decrypter {
                 !dec_incl.is_encrypted(),
                 "decrypter worker returns non-decrypted InclusionList"
             );
-            self.incls.insert(round, dec_incl);
+            self.incls.insert(round, Status::Decrypted(dec_incl));
 
             // since the newly finished/responded inclusion list might belong to a later round
             // the first entry might still be unencrypted, in which case continue the loop and
             // wait until the worker finishes decrypting it.
-            if let Some(incl) = self.first_if_decrypted() {
-                return Ok(incl);
+            if let Some((r, status)) = self.incls.pop_first() {
+                match status {
+                    Status::Decrypted(incl) => return Ok(incl),
+                    still_encrypted => {
+                        self.incls.insert(r, still_encrypted);
+                    }
+                }
             }
         }
         Err(DecryptError::Shutdown)
@@ -307,8 +313,6 @@ impl Worker {
                         error!(%node, %err, "failed to send hatched inclusion list");
                         return;
                     }
-                    self.last_hatched_round = round;
-                    self.gc(round);
                     debug!(%node, %round, "hatch inclusion list... DONE");
                 }
                 Err(err) => warn!(%round, %err, %node, "failed to hatch"),
@@ -441,9 +445,8 @@ impl Worker {
     }
 
     /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if
-    /// insufficient shares dev note: this function doesn't update local states or garbage
-    /// collect for hatched rounds
-    fn hatch(&self, round: RoundNumber) -> Result<Option<InclusionList>> {
+    /// insufficient shares. Local cache are garbage collected for hatched rounds.
+    fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
         // first check if hatchable, if not, return Ok(None)
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
@@ -544,6 +547,10 @@ impl Worker {
                 "didn't fully decrypt inclusion list".to_string(),
             ));
         }
+
+        // garbage collect hatched rounds
+        self.last_hatched_round = round;
+        self.gc(round);
 
         Ok(Some(incl))
     }
