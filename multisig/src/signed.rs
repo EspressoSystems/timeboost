@@ -2,7 +2,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
-use crate::{Committee, Keypair, PublicKey, Signature};
+use crate::{Committee, CommitteeSeq, Indexed, InvalidSignature, Keypair, PublicKey, Signature};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Signed<D: Committable> {
@@ -12,7 +12,7 @@ pub struct Signed<D: Committable> {
     signing_key: PublicKey,
 }
 
-impl<D: Committable> Signed<D> {
+impl<D: Committable + Indexed> Signed<D> {
     pub fn new(d: D, keypair: &Keypair, deterministic: bool) -> Self {
         let c = d.commit();
         let s = keypair.sign(c.as_ref(), deterministic);
@@ -24,12 +24,25 @@ impl<D: Committable> Signed<D> {
         }
     }
 
-    pub fn is_valid(&self, membership: &Committee) -> bool {
-        membership.contains_key(&self.signing_key)
+    pub fn is_valid<'a>(
+        &self,
+        seq: &'a CommitteeSeq<D::Index>,
+    ) -> Result<&'a Committee, InvalidSignature> {
+        let Some(c) = seq.get(self.data.index()) else {
+            return Err(InvalidSignature(()));
+        };
+
+        let ok = c.contains_key(&self.signing_key)
             && constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref())
             && self
                 .signing_key
-                .is_valid(self.commitment.as_ref(), &self.signature)
+                .is_valid(self.commitment.as_ref(), &self.signature);
+
+        if !ok {
+            return Err(InvalidSignature(()));
+        }
+
+        Ok(c)
     }
 
     pub fn signature(&self) -> &Signature {

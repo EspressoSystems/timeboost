@@ -1,11 +1,10 @@
 use std::{collections::BTreeSet, fmt::Display, hash::Hash};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Keypair, PublicKey, Signed};
+use multisig::{Certificate, Indexed, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use super::message::NoVote;
-use crate::{Evidence, RoundNumber};
+use crate::{Evidence, NoVote, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
@@ -19,24 +18,24 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair, deterministic: bool) -> Self
+    pub fn new<N, E>(round: N, evidence: E, data: T, kpair: &Keypair, deterministic: bool) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
     {
-        let r = r.into();
-        let e = e.into();
+        let round = round.into();
+        let evidence = evidence.into();
 
-        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        debug_assert!(evidence.round() + 1 == round || round == RoundNumber::genesis());
 
         Self {
-            source: k.public_key(),
-            round: Signed::new(r, k, deterministic),
+            source: kpair.public_key(),
+            round: Signed::new(round, kpair, deterministic),
             edges: BTreeSet::new(),
-            evidence: e,
+            evidence,
             no_vote: None,
             committed: RoundNumber::genesis(),
-            payload: d,
+            payload: data,
         }
     }
 
@@ -110,6 +109,14 @@ impl<T> Vertex<T> {
 
     pub fn dbg(&self) -> String {
         format!("{} -> {:?}", self, self.edges().collect::<Vec<_>>())
+    }
+}
+
+impl<T> Indexed for Vertex<T> {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        *self.round.data()
     }
 }
 

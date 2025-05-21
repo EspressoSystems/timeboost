@@ -2,14 +2,15 @@ mod dag;
 mod info;
 mod metrics;
 
-use std::collections::{BTreeMap, HashSet};
-use std::num::NonZeroUsize;
+use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::time::Instant;
 
 use committable::Committable;
 use info::NodeInfo;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use multisig::{Certificate, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use multisig::{Committee, CommitteeSeq, Indexed, IntervalOverlap};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{DataSource, Payload, RoundNumber, Vertex};
+use sailfish_types::{CommitteeInfo, DataSource, Payload, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -26,7 +27,7 @@ pub struct Consensus<T> {
     dag: Dag<T>,
 
     /// The quorum membership.
-    committee: Committee,
+    committees: CommitteeSeq<RoundNumber>,
 
     /// The current round number.
     round: RoundNumber,
@@ -66,6 +67,9 @@ pub struct Consensus<T> {
 
     /// Sign deterministically?
     deterministic: bool,
+
+    /// Next rounds of committee changes.
+    committee_changes: VecDeque<RoundNumber>,
 }
 
 impl<T> Consensus<T> {
@@ -91,8 +95,10 @@ impl<T> Consensus<T> {
         self.committed_round
     }
 
-    pub fn committee_size(&self) -> NonZeroUsize {
-        self.committee.size()
+    pub fn add_committee(&mut self, i: CommitteeInfo, c: Committee) -> Result<(), IntervalOverlap> {
+        self.committees.add(i.round().., c)?;
+        self.committee_changes.push_back(i.round());
+        Ok(())
     }
 }
 
@@ -100,27 +106,28 @@ impl<T> Consensus<T>
 where
     T: Committable + Clone + PartialEq,
 {
-    pub fn new<D>(keypair: Keypair, committee: Committee, datasource: D) -> Self
+    pub fn new<D>(keypair: Keypair, committees: CommitteeSeq<RoundNumber>, datasource: D) -> Self
     where
         D: DataSource<Data = T> + Send + 'static,
     {
         Self {
             keypair,
-            nodes: NodeInfo::new(&committee),
-            dag: Dag::new(committee.size()),
+            nodes: NodeInfo::new(committees.last()),
+            dag: Dag::new(),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),
-            buffer: Dag::new(committee.size()),
+            buffer: Dag::new(),
             delivered: HashSet::new(),
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: BTreeMap::new(),
-            committee,
+            committees,
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
             metrics: Default::default(),
-            metrics_timer: std::time::Instant::now(),
+            metrics_timer: Instant::now(),
             deterministic: false,
+            committee_changes: VecDeque::new(),
         }
     }
 
@@ -209,14 +216,14 @@ where
             return actions;
         }
 
-        if !self.is_valid(&v) {
+        let Ok(committee) = self.is_valid(&v).cloned() else {
             return actions;
-        }
+        };
 
         let accum = self
             .rounds
             .entry(*v.round().data())
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(v.index(), committee.clone()));
 
         if let Err(e) = accum.add(v.round().clone()) {
             warn!(
@@ -239,11 +246,12 @@ where
             actions.extend(self.try_to_add_to_dag_from_buffer());
         }
 
-        let quorum = self.committee.quorum_size().get();
+        let quorum = committee.quorum_size().get();
 
         let r = *v.round().data();
-        match self.try_to_add_to_dag(v) {
+        match self.try_to_add_to_dag(&committee, v) {
             Err(v) => {
+                debug_assert!(self.buffer.size_at(r) < committee.size().get());
                 self.buffer.add(v);
                 self.metrics.vertex_buffer.set(self.buffer.depth());
             }
@@ -293,9 +301,14 @@ where
             return actions;
         }
 
+        let Some(committee) = self.committees.get(timeout_round) else {
+            warn!(node = %self.public_key(), round = %timeout_round, "no committee for round");
+            return actions;
+        };
+
         // Here the no-vote is sent from round r - 1 to leader in round r that is why we add 1 to
         // round to get correct leader
-        if self.public_key() != self.committee.leader(*timeout_round as usize + 1) {
+        if self.public_key() != committee.leader(*timeout_round as usize + 1) {
             warn!(
                 node    = %self.public_key(),
                 no_vote = %timeout_round,
@@ -307,23 +320,34 @@ where
         let (no_vote, tc) = e.into_data().into_parts();
 
         if !self.has_timeout_cert(timeout_round) {
-            self.timeouts
+            let acc = self
+                .timeouts
                 .entry(timeout_round)
-                .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
-                .set_certificate(tc.clone())
+                .or_insert_with(|| VoteAccumulator::new(timeout_round, committee.clone()));
+            if acc.set_certificate(tc.clone()).is_err() {
+                warn!(
+                    node  = %self.keypair.public_key(),
+                    round = %timeout_round,
+                    "certificate does not match vote accumulator"
+                );
+                if acc.is_empty() {
+                    self.timeouts.remove(&timeout_round);
+                }
+                return actions;
+            }
         }
 
         let accum = self
             .no_votes
             .entry(timeout_round)
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(timeout_round, committee.clone()));
 
         match accum.add(no_vote) {
             // Not enough votes yet.
             Ok(None) => {}
             // Certificate is formed when we have 2f + 1 votes added to accumulator.
             Ok(Some(nc)) => {
-                if self.dag.vertex_count(timeout_round) >= self.committee.quorum_size().get() {
+                if self.dag.vertex_count(timeout_round) >= committee.quorum_size().get() {
                     let nc = nc.clone();
                     actions.extend(self.advance_leader_with_no_vote_certificate(
                         timeout_round,
@@ -372,10 +396,15 @@ where
 
         let (timeout, evidence) = e.into_data().into_parts();
 
+        let Some(committee) = self.committees.get(timeout_round) else {
+            warn!(node = %self.public_key(), round = %timeout_round, "no committee for round");
+            return actions;
+        };
+
         let accum = self
             .timeouts
             .entry(timeout_round)
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(timeout_round, committee.clone()));
 
         let commit = timeout.commitment();
         let votes = accum.votes(&commit);
@@ -395,7 +424,7 @@ where
 
         // Have we received more than f timeouts?
         if votes != accum.votes(&commit)
-            && accum.votes(&commit) == self.committee.one_honest_threshold().get()
+            && accum.votes(&commit) == committee.one_honest_threshold().get()
         {
             let t = TimeoutMessage::new(evidence, &self.keypair, self.deterministic);
             let e = Envelope::signed(t, &self.keypair, self.deterministic);
@@ -403,9 +432,7 @@ where
         }
 
         // Have we received 2f + 1 timeouts?
-        if votes != accum.votes(&commit)
-            && accum.votes(&commit) == self.committee.quorum_size().get()
-        {
+        if votes != accum.votes(&commit) && accum.votes(&commit) == committee.quorum_size().get() {
             if let Some(cert) = accum.certificate() {
                 actions.push(Action::SendTimeoutCert(cert.clone()))
             } else {
@@ -435,14 +462,30 @@ where
             return actions;
         }
 
+        let Some(committee) = self.committees.get(round) else {
+            warn!(node = %self.public_key(), %round, "no committee for round");
+            return actions;
+        };
+
         if !self.has_timeout_cert(cert.data().round()) {
-            self.timeouts
-                .entry(cert.data().round())
-                .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
-                .set_certificate(cert.clone())
+            let acc = self
+                .timeouts
+                .entry(round)
+                .or_insert_with(|| VoteAccumulator::new(round, committee.clone()));
+            if acc.set_certificate(cert.clone()).is_err() {
+                warn!(
+                    node  = %self.keypair.public_key(),
+                    round = %round,
+                    "certificate does not match vote accumulator"
+                );
+                if acc.is_empty() {
+                    self.timeouts.remove(&round);
+                }
+                return actions;
+            }
         }
 
-        if self.dag.vertex_count(round) >= self.committee.quorum_size().get() {
+        if self.dag.vertex_count(round) >= committee.quorum_size().get() {
             actions.extend(self.advance_from_round(round, cert.into()));
         }
 
@@ -461,13 +504,21 @@ where
 
         let mut actions = Vec::new();
 
+        let Some(committee) = self.committees.get(round + 1).cloned() else {
+            warn!(node = %self.public_key(), round = %(round + 1), "no committee for round");
+            return actions;
+        };
+
         // With a leader vertex we can move on to the next round immediately.
-        if self.leader_vertex(round).is_some() {
+        if self.leader_vertex(&committee, round).is_some() {
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
-            let v = self.create_new_vertex(self.round, evidence);
-            actions.extend(self.broadcast_vertex(v.0));
+            let NewVertex(v) = self.create_new_vertex(self.round, evidence);
+            // Every vertex in our DAG has > 2f edges to the previous round:
+            debug_assert!(v.num_edges() >= committee.quorum_size().get());
+            actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
+            self.update_committee();
             self.metrics
                 .round_duration
                 .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -489,7 +540,7 @@ where
         // We inform the leader of the next round that we did not vote in this round.
         let nvm = NoVoteMessage::new(tc.clone(), &self.keypair, self.deterministic);
         let env = Envelope::signed(nvm, &self.keypair, self.deterministic);
-        let leader = self.committee.leader(*round as usize + 1);
+        let leader = committee.leader(*round as usize + 1);
         actions.push(Action::SendNoVote(leader, env));
 
         // If we are not ourselves leader of the next round we can move to it directly.
@@ -497,9 +548,12 @@ where
             self.round = round + 1;
             actions.push(Action::ResetTimer(self.round));
             let NewVertex(v) = self.create_new_vertex(self.round, tc.into());
+            // Every vertex in our DAG has > 2f edges to the previous round:
+            debug_assert!(v.num_edges() >= committee.quorum_size().get());
             debug_assert!(v.evidence().is_timeout());
             actions.extend(self.broadcast_vertex(v));
             self.clear_aggregators(self.round);
+            self.update_committee();
             self.metrics
                 .round_duration
                 .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -543,6 +597,7 @@ where
         v.set_no_vote(nc);
         actions.extend(self.broadcast_vertex(v));
         self.clear_aggregators(self.round);
+        self.update_committee();
         self.metrics
             .round_duration
             .add_point(self.metrics_timer.elapsed().as_secs_f64());
@@ -571,9 +626,6 @@ where
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
 
-        // Every vertex in our DAG has > 2f edges to the previous round:
-        debug_assert!(new.num_edges() >= self.committee.quorum_size().get());
-
         NewVertex(new)
     }
 
@@ -583,7 +635,11 @@ where
     /// vertex to the DAG. If we also have more than 2f vertices for the given
     /// round, we can try to commit the leader vertex of a round.
     #[allow(clippy::result_large_err)]
-    fn try_to_add_to_dag(&mut self, v: Vertex<T>) -> Result<Vec<Action<T>>, Vertex<T>> {
+    fn try_to_add_to_dag(
+        &mut self,
+        c: &Committee,
+        v: Vertex<T>,
+    ) -> Result<Vec<Action<T>>, Vertex<T>> {
         trace!(node = %self.public_key(), vertex = %v, "try to add to dag");
 
         let r = *v.round().data();
@@ -595,6 +651,7 @@ where
 
         let is_genesis_vertex = v.is_genesis();
 
+        debug_assert!(self.dag.size_at(r) < c.size().get());
         self.dag.add(v);
         self.metrics.dag_depth.set(self.dag.depth());
 
@@ -613,9 +670,9 @@ where
             return Ok(Vec::new());
         }
 
-        if self.dag.vertex_count(r) >= self.committee.quorum_size().get() {
+        if self.dag.vertex_count(r) >= c.quorum_size().get() {
             // We have enough vertices => try to commit the leader vertex:
-            let Some(l) = self.leader_vertex(r - 1).cloned() else {
+            let Some(l) = self.leader_vertex(c, r - 1).cloned() else {
                 debug!(
                     node  = %self.public_key(),
                     round = %r,
@@ -630,7 +687,7 @@ where
                 .vertices(r)
                 .filter(|v| v.has_edge(l.source()))
                 .count()
-                >= self.committee.quorum_size().get()
+                >= c.quorum_size().get()
             {
                 return Ok(self.commit_leader(l));
             }
@@ -646,14 +703,16 @@ where
 
         let mut actions = Vec::new();
 
-        let quorum = self.committee.quorum_size().get();
-
         for v in self.buffer.drain().map(|(.., v)| v) {
             let r = *v.round().data();
-            match self.try_to_add_to_dag(v) {
+            let Some(c) = self.committees.get(r).cloned() else {
+                warn!(node = %self.public_key(), round = %r, "no committee for round");
+                return actions;
+            };
+            match self.try_to_add_to_dag(&c, v) {
                 Ok(a) => {
                     actions.extend(a);
-                    if r >= self.round && self.dag.vertex_count(r) >= quorum {
+                    if r >= self.round && self.dag.vertex_count(r) >= c.quorum_size().get() {
                         if let Some(e) = self.evidence(r) {
                             actions.extend(self.advance_from_round(r, e))
                         } else {
@@ -666,6 +725,7 @@ where
                     }
                 }
                 Err(v) => {
+                    debug_assert!(self.buffer.size_at(r) < c.size().get());
                     self.buffer.add(v);
                 }
             }
@@ -688,7 +748,15 @@ where
         debug_assert!(*v.round().data() >= self.committed_round);
         self.leader_stack.push(v.clone());
         for r in (*self.committed_round + 1..**v.round().data()).rev() {
-            let Some(l) = self.leader_vertex(r.into()).cloned() else {
+            let Some(c) = self.committees.get(r.into()) else {
+                warn!(
+                    node  = %self.public_key(),
+                    round = %r,
+                    "no committee for round"
+                );
+                continue;
+            };
+            let Some(l) = self.leader_vertex(c, r.into()).cloned() else {
                 debug!(
                     node  = %self.public_key(),
                     round = %r,
@@ -801,16 +869,21 @@ where
     /// vertex needs to have either a path to the leader vertex of the
     /// previous round, or a timeout certificate and (if from the leader) a
     /// no-vote certificate.
-    fn is_valid(&self, v: &Vertex<T>) -> bool {
+    fn is_valid(&self, v: &Vertex<T>) -> Result<&Committee, ()> {
         trace!(node = %self.public_key(), vertex = %v, "check vertex");
         if v.is_genesis() {
-            info!(
-                node   = %self.public_key(),
-                round  = %self.round,
-                vertex = %v,
-                "accepting genesis vertex"
-            );
-            return true;
+            return if let Some(c) = self.committees.get(v.index()) {
+                info!(
+                    node   = %self.public_key(),
+                    round  = %self.round,
+                    vertex = %v,
+                    "accepting genesis vertex"
+                );
+                Ok(c)
+            } else {
+                warn!(node = %self.public_key(), vertex = %v, "no committee for vertex");
+                Err(())
+            };
         }
 
         if *v.round().data() < self.dag.min_round().unwrap_or_else(RoundNumber::genesis) {
@@ -820,7 +893,7 @@ where
                 vertex = %v,
                 "vertex round is too old"
             );
-            return false;
+            return Err(());
         }
 
         if *v.round().data() < v.committed_round() {
@@ -829,32 +902,33 @@ where
                 vertex = %v,
                 "vertex round is less than committed round"
             );
-            return false;
+            return Err(());
         }
 
-        if v.has_edge(&self.committee.leader(**v.round().data() as usize - 1)) {
-            return true;
+        let Some(committee) = self.committees.get(v.index()) else {
+            warn!(node = %self.public_key(), vertex = %v, "no committee for vertex");
+            return Err(());
+        };
+
+        if v.has_edge(&committee.leader(**v.round().data() as usize - 1)) {
+            return Ok(committee);
         }
 
-        if v.source() != &self.committee.leader(**v.round().data() as usize) {
-            return true;
+        if v.source() != &committee.leader(**v.round().data() as usize) {
+            return Ok(committee);
         }
 
         if v.no_vote_cert().is_none() {
-            warn!(
-                node   = %self.public_key(),
-                vertex = %v,
-                "vertex is missing no-vote certificate"
-            );
-            return false;
+            warn!(node = %self.public_key(), vertex = %v, "vertex is missing no-vote certificate");
+            return Err(());
         };
 
-        true
+        Ok(committee)
     }
 
     /// Retrieve leader vertex for a given round.
-    fn leader_vertex(&self, r: RoundNumber) -> Option<&Vertex<T>> {
-        self.dag.vertex(r, &self.committee.leader(*r as usize))
+    fn leader_vertex(&self, c: &Committee, r: RoundNumber) -> Option<&Vertex<T>> {
+        self.dag.vertex(r, &c.leader(*r as usize))
     }
 
     /// Do we have `Evidence` that a message is valid for a given round?
@@ -878,9 +952,12 @@ where
 
     /// Find the first round in our buffer that we have a quorum of vertices for.
     fn first_available_round(&self) -> Option<RoundNumber> {
-        self.buffer
-            .rounds()
-            .find(|r| self.buffer.vertex_count(*r) >= self.committee.quorum_size().get())
+        self.buffer.rounds().find(|r| {
+            let Some(c) = self.committees.get(*r) else {
+                return false;
+            };
+            self.buffer.vertex_count(*r) >= c.quorum_size().get()
+        })
     }
 
     /// Cutoff round for cleanup and catch-up logic.
@@ -888,10 +965,25 @@ where
     /// It is defined as the quorum of committed round numbers of the committee
     /// minus an extra margin to avoid overly aggressive cleanup.
     fn lower_round_bound(&self) -> RoundNumber {
-        self.nodes
-            .committed_round_quorum()
-            .saturating_sub(self.committee.quorum_size().get() as u64)
-            .into()
+        let r = self.nodes.committed_round_quorum();
+        let c = self
+            .committees
+            .get(r)
+            .unwrap_or_else(|| self.committees.last());
+        r.saturating_sub(c.quorum_size().get() as u64).into()
+    }
+
+    /// Act if a committee changes at the current round.
+    fn update_committee(&mut self) {
+        while let Some(&next) = self.committee_changes.front() {
+            if self.round < next {
+                return;
+            }
+            self.committee_changes.pop_front();
+            if let Some(c) = self.committees.get(next) {
+                self.nodes = NodeInfo::new(c)
+            }
+        }
     }
 }
 

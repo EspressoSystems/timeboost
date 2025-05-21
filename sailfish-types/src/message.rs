@@ -1,9 +1,8 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{
-    Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated,
-};
+use multisig::{Certificate, CommitteeSeq};
+use multisig::{Envelope, Indexed, Keypair, PublicKey, Signed, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -61,11 +60,11 @@ impl<T: Committable, S> Message<T, S> {
 }
 
 impl<T: Committable> Message<T, Unchecked> {
-    pub fn validated(self, c: &Committee) -> Option<Message<T, Validated>> {
+    pub fn validated(self, seq: &CommitteeSeq<RoundNumber>) -> Option<Message<T, Validated>> {
         match self {
             Self::Vertex(e) => {
                 // Validate the envelope's signature:
-                let Some(e) = e.validated(c) else {
+                let Ok((e, _)) = e.validated(seq) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
@@ -79,10 +78,10 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // Validate the round signature:
-                if !e.data().round().is_valid(c) {
+                let Ok(c) = e.data().round().is_valid(seq) else {
                     warn!(%signer, "invalid round signature");
                     return None;
-                }
+                };
 
                 // The signer of the envelope should also be the same as the one who signed
                 // the round number certificate:
@@ -96,7 +95,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // Validate the previous round evidence:
-                if !e.data().evidence().is_valid(*e.data().round().data(), c) {
+                if !e.data().evidence().is_valid(*e.data().round().data(), seq) {
                     warn!(%signer, "invalid evidence in vertex");
                     return None;
                 }
@@ -112,7 +111,7 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 // No-vote certificate validation:
                 if let Some(cert) = e.data().no_vote_cert() {
-                    if !cert.is_valid_par(c) {
+                    if cert.is_valid_par(seq).is_err() {
                         warn!(%signer, "invalid no-vote certificate in vertex");
                         return None;
                     }
@@ -128,7 +127,7 @@ impl<T: Committable> Message<T, Unchecked> {
             }
             Self::Timeout(e) => {
                 // Validate the envelope's signature:
-                let Some(e) = e.validated(c) else {
+                let Ok((e, _)) = e.validated(seq) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
@@ -146,7 +145,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // Validate the timeout signature:
-                if !e.data().timeout().is_valid(c) {
+                if e.data().timeout().is_valid(seq).is_err() {
                     warn!(%signer, "invalid timeout signature");
                     return None;
                 }
@@ -155,7 +154,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 if !e
                     .data()
                     .evidence()
-                    .is_valid(e.data().timeout().data().round(), c)
+                    .is_valid(e.data().timeout().data().round(), seq)
                 {
                     warn!(%signer, "invalid timeout evidence");
                     return None;
@@ -165,7 +164,7 @@ impl<T: Committable> Message<T, Unchecked> {
             }
             Self::NoVote(e) => {
                 // Validate the envelope's signature:
-                let Some(e) = e.validated(c) else {
+                let Ok((e, _)) = e.validated(seq) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
@@ -183,13 +182,13 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // Validate the no-vote signature:
-                if !e.data().no_vote().is_valid(c) {
+                if e.data().no_vote().is_valid(seq).is_err() {
                     warn!(%signer, "invalid no-vote signature");
                     return None;
                 }
 
                 // Validate the timeout certificate signatures:
-                if !e.data().certificate().is_valid_par(c) {
+                if e.data().certificate().is_valid_par(seq).is_err() {
                     warn!(%signer, "invalid no-vote certificate");
                     return None;
                 }
@@ -204,7 +203,7 @@ impl<T: Committable> Message<T, Unchecked> {
             }
             Self::TimeoutCert(crt) => {
                 // Validate the timeout certificate signatures:
-                if !crt.is_valid_par(c) {
+                if crt.is_valid_par(seq).is_err() {
                     warn!("invalid timeout certiticate");
                     return None;
                 }
@@ -345,6 +344,22 @@ impl NoVote {
     }
 }
 
+impl Indexed for Timeout {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        self.round()
+    }
+}
+
+impl Indexed for NoVote {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        self.round()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub enum Evidence {
     Genesis,
@@ -361,11 +376,11 @@ impl Evidence {
         }
     }
 
-    pub fn is_valid(&self, r: RoundNumber, c: &Committee) -> bool {
+    pub fn is_valid(&self, r: RoundNumber, c: &CommitteeSeq<RoundNumber>) -> bool {
         match self {
             Self::Genesis => r.is_genesis(),
-            Self::Regular(x) => self.round() + 1 == r && x.is_valid_par(c),
-            Self::Timeout(x) => self.round() + 1 == r && x.is_valid_par(c),
+            Self::Regular(x) => self.round() + 1 == r && x.is_valid_par(c).is_ok(),
+            Self::Timeout(x) => self.round() + 1 == r && x.is_valid_par(c).is_ok(),
         }
     }
 
@@ -422,6 +437,14 @@ impl TimeoutMessage {
     }
 }
 
+impl Indexed for TimeoutMessage {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        self.timeout.data().round()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NoVoteMessage {
     no_vote: Signed<NoVote>,
@@ -446,6 +469,14 @@ impl NoVoteMessage {
 
     pub fn into_parts(self) -> (Signed<NoVote>, Certificate<Timeout>) {
         (self.no_vote, self.evidence)
+    }
+}
+
+impl Indexed for NoVoteMessage {
+    type Index = RoundNumber;
+
+    fn index(&self) -> Self::Index {
+        self.no_vote.data().round()
     }
 }
 
