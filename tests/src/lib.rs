@@ -11,14 +11,14 @@ pub(crate) mod prelude {
     use committable::{Commitment, Committable, RawCommitmentBuilder};
     use serde::{Deserialize, Serialize};
 
-    pub use sailfish::types::DataSource;
+    pub use sailfish::types::{DataSource, HasTime};
     pub use timeboost::types::Timestamp;
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SailfishBlock(Timestamp);
 
-    impl SailfishBlock {
-        pub fn timestamp(&self) -> Timestamp {
+    impl HasTime for SailfishBlock {
+        fn time(&self) -> Timestamp {
             self.0
         }
     }

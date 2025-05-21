@@ -222,7 +222,7 @@ fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &Comm
 
 fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
     assert!(
-        l.timestamp().abs_diff(*r.timestamp()) <= 5,
+        l.time().abs_diff(*r.time()) <= 5,
         "Drift is too high from expected to actual block timestamps"
     );
 }

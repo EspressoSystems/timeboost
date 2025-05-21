@@ -9,7 +9,7 @@ use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{CommitteeId, CommitteeVec};
-use sailfish_types::{DataSource, Payload, Round, RoundNumber, Vertex};
+use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -92,7 +92,7 @@ impl<T> Consensus<T> {
 
 impl<T> Consensus<T>
 where
-    T: Committable + Clone + PartialEq,
+    T: Committable + HasTime + Clone + PartialEq,
 {
     pub fn new<D>(keypair: Keypair, id: CommitteeId, committee: Committee, datasource: D) -> Self
     where

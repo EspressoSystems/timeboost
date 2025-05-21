@@ -4,7 +4,7 @@ use std::time::Duration;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-pub use sailfish_types::Timestamp;
+pub use sailfish_types::{ConsensusTime, HasTime, Timestamp};
 
 const EPOCH_DURATION: Duration = Duration::from_secs(60);
 

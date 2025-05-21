@@ -8,7 +8,7 @@ use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::{Action, PLACEHOLDER},
+    types::{Action, HasTime, PLACEHOLDER, Timestamp},
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
@@ -73,19 +73,26 @@ struct Cli {
 
 /// Payload data type is a block of 512 random bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-struct Block(#[serde(with = "serde_bytes")] [u8; 512]);
+struct Block(Timestamp, #[serde(with = "serde_bytes")] [u8; 512]);
 
 impl Block {
     fn random() -> Self {
-        Self(rand::random())
+        Self(Timestamp::now(), rand::random())
     }
 }
 
 impl Committable for Block {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Block")
-            .var_size_bytes(&self.0)
+            .field("time", self.0.commit())
+            .var_size_bytes(&self.1)
             .finalize()
+    }
+}
+
+impl HasTime for Block {
+    fn time(&self) -> Timestamp {
+        self.0
     }
 }
 

@@ -14,7 +14,7 @@ pub use message::{Action, Evidence, Payload};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
 pub use round::{Round, RoundNumber};
-pub use time::Timestamp;
+pub use time::{ConsensusTime, HasTime, Timestamp};
 pub use vertex::Vertex;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};

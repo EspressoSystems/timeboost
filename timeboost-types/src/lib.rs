@@ -23,4 +23,4 @@ pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
-pub use time::{Epoch, Timestamp};
+pub use time::{ConsensusTime, Epoch, HasTime, Timestamp};

@@ -4,7 +4,7 @@ use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
 use multisig::PublicKey;
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Comm, Evidence, Message, RoundNumber};
+use sailfish_types::{Action, Comm, Evidence, HasTime, Message, RoundNumber};
 use tokio::select;
 use tokio::time::sleep;
 
@@ -52,7 +52,7 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
 impl<T, C> Coordinator<T, C>
 where
     C: Comm<T> + Send,
-    T: Committable + Clone + PartialEq,
+    T: Committable + HasTime + Clone + PartialEq,
 {
     /// Starts Sailfish consensus.
     ///

@@ -1,7 +1,13 @@
 use std::ops::{Add, Deref, Div};
 use std::time::SystemTime;
 
+use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
+
+/// Class of types that can provide a timestamp.
+pub trait HasTime {
+    fn time(&self) -> Timestamp;
+}
 
 /// Unix timestamp in seconds.
 #[derive(
@@ -65,5 +71,19 @@ impl Deref for ConsensusTime {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Committable for Timestamp {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Timestamp")
+            .u64(self.0)
+            .finalize()
+    }
+}
+
+impl HasTime for Timestamp {
+    fn time(&self) -> Self {
+        *self
     }
 }
