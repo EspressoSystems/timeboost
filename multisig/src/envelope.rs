@@ -19,7 +19,7 @@ pub enum Validated {}
 /// signature has been checked at least once. By construction it is impossible to
 /// create a validated envelope without either creating or verifying the signature.
 ///
-///```compile_fail
+/// ```compile_fail
 /// use multisig::{Envelope, Signature, Validated};
 ///
 /// let _: Envelope<Signature, Validated> =

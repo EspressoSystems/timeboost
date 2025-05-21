@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
 use sailfish::types::RoundNumber;
@@ -79,7 +79,10 @@ impl Includer {
             self.seqno = SeqNo::zero();
         }
 
-        let mut regular: HashMap<Bundle, usize> = HashMap::new();
+        // NOTE: in timeboost spec, regular bundles are an unordered set, thus technically a HashMap
+        // is sufficient. However, ordering them simplifies the decryption phase logic at no cost,
+        // thus we choose BTreeMap instead.
+        let mut regular: BTreeMap<Bundle, usize> = BTreeMap::new();
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
 

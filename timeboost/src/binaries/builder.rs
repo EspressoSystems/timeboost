@@ -141,8 +141,9 @@ async fn main() -> Result<()> {
         .get(cli.id as usize)
         .expect("keyset for this node to exist");
 
-    // Now, fetch the signature private key and decryption private key, preference toward the JSON config.
-    // Note that the clone of the two fields explicitly avoids cloning the entire `PublicNodeInfo`.
+    // Now, fetch the signature private key and decryption private key, preference toward the JSON
+    // config. Note that the clone of the two fields explicitly avoids cloning the entire
+    // `PublicNodeInfo`.
     let (sig_key, dec_sk) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
         // We found both in the JSON, we're good to go.
         (Some(sig_pk), Some(dec_pk)) => {

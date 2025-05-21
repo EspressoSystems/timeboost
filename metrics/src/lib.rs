@@ -4,11 +4,13 @@
 // You should have received a copy of the MIT License
 // along with the HotShot repository. If not, see <https://mit-license.org/>.
 
-//! The [`Metrics`] trait is used to collect information from multiple components in the entire system.
+//! The [`Metrics`] trait is used to collect information from multiple components in the entire
+//! system.
 //!
 //! This trait can be used to spawn the following traits:
 //! - [`Counter`]: an ever-increasing value (example usage: total bytes send/received)
-//! - [`Gauge`]: a value that store the latest value, and can go up and down (example usage: amount of users logged in)
+//! - [`Gauge`]: a value that store the latest value, and can go up and down (example usage: amount
+//!   of users logged in)
 //! - [`Histogram`]: stores multiple float values based for a graph (example usage: CPU %)
 //! - text: stores a constant string in the collected metrics
 
@@ -20,15 +22,18 @@ use dyn_clone::DynClone;
 pub trait Metrics: Send + Sync + DynClone + Debug {
     /// Create a [`Counter`] with an optional `unit_label`.
     ///
-    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
+    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or
+    /// "seconds"
     fn create_counter(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Counter>;
     /// Create a [`Gauge`] with an optional `unit_label`.
     ///
-    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
+    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or
+    /// "seconds"
     fn create_gauge(&self, name: &str, unit_label: Option<&str>) -> Box<dyn Gauge>;
     /// Create a [`Histogram`] with an optional `unit_label`.
     ///
-    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or "seconds"
+    /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or
+    /// "seconds"
     fn create_histogram(
         &self,
         name: &str,

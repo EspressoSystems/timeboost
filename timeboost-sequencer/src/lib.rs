@@ -264,19 +264,17 @@ impl Sequencer {
 
 impl Task {
     /// Run sequencing logic.
-    //
     // Processing takes place as follows:
     //
-    // 1. Sailfish actions are executed and outputs collected in
-    //    round-indexed sequences of candidate lists.
-    // 2. Candidates are handed to the inclusion phase and produce the
-    //    next inclusion list.
-    // 3. If the decrypter has capacity the inclusion list is passed on
-    //    and processing continues with the next candidates.
+    // 1. Sailfish actions are executed and outputs collected in round-indexed sequences of
+    //    candidate lists.
+    // 2. Candidates are handed to the inclusion phase and produce the next inclusion list.
+    // 3. If the decrypter has capacity the inclusion list is passed on and processing continues
+    //    with the next candidates.
     // 4. Otherwise we buffer the inclusion list and pause Sailfish execution.
-    // 5. When the decrypter produces outputs we hand it to the ordering
-    //    phase and if it then has capacity we resume with the buffered
-    //    inclusion list from (4) and process the remaining candidates.
+    // 5. When the decrypter produces outputs we hand it to the ordering phase and if it then has
+    //    capacity we resume with the buffered inclusion list from (4) and process the remaining
+    //    candidates.
     // 6. The logic continues at step (1).
     //
     // NB that if Sailfish does not produce outputs (i.e. candidate lists)

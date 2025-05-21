@@ -105,7 +105,8 @@ impl<T: PartialEq> Dag<T> {
 
     /// Returns an iterator over all vertices within the specified round range.
     ///
-    /// This method allows iteration over vertices across multiple rounds using any valid range syntax:
+    /// This method allows iteration over vertices across multiple rounds using any valid range
+    /// syntax:
     /// - `vertex_range(1..4)` - vertices from rounds 1,2,3
     /// - `vertex_range(1..=4)` - vertices from rounds 1,2,3,4
     /// - `vertex_range(1..)` - vertices from round 1 onwards

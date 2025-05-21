@@ -115,11 +115,10 @@ impl RbcConfig {
 /// deliver vertex proposals. The algorithm is based on Abraham et al. \[1\]:
 ///
 /// 1. Propose: When broadcasting a message we send a proposal to all parties.
-/// 2. Vote: When receiving a first proposal from a broadcaster, we send
-///    a vote for the proposal to all parties.
-/// 3. Commit: When receiving 𝑛 − 𝑓 votes for a proposal, we send the
-///    resulting certificate to all parties and deliver the message to the
-///    application.
+/// 2. Vote: When receiving a first proposal from a broadcaster, we send a vote for the proposal to
+///    all parties.
+/// 3. Commit: When receiving 𝑛 − 𝑓 votes for a proposal, we send the resulting certificate to all
+///    parties and deliver the message to the application.
 ///
 /// Voting uses the commit digest of the proposal, not the proposal message itself,
 /// in order to minimise the amount of data to send.

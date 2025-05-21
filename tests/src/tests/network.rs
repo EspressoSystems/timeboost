@@ -147,7 +147,8 @@ pub trait TestableNetwork {
                         }
                     }
                     if all_evaluated {
-                        // We are done with this nodes test, we can break our loop and pop off `JoinSet` handles
+                        // We are done with this nodes test, we can break our loop and pop off
+                        // `JoinSet` handles
                         sleep(Duration::from_secs(1)).await;
                         return TaskHandleResult::new(coordinator.public_key(), outcome);
                     }
