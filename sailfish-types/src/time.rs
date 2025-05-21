@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Timestamp(u64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct ConsensusTime(pub Timestamp);
+
 impl Timestamp {
     pub fn now() -> Self {
         let d = SystemTime::now()
@@ -50,6 +54,14 @@ impl From<Timestamp> for u64 {
 
 impl Deref for Timestamp {
     type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Deref for ConsensusTime {
+    type Target = Timestamp;
 
     fn deref(&self) -> &Self::Target {
         &self.0
