@@ -31,12 +31,12 @@ opt-level = 3
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
 alloy-chains = "0.2.0"
-alloy-consensus = { version = "0.15.6", features = ["arbitrary", "k256"] }
-alloy-eips = { version = "0.15.6" }
+alloy-consensus = { version = "1.0.5", features = ["arbitrary", "k256"] }
+alloy-eips = "1.0.5"
 alloy-primitives = { version = "1.0.0", features = ["serde", "rlp"] }
 alloy-rlp = { version = "0.3.11", features = ["derive"] }
-alloy-signer = "0.15.6"
-alloy-signer-local = "0.15.6"
+alloy-signer = "1.0.5"
+alloy-signer-local = "1.0.5"
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 ark-bn254 = "0.5"
@@ -57,7 +57,7 @@ bytes = { version = "1.8.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 committable = "0.2"
 constant_time_eq = "0.4"
-criterion = "0.5"
+criterion = "0.6"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
 derive_builder = "0.20"
