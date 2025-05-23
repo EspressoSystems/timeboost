@@ -1,33 +1,31 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -a; source .env; set +a;
-if ! cargo build --release --features until; then
-    echo "Error: Build failed" >&2
-    exit 1
-fi
+set -euo pipefail
 
-nodes=5
-nitro_node_url=""
+rounds=300
 late_start=false
+keyset_file=
+tps=1
 stamp=
 ignore_stamp=false
-keyset_file=""
+nitro_node_url=
+yapper=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -k|--keyset-file)
+            keyset_file="$2"
+            shift 2
+            ;;
         -l|--late)
             late_start=true
             shift
             ;;
-        -n|--nodes)
-            if !((4 < $2 && $2 <= 20)); then
-                echo "Error: The number of nodes must be greater than 4 and no more than 20"
-                exit 1
-            fi
-            nodes="$2"
+        -r|--rounds)
+            rounds="$2"
             shift 2
             ;;
-        -url|--url)
+        -u|--url)
             nitro_node_url="$2"
             shift 2
             ;;
@@ -35,17 +33,43 @@ while [[ $# -gt 0 ]]; do
             stamp="$2"
             shift 2
             ;;
-        --yapper)
-            keyset_file="$2"
-            shift 2
-            ;;
         --ignore-stamp)
             ignore_stamp=true
             shift
             ;;
+        --yapper)
+            yapper=true
+            shift
+            ;;
         *)
-            echo "Unknown: $1"
-            echo "Usage: $0 [-l|--late] [-url|--url <NITRO_URL>] [-n|--nodes <NUMBER>]"
+            echo -e "Unknown: $1\n"
+            echo "Usage: $0 [Options] where
+
+Options:
+
+    -l | --late
+        Delayed startup of first node.
+
+    -k | --keyset-file <PATH>
+        Use a JSON file for node keys.
+
+    -r | --rounds <NUMBER>
+        Run for the given number of rounds (default = 1000).
+
+    -t | --tps <number>
+        number of transactions per second to generate.
+
+    -u | --url <URL>
+        Nitro URL.
+
+    -s | --stamp <PATH prefix>
+        Path prefix for the stamp files.
+
+    --yapper
+        Run external transaction generator.
+
+    --ignore-stamp
+        Ignore an existing stamp file and start from genesis"
             exit 1
             ;;
     esac
@@ -56,85 +80,66 @@ if [ ! $stamp ]; then
     exit 1
 fi
 
+if [ ! $keyset_file ]; then
+    echo "Missing -k | --keyset-file <PATH>"
+    exit 1
+fi
+
 if [ -n "$nitro_node_url" ]; then
-    nitro_node_url="--nitro-node-url $nitro_node_url"
     docker run --rm --name nitro-dev -p 8547:8547 "offchainlabs/nitro-node:v3.2.1-d81324d" --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug &
     timeout 30 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
 fi
 
+just build_release --features="until"
+
+nodes=$(jq '.keyset | length' $keyset_file)
+
+RUST_LOG=${RUST_LOG:-}
+
+if [ -z "$RUST_LOG" ]; then
+    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
+fi
 
 pids=()
-SECONDS=0
-for i in $(seq 0 $((nodes - 1))); do
-    echo "Starting node $i"
-
-    SIGNATURE_PRIVATE_KEY="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
-    DECRYPTION_PRIVATE_KEY="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
-
-    cmd="RUST_LOG=timeboost=info,sailfish=info,cliquenet=warn \
-    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
-    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
-    ./target/release/timeboost \
-        --id $i \
-        --sailfish-addr \"0.0.0.0:$((8000 + $i))\"
-        --decrypt-addr \"0.0.0.0:$((10000 + $i))\"
-        --producer-addr \"0.0.0.0:$((11000 + $i))\"
-        --rpc-port $((8800 + $i)) \
-        --metrics-port $((9000 + $i)) \
-        --until 300 \
-        $nitro_node_url \
-        --nodes $nodes \
-        --stamp \"$stamp-$i.sf\" \
-        --keyset-file test-configs/local.json \
-        --watchdog-timeout 300"
+for (( i=0; i<$nodes; i++ )); do
+    cmd=(target/release/timeboost
+        --id $i
+        --rpc-port $((8800 + $i))
+        --metrics-port $((9000 + $i))
+        --until $rounds
+        --keyset-file $keyset_file
+        --stamp "${stamp}-$i.sf"
+        --watchdog-timeout $rounds)
 
     if $ignore_stamp; then
-        cmd="$cmd --ignore-stamp"
+        cmd+=(--ignore-stamp)
     fi
 
     if $late_start; then
-        cmd="$cmd --late-start --late-start-node-id 0"
+        cmd+=(--late-start --late-start-node-id 0)
     fi
 
-    eval $cmd &
+    if [ -n "$nitro_node_url" ]; then
+        cmd+=(--nitro-node-url $nitro_node_url)
+    fi
+
+    echo "${cmd[@]}"
+    RUST_LOG=$RUST_LOG "${cmd[@]}" &
+
     pids+=($!)
 done
 
-if [ -n "$keyset_file" ]; then
-    cmd="RUST_LOG=yapper=info \
-    ./target/release/yapper \
-        --tps 5 \
-        --nodes $nodes \
-        --keyset-file $keyset_file"
-    eval $cmd &
+if $yapper; then
+    target/release/yapper --tps $tps --keyset-file $keyset_file &
 fi
 
-failed=false
-for pid in "${pids[@]}"; do
-    wait $pid
-    exit_code=$?
-
-    if [ $exit_code -eq 0 ]; then
-        echo "Process $pid completed successfully with exit code $exit_code."
-    else
-        echo "Process $pid failed with exit code $exit_code."
-        failed=true
-    fi
-done
+wait "${pids[@]}"
 
 if [ -n "$nitro_node_url" ]; then
-    echo "Attempting to kill nitro..."
     pkill nitro
 fi
-if [ -n "$keyset_file" ]; then
-    echo "Attempting to kill yapper..."
+
+if $yapper; then
     pkill yapper
 fi
-duration=$SECONDS
-echo "All processes have finished (duration: $((duration)) sec)."
 
-if $failed; then
-    exit 1
-else
-    exit 0
-fi

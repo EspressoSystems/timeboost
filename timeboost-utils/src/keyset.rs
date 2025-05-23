@@ -1,10 +1,9 @@
-use std::{collections::HashMap, fs, path::Path, time::Duration};
+use std::{fs, path::Path, time::Duration};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::Result;
 use cliquenet::Address;
-use multisig::{SecretKey, x25519};
+use multisig::x25519;
 use serde::{Deserialize, Serialize};
-use serde_json::from_str;
 use timeboost_crypto::{DecryptionScheme, traits::threshold_enc::ThresholdEncScheme};
 use timeboost_types::DecryptionKey;
 
@@ -20,9 +19,9 @@ pub struct KeysetConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeInfo {
-    pub sailfish_url: Address,
-    pub decrypt_url: Address,
-    pub producer_url: Address,
+    pub sailfish_address: Address,
+    pub decrypt_address: Address,
+    pub producer_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
 
@@ -32,84 +31,67 @@ pub struct NodeInfo {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PrivateKeys {
-    /// Signing key.
-    pub sig: multisig::SecretKey,
-    /// DH key.
-    pub dh: x25519::SecretKey,
-    /// Threshold decryption key.
-    pub dec: String,
+    pub signing_key: multisig::SecretKey,
+    pub dh_key: x25519::SecretKey,
+    #[serde(with = "keyshare")]
+    pub dec_share: KeyShare,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicDecInfo {
-    pub pubkey: String,
-    pub combkey: String,
-}
-
-impl PublicDecInfo {
-    pub fn pubkey(&self) -> Result<PublicKey> {
-        PublicKey::try_from_str::<8192>(self.pubkey.as_str())
-            .context("Failed to parse public key from keyset")
-    }
+    #[serde(with = "pubkey")]
+    pub pubkey: PublicKey,
+    #[serde(with = "combkey")]
+    pub combkey: CombKey,
 }
 
 impl KeysetConfig {
-    pub fn read_keyset(path: &Path) -> Result<Self> {
-        ensure!(path.exists(), "File not found: {:?}", path);
-        let data = fs::read_to_string(path).context("Failed to read file")?;
-        let keyset: KeysetConfig = from_str(&data).context("Failed to parse JSON")?;
-        Ok(keyset)
+    pub fn read_keyset<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref();
+        let data = fs::read_to_string(path)?;
+        let conf = serde_json::from_str(&data)?;
+        Ok(conf)
     }
 
-    pub fn build_decryption_material(&self, deckey: KeyShare) -> Result<DecryptionKey> {
-        let pubkey = PublicKey::try_from_str::<8192>(self.dec_keyset.pubkey.as_str())
-            .context("Failed to parse public key from keyset")?;
-        let combkey = CombKey::try_from_str::<8192>(self.dec_keyset.combkey.as_str())
-            .context("Failed to parse combination key from keyset")?;
-        Ok(DecryptionKey::new(pubkey, combkey, deckey))
-    }
-
-    pub fn keyset(&self) -> &[NodeInfo] {
-        &self.keyset
-    }
-
-    pub fn dec_keyset(&self) -> &PublicDecInfo {
-        &self.dec_keyset
-    }
-}
-
-impl PrivateKeys {
-    pub fn read<P: AsRef<Path>>(key_file: P) -> Result<Self> {
-        let vars = dotenvy::from_path_iter(key_file)?.collect::<Result<HashMap<_, _>, _>>()?;
-        let sig = vars
-            .get("TIMEBOOST_PRIVATE_SIGNATURE_KEY")
-            .context("key file missing TIMEBOOST_PRIVATE_SIGNATURE_KEY")?
-            .as_str()
-            .try_into()
-            .context("invalid value for TIMEBOOST_PRIVATE_SIGNATURE_KEY")?;
-        let dh = vars
-            .get("TIMEBOOST_PRIVATE_DH_KEY")
-            .cloned()
-            .context("key file missing TIMEBOOST_PRIVATE_DH_KEY")?
-            .as_str()
-            .try_into()
-            .context("invalid value for TIMEBOOST_PRIVATE_DH_KEY")?;
-        let dec = vars
-            .get("TIMEBOOST_PRIVATE_DECRYPTION_KEY")
-            .cloned()
-            .context("key file missing TIMEBOOST_PRIVATE_DECRYPTION_KEY")?;
-        Ok(Self { sig, dh, dec })
-    }
-
-    pub fn parse(&self) -> Result<(SecretKey, x25519::SecretKey, KeyShare)> {
-        let dec: KeyShare = bincode::serde::decode_from_slice(
-            &bs58::decode(&*self.dec).into_vec()?,
-            bincode::config::standard(),
+    pub fn decryption_key(&self, share: KeyShare) -> DecryptionKey {
+        DecryptionKey::new(
+            self.dec_keyset.pubkey.clone(),
+            self.dec_keyset.combkey.clone(),
+            share,
         )
-        .map(|(val, _)| val)?;
-        Ok((self.sig.clone(), self.dh.clone(), dec))
     }
 }
+
+macro_rules! mk_serde_mod {
+    ($module:ident, $type:ident) => {
+        mod $module {
+            use super::$type;
+            use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+
+            pub fn serialize<S>(x: &$type, s: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                bs58::encode(x.to_bytes()).into_string().serialize(s)
+            }
+
+            pub fn deserialize<'de, D>(d: D) -> Result<$type, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let s = String::deserialize(d)?;
+                let v = bs58::decode(&s).into_vec().map_err(de::Error::custom)?;
+                let c = bincode::config::standard().with_limit::<8192>();
+                let k = bincode::serde::decode_from_slice(&v, c).map_err(de::Error::custom)?;
+                Ok(k.0)
+            }
+        }
+    };
+}
+
+mk_serde_mod!(keyshare, KeyShare);
+mk_serde_mod!(pubkey, PublicKey);
+mk_serde_mod!(combkey, CombKey);
 
 /// NON PRODUCTION
 /// This function takes the provided host and hits the healthz endpoint. This to ensure that when

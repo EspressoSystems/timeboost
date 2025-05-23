@@ -4,25 +4,24 @@ set -euo pipefail
 
 just build_release --features until
 
-nodes=${1:-5}
-
 # Set default RUST_LOG if not already defined
 if [ -z "${RUST_LOG:-}" ]; then
     export RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
 fi
 
+keyset_file="test-configs/local-5.json"
+
+nodes=$(jq '.keyset | length' $keyset_file)
+
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/sailfish
         --id $i
-        --port $((8000 + $i))
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
-        --keyset-file test-configs/local.json
-        --nodes $nodes
+        --keyset-file "$keyset_file"
         --stamp "${TMPDIR:-/tmp}/stamp-$i.sf"
         --ignore-stamp
-        --until 300
-    )
+        --until 300)
 
     "${cmd[@]}" &
 done
