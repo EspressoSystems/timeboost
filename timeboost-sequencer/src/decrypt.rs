@@ -627,7 +627,7 @@ mod tests {
         let num_nodes = 5;
         let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
         let encryption_key: PublicKey<_> =
-            decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
+            decode_bincode("8sAbsmFDqeFxCFmeYJywgvk2jWFShkeFdVi4TCZnZi2JoH3dpuRVjQZqFbio7cqeAHV");
 
         let mut decrypters = setup(keyset.clone()).await;
 
@@ -713,6 +713,8 @@ mod tests {
     }
 
     async fn setup(keyset: Keyset) -> Vec<Decrypter> {
+        // these keys are generated via
+        // `just keygen --seed 0000000000000000000000000000000000000000000000000000000000000000 --num 5 --out xxx`
         let signature_private_keys = [
             "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
             "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
@@ -721,15 +723,15 @@ mod tests {
             "jW98dJM94zuvhRCA1bGLiPjakePTc1CYPP2V5iCswfayZiYujGYdSoE1MYDa61dHCyzPdEvGNBDmnFHS6jf83Km",
         ];
         let decryption_private_keys = [
-            "jMbTDiLo8tgyERv92mGrCAe1s3KnnnyqhQeSYte6vUhZy1",
-            "jysmvvvwSHu872gmxkejPP8RxUDpSpKChnkPMVeXyRibwN",
-            "kCioHtYdX7pUVXJLceFFKx7j4czcqDjjS52FYbvy2AuyQV",
-            "jVEU8hbv7uUntaDt4GgDxUKgoCu8UCXugx1coMeiVfn31L",
-            "jUzpdPzgxn2zpaLXaHJiWJ2jbbD3scsP8YqscA1uZGhPfZ",
+            "jVPi6fFT77sTLDFjzbjUpQTfpqd9vf7cMENE3Dg15feU1D",
+            "jitsSHznkMmUb8ywKeqGZJf29Giq2WeDvNbYXnimkidBmJ",
+            "jcu9prPe5T3KzLsioFsXtkHHMvEd8anw8MLFqa9ZS3fo9B",
+            "jx3eHgfB81frVrNE1rLMYHWVVrjdUXj9gLNV2AP29P86MG",
+            "jUiNmqJ5ux9KGKPiPDEu2Wnm6PrwFJQDTeUkTVTrPzrBZd",
         ];
 
-        let encryption_key = "kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK";
-        let comb_key = "AuMP7yjmQH98sUnn7gcP7UUEZ1zNNbzESuNFkizXXHLeyyeH89Ky6F3M5xQ5kDXHyBAuza2CJmyXG9r1n38dW5GYj3asqB1TJzxmCDpmQo7eGjQEgcfEhz521k91kymL7u14EaGriN43WfzDBvcvWjNq93tjTUpRtv4kBycAujLxsWUoaCZBFDVcYMrLAoNXAaCMZHNerseE5V9vqMmgDXRqXZZZtJFv6kgARqmqH";
+        let encryption_key = "8sAbsmFDqeFxCFmeYJywgvk2jWFShkeFdVi4TCZnZi2JoH3dpuRVjQZqFbio7cqeAHV";
+        let comb_key = "y77mNR8RCyir3GuSruqC99BSkaxw9wnaqfQZbP89HZQ3V6pZUJedFhkd51r4KuCLumnKXgzoEnnTP2txLtnqSFPChCCxBKosGJa3sC7ohRd6raLeQqgMX5PeAoEmQnkX1QyVu88cjMAkBYXXAJ24WbdMAAEpmAkC1YFGVtwwM7QJSvrDAfBjfVnGbTNAGxf937maDbqjsuqUQGTcTDJg7TEpcavJb2kXt5pVtgNEBU2FWNxvaHjhegGytq1qfEfGpB1sbRhB4huaVuEmLvAaUjfsQGHKPZp4fCnTqGU2paD2SQvjeMZAcsj7NKsmHpEcRMnNa2dpSHhQnNG";
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()
@@ -759,7 +761,7 @@ mod tests {
             .collect();
 
         let mut decrypters = Vec::new();
-        for i in 0..usize::from(keyset.size()) {
+        for i in 0..peers.len() {
             let sig_key = signature_keys[i].clone();
             let (_, addr) = peers[i];
 
