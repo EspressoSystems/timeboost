@@ -10,7 +10,7 @@ aes-gcm = { workspace = true }
 alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
 ark-ec = { workspace = true }
-ark-secp256k1 = { workspace = true }
+ark-bls12-381 = { workspace = true }
 ark-ff = { workspace = true }
 ark-poly = { workspace = true }
 ark-serialize = { workspace = true }
@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+ark-secp256k1 = { workspace = true }
 ark-bn254 = { workspace = true }
 criterion = { workspace = true }
 
