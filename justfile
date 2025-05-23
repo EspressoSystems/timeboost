@@ -78,6 +78,11 @@ run_sailfish_demo *ARGS:
 run *ARGS:
   cargo run {{ARGS}}
 
+# Run the keygen binary to re-generate keys and update test-configs/*
+# Run `just keygen --help` for more info
+keygen *ARGS:
+  RUST_LOG=debug cargo run --bin keygen -- {{ARGS}}
+
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 

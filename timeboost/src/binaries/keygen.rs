@@ -2,6 +2,7 @@
 
 use alloy_primitives::hex;
 use anyhow::anyhow;
+use ark_std::rand::SeedableRng;
 use clap::{Parser, ValueEnum};
 use rand::Rng;
 use std::{
@@ -14,6 +15,14 @@ use timeboost_crypto::DecryptionScheme;
 use timeboost_utils::{bs58_encode, sig_keypair_from_seed_indexed, types::logging};
 use tracing::{debug, info};
 
+/// Test config files whose key materials should be updated
+const TEST_CONFIG_FILES: [&str; 4] = [
+    "local.json",
+    "docker.json",
+    "cloud_single.json",
+    "cloud_multi.json",
+];
+
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum Scheme {
     #[default]
@@ -23,47 +32,80 @@ enum Scheme {
 }
 
 impl Scheme {
-    fn generate(self, seed: [u8; 32], num: NonZeroUsize, out: &PathBuf) -> anyhow::Result<()> {
+    fn generate(
+        self,
+        seed: [u8; 32],
+        num: NonZeroUsize,
+        out: Option<PathBuf>,
+    ) -> anyhow::Result<()> {
         match self {
             Self::All => {
-                Self::Signature.generate(seed, num, out)?;
+                Self::Signature.generate(seed, num, out.clone())?;
                 Self::Decryption.generate(seed, num, out)?;
             }
             Self::Signature => {
-                for index in 0..num.into() {
-                    let path = out.join(format!("{index}.env"));
-                    let mut env_file = File::options().append(true).create(true).open(&path)?;
-                    let keypair = sig_keypair_from_seed_indexed(seed, index as u64);
-                    let privkey = bs58_encode(&keypair.secret_key().as_bytes());
-                    let pubkey = bs58_encode(&keypair.public_key().as_bytes());
-                    writeln!(env_file, "TIMEBOOST_SIGNATURE_KEY={}", pubkey)?;
-                    writeln!(env_file, "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}", privkey)?;
-                    info!("generated signature keypair: {}", pubkey);
-                    debug!("private signature key written to {}", path.display());
+                let keypairs = (0..num.into())
+                    .map(|idx| sig_keypair_from_seed_indexed(seed, idx as u64))
+                    .collect::<Vec<_>>();
+
+                if let Some(out) = out {
+                    for (idx, keypair) in keypairs.iter().enumerate() {
+                        let path = out.join(format!("{idx}.env"));
+                        let mut env_file = File::options().append(true).create(true).open(&path)?;
+                        let privkey = bs58_encode(&keypair.secret_key().as_bytes());
+                        let pubkey = bs58_encode(&keypair.public_key().as_bytes());
+                        writeln!(env_file, "TIMEBOOST_SIGNATURE_KEY={}", pubkey)?;
+                        writeln!(env_file, "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}", privkey)?;
+                        info!("generated signature keypair: {}", pubkey);
+                        debug!("private signature key written to {}", path.display());
+                    }
+                } else {
+                    for f in TEST_CONFIG_FILES {
+                        let path = PathBuf::from("test-configs").join(f);
+                        debug!(
+                            "updating {} with new signature keys",
+                            path.to_str().unwrap()
+                        );
+                        todo!("blocked by https://github.com/EspressoSystems/timeboost/issues/355");
+                    }
                 }
             }
             Self::Decryption => {
-                let (pub_key, comb_key, key_shares) = DecryptionScheme::trusted_keygen(num);
+                let mut rng = ark_std::rand::rngs::StdRng::from_seed(seed);
+                let (pub_key, comb_key, key_shares) =
+                    DecryptionScheme::trusted_keygen_with_rng(num, &mut rng);
                 debug!("generating new threshold encryption keyset");
-                let pub_key = bs58_encode(&pub_key.to_bytes());
-                let comb_key = bs58_encode(&comb_key.to_bytes());
 
-                for index in 0..num.into() {
-                    let key_share = key_shares
-                        .get(index)
-                        .expect("key share should exist in generated material");
-                    let key_share = bs58_encode(&key_share.to_bytes());
-                    let path = out.join(format!("{index}.env"));
-                    let mut env_file = File::options().append(true).create(true).open(&path)?;
-                    writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
-                    writeln!(env_file, "TIMEBOOST_ENCRYPTION_KEY={}", pub_key)?;
-                    writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
-                    debug!("private decryption key written to {}", path.display());
+                if let Some(out) = out {
+                    let pub_key = bs58_encode(&pub_key.to_bytes());
+                    let comb_key = bs58_encode(&comb_key.to_bytes());
+                    let key_shares = key_shares
+                        .into_iter()
+                        .map(|s| bs58_encode(&s.to_bytes()))
+                        .collect::<Vec<_>>();
+
+                    for (idx, key_share) in key_shares.iter().enumerate() {
+                        let path = out.join(format!("{idx}.env"));
+                        let mut env_file = File::options().append(true).create(true).open(&path)?;
+                        writeln!(env_file, "TIMEBOOST_PRIVATE_DECRYPTION_KEY={}", key_share)?;
+                        writeln!(env_file, "TIMEBOOST_ENCRYPTION_KEY={}", pub_key)?;
+                        writeln!(env_file, "TIMEBOOST_COMBINATION_KEY={}", comb_key)?;
+                        debug!("private decryption key written to {}", path.display());
+                    }
+                    info!(
+                        "generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
+                        pub_key, comb_key
+                    );
+                } else {
+                    for f in TEST_CONFIG_FILES {
+                        let path = PathBuf::from("test-configs").join(f);
+                        debug!(
+                            "updating {} with new decryption keys",
+                            path.to_str().unwrap()
+                        );
+                        todo!("blocked by https://github.com/EspressoSystems/timeboost/issues/355");
+                    }
                 }
-                info!(
-                    "generated threshold encryption keyset with:\nTIMEBOOST_ENCRYPTION_KEY={}\nTIMEBOOST_COMBINATION_KEY={}",
-                    pub_key, comb_key
-                );
             }
         }
         Ok(())
@@ -78,7 +120,8 @@ impl Scheme {
 /// Note that signature keys can be generated independently of other keys but
 /// decryption keys of a committee can only be derived from the same trusted setup.
 ///
-/// Generated secret keys are written to a file in .env format, which can directly be used to
+/// Without `--out`, generated keys will update all `test-configs/*.json` configs;
+/// Else, generated secret keys are written to a file in .env format, which can directly be used to
 /// configure a Timeboost node. Public information about the generated keys is printed to stdout.
 #[derive(Clone, Debug, Parser)]
 struct Cli {
@@ -110,7 +153,7 @@ struct Cli {
     /// N - 1. The random seed used to generate the keys will also be written to a file in DIR
     /// called .seed.
     #[clap(short, long, name = "OUT")]
-    out: PathBuf,
+    out: Option<PathBuf>,
 }
 
 fn parse_seed(s: &str) -> Result<[u8; 32], anyhow::Error> {
@@ -137,22 +180,24 @@ fn main() -> anyhow::Result<()> {
         cli.num, cli.scheme
     );
 
-    // Create output dir if necessary.
-    fs::create_dir_all(&cli.out)?;
-
     let seed = cli.seed.unwrap_or_else(|| {
         debug!("No seed provided, generating a random seed");
         gen_default_seed()
     });
-    let out = cli.out;
-    let mut env_file = File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(out.join(".seed"))?;
-    writeln!(env_file, "TIMEBOOST_SIGNATURE_SEED={}", hex::encode(seed))?;
     let num = NonZeroUsize::new(cli.num).expect("committee size greater than zero");
-    let _ = cli.scheme.generate(seed, num, &out);
+
+    if let Some(out) = cli.out.clone() {
+        // Create output dir if necessary.
+        fs::create_dir_all(&out)?;
+        // write seed to a special `.seed` file
+        let mut env_file = File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(out.join(".seed"))?;
+        writeln!(env_file, "TIMEBOOST_SIGNATURE_SEED={}", hex::encode(seed))?;
+    }
+    cli.scheme.generate(seed, num, cli.out)?;
 
     Ok(())
 }

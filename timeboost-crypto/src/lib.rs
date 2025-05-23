@@ -270,10 +270,20 @@ impl DecryptionScheme {
     /// - A single combination key to all nodes for combining partially decrypted ciphertexts.
     /// - One distinct private key share per node for partial decryption.
     pub fn trusted_keygen(size: NonZeroUsize) -> TrustedKeyMaterial {
-        // TODO: fix committee id when dynamic keysets
         let mut rng = ark_std::rand::thread_rng();
+        // TODO: fix committee id when dynamic keysets
         let keyset = Keyset::new(1, size);
         <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &keyset).unwrap()
+    }
+
+    /// Same as [`trusted_keygen`], except accepting a caller-provided RNG
+    pub fn trusted_keygen_with_rng<R: ark_std::rand::Rng>(
+        size: NonZeroUsize,
+        rng: &mut R,
+    ) -> TrustedKeyMaterial {
+        // TODO: fix committee id when dynamic keysets
+        let keyset = Keyset::new(1, size);
+        <DecryptionScheme as ThresholdEncScheme>::keygen(rng, &keyset).unwrap()
     }
 }
 
