@@ -13,9 +13,9 @@ pub struct Signed<D: Committable> {
 }
 
 impl<D: Committable> Signed<D> {
-    pub fn new(d: D, keypair: &Keypair, deterministic: bool) -> Self {
+    pub fn new(d: D, keypair: &Keypair) -> Self {
         let c = d.commit();
-        let s = keypair.sign(c.as_ref(), deterministic);
+        let s = keypair.sign(c.as_ref());
         Self {
             data: d,
             commitment: c,

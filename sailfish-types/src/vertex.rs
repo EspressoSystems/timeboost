@@ -19,7 +19,7 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair, deterministic: bool) -> Self
+    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair) -> Self
     where
         N: Into<RoundNumber>,
         E: Into<Evidence>,
@@ -31,7 +31,7 @@ impl<T> Vertex<T> {
 
         Self {
             source: k.public_key(),
-            round: Signed::new(r, k, deterministic),
+            round: Signed::new(r, k),
             edges: BTreeSet::new(),
             evidence: e,
             no_vote: None,

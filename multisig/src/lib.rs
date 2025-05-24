@@ -106,8 +106,8 @@ impl Keypair {
     }
 
     /// Sign data with our ed25519 secret key.
-    pub fn sign(&self, data: &[u8], deterministic: bool) -> Signature {
-        self.sk.sign(data, deterministic)
+    pub fn sign(&self, data: &[u8]) -> Signature {
+        self.sk.sign(data)
     }
 }
 
@@ -125,7 +125,7 @@ impl PublicKey {
 }
 
 impl SecretKey {
-    pub fn sign(&self, data: &[u8], _deterministic: bool) -> Signature {
+    pub fn sign(&self, data: &[u8]) -> Signature {
         use secp256k1::hashes::{Hash, sha256};
         let hash = sha256::Hash::hash(data);
         let mesg = secp256k1::Message::from_digest(hash.to_byte_array());

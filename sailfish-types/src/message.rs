@@ -397,14 +397,14 @@ pub struct TimeoutMessage {
 }
 
 impl TimeoutMessage {
-    pub fn new(e: Evidence, k: &Keypair, deterministic: bool) -> Self {
+    pub fn new(e: Evidence, k: &Keypair) -> Self {
         let t = Timeout::new(if e.is_genesis() {
             e.round()
         } else {
             e.round() + 1
         });
         Self {
-            timeout: Signed::new(t, k, deterministic),
+            timeout: Signed::new(t, k),
             evidence: e,
         }
     }
@@ -429,9 +429,9 @@ pub struct NoVoteMessage {
 }
 
 impl NoVoteMessage {
-    pub fn new(e: Certificate<Timeout>, k: &Keypair, deterministic: bool) -> Self {
+    pub fn new(e: Certificate<Timeout>, k: &Keypair) -> Self {
         Self {
-            no_vote: Signed::new(NoVote::new(e.data().round), k, deterministic),
+            no_vote: Signed::new(NoVote::new(e.data().round), k),
             evidence: e,
         }
     }
