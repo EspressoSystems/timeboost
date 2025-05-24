@@ -21,11 +21,11 @@ where
 
     // Each node should see the initial vertex proposal from every other node.
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             let conditions: Vec<TestCondition> = group
-                .keypairs
+                .sign_keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
@@ -66,11 +66,11 @@ where
     let rounds = 25;
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             let conditions: Vec<TestCondition> = group
-                .keypairs
+                .sign_keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
@@ -122,7 +122,7 @@ where
     });
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
@@ -152,7 +152,7 @@ where
             )];
 
             // Next make sure we can advance some rounds and receive all vertices from each node
-            conditions.extend(group.keypairs.iter().map(|kpr| {
+            conditions.extend(group.sign_keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
@@ -202,7 +202,7 @@ where
     });
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             // First only check if we received vertex with no vote cert from leader only
@@ -232,7 +232,7 @@ where
             )];
 
             // Next make sure we can advance some rounds and receive all vertices from each node
-            conditions.extend(group.keypairs.iter().map(|kpr| {
+            conditions.extend(group.sign_keypairs.iter().map(|kpr| {
                 let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
@@ -279,18 +279,18 @@ where
     });
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             let conditions = group
-                .keypairs
+                .sign_keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             let r = **v.data().round().data();
-                            if v.data().evidence().is_timeout() && r != 3 {
+                            if v.data().evidence().is_timeout() && r != 6 {
                                 return TestOutcome::Failed(
                                     "We should only timeout when node 4 is leader the first time",
                                 );
@@ -355,11 +355,11 @@ where
     });
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
-        .keypairs
+        .sign_keypairs
         .iter()
         .map(|k| {
             let conditions = group
-                .keypairs
+                .sign_keypairs
                 .iter()
                 .map(|kpr| {
                     let node_public_key = kpr.public_key();

@@ -52,3 +52,7 @@ path = "src/binaries/keygen.rs"
 [[bin]]
 name = "sailfish"
 path = "src/binaries/sailfish.rs"
+
+[[bin]]
+name = "mkconfig"
+path = "src/binaries/mkconfig.rs"

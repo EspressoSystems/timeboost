@@ -3,10 +3,15 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-use crate::keyset::PublicNodeInfo;
+use crate::keyset::NodeInfo;
+use multisig::x25519;
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
+}
+
+pub fn unsafe_zero_dh_keypair<N: Into<u64>>(i: N) -> x25519::Keypair {
+    dh_keypair_from_seed_indexed([0u8; 32], i.into())
 }
 
 pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Keypair {
@@ -15,6 +20,14 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
     hasher.update(&index.to_le_bytes());
     let new_seed = *hasher.finalize().as_bytes();
     multisig::Keypair::from_seed(new_seed)
+}
+
+pub fn dh_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> x25519::Keypair {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&seed);
+    hasher.update(&index.to_le_bytes());
+    let new_seed = *hasher.finalize().as_bytes();
+    x25519::Keypair::from_seed(new_seed).unwrap()
 }
 
 pub fn bs58_encode(b: &[u8]) -> String {
@@ -34,10 +47,10 @@ pub fn bs58_encode(b: &[u8]) -> String {
 ///
 /// Returns a boxed iterator over the selected PublicNodeInfo references.
 pub fn select_peer_hosts(
-    keyset: &[PublicNodeInfo],
+    keyset: &[NodeInfo],
     nodes: usize,
     multi_region: bool,
-) -> impl Iterator<Item = &PublicNodeInfo> {
+) -> impl Iterator<Item = &NodeInfo> {
     if multi_region {
         let take_from_group = nodes / 4;
         Box::new(

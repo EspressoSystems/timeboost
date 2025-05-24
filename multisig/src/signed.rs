@@ -13,9 +13,9 @@ pub struct Signed<D: Committable> {
 }
 
 impl<D: Committable> Signed<D> {
-    pub fn new(d: D, keypair: &Keypair, deterministic: bool) -> Self {
+    pub fn new(d: D, keypair: &Keypair) -> Self {
         let c = d.commit();
-        let s = keypair.sign(c.as_ref(), deterministic);
+        let s = keypair.sign(c.as_ref());
         Self {
             data: d,
             commitment: c,
@@ -61,7 +61,7 @@ impl<D: Committable> Committable for Signed<D> {
             .field("data", self.data.commit())
             .field("commitment", self.commitment)
             .var_size_field("signature", &sig)
-            .var_size_field("signing_key", &self.signing_key.as_bytes())
+            .var_size_field("signing_key", &self.signing_key.to_bytes())
             .finalize()
     }
 }

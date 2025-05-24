@@ -21,7 +21,7 @@ impl TestNodeInstrument {
         Self {
             kpair,
             manager,
-            node: node.sign_deterministically(true),
+            node,
             msg_queue: VecDeque::new(),
             expected_actions: VecDeque::new(),
         }
@@ -77,14 +77,13 @@ impl TestNodeInstrument {
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
-            Vertex::new(round, tc, EmptyBlocks.next(round), &self.kpair, true)
+            Vertex::new(round, tc, EmptyBlocks.next(round), &self.kpair)
         } else {
             Vertex::new(
                 round,
                 self.manager.gen_round_cert(round - 1),
                 EmptyBlocks.next(round),
                 &self.kpair,
-                true,
             )
         };
         v.add_edges(edges);
@@ -95,11 +94,7 @@ impl TestNodeInstrument {
         &self,
         round: RoundNumber,
     ) -> Envelope<TimeoutMessage, Validated> {
-        let d = TimeoutMessage::new(
-            self.manager.gen_round_cert(round - 1).into(),
-            &self.kpair,
-            true,
-        );
+        let d = TimeoutMessage::new(self.manager.gen_round_cert(round - 1).into(), &self.kpair);
         self.sign(d.clone())
     }
 
@@ -118,7 +113,7 @@ impl TestNodeInstrument {
         &self,
         round: RoundNumber,
     ) -> Envelope<NoVoteMessage, Validated> {
-        let nv = NoVoteMessage::new(self.manager.gen_timeout_cert(round), &self.kpair, true);
+        let nv = NoVoteMessage::new(self.manager.gen_timeout_cert(round), &self.kpair);
         self.sign(nv)
     }
 
@@ -145,7 +140,7 @@ impl TestNodeInstrument {
     }
 
     pub(crate) fn sign<D: Committable>(&self, d: D) -> Envelope<D, Validated> {
-        Envelope::signed(d, &self.kpair, true)
+        Envelope::signed(d, &self.kpair)
     }
 }
 

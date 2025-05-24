@@ -1,47 +1,49 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{collections::HashMap, fs, path::Path, time::Duration};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use cliquenet::Address;
-use multisig::SecretKey;
-use serde::Deserialize;
+use multisig::{SecretKey, x25519};
+use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use timeboost_crypto::{DecryptionScheme, traits::threshold_enc::ThresholdEncScheme};
 use timeboost_types::DecryptionKey;
+
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct KeysetConfig {
-    keyset: Vec<PublicNodeInfo>,
-    dec_keyset: PublicDecInfo,
+    pub keyset: Vec<NodeInfo>,
+    pub dec_keyset: PublicDecInfo,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct PublicNodeInfo {
-    pub sailfish_url: String,
-    pub decrypt_url: String,
-    pub producer_url: String,
-    pub pubkey: String,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub sailfish_url: Address,
+    pub decrypt_url: Address,
+    pub producer_url: Address,
+    pub signing_key: multisig::PublicKey,
+    pub dh_key: x25519::PublicKey,
 
-    /// The optional signature private key for this node.
     #[serde(default)]
-    pub sig_pk: Option<String>,
-
-    /// The optional decryption private key for this node.
-    #[serde(default)]
-    pub dec_pk: Option<String>,
+    pub private: Option<PrivateKeys>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PrivateKeys {
+    /// Signing key.
+    pub sig: multisig::SecretKey,
+    /// DH key.
+    pub dh: x25519::SecretKey,
+    /// Threshold decryption key.
+    pub dec: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PublicDecInfo {
-    pubkey: String,
-    combkey: String,
+    pub pubkey: String,
+    pub combkey: String,
 }
 
 impl PublicDecInfo {
@@ -67,7 +69,7 @@ impl KeysetConfig {
         Ok(DecryptionKey::new(pubkey, combkey, deckey))
     }
 
-    pub fn keyset(&self) -> &[PublicNodeInfo] {
+    pub fn keyset(&self) -> &[NodeInfo] {
         &self.keyset
     }
 
@@ -76,40 +78,36 @@ impl KeysetConfig {
     }
 }
 
-pub fn private_keys(
-    key_file: Option<PathBuf>,
-    private_signature_key: Option<String>,
-    private_decryption_key: Option<String>,
-) -> Result<(SecretKey, KeyShare)> {
-    if let Some(path) = key_file {
-        let vars = dotenvy::from_path_iter(path)?.collect::<Result<HashMap<_, _>, _>>()?;
-        let sig_key_string: &str = vars
+impl PrivateKeys {
+    pub fn read<P: AsRef<Path>>(key_file: P) -> Result<Self> {
+        let vars = dotenvy::from_path_iter(key_file)?.collect::<Result<HashMap<_, _>, _>>()?;
+        let sig = vars
             .get("TIMEBOOST_PRIVATE_SIGNATURE_KEY")
-            .context("key file missing TIMEBOOST_PRIVATE_SIGNATURE_KEY")?;
-        let sig_key = multisig::SecretKey::try_from(sig_key_string)?;
-        let dec_key_string = vars
+            .context("key file missing TIMEBOOST_PRIVATE_SIGNATURE_KEY")?
+            .as_str()
+            .try_into()
+            .context("invalid value for TIMEBOOST_PRIVATE_SIGNATURE_KEY")?;
+        let dh = vars
+            .get("TIMEBOOST_PRIVATE_DH_KEY")
+            .cloned()
+            .context("key file missing TIMEBOOST_PRIVATE_DH_KEY")?
+            .as_str()
+            .try_into()
+            .context("invalid value for TIMEBOOST_PRIVATE_DH_KEY")?;
+        let dec = vars
             .get("TIMEBOOST_PRIVATE_DECRYPTION_KEY")
+            .cloned()
             .context("key file missing TIMEBOOST_PRIVATE_DECRYPTION_KEY")?;
-        let dec_key: KeyShare = bincode::serde::decode_from_slice(
-            &bs58::decode(dec_key_string).into_vec()?,
+        Ok(Self { sig, dh, dec })
+    }
+
+    pub fn parse(&self) -> Result<(SecretKey, x25519::SecretKey, KeyShare)> {
+        let dec: KeyShare = bincode::serde::decode_from_slice(
+            &bs58::decode(&*self.dec).into_vec()?,
             bincode::config::standard(),
         )
         .map(|(val, _)| val)?;
-
-        Ok((sig_key, dec_key))
-    } else if let (Some(sig_key), Some(dec_key)) = (private_signature_key, private_decryption_key) {
-        let sig_key = multisig::SecretKey::try_from(sig_key.as_str())?;
-        let bytes = &bs58::decode(dec_key)
-            .into_vec()
-            .context("unable to decode bs58")?;
-        let config = bincode::config::standard().with_limit::<8192>();
-        let dec_key: KeyShare = bincode::serde::decode_from_slice(bytes, config)
-            .map(|(val, _)| val)
-            .expect("unable to read bytes into keyshare");
-
-        Ok((sig_key, dec_key))
-    } else {
-        bail!("neither key file nor full set of private keys was provided")
+        Ok((self.sig.clone(), self.dh.clone(), dec))
     }
 }
 

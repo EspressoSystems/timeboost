@@ -193,16 +193,19 @@ impl Network {
         name: &'static str,
         bind_to: A1,
         kp: Keypair,
+        xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, A2)>,
+        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
-        Self::generic_create::<tokio::net::TcpListener, _, _, _>(name, bind_to, kp, group, metrics)
-            .await
+        Self::generic_create::<tokio::net::TcpListener, _, _, _>(
+            name, bind_to, kp, xp, group, metrics,
+        )
+        .await
     }
 
     /// Create a new `Network` for tests with [`turmoil`].
@@ -213,16 +216,17 @@ impl Network {
         name: &'static str,
         bind_to: A1,
         kp: Keypair,
+        xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, A2)>,
+        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
     {
         Self::generic_create::<turmoil::net::TcpListener, _, _, _>(
-            name, bind_to, kp, group, metrics,
+            name, bind_to, kp, xp, group, metrics,
         )
         .await
     }
@@ -231,18 +235,18 @@ impl Network {
         name: &'static str,
         bind_to: A1,
         kp: Keypair,
+        xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
     ) -> Result<Self>
     where
-        P: IntoIterator<Item = (PublicKey, A2)>,
+        P: IntoIterator<Item = (PublicKey, x25519::PublicKey, A2)>,
         A1: Into<Address>,
         A2: Into<Address>,
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
         let label = kp.public_key();
-        let keys = x25519::Keypair::try_from(kp).expect("ed25519 -> x25519");
 
         let listener = T::bind(&bind_to.into()).await?;
 
@@ -252,9 +256,9 @@ impl Network {
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
-        for (k, a) in group {
+        for (k, x, a) in group {
             parties.insert(k);
-            index.insert(k, x25519::PublicKey::try_from(k)?);
+            index.insert(k, x);
             peers.insert(k, a.into());
         }
 
@@ -266,7 +270,7 @@ impl Network {
 
         let server = Server {
             name,
-            keypair: keys,
+            keypair: xp,
             key: label,
             ibound: itx,
             obound: orx,

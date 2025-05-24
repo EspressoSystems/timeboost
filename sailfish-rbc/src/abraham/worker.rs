@@ -550,7 +550,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             // If this is a new message or we received our own we vote for it.
             Status::Initiated => {
                 if tracker.message.item.is_none() || src == self.key {
-                    let env = Envelope::signed(digest, &self.config.keypair, false);
+                    let env = Envelope::signed(digest, &self.config.keypair);
                     let vote = Protocol::<'_, T, Validated>::Vote(env, evidence);
                     let bytes = serialize(&vote)?;
                     if can_send {

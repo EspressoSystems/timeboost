@@ -5,7 +5,7 @@ mod transaction_order;
 use std::net::Ipv4Addr;
 
 use cliquenet::Address;
-use multisig::Keypair;
+use multisig::{Keypair, x25519};
 use timeboost_builder::BlockProducerConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::TrustedKeyMaterial;
@@ -35,37 +35,44 @@ where
             let a1 = Address::from((Ipv4Addr::LOCALHOST, p1));
             let a2 = Address::from((Ipv4Addr::LOCALHOST, p2));
             let a3 = Address::from((Ipv4Addr::LOCALHOST, p3));
-            (Keypair::generate(), a1, a2, a3, s)
+            (
+                Keypair::generate(),
+                x25519::Keypair::generate().unwrap(),
+                a1,
+                a2,
+                a3,
+                s,
+            )
         })
         .collect::<Vec<_>>();
 
     let sailfish_peers = parts
         .iter()
-        .map(|(kp, sa, ..)| (kp.public_key(), sa.clone()))
+        .map(|(kp, xp, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone()))
         .collect::<Vec<_>>();
 
     let decrypt_peers = parts
         .iter()
-        .map(|(kp, _, da, ..)| (kp.public_key(), da.clone()))
+        .map(|(kp, xp, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone()))
         .collect::<Vec<_>>();
 
     let produce_peers = parts
         .iter()
-        .map(|(kp, _, _, pa, ..)| (kp.public_key(), pa.clone()))
+        .map(|(kp, xp, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone()))
         .collect::<Vec<_>>();
 
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    for (i, (kpair, sa, da, pa, share)) in parts.iter().cloned().enumerate() {
+    for (i, (kpair, xpair, sa, da, pa, share)) in parts.iter().cloned().enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
-        let mut cfg = SequencerConfig::new(kpair.clone(), dkey, sa, da)
+        let mut cfg = SequencerConfig::new(kpair.clone(), xpair.clone(), dkey, sa, da)
             .with_sailfish_peers(sailfish_peers.clone())
             .with_decrypt_peers(decrypt_peers.clone());
         if let Some(r) = recover_index {
             cfg = cfg.recover(i == r);
         }
-        let pcf = BlockProducerConfig::new(kpair, pa).with_peers(produce_peers.clone());
+        let pcf = BlockProducerConfig::new(kpair, xpair, pa).with_peers(produce_peers.clone());
         cfgs.push((cfg, pcf));
     }
 

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use cliquenet::{self as net, MAX_MESSAGE_SIZE};
 use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
@@ -34,24 +34,32 @@ type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
 #[derive(Debug)]
 pub struct SequencerConfig {
     priority_addr: Address,
-    keypair: Keypair,
-    sailfish_peers: Vec<(PublicKey, net::Address)>,
+    sign_keypair: Keypair,
+    dh_keypair: x25519::Keypair,
+    sailfish_peers: Vec<(PublicKey, x25519::PublicKey, net::Address)>,
     sailfish_bind: net::Address,
     decrypt_bind: net::Address,
-    decrypt_peers: Vec<(PublicKey, net::Address)>,
+    decrypt_peers: Vec<(PublicKey, x25519::PublicKey, net::Address)>,
     index: DelayedInboxIndex,
     dec_sk: DecryptionKey,
     recover: bool,
 }
 
 impl SequencerConfig {
-    pub fn new<A>(keyp: Keypair, dec_sk: DecryptionKey, sf_bind: A, dec_bind: A) -> Self
+    pub fn new<A>(
+        kp: Keypair,
+        xp: x25519::Keypair,
+        dec_sk: DecryptionKey,
+        sf_bind: A,
+        dec_bind: A,
+    ) -> Self
     where
         A: Into<net::Address>,
     {
         Self {
             priority_addr: Address::default(),
-            keypair: keyp,
+            sign_keypair: kp,
+            dh_keypair: xp,
             sailfish_peers: Vec::new(),
             decrypt_peers: Vec::new(),
             sailfish_bind: sf_bind.into(),
@@ -69,19 +77,19 @@ impl SequencerConfig {
 
     pub fn with_sailfish_peers<I, A>(mut self, it: I) -> Self
     where
-        I: IntoIterator<Item = (PublicKey, A)>,
+        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
         A: Into<net::Address>,
     {
-        self.sailfish_peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
+        self.sailfish_peers = it.into_iter().map(|(k, x, a)| (k, x, a.into())).collect();
         self
     }
 
     pub fn with_decrypt_peers<I, A>(mut self, it: I) -> Self
     where
-        I: IntoIterator<Item = (PublicKey, A)>,
+        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
         A: Into<net::Address>,
     {
-        self.decrypt_peers = it.into_iter().map(|(k, a)| (k, a.into())).collect();
+        self.decrypt_peers = it.into_iter().map(|(k, x, a)| (k, x, a.into())).collect();
         self
     }
 
@@ -151,12 +159,12 @@ impl Sequencer {
         let committee = Committee::new(
             cfg.sailfish_peers
                 .iter()
-                .map(|(k, _)| *k)
+                .map(|(k, ..)| *k)
                 .enumerate()
                 .map(|(i, key)| (i as u8, key)),
         );
 
-        let public_key = cfg.keypair.public_key();
+        let public_key = cfg.sign_keypair.public_key();
 
         let queue = BundleQueue::new(cfg.priority_addr, cfg.index, seq_metrics.clone());
 
@@ -167,22 +175,24 @@ impl Sequencer {
             let met = NetworkMetrics::new(
                 "sailfish",
                 metrics,
-                cfg.sailfish_peers.iter().map(|(k, _)| *k),
+                cfg.sailfish_peers.iter().map(|(k, ..)| *k),
             );
 
             let net = Network::create(
                 "sailfish",
                 cfg.sailfish_bind,
-                cfg.keypair.clone(),
+                cfg.sign_keypair.clone(),
+                cfg.dh_keypair.clone(),
                 cfg.sailfish_peers,
                 met,
             )
             .await?;
 
-            let rcf = RbcConfig::new(cfg.keypair.clone(), committee.clone()).recover(cfg.recover);
+            let rcf =
+                RbcConfig::new(cfg.sign_keypair.clone(), committee.clone()).recover(cfg.recover);
             let rbc = Rbc::new(Overlay::new(net), rcf.with_metrics(rbc_metrics));
 
-            let cons = Consensus::new(cfg.keypair.clone(), committee.clone(), queue.clone())
+            let cons = Consensus::new(cfg.sign_keypair.clone(), committee.clone(), queue.clone())
                 .with_metrics(cons_metrics);
 
             Coordinator::new(rbc, cons)
@@ -194,13 +204,14 @@ impl Sequencer {
             let met = NetworkMetrics::new(
                 "decrypt",
                 metrics,
-                cfg.decrypt_peers.iter().map(|(k, _)| *k),
+                cfg.decrypt_peers.iter().map(|(k, ..)| *k),
             );
 
             let net = Network::create(
                 "decrypt",
                 cfg.decrypt_bind,
-                cfg.keypair.clone(), // same auth
+                cfg.sign_keypair.clone(), // same auth
+                cfg.dh_keypair.clone(),   // same auth
                 cfg.decrypt_peers,
                 met,
             )

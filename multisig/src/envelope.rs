@@ -35,9 +35,9 @@ pub struct Envelope<D: Committable, S> {
 
 impl<D: Committable> Envelope<D, Validated> {
     /// Create a (validated) envelope by signing data with a private key.
-    pub fn signed(d: D, keypair: &Keypair, deterministic: bool) -> Self {
+    pub fn signed(d: D, keypair: &Keypair) -> Self {
         Self {
-            signed: Signed::new(d, keypair, deterministic),
+            signed: Signed::new(d, keypair),
             _marker: PhantomData,
         }
     }

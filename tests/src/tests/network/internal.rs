@@ -58,12 +58,12 @@ impl TestableNetwork for MemoryNetworkTest {
         for i in 0..self.group.size {
             // Join each node to the network
             let test_net = TestNet::new(
-                self.star_net.join(self.group.keypairs[i].public_key()),
+                self.star_net.join(self.group.sign_keypairs[i].public_key()),
                 i as u64,
                 self.interceptor.clone(),
             );
             let messages = test_net.messages();
-            let kpr = self.group.keypairs[i].clone();
+            let kpr = self.group.sign_keypairs[i].clone();
 
             let cons = Consensus::new(kpr, self.group.committee.clone(), EmptyBlocks);
             let coor = Coordinator::new(test_net, cons);

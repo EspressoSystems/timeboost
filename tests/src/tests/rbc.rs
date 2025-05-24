@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use cliquenet::{Address, Network, NetworkMetrics, Overlay};
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
 use timeboost_utils::types::logging::init_logging;
@@ -10,16 +10,19 @@ use tokio::time::timeout;
 
 use crate::prelude::*;
 
-type Peers<const N: usize> = [(PublicKey, Address); N];
+type Peers<const N: usize> = [(PublicKey, x25519::PublicKey, Address); N];
 
-fn fresh_keys(n: usize) -> (Vec<Keypair>, Committee) {
+fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
     let ks: Vec<Keypair> = (0..n).map(|_| Keypair::generate()).collect();
+    let xs: Vec<x25519::Keypair> = (0..n)
+        .map(|_| x25519::Keypair::generate().unwrap())
+        .collect();
     let co = Committee::new(
         ks.iter()
             .enumerate()
             .map(|(i, kp)| (i as u8, kp.public_key())),
     );
-    (ks, co)
+    (ks, xs, co)
 }
 
 fn ports(n: usize) -> Vec<u16> {
@@ -40,6 +43,7 @@ fn mk_host<A, const N: usize>(
     addr: A,
     sim: &mut turmoil::Sim,
     k: Keypair,
+    x: x25519::Keypair,
     c: Committee,
     peers: Peers<N>,
 ) where
@@ -48,12 +52,20 @@ fn mk_host<A, const N: usize>(
     let addr = addr.into();
     sim.host(name, move || {
         let k = k.clone();
+        let x = x.clone();
         let c = c.clone();
         let a = addr.clone();
         let p = peers.clone();
         async move {
-            let comm =
-                Network::create_turmoil("test", a, k.clone(), p, NetworkMetrics::default()).await?;
+            let comm = Network::create_turmoil(
+                "test",
+                a,
+                k.clone(),
+                x.clone(),
+                p,
+                NetworkMetrics::default(),
+            )
+            .await?;
             let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
             let rbc = Rbc::new(Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
@@ -82,24 +94,25 @@ fn small_committee() {
         .build();
 
     let n = 3;
-    let (ks, committee) = fresh_keys(n);
+    let (ks, xs, committee) = fresh_keys(n);
     let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", ports[0]).into()),
-        (ks[1].public_key(), ("B", ports[1]).into()),
-        (ks[2].public_key(), ("C", ports[2]).into()),
+        (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),
+        (ks[1].public_key(), xs[1].public_key(), ("B", ports[1]).into()),
+        (ks[2].public_key(), xs[2].public_key(), ("C", ports[2]).into()),
     ];
 
-    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), xs[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), xs[1].clone(), committee.clone(), peers.clone());
 
     let k = ks[2].clone();
+    let x = xs[2].clone();
     let c = committee.clone();
 
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
-        let comm = Network::create_turmoil("C", addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("C", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -135,28 +148,29 @@ fn medium_committee() {
         .build();
 
     let n = 5;
-    let (ks, committee) = fresh_keys(n);
+    let (ks, xs, committee) = fresh_keys(n);
     let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", ports[0]).into()),
-        (ks[1].public_key(), ("B", ports[1]).into()),
-        (ks[2].public_key(), ("C", ports[2]).into()),
-        (ks[3].public_key(), ("D", ports[3]).into()),
-        (ks[4].public_key(), ("E", ports[4]).into()),
+        (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),
+        (ks[1].public_key(), xs[1].public_key(), ("B", ports[1]).into()),
+        (ks[2].public_key(), xs[2].public_key(), ("C", ports[2]).into()),
+        (ks[3].public_key(), xs[3].public_key(), ("D", ports[3]).into()),
+        (ks[4].public_key(), xs[4].public_key(), ("E", ports[4]).into()),
     ];
 
-    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
-    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
-    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), xs[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), xs[1].clone(), committee.clone(), peers.clone());
+    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), xs[2].clone(), committee.clone(), peers.clone());
+    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), xs[3].clone(), committee.clone(), peers.clone());
 
     let k = ks[4].clone();
+    let x = xs[4].clone();
     let c = committee.clone();
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("E", addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -191,28 +205,29 @@ fn medium_committee_partition_network() {
         .build();
 
     let n = 5;
-    let (ks, committee) = fresh_keys(n);
+    let (ks, xs, committee) = fresh_keys(n);
     let ports = ports(n);
 
     let peers = [
-        (ks[0].public_key(), ("A", ports[0]).into()),
-        (ks[1].public_key(), ("B", ports[1]).into()),
-        (ks[2].public_key(), ("C", ports[2]).into()),
-        (ks[3].public_key(), ("D", ports[3]).into()),
-        (ks[4].public_key(), ("E", ports[4]).into()),
+        (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),
+        (ks[1].public_key(), xs[1].public_key(), ("B", ports[1]).into()),
+        (ks[2].public_key(), xs[2].public_key(), ("C", ports[2]).into()),
+        (ks[3].public_key(), xs[3].public_key(), ("D", ports[3]).into()),
+        (ks[4].public_key(), xs[4].public_key(), ("E", ports[4]).into()),
     ];
 
-    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), committee.clone(), peers.clone());
-    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), committee.clone(), peers.clone());
-    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), committee.clone(), peers.clone());
-    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), committee.clone(), peers.clone());
+    mk_host("A", (UNSPECIFIED, ports[0]), &mut sim, ks[0].clone(), xs[0].clone(), committee.clone(), peers.clone());
+    mk_host("B", (UNSPECIFIED, ports[1]), &mut sim, ks[1].clone(), xs[1].clone(), committee.clone(), peers.clone());
+    mk_host("C", (UNSPECIFIED, ports[2]), &mut sim, ks[2].clone(), xs[2].clone(), committee.clone(), peers.clone());
+    mk_host("D", (UNSPECIFIED, ports[3]), &mut sim, ks[3].clone(), xs[3].clone(), committee.clone(), peers.clone());
 
     let k = ks[4].clone();
+    let x = xs[4].clone();
     let c = committee.clone();
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("E", addr, k.clone(), peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
