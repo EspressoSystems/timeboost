@@ -1,5 +1,4 @@
 use std::iter::once;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -51,13 +50,13 @@ pub struct TimeboostConfig {
     pub dec_sk: DecryptionKey,
 
     /// The bind address for the sailfish node.
-    pub sailfish_address: SocketAddr,
+    pub sailfish_address: Address,
 
     /// The bind address for the decrypter node.
-    pub decrypt_address: SocketAddr,
+    pub decrypt_address: Address,
 
     /// The bind address for the block producer node.
-    pub producer_address: SocketAddr,
+    pub producer_address: Address,
 
     /// The url for arbitrum nitro node for gas calculations
     pub nitro_url: Option<reqwest::Url>,
@@ -97,8 +96,8 @@ impl Timeboost {
             init.sign_keypair.clone(),
             init.dh_keypair.clone(),
             init.dec_sk.clone(),
-            init.sailfish_address,
-            init.decrypt_address,
+            init.sailfish_address.clone(),
+            init.decrypt_address.clone(),
         )
         .recover(recover)
         .with_sailfish_peers(init.sailfish_peers.clone())
@@ -107,7 +106,7 @@ impl Timeboost {
         let bcf = BlockProducerConfig::new(
             init.sign_keypair.clone(),
             init.dh_keypair.clone(),
-            init.producer_address,
+            init.producer_address.clone(),
         )
         .with_peers(init.producer_peers.clone());
 

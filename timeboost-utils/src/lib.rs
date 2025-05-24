@@ -48,17 +48,16 @@ pub fn bs58_encode(b: &[u8]) -> String {
 /// Returns a boxed iterator over the selected PublicNodeInfo references.
 pub fn select_peer_hosts(
     keyset: &[NodeInfo],
-    nodes: usize,
     multi_region: bool,
 ) -> impl Iterator<Item = &NodeInfo> {
     if multi_region {
-        let take_from_group = nodes / 4;
+        let take_from_group = keyset.len() / 4;
         Box::new(
             keyset
                 .chunks(4)
                 .flat_map(move |v| v.iter().take(take_from_group)),
         )
     } else {
-        Box::new(keyset.iter().take(nodes)) as Box<dyn Iterator<Item = _>>
+        Box::new(keyset.iter().take(keyset.len())) as Box<dyn Iterator<Item = _>>
     }
 }

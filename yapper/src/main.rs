@@ -23,10 +23,6 @@ mod tx;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The number of nodes that are being run in this instance.
-    #[clap(long)]
-    nodes: usize,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
@@ -50,27 +46,22 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
-    let keyset = KeysetConfig::read_keyset(&cli.keyset_file).context(format!(
-        "opening the keyfile at path {}",
-        cli.keyset_file.to_string_lossy(),
-    ))?;
+    let keyset = KeysetConfig::read_keyset(&cli.keyset_file)
+        .with_context(|| format!("opening the keyfile at path {:?}", cli.keyset_file,))?;
 
-    let nodes = select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
+    let nodes = select_peer_hosts(&keyset.keyset, cli.multi_region);
 
     let mut addresses = Vec::new();
     for node in nodes {
-        info!("waiting for peer: {}", node.sailfish_url);
-        let mut addr = node.sailfish_url.clone();
+        info!("waiting for peer: {}", node.sailfish_address);
+        let mut addr = node.sailfish_address.clone();
         wait_for_live_peer(addr.clone()).await?;
         addr.set_port(800 + addr.port());
         addresses.push(addr);
     }
 
-    let pub_key = keyset
-        .dec_keyset()
-        .pubkey()
-        .expect("failed to get public key from keyset");
-    let mut jh = tokio::spawn(async move { yap(&addresses, &pub_key, cli.tps).await });
+    let mut jh =
+        tokio::spawn(async move { yap(&addresses, &keyset.dec_keyset.pubkey, cli.tps).await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {

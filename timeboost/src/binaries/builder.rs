@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use multisig::{Keypair, x25519};
-use std::{net::SocketAddr, path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
 use tokio::signal;
@@ -13,7 +13,7 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
-use timeboost_utils::keyset::{KeysetConfig, PrivateKeys, wait_for_live_peer};
+use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -25,18 +25,6 @@ struct Cli {
     /// The ID of the node to build.
     #[clap(long)]
     id: u16,
-
-    /// The listen address of the sailfish node.
-    #[clap(long)]
-    sailfish_addr: String,
-
-    /// The listen address of the decrypt node.
-    #[clap(long)]
-    decrypt_addr: String,
-
-    /// The listen address of the producer node.
-    #[clap(long)]
-    producer_addr: String,
 
     /// The port of the RPC API.
     #[clap(long)]
@@ -72,46 +60,6 @@ struct Cli {
     #[clap(long)]
     keyset_file: PathBuf,
 
-    /// NON PRODUCTION: Specify the number of nodes to run.
-    #[clap(long)]
-    nodes: usize,
-
-    /// Path to file containing private keys.
-    ///
-    /// The file should follow the .env format, with two keys:
-    /// * TIMEBOOST_SIGNATURE_PRIVATE_KEY
-    /// * TIMEBOOST_DECRYPTION_PRIVATE_KEY
-    ///
-    /// Appropriate key files can be generated with the `keygen` utility program.
-    #[clap(long, name = "KEY_FILE", env = "TIMEBOOST_KEY_FILE")]
-    key_file: Option<PathBuf>,
-
-    /// Private signature key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(
-        long,
-        env = "TIMEBOOST_SIGNATURE_PRIVATE_KEY",
-        conflicts_with = "KEY_FILE"
-    )]
-    private_signature_key: Option<String>,
-
-    /// Private DH key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(long, env = "TIMEBOOST_DH_PRIVATE_KEY", conflicts_with = "KEY_FILE")]
-    private_dh_key: Option<String>,
-
-    /// Private decryption key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(
-        long,
-        env = "TIMEBOOST_DECRYPTION_PRIVATE_KEY",
-        conflicts_with = "KEY_FILE"
-    )]
-    private_decryption_key: Option<String>,
-
     /// The ip address of the nitro node for gas estimations.
     #[clap(long)]
     nitro_node_url: Option<reqwest::Url>,
@@ -137,44 +85,23 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Read public key material
-    let keyset =
-        KeysetConfig::read_keyset(&cli.keyset_file).context("keyfile to exist and be valid")?;
+    let keyset = KeysetConfig::read_keyset(&cli.keyset_file)
+        .with_context(|| format!("could not read keyset file {:?}", cli.keyset_file))?;
 
     // Ensure the config exists for this keyset
     let my_keyset = keyset
-        .keyset()
+        .keyset
         .get(cli.id as usize)
         .expect("keyset for this node to exist");
 
-    let (sig_key, dh_key, dec_key) = if let Some(keys) = &my_keyset.private {
-        keys.parse()?
-    } else if let Some(path) = cli.key_file {
-        PrivateKeys::read(path)?.parse()?
-    } else {
-        let sig = cli
-            .private_signature_key
-            .ok_or_else(|| anyhow!("missing private_signature_key"))?
-            .as_str()
-            .try_into()
-            .context("invalid private_signature_key")?;
-        let dh = cli
-            .private_dh_key
-            .ok_or_else(|| anyhow!("missing private_dh_key"))?
-            .as_str()
-            .try_into()
-            .context("invalid private_dh_key")?;
-        let dec = cli
-            .private_decryption_key
-            .ok_or_else(|| anyhow!("missing private_decryption_key"))?;
-        PrivateKeys { sig, dh, dec }.parse()?
-    };
+    let private = my_keyset
+        .private
+        .clone()
+        .ok_or_else(|| anyhow!("missing private keys for node"))?;
 
-    let sign_keypair = Keypair::from(sig_key);
-    let dh_keypair = x25519::Keypair::from(dh_key);
-
-    let dec_sk = keyset
-        .build_decryption_material(dec_key)
-        .expect("parse keyset");
+    let sign_keypair = Keypair::from(private.signing_key);
+    let dh_keypair = x25519::Keypair::from(private.dh_key);
+    let dec_sk = keyset.decryption_key(private.dec_share);
 
     let (tb_app_tx, tb_app_rx) = channel(100);
 
@@ -184,47 +111,36 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
-        .keyset()
+        .keyset
         .iter()
-        .take(cli.nodes)
-        .map(|ph| format!("http://{}", ph.sailfish_url).parse().unwrap())
+        .map(|ph| format!("http://{}", ph.sailfish_address).parse().unwrap())
         .collect();
 
-    let peer_host_iter =
-        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
+    let peer_host_iter = timeboost_utils::select_peer_hosts(&keyset.keyset, cli.multi_region);
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut producer_peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
-        wait_for_live_peer(peer_host.sailfish_url.clone()).await?;
+        wait_for_live_peer(peer_host.sailfish_address.clone()).await?;
 
         sailfish_peer_hosts_and_keys.push((
             peer_host.signing_key,
             peer_host.dh_key,
-            peer_host.sailfish_url.clone(),
+            peer_host.sailfish_address.clone(),
         ));
         decrypt_peer_hosts_and_keys.push((
             peer_host.signing_key,
             peer_host.dh_key,
-            peer_host.decrypt_url.clone(),
+            peer_host.decrypt_address.clone(),
         ));
         producer_peer_hosts_and_keys.push((
             peer_host.signing_key,
             peer_host.dh_key,
-            peer_host.producer_url.clone(),
+            peer_host.producer_address.clone(),
         ));
     }
-
-    let sailfish_address =
-        SocketAddr::from_str(&cli.sailfish_addr).context("failed to parse sailfish address")?;
-
-    let decrypt_address =
-        SocketAddr::from_str(&cli.decrypt_addr).context("failed to parse decrypt address")?;
-
-    let producer_address =
-        SocketAddr::from_str(&cli.producer_addr).context("failed to parse producer address")?;
 
     #[cfg(feature = "until")]
     let handle = {
@@ -251,9 +167,9 @@ async fn main() -> Result<()> {
         sign_keypair,
         dh_keypair,
         dec_sk,
-        sailfish_address,
-        decrypt_address,
-        producer_address,
+        sailfish_address: my_keyset.sailfish_address.clone(),
+        decrypt_address: my_keyset.decrypt_address.clone(),
+        producer_address: my_keyset.producer_address.clone(),
         nitro_url: cli.nitro_node_url,
         sender: tb_app_tx,
         receiver: tb_app_rx,
