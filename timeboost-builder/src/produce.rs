@@ -252,7 +252,7 @@ impl Worker {
                 val = block_rx.recv() => match val {
                     Some(WorkerCommand::Send(num, hash)) => {
                         trace!(node = %label, %num, hash = ?hash, "produced");
-                        let env = Envelope::signed(hash, &self.keypair, false);
+                        let env = Envelope::signed(hash, &self.keypair);
                         recv_block = (Some(num), env.clone());
                         let b = BlockInfo::new(num, env);
                         let data = match serialize(&b) {
