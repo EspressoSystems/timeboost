@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -emuo pipefail
+
+cleanup() {
+    trap - EXIT TERM
+    kill $(jobs -p) 2>/dev/null
+}
+
+trap cleanup EXIT TERM INT
 
 rounds=1000
 late_start=false
@@ -106,8 +113,3 @@ if [ "$tps" -gt 0 ]; then
 fi
 
 wait "${pids[@]}"
-
-if [ "$tps" -gt 0 ]; then
-    pkill yapper
-fi
-

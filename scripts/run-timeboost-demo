@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -emuo pipefail
+
+cleanup() {
+    trap - EXIT TERM
+    kill $(jobs -p) 2>/dev/null
+}
+
+trap cleanup EXIT TERM INT
 
 rounds=300
 late_start=false
@@ -134,12 +141,4 @@ if $yapper; then
 fi
 
 wait "${pids[@]}"
-
-if [ -n "$nitro_node_url" ]; then
-    pkill nitro
-fi
-
-if $yapper; then
-    pkill yapper
-fi
 
