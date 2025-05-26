@@ -34,10 +34,10 @@ check-individually:
   done
 
 fmt:
-  cargo fmt --all
+  cargo +nightly fmt --all
 
 fmt_check:
-  cargo fmt --check
+  cargo +nightly fmt --check
 
 lint: clippy fmt_check
 
