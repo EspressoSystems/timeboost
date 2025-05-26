@@ -257,10 +257,10 @@ where
     /// Upon receiving a no vote message we:
     /// - Verify that we are the leader for round `r + 1` from timeout round `r`.
     /// - Check if we have a timeout certificate for the round, or else set it.
-    /// - Add the `no_vote` to our `VoteAccumulator`. Upon receiving `2f + 1`
-    ///   `no_votes` a certificate will be created.
-    /// - If a no-vote certificate has been created, advance to the next round with
-    ///   the `no_vote` and `timeout_certificate`.
+    /// - Add the `no_vote` to our `VoteAccumulator`. Upon receiving `2f + 1` `no_votes` a
+    ///   certificate will be created.
+    /// - If a no-vote certificate has been created, advance to the next round with the `no_vote`
+    ///   and `timeout_certificate`.
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action<T>> {
         trace!(
             node    = %self.public_key(),

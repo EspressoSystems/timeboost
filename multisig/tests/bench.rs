@@ -38,7 +38,7 @@ fn bench_vote_accumulator() {
         let duration = simple_bench(|| {
             let mut accu = VoteAccumulator::<Message>::new(comm.clone());
             for k in &mut keys[..] {
-                accu.add(Signed::new(Message, k, false)).unwrap();
+                accu.add(Signed::new(Message, k)).unwrap();
             }
             accu.certificate().is_some()
         });
@@ -49,7 +49,7 @@ fn bench_vote_accumulator() {
 fn mk_cert(keys: &mut [Keypair], comm: Committee) -> Certificate<Message> {
     let mut accu = VoteAccumulator::<Message>::new(comm);
     for k in &mut keys[..] {
-        accu.add(Signed::new(Message, k, false)).unwrap();
+        accu.add(Signed::new(Message, k)).unwrap();
     }
     accu.certificate().unwrap().clone()
 }

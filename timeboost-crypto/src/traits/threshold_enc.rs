@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use ark_std::rand::Rng;
 use thiserror::Error;
 
@@ -65,5 +67,5 @@ pub enum ThresholdEncError {
     #[error(transparent)]
     SerializationError(#[from] ark_serialize::SerializationError),
     #[error("Faulty node indices: {0:?}")]
-    FaultySubset(Vec<u32>),
+    FaultySubset(BTreeSet<u32>),
 }

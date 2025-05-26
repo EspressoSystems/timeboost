@@ -26,8 +26,7 @@ pub fn make_bundle(pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
         let plaintext = Plaintext::new(data.to_vec());
         let ciphertext = DecryptionScheme::encrypt(&mut rng, &kid, pubkey, &plaintext, &vec![])?;
         let encoded = serialize(&ciphertext)?;
-        bundle.set_data(encoded.into());
-        bundle.set_kid(kid);
+        bundle.set_encrypted_data(encoded.into(), kid);
     }
     if rng.gen_bool(0.5) {
         // priority

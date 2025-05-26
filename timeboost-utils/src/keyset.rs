@@ -106,15 +106,16 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
         .timeout(Duration::from_secs(1))
         .build()?;
 
-    // The port is always 8800 + node index. We need to increment the port by one because we are using
-    // the cli port for sailfish in our default config.
+    // The port is always 8800 + node index. We need to increment the port by one because we are
+    // using the cli port for sailfish in our default config.
     host.set_port(800 + host.port());
 
     loop {
         let url = format!("http://{host}/v0/healthz");
         tracing::info!(%host, %url, "establishing connection to load balancer");
 
-        // Check if the healthz endpoint returns a 200 on the new host, looping forever until it does
+        // Check if the healthz endpoint returns a 200 on the new host, looping forever until it
+        // does
         match client.get(&url).send().await {
             Ok(resp) => {
                 tracing::info!("got response {resp:?}, status {}", resp.status());

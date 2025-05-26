@@ -96,6 +96,12 @@ impl From<SecretKey> for Keypair {
     }
 }
 
+impl From<SecretKey> for PublicKey {
+    fn from(k: SecretKey) -> Self {
+        k.public_key()
+    }
+}
+
 impl Ord for PublicKey {
     fn cmp(&self, other: &Self) -> Ordering {
         self.key[..].cmp(&other.key[..])
