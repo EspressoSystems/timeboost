@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{Bundle, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
+use crate::{Bundle, Bytes, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
 use sailfish_types::RoundNumber;
 use timeboost_crypto::KeysetId;
 
@@ -128,5 +128,20 @@ impl InclusionList {
         h.update(&u64::from(self.time).to_be_bytes());
         h.update(&u64::from(self.index).to_be_bytes());
         h.finalize().into()
+    }
+
+    /// scan through the inclusion list and extract the relevant ciphertext from encrypted
+    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset `kid`
+    pub fn filter_ciphertexts(&self, kid: KeysetId) -> impl Iterator<Item = &Bytes> {
+        self.priority_bundles()
+            .iter()
+            .filter(move |pb| pb.bundle().kid() == Some(kid))
+            .map(|pb| pb.bundle().data())
+            .chain(
+                self.regular_bundles()
+                    .iter()
+                    .filter(move |b| b.kid() == Some(kid))
+                    .map(|b| b.data()),
+            )
     }
 }

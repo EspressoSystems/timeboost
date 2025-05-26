@@ -119,7 +119,7 @@ impl Decrypter {
             }
 
             self.req_tx
-                .send(WorkerRequest::Decrypt(incl.clone()))
+                .send(WorkerRequest::Decrypt(incl))
                 .await
                 .map_err(|_| DecryptError::Shutdown)?;
             self.incls.insert(round, Status::Encrypted);
@@ -140,11 +140,10 @@ impl Decrypter {
     /// Produces decrypted inclusion lists ordered by round number
     pub async fn next(&mut self) -> Result<InclusionList> {
         // first try to return the first inclusion list if it's already decrypted
-        if let Some((r, status)) = self.incls.pop_first() {
-            match status {
-                Status::Decrypted(incl) => return Ok(incl),
-                still_encrypted => {
-                    self.incls.insert(r, still_encrypted);
+        if let Some(entry) = self.incls.first_entry() {
+            if matches!(entry.get(), Status::Decrypted(_)) {
+                if let Status::Decrypted(incl) = entry.remove() {
+                    return Ok(incl);
                 }
             }
         }
@@ -163,11 +162,10 @@ impl Decrypter {
             // since the newly finished/responded inclusion list might belong to a later round
             // the first entry might still be unencrypted, in which case continue the loop and
             // wait until the worker finishes decrypting it.
-            if let Some((r, status)) = self.incls.pop_first() {
-                match status {
-                    Status::Decrypted(incl) => return Ok(incl),
-                    still_encrypted => {
-                        self.incls.insert(r, still_encrypted);
+            if let Some(entry) = self.incls.first_entry() {
+                if matches!(entry.get(), Status::Decrypted(_)) {
+                    if let Status::Decrypted(incl) = entry.remove() {
+                        return Ok(incl);
                     }
                 }
             }
@@ -342,7 +340,7 @@ impl Worker {
 
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(round, incl.clone());
+        let dec_shares = self.decrypt(round, &incl);
         if dec_shares.is_empty() {
             return Err(DecryptError::EmptyDecShares);
         }
@@ -388,20 +386,12 @@ impl Worker {
     /// belongs to.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(&self, incl: &InclusionList) -> Vec<Option<Ciphertext>> {
-        let kid = self.keyset.id();
-        incl.priority_bundles()
-            .iter()
-            .filter(|pb| pb.bundle().kid() == Some(kid))
-            .map(|pb| pb.bundle().data())
-            .chain(
-                incl.regular_bundles()
-                    .iter()
-                    .filter(|b| b.kid() == Some(kid))
-                    .map(|b| b.data()),
-            )
+    fn extract_ciphertexts(
+        kid: KeysetId,
+        incl: &InclusionList,
+    ) -> impl Iterator<Item = Option<Ciphertext>> {
+        incl.filter_ciphertexts(kid)
             .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
-            .collect::<Vec<_>>()
     }
 
     /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
@@ -410,10 +400,8 @@ impl Worker {
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
-    fn decrypt(&mut self, round: RoundNumber, incl: InclusionList) -> DecShareBatch {
-        let dec_shares = self
-            .extract_ciphertexts(&incl)
-            .into_iter()
+    fn decrypt(&mut self, round: RoundNumber, incl: &InclusionList) -> DecShareBatch {
+        let dec_shares = Self::extract_ciphertexts(self.keyset.id(), incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
@@ -486,12 +474,7 @@ impl Worker {
                 ))
             })?
             .clone();
-        let ciphertexts = self.extract_ciphertexts(&incl);
-        debug_assert_eq!(
-            ciphertexts.len(),
-            per_ct_opt_dec_shares.len(),
-            "mismatched len"
-        );
+        let ciphertexts = Self::extract_ciphertexts(self.keyset.id(), &incl);
 
         // hatching ciphertext
         // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
