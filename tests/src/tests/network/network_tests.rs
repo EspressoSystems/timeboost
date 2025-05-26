@@ -156,7 +156,8 @@ where
                 let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
-                        // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
+                        // Go 20 rounds passed timeout, make sure all nodes receive all vertices
+                        // from round
                         if **v.data().round().data() == timeout_round + 20
                             && node_public_key == *v.data().source()
                         {
@@ -236,7 +237,8 @@ where
                 let node_public_key = kpr.public_key();
                 TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                     if let Some(Message::Vertex(v)) = msg {
-                        // Go 20 rounds passed timeout, make sure all nodes receive all vertices from round
+                        // Go 20 rounds passed timeout, make sure all nodes receive all vertices
+                        // from round
                         if **v.data().round().data() == timeout_round + 20
                             && node_public_key == *v.data().source()
                         {
