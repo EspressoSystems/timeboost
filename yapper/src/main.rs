@@ -7,7 +7,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use cliquenet::Address;
 
 use clap::Parser;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
@@ -61,12 +60,7 @@ async fn main() -> Result<()> {
     let mut addresses = Vec::new();
     for node in nodes {
         info!("waiting for peer: {}", node.sailfish_url);
-        let mut addr = node
-            .sailfish_url
-            .parse::<Address>()
-            .context("failed to parse saiflish url to address")?;
-
-        // Wait for the peeer to come online so we know it's valid.
+        let mut addr = node.sailfish_url.clone();
         wait_for_live_peer(addr.clone()).await?;
         addr.set_port(800 + addr.port());
         addresses.push(addr);

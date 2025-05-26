@@ -47,16 +47,19 @@ impl TestableNetwork for BasicNetworkTest {
         let committee = self.group.committee.clone();
         let mut nodes = Vec::new();
         for i in 0..self.group.size {
-            let kpr = self.group.keypairs[i].clone();
+            let kpr = self.group.sign_keypairs[i].clone();
+            let xpr = self.group.dh_keypairs[i].clone();
             let addr = *self
                 .group
                 .peers
-                .get(&kpr.public_key())
+                .iter()
+                .find_map(|(p, _, a)| (*p == kpr.public_key()).then_some(a))
                 .expect("own public key to be present");
             let net = Network::create(
                 "test",
                 addr,
                 kpr.clone(),
+                xpr.clone(),
                 self.group.peers.clone(),
                 NetworkMetrics::default(),
             )

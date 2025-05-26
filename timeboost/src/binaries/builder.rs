@@ -1,6 +1,5 @@
-use anyhow::{Context, Result};
-use cliquenet::Address;
-use multisig::{Keypair, PublicKey};
+use anyhow::{Context, Result, anyhow};
+use multisig::{Keypair, x25519};
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
@@ -14,7 +13,7 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
-use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
+use timeboost_utils::keyset::{KeysetConfig, PrivateKeys, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -97,6 +96,12 @@ struct Cli {
     )]
     private_signature_key: Option<String>,
 
+    /// Private DH key.
+    ///
+    /// This can be used as an alternative to KEY_FILE.
+    #[clap(long, env = "TIMEBOOST_DH_PRIVATE_KEY", conflicts_with = "KEY_FILE")]
+    private_dh_key: Option<String>,
+
     /// Private decryption key.
     ///
     /// This can be used as an alternative to KEY_FILE.
@@ -141,40 +146,34 @@ async fn main() -> Result<()> {
         .get(cli.id as usize)
         .expect("keyset for this node to exist");
 
-    // Now, fetch the signature private key and decryption private key, preference toward the JSON
-    // config. Note that the clone of the two fields explicitly avoids cloning the entire
-    // `PublicNodeInfo`.
-    let (sig_key, dec_sk) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
-        // We found both in the JSON, we're good to go.
-        (Some(sig_pk), Some(dec_pk)) => {
-            let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
-                .context("converting key string to secret key")?;
-            let dec_key = bincode::serde::decode_from_slice(
-                &bs58::decode(dec_pk)
-                    .into_vec()
-                    .context("unable to decode bs58")?,
-                bincode::config::standard(),
-            )?
-            .0;
-
-            (sig_key, dec_key)
-        }
-        // Hard crash on misconfigurations in the JSON (i.e. one key unset).
-        (Some(..), None) | (None, Some(..)) => {
-            panic!("malformed JSON configuration, both `sig_pk` and `dec_pk` must be set");
-        }
-        // Last try: Can we pick these eys from the environment or other provided key(s)?
-        _ => private_keys(
-            cli.key_file,
-            cli.private_signature_key,
-            cli.private_decryption_key,
-        )?,
+    let (sig_key, dh_key, dec_key) = if let Some(keys) = &my_keyset.private {
+        keys.parse()?
+    } else if let Some(path) = cli.key_file {
+        PrivateKeys::read(path)?.parse()?
+    } else {
+        let sig = cli
+            .private_signature_key
+            .ok_or_else(|| anyhow!("missing private_signature_key"))?
+            .as_str()
+            .try_into()
+            .context("invalid private_signature_key")?;
+        let dh = cli
+            .private_dh_key
+            .ok_or_else(|| anyhow!("missing private_dh_key"))?
+            .as_str()
+            .try_into()
+            .context("invalid private_dh_key")?;
+        let dec = cli
+            .private_decryption_key
+            .ok_or_else(|| anyhow!("missing private_decryption_key"))?;
+        PrivateKeys { sig, dh, dec }.parse()?
     };
 
-    let keypair = Keypair::from(sig_key);
+    let sign_keypair = Keypair::from(sig_key);
+    let dh_keypair = x25519::Keypair::from(dh_key);
 
     let dec_sk = keyset
-        .build_decryption_material(dec_sk)
+        .build_decryption_material(dec_key)
         .expect("parse keyset");
 
     let (tb_app_tx, tb_app_rx) = channel(100);
@@ -199,18 +198,23 @@ async fn main() -> Result<()> {
     let mut producer_peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
-        let sailfish_address = Address::from_str(&peer_host.sailfish_url)?;
-        let decrypt_address = Address::from_str(&peer_host.decrypt_url)?;
-        let producer_address = Address::from_str(&peer_host.producer_url)?;
+        wait_for_live_peer(peer_host.sailfish_url.clone()).await?;
 
-        wait_for_live_peer(sailfish_address.clone()).await?;
-
-        let pubkey = PublicKey::try_from(&*peer_host.pubkey)
-            .context("failed to derive public signature key")?;
-
-        sailfish_peer_hosts_and_keys.push((pubkey, sailfish_address));
-        decrypt_peer_hosts_and_keys.push((pubkey, decrypt_address));
-        producer_peer_hosts_and_keys.push((pubkey, producer_address));
+        sailfish_peer_hosts_and_keys.push((
+            peer_host.signing_key,
+            peer_host.dh_key,
+            peer_host.sailfish_url.clone(),
+        ));
+        decrypt_peer_hosts_and_keys.push((
+            peer_host.signing_key,
+            peer_host.dh_key,
+            peer_host.decrypt_url.clone(),
+        ));
+        producer_peer_hosts_and_keys.push((
+            peer_host.signing_key,
+            peer_host.dh_key,
+            peer_host.producer_url.clone(),
+        ));
     }
 
     let sailfish_address =
@@ -244,7 +248,8 @@ async fn main() -> Result<()> {
         sailfish_peers: sailfish_peer_hosts_and_keys,
         decrypt_peers: decrypt_peer_hosts_and_keys,
         producer_peers: producer_peer_hosts_and_keys,
-        keypair,
+        sign_keypair,
+        dh_keypair,
         dec_sk,
         sailfish_address,
         decrypt_address,

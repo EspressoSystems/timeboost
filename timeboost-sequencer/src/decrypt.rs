@@ -668,7 +668,7 @@ mod tests {
 
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::SecretKey;
+    use multisig::{SecretKey, x25519};
     use sailfish::types::RoundNumber;
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
@@ -774,11 +774,18 @@ mod tests {
 
     async fn setup(keyset: Keyset) -> Vec<Decrypter> {
         let signature_private_keys = [
-            "24f9BtAxuZziE4BWMYA6FvyBuedxU9SVsgsoVcyw3aEWagH8eXsV6zi2jLnSvRVjpZkf79HDJNicXSF6FpRWkCXg",
-            "2gtHurFq5yeJ8HGD5mHUPqniHbpEE83ELLpPqhxEvKhPJFcjMnUwdH2YsdhngMmQTqHo9B1Qna6uM13ug2Pir97k",
-            "4Y7yyg11MBYJaeD2UWCh5cto8wizJoUCqFm7YjMbY3hXyWSWVPgi7y1D9e7D78a1NcWdE4k59D6vK9f6eCpzVkbQ",
-            "zrjZDknq9nPhiBXKeG2PeotwxAayYkv2UFmxc2UsCGHsdu5vCsjqxn8ko2Rh2fWts76u6eCJYjDgKEaveutVhjW",
-            "jW98dJM94zuvhRCA1bGLiPjakePTc1CYPP2V5iCswfayZiYujGYdSoE1MYDa61dHCyzPdEvGNBDmnFHS6jf83Km",
+            "4aZN8RbcnmVkWvhX9D78qcu62eFc7JuWvy2Yf8SLrjey",
+            "6gWU69SCKvhojvuPXHaTzA155h8yy4f7trbZrkDKggqp",
+            "CuVp8gBsVoK3qted8CuwEUNy6KE5rPG5ZYNGG5Lf1rwo",
+            "4MmQb1DCqJrr2iyiykYCfdezgi5vuFtz63ce3upKa5iU",
+            "3RVPdMGjErdNJJEbcAnszp1gE2Z9q615JDbHrRxumZDQ",
+        ];
+        let dh_private_keys = [
+            "AZUmKaxT6JHXworoVGJwpsTEWtrZX3UqRXyt9UTGVLfu",
+            "4cA4NpXcnsz3ihMU7JKBJeMkQdZ3MqwHiJdAnqVRPGEB",
+            "5R35tzKbsXVSCgznEye1Rncp18mJxKzKL5bsvYP6iSX3",
+            "BjR6ZGFquSqk8ZmegchBm97uP8GfoF2r3jfHjL7QQJVH",
+            "3RzAc8nAvNJkp8DvtAGdWvyN7jNnMoCBp5tVjLS9fXZY",
         ];
         let decryption_private_keys = [
             "jMbTDiLo8tgyERv92mGrCAe1s3KnnnyqhQeSYte6vUhZy1",
@@ -793,7 +800,12 @@ mod tests {
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()
-            .map(|s| SecretKey::try_from(&decode_bs58(s)[..]).expect("into secret key"))
+            .map(|s| SecretKey::try_from(*s).expect("into secret key"))
+            .collect();
+
+        let dh_keys: Vec<_> = dh_private_keys
+            .iter()
+            .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
 
         let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
@@ -809,10 +821,12 @@ mod tests {
 
         let peers: Vec<_> = signature_keys
             .iter()
-            .map(|k| {
+            .zip(&dh_keys)
+            .map(|(k, x)| {
                 let port = portpicker::pick_unused_port().expect("find open port");
                 (
                     k.public_key(),
+                    x.public_key(),
                     SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
                 )
             })
@@ -821,12 +835,14 @@ mod tests {
         let mut decrypters = Vec::new();
         for i in 0..usize::from(keyset.size()) {
             let sig_key = signature_keys[i].clone();
-            let (_, addr) = peers[i];
+            let dh_key = dh_keys[i].clone();
+            let (_, _, addr) = peers[i];
 
             let network = Network::create(
                 "decrypt",
                 addr,
                 sig_key.clone().into(),
+                dh_key.clone().into(),
                 peers.clone(),
                 NetworkMetrics::default(),
             )
@@ -846,13 +862,9 @@ mod tests {
         decrypters
     }
 
-    fn decode_bs58(encoded: &str) -> Vec<u8> {
-        bs58::decode(encoded).into_vec().unwrap()
-    }
-
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
         let conf = bincode::config::standard().with_limit::<{ 1024 * 1024 }>();
-        bincode::serde::decode_from_slice(&decode_bs58(encoded), conf)
+        bincode::serde::decode_from_slice(&bs58::decode(encoded).into_vec().unwrap(), conf)
             .unwrap()
             .0
     }

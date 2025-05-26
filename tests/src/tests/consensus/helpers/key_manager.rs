@@ -63,10 +63,9 @@ impl KeyManager {
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round.into()),
             kpair,
-            true,
         );
         v.add_edges(edges);
-        let e = Envelope::signed(v, kpair, true);
+        let e = Envelope::signed(v, kpair);
         Message::Vertex(e)
     }
 
@@ -81,8 +80,8 @@ impl KeyManager {
     /// For a given round, create a timeout message for specified node id in committee.
     pub(crate) fn create_timeout_msg_for_node_id(&self, id: u8, round: u64) -> Message {
         let kpair = &self.keys[&id];
-        let t = TimeoutMessage::new(self.gen_round_cert(round - 1).into(), kpair, true);
-        let e = Envelope::signed(t, kpair, true);
+        let t = TimeoutMessage::new(self.gen_round_cert(round - 1).into(), kpair);
+        let e = Envelope::signed(t, kpair);
         Message::Timeout(e)
     }
 
@@ -111,7 +110,7 @@ impl KeyManager {
     {
         let mut envs = Vec::new();
         for kpair in self.keys.values().take(count) {
-            envs.push(Envelope::signed(value.clone(), kpair, true))
+            envs.push(Envelope::signed(value.clone(), kpair))
         }
         envs
     }
@@ -133,7 +132,6 @@ impl KeyManager {
                     self.gen_round_cert(round - 1),
                     EmptyBlocks.next(r),
                     kpair,
-                    true,
                 );
                 dag.add(v.clone());
                 *v.source()
@@ -154,9 +152,8 @@ impl KeyManager {
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round),
             kpair,
-            true,
         );
-        let e = Envelope::signed(d, kpair, true);
+        let e = Envelope::signed(d, kpair);
         Message::Vertex(e)
     }
 
@@ -165,7 +162,7 @@ impl KeyManager {
         let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
         for k in self.keys.values() {
-            va.add(Signed::new(Timeout::new(r), k, true)).unwrap();
+            va.add(Signed::new(Timeout::new(r), k)).unwrap();
         }
         va.into_certificate().unwrap()
     }
@@ -175,7 +172,7 @@ impl KeyManager {
         let mut va = VoteAccumulator::new(self.committee.clone());
         let r = r.into();
         for k in self.keys.values() {
-            va.add(Signed::new(r, k, true)).unwrap();
+            va.add(Signed::new(r, k)).unwrap();
         }
         va.into_certificate().unwrap()
     }
