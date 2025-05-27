@@ -11,13 +11,13 @@ type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {
     pub keyset: Vec<NodeInfo>,
     pub dec_keyset: PublicDecInfo,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub sailfish_address: Address,
     pub decrypt_address: Address,
@@ -29,7 +29,7 @@ pub struct NodeInfo {
     pub private: Option<PrivateKeys>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrivateKeys {
     pub signing_key: multisig::SecretKey,
     pub dh_key: x25519::SecretKey,
@@ -37,7 +37,7 @@ pub struct PrivateKeys {
     pub dec_share: KeyShare,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicDecInfo {
     #[serde(with = "pubkey")]
     pub pubkey: PublicKey,
@@ -172,17 +172,6 @@ mod tests {
     fn serialisation_roundtrip() {
         let a = KeysetConfig::read_string(CONFIG).unwrap();
         let b = KeysetConfig::read_string(&a.to_string()).unwrap();
-        assert_eq!(a.keyset.len(), b.keyset.len());
-        for (a, b) in a.keyset.iter().zip(&b.keyset) {
-            assert_eq!(a.sailfish_address, b.sailfish_address);
-            assert_eq!(a.decrypt_address, b.decrypt_address);
-            assert_eq!(a.producer_address, b.producer_address);
-            assert_eq!(a.signing_key, b.signing_key);
-            assert_eq!(a.dh_key, b.dh_key);
-            let a = a.private.as_ref().unwrap();
-            let b = b.private.as_ref().unwrap();
-            assert_eq!(a.signing_key, b.signing_key);
-            assert_eq!(a.dh_key, b.dh_key);
-        }
+        assert_eq!(a, b);
     }
 }
