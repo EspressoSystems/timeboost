@@ -372,6 +372,9 @@ impl Task {
                         actions.push_front(action);
                         break;
                     }
+                    Action::Catchup(_) => {
+                        self.includer.clear_cache();
+                    }
                     _ => {
                         actions.push_front(action);
                         break;
@@ -389,6 +392,9 @@ impl Task {
                     }
                     Action::Gc(r) => {
                         self.decrypter.gc(r).await?;
+                    }
+                    Action::Catchup(_) => {
+                        self.includer.clear_cache();
                     }
                     _ => {}
                 }
