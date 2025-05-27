@@ -1,4 +1,4 @@
-use std::{fs, path::Path, time::Duration};
+use std::{fmt, fs, path::Path, time::Duration};
 
 use anyhow::Result;
 use cliquenet::Address;
@@ -49,7 +49,11 @@ impl KeysetConfig {
     pub fn read_keyset<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let data = fs::read_to_string(path)?;
-        let conf = serde_json::from_str(&data)?;
+        Self::read_string(&data)
+    }
+
+    pub fn read_string(s: &str) -> Result<Self> {
+        let conf = serde_json::from_str(&s)?;
         Ok(conf)
     }
 
@@ -59,6 +63,13 @@ impl KeysetConfig {
             self.dec_keyset.combkey.clone(),
             share,
         )
+    }
+}
+
+impl fmt::Display for KeysetConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = serde_json::to_string_pretty(self).map_err(|_| fmt::Error)?;
+        f.write_str(&s)
     }
 }
 
@@ -127,5 +138,51 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    const CONFIG: &str = r#"
+    {
+      "keyset": [
+        {
+          "sailfish_address": "127.0.0.1:8000",
+          "decrypt_address": "127.0.0.1:10000",
+          "producer_address": "127.0.0.1:11000",
+          "signing_key": "io8tNQZ3HB8UAf7tUVtETTByFscDx16FTesmmUThuRNs",
+          "dh_key": "3R87Pcd8nDyv6snoyv5rnwaQjvBpmjfux7kVDTyqeq5R",
+          "private": {
+            "signing_key": "GzdoPBXYWqsYxVEApJCHEkw9j9yDBvcMCthGLSzaDibp",
+            "dh_key": "ABq61FVoQURtK9quBHDGnP1kGKRM1Z8b7qt4TKcUZtHQ",
+            "dec_share": "j6QGWbskmmJXaKB1b6rx2ikMaZ9oBrejrBnfEKvqSz3TFm"
+          }
+        }
+      ],
+      "dec_keyset": {
+        "pubkey": "kXGwgxdDHwJ8zWV72kSRr3FBGbQL7p7pmzEUhrz6webut3",
+        "combkey": "7YBXwEN1WAfTCPyPdumpL7TtfQtTWkLJmL7rAMASxY8tEcw"
+      }
+    }
+    "#;
+
+    use super::KeysetConfig;
+
+    #[test]
+    fn serialisation_roundtrip() {
+        let a = KeysetConfig::read_string(CONFIG).unwrap();
+        let b = KeysetConfig::read_string(&a.to_string()).unwrap();
+        assert_eq!(a.keyset.len(), b.keyset.len());
+        for (a, b) in a.keyset.iter().zip(&b.keyset) {
+            assert_eq!(a.sailfish_address, b.sailfish_address);
+            assert_eq!(a.decrypt_address, b.decrypt_address);
+            assert_eq!(a.producer_address, b.producer_address);
+            assert_eq!(a.signing_key, b.signing_key);
+            assert_eq!(a.dh_key, b.dh_key);
+            let a = a.private.as_ref().unwrap();
+            let b = b.private.as_ref().unwrap();
+            assert_eq!(a.signing_key, b.signing_key);
+            assert_eq!(a.dh_key, b.dh_key);
+        }
     }
 }
