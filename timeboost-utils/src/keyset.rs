@@ -53,7 +53,7 @@ impl KeysetConfig {
     }
 
     pub fn read_string(s: &str) -> Result<Self> {
-        let conf = serde_json::from_str(&s)?;
+        let conf = serde_json::from_str(s)?;
         Ok(conf)
     }
 
