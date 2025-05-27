@@ -153,6 +153,10 @@ impl Includer {
         }
     }
 
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
     fn is_unknown(&self, t: &Bundle) -> bool {
         for hashes in self.cache.values().rev() {
             if hashes.contains(t.digest()) {
@@ -197,14 +201,6 @@ impl Includer {
 
     /// Check if the cache is valid, i.e. ends with at least 8 consecutive rounds.
     fn is_valid_cache(&self) -> bool {
-        if self.cache.len() < CACHE_SIZE {
-            return false;
-        }
-        self.cache
-            .keys()
-            .rev()
-            .zip(self.cache.keys().rev().skip(1))
-            .take(CACHE_SIZE)
-            .all(|(a, b)| a.saturating_sub(1) == **b)
+        self.cache.len() < CACHE_SIZE
     }
 }
