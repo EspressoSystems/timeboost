@@ -5,10 +5,6 @@ services:
       [
         "/app/timeboost",
         "--id", "0",
-        "--nodes", "5",
-        "--sailfish-addr", "0.0.0.0:8000",
-        "--decrypt-addr", "0.0.0.0:8001",
-        "--producer-addr", "0.0.0.0:8002",
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "docker.json",
@@ -20,10 +16,10 @@ services:
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
+      - TIMEBOOST_DECRYPT_PORT=8001
+      - TIMEBOOST_PRODUCER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
-      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_0
-      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_0
     ports:
       - "8000:8000"
       - "8030:8001"
@@ -36,10 +32,6 @@ services:
       [
         "/app/timeboost",
         "--id", "1",
-        "--nodes", "5",
-        "--sailfish-addr", "0.0.0.0:8000",
-        "--decrypt-addr", "0.0.0.0:8001",
-        "--producer-addr", "0.0.0.0:8002",
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "docker.json",
@@ -55,8 +47,6 @@ services:
       - TIMEBOOST_PRODUCER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
-      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_1
-      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_1
     ports:
       - "8001:8000"
       - "8031:8001"
@@ -69,10 +59,6 @@ services:
       [
         "/app/timeboost",
         "--id", "2",
-        "--nodes", "5",
-        "--sailfish-addr", "0.0.0.0:8000",
-        "--decrypt-addr", "0.0.0.0:8001",
-        "--producer-addr", "0.0.0.0:8002",
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "docker.json",
@@ -88,8 +74,6 @@ services:
       - TIMEBOOST_PRODUCER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
-      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_2
-      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_2
     ports:
       - "8002:8000"
       - "8032:8001"
@@ -102,10 +86,6 @@ services:
       [
         "/app/timeboost",
         "--id", "3",
-        "--nodes", "5",
-        "--sailfish-addr", "0.0.0.0:8000",
-        "--decrypt-addr", "0.0.0.0:8001",
-        "--producer-addr", "0.0.0.0:8002",
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "docker.json",
@@ -121,8 +101,6 @@ services:
       - TIMEBOOST_PRODUCER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
-      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_3
-      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_3
     ports:
       - "8003:8000"
       - "8033:8001"
@@ -135,10 +113,6 @@ services:
       [
         "/app/timeboost",
         "--id", "4",
-        "--nodes", "5",
-        "--sailfish-addr", "0.0.0.0:8000",
-        "--decrypt-addr", "0.0.0.0:8001",
-        "--producer-addr", "0.0.0.0:8002",
         "--rpc-port", "8800",
         "--metrics-port", "9000",
         "--keyset-file", "docker.json",
@@ -154,8 +128,6 @@ services:
       - TIMEBOOST_PRODUCER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
-      - TIMEBOOST_SIGNATURE_PRIVATE_KEY=$TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_4
-      - TIMEBOOST_DECRYPTION_PRIVATE_KEY=$TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_4
     ports:
       - "8004:8000"
       - "8034:8001"
@@ -177,8 +149,6 @@ services:
         "/app/yapper",
         "--tps",
         "1",
-        "--nodes",
-        "5",
         "--keyset-file",
         "docker.json",
       ]
