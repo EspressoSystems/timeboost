@@ -1,13 +1,6 @@
 #!/bin/bash
 
-set -emuo pipefail
-
-cleanup() {
-    trap - EXIT TERM
-    kill $(jobs -p) 2>/dev/null
-}
-
-trap cleanup EXIT TERM INT
+set -euo pipefail
 
 just build_release --features until
 

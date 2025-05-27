@@ -4,7 +4,7 @@ set -emuo pipefail
 
 cleanup() {
     trap - EXIT TERM
-    kill $(jobs -p) 2>/dev/null
+    kill $(jobs -p) 2>/dev/null || true
 }
 
 trap cleanup EXIT TERM INT
