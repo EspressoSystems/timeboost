@@ -18,6 +18,7 @@ data-encoding = { workspace = true }
 ed25519-compact = { workspace = true }
 either = { workspace = true }
 rayon = { workspace = true }
+secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }

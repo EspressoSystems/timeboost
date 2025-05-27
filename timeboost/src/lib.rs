@@ -7,19 +7,18 @@ use anyhow::Result;
 use api::metrics::serve_metrics_api;
 use cliquenet::Address;
 use metrics::TimeboostMetrics;
+use multisig::{Keypair, PublicKey, x25519};
 use reqwest::Url;
 use timeboost_builder::{BlockProducer, BlockProducerConfig, ProducerDown};
 use timeboost_sequencer::{Sequencer, SequencerConfig};
 use timeboost_types::{BundleVariant, DecryptionKey};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tracing::{error, info, instrument};
 use vbs::version::StaticVersion;
-
-use multisig::{Keypair, PublicKey};
-use tokio::sync::mpsc::{Receiver, Sender};
 
 pub use timeboost_types as types;
 
@@ -34,16 +33,19 @@ pub struct TimeboostConfig {
     pub metrics_port: u16,
 
     /// The sailfish peers that this node will connect to.
-    pub sailfish_peers: Vec<(PublicKey, Address)>,
+    pub sailfish_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
 
     /// The decrypt peers that this node will connect to.
-    pub decrypt_peers: Vec<(PublicKey, Address)>,
+    pub decrypt_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
 
     /// The block producer peers that this node will connect to.
-    pub producer_peers: Vec<(PublicKey, Address)>,
+    pub producer_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
 
-    /// The keypair for the node.
-    pub keypair: Keypair,
+    /// The keypair for the node to sign messages.
+    pub sign_keypair: Keypair,
+
+    /// The keypair for Diffie-Hellman key exchange.
+    pub dh_keypair: x25519::Keypair,
 
     /// The decryption key material for the node.
     pub dec_sk: DecryptionKey,
@@ -92,7 +94,8 @@ impl Timeboost {
         };
 
         let scf = SequencerConfig::new(
-            init.keypair.clone(),
+            init.sign_keypair.clone(),
+            init.dh_keypair.clone(),
             init.dec_sk.clone(),
             init.sailfish_address,
             init.decrypt_address,
@@ -101,8 +104,12 @@ impl Timeboost {
         .with_sailfish_peers(init.sailfish_peers.clone())
         .with_decrypt_peers(init.decrypt_peers.clone());
 
-        let bcf = BlockProducerConfig::new(init.keypair.clone(), init.producer_address)
-            .with_peers(init.producer_peers.clone());
+        let bcf = BlockProducerConfig::new(
+            init.sign_keypair.clone(),
+            init.dh_keypair.clone(),
+            init.producer_address,
+        )
+        .with_peers(init.producer_peers.clone());
 
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(scf, &*pro).await?;
@@ -110,7 +117,7 @@ impl Timeboost {
         let met = Arc::new(TimeboostMetrics::new(&*pro));
 
         Ok(Self {
-            label: init.keypair.public_key(),
+            label: init.sign_keypair.public_key(),
             init,
             sequencer: seq,
             producer: blk,

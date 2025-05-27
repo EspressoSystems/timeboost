@@ -1,5 +1,6 @@
 use ark_ec::hashing;
 use ark_std::rand::Rng;
+use std::collections::BTreeSet;
 use thiserror::Error;
 
 use crate::traits::dleq_proof::DleqProofError;
@@ -66,7 +67,7 @@ pub enum ThresholdEncError {
     #[error(transparent)]
     SerializationError(#[from] ark_serialize::SerializationError),
     #[error("Faulty node indices: {0:?}")]
-    FaultySubset(Vec<u32>),
+    FaultySubset(BTreeSet<u32>),
     #[error("Only support Bls12-381::G1")]
     UnsupportedCurve,
     #[error(transparent)]

@@ -63,19 +63,11 @@ pub struct Consensus<T> {
 
     /// The timer for recording metrics related to duration of consensus operations.
     metrics_timer: std::time::Instant,
-
-    /// Sign deterministically?
-    deterministic: bool,
 }
 
 impl<T> Consensus<T> {
     pub fn with_metrics(mut self, m: ConsensusMetrics) -> Self {
         self.metrics = m;
-        self
-    }
-
-    pub fn sign_deterministically(mut self, val: bool) -> Self {
-        self.deterministic = val;
         self
     }
 
@@ -120,7 +112,6 @@ where
             datasource: Box::new(datasource),
             metrics: Default::default(),
             metrics_timer: std::time::Instant::now(),
-            deterministic: false,
         }
     }
 
@@ -137,14 +128,8 @@ where
         self.round = r;
 
         if r.is_genesis() {
-            let vtx = Vertex::new(
-                r,
-                Evidence::Genesis,
-                self.datasource.next(r),
-                &self.keypair,
-                self.deterministic,
-            );
-            let env = Envelope::signed(vtx, &self.keypair, self.deterministic);
+            let vtx = Vertex::new(r, Evidence::Genesis, self.datasource.next(r), &self.keypair);
+            let env = Envelope::signed(vtx, &self.keypair);
             vec![Action::SendProposal(env), Action::ResetTimer(r)]
         } else {
             self.advance_from_round(r, e)
@@ -186,8 +171,8 @@ where
             self.evidence(r - 1)
                 .expect("evidence for previous round exists")
         };
-        let t = TimeoutMessage::new(e, &self.keypair, self.deterministic);
-        let e = Envelope::signed(t, &self.keypair, self.deterministic);
+        let t = TimeoutMessage::new(e, &self.keypair);
+        let e = Envelope::signed(t, &self.keypair);
         vec![Action::SendTimeout(e)]
     }
 
@@ -272,10 +257,10 @@ where
     /// Upon receiving a no vote message we:
     /// - Verify that we are the leader for round `r + 1` from timeout round `r`.
     /// - Check if we have a timeout certificate for the round, or else set it.
-    /// - Add the `no_vote` to our `VoteAccumulator`. Upon receiving `2f + 1`
-    ///   `no_votes` a certificate will be created.
-    /// - If a no-vote certificate has been created, advance to the next round with
-    ///   the `no_vote` and `timeout_certificate`.
+    /// - Add the `no_vote` to our `VoteAccumulator`. Upon receiving `2f + 1` `no_votes` a
+    ///   certificate will be created.
+    /// - If a no-vote certificate has been created, advance to the next round with the `no_vote`
+    ///   and `timeout_certificate`.
     pub fn handle_no_vote(&mut self, e: Envelope<NoVoteMessage, Validated>) -> Vec<Action<T>> {
         trace!(
             node    = %self.public_key(),
@@ -397,8 +382,8 @@ where
         if votes != accum.votes(&commit)
             && accum.votes(&commit) == self.committee.one_honest_threshold().get()
         {
-            let t = TimeoutMessage::new(evidence, &self.keypair, self.deterministic);
-            let e = Envelope::signed(t, &self.keypair, self.deterministic);
+            let t = TimeoutMessage::new(evidence, &self.keypair);
+            let e = Envelope::signed(t, &self.keypair);
             actions.push(Action::SendTimeout(e))
         }
 
@@ -487,8 +472,8 @@ where
         };
 
         // We inform the leader of the next round that we did not vote in this round.
-        let nvm = NoVoteMessage::new(tc.clone(), &self.keypair, self.deterministic);
-        let env = Envelope::signed(nvm, &self.keypair, self.deterministic);
+        let nvm = NoVoteMessage::new(tc.clone(), &self.keypair);
+        let env = Envelope::signed(nvm, &self.keypair);
         let leader = self.committee.leader(*round as usize + 1);
         actions.push(Action::SendNoVote(leader, env));
 
@@ -554,7 +539,7 @@ where
     /// Add a new vertex to the DAG and send it as a proposal to nodes.
     fn broadcast_vertex(&mut self, v: Vertex<T>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), vertex = %v, "broadcast vertex");
-        let e = Envelope::signed(v, &self.keypair, self.deterministic);
+        let e = Envelope::signed(v, &self.keypair);
         vec![Action::SendProposal(e)]
     }
 
@@ -567,7 +552,7 @@ where
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
         let payload = self.datasource.next(r);
-        let mut new = Vertex::new(r, e, payload, &self.keypair, self.deterministic);
+        let mut new = Vertex::new(r, e, payload, &self.keypair);
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
 

@@ -12,7 +12,8 @@ use std::{
     path::PathBuf,
 };
 use timeboost_crypto::DecryptionScheme;
-use timeboost_utils::{bs58_encode, sig_keypair_from_seed_indexed, types::logging};
+use timeboost_utils::{bs58_encode, types::logging};
+use timeboost_utils::{dh_keypair_from_seed_indexed, sig_keypair_from_seed_indexed};
 use tracing::{debug, info};
 
 /// Test config files whose key materials should be updated
@@ -28,6 +29,7 @@ enum Scheme {
     #[default]
     All,
     Signature,
+    DH,
     Decryption,
 }
 
@@ -41,7 +43,8 @@ impl Scheme {
         match self {
             Self::All => {
                 Self::Signature.generate(seed, num, out.clone())?;
-                Self::Decryption.generate(seed, num, out)?;
+                Self::DH.generate(seed, num, out.clone())?;
+                Self::Decryption.generate(seed, num, out.clone())?;
             }
             Self::Signature => {
                 let keypairs = (0..num.into())
@@ -53,7 +56,7 @@ impl Scheme {
                         let path = out.join(format!("{idx}.env"));
                         let mut env_file = File::options().append(true).create(true).open(&path)?;
                         let privkey = bs58_encode(&keypair.secret_key().as_bytes());
-                        let pubkey = bs58_encode(&keypair.public_key().as_bytes());
+                        let pubkey = bs58_encode(&keypair.public_key().to_bytes());
                         writeln!(env_file, "TIMEBOOST_SIGNATURE_KEY={}", pubkey)?;
                         writeln!(env_file, "TIMEBOOST_PRIVATE_SIGNATURE_KEY={}", privkey)?;
                         info!("generated signature keypair: {}", pubkey);
@@ -68,6 +71,20 @@ impl Scheme {
                         );
                         todo!("blocked by https://github.com/EspressoSystems/timeboost/issues/355");
                     }
+                }
+            }
+            Self::DH => {
+                for index in 0..num.into() {
+                    // TODO(alex): unify this with other branches
+                    let path = out.clone().unwrap().join(format!("{index}.env"));
+                    let mut env_file = File::options().append(true).create(true).open(&path)?;
+                    let keypair = dh_keypair_from_seed_indexed(seed, index as u64);
+                    let privkey = bs58_encode(&keypair.secret_key().as_bytes());
+                    let pubkey = bs58_encode(&keypair.public_key().as_bytes());
+                    writeln!(env_file, "TIMEBOOST_DH_KEY={}", pubkey)?;
+                    writeln!(env_file, "TIMEBOOST_PRIVATE_DH_KEY={}", privkey)?;
+                    info!("generated dh keypair: {}", pubkey);
+                    debug!("private dh key written to {}", path.display());
                 }
             }
             Self::Decryption => {
@@ -165,9 +182,7 @@ fn parse_seed(s: &str) -> Result<[u8; 32], anyhow::Error> {
 
 fn gen_default_seed() -> [u8; 32] {
     let mut seed = [0u8; 32];
-    let mut rng = rand::rngs::ThreadRng::default();
-    rng.fill(&mut seed);
-
+    rand::rng().fill(&mut seed);
     seed
 }
 

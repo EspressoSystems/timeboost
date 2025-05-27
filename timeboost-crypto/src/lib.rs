@@ -16,6 +16,7 @@ use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
 use sha2::Sha256;
 use spongefish::DigestBridge;
+use std::fmt;
 use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -27,6 +28,12 @@ pub struct Nonce(u128);
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
 pub struct KeysetId(u64);
+
+impl fmt::Display for KeysetId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "KeysetId({})", self.0)
+    }
+}
 
 impl TryFrom<&[u8]> for KeysetId {
     type Error = InvalidKeysetId;
@@ -60,7 +67,7 @@ impl Committable for KeysetId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Keyset {
     id: KeysetId,
     size: NonZeroUsize,
@@ -88,6 +95,12 @@ impl Keyset {
     pub fn one_honest_threshold(&self) -> NonZeroUsize {
         let t = self.size().get().div_ceil(3);
         NonZeroUsize::new(t).expect("ceil(n/3) with n > 0 never gives 0")
+    }
+
+    /// threshold where the majority of honest nodes will agree (>=2f+1)
+    pub fn honest_majority_threshold(&self) -> NonZeroUsize {
+        let t = self.size().get() * 2 / 3 + 1;
+        NonZeroUsize::new(t).expect("ceil(2n/3) with n > 0 never gives 0")
     }
 }
 
@@ -129,7 +142,7 @@ pub struct Ciphertext<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DecShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     w: C,
@@ -235,12 +248,6 @@ impl Plaintext {
 impl From<Plaintext> for Vec<u8> {
     fn from(plaintext: Plaintext) -> Self {
         plaintext.0
-    }
-}
-
-impl<C: CurveGroup> Ciphertext<C> {
-    pub fn nonce(&self) -> Nonce {
-        self.nonce
     }
 }
 

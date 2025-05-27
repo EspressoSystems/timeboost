@@ -18,7 +18,7 @@ pub use bundle::{
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
-pub use decryption::{DecShareKey, DecryptionKey, ShareInfo};
+pub use decryption::DecryptionKey;
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;

@@ -105,7 +105,8 @@ impl<T: PartialEq> Dag<T> {
 
     /// Returns an iterator over all vertices within the specified round range.
     ///
-    /// This method allows iteration over vertices across multiple rounds using any valid range syntax:
+    /// This method allows iteration over vertices across multiple rounds using any valid range
+    /// syntax:
     /// - `vertex_range(1..4)` - vertices from rounds 1,2,3
     /// - `vertex_range(1..=4)` - vertices from rounds 1,2,3,4
     /// - `vertex_range(1..)` - vertices from round 1 onwards
@@ -204,38 +205,33 @@ mod tests {
 
         let gen_evidence = |r: u64| {
             let mut va = VoteAccumulator::new(com.clone());
-            va.add(Signed::new(RoundNumber::from(r), &kp1, false))
-                .unwrap();
-            va.add(Signed::new(RoundNumber::from(r), &kp2, false))
-                .unwrap();
-            va.add(Signed::new(RoundNumber::from(r), &kp3, false))
-                .unwrap();
-            va.add(Signed::new(RoundNumber::from(r), &kp4, false))
-                .unwrap();
-            va.add(Signed::new(RoundNumber::from(r), &kp5, false))
-                .unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp1)).unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp2)).unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp3)).unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp4)).unwrap();
+            va.add(Signed::new(RoundNumber::from(r), &kp5)).unwrap();
             va.into_certificate().unwrap()
         };
 
         // Layer 1
-        let v11 = Vertex::new(1, gen_evidence(0), Unit, &kp1, false);
-        let v12 = Vertex::new(1, gen_evidence(0), Unit, &kp2, false);
-        let v13 = Vertex::new(1, gen_evidence(0), Unit, &kp3, false);
-        let v14 = Vertex::new(1, gen_evidence(0), Unit, &kp4, false);
-        let v15 = Vertex::new(1, gen_evidence(0), Unit, &kp5, false);
+        let v11 = Vertex::new(1, gen_evidence(0), Unit, &kp1);
+        let v12 = Vertex::new(1, gen_evidence(0), Unit, &kp2);
+        let v13 = Vertex::new(1, gen_evidence(0), Unit, &kp3);
+        let v14 = Vertex::new(1, gen_evidence(0), Unit, &kp4);
+        let v15 = Vertex::new(1, gen_evidence(0), Unit, &kp5);
 
         // Layer 2
-        let mut v21 = Vertex::new(2, gen_evidence(1), Unit, &kp1, false);
-        let mut v22 = Vertex::new(2, gen_evidence(1), Unit, &kp2, false);
-        let mut v23 = Vertex::new(2, gen_evidence(1), Unit, &kp3, false);
+        let mut v21 = Vertex::new(2, gen_evidence(1), Unit, &kp1);
+        let mut v22 = Vertex::new(2, gen_evidence(1), Unit, &kp2);
+        let mut v23 = Vertex::new(2, gen_evidence(1), Unit, &kp3);
 
         // Layer 3
-        let mut v31 = Vertex::new(3, gen_evidence(2), Unit, &kp1, false);
-        let mut v32 = Vertex::new(3, gen_evidence(2), Unit, &kp2, false);
-        let mut v33 = Vertex::new(3, gen_evidence(2), Unit, &kp3, false);
+        let mut v31 = Vertex::new(3, gen_evidence(2), Unit, &kp1);
+        let mut v32 = Vertex::new(3, gen_evidence(2), Unit, &kp2);
+        let mut v33 = Vertex::new(3, gen_evidence(2), Unit, &kp3);
 
         // Layer 4
-        let mut v41 = Vertex::new(4, gen_evidence(3), Unit, &kp1, false);
+        let mut v41 = Vertex::new(4, gen_evidence(3), Unit, &kp1);
 
         v41.add_edges([*v31.source(), *v32.source(), *v33.source()]);
 

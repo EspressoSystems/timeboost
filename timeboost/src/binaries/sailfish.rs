@@ -2,14 +2,13 @@ use std::{
     iter::repeat_with,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
-    str::FromStr,
     sync::Arc,
 };
 
-use anyhow::{Context, Result, bail};
-use cliquenet::{Address, Network, NetworkMetrics, Overlay};
+use anyhow::{Context, Result, anyhow};
+use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Committee, Keypair, PublicKey};
+use multisig::{Committee, Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
@@ -18,7 +17,7 @@ use sailfish::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
-use timeboost_utils::keyset::{KeysetConfig, private_keys, wait_for_live_peer};
+use timeboost_utils::keyset::{KeysetConfig, PrivateKeys, wait_for_live_peer};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::signal;
@@ -92,6 +91,12 @@ struct Cli {
         conflicts_with = "KEY_FILE"
     )]
     private_signature_key: Option<String>,
+
+    /// Private DH key.
+    ///
+    /// This can be used as an alternative to KEY_FILE.
+    #[clap(long, env = "TIMEBOOST_DH_PRIVATE_KEY", conflicts_with = "KEY_FILE")]
+    private_dh_key: Option<String>,
 
     /// Private decryption key.
     ///
@@ -225,37 +230,31 @@ async fn main() -> Result<()> {
         .get(cli.id as usize)
         .context("Keyset for this node does not exist")?;
 
-    // Now, fetch the signature private key and decryption private key, preference toward the JSON
-    // config. Note that the clone of the two fields explicitly avoids cloning the entire
-    // `PublicNodeInfo`.
-    let (sig_key, _) = match (my_keyset.sig_pk.clone(), my_keyset.dec_pk.clone()) {
-        // We found both in the JSON, we're good to go.
-        (Some(sig_pk), Some(dec_pk)) => {
-            let sig_key = multisig::SecretKey::try_from(sig_pk.as_str())
-                .context("converting key string to secret key")?;
-            let dec_key = bincode::serde::decode_from_slice(
-                &bs58::decode(dec_pk)
-                    .into_vec()
-                    .context("unable to decode bs58")?,
-                bincode::config::standard(),
-            )?
-            .0;
-
-            (sig_key, dec_key)
-        }
-        // Convert panic to error for misconfigurations in the JSON
-        (Some(..), None) | (None, Some(..)) => {
-            bail!("Malformed JSON configuration, both `sig_pk` and `dec_pk` must be set");
-        }
-        // Last try: Can we pick these keys from the environment or other provided key(s)?
-        _ => private_keys(
-            cli.key_file,
-            cli.private_signature_key,
-            cli.private_decryption_key,
-        )?,
+    let (sig_key, dh_key, _) = if let Some(keys) = &my_keyset.private {
+        keys.parse()?
+    } else if let Some(path) = cli.key_file {
+        PrivateKeys::read(path)?.parse()?
+    } else {
+        let sig = cli
+            .private_signature_key
+            .ok_or_else(|| anyhow!("missing private_signature_key"))?
+            .as_str()
+            .try_into()
+            .context("invalid private_signature_key")?;
+        let dh = cli
+            .private_dh_key
+            .ok_or_else(|| anyhow!("missing private_dh_key"))?
+            .as_str()
+            .try_into()
+            .context("invalid private_dh_key")?;
+        let dec = cli
+            .private_decryption_key
+            .ok_or_else(|| anyhow!("missing private_decryption_key"))?;
+        PrivateKeys { sig, dh, dec }.parse()?
     };
 
-    let keypair = Keypair::from(sig_key);
+    let signing_keypair = Keypair::from(sig_key);
+    let dh_keypair = x25519::Keypair::from(dh_key);
 
     let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
 
@@ -296,15 +295,12 @@ async fn main() -> Result<()> {
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
-        let peer_address = Address::from_str(&peer_host.sailfish_url)?;
-        wait_for_live_peer(peer_address.clone()).await?;
-
-        let pubkey = PublicKey::try_from(peer_host.pubkey.as_str()).context(format!(
-            "Failed to derive public signature key from: {}",
-            peer_host.pubkey
-        ))?;
-
-        peer_hosts_and_keys.push((pubkey, peer_address));
+        wait_for_live_peer(peer_host.sailfish_url.clone()).await?;
+        peer_hosts_and_keys.push((
+            peer_host.signing_key,
+            peer_host.dh_key,
+            peer_host.sailfish_url.clone(),
+        ));
     }
 
     let prom = Arc::new(PrometheusMetrics::default());
@@ -312,13 +308,14 @@ async fn main() -> Result<()> {
     let net_metrics = NetworkMetrics::new(
         "sailfish",
         prom.as_ref(),
-        peer_hosts_and_keys.iter().map(|(k, _)| *k),
+        peer_hosts_and_keys.iter().map(|(k, ..)| *k),
     );
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
         bind_address,
-        keypair.clone(),
+        signing_keypair.clone(),
+        dh_keypair.clone(),
         peer_hosts_and_keys.clone(),
         net_metrics,
     )
@@ -341,11 +338,11 @@ async fn main() -> Result<()> {
         tokio::fs::try_exists(&cli.stamp).await?
     };
 
-    let cfg = RbcConfig::new(keypair.clone(), committee.clone()).recover(recover);
+    let cfg = RbcConfig::new(signing_keypair.clone(), committee.clone()).recover(recover);
     let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
 
-    let consensus =
-        Consensus::new(keypair, committee, repeat_with(Block::random)).with_metrics(sf_metrics);
+    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
+        .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
     // Create proof of execution.

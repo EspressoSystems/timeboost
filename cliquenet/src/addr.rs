@@ -1,6 +1,8 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+
 /// A network address.
 ///
 /// Either an IP address and port number or else a hostname and port number.
@@ -117,6 +119,20 @@ impl TryFrom<&str> for Address {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("invalid address")]
 pub struct InvalidAddress(());
+
+impl Serialize for Address {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Address {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        let a = s.parse().map_err(de::Error::custom)?;
+        Ok(a)
+    }
+}
 
 #[cfg(test)]
 mod tests {

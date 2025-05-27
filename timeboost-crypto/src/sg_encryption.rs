@@ -12,6 +12,7 @@ use spongefish::DuplexSpongeInterface;
 use std::marker::PhantomData;
 use std::{
     any::TypeId,
+    collections::BTreeSet,
     io::{BufWriter, Write},
 };
 use zeroize::Zeroize;
@@ -29,8 +30,8 @@ use crate::{
 /// instantiated as a key encapsulation mechanism (hybrid cryptosystem) for a symmetric key.
 ///
 /// NOTE:
-/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful `combine()`
-///    in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
+/// 1. k-out-of-n threshold scheme means >= k correct decryption shares lead to successful
+///    `combine()` in the case of timeboost, k=f+1 where f is the (inclusive) faulty nodes
 pub struct ShoupGennaro<C, H, D, H2C>
 where
     C: CurveGroup,
@@ -223,7 +224,10 @@ where
             }
         }
 
-        let faulty_subset: Vec<_> = faulty_shares.into_iter().map(|s| s.index).collect();
+        let mut faulty_subset = BTreeSet::new();
+        for s in faulty_shares {
+            faulty_subset.insert(s.index);
+        }
         if valid_shares.len() < threshold {
             return Err(ThresholdEncError::FaultySubset(faulty_subset));
         }
@@ -302,8 +306,9 @@ where
         let (v, e, w_hat, pi) = (ct.v, ct.e.clone(), ct.w_hat, ct.pi.clone());
 
         // dev note: currently our scheme binds the keyset_id associated data not through `aad`
-        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds `keyset_id`,
-        // which is why `aad` is left unused. Technically, keyset_id is part of aad, we should use aad to derive u_hat
+        // but through symmetric key derivation used to compute `e`, thus `e` indirectly binds
+        // `keyset_id`, which is why `aad` is left unused. Technically, keyset_id is part of
+        // aad, we should use aad to derive u_hat
         let u_hat = hash_to_curve::<C, H2C>(v, e)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to curve failed: {:?}", e)))?;
         let tuple = DleqTuple::new(g, v, u_hat, w_hat);
@@ -330,9 +335,10 @@ where
     // will add support for more curves in the future using SW06 method
     // <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-shallue-van-de-woestijne-me>
     //
-    // maintenance note: update domain separator when Timeboost has minor version upgrade or there are multiple
-    // usages of HashToCurve oracle (currently we only have 1 in threshold signature, assigned with `CS01`).
-    // e.g. Timeboost upgraded to `2.4.x` and there are 3 occurences of this oracles, the full tag should be:
+    // maintenance note: update domain separator when Timeboost has minor version upgrade or there
+    // are multiple usages of HashToCurve oracle (currently we only have 1 in threshold
+    // signature, assigned with `CS01`). e.g. Timeboost upgraded to `2.4.x` and there are 3
+    // occurences of this oracles, the full tag should be:
     // `TIMEBOOST-V24-CS03-with-BLS12381G1_XMD:SHA-256_SSWU_RO_`
     // See: <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-domain-separation-requireme>
     // and <https://www.ietf.org/archive/id/draft-irtf-cfrg-hash-to-curve-16.html#name-suite-id-naming-conventions>
@@ -366,7 +372,7 @@ fn hash_to_key<C: CurveGroup, H: Digest>(
 
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroUsize;
+    use std::{collections::BTreeSet, num::NonZeroUsize};
 
     use crate::{
         cp_proof::Proof,
@@ -476,10 +482,11 @@ mod test {
     }
 
     #[test]
-    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully decrypt,
-    // in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes. In the original spec,
-    // authors used `t+1` shares to decrypt, but here, we are testing SG01 scheme purely from the perspective
-    // of the standalone cryptographic scheme, so be aware of the slight mismatch of notation.
+    // NOTE: we are using (t, N) threshold scheme, where exactly =t valid shares can successfully
+    // decrypt, in the context of timeboost, t=f+1 where f is the upper bound of faulty nodes.
+    // In the original spec, authors used `t+1` shares to decrypt, but here, we are testing SG01
+    // scheme purely from the perspective of the standalone cryptographic scheme, so be aware of
+    // the slight mismatch of notation.
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
         let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
@@ -521,10 +528,10 @@ mod test {
         let c_threshold = committee.one_honest_threshold().get();
         let first_correct_share = dec_shares[0].clone();
         // modify the first n - t + 1 shares
-        let mut expected_faulty_subset = vec![];
+        let mut expected_faulty_subset = BTreeSet::new();
         (0..(c_size - c_threshold + 1)).for_each(|i| {
             let mut share: DecShare<_> = dec_shares[i].clone();
-            expected_faulty_subset.push(share.index);
+            expected_faulty_subset.insert(share.index);
             share.phi = Proof { transcript: vec![] };
             dec_shares[i] = share;
         });
@@ -537,10 +544,7 @@ mod test {
         );
         match result {
             Err(ThresholdEncError::FaultySubset(set)) => {
-                assert!(
-                    set.iter()
-                        .all(|faulty_node_idx| expected_faulty_subset.contains(faulty_node_idx))
-                )
+                assert_eq!(set, expected_faulty_subset);
             }
             _ => panic!("Should fail with faulty subset to blame"),
         };
