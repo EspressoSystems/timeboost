@@ -12,26 +12,34 @@ use timeboost_utils::types::logging;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
+    /// How many nodes should configuration contain?
     #[clap(long, short)]
     num: NonZeroU8,
 
+    /// The first sailfish address.
     #[clap(long, short)]
     sailfish_base_addr: Address,
 
+    /// The first decrypter address.
     #[clap(long, short)]
     decrypt_base_addr: Address,
 
+    /// The first producer address.
     #[clap(long, short)]
     producer_base_addr: Address,
 
+    /// Address modification mode.
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
 }
 
+/// How should addresses be updated?
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum Mode {
+    /// Increment the port number of addresses.
     #[default]
     IncrementPort,
+    /// Increment the IP address.
     IncrementAddress,
 }
 
