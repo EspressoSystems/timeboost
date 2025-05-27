@@ -44,11 +44,7 @@ vbs = { workspace = true }
 
 [[bin]]
 name = "timeboost"
-path = "src/binaries/builder.rs"
-
-[[bin]]
-name = "keygen"
-path = "src/binaries/keygen.rs"
+path = "src/binaries/timeboost.rs"
 
 [[bin]]
 name = "sailfish"

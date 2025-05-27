@@ -1,9 +1,4 @@
-use std::{
-    iter::repeat_with,
-    net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{iter::repeat_with, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
 use cliquenet::{Network, NetworkMetrics, Overlay};
@@ -17,7 +12,7 @@ use sailfish::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
-use timeboost_utils::keyset::{KeysetConfig, PrivateKeys, wait_for_live_peer};
+use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::signal;
@@ -48,19 +43,11 @@ struct Cli {
     #[clap(long)]
     metrics_port: u16,
 
-    /// The port of the node to build.
-    #[clap(long)]
-    port: u16,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
     keyset_file: PathBuf,
-
-    /// NON PRODUCTION: Specify the number of nodes to run.
-    #[clap(long)]
-    nodes: usize,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -71,42 +58,6 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
-
-    /// Path to file containing private keys.
-    ///
-    /// The file should follow the .env format, with two keys:
-    /// * TIMEBOOST_SIGNATURE_PRIVATE_KEY
-    /// * TIMEBOOST_DECRYPTION_PRIVATE_KEY
-    ///
-    /// Appropriate key files can be generated with the `keygen` utility program.
-    #[clap(long, name = "KEY_FILE", env = "TIMEBOOST_KEY_FILE")]
-    key_file: Option<PathBuf>,
-
-    /// Private signature key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(
-        long,
-        env = "TIMEBOOST_SIGNATURE_PRIVATE_KEY",
-        conflicts_with = "KEY_FILE"
-    )]
-    private_signature_key: Option<String>,
-
-    /// Private DH key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(long, env = "TIMEBOOST_DH_PRIVATE_KEY", conflicts_with = "KEY_FILE")]
-    private_dh_key: Option<String>,
-
-    /// Private decryption key.
-    ///
-    /// This can be used as an alternative to KEY_FILE.
-    #[clap(
-        long,
-        env = "TIMEBOOST_DECRYPTION_PRIVATE_KEY",
-        conflicts_with = "KEY_FILE"
-    )]
-    private_decryption_key: Option<String>,
 
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
@@ -226,45 +177,28 @@ async fn main() -> Result<()> {
     let rpc = spawn(rpc_api(app_tx, cli.rpc_port));
 
     let my_keyset = keyset
-        .keyset()
+        .keyset
         .get(cli.id as usize)
         .context("Keyset for this node does not exist")?;
 
-    let (sig_key, dh_key, _) = if let Some(keys) = &my_keyset.private {
-        keys.parse()?
-    } else if let Some(path) = cli.key_file {
-        PrivateKeys::read(path)?.parse()?
-    } else {
-        let sig = cli
-            .private_signature_key
-            .ok_or_else(|| anyhow!("missing private_signature_key"))?
-            .as_str()
-            .try_into()
-            .context("invalid private_signature_key")?;
-        let dh = cli
-            .private_dh_key
-            .ok_or_else(|| anyhow!("missing private_dh_key"))?
-            .as_str()
-            .try_into()
-            .context("invalid private_dh_key")?;
-        let dec = cli
-            .private_decryption_key
-            .ok_or_else(|| anyhow!("missing private_decryption_key"))?;
-        PrivateKeys { sig, dh, dec }.parse()?
-    };
+    let private = my_keyset
+        .private
+        .clone()
+        .ok_or_else(|| anyhow!("missing private keys for node"))?;
 
-    let signing_keypair = Keypair::from(sig_key);
-    let dh_keypair = x25519::Keypair::from(dh_key);
-
-    let bind_address = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cli.port));
+    let signing_keypair = Keypair::from(private.signing_key);
+    let dh_keypair = x25519::Keypair::from(private.dh_key);
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = {
         let mut urls = Vec::new();
-        for ph in keyset.keyset().iter().take(cli.nodes) {
-            let url = format!("http://{}", ph.sailfish_url)
+        for ph in keyset.keyset.iter() {
+            let url = format!("http://{}", ph.sailfish_address)
                 .parse()
-                .context(format!("Failed to parse URL: http://{}", ph.sailfish_url))?;
+                .context(format!(
+                    "Failed to parse URL: http://{}",
+                    ph.sailfish_address
+                ))?;
             urls.push(url);
         }
         urls
@@ -289,17 +223,16 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let peer_host_iter =
-        timeboost_utils::select_peer_hosts(keyset.keyset(), cli.nodes, cli.multi_region);
+    let peer_host_iter = timeboost_utils::select_peer_hosts(&keyset.keyset, cli.multi_region);
 
     let mut peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
-        wait_for_live_peer(peer_host.sailfish_url.clone()).await?;
+        wait_for_live_peer(peer_host.sailfish_address.clone()).await?;
         peer_hosts_and_keys.push((
             peer_host.signing_key,
             peer_host.dh_key,
-            peer_host.sailfish_url.clone(),
+            peer_host.sailfish_address.clone(),
         ));
     }
 
@@ -313,7 +246,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        bind_address,
+        my_keyset.sailfish_address.clone(),
         signing_keypair.clone(),
         dh_keypair.clone(),
         peer_hosts_and_keys.clone(),

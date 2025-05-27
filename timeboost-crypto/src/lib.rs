@@ -105,21 +105,21 @@ impl Keyset {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CombKey<C: CurveGroup> {
     #[serde_as(as = "Vec<crate::SerdeAs>")]
     pub key: Vec<C>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PublicKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     key: C,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct KeyShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
