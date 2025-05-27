@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -emuo pipefail
 
-nodes=5
+cleanup() {
+    trap - EXIT TERM
+    kill $(jobs -p) 2>/dev/null || true
+}
+
+trap cleanup EXIT TERM INT
+
 rounds=1000
 late_start=false
-keyset_file="test-configs/local.json"
+keyset_file=
 tps=1
 stamp=
 ignore_stamp=false
@@ -19,10 +25,6 @@ while [[ $# -gt 0 ]]; do
         -l|--late)
             late_start=true
             shift
-            ;;
-        -n|--nodes)
-            nodes="$2"
-            shift 2
             ;;
         -r|--rounds)
             rounds="$2"
@@ -50,7 +52,7 @@ Options:
         Delayed startup of first node.
 
     -k | --keyset-file <PATH>
-        Use a JSON file for node keys (default \"test-configs/local.json\").
+        Use a JSON file for node keys.
 
     -r | --rounds <NUMBER>
         Run for the given number of rounds (default = 1000).
@@ -60,9 +62,6 @@ Options:
 
     -s | --stamp <PATH prefix>
         Path prefix for the stamp files.
-
-    -n | --nodes <NUMBER>
-        Run the given number of nodes (default = 5).
 
     --ignore-stamp
         Ignore an existing stamp file and start from genesis"
@@ -76,25 +75,22 @@ if [ ! $stamp ]; then
     exit 1
 fi
 
-set -a;
-source .env;
-set +a;
+if [ ! $keyset_file ]; then
+    echo "Missing -k | --keyset-file <PATH>"
+    exit 1
+fi
 
 just build_release --features="until"
 
+nodes=$(jq '.keyset | length' $keyset_file)
+
 pids=()
 for (( i=0; i<$nodes; i++ )); do
-    sig_priv_key="TIMEBOOST_DEMO_SIGNATURE_PRIVATE_KEY_$i"
-    dec_priv_key="TIMEBOOST_DEMO_DECRYPTION_PRIVATE_KEY_$i"
     cmd=(target/release/timeboost
         --id $i
-        --sailfish-addr "127.0.0.1:$((8000 + $i))"
-        --decrypt-addr "127.0.0.1:$((10000 + $i))"
-        --producer-addr "127.0.0.1:$((11000 + $i))"
         --rpc-port $((8800 + $i))
         --metrics-port $((9000 + $i))
         --until $rounds
-        --nodes $nodes
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
         --watchdog-timeout $rounds)
@@ -108,19 +104,12 @@ for (( i=0; i<$nodes; i++ )); do
     fi
 
     echo "${cmd[@]}"
-    TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!sig_priv_key} \
-    TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!dec_priv_key} \
     "${cmd[@]}" &
     pids+=($!)
 done
 
 if [ "$tps" -gt 0 ]; then
-    target/release/yapper --tps $tps --nodes $nodes --keyset-file $keyset_file &
+    target/release/yapper --tps $tps --keyset-file $keyset_file &
 fi
 
 wait "${pids[@]}"
-
-if [ "$tps" -gt 0 ]; then
-    pkill yapper
-fi
-
