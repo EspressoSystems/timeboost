@@ -5,7 +5,8 @@ use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
 use sailfish::consensus::ConsensusMetrics;
-use sailfish::types::{Evidence, RoundNumber, Timeout, TimeoutMessage};
+use sailfish::types::CommitteeVec;
+use sailfish::types::{Evidence, PLACEHOLDER, Round, RoundNumber, Timeout, TimeoutMessage};
 use timeboost_utils::unsafe_zero_keypair;
 
 use super::node_instrument::TestNodeInstrument;
@@ -15,6 +16,7 @@ use crate::prelude::*;
 pub struct KeyManager {
     keys: BTreeMap<u8, Keypair>,
     committee: Committee,
+    committees: CommitteeVec<2>,
 }
 
 /// Helper for all the keys in a committeee for testing purposes.
@@ -22,9 +24,12 @@ impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
         let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
         let committee = Committee::new(key_pairs.clone().map(|(i, k)| (i, k.public_key())));
+        let mut cv = CommitteeVec::new();
+        cv.add(PLACEHOLDER, committee.clone());
         Self {
             keys: key_pairs.collect(),
             committee,
+            committees: cv,
         }
     }
 
@@ -34,8 +39,13 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
-                let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
-                    .with_metrics(metrics);
+                let cons = Consensus::new(
+                    kpair.clone(),
+                    PLACEHOLDER,
+                    self.committee.clone(),
+                    EmptyBlocks,
+                )
+                .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
             .collect()
@@ -59,7 +69,7 @@ impl KeyManager {
     ) -> Message {
         let kpair = &self.keys[&id];
         let mut v = Vertex::new(
-            round,
+            Round::new(round, PLACEHOLDER),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round.into()),
             kpair,
@@ -80,7 +90,7 @@ impl KeyManager {
     /// For a given round, create a timeout message for specified node id in committee.
     pub(crate) fn create_timeout_msg_for_node_id(&self, id: u8, round: u64) -> Message {
         let kpair = &self.keys[&id];
-        let t = TimeoutMessage::new(self.gen_round_cert(round - 1).into(), kpair);
+        let t = TimeoutMessage::new(PLACEHOLDER, self.gen_round_cert(round - 1).into(), kpair);
         let e = Envelope::signed(t, kpair);
         Message::Timeout(e)
     }
@@ -116,19 +126,15 @@ impl KeyManager {
     }
 
     /// Setup dag for testing.
-    pub(crate) fn prepare_dag(
-        &self,
-        round: u64,
-        committee: &Committee,
-    ) -> (Dag, Evidence, Vec<PublicKey>) {
-        let mut dag = Dag::new(committee.size());
+    pub(crate) fn prepare_dag(&self, round: u64) -> (Dag, Evidence, Vec<PublicKey>) {
+        let mut dag = Dag::new();
         let edges = self
             .keys
             .values()
             .map(|kpair| {
                 let r = round.into();
                 let v = Vertex::new(
-                    round,
+                    Round::new(round, PLACEHOLDER),
                     self.gen_round_cert(round - 1),
                     EmptyBlocks.next(r),
                     kpair,
@@ -148,7 +154,7 @@ impl KeyManager {
         kpair: &Keypair,
     ) -> Message {
         let d = Vertex::new(
-            round,
+            Round::new(round, PLACEHOLDER),
             self.gen_round_cert(round - 1),
             EmptyBlocks.next(round),
             kpair,
@@ -160,7 +166,7 @@ impl KeyManager {
     /// Craft a timeout certificate with signers from committee.
     pub(crate) fn gen_timeout_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<Timeout> {
         let mut va = VoteAccumulator::new(self.committee.clone());
-        let r = r.into();
+        let r = Round::new(r.into(), PLACEHOLDER);
         for k in self.keys.values() {
             va.add(Signed::new(Timeout::new(r), k)).unwrap();
         }
@@ -168,9 +174,9 @@ impl KeyManager {
     }
 
     /// Craft a timeout certificate with signers from committee.
-    pub(crate) fn gen_round_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<RoundNumber> {
+    pub(crate) fn gen_round_cert<N: Into<RoundNumber>>(&self, r: N) -> Certificate<Round> {
         let mut va = VoteAccumulator::new(self.committee.clone());
-        let r = r.into();
+        let r = Round::new(r.into(), PLACEHOLDER);
         for k in self.keys.values() {
             va.add(Signed::new(r, k)).unwrap();
         }
@@ -179,5 +185,9 @@ impl KeyManager {
 
     pub(crate) fn committee(&self) -> Committee {
         self.committee.clone()
+    }
+
+    pub(crate) fn committees(&self) -> &CommitteeVec<2> {
+        &self.committees
     }
 }

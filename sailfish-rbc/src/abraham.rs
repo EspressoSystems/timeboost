@@ -7,6 +7,7 @@ use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
+use sailfish_types::{CommitteeId, CommitteeVec};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -65,23 +66,32 @@ enum Command<T: Committable> {
     RbcBroadcast(Envelope<Vertex<T>, Validated>, Data),
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
+    /// Add the next committee.
+    AddCommittee(CommitteeId, Committee),
+    /// Use the given committee starting with the given round number.
+    UseCommittee(CommitteeId, RoundNumber),
 }
 
 /// RBC configuration
 #[derive(Debug)]
 pub struct RbcConfig {
     keypair: Keypair,
-    committee: Committee,
+    committees: CommitteeVec<2>,
+    committee_id: CommitteeId,
     recover: bool,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
 
 impl RbcConfig {
-    pub fn new(k: Keypair, c: Committee) -> Self {
+    pub fn new(k: Keypair, id: CommitteeId, c: Committee) -> Self {
+        let mut cv = CommitteeVec::new();
+        cv.add(id, c);
+
         Self {
             keypair: k,
-            committee: c,
+            committees: cv,
+            committee_id: id,
             recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
@@ -142,15 +152,29 @@ impl<T: Committable> Drop for Rbc<T> {
 }
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
-    pub fn new(net: Overlay, c: RbcConfig) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+    pub fn new(cap: usize, net: Overlay, c: RbcConfig) -> Self {
+        let (obound_tx, obound_rx) = mpsc::channel(cap);
+        let (ibound_tx, ibound_rx) = mpsc::channel(cap);
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,
             tx: obound_tx,
             jh: tokio::spawn(worker.go()),
         }
+    }
+
+    pub async fn add_committee(&mut self, i: CommitteeId, c: Committee) -> Result<(), RbcError> {
+        self.tx
+            .send(Command::AddCommittee(i, c))
+            .await
+            .map_err(|_| RbcError::Shutdown)
+    }
+
+    pub async fn use_committee(&mut self, c: CommitteeId, r: RoundNumber) -> Result<(), RbcError> {
+        self.tx
+            .send(Command::UseCommittee(c, r))
+            .await
+            .map_err(|_| RbcError::Shutdown)
     }
 }
 

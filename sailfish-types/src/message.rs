@@ -1,13 +1,11 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{
-    Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated,
-};
+use multisig::{Certificate, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{RoundNumber, Vertex};
+use crate::{CommitteeId, CommitteeVec, Round, RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
@@ -25,7 +23,7 @@ pub enum Message<T: Committable, Status = Validated> {
 }
 
 impl<T: Committable, S> Message<T, S> {
-    pub fn round(&self) -> RoundNumber {
+    pub fn round(&self) -> Round {
         match self {
             Self::Vertex(v) => *v.data().round().data(),
             Self::Timeout(t) => t.data().timeout().data().round(),
@@ -61,72 +59,88 @@ impl<T: Committable, S> Message<T, S> {
 }
 
 impl<T: Committable> Message<T, Unchecked> {
-    pub fn validated(self, c: &Committee) -> Option<Message<T, Validated>> {
+    pub fn validated<const N: usize>(self, cc: &CommitteeVec<N>) -> Option<Message<T, Validated>> {
         match self {
-            Self::Vertex(e) => {
+            Self::Vertex(env) => {
+                let round = *env.data().round().data();
+
+                // Get the committee of the vertex round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
                 // Validate the envelope's signature:
-                let Some(e) = e.validated(c) else {
+                let Some(env) = env.validated(c) else {
                     warn!("invalid envelope signature");
                     return None;
                 };
 
-                let signer = e.signing_key();
+                let signer = env.signing_key();
 
                 // The signer should be the producer of the vertex:
-                if signer != e.data().source() {
-                    warn!(%signer, source = %e.data().source(), "envelope signer != vertex source");
+                if signer != env.data().source() {
+                    warn!(%signer, source = %env.data().source(), "envelope signer != vertex source");
                     return None;
                 }
 
                 // Validate the round signature:
-                if !e.data().round().is_valid(c) {
+                if !env.data().round().is_valid(c) {
                     warn!(%signer, "invalid round signature");
                     return None;
                 }
 
                 // The signer of the envelope should also be the same as the one who signed
                 // the round number certificate:
-                if signer != e.data().round().signing_key() {
+                if signer != env.data().round().signing_key() {
                     warn!(
                         %signer,
-                        round = %e.data().round().signing_key(),
+                        round = %env.data().round().signing_key(),
                         "envelope signer != vertex round signer"
                     );
                     return None;
                 }
 
                 // Validate the previous round evidence:
-                if !e.data().evidence().is_valid(*e.data().round().data(), c) {
+                if !env.data().evidence().is_valid(round.num(), cc) {
                     warn!(%signer, "invalid evidence in vertex");
                     return None;
                 }
 
                 // The following check does not apply to the genesis round:
-                if *e.data().round().data() != RoundNumber::genesis() {
+                if round.num() != RoundNumber::genesis() {
                     // The number of vertex edges must be >= to the committee quorum:
-                    if e.data().num_edges() < c.quorum_size().get() {
+                    if env.data().num_edges() < c.quorum_size().get() {
                         warn!(%signer, "vertex has not enough edges");
                         return None;
                     }
                 }
 
                 // No-vote certificate validation:
-                if let Some(cert) = e.data().no_vote_cert() {
+                if let Some(cert) = env.data().no_vote_cert() {
                     if !cert.is_valid_par(c) {
                         warn!(%signer, "invalid no-vote certificate in vertex");
                         return None;
                     }
                     // The no-vote certificate should apply to the immediate predecessor
                     // of the current vertex round:
-                    if cert.data().round() + 1 != *e.data().round().data() {
+                    if cert.data().round().num() + 1 != round.num() {
                         warn!(%signer, "no-vote certificate in vertex applies to invalid round");
                         return None;
                     }
                 }
 
-                Some(Message::Vertex(e))
+                Some(Message::Vertex(env))
             }
             Self::Timeout(e) => {
+                let round = e.data().timeout().data().round();
+
+                // Get the committee of the timeout round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
                 // Validate the envelope's signature:
                 let Some(e) = e.validated(c) else {
                     warn!("invalid envelope signature");
@@ -152,11 +166,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // Validate the signature of the previous round evidence:
-                if !e
-                    .data()
-                    .evidence()
-                    .is_valid(e.data().timeout().data().round(), c)
-                {
+                if !e.data().evidence().is_valid(round.num(), cc) {
                     warn!(%signer, "invalid timeout evidence");
                     return None;
                 }
@@ -164,6 +174,14 @@ impl<T: Committable> Message<T, Unchecked> {
                 Some(Message::Timeout(e))
             }
             Self::NoVote(e) => {
+                let round = e.data().no_vote().data().round();
+
+                // Get the committee of the no-vote round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
                 // Validate the envelope's signature:
                 let Some(e) = e.validated(c) else {
                     warn!("invalid envelope signature");
@@ -195,7 +213,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 }
 
                 // The no-vote should apply to the same round as the timeout certificate:
-                if e.data().no_vote().data().round() != e.data().certificate().data().round() {
+                if round != e.data().certificate().data().round() {
                     warn!(%signer, "no-vote certificate applies to invalid round");
                     return None;
                 }
@@ -203,6 +221,14 @@ impl<T: Committable> Message<T, Unchecked> {
                 Some(Message::NoVote(e))
             }
             Self::TimeoutCert(crt) => {
+                let round = crt.data().round();
+
+                // Get the committee of the certificate round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
                 // Validate the timeout certificate signatures:
                 if !crt.is_valid_par(c) {
                     warn!("invalid timeout certiticate");
@@ -317,30 +343,30 @@ impl<T: Committable> fmt::Display for Action<T> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct Timeout {
-    round: RoundNumber,
+    round: Round,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 pub struct NoVote {
-    round: RoundNumber,
+    round: Round,
 }
 
 impl Timeout {
-    pub fn new<N: Into<RoundNumber>>(r: N) -> Self {
-        Self { round: r.into() }
+    pub fn new(r: Round) -> Self {
+        Self { round: r }
     }
 
-    pub fn round(&self) -> RoundNumber {
+    pub fn round(&self) -> Round {
         self.round
     }
 }
 
 impl NoVote {
-    pub fn new<N: Into<RoundNumber>>(r: N) -> Self {
-        Self { round: r.into() }
+    pub fn new(r: Round) -> Self {
+        Self { round: r }
     }
 
-    pub fn round(&self) -> RoundNumber {
+    pub fn round(&self) -> Round {
         self.round
     }
 }
@@ -348,7 +374,7 @@ impl NoVote {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub enum Evidence {
     Genesis,
-    Regular(Certificate<RoundNumber>),
+    Regular(Certificate<Round>),
     Timeout(Certificate<Timeout>),
 }
 
@@ -356,16 +382,26 @@ impl Evidence {
     pub fn round(&self) -> RoundNumber {
         match self {
             Self::Genesis => RoundNumber::genesis(),
-            Self::Regular(x) => *x.data(),
-            Self::Timeout(x) => x.data().round,
+            Self::Regular(x) => x.data().num(),
+            Self::Timeout(x) => x.data().round().num(),
         }
     }
 
-    pub fn is_valid(&self, r: RoundNumber, c: &Committee) -> bool {
+    pub fn is_valid<const N: usize>(&self, r: RoundNumber, cc: &CommitteeVec<N>) -> bool {
         match self {
             Self::Genesis => r.is_genesis(),
-            Self::Regular(x) => self.round() + 1 == r && x.is_valid_par(c),
-            Self::Timeout(x) => self.round() + 1 == r && x.is_valid_par(c),
+            Self::Regular(x) => {
+                let Some(c) = cc.get(x.data().committee()) else {
+                    return false;
+                };
+                self.round() + 1 == r && x.is_valid_par(c)
+            }
+            Self::Timeout(x) => {
+                let Some(c) = cc.get(x.data().round().committee()) else {
+                    return false;
+                };
+                self.round() + 1 == r && x.is_valid_par(c)
+            }
         }
     }
 
@@ -378,8 +414,8 @@ impl Evidence {
     }
 }
 
-impl From<Certificate<RoundNumber>> for Evidence {
-    fn from(value: Certificate<RoundNumber>) -> Self {
+impl From<Certificate<Round>> for Evidence {
+    fn from(value: Certificate<Round>) -> Self {
         Self::Regular(value)
     }
 }
@@ -397,14 +433,17 @@ pub struct TimeoutMessage {
 }
 
 impl TimeoutMessage {
-    pub fn new(e: Evidence, k: &Keypair) -> Self {
-        let t = Timeout::new(if e.is_genesis() {
-            e.round()
-        } else {
-            e.round() + 1
-        });
+    pub fn new(c: CommitteeId, e: Evidence, k: &Keypair) -> Self {
+        let r = Round::new(
+            if e.is_genesis() {
+                e.round()
+            } else {
+                e.round() + 1
+            },
+            c,
+        );
         Self {
-            timeout: Signed::new(t, k),
+            timeout: Signed::new(Timeout::new(r), k),
             evidence: e,
         }
     }

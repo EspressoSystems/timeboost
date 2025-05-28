@@ -14,7 +14,7 @@ use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
-use sailfish::types::{Action, RoundNumber};
+use sailfish::types::{Action, PLACEHOLDER, RoundNumber};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
@@ -188,12 +188,22 @@ impl Sequencer {
             )
             .await?;
 
-            let rcf =
-                RbcConfig::new(cfg.sign_keypair.clone(), committee.clone()).recover(cfg.recover);
-            let rbc = Rbc::new(Overlay::new(net), rcf.with_metrics(rbc_metrics));
+            let rcf = RbcConfig::new(cfg.sign_keypair.clone(), PLACEHOLDER, committee.clone())
+                .recover(cfg.recover);
 
-            let cons = Consensus::new(cfg.sign_keypair.clone(), committee.clone(), queue.clone())
-                .with_metrics(cons_metrics);
+            let rbc = Rbc::new(
+                5 * committee.size().get(),
+                Overlay::new(net),
+                rcf.with_metrics(rbc_metrics),
+            );
+
+            let cons = Consensus::new(
+                cfg.sign_keypair.clone(),
+                PLACEHOLDER,
+                committee.clone(),
+                queue.clone(),
+            )
+            .with_metrics(cons_metrics);
 
             Coordinator::new(rbc, cons)
         };

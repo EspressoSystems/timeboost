@@ -4,12 +4,11 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Keypair, PublicKey, Signed};
 use serde::{Deserialize, Serialize};
 
-use super::message::NoVote;
-use crate::{Evidence, RoundNumber};
+use crate::{Evidence, NoVote, Round, RoundNumber};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Vertex<T> {
-    round: Signed<RoundNumber>,
+    round: Signed<Round>,
     source: PublicKey,
     edges: BTreeSet<PublicKey>,
     evidence: Evidence,
@@ -19,31 +18,29 @@ pub struct Vertex<T> {
 }
 
 impl<T> Vertex<T> {
-    pub fn new<N, E>(r: N, e: E, d: T, k: &Keypair) -> Self
+    pub fn new<E>(round: Round, evidence: E, payload: T, keypair: &Keypair) -> Self
     where
-        N: Into<RoundNumber>,
         E: Into<Evidence>,
     {
-        let r = r.into();
-        let e = e.into();
+        let evidence = evidence.into();
 
-        debug_assert!(e.round() + 1 == r || r == RoundNumber::genesis());
+        debug_assert!(evidence.round() + 1 == round.num() || round.num() == RoundNumber::genesis());
 
         Self {
-            source: k.public_key(),
-            round: Signed::new(r, k),
+            source: keypair.public_key(),
+            round: Signed::new(round, keypair),
             edges: BTreeSet::new(),
-            evidence: e,
+            evidence,
             no_vote: None,
             committed: RoundNumber::genesis(),
-            payload: d,
+            payload,
         }
     }
 
     /// Is this vertex from the genesis round?
     pub fn is_genesis(&self) -> bool {
-        *self.round.data() == RoundNumber::genesis()
-            && *self.round.data() == self.evidence.round()
+        self.round.data().num() == RoundNumber::genesis()
+            && self.round.data().num() == self.evidence.round()
             && self.evidence.is_genesis()
             && self.edges.is_empty()
             && self.no_vote.is_none()
@@ -53,7 +50,7 @@ impl<T> Vertex<T> {
         &self.source
     }
 
-    pub fn round(&self) -> &Signed<RoundNumber> {
+    pub fn round(&self) -> &Signed<Round> {
         &self.round
     }
 

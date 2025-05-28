@@ -6,7 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::types::{Evidence, RoundNumber};
+use sailfish::types::{Evidence, PLACEHOLDER, RoundNumber};
 use tracing::debug;
 
 use crate::prelude::*;
@@ -326,7 +326,7 @@ impl Simulator {
             .map(|(n, k)| {
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
+                    logic: Consensus::new(k, PLACEHOLDER, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -336,12 +336,10 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
-        let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
-
         let mut actions = Vec::new();
 
         for (name, party) in &mut parties {
-            actions.push((*name, party.logic.go(dag.clone(), Evidence::Genesis)));
+            actions.push((*name, party.logic.go(Dag::new(), Evidence::Genesis)));
         }
 
         Self {

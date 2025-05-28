@@ -8,7 +8,7 @@ use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::Action,
+    types::{Action, PLACEHOLDER},
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
@@ -271,11 +271,22 @@ async fn main() -> Result<()> {
         tokio::fs::try_exists(&cli.stamp).await?
     };
 
-    let cfg = RbcConfig::new(signing_keypair.clone(), committee.clone()).recover(recover);
-    let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
+    let cfg =
+        RbcConfig::new(signing_keypair.clone(), PLACEHOLDER, committee.clone()).recover(recover);
 
-    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
-        .with_metrics(sf_metrics);
+    let rbc = Rbc::new(
+        committee.size().get() * 5,
+        Overlay::new(network),
+        cfg.with_metrics(rbc_metrics),
+    );
+
+    let consensus = Consensus::new(
+        signing_keypair,
+        PLACEHOLDER,
+        committee,
+        repeat_with(Block::random),
+    )
+    .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
     // Create proof of execution.

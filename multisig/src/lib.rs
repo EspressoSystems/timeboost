@@ -19,6 +19,7 @@ pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct KeyId(u8);
 
 impl KeyId {

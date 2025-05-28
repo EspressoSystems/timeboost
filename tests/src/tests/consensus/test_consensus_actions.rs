@@ -1,4 +1,4 @@
-use sailfish::types::{RoundNumber, Timeout};
+use sailfish::types::{PLACEHOLDER, Round, RoundNumber, Timeout};
 use timeboost_utils::types::logging;
 
 use crate::prelude::*;
@@ -30,7 +30,7 @@ async fn test_single_node_advance() {
     // Setup up consensus state
     let mut round = 7;
     let node = node_handle.node_mut();
-    let (dag, evidence, vertices_for_round) = manager.prepare_dag(round, &committee);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(round);
     node.go(dag, evidence);
 
     // Craft messages
@@ -63,7 +63,10 @@ async fn test_single_node_timeout() {
     // Setup expectations
     let expected_round = RoundNumber::new(5);
     let timeout = node_handle.expected_timeout(expected_round);
-    let signers = manager.signers(Timeout::new(expected_round), committee.quorum_size().get());
+    let signers = manager.signers(
+        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        committee.quorum_size().get(),
+    );
     let send_cert = node_handle.expected_timeout_certificate(signers);
     node_handle.insert_expected_actions(vec![
         Action::SendTimeout(timeout),
@@ -73,7 +76,7 @@ async fn test_single_node_timeout() {
     // Setup up consensus state
     let mut round = 4;
     let node = node_handle.node_mut();
-    let (dag, evidence, _vertices_for_round) = manager.prepare_dag(round, &committee);
+    let (dag, evidence, _vertices_for_round) = manager.prepare_dag(round);
     node.go(dag, evidence);
 
     // Craft messages
@@ -110,13 +113,19 @@ async fn test_single_node_timeout_cert() {
     let no_vote = node_handle.expected_no_vote(expected_round);
 
     // Signers and cert for 2f + 1 nodes
-    let signers = manager.signers(Timeout::new(expected_round), committee.quorum_size().get());
+    let signers = manager.signers(
+        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        committee.quorum_size().get(),
+    );
     // The first cert is sent when we see 2f + 1 timeouts
     // We will still get other timeout votes causing cert to change
     let send_cert = node_handle.expected_timeout_certificate(signers);
 
     // Signers from all nodes and cert
-    let signers = manager.signers(Timeout::new(expected_round), committee.size().get());
+    let signers = manager.signers(
+        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        committee.size().get(),
+    );
     // Proposal will send with a certificate with all signers
     let expected_cert = node_handle.expected_timeout_certificate(signers);
     let vertex_proposal = node_handle.expected_vertex_proposal(
@@ -136,7 +145,7 @@ async fn test_single_node_timeout_cert() {
 
     // Setup up consensus state
     let node = node_handle.node_mut();
-    let (dag, evidence, vertices_for_round) = manager.prepare_dag(*expected_round - 1, &committee);
+    let (dag, evidence, vertices_for_round) = manager.prepare_dag(*expected_round - 1);
     node.go(dag, evidence);
 
     // Craft messages, skip leader vertex
@@ -147,7 +156,7 @@ async fn test_single_node_timeout_cert() {
             if let Message::Vertex(v) = m {
                 let d = v.data();
                 // Process non leader vertices
-                *d.source() != committee.leader(**d.round().data() as usize)
+                *d.source() != committee.leader(*d.round().data().num() as usize)
             } else {
                 panic!("Expected vertex message in test");
             }

@@ -46,11 +46,11 @@ async fn test_timeout_round_and_no_vote() {
     let interceptor = Interceptor::new(
         move |msg: &Message, node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(v) = msg {
-                if *v.data().round().data() == timeout_at_round
+                if v.data().round().data().num() == timeout_at_round
                     && *v.signing_key()
                         == manager
                             .committee()
-                            .leader(**v.data().round().data() as usize)
+                            .leader(*v.data().round().data().num() as usize)
                 {
                     let timeout_msgs = manager.create_timeout_msgs(timeout_at_round.into());
                     node_handle.add_msgs(timeout_msgs);
@@ -126,7 +126,7 @@ async fn test_timeout_round_and_no_vote() {
             );
 
             // Ensure the vertex is from the leader
-            let expected_leader = network.leader_for_round(*data.round().data());
+            let expected_leader = network.leader_for_round(data.round().data().num());
             assert!(
                 *vertex.signing_key() == expected_leader,
                 "Vertex should be signed by the leader."
@@ -175,7 +175,7 @@ async fn test_invalid_vertex_signatures() {
                 // generate keys for invalid node for a node one not in stake table
                 let invalid_kpair = unsafe_zero_keypair(invalid_node_id);
                 // modify current network message with this invalid one
-                return vec![manager.create_vertex_proposal_msg(msg.round(), &invalid_kpair)];
+                return vec![manager.create_vertex_proposal_msg(msg.round().num(), &invalid_kpair)];
             }
             // if not vertex leave msg alone
             vec![msg.clone()]
@@ -211,10 +211,7 @@ fn basic_liveness() {
         .iter_mut()
         .map(|(id, node_handle)| {
             let node = node_handle.node_mut();
-            (
-                *id,
-                node.go(Dag::new(node.committee_size()), Evidence::Genesis),
-            )
+            (*id, node.go(Dag::new(), Evidence::Genesis))
         })
         .collect();
 

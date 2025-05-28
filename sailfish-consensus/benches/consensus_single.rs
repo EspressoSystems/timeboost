@@ -1,11 +1,11 @@
 use std::iter::repeat;
-use std::{collections::HashMap, fmt, num::NonZeroUsize};
+use std::{collections::HashMap, fmt};
 
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Evidence, Message, Unit};
+use sailfish_types::{Action, Evidence, Message, PLACEHOLDER, Unit};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -53,17 +53,15 @@ impl Net {
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, com.clone(), repeat(Unit)),
+                    Consensus::new(kp, PLACEHOLDER, com.clone(), repeat(Unit)),
                 )
             })
             .collect::<HashMap<_, _>>();
 
-        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
-
         let mut messages = Vec::new();
 
         for node in nodes.values_mut() {
-            let actions = node.go(dag.clone(), Evidence::Genesis);
+            let actions = node.go(Dag::new(), Evidence::Genesis);
             messages.extend(actions.into_iter().filter_map(action_to_msg));
         }
 
