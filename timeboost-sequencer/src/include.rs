@@ -201,6 +201,6 @@ impl Includer {
 
     /// Check if the cache is valid, i.e. ends with at least 8 consecutive rounds.
     fn is_valid_cache(&self) -> bool {
-        self.cache.len() < CACHE_SIZE
+        self.cache.len() >= CACHE_SIZE
     }
 }
