@@ -298,6 +298,9 @@ pub enum Action<T: Committable> {
     /// Send a timeout certificate to all nodes.
     SendTimeoutCert(Certificate<Timeout>),
 
+    /// Are we in catchup?
+    Catchup(RoundNumber),
+
     /// Signal that it is safe to garbage collect up to the given round number.
     Gc(RoundNumber),
 }
@@ -336,6 +339,9 @@ impl<T: Committable> fmt::Display for Action<T> {
             }
             Action::Gc(r) => {
                 write!(f, "Gc({r})")
+            }
+            Action::Catchup(r) => {
+                write!(f, "Catchup({r})")
             }
         }
     }

@@ -241,7 +241,10 @@ fn basic_liveness() {
                         Action::SendNoVote(to, e) if n.public_key() == *to => {
                             n.handle_no_vote(e.clone())
                         }
-                        Action::SendNoVote(..) | Action::ResetTimer(..) | Action::Gc(_) => continue,
+                        Action::SendNoVote(..)
+                        | Action::ResetTimer(..)
+                        | Action::Gc(_)
+                        | Action::Catchup(_) => continue,
                     };
                     if !na.is_empty() {
                         next.push((n.public_key(), na))
