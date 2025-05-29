@@ -3,9 +3,11 @@ use std::num::NonZeroU8;
 use std::{io, iter};
 
 use anyhow::{Result, bail};
+use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
+use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
@@ -28,6 +30,10 @@ struct Args {
     #[clap(long, short)]
     producer_base_addr: Address,
 
+    /// RNG seed for deterministic key generation
+    #[clap(long)]
+    seed: Option<u64>,
+
     /// Address modification mode.
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
@@ -44,12 +50,25 @@ enum Mode {
 }
 
 impl Args {
-    fn mk_node_infos(&self, dec: &TrustedKeyMaterial) -> impl Iterator<Item = Result<NodeInfo>> {
-        iter::repeat_with(multisig::Keypair::generate)
-            .zip(iter::repeat_with(|| x25519::Keypair::generate().unwrap()))
+    fn mk_node_infos(
+        &self,
+        dec: &TrustedKeyMaterial,
+        seed: Option<u64>,
+    ) -> impl Iterator<Item = Result<NodeInfo>> {
+        let num_nodes: u8 = self.num.into();
+        let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
+            seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
+        );
+        let mut d_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
+            seed.map(|s| s.wrapping_pow(3)).unwrap_or_else(rand::random),
+        );
+        iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
+            .zip(iter::repeat_with(move || {
+                x25519::Keypair::generate_with_rng(&mut d_rng).unwrap()
+            }))
             .zip(&dec.2)
             .enumerate()
-            .take(dec.2.len())
+            .take(num_nodes as usize)
             .map(|(i, ((kp, xp), share))| {
                 let i = i as u8;
                 Ok(NodeInfo {
@@ -89,9 +108,15 @@ fn main() -> Result<()> {
 
     logging::init_logging();
 
-    let tkm = DecryptionScheme::trusted_keygen(args.num.into());
+    let tkm = match args.seed {
+        Some(seed) => {
+            let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
+            DecryptionScheme::trusted_keygen_with_rng(args.num.into(), &mut rng)
+        }
+        None => DecryptionScheme::trusted_keygen(args.num.into()),
+    };
     let cfg = KeysetConfig {
-        keyset: args.mk_node_infos(&tkm).collect::<Result<_>>()?,
+        keyset: args.mk_node_infos(&tkm, args.seed).collect::<Result<_>>()?,
         dec_keyset: PublicDecInfo {
             pubkey: tkm.0.clone(),
             combkey: tkm.1.clone(),
