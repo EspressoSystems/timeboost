@@ -30,11 +30,11 @@ impl Timestamp {
     }
 }
 
-impl Add for Timestamp {
+impl Add<u64> for Timestamp {
     type Output = Self;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
     }
 }
 

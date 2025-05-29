@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, HashSet};
 use committable::Committable;
 use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{CommitteeId, CommitteeVec};
+use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
@@ -21,6 +22,8 @@ struct NewVertex<T>(Vertex<T>);
 pub struct Consensus<T> {
     /// The public and private key of this node.
     keypair: Keypair,
+
+    clock: ConsensusTime,
 
     /// Available committees.
     _committees: CommitteeVec<2>,
@@ -103,6 +106,7 @@ where
 
         Self {
             keypair,
+            clock: ConsensusTime(Default::default()),
             nodes: NodeInfo::new(&committee),
             dag: Dag::new(),
             round: RoundNumber::genesis(),
@@ -731,6 +735,7 @@ where
                 self.delivered.insert((r, s));
             }
         }
+        tick(&actions, &mut self.clock);
         actions.extend(self.cleanup());
         actions
     }
@@ -924,5 +929,92 @@ impl<T: Committable + Eq> Consensus<T> {
         &self,
     ) -> impl Iterator<Item = (RoundNumber, &VoteAccumulator<Timeout>)> {
         self.timeouts.iter().map(|(r, v)| (*r, v))
+    }
+}
+
+fn tick<T>(actions: &[Action<T>], ct: &mut ConsensusTime)
+where
+    T: Committable + HasTime,
+{
+    let mut actions = actions.iter().peekable();
+    let mut frontier = Vec::new();
+
+    // Go over all actions and calculate the median timestamp for
+    // each sequence of consecutive deliver actions by collecting
+    // the individual timestamp of each payload.
+    while actions.peek().is_some() {
+        let times = (&mut actions)
+            .skip_while(|a| !a.is_deliver())
+            .map_while(|a| {
+                if let Action::Deliver(p) = a {
+                    Some(u64::from(p.data().time()))
+                } else {
+                    None
+                }
+            });
+
+        frontier.clear();
+        frontier.extend(times);
+
+        if let Some(t) = math::median(&mut frontier) {
+            *ct = ConsensusTime(t.into())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arbtest::{arbitrary::Arbitrary, arbtest};
+    use multisig::Keypair;
+    use sailfish_types::{Timestamp, math};
+
+    use super::{Action, ConsensusTime, Payload, RoundNumber, tick};
+
+    #[test]
+    fn consensus_time() {
+        const N: usize = 19; // number of timestamps
+        arbtest(|u| {
+            // Some fake values of no concern to this test:
+            let r = RoundNumber::from(u64::arbitrary(u)?);
+            let k = Keypair::generate();
+
+            // Some random timestamps:
+            let mut t = <[u64; N]>::arbitrary(u)?;
+
+            // Randomly populated sequence of actions:
+            let mut actions: Vec<Action<Timestamp>> = Vec::new();
+
+            let mut i = 0;
+            while i < t.len() {
+                let a = match u8::arbitrary(u)? {
+                    0 => Action::ResetTimer(0.into()),
+                    1 => Action::Catchup(0.into()),
+                    2 => Action::Gc(0.into()),
+                    _ => {
+                        let n = t[i];
+                        i += 1;
+                        Action::Deliver(Payload::new(r, k.public_key(), n.into()))
+                    }
+                };
+                actions.push(a)
+            }
+
+            let mut ct = ConsensusTime(Default::default());
+            tick(&actions, &mut ct);
+
+            // Find the length of the last deliver actions segment:
+            let n = actions
+                .iter()
+                .rev()
+                .skip_while(|a| !a.is_deliver())
+                .take_while(|a| a.is_deliver())
+                .count();
+
+            let m = math::median(&mut t[N - n..]).unwrap_or(0);
+            assert_eq!(ct.0, m.into());
+
+            Ok(())
+        })
+        .size_min(512);
     }
 }

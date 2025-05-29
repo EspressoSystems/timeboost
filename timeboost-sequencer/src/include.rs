@@ -63,16 +63,27 @@ impl Includer {
         self.cache.entry(self.round).or_default();
 
         self.time = {
-            let mut times = lists.iter().map(|cl| cl.timestamp()).collect::<Vec<_>>();
-            max(self.time, math::median(&mut times).unwrap_or_default())
+            let mut times = lists
+                .iter()
+                .map(|cl| u64::from(cl.timestamp()))
+                .collect::<Vec<_>>();
+            max(
+                self.time.into(),
+                math::median(&mut times).unwrap_or_default(),
+            )
+            .into()
         };
 
         self.index = {
             let mut indices = lists
                 .iter()
-                .map(|cl| cl.delayed_inbox_index())
+                .map(|cl| u64::from(cl.delayed_inbox_index()))
                 .collect::<Vec<_>>();
-            max(self.index, math::median(&mut indices).unwrap_or_default())
+            max(
+                self.index.into(),
+                math::median(&mut indices).unwrap_or_default(),
+            )
+            .into()
         };
 
         if self.epoch != self.time.into() {
