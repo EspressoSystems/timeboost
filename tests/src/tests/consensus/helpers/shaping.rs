@@ -509,7 +509,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
-                Action::Gc(_) => {}
+                Action::Gc(_) | Action::Catchup(_) => {}
             }
         }
     }

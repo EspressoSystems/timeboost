@@ -114,6 +114,9 @@ where
             Action::Gc(r) => {
                 self.comm.gc(r).await?;
             }
+            Action::Catchup(_) => {
+                // nothing to do
+            }
             Action::Deliver(_) => {
                 // nothing to do
             }
