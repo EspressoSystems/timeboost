@@ -23,10 +23,11 @@ pub struct Consensus<T> {
     /// The public and private key of this node.
     keypair: Keypair,
 
+    /// Clock driven by median of timestamps in a round.
     clock: ConsensusTime,
 
     /// Available committees.
-    _committees: CommitteeVec<2>,
+    committees: CommitteeVec<2>,
 
     /// The DAG of vertices.
     dag: Dag<T>,
@@ -36,6 +37,8 @@ pub struct Consensus<T> {
 
     /// The ID of the currently active committee.
     committee_id: CommitteeId,
+
+    next_committee: Option<(ConsensusTime, CommitteeId)>,
 
     /// The current round number.
     round: RoundNumber,
@@ -91,6 +94,11 @@ impl<T> Consensus<T> {
     pub fn committed_round(&self) -> RoundNumber {
         self.committed_round
     }
+
+    pub fn add_committee(&mut self, t: ConsensusTime, i: CommitteeId, c: Committee) {
+        self.committees.add(i, c);
+        self.next_committee = Some((t, i));
+    }
 }
 
 impl<T> Consensus<T>
@@ -118,7 +126,8 @@ where
             no_votes: BTreeMap::new(),
             committee,
             committee_id: id,
-            _committees: cv,
+            committees: cv,
+            next_committee: None,
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
             metrics: Default::default(),
@@ -736,6 +745,7 @@ where
             }
         }
         tick(&actions, &mut self.clock);
+        actions.extend(self.update_committee());
         actions.extend(self.cleanup());
         actions
     }
@@ -898,6 +908,19 @@ where
             .committed_round_quorum()
             .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
+    }
+
+    /// Check if the time has come to active the next committee.
+    fn update_committee(&mut self) -> Option<Action<T>> {
+        let (t, i) = self.next_committee?;
+        if t > self.clock {
+            return None;
+        }
+        let c = self.committees.get(i)?; // TODO: report failure
+        self.committee_id = i;
+        self.committee = c.clone();
+        self.next_committee = None;
+        Some(Action::UseCommittee(Round::new(self.round, i)))
     }
 }
 

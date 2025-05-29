@@ -12,8 +12,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
-use sailfish_types::CommitteeId;
+use sailfish_types::{Evidence, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -49,7 +48,7 @@ pub struct Worker<T: Committable> {
     /// The latest round number this worker proposed.
     round: (RoundNumber, Evidence),
     /// Next committee to use.
-    next_committee: Option<(CommitteeId, RoundNumber)>,
+    next_committee: Option<Round>,
     /// Retry timer.
     timer: Interval,
 }
@@ -312,12 +311,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             debug!(node = %self.key, committee = %i, "add committee");
                             self.config.committees.add(i, c);
                         }
-                        Some(Command::UseCommittee(c, r)) => {
-                            debug!(node = %self.key, round = %r, committee = %c, "use committee");
-                            if !self.config.committees.contains(c) {
-                                error!(node = %self.key, committee = %c, "committee to use not found");
+                        Some(Command::UseCommittee(r)) => {
+                            debug!(node = %self.key, round = %r, "use committee");
+                            if !self.config.committees.contains(r.committee()) {
+                                error!(
+                                    node = %self.key,
+                                    committee = %r.committee(),
+                                    "committee to use not found"
+                                );
                             }
-                            self.next_committee = Some((c, r));
+                            self.next_committee = Some(r);
                         }
                         None => {
                             debug!(node = %self.key, "rbc shutdown detected");
@@ -371,9 +374,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         self.round = (vertex.data().round().data().num(), vertex.data().evidence().clone());
 
-        if let Some((c, r)) = &self.next_committee {
-            if self.round.0 >= *r {
-                self.config.committee_id = *c;
+        if let Some(r) = &self.next_committee {
+            if self.round.0 >= r.num() {
+                self.config.committee_id = r.committee();
                 self.next_committee = None;
             }
         }

@@ -303,6 +303,9 @@ pub enum Action<T: Committable> {
 
     /// Signal that it is safe to garbage collect up to the given round number.
     Gc(RoundNumber),
+
+    /// Use a committee starting at the given round.
+    UseCommittee(Round),
 }
 
 impl<T: Committable> Action<T> {
@@ -342,6 +345,9 @@ impl<T: Committable> fmt::Display for Action<T> {
             }
             Action::Catchup(r) => {
                 write!(f, "Catchup({r})")
+            }
+            Action::UseCommittee(r) => {
+                write!(f, "UseCommittee({r})")
             }
         }
     }

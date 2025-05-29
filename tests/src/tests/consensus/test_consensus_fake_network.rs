@@ -244,7 +244,8 @@ fn basic_liveness() {
                         Action::SendNoVote(..)
                         | Action::ResetTimer(..)
                         | Action::Gc(_)
-                        | Action::Catchup(_) => continue,
+                        | Action::Catchup(_)
+                        | Action::UseCommittee(_) => continue,
                     };
                     if !na.is_empty() {
                         next.push((n.public_key(), na))

@@ -112,6 +112,9 @@ where
             Action::Gc(r) => {
                 self.comm.gc(r).await?;
             }
+            Action::UseCommittee(_) => {
+                todo!()
+            }
             Action::Catchup(_) => {
                 // nothing to do
             }
