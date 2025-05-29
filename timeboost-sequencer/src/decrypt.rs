@@ -687,7 +687,7 @@ mod tests {
         let num_nodes = 5;
         let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
         let encryption_key: PublicKey<_> =
-            decode_bincode("8sAbsmFDqeFxCFmeYJywgvk2jWFShkeFdVi4TCZnZi2JoH3dpuRVjQZqFbio7cqeAHV");
+            decode_bincode("8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu");
 
         let mut decrypters = setup(keyset).await;
 
@@ -774,32 +774,31 @@ mod tests {
 
     async fn setup(keyset: Keyset) -> Vec<Decrypter> {
         // these keys are generated via
-        // `just keygen --seed 0000000000000000000000000000000000000000000000000000000000000000
-        // --num 5 --out xxx`
+        // `just mkconfig_local 5 --seed 42`
         let signature_private_keys = [
-            "4aZN8RbcnmVkWvhX9D78qcu62eFc7JuWvy2Yf8SLrjey",
-            "6gWU69SCKvhojvuPXHaTzA155h8yy4f7trbZrkDKggqp",
-            "CuVp8gBsVoK3qted8CuwEUNy6KE5rPG5ZYNGG5Lf1rwo",
-            "4MmQb1DCqJrr2iyiykYCfdezgi5vuFtz63ce3upKa5iU",
-            "3RVPdMGjErdNJJEbcAnszp1gE2Z9q615JDbHrRxumZDQ",
+            "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
+            "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
+            "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
+            "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
+            "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
         ];
         let dh_private_keys = [
-            "AZUmKaxT6JHXworoVGJwpsTEWtrZX3UqRXyt9UTGVLfu",
-            "4cA4NpXcnsz3ihMU7JKBJeMkQdZ3MqwHiJdAnqVRPGEB",
-            "5R35tzKbsXVSCgznEye1Rncp18mJxKzKL5bsvYP6iSX3",
-            "BjR6ZGFquSqk8ZmegchBm97uP8GfoF2r3jfHjL7QQJVH",
-            "3RzAc8nAvNJkp8DvtAGdWvyN7jNnMoCBp5tVjLS9fXZY",
+            "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
+            "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
+            "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
+            "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
+            "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
         let decryption_private_keys = [
-            "jVPi6fFT77sTLDFjzbjUpQTfpqd9vf7cMENE3Dg15feU1D",
-            "jitsSHznkMmUb8ywKeqGZJf29Giq2WeDvNbYXnimkidBmJ",
-            "jcu9prPe5T3KzLsioFsXtkHHMvEd8anw8MLFqa9ZS3fo9B",
-            "jx3eHgfB81frVrNE1rLMYHWVVrjdUXj9gLNV2AP29P86MG",
-            "jUiNmqJ5ux9KGKPiPDEu2Wnm6PrwFJQDTeUkTVTrPzrBZd",
+            "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV",
+            "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S",
+            "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z",
+            "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2",
+            "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX",
         ];
 
-        let encryption_key = "8sAbsmFDqeFxCFmeYJywgvk2jWFShkeFdVi4TCZnZi2JoH3dpuRVjQZqFbio7cqeAHV";
-        let comb_key = "y77mNR8RCyir3GuSruqC99BSkaxw9wnaqfQZbP89HZQ3V6pZUJedFhkd51r4KuCLumnKXgzoEnnTP2txLtnqSFPChCCxBKosGJa3sC7ohRd6raLeQqgMX5PeAoEmQnkX1QyVu88cjMAkBYXXAJ24WbdMAAEpmAkC1YFGVtwwM7QJSvrDAfBjfVnGbTNAGxf937maDbqjsuqUQGTcTDJg7TEpcavJb2kXt5pVtgNEBU2FWNxvaHjhegGytq1qfEfGpB1sbRhB4huaVuEmLvAaUjfsQGHKPZp4fCnTqGU2paD2SQvjeMZAcsj7NKsmHpEcRMnNa2dpSHhQnNG";
+        let encryption_key = "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu";
+        let comb_key = "y7D4UxEgJtRshdYfZu1NY4RyJxAzjjf3AGhf4AihP4epZffaoYRjFeCEaD9uCjNJVCDPZmjwnfB6v1gyZmrQsiCT5PDcHNzS7qfxP8GatiFes3nUs3xTxQLThqvrfdEv3S48jArK75FJoPRk5cKEBodTv1BVKu3GNgYHmcK731MKTJoMS16ukYxrSKg7KxzeQCZwBcamW1YQpVkHqbkvVif8wekSxfpz3CGrw2WKadzVbK1x1pUDFTrtSZU2eyTKVvrW4YJ2zKPm5FYXTaYMJqRXkyBFnvfR9NxgLHq6i5AuArTxrD772Rs1YX8bXu9fR4nLHt14SUJAGqf";
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()

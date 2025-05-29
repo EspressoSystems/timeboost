@@ -143,27 +143,28 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    // generated via `just mkconfig_local 1 --seed 42`
     const CONFIG: &str = r#"
+{
+  "keyset": [
     {
-      "keyset": [
-        {
-          "sailfish_address": "127.0.0.1:8000",
-          "decrypt_address": "127.0.0.1:10000",
-          "producer_address": "127.0.0.1:11000",
-          "signing_key": "io8tNQZ3HB8UAf7tUVtETTByFscDx16FTesmmUThuRNs",
-          "dh_key": "3R87Pcd8nDyv6snoyv5rnwaQjvBpmjfux7kVDTyqeq5R",
-          "private": {
-            "signing_key": "GzdoPBXYWqsYxVEApJCHEkw9j9yDBvcMCthGLSzaDibp",
-            "dh_key": "ABq61FVoQURtK9quBHDGnP1kGKRM1Z8b7qt4TKcUZtHQ",
-            "dec_share": "j6QGWbskmmJXaKB1b6rx2ikMaZ9oBrejrBnfEKvqSz3TFm"
-          }
-        }
-      ],
-      "dec_keyset": {
-        "pubkey": "kXGwgxdDHwJ8zWV72kSRr3FBGbQL7p7pmzEUhrz6webut3",
-        "combkey": "7YBXwEN1WAfTCPyPdumpL7TtfQtTWkLJmL7rAMASxY8tEcw"
+      "sailfish_address": "127.0.0.1:8000",
+      "decrypt_address": "127.0.0.1:10000",
+      "producer_address": "127.0.0.1:11000",
+      "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
+      "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
+      "private": {
+        "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
+        "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
+        "dec_share": "jbJKBjBMYvZhrtFwzDohY5rWSvVSsSu2X5qjQyFJAZQCcF"
       }
     }
+  ],
+  "dec_keyset": {
+    "pubkey": "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu",
+    "combkey": "rL1WRpSHwV538SENbbFRaMTARrK3h9WhgTx5wzb5E78QsjdHMkEnEQeDXgeEdXSvvsR"
+  }
+}
     "#;
 
     use super::KeysetConfig;

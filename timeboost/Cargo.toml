@@ -28,6 +28,7 @@ multisig = { path = "../multisig" }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sailfish = { path = "../sailfish" }
+secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
