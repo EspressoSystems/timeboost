@@ -15,7 +15,7 @@ use timeboost_utils::types::logging;
 #[derive(Clone, Debug, Parser)]
 struct Args {
     /// How many nodes should configuration contain?
-    #[clap(long, short = 'n')]
+    #[clap(long, short)]
     num: NonZeroU8,
 
     /// The first sailfish address.
@@ -56,35 +56,19 @@ impl Args {
         seed: Option<u64>,
     ) -> impl Iterator<Item = Result<NodeInfo>> {
         let num_nodes: u8 = self.num.into();
-        let num_nodes = num_nodes as usize;
-        let (signing_keys, dh_keys) = match seed {
-            Some(s) => {
-                let mut sign_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(s.wrapping_pow(2));
-                let mut dh_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(s.wrapping_pow(3));
-
-                (
-                    iter::repeat_with(|| multisig::Keypair::generate_with_rng(&mut sign_rng))
-                        .take(num_nodes)
-                        .collect::<Vec<_>>(),
-                    iter::repeat_with(|| x25519::Keypair::generate_with_rng(&mut dh_rng).unwrap())
-                        .take(num_nodes)
-                        .collect::<Vec<_>>(),
-                )
-            }
-            None => (
-                iter::repeat_with(multisig::Keypair::generate)
-                    .take(num_nodes)
-                    .collect::<Vec<_>>(),
-                iter::repeat_with(|| x25519::Keypair::generate().unwrap())
-                    .take(num_nodes)
-                    .collect::<Vec<_>>(),
-            ),
-        };
-        signing_keys
-            .into_iter()
-            .zip(dh_keys)
+        let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
+            seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
+        );
+        let mut d_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
+            seed.map(|s| s.wrapping_pow(3)).unwrap_or_else(rand::random),
+        );
+        iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
+            .zip(iter::repeat_with(move || {
+                x25519::Keypair::generate_with_rng(&mut d_rng).unwrap()
+            }))
             .zip(&dec.2)
             .enumerate()
+            .take(num_nodes as usize)
             .map(|(i, ((kp, xp), share))| {
                 let i = i as u8;
                 Ok(NodeInfo {
