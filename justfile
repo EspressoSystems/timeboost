@@ -87,6 +87,13 @@ mkconfig_local NUM_NODES *ARGS:
 mkconfig_docker NUM_NODES *ARGS:
   cargo run --bin mkconfig -- -n {{NUM_NODES}} --sailfish-base-addr "172.20.0.2:8000" --decrypt-base-addr "172.20.0.2:8001" --producer-base-addr "172.20.0.2:8002" --mode "increment-address" {{ARGS}} | jq
 
+mkconfig_cloud_single:
+  cargo run --bin mkconfig -- -n 5 \
+  --sailfish-base-addr "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8000" \
+  --decrypt-base-addr "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:10000" \
+  --producer-base-addr "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:11000" \
+  --mode "increment-port" | jq
+
 ####################
 ####TEST COMMANDS###
 ####################
