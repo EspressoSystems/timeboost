@@ -1,11 +1,11 @@
 use std::iter::repeat;
-use std::{collections::HashMap, fmt, num::NonZeroUsize};
+use std::{collections::HashMap, fmt};
 
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Evidence, Message, Unit};
+use sailfish_types::{Action, Evidence, Message, PLACEHOLDER, Timestamp};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -25,7 +25,7 @@ impl fmt::Display for MultiRoundTestSpec {
 
 struct Net {
     /// Mapping of public key to the corresponding cx node.
-    nodes: HashMap<PublicKey, Consensus<Unit>>,
+    nodes: HashMap<PublicKey, Consensus<Timestamp>>,
 
     /// How many rounds to run until.
     rounds: u64,
@@ -34,7 +34,7 @@ struct Net {
     iteration: u64,
 
     /// Message buffer.
-    messages: Vec<Message<Unit>>,
+    messages: Vec<Message<Timestamp>>,
 }
 
 impl Net {
@@ -48,22 +48,22 @@ impl Net {
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
 
+        let now = Timestamp::now();
+
         let mut nodes = kps
             .into_iter()
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, com.clone(), repeat(Unit)),
+                    Consensus::new(kp, PLACEHOLDER, com.clone(), repeat(now)),
                 )
             })
             .collect::<HashMap<_, _>>();
 
-        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
-
         let mut messages = Vec::new();
 
         for node in nodes.values_mut() {
-            let actions = node.go(dag.clone(), Evidence::Genesis);
+            let actions = node.go(Dag::new(), Evidence::Genesis);
             messages.extend(actions.into_iter().filter_map(action_to_msg));
         }
 
@@ -93,9 +93,9 @@ impl Net {
 
 /// Many-to-many broadcast of a message stack.
 fn send(
-    nodes: &mut HashMap<PublicKey, Consensus<Unit>>,
-    msgs: &[Message<Unit>],
-) -> Vec<Action<Unit>> {
+    nodes: &mut HashMap<PublicKey, Consensus<Timestamp>>,
+    msgs: &[Message<Timestamp>],
+) -> Vec<Action<Timestamp>> {
     use rayon::prelude::*;
 
     if nodes.len() == 1 {
@@ -131,6 +131,7 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::Deliver(..) => None,
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
+        Action::UseCommittee(_) => None,
     }
 }
 

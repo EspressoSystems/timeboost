@@ -1,4 +1,5 @@
 use cliquenet::overlay::{DataError, NetworkDown};
+use sailfish_types::CommitteeId;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -17,6 +18,9 @@ pub enum RbcError {
 
     #[error("invalid sender")]
     InvalidSender,
+
+    #[error("no committee for id {0}")]
+    NoCommittee(CommitteeId),
 
     #[error("rbc has shut down")]
     Shutdown,

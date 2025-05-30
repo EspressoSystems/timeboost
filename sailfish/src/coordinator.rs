@@ -4,7 +4,7 @@ use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
 use multisig::PublicKey;
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Comm, Evidence, Message, RoundNumber};
+use sailfish_types::{Action, Comm, Evidence, HasTime, Message, RoundNumber};
 use tokio::select;
 use tokio::time::sleep;
 
@@ -52,7 +52,7 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
 impl<T, C> Coordinator<T, C>
 where
     C: Comm<T> + Send,
-    T: Committable + Clone + PartialEq,
+    T: Committable + HasTime + Clone + PartialEq,
 {
     /// Starts Sailfish consensus.
     ///
@@ -66,9 +66,7 @@ where
     pub fn init(&mut self) -> Vec<Action<T>> {
         assert!(!self.init, "Cannot call start twice");
         self.init = true;
-        let e = Evidence::Genesis;
-        let d = Dag::new(self.consensus.committee_size());
-        self.consensus.go(d, e)
+        self.consensus.go(Dag::new(), Evidence::Genesis)
     }
 
     /// Await the next sequence of consensus actions.
@@ -113,6 +111,9 @@ where
             }
             Action::Gc(r) => {
                 self.comm.gc(r).await?;
+            }
+            Action::UseCommittee(_) => {
+                todo!()
             }
             Action::Catchup(_) => {
                 // nothing to do

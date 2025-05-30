@@ -38,11 +38,12 @@ pub struct Includer {
 
 impl Includer {
     pub fn new(c: Committee, i: DelayedInboxIndex) -> Self {
+        let now = Timestamp::default();
         Self {
             committee: c,
             round: RoundNumber::genesis(),
-            time: Timestamp::default(),
-            epoch: Timestamp::default().epoch(),
+            time: now,
+            epoch: now.into(),
             seqno: SeqNo::zero(),
             index: i,
             cache: BTreeMap::new(),
@@ -62,20 +63,31 @@ impl Includer {
         self.cache.entry(self.round).or_default();
 
         self.time = {
-            let mut times = lists.iter().map(|cl| cl.timestamp()).collect::<Vec<_>>();
-            max(self.time, math::median(&mut times).unwrap_or_default())
+            let mut times = lists
+                .iter()
+                .map(|cl| u64::from(cl.timestamp()))
+                .collect::<Vec<_>>();
+            max(
+                self.time.into(),
+                math::median(&mut times).unwrap_or_default(),
+            )
+            .into()
         };
 
         self.index = {
             let mut indices = lists
                 .iter()
-                .map(|cl| cl.delayed_inbox_index())
+                .map(|cl| u64::from(cl.delayed_inbox_index()))
                 .collect::<Vec<_>>();
-            max(self.index, math::median(&mut indices).unwrap_or_default())
+            max(
+                self.index.into(),
+                math::median(&mut indices).unwrap_or_default(),
+            )
+            .into()
         };
 
-        if self.epoch != self.time.epoch() {
-            self.epoch = self.time.epoch();
+        if self.epoch != self.time.into() {
+            self.epoch = self.time.into();
             self.seqno = SeqNo::zero();
         }
 

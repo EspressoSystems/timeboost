@@ -16,6 +16,7 @@ sailfish-types = { path = "../sailfish-types" }
 tracing = { workspace = true }
 
 [dev-dependencies]
+arbtest = { workspace = true }
 criterion = { workspace = true }
 rayon = { workspace = true }
 
