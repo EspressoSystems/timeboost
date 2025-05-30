@@ -30,7 +30,7 @@ impl Forwarder {
         }
 
         self.retry().await?;
-        
+
         self.send(include).await?;
         Ok(())
     }
@@ -103,7 +103,7 @@ mod tests {
         let r = f.try_send(i.clone()).await;
         assert!(r.is_err());
         assert_eq!(f.retry_cache.len(), 1);
-        
+
         let l = TcpListener::bind("127.0.0.1:11000").unwrap();
 
         let length = i.encoded_len();
