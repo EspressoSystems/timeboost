@@ -1,0 +1,17 @@
+[package]
+name = "timeboost-proto"
+description = "Timeboost API types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+protobuf = "3.7.2"
+prost = "0.11"
+prost-types = "0.11"
+
+[build-dependencies]
+protobuf-codegen = "3.7.2"
+protoc-bin-vendored = "3.1.0"
+prost-build = "0.13.5"
+protoc-rust = "^2.0"

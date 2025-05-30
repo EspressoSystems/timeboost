@@ -21,11 +21,14 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
+timeboost-proto = { path = "../timeboost-proto" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+prost = "0.11"
 
 [dev-dependencies]
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 portpicker = { workspace = true }
 timeboost-utils = { path = "../timeboost-utils" }
+timeboost-proto = { path = "../timeboost-proto" }
