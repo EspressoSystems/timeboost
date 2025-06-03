@@ -6,8 +6,8 @@ use bytes::{BufMut, BytesMut};
 use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
-use sailfish_types::{Comm, Evidence, Message, Round, RoundNumber, Vertex};
-use sailfish_types::{CommitteeId, CommitteeVec};
+use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
+use sailfish_types::{CommitteeId, CommitteeVec, Handover};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -60,6 +60,8 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
 enum Command<T: Committable> {
     /// Send message to a party identified by the given public key.
     Send(PublicKey, Message<T, Validated>, Data),
+    /// Send a handover message to the next committee.
+    Handover(Envelope<Handover, Validated>),
     /// Do a best-effort broadcast of the given message.
     Broadcast(Message<T, Validated>, Data),
     /// Do a byzantine reliable broadcast of the given message.
@@ -68,8 +70,6 @@ enum Command<T: Committable> {
     Gc(RoundNumber),
     /// Add the next committee.
     AddCommittee(CommitteeId, Committee),
-    /// Use the given committee starting with the given round.
-    UseCommittee(Round),
 }
 
 /// RBC configuration
@@ -166,13 +166,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
     pub async fn add_committee(&mut self, i: CommitteeId, c: Committee) -> Result<(), RbcError> {
         self.tx
             .send(Command::AddCommittee(i, c))
-            .await
-            .map_err(|_| RbcError::Shutdown)
-    }
-
-    pub async fn use_committee(&mut self, r: Round) -> Result<(), RbcError> {
-        self.tx
-            .send(Command::UseCommittee(r))
             .await
             .map_err(|_| RbcError::Shutdown)
     }

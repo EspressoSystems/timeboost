@@ -12,7 +12,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Evidence, Message, Round, RoundNumber, Vertex};
+use sailfish_types::{Evidence, Message, RoundNumber, Vertex, Handover};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -47,8 +47,6 @@ pub struct Worker<T: Committable> {
     state: WorkerState,
     /// The latest round number this worker proposed.
     round: (RoundNumber, Evidence),
-    /// Next committee to use.
-    next_committee: Option<Round>,
     /// Retry timer.
     timer: Interval,
 }
@@ -85,14 +83,14 @@ struct Messages<T: Committable> {
     /// 2f + 1 messages we know that at least f + 1 messages will eventually
     /// be delivered.
     early: bool,
-    /// Tracking info per message.
-    map: BTreeMap<Digest, Tracker<T>>,
+    /// Tracking info per message proposal.
+    proposals: BTreeMap<Digest, Tracker<Envelope<Vertex<T>, Validated>>>,
 }
 
 impl<T: Committable> Messages<T> {
     /// Get a message digest of this source, if any.
     fn digest(&self, s: &PublicKey) -> Option<Digest> {
-        for (d, t) in &self.map {
+        for (d, t) in &self.proposals {
             if let Some(vertex) = &t.message.item {
                 if vertex.data().source() == s {
                     return Some(*d);
@@ -107,13 +105,13 @@ impl<T: Committable> Default for Messages<T> {
     fn default() -> Self {
         Self {
             early: false,
-            map: Default::default(),
+            proposals: Default::default(),
         }
     }
 }
 
 /// Tracking information about a message and its status.
-struct Tracker<T: Committable> {
+struct Tracker<T> {
     /// The time when this info was created.
     start: Instant,
     /// The time when this info was last updated.
@@ -121,7 +119,7 @@ struct Tracker<T: Committable> {
     /// The message (if any).
     ///
     /// If we receive votes before the message, this item will be empty.
-    message: Item<Envelope<Vertex<T>, Validated>>,
+    message: Item<T>,
     /// The votes for a message.
     votes: VoteAccumulator<Digest>,
     /// The message status.
@@ -130,7 +128,7 @@ struct Tracker<T: Committable> {
     retries: usize,
 }
 
-impl<T: Committable> Tracker<T> {
+impl<T> Tracker<T> {
     /// Randomly select a voter of the given commitment.
     fn choose_voter(&self, d: &Commitment<Digest>) -> Option<PublicKey> {
         use rand::seq::IteratorRandom;
@@ -218,7 +216,6 @@ impl<T: Committable> Worker<T> {
                 WorkerState::Genesis
             },
             config: cfg,
-            next_committee: None,
             timer: {
                 let mut i = time::interval(Duration::from_secs(1));
                 i.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -286,6 +283,16 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                                 }
                             }
                         }
+                        Some(Command::Handover(msg)) => {
+                            if let Err(err) = self.handover(msg).await {
+                                if matches!(err, RbcError::Shutdown) {
+                                    debug!(node = %self.key, "network went down");
+                                    return
+                                } else {
+                                    warn!(node = %self.key, %err)
+                                }
+                            }
+                        }
                         // Best-effort sending to a peer without RBC properties.
                         Some(Command::Send(to, msg, data)) => {
                             if let Err(err) = self.send(to, msg, data).await {
@@ -310,17 +317,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         Some(Command::AddCommittee(i, c)) => {
                             debug!(node = %self.key, committee = %i, "add committee");
                             self.config.committees.add(i, c);
-                        }
-                        Some(Command::UseCommittee(r)) => {
-                            debug!(node = %self.key, round = %r, "use committee");
-                            if !self.config.committees.contains(r.committee()) {
-                                error!(
-                                    node = %self.key,
-                                    committee = %r.committee(),
-                                    "committee to use not found"
-                                );
-                            }
-                            self.next_committee = Some(r);
                         }
                         None => {
                             debug!(node = %self.key, "rbc shutdown detected");
@@ -367,19 +363,36 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         Ok(())
     }
 
+    /// Send handover message to next committee.
+    async fn handover(&mut self, env: Envelope<Handover, Validated>) -> RbcResult<()> {
+        trace!(node = %self.key, round = %env.data().round(), "sending handover");
+
+        let round = env.data().round().num();
+        let next_cid = env.data().next();
+
+        let Some(committee) = self.config.committees.get(next_cid) else {
+            return Err(RbcError::NoCommittee(next_cid))
+        };
+
+        let mesg = Message::Handover(env);
+        let data = serialize(&Protocol::<'_, T, Validated>::Send(Cow::Borrowed(&mesg)))?;
+        let dest = committee.parties().copied().collect();
+        self.comm.multicast(dest, *round, data).await?;
+
+        // If this node is a member of the next committee, start using it now:
+        if committee.contains_key(&self.key) {
+            self.config.committee_id = next_cid
+        }
+
+        Ok(())
+    }
+
     /// Start RBC broadcast.
     async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> RbcResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
 
         self.round = (vertex.data().round().data().num(), vertex.data().evidence().clone());
-
-        if let Some(r) = &self.next_committee {
-            if self.round.0 >= r.num() {
-                self.config.committee_id = r.committee();
-                self.next_committee = None;
-            }
-        }
 
         let cid = vertex.data().round().data().committee();
 
@@ -402,13 +415,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if !can_send {
             tracker.message.defer.prop = Some(data);
-            messages.map.insert(digest, tracker);
+            messages.proposals.insert(digest, tracker);
             debug!(node = %self.key, %digest, "suppressing proposal");
             return Ok(())
         }
 
         self.comm.broadcast(*digest.round().num(), data).await?;
-        messages.map.insert(digest, tracker);
+        messages.proposals.insert(digest, tracker);
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
 
@@ -499,7 +512,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             debug!(node = %self.key, %barrier, "round number info collected");
 
             for (round, messages) in self.buffer.range_mut(barrier ..) {
-                for (digest, tracker) in &mut messages.map {
+                for (digest, tracker) in &mut messages.proposals {
                     match tracker.status {
                         // A quorum has been formed already => just send the certificate.
                         Status::Requested | Status::Delivered => {
@@ -579,7 +592,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let evidence = vertex.data().evidence().clone();
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
-        let tracker = messages.map.entry(digest).or_insert_with(|| {
+        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -654,13 +667,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if self.config.early_delivery && !messages.early {
             let available = messages
-                .map
+                .proposals
                 .values()
                 .filter(|t| t.message.item.is_some())
                 .count();
 
             if available >= committee.quorum_size().get() {
-                for tracker in messages.map.values_mut() {
+                for tracker in messages.proposals.values_mut() {
                     if tracker.status == Status::Delivered {
                         continue;
                     }
@@ -720,7 +733,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
-        let tracker = messages.map.entry(digest).or_insert_with(|| {
+        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -779,7 +792,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     warn!(node = %self.key, %err, %digest, "failed to add vote");
                     if tracker.votes.is_empty() && tracker.message.item.is_none() {
                         if let Some(messages) = self.buffer.get_mut(&digest.round().num()) {
-                            messages.map.remove(&digest);
+                            messages.proposals.remove(&digest);
                         }
                     }
                 }
@@ -816,7 +829,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let commit = digest.commit();
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round().num()).or_default();
-        let tracker = messages.map.entry(digest).or_insert_with(|| {
+        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -885,7 +898,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         if let Some(msg) = self
             .buffer
             .get_mut(&digest.round().num())
-            .and_then(|m| m.map.get_mut(&digest))
+            .and_then(|m| m.proposals.get_mut(&digest))
             .and_then(|t| t.message.item.as_ref())
         {
             let proto = Protocol::GetResponse(Cow::Borrowed(msg));
@@ -918,7 +931,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let Some(tracker) = self
             .buffer
             .get_mut(&digest.round().num())
-            .and_then(|m| m.map.get_mut(&digest))
+            .and_then(|m| m.proposals.get_mut(&digest))
         else {
             debug!(node = %self.key, %src, "no tracker for get response");
             return Ok(());
@@ -944,7 +957,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// Periodically we go over message status and retry incomplete items.
     async fn retry(&mut self, now: Instant) -> RbcResult<()> {
         trace!(node = %self.key, "retrying ...");
-        for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
+        for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.proposals.iter_mut()) {
             if tracker.status == Status::Requested {
                 debug!(
                     node     = %self.key,

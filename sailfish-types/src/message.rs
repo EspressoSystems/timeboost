@@ -20,6 +20,9 @@ pub enum Message<T: Committable, Status = Validated> {
 
     /// A timeout certificate from a node.
     TimeoutCert(Certificate<Timeout>),
+
+    /// A handover message from a node.
+    Handover(Envelope<Handover, Status>),
 }
 
 impl<T: Committable, S> Message<T, S> {
@@ -29,6 +32,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::Timeout(t) => t.data().timeout().data().round(),
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
+            Self::Handover(h) => h.data().round(),
         }
     }
 
@@ -37,6 +41,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::Vertex(e) => Some(e.signing_key()),
             Self::Timeout(e) => Some(e.signing_key()),
             Self::NoVote(e) => Some(e.signing_key()),
+            Self::Handover(e) => Some(e.signing_key()),
             Self::TimeoutCert(_) => None,
         }
     }
@@ -55,6 +60,10 @@ impl<T: Committable, S> Message<T, S> {
 
     pub fn is_timeout_cert(&self) -> bool {
         matches!(self, Self::TimeoutCert(_))
+    }
+
+    pub fn is_handover(&self) -> bool {
+        matches!(self, Self::Handover(_))
     }
 }
 
@@ -220,6 +229,23 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 Some(Message::NoVote(e))
             }
+            Self::Handover(env) => {
+                let round = env.data().round();
+
+                // Get the committee of the handover round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
+                // Validate the envelope's signature:
+                let Some(env) = env.validated(c) else {
+                    warn!("invalid envelope signature");
+                    return None;
+                };
+
+                Some(Message::Handover(env))
+            }
             Self::TimeoutCert(crt) => {
                 let round = crt.data().round();
 
@@ -363,6 +389,12 @@ pub struct NoVote {
     round: Round,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
+pub struct Handover {
+    round: Round,
+    next: CommitteeId,
+}
+
 impl Timeout {
     pub fn new(r: Round) -> Self {
         Self { round: r }
@@ -380,6 +412,20 @@ impl NoVote {
 
     pub fn round(&self) -> Round {
         self.round
+    }
+}
+
+impl Handover {
+    pub fn new(r: Round, c: CommitteeId) -> Self {
+        Self { round: r, next: c }
+    }
+
+    pub fn round(&self) -> Round {
+        self.round
+    }
+
+    pub fn next(&self) -> CommitteeId {
+        self.next
     }
 }
 
@@ -519,7 +565,10 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
                 write!(f, "NoVote({r},{s})")
             }
             Self::TimeoutCert(c) => {
-                write!(f, "TimeoutCert({})", c.data().round)
+                write!(f, "TimeoutCert({})", c.data().round())
+            }
+            Self::Handover(h) => {
+                write!(f, "Handover({})", h.data().round())
             }
         }
     }
@@ -537,6 +586,15 @@ impl Committable for NoVote {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("NoVote")
             .field("round", self.round.commit())
+            .finalize()
+    }
+}
+
+impl Committable for Handover {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Handover")
+            .field("round", self.round.commit())
+            .field("next", self.next.commit())
             .finalize()
     }
 }
@@ -581,6 +639,7 @@ impl<T: Committable, S> Committable for Message<T, S> {
             Self::Timeout(e) => builder.field("timeout", e.commit()).finalize(),
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
+            Self::Handover(h) => builder.field("handover", h.commit()).finalize(),
         }
     }
 }

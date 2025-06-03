@@ -9,7 +9,7 @@ use info::NodeInfo;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime};
+use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime, Handover};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
@@ -63,6 +63,9 @@ pub struct Consensus<T> {
 
     /// The set of no votes that we've received so far.
     no_votes: BTreeMap<RoundNumber, VoteAccumulator<NoVote>>,
+
+    /// Handovers from the previous committee.
+    handovers: Option<VoteAccumulator<Handover>>,
 
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex<T>>,
@@ -124,6 +127,7 @@ where
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: BTreeMap::new(),
+            handovers: None,
             committee,
             committee_id: id,
             committees: cv,
@@ -180,7 +184,12 @@ where
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
+            Message::Handover(h) => self.handle_handover(h),
         }
+    }
+
+    fn handle_handover(&mut self, e: Envelope<Handover, Validated>) -> Vec<Action<T>> {
+        Vec::new()
     }
 
     /// An internal timeout occurred.

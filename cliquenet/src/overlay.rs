@@ -130,13 +130,11 @@ impl Overlay {
         self.send(b.into(), Target::All, data).await
     }
 
-    pub async fn multicast<B, I>(&mut self, to: I, b: B, data: Data) -> Result<Id>
+    pub async fn multicast<B>(&mut self, to: Vec<PublicKey>, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
-        I: IntoIterator<Item = PublicKey>,
     {
-        self.send(b.into(), Target::Multi(to.into_iter().collect()), data)
-            .await
+        self.send(b.into(), Target::Multi(to), data).await
     }
 
     pub async fn unicast<B>(&mut self, to: PublicKey, b: B, data: Data) -> Result<Id>
