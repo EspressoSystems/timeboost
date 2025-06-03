@@ -12,7 +12,7 @@ use cliquenet::{
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated};
-use sailfish_types::{Evidence, Message, RoundNumber, Vertex, Handover};
+use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -84,13 +84,13 @@ struct Messages<T: Committable> {
     /// be delivered.
     early: bool,
     /// Tracking info per message proposal.
-    proposals: BTreeMap<Digest, Tracker<Envelope<Vertex<T>, Validated>>>,
+    map: BTreeMap<Digest, Tracker<Envelope<Vertex<T>, Validated>>>,
 }
 
 impl<T: Committable> Messages<T> {
     /// Get a message digest of this source, if any.
     fn digest(&self, s: &PublicKey) -> Option<Digest> {
-        for (d, t) in &self.proposals {
+        for (d, t) in &self.map {
             if let Some(vertex) = &t.message.item {
                 if vertex.data().source() == s {
                     return Some(*d);
@@ -105,7 +105,7 @@ impl<T: Committable> Default for Messages<T> {
     fn default() -> Self {
         Self {
             early: false,
-            proposals: Default::default(),
+            map: Default::default(),
         }
     }
 }
@@ -283,16 +283,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                                 }
                             }
                         }
-                        Some(Command::Handover(msg)) => {
-                            if let Err(err) = self.handover(msg).await {
-                                if matches!(err, RbcError::Shutdown) {
-                                    debug!(node = %self.key, "network went down");
-                                    return
-                                } else {
-                                    warn!(node = %self.key, %err)
-                                }
-                            }
-                        }
                         // Best-effort sending to a peer without RBC properties.
                         Some(Command::Send(to, msg, data)) => {
                             if let Err(err) = self.send(to, msg, data).await {
@@ -304,9 +294,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                         // Best-effort broadcast without RBC properties.
                         Some(Command::Broadcast(msg, data)) => {
                             if let Err(err) = self.broadcast(msg, data).await {
-                                let _: NetworkDown = err;
-                                debug!(node = %self.key, "network went down");
-                                return
+                                if matches!(err, RbcError::Shutdown) {
+                                    debug!(node = %self.key, "network went down");
+                                    return
+                                } else {
+                                    warn!(node = %self.key, %err)
+                                }
                             }
                         }
                         Some(Command::Gc(round)) => {
@@ -340,14 +333,34 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Best effort broadcast.
-    async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> SendResult<()> {
+    async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> RbcResult<()> {
         if self.barrier().is_gt() {
             debug!(node = %self.key, "suppressing message broadcast");
             return Ok(())
         }
-        let digest = Digest::of_msg(&msg);
-        self.comm.broadcast(*msg.round().num(), data).await?;
-        debug!(node = %self.key, %digest, "message broadcasted");
+
+        if let Message::Handover(env) = msg {
+            let handover = env.data().handover().data();
+            let round = handover.round().num();
+            let next_cid = handover.next();
+
+            let Some(committee) = self.config.committees.get(next_cid) else {
+                return Err(RbcError::NoCommittee(next_cid))
+            };
+
+            let dest = committee.parties().copied().collect();
+            self.comm.multicast(dest, *round, data).await?;
+
+            // If this node is a member of the next committee, start using it now:
+            if committee.contains_key(&self.key) {
+                self.config.committee_id = next_cid
+            }
+        } else {
+            let digest = Digest::of_msg(&msg);
+            self.comm.broadcast(*msg.round().num(), data).await?;
+            debug!(node = %self.key, %digest, "message broadcasted");
+        }
+
         Ok(())
     }
 
@@ -360,29 +373,6 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let digest = Digest::of_msg(&msg);
         self.comm.unicast(to, *msg.round().num(), data).await?;
         debug!(node = %self.key, %to, %digest, "direct send");
-        Ok(())
-    }
-
-    /// Send handover message to next committee.
-    async fn handover(&mut self, env: Envelope<Handover, Validated>) -> RbcResult<()> {
-        trace!(node = %self.key, round = %env.data().round(), "sending handover");
-
-        let round = env.data().round().num();
-        let next_cid = env.data().next();
-
-        let Some(committee) = self.config.committees.get(next_cid) else {
-            return Err(RbcError::NoCommittee(next_cid))
-        };
-
-        let mesg = Message::Handover(env);
-        let data = serialize(&Protocol::<'_, T, Validated>::Send(Cow::Borrowed(&mesg)))?;
-        let dest = committee.parties().copied().collect();
-        self.comm.multicast(dest, *round, data).await?;
-
-        // If this node is a member of the next committee, start using it now:
-        if committee.contains_key(&self.key) {
-            self.config.committee_id = next_cid
-        }
 
         Ok(())
     }
@@ -415,13 +405,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if !can_send {
             tracker.message.defer.prop = Some(data);
-            messages.proposals.insert(digest, tracker);
+            messages.map.insert(digest, tracker);
             debug!(node = %self.key, %digest, "suppressing proposal");
             return Ok(())
         }
 
         self.comm.broadcast(*digest.round().num(), data).await?;
-        messages.proposals.insert(digest, tracker);
+        messages.map.insert(digest, tracker);
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
 
@@ -512,7 +502,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             debug!(node = %self.key, %barrier, "round number info collected");
 
             for (round, messages) in self.buffer.range_mut(barrier ..) {
-                for (digest, tracker) in &mut messages.proposals {
+                for (digest, tracker) in &mut messages.map {
                     match tracker.status {
                         // A quorum has been formed already => just send the certificate.
                         Status::Requested | Status::Delivered => {
@@ -592,7 +582,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let evidence = vertex.data().evidence().clone();
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
-        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -667,13 +657,13 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if self.config.early_delivery && !messages.early {
             let available = messages
-                .proposals
+                .map
                 .values()
                 .filter(|t| t.message.item.is_some())
                 .count();
 
             if available >= committee.quorum_size().get() {
-                for tracker in messages.proposals.values_mut() {
+                for tracker in messages.map.values_mut() {
                     if tracker.status == Status::Delivered {
                         continue;
                     }
@@ -733,7 +723,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round().num()).or_default();
 
-        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -792,7 +782,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                     warn!(node = %self.key, %err, %digest, "failed to add vote");
                     if tracker.votes.is_empty() && tracker.message.item.is_none() {
                         if let Some(messages) = self.buffer.get_mut(&digest.round().num()) {
-                            messages.proposals.remove(&digest);
+                            messages.map.remove(&digest);
                         }
                     }
                 }
@@ -829,7 +819,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let commit = digest.commit();
         let can_send = self.barrier().is_le();
         let messages = self.buffer.entry(digest.round().num()).or_default();
-        let tracker = messages.proposals.entry(digest).or_insert_with(|| {
+        let tracker = messages.map.entry(digest).or_insert_with(|| {
             let now = Instant::now();
             Tracker {
                 start: now,
@@ -898,7 +888,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         if let Some(msg) = self
             .buffer
             .get_mut(&digest.round().num())
-            .and_then(|m| m.proposals.get_mut(&digest))
+            .and_then(|m| m.map.get_mut(&digest))
             .and_then(|t| t.message.item.as_ref())
         {
             let proto = Protocol::GetResponse(Cow::Borrowed(msg));
@@ -931,7 +921,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let Some(tracker) = self
             .buffer
             .get_mut(&digest.round().num())
-            .and_then(|m| m.proposals.get_mut(&digest))
+            .and_then(|m| m.map.get_mut(&digest))
         else {
             debug!(node = %self.key, %src, "no tracker for get response");
             return Ok(());
@@ -957,7 +947,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// Periodically we go over message status and retry incomplete items.
     async fn retry(&mut self, now: Instant) -> RbcResult<()> {
         trace!(node = %self.key, "retrying ...");
-        for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.proposals.iter_mut()) {
+        for (digest, tracker) in self.buffer.values_mut().flat_map(|m| m.map.iter_mut()) {
             if tracker.status == Status::Requested {
                 debug!(
                     node     = %self.key,

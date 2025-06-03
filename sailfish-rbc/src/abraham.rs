@@ -7,7 +7,7 @@ use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
-use sailfish_types::{CommitteeId, CommitteeVec, Handover};
+use sailfish_types::{CommitteeId, CommitteeVec};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -60,8 +60,6 @@ enum Protocol<'a, T: Committable + Clone, Status: Clone> {
 enum Command<T: Committable> {
     /// Send message to a party identified by the given public key.
     Send(PublicKey, Message<T, Validated>, Data),
-    /// Send a handover message to the next committee.
-    Handover(Envelope<Handover, Validated>),
     /// Do a best-effort broadcast of the given message.
     Broadcast(Message<T, Validated>, Data),
     /// Do a byzantine reliable broadcast of the given message.

@@ -22,7 +22,7 @@ pub enum Message<T: Committable, Status = Validated> {
     TimeoutCert(Certificate<Timeout>),
 
     /// A handover message from a node.
-    Handover(Envelope<Handover, Status>),
+    Handover(Envelope<HandoverMessage, Status>),
 }
 
 impl<T: Committable, S> Message<T, S> {
@@ -31,8 +31,8 @@ impl<T: Committable, S> Message<T, S> {
             Self::Vertex(v) => *v.data().round().data(),
             Self::Timeout(t) => t.data().timeout().data().round(),
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
+            Self::Handover(h) => h.data().handover().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
-            Self::Handover(h) => h.data().round(),
         }
     }
 
@@ -230,7 +230,7 @@ impl<T: Committable> Message<T, Unchecked> {
                 Some(Message::NoVote(e))
             }
             Self::Handover(env) => {
-                let round = env.data().round();
+                let round = env.data().handover().data().round();
 
                 // Get the committee of the handover round.
                 let Some(c) = cc.get(round.committee()) else {
@@ -243,6 +243,24 @@ impl<T: Committable> Message<T, Unchecked> {
                     warn!("invalid envelope signature");
                     return None;
                 };
+
+                let signer = env.signing_key();
+
+                // The signer should be the producer of the handover message:
+                if signer != env.data().handover().signing_key() {
+                    warn!(
+                        %signer,
+                        handover = %env.data().handover().signing_key(),
+                        "envelope signer != handover signer"
+                    );
+                    return None;
+                }
+
+                // Validate the signature of the previous round evidence:
+                if !env.data().evidence().is_valid(round.num(), cc) {
+                    warn!(%signer, "invalid handover evidence");
+                    return None;
+                }
 
                 Some(Message::Handover(env))
             }
@@ -546,6 +564,33 @@ impl NoVoteMessage {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct HandoverMessage {
+    handover: Signed<Handover>,
+    evidence: Evidence,
+}
+
+impl HandoverMessage {
+    pub fn new(h: Handover, e: Evidence, k: &Keypair) -> Self {
+        Self {
+            handover: Signed::new(h, k),
+            evidence: e,
+        }
+    }
+
+    pub fn handover(&self) -> &Signed<Handover> {
+        &self.handover
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
+    }
+
+    pub fn into_parts(self) -> (Signed<Handover>, Evidence) {
+        (self.handover, self.evidence)
+    }
+}
+
 impl<T: Committable, S> fmt::Display for Message<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -568,7 +613,9 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
                 write!(f, "TimeoutCert({})", c.data().round())
             }
             Self::Handover(h) => {
-                write!(f, "Handover({})", h.data().round())
+                let r = h.data().handover().data().round();
+                let t = h.data().handover().data().next();
+                write!(f, "Handover({}--[{}]->{})", r.committee(), r.num(), t)
             }
         }
     }
@@ -612,6 +659,15 @@ impl Committable for NoVoteMessage {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("NoVoteMessage")
             .field("no_vote", self.no_vote.commit())
+            .field("evidence", self.evidence.commit())
+            .finalize()
+    }
+}
+
+impl Committable for HandoverMessage {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("HandoverMessage")
+            .field("handover", self.handover.commit())
             .field("evidence", self.evidence.commit())
             .finalize()
     }

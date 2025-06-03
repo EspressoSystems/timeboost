@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use committable::Committable;
 use info::NodeInfo;
+use multisig::Signed;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime, Handover};
+use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime, Handover, HandoverMessage};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
@@ -38,7 +39,7 @@ pub struct Consensus<T> {
     /// The ID of the currently active committee.
     committee_id: CommitteeId,
 
-    next_committee: Option<(ConsensusTime, CommitteeId)>,
+    next_committee: Option<(ConsensusTime, CommitteeId, VoteAccumulator<Handover>)>,
 
     /// The current round number.
     round: RoundNumber,
@@ -64,8 +65,8 @@ pub struct Consensus<T> {
     /// The set of no votes that we've received so far.
     no_votes: BTreeMap<RoundNumber, VoteAccumulator<NoVote>>,
 
-    /// Handovers from the previous committee.
-    handovers: Option<VoteAccumulator<Handover>>,
+    /// Buffer of handover messages we have received before having seen the committee.
+    handovers: Vec<Signed<Handover>>,
 
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex<T>>,
@@ -99,8 +100,9 @@ impl<T> Consensus<T> {
     }
 
     pub fn add_committee(&mut self, t: ConsensusTime, i: CommitteeId, c: Committee) {
-        self.committees.add(i, c);
-        self.next_committee = Some((t, i));
+        self.committees.add(i, c.clone());
+        let v = VoteAccumulator::new(c);
+        self.next_committee = Some((t, i, v));
     }
 }
 
@@ -127,7 +129,7 @@ where
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: BTreeMap::new(),
-            handovers: None,
+            handovers: Vec::new(),
             committee,
             committee_id: id,
             committees: cv,
@@ -183,12 +185,22 @@ where
             Message::Vertex(e) => self.handle_vertex(e),
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
+            Message::Handover(e) => self.handle_handover(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
-            Message::Handover(h) => self.handle_handover(h),
         }
     }
 
-    fn handle_handover(&mut self, e: Envelope<Handover, Validated>) -> Vec<Action<T>> {
+    fn handle_handover(&mut self, e: Envelope<HandoverMessage, Validated>) -> Vec<Action<T>> {
+        let h = e.into_signed().into_data().into_parts().0;
+        if let Some((_, id, va)) = &mut self.next_committee {
+            if h.data().next() == *id {
+                let _ = va.add(h); // TODO
+                // TODO: send handover if > threshold
+                // TODO: switch when > quorum
+            }
+        } else {
+            self.handovers.push(h);
+        }
         Vec::new()
     }
 
@@ -921,7 +933,7 @@ where
 
     /// Check if the time has come to active the next committee.
     fn update_committee(&mut self) -> Option<Action<T>> {
-        let (t, i) = self.next_committee?;
+        let &(t, i, _) = self.next_committee.as_ref()?;
         if t > self.clock {
             return None;
         }
