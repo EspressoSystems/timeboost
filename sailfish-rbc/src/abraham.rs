@@ -83,12 +83,9 @@ pub struct RbcConfig {
 
 impl RbcConfig {
     pub fn new(k: Keypair, id: CommitteeId, c: Committee) -> Self {
-        let mut cv = CommitteeVec::new();
-        cv.add(id, c);
-
         Self {
             keypair: k,
-            committees: cv,
+            committees: CommitteeVec::singleton(id, c),
             committee_id: id,
             recover: true,
             early_delivery: true,

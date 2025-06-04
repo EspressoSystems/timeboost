@@ -81,6 +81,12 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
+mkconfig_local NUM_NODES *ARGS:
+  cargo run --bin mkconfig -- -n {{NUM_NODES}} --sailfish-base-addr "127.0.0.1:8000" --decrypt-base-addr "127.0.0.1:10000" --producer-base-addr "127.0.0.1:11000" --mode "increment-port" {{ARGS}} | jq
+
+mkconfig_docker NUM_NODES *ARGS:
+  cargo run --bin mkconfig -- -n {{NUM_NODES}} --sailfish-base-addr "172.20.0.2:8000" --decrypt-base-addr "172.20.0.2:8001" --producer-base-addr "172.20.0.2:8002" --mode "increment-address" {{ARGS}} | jq
+
 ####################
 ####TEST COMMANDS###
 ####################

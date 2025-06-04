@@ -1,6 +1,6 @@
 [package]
 name = "multisig"
-description = "Signature set over ED25519 signatures"
+description = "Quorum Signature and Diffie-Hellman Key Exchanges"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,7 +18,7 @@ data-encoding = { workspace = true }
 ed25519-compact = { workspace = true }
 either = { workspace = true }
 rayon = { workspace = true }
-secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
+secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }

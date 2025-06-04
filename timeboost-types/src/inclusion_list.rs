@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::{Bundle, Bytes, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
-use sailfish_types::RoundNumber;
+use sailfish_types::{Evidence, RoundNumber};
 use timeboost_crypto::KeysetId;
 
 /// List of bundles to be included, selected from `CandidateList`.
@@ -12,16 +12,18 @@ pub struct InclusionList {
     round: RoundNumber,
     time: Timestamp,
     index: DelayedInboxIndex,
+    evidence: Evidence,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
 }
 
 impl InclusionList {
-    pub fn new(r: RoundNumber, t: Timestamp, i: DelayedInboxIndex) -> Self {
+    pub fn new(r: RoundNumber, t: Timestamp, i: DelayedInboxIndex, e: Evidence) -> Self {
         Self {
             round: r,
             time: t,
             index: i,
+            evidence: e,
             priority: Vec::new(),
             regular: Vec::new(),
         }
@@ -88,6 +90,10 @@ impl InclusionList {
 
     pub fn timestamp(&self) -> Timestamp {
         self.time
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
     }
 
     pub fn round(&self) -> RoundNumber {

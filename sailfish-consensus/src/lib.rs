@@ -838,8 +838,9 @@ where
                     continue;
                 }
                 let b = to_deliver.payload().clone();
+                let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                actions.push(Action::Deliver(Payload::new(r, s, b)));
+                actions.push(Action::Deliver(Payload::new(r, s, b, e)));
                 self.delivered.insert((r, s));
             }
         }
@@ -1142,7 +1143,7 @@ where
 mod tests {
     use arbtest::{arbitrary::Arbitrary, arbtest};
     use multisig::Keypair;
-    use sailfish_types::{Timestamp, math};
+    use sailfish_types::{Evidence, Timestamp, math};
 
     use super::{Action, ConsensusTime, Payload, RoundNumber, tick};
 
@@ -1160,6 +1161,8 @@ mod tests {
             // Randomly populated sequence of actions:
             let mut actions: Vec<Action<Timestamp>> = Vec::new();
 
+            let e = Evidence::Genesis;
+
             let mut i = 0;
             while i < t.len() {
                 let a = match u8::arbitrary(u)? {
@@ -1169,7 +1172,7 @@ mod tests {
                     _ => {
                         let n = t[i];
                         i += 1;
-                        Action::Deliver(Payload::new(r, k.public_key(), n.into()))
+                        Action::Deliver(Payload::new(r, k.public_key(), n.into(), e.clone()))
                     }
                 };
                 actions.push(a)

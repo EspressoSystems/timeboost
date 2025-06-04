@@ -55,6 +55,13 @@ impl<const N: usize> CommitteeVec<N> {
         }
     }
 
+    /// Create a committee vector with the given entry.
+    pub fn singleton(id: CommitteeId, c: Committee) -> Self {
+        let mut this = Self::new();
+        this.add(id, c);
+        this
+    }
+
     /// Check if an entry for the given ID exists.
     pub fn contains(&self, id: CommitteeId) -> bool {
         self.vec.iter().any(|(i, _)| *i == id)

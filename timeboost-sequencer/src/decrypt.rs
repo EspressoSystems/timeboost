@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use multisig::PublicKey;
-use sailfish::types::RoundNumber;
+use sailfish::types::{CommitteeVec, Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
@@ -70,10 +70,16 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(label: PublicKey, net: Overlay, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(
+        label: PublicKey,
+        net: Overlay,
+        committees: CommitteeVec<2>,
+        keyset: Keyset,
+        dec_sk: DecryptionKey,
+    ) -> Self {
         let (req_tx, req_rx) = channel(MAX_ROUNDS);
         let (res_tx, res_rx) = channel(MAX_ROUNDS);
-        let worker = Worker::new(label, net, keyset, dec_sk);
+        let worker = Worker::new(label, net, committees, keyset, dec_sk);
 
         Self {
             label,
@@ -189,6 +195,8 @@ struct Worker {
     label: PublicKey,
     /// overlay network to connect to other decrypters
     net: Overlay,
+    /// consensus committees
+    committees: CommitteeVec<2>,
     /// keyset metadata about the decryption committee
     keyset: Keyset,
     /// round number of the first decrypter request, used to ignore received decryption shares for
@@ -213,10 +221,17 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(label: PublicKey, net: Overlay, keyset: Keyset, dec_sk: DecryptionKey) -> Self {
+    pub fn new(
+        label: PublicKey,
+        net: Overlay,
+        committees: CommitteeVec<2>,
+        keyset: Keyset,
+        dec_sk: DecryptionKey,
+    ) -> Self {
         Self {
             label,
             net,
+            committees,
             keyset,
             first_requested_round: None,
             dec_sk,
@@ -418,6 +433,7 @@ impl Worker {
             round,
             kid: self.keyset.id(),
             dec_shares,
+            evidence: incl.evidence().clone(),
         }
     }
 
@@ -427,13 +443,18 @@ impl Worker {
             trace!("Empty decryption share batch, skipped");
             return Err(DecryptError::EmptyDecShares);
         }
+        let round = batch.round;
+        if !batch.evidence.is_valid(round, &self.committees) {
+            debug!(node = %self.label, %round, "Invalid round evidence");
+            return Err(DecryptError::MissingRoundEvidence(round));
+        }
         // This operation is doing the following: assumme local cache for this round is:
         // [[s1a, s1b], [s2a, s2b], [s3a, s3b]]
         // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so
         // far. with node c's batch [s1c, s2c, s3c], the new local cache is:
         // [[s1a, s1b, s1c], [s2a, s2b, s2c], [s3a, s3b, s3c]]
         self.dec_shares
-            .entry(batch.round)
+            .entry(round)
             .or_insert(vec![vec![]; batch.len()])
             .iter_mut()
             .zip(batch.dec_shares)
@@ -583,6 +604,8 @@ struct DecShareBatch {
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
     // ones
     dec_shares: Vec<Option<DecShare>>,
+    /// round evidence to justify `round`, avoiding unbounded worker buffer w/ future rounds data
+    evidence: Evidence,
 }
 
 impl DecShareBatch {
@@ -668,8 +691,8 @@ mod tests {
 
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::{SecretKey, x25519};
-    use sailfish::types::RoundNumber;
+    use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use sailfish::types::{CommitteeVec, PLACEHOLDER, Round, RoundNumber};
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
@@ -687,9 +710,9 @@ mod tests {
         let num_nodes = 5;
         let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
         let encryption_key: PublicKey<_> =
-            decode_bincode("kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK");
+            decode_bincode("8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu");
 
-        let mut decrypters = setup(keyset).await;
+        let (mut decrypters, signature_keys, committee) = setup(keyset).await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
@@ -720,7 +743,19 @@ mod tests {
                 .expect("Failed to encode ciphertext");
 
         // Create inclusion lists with encrypted transactions
-        let mut incl_list = InclusionList::new(RoundNumber::new(42), Timestamp::now(), 0.into());
+        let round = RoundNumber::new(42);
+        // generate round evidence by signing for round-1
+        let evidence = {
+            let mut va = VoteAccumulator::new(committee);
+            for sk in signature_keys {
+                let keypair = Keypair::from(sk);
+                va.add(Signed::new(Round::new(round - 1, PLACEHOLDER), &keypair))
+                    .unwrap();
+            }
+            let cert = va.into_certificate().unwrap();
+            cert.into()
+        };
+        let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
         let keyset_id = keyset.id();
         let chain_id = ChainId::from(0);
         let epoch = Epoch::from(42);
@@ -772,31 +807,33 @@ mod tests {
         }
     }
 
-    async fn setup(keyset: Keyset) -> Vec<Decrypter> {
+    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<SecretKey>, Committee) {
+        // these keys are generated via
+        // `just mkconfig_local 5 --seed 42`
         let signature_private_keys = [
-            "4aZN8RbcnmVkWvhX9D78qcu62eFc7JuWvy2Yf8SLrjey",
-            "6gWU69SCKvhojvuPXHaTzA155h8yy4f7trbZrkDKggqp",
-            "CuVp8gBsVoK3qted8CuwEUNy6KE5rPG5ZYNGG5Lf1rwo",
-            "4MmQb1DCqJrr2iyiykYCfdezgi5vuFtz63ce3upKa5iU",
-            "3RVPdMGjErdNJJEbcAnszp1gE2Z9q615JDbHrRxumZDQ",
+            "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
+            "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
+            "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
+            "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
+            "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
         ];
         let dh_private_keys = [
-            "AZUmKaxT6JHXworoVGJwpsTEWtrZX3UqRXyt9UTGVLfu",
-            "4cA4NpXcnsz3ihMU7JKBJeMkQdZ3MqwHiJdAnqVRPGEB",
-            "5R35tzKbsXVSCgznEye1Rncp18mJxKzKL5bsvYP6iSX3",
-            "BjR6ZGFquSqk8ZmegchBm97uP8GfoF2r3jfHjL7QQJVH",
-            "3RzAc8nAvNJkp8DvtAGdWvyN7jNnMoCBp5tVjLS9fXZY",
+            "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
+            "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
+            "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
+            "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
+            "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
         let decryption_private_keys = [
-            "jMbTDiLo8tgyERv92mGrCAe1s3KnnnyqhQeSYte6vUhZy1",
-            "jysmvvvwSHu872gmxkejPP8RxUDpSpKChnkPMVeXyRibwN",
-            "kCioHtYdX7pUVXJLceFFKx7j4czcqDjjS52FYbvy2AuyQV",
-            "jVEU8hbv7uUntaDt4GgDxUKgoCu8UCXugx1coMeiVfn31L",
-            "jUzpdPzgxn2zpaLXaHJiWJ2jbbD3scsP8YqscA1uZGhPfZ",
+            "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV",
+            "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S",
+            "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z",
+            "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2",
+            "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX",
         ];
 
-        let encryption_key = "kjGsCSgKRoBte3ohUroYzckRZCTknNbF44EagVmYGGp1YK";
-        let comb_key = "AuMP7yjmQH98sUnn7gcP7UUEZ1zNNbzESuNFkizXXHLeyyeH89Ky6F3M5xQ5kDXHyBAuza2CJmyXG9r1n38dW5GYj3asqB1TJzxmCDpmQo7eGjQEgcfEhz521k91kymL7u14EaGriN43WfzDBvcvWjNq93tjTUpRtv4kBycAujLxsWUoaCZBFDVcYMrLAoNXAaCMZHNerseE5V9vqMmgDXRqXZZZtJFv6kgARqmqH";
+        let encryption_key = "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu";
+        let comb_key = "y7D4UxEgJtRshdYfZu1NY4RyJxAzjjf3AGhf4AihP4epZffaoYRjFeCEaD9uCjNJVCDPZmjwnfB6v1gyZmrQsiCT5PDcHNzS7qfxP8GatiFes3nUs3xTxQLThqvrfdEv3S48jArK75FJoPRk5cKEBodTv1BVKu3GNgYHmcK731MKTJoMS16ukYxrSKg7KxzeQCZwBcamW1YQpVkHqbkvVif8wekSxfpz3CGrw2WKadzVbK1x1pUDFTrtSZU2eyTKVvrW4YJ2zKPm5FYXTaYMJqRXkyBFnvfR9NxgLHq6i5AuArTxrD772Rs1YX8bXu9fR4nLHt14SUJAGqf";
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()
@@ -831,9 +868,16 @@ mod tests {
                 )
             })
             .collect();
+        let committee = Committee::new(
+            signature_keys
+                .iter()
+                .map(SecretKey::public_key)
+                .enumerate()
+                .map(|(i, key)| (i as u8, key)),
+        );
 
         let mut decrypters = Vec::new();
-        for i in 0..usize::from(keyset.size()) {
+        for i in 0..peers.len() {
             let sig_key = signature_keys[i].clone();
             let dh_key = dh_keys[i].clone();
             let (_, _, addr) = peers[i];
@@ -852,6 +896,7 @@ mod tests {
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 Overlay::new(network),
+                CommitteeVec::singleton(PLACEHOLDER, committee.clone()),
                 keyset,
                 decryption_keys[i].clone(),
             );
@@ -859,7 +904,7 @@ mod tests {
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-        decrypters
+        (decrypters, signature_keys, committee)
     }
 
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {

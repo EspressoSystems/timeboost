@@ -24,8 +24,7 @@ impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
         let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
         let committee = Committee::new(key_pairs.clone().map(|(i, k)| (i, k.public_key())));
-        let mut cv = CommitteeVec::new();
-        cv.add(PLACEHOLDER, committee.clone());
+        let cv = CommitteeVec::singleton(PLACEHOLDER, committee.clone());
         Self {
             keys: key_pairs.collect(),
             committee,

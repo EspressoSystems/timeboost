@@ -10,6 +10,7 @@ pub mod x25519;
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use secp256k1::rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub use cert::Certificate;
@@ -77,6 +78,14 @@ pub struct Signature {
 impl Keypair {
     pub fn generate() -> Self {
         let (sk, pk) = secp256k1::generate_keypair(&mut secp256k1::rand::rng());
+        Self {
+            sk: SecretKey { key: sk },
+            pk: PublicKey { key: pk },
+        }
+    }
+
+    pub fn generate_with_rng<R: Rng>(rng: &mut R) -> Self {
+        let (sk, pk) = secp256k1::generate_keypair(rng);
         Self {
             sk: SecretKey { key: sk },
             pk: PublicKey { key: pk },

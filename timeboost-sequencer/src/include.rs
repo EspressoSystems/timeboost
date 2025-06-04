@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 
 use multisig::Committee;
-use sailfish::types::RoundNumber;
+use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
     Timestamp,
@@ -50,7 +50,12 @@ impl Includer {
         }
     }
 
-    pub fn inclusion_list(&mut self, round: RoundNumber, lists: Vec<CandidateList>) -> Outcome {
+    pub fn inclusion_list(
+        &mut self,
+        round: RoundNumber,
+        evidence: Evidence,
+        lists: Vec<CandidateList>,
+    ) -> Outcome {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
@@ -153,7 +158,7 @@ impl Includer {
             }
         }
 
-        let mut ilist = InclusionList::new(self.round, self.time, self.index);
+        let mut ilist = InclusionList::new(self.round, self.time, self.index, evidence);
         ilist
             .set_priority_bundles(bundles)
             .set_regular_bundles(include);

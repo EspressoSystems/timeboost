@@ -315,14 +315,16 @@ pub struct Payload<T: Committable> {
     round: RoundNumber,
     source: PublicKey,
     data: T,
+    evidence: Evidence,
 }
 
 impl<T: Committable> Payload<T> {
-    pub fn new(round: RoundNumber, source: PublicKey, data: T) -> Self {
+    pub fn new(round: RoundNumber, source: PublicKey, data: T, evidence: Evidence) -> Self {
         Self {
             round,
             source,
             data,
+            evidence,
         }
     }
 
@@ -342,8 +344,16 @@ impl<T: Committable> Payload<T> {
         self.data
     }
 
-    pub fn into_parts(self) -> (RoundNumber, PublicKey, T) {
-        (self.round, self.source, self.data)
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
+    }
+
+    pub fn into_evidence(self) -> Evidence {
+        self.evidence
+    }
+
+    pub fn into_parts(self) -> (RoundNumber, PublicKey, T, Evidence) {
+        (self.round, self.source, self.data, self.evidence)
     }
 }
 
