@@ -112,6 +112,12 @@ where
             Action::Gc(r) => {
                 self.comm.gc(r).await?;
             }
+            Action::SendHandover(e) => {
+                self.comm.broadcast(Message::Handover(e)).await?;
+            }
+            Action::SendHandoverCert(c) => {
+                self.comm.broadcast(Message::HandoverCert(c)).await?;
+            }
             Action::UseCommittee(_) => {
                 todo!()
             }

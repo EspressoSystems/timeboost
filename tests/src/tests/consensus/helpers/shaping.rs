@@ -496,6 +496,34 @@ impl Simulator {
                         }
                     }
                 }
+                Action::SendHandover(e) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::Handover(e.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::Handover(e.clone()))
+                        }
+                    }
+                }
+                Action::SendHandoverCert(c) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::HandoverCert(c.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::HandoverCert(c.clone()))
+                        }
+                    }
+                }
                 Action::ResetTimer(r) => {
                     if let Some(p) = self.parties.get_mut(party) {
                         p.timeout.0 = self.time + self.timeout;

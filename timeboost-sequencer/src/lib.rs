@@ -201,6 +201,7 @@ impl Sequencer {
                 cfg.sign_keypair.clone(),
                 PLACEHOLDER,
                 committee.clone(),
+                false,
                 queue.clone(),
             )
             .with_metrics(cons_metrics);

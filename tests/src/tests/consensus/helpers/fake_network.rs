@@ -134,6 +134,8 @@ impl FakeNetwork {
             Action::SendProposal(e) => (None, Message::Vertex(e)),
             Action::SendTimeout(e) => (None, Message::Timeout(e)),
             Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
+            Action::SendHandover(e) => (None, Message::Handover(e)),
+            Action::SendHandoverCert(c) => (None, Message::HandoverCert(c)),
         };
         msgs.push(msg)
     }

@@ -41,6 +41,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         self.votes.is_empty()
     }
 
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     /// Return the amount of signatures for a given commmitment.
     pub fn votes(&self, c: &Commitment<D>) -> usize {
         self.votes.get(c).map(|e| e.sigs.len()).unwrap_or(0)
