@@ -714,8 +714,9 @@ where
                     continue;
                 }
                 let b = to_deliver.payload().clone();
+                let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                actions.push(Action::Deliver(Payload::new(r, s, b)));
+                actions.push(Action::Deliver(Payload::new(r, s, b, e)));
                 self.delivered.insert((r, s));
             }
         }
