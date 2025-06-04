@@ -220,8 +220,6 @@ pub struct Payload<T: Committable> {
     round: RoundNumber,
     source: PublicKey,
     data: T,
-    /// when sailfish delivers to timeboost, round evidence prevents malicious timeboost nodes
-    /// placing messages arbitrarily far into the future, causing unbounded buffer grow.
     evidence: Evidence,
 }
 
@@ -255,8 +253,12 @@ impl<T: Committable> Payload<T> {
         &self.evidence
     }
 
-    pub fn into_parts(self) -> (RoundNumber, PublicKey, T) {
-        (self.round, self.source, self.data)
+    pub fn into_evidence(self) -> Evidence {
+        self.evidence
+    }
+
+    pub fn into_parts(self) -> (RoundNumber, PublicKey, T, Evidence) {
+        (self.round, self.source, self.data, self.evidence)
     }
 }
 

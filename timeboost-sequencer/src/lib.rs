@@ -362,11 +362,13 @@ impl Task {
                 match action {
                     Action::Deliver(payload) => {
                         round = payload.round();
-                        if payload.evidence().round() > evidence.round() {
-                            evidence = payload.evidence().clone()
-                        }
                         match payload.data().decode::<MAX_MESSAGE_SIZE>() {
-                            Ok(data) => lists.push(data),
+                            Ok(data) => {
+                                if payload.evidence().round() > evidence.round() {
+                                    evidence = payload.into_evidence()
+                                }
+                                lists.push(data)
+                            }
                             Err(err) => {
                                 warn!(
                                     node = %self.label,

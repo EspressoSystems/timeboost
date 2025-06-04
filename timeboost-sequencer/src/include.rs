@@ -24,8 +24,6 @@ pub struct Includer {
     committee: Committee,
     /// Consensus round.
     round: RoundNumber,
-    /// Round evidence
-    evidence: Evidence,
     /// Consensus timestamp.
     time: Timestamp,
     /// Epoch of timestamp.
@@ -43,7 +41,6 @@ impl Includer {
         Self {
             committee: c,
             round: RoundNumber::genesis(),
-            evidence: Evidence::Genesis,
             time: Timestamp::default(),
             epoch: Timestamp::default().epoch(),
             seqno: SeqNo::zero(),
@@ -61,7 +58,6 @@ impl Includer {
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
-        self.evidence = evidence;
 
         while self.cache.len() > CACHE_SIZE {
             self.cache.pop_first();
@@ -150,8 +146,7 @@ impl Includer {
             }
         }
 
-        let mut ilist =
-            InclusionList::new(self.round, self.time, self.index, self.evidence.clone());
+        let mut ilist = InclusionList::new(self.round, self.time, self.index, evidence);
         ilist
             .set_priority_bundles(bundles)
             .set_regular_bundles(include);

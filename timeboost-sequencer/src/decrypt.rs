@@ -355,10 +355,6 @@ impl Worker {
 
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
-        // reject requests too far into the future without proper round evidence
-        if !incl.evidence().is_valid(round, &self.committee) {
-            return Err(DecryptError::MissingRoundEvidence(round));
-        }
         let dec_shares = self.decrypt(round, &incl);
         if dec_shares.is_empty() {
             return Err(DecryptError::EmptyDecShares);
