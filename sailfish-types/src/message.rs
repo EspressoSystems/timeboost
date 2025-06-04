@@ -381,6 +381,9 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
+
+    /// End processing
+    Shutdown,
 }
 
 impl<T: Committable> Action<T> {
@@ -434,6 +437,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
+            Action::Shutdown => f.write_str("Shutdown"),
         }
     }
 }
@@ -493,7 +497,7 @@ pub enum Evidence {
     Genesis,
     Regular(Certificate<Round>),
     Timeout(Certificate<Timeout>),
-    Handover(Certificate<Handover>)
+    Handover(Certificate<Handover>),
 }
 
 impl Evidence {
@@ -502,7 +506,7 @@ impl Evidence {
             Self::Genesis => RoundNumber::genesis(),
             Self::Regular(x) => x.data().num(),
             Self::Timeout(x) => x.data().round().num(),
-            Self::Handover(x) => x.data().round().num()
+            Self::Handover(x) => x.data().round().num(),
         }
     }
 

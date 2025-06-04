@@ -6,7 +6,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, x25519};
 use sailfish::{
     Coordinator,
-    consensus::{Consensus, ConsensusMetrics},
+    consensus::{Consensus, ConsensusMetrics, CurrentCommittee},
     rbc::{Rbc, RbcConfig, RbcMetrics},
     types::{Action, HasTime, PLACEHOLDER, Timestamp},
 };
@@ -289,8 +289,7 @@ async fn main() -> Result<()> {
 
     let consensus = Consensus::new(
         signing_keypair,
-        PLACEHOLDER,
-        committee,
+        CurrentCommittee::new(PLACEHOLDER, committee),
         repeat_with(Block::random),
     )
     .with_metrics(sf_metrics);

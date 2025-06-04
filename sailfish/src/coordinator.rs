@@ -127,6 +127,9 @@ where
             Action::Deliver(_) => {
                 // nothing to do
             }
+            Action::Shutdown => {
+                // nothing to do
+            }
         }
         Ok(())
     }

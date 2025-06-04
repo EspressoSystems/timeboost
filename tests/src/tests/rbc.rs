@@ -4,6 +4,7 @@ use std::time::Duration;
 use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
+use sailfish::consensus::CurrentCommittee;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::types::PLACEHOLDER;
 use timeboost_utils::types::logging::init_logging;
@@ -13,7 +14,7 @@ use crate::prelude::*;
 
 type Peers<const N: usize> = [(PublicKey, x25519::PublicKey, Address); N];
 
-fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
+fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, CurrentCommittee) {
     let ks: Vec<Keypair> = (0..n).map(|_| Keypair::generate()).collect();
     let xs: Vec<x25519::Keypair> = (0..n)
         .map(|_| x25519::Keypair::generate().unwrap())
@@ -23,7 +24,7 @@ fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
             .enumerate()
             .map(|(i, kp)| (i as u8, kp.public_key())),
     );
-    (ks, xs, co)
+    (ks, xs, CurrentCommittee::new(PLACEHOLDER, co))
 }
 
 fn ports(n: usize) -> Vec<u16> {
@@ -45,7 +46,7 @@ fn mk_host<A, const N: usize>(
     sim: &mut turmoil::Sim,
     k: Keypair,
     x: x25519::Keypair,
-    c: Committee,
+    c: CurrentCommittee,
     peers: Peers<N>,
 ) where
     A: Into<Address>,
@@ -67,9 +68,9 @@ fn mk_host<A, const N: usize>(
                 NetworkMetrics::default(),
             )
             .await?;
-            let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.clone()).recover(false);
+            let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.committee().clone()).recover(false);
             let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-            let cons = Consensus::new(k, PLACEHOLDER, c, EmptyBlocks);
+            let cons = Consensus::new(k, c, EmptyBlocks);
             let mut coor = Coordinator::new(rbc, cons);
             let mut actions = coor.init();
             loop {
@@ -114,9 +115,9 @@ fn small_committee() {
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
         let comm = Network::create_turmoil("C", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.clone()).recover(false);
+        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.committee().clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, PLACEHOLDER, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {
@@ -172,9 +173,9 @@ fn medium_committee() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.clone()).recover(false);
+        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.committee().clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, PLACEHOLDER, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {
@@ -229,9 +230,9 @@ fn medium_committee_partition_network() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.clone()).recover(false);
+        let cfg = RbcConfig::new(k.clone(), PLACEHOLDER, c.committee().clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
-        let cons = Consensus::new(k, PLACEHOLDER, c, EmptyBlocks);
+        let cons = Consensus::new(k, c, EmptyBlocks);
         let mut coor = Coordinator::new(rbc, cons);
         let mut actions = coor.init();
         loop {

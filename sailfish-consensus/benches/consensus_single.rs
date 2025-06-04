@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt};
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
-use sailfish_consensus::{Consensus, Dag};
+use sailfish_consensus::{Consensus, CurrentCommittee, Dag};
 use sailfish_types::{Action, Evidence, Message, PLACEHOLDER, Timestamp};
 
 #[derive(Debug, Clone, Copy)]
@@ -42,11 +42,14 @@ impl Net {
         let MultiRoundTestSpec { nodes, rounds } = spec;
         let kps = (0..nodes).map(|_| Keypair::generate()).collect::<Vec<_>>();
 
-        let com = Committee::new(
-            kps.iter()
-                .enumerate()
-                .map(|(i, kp)| (i as u8, kp.public_key())),
-        );
+        let com = {
+            let c = Committee::new(
+                kps.iter()
+                    .enumerate()
+                    .map(|(i, kp)| (i as u8, kp.public_key())),
+            );
+            CurrentCommittee::new(PLACEHOLDER, c)
+        };
 
         let now = Timestamp::now();
 
@@ -55,7 +58,7 @@ impl Net {
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, PLACEHOLDER, com.clone(), repeat(now)),
+                    Consensus::new(kp, com.clone(), repeat(now)),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -134,6 +137,7 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
         Action::UseCommittee(_) => None,
+        Action::Shutdown => None,
     }
 }
 

@@ -6,6 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
+use sailfish::consensus::CurrentCommittee;
 use sailfish::types::{Evidence, PLACEHOLDER, RoundNumber};
 use tracing::debug;
 
@@ -324,9 +325,10 @@ impl Simulator {
         let mut parties: BTreeMap<Name, Party> = keypairs
             .into_iter()
             .map(|(n, k)| {
+                let c = CurrentCommittee::new(PLACEHOLDER, committee.clone());
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, PLACEHOLDER, committee.clone(), EmptyBlocks),
+                    logic: Consensus::new(k, c, EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -535,7 +537,8 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) | Action::Shutdown => {
+                }
             }
         }
     }
