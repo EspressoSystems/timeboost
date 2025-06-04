@@ -360,25 +360,23 @@ impl Task {
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
                 match action {
-                    Action::Deliver(payload) => {
-                        round = payload.round();
-                        match payload.data().decode::<MAX_MESSAGE_SIZE>() {
-                            Ok(data) => {
-                                if payload.evidence().round() > evidence.round() {
-                                    evidence = payload.into_evidence()
-                                }
-                                lists.push(data)
+                    Action::Deliver(payload) => match payload.data().decode::<MAX_MESSAGE_SIZE>() {
+                        Ok(data) => {
+                            round = payload.round();
+                            if payload.evidence().round() > evidence.round() {
+                                evidence = payload.into_evidence()
                             }
-                            Err(err) => {
-                                warn!(
-                                    node = %self.label,
-                                    err  = %err,
-                                    src  = %payload.source(),
-                                    "failed to deserialize candidate list"
-                                );
-                            }
+                            lists.push(data)
                         }
-                    }
+                        Err(err) => {
+                            warn!(
+                                node = %self.label,
+                                err  = %err,
+                                src  = %payload.source(),
+                                "failed to deserialize candidate list"
+                            );
+                        }
+                    },
                     Action::Gc(r) => {
                         self.decrypter.gc(r).await?;
                         actions.push_front(action);
