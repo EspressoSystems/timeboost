@@ -115,25 +115,20 @@ impl FakeNetwork {
 
     fn handle_action(a: Action, msgs: &mut Vec<(Option<PublicKey>, Message)>) {
         let msg = match a {
-            Action::ResetTimer(_) => {
-                return;
-            }
-            Action::Deliver(_) => {
-                return;
-            }
-            Action::Gc(_) => {
-                return;
-            }
-            Action::Catchup(_) => {
-                return;
-            }
-            Action::UseCommittee(_) => {
+            Action::ResetTimer(_)
+            | Action::Deliver(_)
+            | Action::Gc(_)
+            | Action::Catchup(_)
+            | Action::UseCommittee(_)
+            | Action::Shutdown => {
                 return;
             }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),
             Action::SendProposal(e) => (None, Message::Vertex(e)),
             Action::SendTimeout(e) => (None, Message::Timeout(e)),
             Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
+            Action::SendHandover(e) => (None, Message::Handover(e)),
+            Action::SendHandoverCert(c) => (None, Message::HandoverCert(c)),
         };
         msgs.push(msg)
     }

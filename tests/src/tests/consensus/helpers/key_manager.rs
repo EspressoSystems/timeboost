@@ -4,7 +4,7 @@ use committable::Committable;
 use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
-use sailfish::consensus::ConsensusMetrics;
+use sailfish::consensus::{ConsensusMetrics, CurrentCommittee};
 use sailfish::types::CommitteeVec;
 use sailfish::types::{Evidence, PLACEHOLDER, Round, RoundNumber, Timeout, TimeoutMessage};
 use timeboost_utils::unsafe_zero_keypair;
@@ -41,8 +41,7 @@ impl KeyManager {
                 let metrics = ConsensusMetrics::default();
                 let cons = Consensus::new(
                     kpair.clone(),
-                    PLACEHOLDER,
-                    self.committee.clone(),
+                    CurrentCommittee::new(PLACEHOLDER, self.committee.clone()),
                     EmptyBlocks,
                 )
                 .with_metrics(metrics);

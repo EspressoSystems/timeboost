@@ -12,7 +12,7 @@ use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
-use sailfish::consensus::{Consensus, ConsensusMetrics};
+use sailfish::consensus::{Consensus, ConsensusMetrics, CurrentCommittee};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, PLACEHOLDER, RoundNumber};
 use timeboost_crypto::Keyset;
@@ -199,8 +199,7 @@ impl Sequencer {
 
             let cons = Consensus::new(
                 cfg.sign_keypair.clone(),
-                PLACEHOLDER,
-                committee.clone(),
+                CurrentCommittee::new(PLACEHOLDER, committee.clone()),
                 queue.clone(),
             )
             .with_metrics(cons_metrics);

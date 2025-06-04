@@ -6,6 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
+use sailfish::consensus::CurrentCommittee;
 use sailfish::types::{Evidence, PLACEHOLDER, RoundNumber};
 use tracing::debug;
 
@@ -324,9 +325,10 @@ impl Simulator {
         let mut parties: BTreeMap<Name, Party> = keypairs
             .into_iter()
             .map(|(n, k)| {
+                let c = CurrentCommittee::new(PLACEHOLDER, committee.clone());
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, PLACEHOLDER, committee.clone(), EmptyBlocks),
+                    logic: Consensus::new(k, c, EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -496,6 +498,34 @@ impl Simulator {
                         }
                     }
                 }
+                Action::SendHandover(e) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::Handover(e.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::Handover(e.clone()))
+                        }
+                    }
+                }
+                Action::SendHandoverCert(c) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::HandoverCert(c.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::HandoverCert(c.clone()))
+                        }
+                    }
+                }
                 Action::ResetTimer(r) => {
                     if let Some(p) = self.parties.get_mut(party) {
                         p.timeout.0 = self.time + self.timeout;
@@ -507,7 +537,8 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) | Action::Shutdown => {
+                }
             }
         }
     }

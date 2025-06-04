@@ -23,6 +23,9 @@ pub enum Message<T: Committable, Status = Validated> {
 
     /// A handover message from a node.
     Handover(Envelope<HandoverMessage, Status>),
+
+    /// A handover certificate from a node.
+    HandoverCert(Certificate<Handover>),
 }
 
 impl<T: Committable, S> Message<T, S> {
@@ -33,6 +36,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
             Self::Handover(h) => h.data().handover().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
+            Self::HandoverCert(c) => c.data().round(),
         }
     }
 
@@ -42,7 +46,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::Timeout(e) => Some(e.signing_key()),
             Self::NoVote(e) => Some(e.signing_key()),
             Self::Handover(e) => Some(e.signing_key()),
-            Self::TimeoutCert(_) => None,
+            Self::TimeoutCert(_) | Self::HandoverCert(_) => None,
         }
     }
 
@@ -64,6 +68,10 @@ impl<T: Committable, S> Message<T, S> {
 
     pub fn is_handover(&self) -> bool {
         matches!(self, Self::Handover(_))
+    }
+
+    pub fn is_handover_cert(&self) -> bool {
+        matches!(self, Self::HandoverCert(_))
     }
 }
 
@@ -281,6 +289,23 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 Some(Message::TimeoutCert(crt))
             }
+            Self::HandoverCert(crt) => {
+                let round = crt.data().round();
+
+                // Get the committee of the certificate round.
+                let Some(c) = cc.get(round.committee()) else {
+                    warn!(%round, "committee not found");
+                    return None;
+                };
+
+                // Validate the handover certificate signatures:
+                if !crt.is_valid_par(c) {
+                    warn!("invalid handover certiticate");
+                    return None;
+                }
+
+                Some(Message::HandoverCert(crt))
+            }
         }
     }
 }
@@ -336,11 +361,17 @@ pub enum Action<T: Committable> {
     /// Send a timeout message to all nodes.
     SendTimeout(Envelope<TimeoutMessage, Validated>),
 
+    /// Send a handover message to all nodes of the next committee.
+    SendHandover(Envelope<HandoverMessage, Validated>),
+
     /// Send a no-vote message to the given node.
     SendNoVote(PublicKey, Envelope<NoVoteMessage, Validated>),
 
     /// Send a timeout certificate to all nodes.
     SendTimeoutCert(Certificate<Timeout>),
+
+    /// Send a handover certificate to all nodes of the next committee.
+    SendHandoverCert(Certificate<Handover>),
 
     /// Are we in catchup?
     Catchup(RoundNumber),
@@ -350,6 +381,9 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
+
+    /// End processing
+    Shutdown,
 }
 
 impl<T: Committable> Action<T> {
@@ -373,6 +407,13 @@ impl<T: Committable> fmt::Display for Action<T> {
                     envelope.data().timeout().data().round()
                 )
             }
+            Action::SendHandover(envelope) => {
+                write!(
+                    f,
+                    "SendHandover({})",
+                    envelope.data().handover().data().round()
+                )
+            }
             Action::SendNoVote(ver_key, envelope) => {
                 write!(
                     f,
@@ -384,6 +425,9 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::SendTimeoutCert(certificate) => {
                 write!(f, "SendTimeoutCert({})", certificate.data().round())
             }
+            Action::SendHandoverCert(certificate) => {
+                write!(f, "SendHandoverCert({})", certificate.data().round())
+            }
             Action::Gc(r) => {
                 write!(f, "Gc({r})")
             }
@@ -393,6 +437,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
+            Action::Shutdown => f.write_str("Shutdown"),
         }
     }
 }
@@ -452,6 +497,7 @@ pub enum Evidence {
     Genesis,
     Regular(Certificate<Round>),
     Timeout(Certificate<Timeout>),
+    Handover(Certificate<Handover>),
 }
 
 impl Evidence {
@@ -460,6 +506,7 @@ impl Evidence {
             Self::Genesis => RoundNumber::genesis(),
             Self::Regular(x) => x.data().num(),
             Self::Timeout(x) => x.data().round().num(),
+            Self::Handover(x) => x.data().round().num(),
         }
     }
 
@@ -478,6 +525,12 @@ impl Evidence {
                 };
                 self.round() + 1 == r && x.is_valid_par(c)
             }
+            Self::Handover(x) => {
+                let Some(c) = cc.get(x.data().round().committee()) else {
+                    return false;
+                };
+                self.round() + 1 == r && x.is_valid_par(c)
+            }
         }
     }
 
@@ -485,8 +538,16 @@ impl Evidence {
         matches!(self, Self::Genesis)
     }
 
+    pub fn is_regular(&self) -> bool {
+        matches!(self, Self::Regular(_))
+    }
+
     pub fn is_timeout(&self) -> bool {
         matches!(self, Self::Timeout(_))
+    }
+
+    pub fn is_handover(&self) -> bool {
+        matches!(self, Self::Handover(_))
     }
 }
 
@@ -617,6 +678,9 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
                 let t = h.data().handover().data().next();
                 write!(f, "Handover({}--[{}]->{})", r.committee(), r.num(), t)
             }
+            Self::HandoverCert(c) => {
+                write!(f, "HandoverCert({})", c.data().round())
+            }
         }
     }
 }
@@ -683,6 +747,9 @@ impl Committable for Evidence {
             Self::Timeout(c) => RawCommitmentBuilder::new("Evidence::Timeout")
                 .field("cert", c.commit())
                 .finalize(),
+            Self::Handover(c) => RawCommitmentBuilder::new("Evidence::Handover")
+                .field("cert", c.commit())
+                .finalize(),
         }
     }
 }
@@ -696,6 +763,7 @@ impl<T: Committable, S> Committable for Message<T, S> {
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
             Self::Handover(h) => builder.field("handover", h.commit()).finalize(),
+            Self::HandoverCert(c) => builder.field("handover-cert", c.commit()).finalize(),
         }
     }
 }

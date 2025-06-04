@@ -1,19 +1,24 @@
+mod committee;
 mod dag;
 mod info;
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
+use std::mem;
+use std::time::Instant;
 
 use committable::Committable;
 use info::NodeInfo;
-use multisig::Signed;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
+use multisig::{Certificate, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{CommitteeId, CommitteeVec, ConsensusTime, Handover, HandoverMessage};
+use sailfish_types::{ConsensusTime, Handover, HandoverMessage};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{debug, error, info, trace, warn};
 
+use committee::{CommitteeState, Handovers};
+
+pub use committee::{CurrentCommittee, NextCommittee};
 pub use dag::Dag;
 pub use metrics::ConsensusMetrics;
 
@@ -27,19 +32,17 @@ pub struct Consensus<T> {
     /// Clock driven by median of timestamps in a round.
     clock: ConsensusTime,
 
-    /// Available committees.
-    committees: CommitteeVec<2>,
-
     /// The DAG of vertices.
     dag: Dag<T>,
 
-    /// The currently active committee.
-    committee: Committee,
+    /// The current committee (possibly pending activation).
+    committee: CurrentCommittee,
 
-    /// The ID of the currently active committee.
-    committee_id: CommitteeId,
+    /// Information about the next committee.
+    next_committee: Option<NextCommittee>,
 
-    next_committee: Option<(ConsensusTime, CommitteeId, VoteAccumulator<Handover>)>,
+    /// Handover information from members of the previous committee.
+    handovers: Handovers,
 
     /// The current round number.
     round: RoundNumber,
@@ -64,9 +67,6 @@ pub struct Consensus<T> {
 
     /// The set of no votes that we've received so far.
     no_votes: BTreeMap<RoundNumber, VoteAccumulator<NoVote>>,
-
-    /// Buffer of handover messages we have received before having seen the committee.
-    handovers: Vec<Signed<Handover>>,
 
     /// Stack of leader vertices.
     leader_stack: Vec<Vertex<T>>,
@@ -98,25 +98,16 @@ impl<T> Consensus<T> {
     pub fn committed_round(&self) -> RoundNumber {
         self.committed_round
     }
-
-    pub fn add_committee(&mut self, t: ConsensusTime, i: CommitteeId, c: Committee) {
-        self.committees.add(i, c.clone());
-        let v = VoteAccumulator::new(c);
-        self.next_committee = Some((t, i, v));
-    }
 }
 
 impl<T> Consensus<T>
 where
     T: Committable + HasTime + Clone + PartialEq,
 {
-    pub fn new<D>(keypair: Keypair, id: CommitteeId, committee: Committee, datasource: D) -> Self
+    pub fn new<D>(keypair: Keypair, committee: CurrentCommittee, datasource: D) -> Self
     where
         D: DataSource<Data = T> + Send + 'static,
     {
-        let mut cv = CommitteeVec::new();
-        cv.add(id, committee.clone());
-
         Self {
             keypair,
             clock: ConsensusTime(Default::default()),
@@ -129,15 +120,19 @@ where
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: BTreeMap::new(),
-            handovers: Vec::new(),
+            handovers: Handovers {
+                votes: committee
+                    .is_pending()
+                    .then(|| VoteAccumulator::new(committee.committee().clone())),
+                buffer: Vec::new(),
+                cert: None,
+            },
             committee,
-            committee_id: id,
-            committees: cv,
             next_committee: None,
             leader_stack: Vec::new(),
             datasource: Box::new(datasource),
             metrics: Default::default(),
-            metrics_timer: std::time::Instant::now(),
+            metrics_timer: Instant::now(),
         }
     }
 
@@ -153,9 +148,11 @@ where
         self.dag = d;
         self.round = r;
 
-        if r.is_genesis() {
+        if !self.committee.is_active() {
+            Vec::new()
+        } else if r.is_genesis() {
             let vtx = Vertex::new(
-                Round::new(r, self.committee_id),
+                Round::new(r, self.committee.id()),
                 Evidence::Genesis,
                 self.datasource.next(r),
                 &self.keypair,
@@ -165,6 +162,27 @@ where
         } else {
             self.advance_from_round(r, e)
         }
+    }
+
+    pub fn add_committee(&mut self, next: NextCommittee) -> Vec<Action<T>> {
+        let mut actions = Vec::new();
+
+        if next.committee.contains_key(&self.public_key()) {
+            self.handovers.votes = Some(VoteAccumulator::new(next.committee.clone()));
+            self.next_committee = Some(next);
+
+            if let Some(cert) = self.handovers.cert.take() {
+                actions.extend(self.handle_handover_cert(cert))
+            } else {
+                for e in mem::take(&mut self.handovers.buffer) {
+                    actions.extend(self.handle_handover(e))
+                }
+            }
+        } else {
+            self.next_committee = Some(next)
+        }
+
+        actions
     }
 
     /// Main entry point to process a `Message`.
@@ -181,27 +199,25 @@ where
             dag       = %self.dag.depth(),
             "handle message"
         );
+
+        if self.committee.state().is_shutdown() {
+            debug!(
+                node      = %self.public_key(),
+                committed = %self.committed_round,
+                committee = %self.committee.id(),
+                "node has shutdown"
+            );
+            return Vec::new();
+        }
+
         match m {
             Message::Vertex(e) => self.handle_vertex(e),
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::Handover(e) => self.handle_handover(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
+            Message::HandoverCert(c) => self.handle_handover_cert(c),
         }
-    }
-
-    fn handle_handover(&mut self, e: Envelope<HandoverMessage, Validated>) -> Vec<Action<T>> {
-        let h = e.into_signed().into_data().into_parts().0;
-        if let Some((_, id, va)) = &mut self.next_committee {
-            if h.data().next() == *id {
-                let _ = va.add(h); // TODO
-                // TODO: send handover if > threshold
-                // TODO: switch when > quorum
-            }
-        } else {
-            self.handovers.push(h);
-        }
-        Vec::new()
     }
 
     /// An internal timeout occurred.
@@ -217,7 +233,7 @@ where
             self.evidence(r - 1)
                 .expect("evidence for previous round exists")
         };
-        let t = TimeoutMessage::new(self.committee_id, e, &self.keypair);
+        let t = TimeoutMessage::new(self.committee.id(), e, &self.keypair);
         let e = Envelope::signed(t, &self.keypair);
         vec![Action::SendTimeout(e)]
     }
@@ -247,7 +263,7 @@ where
         let accum = self
             .rounds
             .entry(v.round().data().num())
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(self.committee.committee().clone()));
 
         if let Err(e) = accum.add(v.round().clone()) {
             warn!(
@@ -266,7 +282,7 @@ where
             .set_committed_round(v.source(), v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
-            actions.extend(self.cleanup());
+            actions.extend(self.cleanup(self.lower_round_bound()));
             actions.extend(self.try_to_add_to_dag_from_buffer());
         }
 
@@ -340,14 +356,14 @@ where
         if !self.has_timeout_cert(timeout_round) {
             self.timeouts
                 .entry(timeout_round)
-                .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
+                .or_insert_with(|| VoteAccumulator::new(self.committee.committee().clone()))
                 .set_certificate(tc.clone())
         }
 
         let accum = self
             .no_votes
             .entry(timeout_round)
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(self.committee.committee().clone()));
 
         match accum.add(no_vote) {
             // Not enough votes yet.
@@ -406,7 +422,7 @@ where
         let accum = self
             .timeouts
             .entry(timeout_round)
-            .or_insert_with(|| VoteAccumulator::new(self.committee.clone()));
+            .or_insert_with(|| VoteAccumulator::new(self.committee.committee().clone()));
 
         let commit = timeout.commitment();
         let votes = accum.votes(&commit);
@@ -428,7 +444,7 @@ where
         if votes != accum.votes(&commit)
             && accum.votes(&commit) == self.committee.one_honest_threshold().get()
         {
-            let t = TimeoutMessage::new(self.committee_id, evidence, &self.keypair);
+            let t = TimeoutMessage::new(self.committee.id(), evidence, &self.keypair);
             let e = Envelope::signed(t, &self.keypair);
             actions.push(Action::SendTimeout(e))
         }
@@ -469,7 +485,7 @@ where
         if !self.has_timeout_cert(round) {
             self.timeouts
                 .entry(round)
-                .or_insert_with(|| VoteAccumulator::new(self.committee.clone()))
+                .or_insert_with(|| VoteAccumulator::new(self.committee.committee().clone()))
                 .set_certificate(cert.clone())
         }
 
@@ -478,6 +494,63 @@ where
         }
 
         actions
+    }
+
+    /// Members of the next committee receive handover messages.
+    pub fn handle_handover(&mut self, e: Envelope<HandoverMessage, Validated>) -> Vec<Action<T>> {
+        trace!(node = %self.public_key(), round = %e.data().handover().data().round(), "handover");
+
+        let Some(accum) = &mut self.handovers.votes else {
+            // We have not seen this committee => buffer the handover message.
+            self.handovers.buffer.push(e);
+            return Vec::new();
+        };
+
+        let mut actions = Vec::new();
+
+        let (h, evidence) = e.into_signed().into_data().into_parts();
+        let commit = h.commitment();
+        let votes1 = accum.votes(&commit);
+        let handover = h.data().clone();
+
+        match accum.add(h) {
+            Ok(None) => {
+                let votes2 = accum.votes(&commit);
+                if votes1 != votes2 && votes2 == accum.committee().one_honest_threshold().get() {
+                    let h = HandoverMessage::new(handover, evidence, &self.keypair);
+                    let e = Envelope::signed(h, &self.keypair);
+                    actions.push(Action::SendHandover(e));
+                }
+            }
+            Ok(Some(cert)) => {
+                actions.push(Action::SendHandoverCert(cert.clone()));
+                actions.extend(self.switch_committee())
+            }
+            Err(err) => {
+                warn!(
+                    node = %self.keypair.public_key(),
+                    err  = %err,
+                    "could not add handover data to vote accumulator"
+                )
+            }
+        }
+
+        actions
+    }
+
+    /// Members of the next committee receive handover certificates.
+    pub fn handle_handover_cert(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
+        trace!(node = %self.public_key(), round = %cert.data().round(), "handover certificate");
+
+        let Some(accum) = &mut self.handovers.votes else {
+            // We have not seen this committee => buffer the handover certificate.
+            self.handovers.cert = Some(cert);
+            return Vec::new();
+        };
+
+        accum.set_certificate(cert);
+
+        self.switch_committee()
     }
 
     /// Try to advance from the given round `r` to `r + 1`.
@@ -598,7 +671,12 @@ where
         trace!(node = %self.public_key(), next = %r, "create new vertex");
 
         let payload = self.datasource.next(r);
-        let mut new = Vertex::new(Round::new(r, self.committee_id), e, payload, &self.keypair);
+        let mut new = Vertex::new(
+            Round::new(r, self.committee.id()),
+            e,
+            payload,
+            &self.keypair,
+        );
         new.add_edges(self.dag.vertices(r - 1).map(Vertex::source).cloned())
             .set_committed_round(self.committed_round);
 
@@ -766,17 +844,23 @@ where
             }
         }
         tick(&actions, &mut self.clock);
-        actions.extend(self.update_committee());
-        actions.extend(self.cleanup());
+        if let Some(handover) = self.handover() {
+            let e = self
+                .evidence(handover.round().num())
+                .expect("evidence for committed round");
+            let m = HandoverMessage::new(handover, e, &self.keypair);
+            let e = Envelope::signed(m, &self.keypair);
+            actions.push(Action::SendHandover(e));
+            actions.extend(self.switch_committee())
+        }
+        actions.extend(self.cleanup(self.lower_round_bound()));
         actions
     }
 
     /// Cleanup the DAG and other collections.
-    fn cleanup(&mut self) -> Vec<Action<T>> {
+    fn cleanup(&mut self, r: RoundNumber) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), "cleanup");
         let mut actions = Vec::new();
-
-        let r = self.lower_round_bound();
 
         debug!(
             node      = %self.public_key(),
@@ -931,17 +1015,65 @@ where
             .into()
     }
 
-    /// Check if the time has come to active the next committee.
-    fn update_committee(&mut self) -> Option<Action<T>> {
-        let &(t, i, _) = self.next_committee.as_ref()?;
-        if t > self.clock {
+    fn handover(&mut self) -> Option<Handover> {
+        let next = self.next_committee.as_mut()?;
+        if next.handover_started || next.start < self.clock {
             return None;
         }
-        let c = self.committees.get(i)?; // TODO: report failure
-        self.committee_id = i;
-        self.committee = c.clone();
-        self.next_committee = None;
-        Some(Action::UseCommittee(Round::new(self.round, i)))
+        let r = Round::new(self.committed_round, self.committee.id());
+        next.handover_started = true;
+        Some(Handover::new(r, next.id))
+    }
+
+    fn switch_committee(&mut self) -> Vec<Action<T>> {
+        let mut actions = Vec::new();
+
+        if let Some(next) = self.next_committee.take() {
+            // We are not a member of the next committee.
+            if !next.committee.contains_key(&self.public_key()) {
+                self.committee.set_state(CommitteeState::Shutdown);
+                actions.push(Action::Shutdown);
+                return actions;
+            }
+            // We are in the current and the next committee.
+            self.committee = CurrentCommittee::new(next.id, next.committee);
+        } else {
+            // Time to active the committee.
+            debug_assert!(self.committee.is_pending());
+            self.committee.set_state(CommitteeState::Active);
+        }
+
+        let Some(cert) = self
+            .handovers
+            .votes
+            .as_ref()
+            .and_then(|va| va.certificate().cloned())
+        else {
+            error!(node = %self.public_key(), "attempted committee switch without handover cert");
+            return Vec::new();
+        };
+
+        self.nodes = NodeInfo::new(&self.committee);
+
+        let r = self.committed_round + 1;
+
+        let round = Round::new(r, self.committee.id());
+        actions.push(Action::UseCommittee(round));
+
+        actions.extend(self.cleanup(r));
+
+        let vertex = Vertex::new(
+            round,
+            Evidence::Handover(cert),
+            self.datasource.next(r),
+            &self.keypair,
+        );
+        let env = Envelope::signed(vertex, &self.keypair);
+        actions.extend([Action::SendProposal(env), Action::ResetTimer(r)]);
+
+        self.handovers.clear();
+
+        actions
     }
 }
 
