@@ -14,7 +14,7 @@ use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
-use sailfish::types::{Action, RoundNumber};
+use sailfish::types::{Action, Evidence, RoundNumber};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
@@ -29,7 +29,7 @@ use queue::BundleQueue;
 use sort::Sorter;
 
 type Result<T> = std::result::Result<T, TimeboostError>;
-type Candidates = VecDeque<(RoundNumber, Vec<CandidateList>)>;
+type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
 #[derive(Debug)]
 pub struct SequencerConfig {
@@ -217,7 +217,13 @@ impl Sequencer {
             )
             .await?;
 
-            Decrypter::new(public_key, Overlay::new(net), keyset, cfg.dec_sk)
+            Decrypter::new(
+                public_key,
+                Overlay::new(net),
+                committee.clone(),
+                keyset,
+                cfg.dec_sk,
+            )
         };
 
         let (tx, rx) = mpsc::channel(1024);
@@ -350,11 +356,15 @@ impl Task {
         let mut candidates = Vec::new();
         while !actions.is_empty() {
             let mut round = RoundNumber::genesis();
+            let mut evidence = Evidence::Genesis;
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
                 match action {
                     Action::Deliver(payload) => {
                         round = payload.round();
+                        if payload.evidence().round() > evidence.round() {
+                            evidence = payload.evidence().clone()
+                        }
                         match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                             Ok(data) => lists.push(data),
                             Err(err) => {
@@ -382,7 +392,7 @@ impl Task {
                 }
             }
             if !lists.is_empty() {
-                candidates.push((round, lists))
+                candidates.push((round, evidence, lists))
             }
             while let Some(action) = actions.pop_front() {
                 match action {
@@ -409,8 +419,8 @@ impl Task {
 
     /// Handle candidate lists and return the next inclusion list.
     fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
-        while let Some((round, lists)) = candidates.pop_front() {
-            let outcome = self.includer.inclusion_list(round, lists);
+        while let Some((round, evidence, lists)) = candidates.pop_front() {
+            let outcome = self.includer.inclusion_list(round, evidence, lists);
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {
                 self.mode = Mode::Passive;
