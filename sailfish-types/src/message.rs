@@ -46,9 +46,9 @@ impl<T: Committable, S> Message<T, S> {
             Self::Vertex(v) => v.data().round().data().committee(),
             Self::Timeout(t) => t.data().timeout().data().round().committee(),
             Self::NoVote(nv) => nv.data().no_vote().data().round().committee(),
-            Self::Handover(h) => h.data().handover().data().round().committee(),
+            Self::Handover(h) => h.data().handover().data().next(),
             Self::TimeoutCert(c) => c.data().round().committee(),
-            Self::HandoverCert(c) => c.data().round().committee(),
+            Self::HandoverCert(c) => c.data().next(),
         }
     }
 

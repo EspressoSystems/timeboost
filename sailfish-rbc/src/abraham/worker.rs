@@ -339,24 +339,17 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        if let Message::Handover(env) = msg {
-            let handover = env.data().handover().data();
-            let round = handover.round().num();
-            let next_cid = handover.next();
+        let digest = Digest::of_msg(&msg);
 
-            let Some(committee) = self.config.committees.get(next_cid) else {
-                return Err(RbcError::NoCommittee(next_cid))
+        if matches!(msg, Message::Handover(_) | Message::HandoverCert(_)) {
+            let id = msg.committee();
+            let Some(committee) = self.config.committees.get(id) else {
+                return Err(RbcError::NoCommittee(id))
             };
-
             let dest = committee.parties().copied().collect();
-            self.comm.multicast(dest, *round, data).await?;
-
-            // If this node is a member of the next committee, start using it now:
-            if committee.contains_key(&self.key) {
-                self.config.committee_id = next_cid
-            }
+            self.comm.multicast(dest, *msg.round().num(), data).await?;
+            debug!(node = %self.key, %digest, "message multicasted");
         } else {
-            let digest = Digest::of_msg(&msg);
             self.comm.broadcast(*msg.round().num(), data).await?;
             debug!(node = %self.key, %digest, "message broadcasted");
         }
