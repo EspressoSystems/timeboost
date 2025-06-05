@@ -3,7 +3,6 @@ mod info;
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
-use std::num::NonZeroUsize;
 use std::time::Instant;
 
 use committable::Committable;
@@ -102,8 +101,8 @@ impl<T> Consensus<T> {
         self.committed_round
     }
 
-    pub fn committee_size(&self) -> NonZeroUsize {
-        self.committee.size()
+    pub fn committee(&self) -> &Committee {
+        &self.committee
     }
 
     pub fn set_next_committee(&mut self, start: ConsensusTime, c: Committee) {

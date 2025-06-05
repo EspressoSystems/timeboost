@@ -201,7 +201,7 @@ impl Sequencer {
             let cons = Consensus::new(cfg.sign_keypair.clone(), committee.clone(), queue.clone())
                 .with_metrics(cons_metrics);
 
-            Coordinator::new(rbc, cons)
+            Coordinator::new(rbc, cons, false)
         };
 
         let decrypter = {

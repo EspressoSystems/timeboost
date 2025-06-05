@@ -72,7 +72,7 @@ impl TestableNetwork for BasicNetworkTest {
             let messages = test_net.messages();
             tracing::debug!(%i, "created testnet");
             let consensus = Consensus::new(kpr, committee.clone(), EmptyBlocks);
-            let coord = Coordinator::new(test_net, consensus);
+            let coord = Coordinator::new(test_net, consensus, false);
             nodes.push((coord, messages))
         }
         nodes

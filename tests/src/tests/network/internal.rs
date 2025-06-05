@@ -68,7 +68,7 @@ impl TestableNetwork for MemoryNetworkTest {
 
             let comm = self.group.committee.clone();
             let cons = Consensus::new(kpr, comm, EmptyBlocks);
-            let coor = Coordinator::new(test_net, cons);
+            let coor = Coordinator::new(test_net, cons, false);
 
             coordinators.push((coor, messages))
         }

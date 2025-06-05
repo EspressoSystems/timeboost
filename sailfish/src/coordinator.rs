@@ -2,9 +2,10 @@ use std::{future::pending, time::Duration};
 
 use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
-use multisig::PublicKey;
+use multisig::{Certificate, Committee, Envelope, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Action, Comm, Evidence, HasTime, Message, RoundNumber};
+use sailfish_types::{ConsensusTime, Handover, HandoverMessage};
 use tokio::select;
 use tokio::time::sleep;
 
@@ -15,21 +16,41 @@ pub struct Coordinator<T: Committable, C> {
     /// The instance of Sailfish consensus for this coordinator.
     consensus: Consensus<T>,
 
+    /// The upcoming consensus instance (if any).
+    next_consensus: Option<Consensus<T>>,
+
     /// The timeout timer for a sailfish consensus round.
     timer: BoxFuture<'static, RoundNumber>,
 
     /// Have we started consensus?
     init: bool,
+
+    /// Buffer of handover messages.
+    ///
+    /// If handover messages arrive before we know about the next
+    /// committee we buffer them and use them as soon as `set_next_consensus`
+    /// is called.
+    buffer: Vec<Envelope<HandoverMessage, Validated>>,
+
+    /// Buffer of handover certificate.
+    ///
+    /// If a handover certificate arrives before we know about the next
+    /// committee we buffer it and use it as soon as `set_next_consensus`
+    /// is called.
+    cert: Option<Certificate<Handover>>,
 }
 
 impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
     /// Create a new coordinator.
-    pub fn new(comm: C, cons: Consensus<T>) -> Self {
+    pub fn new(comm: C, cons: Consensus<T>, await_handover: bool) -> Self {
         Self {
             comm,
             consensus: cons,
+            next_consensus: None,
             timer: pending().boxed(),
-            init: false,
+            init: await_handover,
+            buffer: Vec::new(),
+            cert: None,
         }
     }
 
@@ -47,6 +68,18 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
     pub fn consensus_round(&self) -> RoundNumber {
         self.consensus.round()
     }
+
+    /// Set the next committee and the time when it should become active.
+    pub fn set_next_committee(&mut self, start: ConsensusTime, committee: Committee) {
+        self.buffer
+            .retain(|e| e.data().handover().data().next() == committee.id());
+        if let Some(cert) = &self.cert {
+            if cert.data().next() != committee.id() {
+                self.cert = None
+            }
+        }
+        self.consensus.set_next_committee(start, committee)
+    }
 }
 
 impl<T, C> Coordinator<T, C>
@@ -57,17 +90,37 @@ where
     /// Starts Sailfish consensus.
     ///
     /// This function initializes and starts consensus. The sequence of
-    /// consensus actions is returned and `Coordinator::execute` should be applied
-    /// to each one.
-    ///
-    /// # Panics
-    ///
-    /// `Coordinator::init` must only be invoked once, otherwise it will panic.
+    /// consensus actions is returned and `Coordinator::execute` should
+    /// be applied to each one.
     pub fn init(&mut self) -> Vec<Action<T>> {
-        assert!(!self.init, "Cannot call start twice");
+        if self.init {
+            return Vec::new();
+        }
         self.init = true;
-        let d = Dag::new(self.consensus.committee_size());
+        let d = Dag::new(self.consensus.committee().size());
         self.consensus.go(d, Evidence::Genesis)
+    }
+
+    /// Set the consensus instance for the next committee.
+    ///
+    /// The instance will be applied to any buffered handover messages or
+    /// certificate, if already available. The resulting actions should be
+    /// passed to `Coordinator::execute` as usual.
+    pub fn set_next_consensus(&mut self, mut cons: Consensus<T>) -> Vec<Action<T>> {
+        let mut actions = Vec::new();
+        if let Some(cert) = self.cert.take() {
+            if cert.data().next() == cons.committee().id() {
+                self.buffer.clear();
+                actions.extend(cons.handle_handover_cert(cert))
+            }
+        }
+        for e in self.buffer.drain(..) {
+            if e.data().handover().data().next() == cons.committee().id() {
+                actions.extend(cons.handle_handover(e))
+            }
+        }
+        self.next_consensus = Some(cons);
+        actions
     }
 
     /// Await the next sequence of consensus actions.
@@ -79,7 +132,29 @@ where
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
         select! { biased;
             r = &mut self.timer => Ok(self.consensus.timeout(r)),
-            m = self.comm.receive() => Ok(self.consensus.handle_message(m?)),
+            m = self.comm.receive() => {
+                let m = m?;
+                let i = m.committee();
+
+                if i == self.consensus.committee().id() {
+                    return Ok(self.consensus.handle_message(m))
+                }
+
+                if let Some(consensus) = &mut self.next_consensus {
+                    if i == consensus.committee().id() {
+                        return Ok(consensus.handle_message(m))
+                    }
+                }
+
+                // Message is for a committee we do not know yet, so we buffer it.
+                match m {
+                    Message::Handover(e)     => self.buffer.push(e),
+                    Message::HandoverCert(c) => self.cert = Some(c),
+                    _                        => {}
+                }
+
+                Ok(Vec::new())
+            }
         }
     }
 
@@ -119,8 +194,12 @@ where
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
-            Action::UseCommittee(_) => {
-                todo!()
+            Action::UseCommittee(r) => {
+                if let Some(next) = self.next_consensus.take() {
+                    if r.committee() == next.committee().id() {
+                        self.consensus = next
+                    }
+                }
             }
             Action::Catchup(_) => {
                 // nothing to do

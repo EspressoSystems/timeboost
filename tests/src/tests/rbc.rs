@@ -71,7 +71,7 @@ fn mk_host<A, const N: usize>(
             let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
             let rbc = Rbc::new(10, Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
-            let mut coor = Coordinator::new(rbc, cons);
+            let mut coor = Coordinator::new(rbc, cons, false);
             let mut actions = coor.init();
             loop {
                 for a in actions {
@@ -118,7 +118,7 @@ fn small_committee() {
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
             for a in actions {
@@ -176,7 +176,7 @@ fn medium_committee() {
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
             for a in actions {
@@ -233,7 +233,7 @@ fn medium_committee_partition_network() {
         let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
 
