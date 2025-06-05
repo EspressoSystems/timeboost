@@ -4,6 +4,7 @@ use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
 use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
+use timeboost_types::PLACEHOLDER;
 use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Transaction};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -53,7 +54,7 @@ impl BlockProducer {
         let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
 
         let committee = Committee::new(
-            0,
+            PLACEHOLDER,
             cfg.peers
                 .iter()
                 .map(|(k, ..)| *k)

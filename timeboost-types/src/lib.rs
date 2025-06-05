@@ -9,6 +9,7 @@ mod retry_list;
 mod seqno;
 mod time;
 
+pub use sailfish_types::PLACEHOLDER;
 pub use sailfish_types::math;
 
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
