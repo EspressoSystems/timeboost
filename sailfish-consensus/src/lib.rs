@@ -848,7 +848,7 @@ where
                 for v in self.buffer.drain_round(r) {
                     self.dag.add(v)
                 }
-                actions.push(Action::Catchup(r));
+                actions.push(Action::Catchup(Round::new(r, self.committee.id())));
             }
         } else if self.committed_round >= self.nodes.committed_round_quorum() {
             for v in self.buffer.drain_round(r) {
@@ -1099,7 +1099,7 @@ where
 mod tests {
     use arbtest::{arbitrary::Arbitrary, arbtest};
     use multisig::Keypair;
-    use sailfish_types::{Evidence, Timestamp, math};
+    use sailfish_types::{Evidence, Round, Timestamp, math};
 
     use super::{Action, ConsensusTime, Payload, RoundNumber, tick};
 
@@ -1122,7 +1122,7 @@ mod tests {
             while i < t.len() {
                 let a = match u8::arbitrary(u)? {
                     0 => Action::ResetTimer(0.into()),
-                    1 => Action::Catchup(0.into()),
+                    1 => Action::Catchup(Round::new(0, 0)),
                     2 => Action::Gc(0.into()),
                     _ => {
                         let n = t[i];

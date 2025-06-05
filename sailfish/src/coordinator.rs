@@ -5,7 +5,7 @@ use futures::{FutureExt, future::BoxFuture};
 use multisig::{Certificate, Committee, Envelope, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Action, Comm, Evidence, HasTime, Message, RoundNumber};
-use sailfish_types::{ConsensusTime, Handover, HandoverMessage};
+use sailfish_types::{ConsensusTime, Handover, HandoverMessage, Round};
 use tokio::select;
 use tokio::time::sleep;
 
@@ -194,20 +194,25 @@ where
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
-            Action::UseCommittee(r) => {
-                if let Some(next) = self.next_consensus.take() {
-                    if r.committee() == next.committee().id() {
-                        self.consensus = next
-                    }
+            Action::UseCommittee(r) => self.use_next_consensus(r),
+            Action::Catchup(r) => {
+                if r.committee() != self.consensus.committee().id() {
+                    self.use_next_consensus(r)
                 }
-            }
-            Action::Catchup(_) => {
-                // nothing to do
             }
             Action::Deliver(_) => {
                 // nothing to do
             }
         }
         Ok(())
+    }
+
+    /// Move the next consensus instancer over to the current one.
+    fn use_next_consensus(&mut self, r: Round) {
+        if let Some(next) = self.next_consensus.take() {
+            if r.committee() == next.committee().id() {
+                self.consensus = next
+            }
+        }
     }
 }

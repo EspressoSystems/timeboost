@@ -396,7 +396,7 @@ pub enum Action<T: Committable> {
     SendHandoverCert(Certificate<Handover>),
 
     /// Are we in catchup?
-    Catchup(RoundNumber),
+    Catchup(Round),
 
     /// Signal that it is safe to garbage collect up to the given round number.
     Gc(RoundNumber),

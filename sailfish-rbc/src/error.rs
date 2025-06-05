@@ -1,5 +1,5 @@
 use cliquenet::overlay::{DataError, NetworkDown};
-use multisig::CommitteeId;
+use multisig::{CommitteeId, PublicKey};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -21,6 +21,9 @@ pub enum RbcError {
 
     #[error("no committee for id {0}")]
     NoCommittee(CommitteeId),
+
+    #[error("missing address information for {1} in committee {0}")]
+    MissingAddrInfo(CommitteeId, PublicKey),
 
     #[error("rbc has shut down")]
     Shutdown,

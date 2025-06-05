@@ -123,6 +123,10 @@ impl Overlay {
         }
     }
 
+    pub fn parties(&self) -> impl Iterator<Item = (&PublicKey, &Role)> {
+        self.net.parties()
+    }
+
     pub async fn broadcast<B>(&mut self, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,

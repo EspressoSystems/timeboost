@@ -48,4 +48,9 @@ impl<const N: usize> CommitteeVec<N> {
     pub fn remove(&mut self, id: CommitteeId) {
         self.vec.retain(|c| c.id() != id);
     }
+
+    /// Get an iterator over all committees.
+    pub fn iter(&self) -> impl Iterator<Item = &Committee> {
+        self.vec.iter()
+    }
 }
