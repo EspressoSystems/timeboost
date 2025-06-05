@@ -1,5 +1,5 @@
 use cliquenet::overlay::{DataError, NetworkDown};
-use sailfish_types::CommitteeId;
+use multisig::CommitteeId;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

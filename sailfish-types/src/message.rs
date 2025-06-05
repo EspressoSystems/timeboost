@@ -1,11 +1,12 @@
 use core::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use multisig::{Certificate, Envelope, Keypair, PublicKey, Signed, Unchecked, Validated};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::{CommitteeId, CommitteeVec, Round, RoundNumber, Vertex};
+use crate::{CommitteeVec, Round, RoundNumber, Vertex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Message<T: Committable, Status = Validated> {
@@ -37,6 +38,17 @@ impl<T: Committable, S> Message<T, S> {
             Self::Handover(h) => h.data().handover().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
             Self::HandoverCert(c) => c.data().round(),
+        }
+    }
+
+    pub fn committee(&self) -> CommitteeId {
+        match self {
+            Self::Vertex(v) => v.data().round().data().committee(),
+            Self::Timeout(t) => t.data().timeout().data().round().committee(),
+            Self::NoVote(nv) => nv.data().no_vote().data().round().committee(),
+            Self::Handover(h) => h.data().handover().data().round().committee(),
+            Self::TimeoutCert(c) => c.data().round().committee(),
+            Self::HandoverCert(c) => c.data().round().committee(),
         }
     }
 
@@ -391,9 +403,6 @@ pub enum Action<T: Committable> {
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),
-
-    /// End processing
-    Shutdown,
 }
 
 impl<T: Committable> Action<T> {
@@ -447,7 +456,6 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
-            Action::Shutdown => f.write_str("Shutdown"),
         }
     }
 }
@@ -692,6 +700,18 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
                 write!(f, "HandoverCert({})", c.data().round())
             }
         }
+    }
+}
+
+impl fmt::Display for Handover {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}--[{}]->{}",
+            self.round.committee(),
+            self.round.num(),
+            self.next
+        )
     }
 }
 

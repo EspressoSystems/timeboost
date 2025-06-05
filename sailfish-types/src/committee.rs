@@ -1,50 +1,10 @@
-use std::fmt;
-
 use arrayvec::ArrayVec;
-use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::Committee;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct CommitteeId(u64);
-
-impl CommitteeId {
-    pub const fn new(n: u64) -> Self {
-        Self(n)
-    }
-}
-
-impl From<u64> for CommitteeId {
-    fn from(val: u64) -> Self {
-        Self(val)
-    }
-}
-
-impl From<CommitteeId> for u64 {
-    fn from(val: CommitteeId) -> Self {
-        val.0
-    }
-}
-
-impl fmt::Display for CommitteeId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Committable for CommitteeId {
-    fn commit(&self) -> Commitment<Self> {
-        RawCommitmentBuilder::new("CommitteeId")
-            .u64(self.0)
-            .finalize()
-    }
-}
+use multisig::{Committee, CommitteeId};
 
 /// A small collection of committees.
 #[derive(Debug, Default, Clone)]
 pub struct CommitteeVec<const N: usize> {
-    vec: ArrayVec<(CommitteeId, Committee), N>,
+    vec: ArrayVec<Committee, N>,
 }
 
 impl<const N: usize> CommitteeVec<N> {
@@ -56,36 +16,36 @@ impl<const N: usize> CommitteeVec<N> {
     }
 
     /// Create a committee vector with the given entry.
-    pub fn singleton(id: CommitteeId, c: Committee) -> Self {
+    pub fn singleton(c: Committee) -> Self {
         let mut this = Self::new();
-        this.add(id, c);
+        this.add(c);
         this
     }
 
     /// Check if an entry for the given ID exists.
     pub fn contains(&self, id: CommitteeId) -> bool {
-        self.vec.iter().any(|(i, _)| *i == id)
+        self.vec.iter().any(|c| c.id() == id)
     }
 
     /// Get the committee corresponding to the given ID (if any).
     pub fn get(&self, id: CommitteeId) -> Option<&Committee> {
-        self.vec.iter().find_map(|(i, c)| (*i == id).then_some(c))
+        self.vec.iter().find(|c| c.id() == id)
     }
 
     /// Add a commmittee entry.
     ///
     /// If an entry with the given ID already exists, `add` is a NOOP.
     /// This method will remove the oldest entry when at capacity.
-    pub fn add(&mut self, id: CommitteeId, c: Committee) {
-        if self.contains(id) {
+    pub fn add(&mut self, c: Committee) {
+        if self.contains(c.id()) {
             return;
         }
         self.vec.truncate(N.saturating_sub(1));
-        self.vec.insert(0, (id, c));
+        self.vec.insert(0, c);
     }
 
     /// Removes a committee entry.
     pub fn remove(&mut self, id: CommitteeId) {
-        self.vec.retain(|(i, _)| *i != id);
+        self.vec.retain(|c| c.id() != id);
     }
 }

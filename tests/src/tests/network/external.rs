@@ -5,9 +5,7 @@ use std::collections::HashMap;
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use multisig::PublicKey;
 use sailfish::Coordinator;
-use sailfish::consensus::CurrentCommittee;
 use sailfish::rbc::{Rbc, RbcConfig};
-use sailfish::types::PLACEHOLDER;
 use tokio::task::JoinSet;
 
 use crate::Group;
@@ -67,14 +65,13 @@ impl TestableNetwork for BasicNetworkTest {
             )
             .await
             .expect("failed to make network");
-            let cfg = RbcConfig::new(kpr.clone(), PLACEHOLDER, committee.clone()).recover(false);
+            let cfg = RbcConfig::new(kpr.clone(), committee.clone()).recover(false);
             let net = Rbc::new(committee.size().get() * 5, Overlay::new(net), cfg);
             tracing::debug!(%i, "created rbc");
             let test_net = TestNet::new(net, i as u64, self.interceptor.clone());
             let messages = test_net.messages();
             tracing::debug!(%i, "created testnet");
-            let committee = CurrentCommittee::new(PLACEHOLDER, committee.clone());
-            let consensus = Consensus::new(kpr, committee, EmptyBlocks);
+            let consensus = Consensus::new(kpr, committee.clone(), EmptyBlocks);
             let coord = Coordinator::new(test_net, consensus);
             nodes.push((coord, messages))
         }

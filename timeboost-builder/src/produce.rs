@@ -53,6 +53,7 @@ impl BlockProducer {
         let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
 
         let committee = Committee::new(
+            0,
             cfg.peers
                 .iter()
                 .map(|(k, ..)| *k)

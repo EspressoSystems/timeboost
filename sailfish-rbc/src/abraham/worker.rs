@@ -307,9 +307,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             self.comm.gc(*round);
                             self.buffer.retain(|r, _| *r >= round);
                         }
-                        Some(Command::AddCommittee(i, c)) => {
-                            debug!(node = %self.key, committee = %i, "add committee");
-                            self.config.committees.add(i, c);
+                        Some(Command::AddCommittee(c)) => {
+                            debug!(node = %self.key, committee = %c.id(), "add committee");
+                            self.config.committees.add(c);
                         }
                         None => {
                             debug!(node = %self.key, "rbc shutdown detected");

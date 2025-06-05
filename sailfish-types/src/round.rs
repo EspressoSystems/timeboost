@@ -1,8 +1,8 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Sub};
 
-use crate::CommitteeId;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
 /// The sailfish genesis round number.
@@ -129,6 +129,10 @@ impl Round {
 
     pub fn committee(&self) -> CommitteeId {
         self.com
+    }
+
+    pub fn into_parts(self) -> (RoundNumber, CommitteeId) {
+        (self.num, self.com)
     }
 }
 

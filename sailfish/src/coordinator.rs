@@ -66,7 +66,8 @@ where
     pub fn init(&mut self) -> Vec<Action<T>> {
         assert!(!self.init, "Cannot call start twice");
         self.init = true;
-        self.consensus.go(Dag::new(), Evidence::Genesis)
+        let d = Dag::new(self.consensus.committee_size());
+        self.consensus.go(d, Evidence::Genesis)
     }
 
     /// Await the next sequence of consensus actions.
@@ -125,9 +126,6 @@ where
                 // nothing to do
             }
             Action::Deliver(_) => {
-                // nothing to do
-            }
-            Action::Shutdown => {
                 // nothing to do
             }
         }

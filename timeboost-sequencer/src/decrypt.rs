@@ -869,6 +869,7 @@ mod tests {
             })
             .collect();
         let committee = Committee::new(
+            PLACEHOLDER,
             signature_keys
                 .iter()
                 .map(SecretKey::public_key)
@@ -896,7 +897,7 @@ mod tests {
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 Overlay::new(network),
-                CommitteeVec::singleton(PLACEHOLDER, committee.clone()),
+                CommitteeVec::singleton(committee.clone()),
                 keyset,
                 decryption_keys[i].clone(),
             );

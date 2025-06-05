@@ -46,6 +46,17 @@ impl<T> Vertex<T> {
             && self.no_vote.is_none()
     }
 
+    /// Is this vertex the first after a committee handover?
+    pub fn is_first_after_handover(&self) -> bool {
+        let Evidence::Handover(cert) = &self.evidence else {
+            return false;
+        };
+        self.round.data().committee() == cert.data().next()
+            && self.round.data().num() == cert.data().round().num() + 1
+            && self.edges.is_empty()
+            && self.no_vote.is_none()
+    }
+
     pub fn source(&self) -> &PublicKey {
         &self.source
     }

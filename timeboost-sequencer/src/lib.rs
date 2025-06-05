@@ -12,7 +12,7 @@ use cliquenet::{Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
-use sailfish::consensus::{Consensus, ConsensusMetrics, CurrentCommittee};
+use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, Evidence, PLACEHOLDER, RoundNumber};
 use timeboost_crypto::Keyset;
@@ -157,6 +157,7 @@ impl Sequencer {
         let seq_metrics = Arc::new(SequencerMetrics::new(metrics));
 
         let committee = Committee::new(
+            PLACEHOLDER,
             cfg.sailfish_peers
                 .iter()
                 .map(|(k, ..)| *k)
@@ -188,8 +189,8 @@ impl Sequencer {
             )
             .await?;
 
-            let rcf = RbcConfig::new(cfg.sign_keypair.clone(), PLACEHOLDER, committee.clone())
-                .recover(cfg.recover);
+            let rcf =
+                RbcConfig::new(cfg.sign_keypair.clone(), committee.clone()).recover(cfg.recover);
 
             let rbc = Rbc::new(
                 5 * committee.size().get(),
@@ -197,12 +198,8 @@ impl Sequencer {
                 rcf.with_metrics(rbc_metrics),
             );
 
-            let cons = Consensus::new(
-                cfg.sign_keypair.clone(),
-                CurrentCommittee::new(PLACEHOLDER, committee.clone()),
-                queue.clone(),
-            )
-            .with_metrics(cons_metrics);
+            let cons = Consensus::new(cfg.sign_keypair.clone(), committee.clone(), queue.clone())
+                .with_metrics(cons_metrics);
 
             Coordinator::new(rbc, cons)
         };
@@ -229,7 +226,7 @@ impl Sequencer {
             Decrypter::new(
                 public_key,
                 Overlay::new(net),
-                CommitteeVec::singleton(PLACEHOLDER, committee.clone()),
+                CommitteeVec::singleton(committee.clone()),
                 keyset,
                 cfg.dec_sk,
             )

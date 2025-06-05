@@ -4,7 +4,7 @@ use committable::Committable;
 use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
-use sailfish::consensus::{ConsensusMetrics, CurrentCommittee};
+use sailfish::consensus::ConsensusMetrics;
 use sailfish::types::CommitteeVec;
 use sailfish::types::{Evidence, PLACEHOLDER, Round, RoundNumber, Timeout, TimeoutMessage};
 use timeboost_utils::unsafe_zero_keypair;
@@ -23,8 +23,11 @@ pub struct KeyManager {
 impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
         let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
-        let committee = Committee::new(key_pairs.clone().map(|(i, k)| (i, k.public_key())));
-        let cv = CommitteeVec::singleton(PLACEHOLDER, committee.clone());
+        let committee = Committee::new(
+            PLACEHOLDER,
+            key_pairs.clone().map(|(i, k)| (i, k.public_key())),
+        );
+        let cv = CommitteeVec::singleton(committee.clone());
         Self {
             keys: key_pairs.collect(),
             committee,
@@ -38,12 +41,8 @@ impl KeyManager {
             .values()
             .map(|kpair| {
                 let metrics = ConsensusMetrics::default();
-                let cons = Consensus::new(
-                    kpair.clone(),
-                    CurrentCommittee::new(PLACEHOLDER, self.committee.clone()),
-                    EmptyBlocks,
-                )
-                .with_metrics(metrics);
+                let cons = Consensus::new(kpair.clone(), self.committee.clone(), EmptyBlocks)
+                    .with_metrics(metrics);
                 TestNodeInstrument::new(self.clone(), kpair.clone(), cons)
             })
             .collect()
@@ -124,8 +123,12 @@ impl KeyManager {
     }
 
     /// Setup dag for testing.
-    pub(crate) fn prepare_dag(&self, round: u64) -> (Dag, Evidence, Vec<PublicKey>) {
-        let mut dag = Dag::new();
+    pub(crate) fn prepare_dag(
+        &self,
+        round: u64,
+        committee: &Committee,
+    ) -> (Dag, Evidence, Vec<PublicKey>) {
+        let mut dag = Dag::new(committee.size());
         let edges = self
             .keys
             .values()

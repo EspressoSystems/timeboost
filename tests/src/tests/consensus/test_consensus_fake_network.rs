@@ -211,7 +211,10 @@ fn basic_liveness() {
         .iter_mut()
         .map(|(id, node_handle)| {
             let node = node_handle.node_mut();
-            (*id, node.go(Dag::new(), Evidence::Genesis))
+            (
+                *id,
+                node.go(Dag::new(node.committee_size()), Evidence::Genesis),
+            )
         })
         .collect();
 
@@ -247,8 +250,7 @@ fn basic_liveness() {
                         | Action::ResetTimer(..)
                         | Action::Gc(_)
                         | Action::Catchup(_)
-                        | Action::UseCommittee(_)
-                        | Action::Shutdown => continue,
+                        | Action::UseCommittee(_) => continue,
                     };
                     if !na.is_empty() {
                         next.push((n.public_key(), na))

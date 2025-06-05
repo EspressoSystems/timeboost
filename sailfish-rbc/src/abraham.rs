@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
+use multisig::{Certificate, Committee, CommitteeId, Envelope, Keypair, PublicKey, Validated};
+use sailfish_types::CommitteeVec;
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
-use sailfish_types::{CommitteeId, CommitteeVec};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -67,7 +67,7 @@ enum Command<T: Committable> {
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
     /// Add the next committee.
-    AddCommittee(CommitteeId, Committee),
+    AddCommittee(Committee),
 }
 
 /// RBC configuration
@@ -82,11 +82,11 @@ pub struct RbcConfig {
 }
 
 impl RbcConfig {
-    pub fn new(k: Keypair, id: CommitteeId, c: Committee) -> Self {
+    pub fn new(k: Keypair, c: Committee) -> Self {
         Self {
             keypair: k,
-            committees: CommitteeVec::singleton(id, c),
-            committee_id: id,
+            committee_id: c.id(),
+            committees: CommitteeVec::singleton(c),
             recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
@@ -158,9 +158,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
         }
     }
 
-    pub async fn add_committee(&mut self, i: CommitteeId, c: Committee) -> Result<(), RbcError> {
+    pub async fn add_committee(&mut self, c: Committee) -> Result<(), RbcError> {
         self.tx
-            .send(Command::AddCommittee(i, c))
+            .send(Command::AddCommittee(c))
             .await
             .map_err(|_| RbcError::Shutdown)
     }

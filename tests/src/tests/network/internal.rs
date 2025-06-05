@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use multisig::PublicKey;
 use net::{Conn, Star};
 use sailfish::Coordinator;
-use sailfish::consensus::CurrentCommittee;
 use sailfish::types::PLACEHOLDER;
 use tokio::task::{JoinHandle, JoinSet};
 
@@ -67,7 +66,7 @@ impl TestableNetwork for MemoryNetworkTest {
             let messages = test_net.messages();
             let kpr = self.group.sign_keypairs[i].clone();
 
-            let comm = CurrentCommittee::new(PLACEHOLDER, self.group.committee.clone());
+            let comm = self.group.committee.clone();
             let cons = Consensus::new(kpr, comm, EmptyBlocks);
             let coor = Coordinator::new(test_net, cons);
 

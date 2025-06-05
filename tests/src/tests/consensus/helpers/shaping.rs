@@ -6,7 +6,6 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::consensus::CurrentCommittee;
 use sailfish::types::{Evidence, PLACEHOLDER, RoundNumber};
 use tracing::debug;
 
@@ -314,6 +313,7 @@ impl Simulator {
             .collect();
 
         let committee = Committee::new(
+            PLACEHOLDER,
             keypairs
                 .iter()
                 .enumerate()
@@ -325,10 +325,9 @@ impl Simulator {
         let mut parties: BTreeMap<Name, Party> = keypairs
             .into_iter()
             .map(|(n, k)| {
-                let c = CurrentCommittee::new(PLACEHOLDER, committee.clone());
                 let p = Party {
                     name: n,
-                    logic: Consensus::new(k, c, EmptyBlocks),
+                    logic: Consensus::new(k, committee.clone(), EmptyBlocks),
                     buffer: Buffer::default(),
                     timeout: (0, RoundNumber::genesis()),
                 };
@@ -338,10 +337,12 @@ impl Simulator {
 
         assert!(!parties.is_empty());
 
+        let dag = Dag::new(NonZeroUsize::new(parties.len()).unwrap());
+
         let mut actions = Vec::new();
 
         for (name, party) in &mut parties {
-            actions.push((*name, party.logic.go(Dag::new(), Evidence::Genesis)));
+            actions.push((*name, party.logic.go(dag.clone(), Evidence::Genesis)));
         }
 
         Self {
@@ -537,8 +538,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) | Action::Shutdown => {
-                }
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
             }
         }
     }

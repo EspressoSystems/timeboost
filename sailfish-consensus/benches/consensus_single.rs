@@ -1,10 +1,10 @@
 use std::iter::repeat;
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, num::NonZeroUsize};
 
 use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
-use sailfish_consensus::{Consensus, CurrentCommittee, Dag};
+use sailfish_consensus::{Consensus, Dag};
 use sailfish_types::{Action, Evidence, Message, PLACEHOLDER, Timestamp};
 
 #[derive(Debug, Clone, Copy)]
@@ -42,14 +42,12 @@ impl Net {
         let MultiRoundTestSpec { nodes, rounds } = spec;
         let kps = (0..nodes).map(|_| Keypair::generate()).collect::<Vec<_>>();
 
-        let com = {
-            let c = Committee::new(
-                kps.iter()
-                    .enumerate()
-                    .map(|(i, kp)| (i as u8, kp.public_key())),
-            );
-            CurrentCommittee::new(PLACEHOLDER, c)
-        };
+        let com = Committee::new(
+            PLACEHOLDER,
+            kps.iter()
+                .enumerate()
+                .map(|(i, kp)| (i as u8, kp.public_key())),
+        );
 
         let now = Timestamp::now();
 
@@ -63,10 +61,12 @@ impl Net {
             })
             .collect::<HashMap<_, _>>();
 
+        let dag = Dag::new(NonZeroUsize::new(nodes.len()).unwrap());
+
         let mut messages = Vec::new();
 
         for node in nodes.values_mut() {
-            let actions = node.go(Dag::new(), Evidence::Genesis);
+            let actions = node.go(dag.clone(), Evidence::Genesis);
             messages.extend(actions.into_iter().filter_map(action_to_msg));
         }
 
@@ -137,7 +137,6 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
         Action::UseCommittee(_) => None,
-        Action::Shutdown => None,
     }
 }
 

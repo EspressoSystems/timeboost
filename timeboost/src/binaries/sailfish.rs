@@ -6,7 +6,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, Keypair, x25519};
 use sailfish::{
     Coordinator,
-    consensus::{Consensus, ConsensusMetrics, CurrentCommittee},
+    consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
     types::{Action, HasTime, PLACEHOLDER, Timestamp},
 };
@@ -264,6 +264,7 @@ async fn main() -> Result<()> {
     let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
 
     let committee = Committee::new(
+        PLACEHOLDER,
         peer_hosts_and_keys
             .iter()
             .map(|b| b.0)
@@ -278,8 +279,7 @@ async fn main() -> Result<()> {
         tokio::fs::try_exists(&cli.stamp).await?
     };
 
-    let cfg =
-        RbcConfig::new(signing_keypair.clone(), PLACEHOLDER, committee.clone()).recover(recover);
+    let cfg = RbcConfig::new(signing_keypair.clone(), committee.clone()).recover(recover);
 
     let rbc = Rbc::new(
         committee.size().get() * 5,
@@ -287,12 +287,8 @@ async fn main() -> Result<()> {
         cfg.with_metrics(rbc_metrics),
     );
 
-    let consensus = Consensus::new(
-        signing_keypair,
-        CurrentCommittee::new(PLACEHOLDER, committee),
-        repeat_with(Block::random),
-    )
-    .with_metrics(sf_metrics);
+    let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
+        .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus);
 
     // Create proof of execution.
