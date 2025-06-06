@@ -16,15 +16,15 @@ async fn test_single_node_advance() {
     let committee = node_handle.committee().clone();
 
     // Setup expectations
-    let expected_round = RoundNumber::new(9);
-    let edges = manager.edges_for_round(expected_round, &committee, false);
-    let vertex_proposal = node_handle.expected_vertex_proposal(expected_round, edges, None);
+    let expected_round = Round::new(9, PLACEHOLDER);
+    let edges = manager.edges_for_round(expected_round.num(), &committee, false);
+    let vertex_proposal = node_handle.expected_vertex_proposal(expected_round.num(), edges, None);
     node_handle.insert_expected_actions(vec![
-        Action::Gc(0.into()),
+        Action::Gc(Round::new(0, PLACEHOLDER)),
         Action::ResetTimer(expected_round),
         Action::SendProposal(vertex_proposal),
-        Action::Gc(0.into()),
-        Action::Gc(0.into()),
+        Action::Gc(Round::new(0, PLACEHOLDER)),
+        Action::Gc(Round::new(0, PLACEHOLDER)),
     ]);
 
     // Setup up consensus state
@@ -135,11 +135,11 @@ async fn test_single_node_timeout_cert() {
         Some(expected_cert),
     );
     node_handle.insert_expected_actions(vec![
-        Action::Gc(0.into()),
+        Action::Gc(Round::new(0, PLACEHOLDER)),
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert.clone()),
         Action::SendNoVote(committee.leader(*expected_round as usize + 1), no_vote),
-        Action::ResetTimer(expected_round + 1),
+        Action::ResetTimer(Round::new(expected_round + 1, PLACEHOLDER)),
         Action::SendProposal(vertex_proposal),
     ]);
 

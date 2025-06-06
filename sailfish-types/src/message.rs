@@ -372,7 +372,7 @@ impl<T: Committable> Payload<T> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Action<T: Committable> {
     /// Reset the timer to the given round.
-    ResetTimer(RoundNumber),
+    ResetTimer(Round),
 
     /// Deliver payload data to the application layer.
     Deliver(Payload<T>),
@@ -399,7 +399,7 @@ pub enum Action<T: Committable> {
     Catchup(Round),
 
     /// Signal that it is safe to garbage collect up to the given round number.
-    Gc(RoundNumber),
+    Gc(Round),
 
     /// Use a committee starting at the given round.
     UseCommittee(Round),

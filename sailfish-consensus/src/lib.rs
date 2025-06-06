@@ -164,7 +164,8 @@ where
                 &self.keypair,
             );
             let env = Envelope::signed(vtx, &self.keypair);
-            vec![Action::SendProposal(env), Action::ResetTimer(r)]
+            let rnd = Round::new(r, self.committee.id());
+            vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
         } else {
             self.advance_from_round(r, e)
         }
@@ -529,7 +530,10 @@ where
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
             self.round = round + 1;
-            actions.push(Action::ResetTimer(self.round));
+            actions.push(Action::ResetTimer(Round::new(
+                self.round,
+                self.committee.id(),
+            )));
             let v = self.create_new_vertex(self.round, evidence);
             actions.extend(self.broadcast_vertex(v.0));
             self.clear_aggregators(self.round);
@@ -560,7 +564,10 @@ where
         // If we are not ourselves leader of the next round we can move to it directly.
         if self.public_key() != leader {
             self.round = round + 1;
-            actions.push(Action::ResetTimer(self.round));
+            actions.push(Action::ResetTimer(Round::new(
+                self.round,
+                self.committee.id(),
+            )));
             let NewVertex(v) = self.create_new_vertex(self.round, tc.into());
             debug_assert!(v.evidence().is_timeout());
             actions.extend(self.broadcast_vertex(v));
@@ -603,7 +610,10 @@ where
         debug_assert_eq!(tc.data().round(), nc.data().round());
         let mut actions = Vec::new();
         self.round = round + 1;
-        actions.push(Action::ResetTimer(self.round));
+        actions.push(Action::ResetTimer(Round::new(
+            self.round,
+            self.committee.id(),
+        )));
         let NewVertex(mut v) = self.create_new_vertex(self.round, tc.into());
         v.set_no_vote(nc);
         actions.extend(self.broadcast_vertex(v));
@@ -663,7 +673,7 @@ where
             return Err(v);
         }
 
-        let is_genesis_vertex = v.is_genesis();
+        let is_genesis_vertex = v.is_genesis() || v.is_first_after_handover();
 
         self.dag.add(v);
         self.metrics.dag_depth.set(self.dag.depth());
@@ -860,7 +870,7 @@ where
         self.metrics.vertex_buffer.set(self.buffer.depth());
         self.metrics.delivered.set(self.delivered.len());
 
-        actions.push(Action::Gc(r));
+        actions.push(Action::Gc(Round::new(r, self.committee.id())));
         actions
     }
 
@@ -1027,7 +1037,7 @@ where
         actions.extend([
             Action::UseCommittee(round),
             Action::SendProposal(env),
-            Action::ResetTimer(self.round),
+            Action::ResetTimer(Round::new(self.round, self.committee.id())),
         ]);
 
         actions
@@ -1121,9 +1131,9 @@ mod tests {
             let mut i = 0;
             while i < t.len() {
                 let a = match u8::arbitrary(u)? {
-                    0 => Action::ResetTimer(0.into()),
+                    0 => Action::ResetTimer(Round::new(0, 0)),
                     1 => Action::Catchup(Round::new(0, 0)),
-                    2 => Action::Gc(0.into()),
+                    2 => Action::Gc(Round::new(0, 0)),
                     _ => {
                         let n = t[i];
                         i += 1;

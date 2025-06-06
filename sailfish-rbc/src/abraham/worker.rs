@@ -389,11 +389,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
 
         let digest = Digest::of_msg(&msg);
+        let committee_id = msg.committee();
 
-        if matches!(msg, Message::Handover(_) | Message::HandoverCert(_)) {
-            let id = msg.committee();
-            let Some(committee) = self.config.committees.get(id) else {
-                return Err(RbcError::NoCommittee(id))
+        if committee_id != self.config.committee_id {
+            let Some(committee) = self.config.committees.get(committee_id) else {
+                return Err(RbcError::NoCommittee(committee_id))
             };
             let dest = committee.parties().copied().collect();
             self.comm.multicast(dest, *msg.round().num(), data).await?;

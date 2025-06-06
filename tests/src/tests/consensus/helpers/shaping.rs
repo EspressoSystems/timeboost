@@ -530,7 +530,7 @@ impl Simulator {
                 Action::ResetTimer(r) => {
                     if let Some(p) = self.parties.get_mut(party) {
                         p.timeout.0 = self.time + self.timeout;
-                        p.timeout.1 = r;
+                        p.timeout.1 = r.num();
                     }
                 }
                 Action::Deliver(data) => {

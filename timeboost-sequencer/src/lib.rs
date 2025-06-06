@@ -384,7 +384,7 @@ impl Task {
                         }
                     },
                     Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
+                        self.decrypter.gc(r.num()).await?;
                         actions.push_front(action);
                         break;
                     }
@@ -407,7 +407,7 @@ impl Task {
                         break;
                     }
                     Action::Gc(r) => {
-                        self.decrypter.gc(r).await?;
+                        self.decrypter.gc(r.num()).await?;
                     }
                     Action::Catchup(_) => {
                         self.includer.clear_cache();

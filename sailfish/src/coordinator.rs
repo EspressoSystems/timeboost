@@ -1,56 +1,63 @@
 use std::{future::pending, time::Duration};
 
+use arrayvec::ArrayVec;
 use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
-use multisig::{Certificate, Committee, Envelope, PublicKey, Validated};
+use multisig::{Committee, CommitteeId, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Comm, Evidence, HasTime, Message, RoundNumber};
-use sailfish_types::{ConsensusTime, Handover, HandoverMessage, Round};
+use sailfish_types::ConsensusTime;
+use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
 use tokio::select;
 use tokio::time::sleep;
 
+const MAX_CONSENSUS: usize = 2;
+const MAX_OLD_IDS: usize = 2;
+
 pub struct Coordinator<T: Committable, C> {
+    /// The public key of this node.
+    key: PublicKey,
+
     /// The communication channel for this coordinator.
     comm: C,
 
-    /// The instance of Sailfish consensus for this coordinator.
-    consensus: Consensus<T>,
+    /// The instances of Sailfish consensus for this coordinator.
+    consensus: ArrayVec<Consensus<T>, MAX_CONSENSUS>,
 
-    /// The upcoming consensus instance (if any).
-    next_consensus: Option<Consensus<T>>,
+    /// The current committee.
+    current: CommitteeId,
+
+    /// Old committee IDs.
+    previous: ArrayVec<CommitteeId, MAX_OLD_IDS>,
 
     /// The timeout timer for a sailfish consensus round.
-    timer: BoxFuture<'static, RoundNumber>,
+    timer: BoxFuture<'static, Round>,
 
     /// Have we started consensus?
     init: bool,
 
-    /// Buffer of handover messages.
+    /// Buffer of messages.
     ///
-    /// If handover messages arrive before we know about the next
-    /// committee we buffer them and use them as soon as `set_next_consensus`
-    /// is called.
-    buffer: Vec<Envelope<HandoverMessage, Validated>>,
-
-    /// Buffer of handover certificate.
-    ///
-    /// If a handover certificate arrives before we know about the next
-    /// committee we buffer it and use it as soon as `set_next_consensus`
-    /// is called.
-    cert: Option<Certificate<Handover>>,
+    /// If messages arrive before we know about the next committee, we buffer
+    /// them and use them as soon as `set_next_consensus` is called.
+    buffer: Vec<Message<T, Validated>>,
 }
 
-impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
+impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
     /// Create a new coordinator.
     pub fn new(comm: C, cons: Consensus<T>, await_handover: bool) -> Self {
         Self {
+            key: cons.public_key(),
             comm,
-            consensus: cons,
-            next_consensus: None,
+            current: cons.committee().id(),
+            previous: ArrayVec::new(),
+            consensus: {
+                let mut a = ArrayVec::new();
+                a.push(cons);
+                a
+            },
             timer: pending().boxed(),
             init: await_handover,
             buffer: Vec::new(),
-            cert: None,
         }
     }
 
@@ -61,24 +68,62 @@ impl<T: Committable, C: Comm<T>> Coordinator<T, C> {
 
     /// The public key of this coordinator.
     pub fn public_key(&self) -> PublicKey {
-        self.consensus.public_key()
-    }
-
-    /// Get the current consensus round.
-    pub fn consensus_round(&self) -> RoundNumber {
-        self.consensus.round()
+        self.key
     }
 
     /// Set the next committee and the time when it should become active.
-    pub fn set_next_committee(&mut self, start: ConsensusTime, committee: Committee) {
-        self.buffer
-            .retain(|e| e.data().handover().data().next() == committee.id());
-        if let Some(cert) = &self.cert {
-            if cert.data().next() != committee.id() {
-                self.cert = None
-            }
+    pub async fn set_next_committee(
+        &mut self,
+        t: ConsensusTime,
+        c: Committee,
+        a: C::AddrInfo,
+    ) -> Result<(), C::Err> {
+        self.buffer.retain(|m| m.committee() == c.id());
+        self.current_mut().set_next_committee(t, c.clone());
+        self.comm.add_committee(c, a).await
+    }
+
+    /// Get the current consensus instance.
+    fn current(&self) -> &Consensus<T> {
+        self.consensus
+            .iter()
+            .find(|c| c.committee().id() == self.current)
+            .expect("current is consensus instance")
+    }
+
+    /// Mutably get the current consensus instance.
+    fn current_mut(&mut self) -> &mut Consensus<T> {
+        self.consensus
+            .iter_mut()
+            .find(|c| c.committee().id() == self.current)
+            .expect("current is consensus instance")
+    }
+
+    /// Is there a consensus instance for the given committee ID?
+    fn contains(&self, id: CommitteeId) -> bool {
+        self.consensus.iter().any(|c| id == c.committee().id())
+    }
+
+    /// Get the consensus instance corresponding to the given committee ID.
+    fn get_mut(&mut self, id: CommitteeId) -> Option<&mut Consensus<T>> {
+        self.consensus.iter_mut().find(|c| id == c.committee().id())
+    }
+
+    /// Update the current instance.
+    fn update_current(&mut self, r: Round) -> bool {
+        if self.current == r.committee() {
+            return false;
         }
-        self.consensus.set_next_committee(start, committee)
+        if self.previous.iter().any(|id| *id == r.committee()) {
+            // Never go back to a previous instance.
+            return false;
+        }
+        self.consensus.truncate(1);
+        self.previous.truncate(MAX_OLD_IDS - 1);
+        self.previous.insert(0, self.current);
+        self.current = r.committee();
+        debug_assert_eq!(self.current, self.current().committee().id());
+        true
     }
 }
 
@@ -97,29 +142,25 @@ where
             return Vec::new();
         }
         self.init = true;
-        let d = Dag::new(self.consensus.committee().size());
-        self.consensus.go(d, Evidence::Genesis)
+        let d = Dag::new(self.current().committee().size());
+        self.current_mut().go(d, Evidence::Genesis)
     }
 
     /// Set the consensus instance for the next committee.
     ///
-    /// The instance will be applied to any buffered handover messages or
-    /// certificate, if already available. The resulting actions should be
-    /// passed to `Coordinator::execute` as usual.
+    /// The instance will be applied to any buffered messages.
+    /// The resulting actions should be passed to `Coordinator::execute` as usual.
     pub fn set_next_consensus(&mut self, mut cons: Consensus<T>) -> Vec<Action<T>> {
         let mut actions = Vec::new();
-        if let Some(cert) = self.cert.take() {
-            if cert.data().next() == cons.committee().id() {
-                self.buffer.clear();
-                actions.extend(cons.handle_handover_cert(cert))
+        for m in self.buffer.drain(..) {
+            if m.committee() == cons.committee().id() {
+                actions.extend(cons.handle_message(m))
             }
         }
-        for e in self.buffer.drain(..) {
-            if e.data().handover().data().next() == cons.committee().id() {
-                actions.extend(cons.handle_handover(e))
-            }
+        if !self.contains(cons.committee().id()) {
+            self.consensus.truncate(MAX_CONSENSUS - 1);
+            self.consensus.insert(0, cons);
         }
-        self.next_consensus = Some(cons);
         actions
     }
 
@@ -131,26 +172,24 @@ where
     /// - process a validated consensus `Message` that was RBC-delivered over the network.
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
         select! { biased;
-            r = &mut self.timer => Ok(self.consensus.timeout(r)),
+            r = &mut self.timer => {
+                Ok(if let Some(cons) = self.get_mut(r.committee()) {
+                    cons.timeout(r.num())
+                } else {
+                    Vec::new()
+                })
+            }
             m = self.comm.receive() => {
                 let m = m?;
-                let i = m.committee();
+                let c = m.committee();
 
-                if i == self.consensus.committee().id() {
-                    return Ok(self.consensus.handle_message(m))
+                if let Some(cons) = self.get_mut(c) {
+                    return Ok(cons.handle_message(m))
                 }
 
-                if let Some(consensus) = &mut self.next_consensus {
-                    if i == consensus.committee().id() {
-                        return Ok(consensus.handle_message(m))
-                    }
-                }
-
-                // Message is for a committee we do not know yet, so we buffer it.
-                match m {
-                    Message::Handover(e)     => self.buffer.push(e),
-                    Message::HandoverCert(c) => self.cert = Some(c),
-                    _                        => {}
+                if !self.previous.contains(&c) {
+                    // Message is for a committee we do not know (yet), so we buffer it.
+                    self.buffer.push(m);
                 }
 
                 Ok(Vec::new())
@@ -171,6 +210,9 @@ where
     pub async fn execute(&mut self, action: Action<T>) -> Result<(), C::Err> {
         match action {
             Action::ResetTimer(r) => {
+                if self.update_current(r) {
+                    self.comm.use_committee(r.committee()).await?
+                }
                 self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
             }
             Action::SendProposal(e) => {
@@ -186,7 +228,7 @@ where
                 self.comm.send(to, Message::NoVote(v)).await?;
             }
             Action::Gc(r) => {
-                self.comm.gc(r).await?;
+                self.comm.gc(r.num()).await?;
             }
             Action::SendHandover(e) => {
                 self.comm.broadcast(Message::Handover(e)).await?;
@@ -194,25 +236,15 @@ where
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
-            Action::UseCommittee(r) => self.use_next_consensus(r),
-            Action::Catchup(r) => {
-                if r.committee() != self.consensus.committee().id() {
-                    self.use_next_consensus(r)
+            Action::UseCommittee(r) => {
+                if self.update_current(r) {
+                    self.comm.use_committee(r.committee()).await?
                 }
             }
-            Action::Deliver(_) => {
+            Action::Catchup(_) | Action::Deliver(_) => {
                 // nothing to do
             }
         }
         Ok(())
-    }
-
-    /// Move the next consensus instancer over to the current one.
-    fn use_next_consensus(&mut self, r: Round) {
-        if let Some(next) = self.next_consensus.take() {
-            if r.committee() == next.committee().id() {
-                self.consensus = next
-            }
-        }
     }
 }
