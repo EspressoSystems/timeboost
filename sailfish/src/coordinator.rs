@@ -10,8 +10,14 @@ use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
 use tokio::select;
 use tokio::time::sleep;
 
-const MAX_CONSENSUS: usize = 2;
-const MAX_OLD_IDS: usize = 2;
+/// Max. number of consensus instances.
+const MAX_CONSENSUS_INSTANCES: usize = 2;
+
+/// Max. number of previous committee IDs to keep around.
+const MAX_OLD_COMMITTEE_IDS: usize = 2;
+
+/// Duration before a timeout happens.
+const TIMEOUT_DURATION: Duration = Duration::from_secs(4);
 
 pub struct Coordinator<T: Committable, C> {
     /// The public key of this node.
@@ -21,13 +27,13 @@ pub struct Coordinator<T: Committable, C> {
     comm: C,
 
     /// The instances of Sailfish consensus for this coordinator.
-    consensus: ArrayVec<Consensus<T>, MAX_CONSENSUS>,
+    consensus: ArrayVec<Consensus<T>, MAX_CONSENSUS_INSTANCES>,
 
     /// The current committee.
     current: CommitteeId,
 
     /// Old committee IDs.
-    previous: ArrayVec<CommitteeId, MAX_OLD_IDS>,
+    previous: ArrayVec<CommitteeId, MAX_OLD_COMMITTEE_IDS>,
 
     /// The timeout timer for a sailfish consensus round.
     timer: BoxFuture<'static, Round>,
@@ -79,7 +85,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         a: C::AddrInfo,
     ) -> Result<(), C::Err> {
         self.buffer.retain(|m| m.committee() == c.id());
-        self.current_mut().set_next_committee(t, c.clone());
+        self.current_mut().set_next_committee(t, c.id());
         self.comm.add_committee(c, a).await
     }
 
@@ -119,7 +125,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
             return false;
         }
         self.consensus.truncate(1);
-        self.previous.truncate(MAX_OLD_IDS - 1);
+        self.previous.truncate(MAX_OLD_COMMITTEE_IDS - 1);
         self.previous.insert(0, self.current);
         self.current = r.committee();
         debug_assert_eq!(self.current, self.current().committee().id());
@@ -158,7 +164,7 @@ where
             }
         }
         if !self.contains(cons.committee().id()) {
-            self.consensus.truncate(MAX_CONSENSUS - 1);
+            self.consensus.truncate(MAX_CONSENSUS_INSTANCES - 1);
             self.consensus.insert(0, cons);
         }
         actions
@@ -213,7 +219,7 @@ where
                 if self.update_current(r) {
                     self.comm.use_committee(r.committee()).await?
                 }
-                self.timer = sleep(Duration::from_secs(4)).map(move |_| r).fuse().boxed();
+                self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
             }
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;

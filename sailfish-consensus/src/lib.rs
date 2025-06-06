@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use committable::Committable;
 use info::NodeInfo;
+use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
@@ -23,7 +24,7 @@ struct NewVertex<T>(Vertex<T>);
 /// Information about the next committee.
 struct NextCommittee {
     start: ConsensusTime,
-    committee: Committee,
+    committee: CommitteeId,
     handover_started: bool,
 }
 
@@ -105,7 +106,7 @@ impl<T> Consensus<T> {
         &self.committee
     }
 
-    pub fn set_next_committee(&mut self, start: ConsensusTime, c: Committee) {
+    pub fn set_next_committee(&mut self, start: ConsensusTime, c: CommitteeId) {
         self.next_committee = Some(NextCommittee {
             start,
             committee: c,
@@ -1006,7 +1007,7 @@ where
         }
         let r = Round::new(self.committed_round, self.committee.id());
         next.handover_started = true;
-        Some(Handover::new(r, next.committee.id()))
+        Some(Handover::new(r, next.committee))
     }
 
     /// A new committee starts here, once the handover is complete.
