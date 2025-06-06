@@ -1,15 +1,12 @@
-use std::ops::{Add, Div};
-
-pub fn median<T>(values: &mut [T]) -> Option<T>
-where
-    T: Ord + Copy + Add<Output = T> + Div<u64, Output = T>,
-{
+pub fn median(values: &mut [u64]) -> Option<u64> {
     if values.is_empty() {
         return None;
     }
     values.sort_unstable();
     let median = if values.len() % 2 == 0 {
-        (values[values.len() / 2 - 1] + values[values.len() / 2]) / 2
+        let a = values[values.len() / 2 - 1];
+        let b = values[values.len() / 2];
+        a.saturating_add(b) / 2
     } else {
         values[values.len() / 2]
     };

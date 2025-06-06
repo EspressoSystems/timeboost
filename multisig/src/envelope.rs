@@ -44,11 +44,6 @@ impl<D: Committable> Envelope<D, Validated> {
 }
 
 impl<D: Committable, S> Envelope<D, S> {
-    /// Is the signature of this envelope valid?
-    pub fn is_valid(&self, membership: &Committee) -> bool {
-        self.signed.is_valid(membership)
-    }
-
     /// Transition from an unchecked envelope to a validated one.
     ///
     /// This checks that the signature of the envelope is valid and represents
