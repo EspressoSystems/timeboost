@@ -4,15 +4,16 @@ mod transaction_order;
 
 use std::net::Ipv4Addr;
 
-use cliquenet::Address;
-use multisig::{Keypair, x25519};
+use cliquenet::{Address, AddressableCommittee};
+use multisig::{Committee, Keypair, x25519};
+use timeboost::types::BundleVariant;
+use timeboost::types::DecryptionKey;
+use timeboost::types::PLACEHOLDER;
 use timeboost_builder::BlockProducerConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::TrustedKeyMaterial;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::BundleVariant;
-use timeboost_types::DecryptionKey;
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -46,33 +47,53 @@ where
         })
         .collect::<Vec<_>>();
 
-    let sailfish_peers = parts
-        .iter()
-        .map(|(kp, xp, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone()))
-        .collect::<Vec<_>>();
+    let committee = Committee::new(
+        PLACEHOLDER,
+        parts
+            .iter()
+            .enumerate()
+            .map(|(i, (kp, ..))| (i as u8, kp.public_key())),
+    );
 
-    let decrypt_peers = parts
-        .iter()
-        .map(|(kp, xp, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone()))
-        .collect::<Vec<_>>();
+    let sailfish_peers = AddressableCommittee::new(
+        committee.clone(),
+        parts
+            .iter()
+            .map(|(kp, xp, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone())),
+    );
 
-    let produce_peers = parts
-        .iter()
-        .map(|(kp, xp, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone()))
-        .collect::<Vec<_>>();
+    let decrypt_peers = AddressableCommittee::new(
+        committee.clone(),
+        parts
+            .iter()
+            .map(|(kp, xp, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone())),
+    );
+
+    let produce_peers = AddressableCommittee::new(
+        committee.clone(),
+        parts
+            .iter()
+            .map(|(kp, xp, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone())),
+    );
 
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
     for (i, (kpair, xpair, sa, da, pa, share)) in parts.iter().cloned().enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
-        let mut cfg = SequencerConfig::new(kpair.clone(), xpair.clone(), dkey, sa, da)
-            .with_sailfish_peers(sailfish_peers.clone())
-            .with_decrypt_peers(decrypt_peers.clone());
+        let mut cfg = SequencerConfig::new(
+            kpair.clone(),
+            xpair.clone(),
+            dkey,
+            sa,
+            da,
+            sailfish_peers.clone(),
+            decrypt_peers.clone(),
+        );
         if let Some(r) = recover_index {
             cfg = cfg.recover(i == r);
         }
-        let pcf = BlockProducerConfig::new(kpair, xpair, pa).with_peers(produce_peers.clone());
+        let pcf = BlockProducerConfig::new(kpair, xpair, pa).with_peers(produce_peers.entries());
         cfgs.push((cfg, pcf));
     }
 

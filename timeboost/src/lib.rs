@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use api::metrics::serve_metrics_api;
-use cliquenet::Address;
+use cliquenet::{Address, AddressableCommittee};
 use metrics::TimeboostMetrics;
 use multisig::{Keypair, PublicKey, x25519};
 use reqwest::Url;
@@ -32,13 +32,13 @@ pub struct TimeboostConfig {
     pub metrics_port: u16,
 
     /// The sailfish peers that this node will connect to.
-    pub sailfish_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
+    pub sailfish_peers: AddressableCommittee,
 
     /// The decrypt peers that this node will connect to.
-    pub decrypt_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
+    pub decrypt_peers: AddressableCommittee,
 
     /// The block producer peers that this node will connect to.
-    pub producer_peers: Vec<(PublicKey, x25519::PublicKey, Address)>,
+    pub producer_peers: AddressableCommittee,
 
     /// The keypair for the node to sign messages.
     pub sign_keypair: Keypair,
@@ -98,17 +98,17 @@ impl Timeboost {
             init.dec_sk.clone(),
             init.sailfish_address.clone(),
             init.decrypt_address.clone(),
+            init.sailfish_peers.clone(),
+            init.decrypt_peers.clone(),
         )
-        .recover(recover)
-        .with_sailfish_peers(init.sailfish_peers.clone())
-        .with_decrypt_peers(init.decrypt_peers.clone());
+        .recover(recover);
 
         let bcf = BlockProducerConfig::new(
             init.sign_keypair.clone(),
             init.dh_keypair.clone(),
             init.producer_address.clone(),
         )
-        .with_peers(init.producer_peers.clone());
+        .with_peers(init.producer_peers.entries());
 
         let pro = Arc::new(PrometheusMetrics::default());
         let seq = Sequencer::new(scf, &*pro).await?;

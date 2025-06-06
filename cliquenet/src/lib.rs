@@ -10,7 +10,7 @@ mod time;
 
 pub mod overlay;
 
-pub use addr::{Address, InvalidAddress};
+pub use addr::{Address, AddressableCommittee, InvalidAddress};
 pub use error::NetworkError;
 pub use id::Id;
 pub use metrics::NetworkMetrics;
