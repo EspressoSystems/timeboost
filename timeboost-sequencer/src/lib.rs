@@ -11,10 +11,10 @@ use cliquenet::{self as net, MAX_MESSAGE_SIZE};
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey, x25519};
-use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
+use sailfish::{Coordinator, Event};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
@@ -31,7 +31,7 @@ use sort::Sorter;
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SequencerConfig {
     sign_keypair: Keypair,
     dh_keypair: x25519::Keypair,
@@ -96,6 +96,14 @@ impl SequencerConfig {
 
     pub fn is_recover(&self) -> bool {
         self.recover
+    }
+
+    pub fn sailfish_peers(&self) -> &AddressableCommittee {
+        &self.sailfish_peers
+    }
+
+    pub fn decrypt_peers(&self) -> &AddressableCommittee {
+        &self.decrypt_peers
     }
 }
 
@@ -405,18 +413,18 @@ impl Task {
                 candidates.push((round, evidence, lists))
             }
             while let Some(action) = actions.pop_front() {
-                match action {
-                    Action::Deliver(_) => {
-                        actions.push_front(action);
-                        break;
-                    }
-                    Action::Gc(r) => {
+                if action.is_deliver() {
+                    actions.push_front(action);
+                    break;
+                }
+                match self.sailfish.execute(action).await {
+                    Ok(Some(Event::Gc(r))) => {
                         self.decrypter.gc(r.num()).await?;
                     }
-                    Action::Catchup(_) => {
+                    Ok(Some(Event::Catchup(_))) => {
                         self.includer.clear_cache();
                     }
-                    Action::UseCommittee(r) => {
+                    Ok(Some(Event::UseCommittee(r))) => {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c)
@@ -424,11 +432,11 @@ impl Task {
                             warn!(node = %self.label, id = %r.committee(), "committee not found");
                         }
                     }
-                    _ => {}
-                }
-                if let Err(err) = self.sailfish.execute(action).await {
-                    error!(node = %self.label, %err, "coordinator error");
-                    return Err(err.into());
+                    Ok(None) => {}
+                    Err(err) => {
+                        error!(node = %self.label, %err, "coordinator error");
+                        return Err(err.into());
+                    }
                 }
             }
         }

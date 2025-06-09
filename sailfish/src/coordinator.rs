@@ -48,6 +48,17 @@ pub struct Coordinator<T: Committable, C> {
     buffer: Vec<Message<T, Validated>>,
 }
 
+/// Events this coordinator can produce.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// A new committee is in use.
+    UseCommittee(Round),
+    /// Gargabe collection has been performed.
+    Gc(Round),
+    /// Consensus was catching up.
+    Catchup(Round),
+}
+
 impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
     /// Create a new coordinator.
     pub fn new(comm: C, cons: Consensus<T>, await_handover: bool) -> Self {
@@ -216,10 +227,14 @@ where
     }
 
     /// Execute a given consensus `Action`.
-    pub async fn execute(&mut self, action: Action<T>) -> Result<(), C::Err> {
+    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Event>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
+                if self.update_consensus(r) {
+                    self.comm.use_committee(r.committee()).await?;
+                    return Ok(Some(Event::UseCommittee(r)));
+                }
             }
             Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
@@ -235,6 +250,7 @@ where
             }
             Action::Gc(r) => {
                 self.comm.gc(r.num()).await?;
+                return Ok(Some(Event::Gc(r)));
             }
             Action::SendHandover(e) => {
                 self.comm.broadcast(Message::Handover(e)).await?;
@@ -244,13 +260,15 @@ where
             }
             Action::UseCommittee(r) => {
                 if self.update_consensus(r) {
-                    self.comm.use_committee(r.committee()).await?
+                    self.comm.use_committee(r.committee()).await?;
+                    return Ok(Some(Event::UseCommittee(r)));
                 }
             }
-            Action::Catchup(_) | Action::Deliver(_) => {
+            Action::Catchup(r) => return Ok(Some(Event::Catchup(r))),
+            Action::Deliver(_) => {
                 // nothing to do
             }
         }
-        Ok(())
+        Ok(None)
     }
 }

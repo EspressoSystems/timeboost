@@ -127,7 +127,7 @@ fn small_committee() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
             actions = coor.next().await?
@@ -185,7 +185,7 @@ fn medium_committee() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
             actions = coor.next().await?
@@ -249,7 +249,7 @@ fn medium_committee_partition_network() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
 
