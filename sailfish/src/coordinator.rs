@@ -90,7 +90,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
     }
 
     /// Get the current consensus instance.
-    fn current_consensus(&self) -> &Consensus<T> {
+    pub fn current_consensus(&self) -> &Consensus<T> {
         self.instances
             .iter()
             .find(|c| c.committee().id() == self.current_committee)
@@ -106,6 +106,11 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
     }
 
     /// Get the consensus instance corresponding to the given committee ID.
+    pub fn consensus(&self, id: CommitteeId) -> Option<&Consensus<T>> {
+        self.instances.iter().find(|c| id == c.committee().id())
+    }
+
+    /// Mutablly get the consensus instance corresponding to the given committee ID.
     fn consensus_mut(&mut self, id: CommitteeId) -> Option<&mut Consensus<T>> {
         self.instances.iter_mut().find(|c| id == c.committee().id())
     }

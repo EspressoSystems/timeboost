@@ -380,13 +380,11 @@ impl Task {
             let mut evidence = Evidence::Genesis;
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
-                match action {
-                    Action::Deliver(payload) => match payload.data().decode::<MAX_MESSAGE_SIZE>() {
+                if let Action::Deliver(payload) = action {
+                    match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
                             round = payload.round();
-                            if payload.evidence().round() > evidence.round() {
-                                evidence = payload.into_evidence()
-                            }
+                            evidence = payload.into_evidence();
                             lists.push(data)
                         }
                         Err(err) => {
@@ -397,19 +395,10 @@ impl Task {
                                 "failed to deserialize candidate list"
                             );
                         }
-                    },
-                    Action::Gc(r) => {
-                        self.decrypter.gc(r.num()).await?;
-                        actions.push_front(action);
-                        break;
                     }
-                    Action::Catchup(_) => {
-                        self.includer.clear_cache();
-                    }
-                    _ => {
-                        actions.push_front(action);
-                        break;
-                    }
+                } else {
+                    actions.push_front(action);
+                    break;
                 }
             }
             if !lists.is_empty() {
@@ -426,6 +415,14 @@ impl Task {
                     }
                     Action::Catchup(_) => {
                         self.includer.clear_cache();
+                    }
+                    Action::UseCommittee(r) => {
+                        if let Some(cons) = self.sailfish.consensus(r.committee()) {
+                            let c = cons.committee().clone();
+                            self.includer.set_next_committee(r.num(), c)
+                        } else {
+                            warn!(node = %self.label, id = %r.committee(), "committee not found");
+                        }
                     }
                     _ => {}
                 }

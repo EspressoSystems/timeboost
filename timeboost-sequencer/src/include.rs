@@ -22,6 +22,7 @@ pub struct Outcome {
 #[derive(Debug)]
 pub struct Includer {
     committee: Committee,
+    next_committee: Option<(RoundNumber, Committee)>,
     /// Consensus round.
     round: RoundNumber,
     /// Consensus timestamp.
@@ -41,6 +42,7 @@ impl Includer {
         let now = Timestamp::default();
         Self {
             committee: c,
+            next_committee: None,
             round: RoundNumber::genesis(),
             time: now,
             epoch: now.into(),
@@ -56,6 +58,11 @@ impl Includer {
         evidence: Evidence,
         lists: Vec<CandidateList>,
     ) -> Outcome {
+        if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r == round) {
+            self.committee = c;
+            self.clear_cache()
+        }
+
         debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
@@ -168,6 +175,10 @@ impl Includer {
             retry,
             is_valid: self.is_valid_cache(),
         }
+    }
+
+    pub fn set_next_committee(&mut self, r: RoundNumber, c: Committee) {
+        self.next_committee = Some((r, c))
     }
 
     pub fn clear_cache(&mut self) {
