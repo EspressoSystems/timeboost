@@ -27,13 +27,13 @@ pub struct Coordinator<T: Committable, C> {
     comm: C,
 
     /// The instances of Sailfish consensus for this coordinator.
-    consensus: ArrayVec<Consensus<T>, MAX_CONSENSUS_INSTANCES>,
+    instances: ArrayVec<Consensus<T>, MAX_CONSENSUS_INSTANCES>,
 
     /// The current committee.
-    current: CommitteeId,
+    current_committee: CommitteeId,
 
     /// Old committee IDs.
-    previous: ArrayVec<CommitteeId, MAX_OLD_COMMITTEE_IDS>,
+    previous_committee: ArrayVec<CommitteeId, MAX_OLD_COMMITTEE_IDS>,
 
     /// The timeout timer for a sailfish consensus round.
     timer: BoxFuture<'static, Round>,
@@ -54,9 +54,9 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         Self {
             key: cons.public_key(),
             comm,
-            current: cons.committee().id(),
-            previous: ArrayVec::new(),
-            consensus: {
+            current_committee: cons.committee().id(),
+            previous_committee: ArrayVec::new(),
+            instances: {
                 let mut a = ArrayVec::new();
                 a.push(cons);
                 a
@@ -85,50 +85,57 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         a: C::CommitteeInfo,
     ) -> Result<(), C::Err> {
         self.buffer.retain(|m| m.committee() == c.id());
-        self.current_mut().set_next_committee(t, c.id());
+        self.current_consensus_mut().set_next_committee(t, c.id());
         self.comm.add_committee(a).await
     }
 
     /// Get the current consensus instance.
-    fn current(&self) -> &Consensus<T> {
-        self.consensus
+    fn current_consensus(&self) -> &Consensus<T> {
+        self.instances
             .iter()
-            .find(|c| c.committee().id() == self.current)
+            .find(|c| c.committee().id() == self.current_committee)
             .expect("current is consensus instance")
     }
 
     /// Mutably get the current consensus instance.
-    fn current_mut(&mut self) -> &mut Consensus<T> {
-        self.consensus
+    fn current_consensus_mut(&mut self) -> &mut Consensus<T> {
+        self.instances
             .iter_mut()
-            .find(|c| c.committee().id() == self.current)
+            .find(|c| c.committee().id() == self.current_committee)
             .expect("current is consensus instance")
+    }
+
+    /// Get the consensus instance corresponding to the given committee ID.
+    fn consensus_mut(&mut self, id: CommitteeId) -> Option<&mut Consensus<T>> {
+        self.instances.iter_mut().find(|c| id == c.committee().id())
     }
 
     /// Is there a consensus instance for the given committee ID?
     fn contains(&self, id: CommitteeId) -> bool {
-        self.consensus.iter().any(|c| id == c.committee().id())
+        self.instances.iter().any(|c| id == c.committee().id())
     }
 
-    /// Get the consensus instance corresponding to the given committee ID.
-    fn get_mut(&mut self, id: CommitteeId) -> Option<&mut Consensus<T>> {
-        self.consensus.iter_mut().find(|c| id == c.committee().id())
-    }
-
-    /// Update the current instance.
-    fn update_current(&mut self, r: Round) -> bool {
-        if self.current == r.committee() {
+    /// Update the current consensus instance.
+    fn update_consensus(&mut self, r: Round) -> bool {
+        if self.current_committee == r.committee() {
             return false;
         }
-        if self.previous.iter().any(|id| *id == r.committee()) {
+        if self
+            .previous_committee
+            .iter()
+            .any(|id| *id == r.committee())
+        {
             // Never go back to a previous instance.
             return false;
         }
-        self.consensus.truncate(1);
-        self.previous.truncate(MAX_OLD_COMMITTEE_IDS - 1);
-        self.previous.insert(0, self.current);
-        self.current = r.committee();
-        debug_assert_eq!(self.current, self.current().committee().id());
+        self.instances.truncate(1);
+        self.previous_committee.truncate(MAX_OLD_COMMITTEE_IDS - 1);
+        self.previous_committee.insert(0, self.current_committee);
+        self.current_committee = r.committee();
+        debug_assert_eq!(
+            self.current_committee,
+            self.current_consensus().committee().id()
+        );
         true
     }
 }
@@ -148,8 +155,8 @@ where
             return Vec::new();
         }
         self.init = true;
-        let d = Dag::new(self.current().committee().size());
-        self.current_mut().go(d, Evidence::Genesis)
+        let d = Dag::new(self.current_consensus().committee().size());
+        self.current_consensus_mut().go(d, Evidence::Genesis)
     }
 
     /// Set the consensus instance for the next committee.
@@ -164,8 +171,8 @@ where
             }
         }
         if !self.contains(cons.committee().id()) {
-            self.consensus.truncate(MAX_CONSENSUS_INSTANCES - 1);
-            self.consensus.insert(0, cons);
+            self.instances.truncate(MAX_CONSENSUS_INSTANCES - 1);
+            self.instances.insert(0, cons);
         }
         actions
     }
@@ -179,7 +186,7 @@ where
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
         select! { biased;
             r = &mut self.timer => {
-                Ok(if let Some(cons) = self.get_mut(r.committee()) {
+                Ok(if let Some(cons) = self.consensus_mut(r.committee()) {
                     cons.timeout(r.num())
                 } else {
                     Vec::new()
@@ -189,11 +196,11 @@ where
                 let m = m?;
                 let c = m.committee();
 
-                if let Some(cons) = self.get_mut(c) {
+                if let Some(cons) = self.consensus_mut(c) {
                     return Ok(cons.handle_message(m))
                 }
 
-                if !self.previous.contains(&c) {
+                if !self.previous_committee.contains(&c) {
                     // Message is for a committee we do not know (yet), so we buffer it.
                     self.buffer.push(m);
                 }
@@ -204,21 +211,9 @@ where
     }
 
     /// Execute a given consensus `Action`.
-    ///
-    /// This function will handle one of the following actions:
-    ///
-    /// - `ResetTimer` - Reset timeout timer.
-    /// - `SendProposal` - Reliably broadcast a vertex to the members in the committee.
-    /// - `SendTimeout` - Multicast a timeout message to the members in the committee.
-    /// - `SendTimeoutCert` - Multicast a timeout certificate to the members in the committee.
-    /// - `SendNoVote` - Send a no-vote to the leader in `r + 1` for a timeout in round `r`.
-    /// - `Deliver` - NOOP.
     pub async fn execute(&mut self, action: Action<T>) -> Result<(), C::Err> {
         match action {
             Action::ResetTimer(r) => {
-                if self.update_current(r) {
-                    self.comm.use_committee(r.committee()).await?
-                }
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
             }
             Action::SendProposal(e) => {
@@ -243,7 +238,7 @@ where
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
             Action::UseCommittee(r) => {
-                if self.update_current(r) {
+                if self.update_consensus(r) {
                     self.comm.use_committee(r.committee()).await?
                 }
             }
