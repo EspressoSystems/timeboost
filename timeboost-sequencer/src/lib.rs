@@ -13,7 +13,7 @@ use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::consensus::{Consensus, ConsensusMetrics};
-use sailfish::rbc::{self, Rbc, RbcConfig, RbcError, RbcMetrics};
+use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
 use timeboost_crypto::Keyset;
 use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
@@ -358,9 +358,8 @@ impl Task {
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
                     Some(Command::NextCommittee(t, a, b)) => {
-                        let addrs = rbc::AddrInfo::new(a.entries());
-                        self.sailfish.set_next_committee(t, a.committee().clone(), addrs).await?;
                         let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
+                        self.sailfish.set_next_committee(t, a.committee().clone(), a).await?;
                         let actions = self.sailfish.set_next_consensus(cons);
                         candidates = self.execute(actions).await?
                     }

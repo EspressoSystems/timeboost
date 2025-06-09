@@ -1,12 +1,10 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use cliquenet::{Address, Overlay, overlay::Data};
+use cliquenet::{AddressableCommittee, Overlay, overlay::Data};
 use committable::Committable;
-use multisig::x25519;
 use multisig::{Certificate, Committee, CommitteeId, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::CommitteeVec;
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
@@ -69,7 +67,7 @@ enum Command<T: Committable> {
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
     /// Add the next committee.
-    AddCommittee(Committee, AddrInfo),
+    AddCommittee(AddressableCommittee),
     /// Use the committee denoted by the given ID.
     UseCommittee(CommitteeId),
 }
@@ -114,30 +112,6 @@ impl RbcConfig {
     pub fn recover(mut self, val: bool) -> Self {
         self.recover = val;
         self
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AddrInfo {
-    addrs: HashMap<PublicKey, (x25519::PublicKey, Address)>,
-}
-
-impl AddrInfo {
-    pub fn new<I, A>(infos: I) -> Self
-    where
-        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
-        A: Into<Address>,
-    {
-        Self {
-            addrs: infos
-                .into_iter()
-                .map(|(k, x, a)| (k, (x, a.into())))
-                .collect(),
-        }
-    }
-
-    pub fn get(&self, k: &PublicKey) -> Option<&(x25519::PublicKey, Address)> {
-        self.addrs.get(k)
     }
 }
 
@@ -190,7 +164,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
 #[async_trait]
 impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     type Err = RbcError;
-    type AddrInfo = AddrInfo;
+    type CommitteeInfo = AddressableCommittee;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
@@ -235,9 +209,9 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
             .map_err(|_| RbcError::Shutdown)
     }
 
-    async fn add_committee(&mut self, c: Committee, i: Self::AddrInfo) -> Result<(), Self::Err> {
+    async fn add_committee(&mut self, i: Self::CommitteeInfo) -> Result<(), Self::Err> {
         self.tx
-            .send(Command::AddCommittee(c, i))
+            .send(Command::AddCommittee(i))
             .await
             .map_err(|_| RbcError::Shutdown)
     }

@@ -152,7 +152,7 @@ impl<T: Clone> Star<T> {
 #[async_trait]
 impl<T: Committable + Clone + Send> Comm<T> for Star<Message<T, Validated>> {
     type Err = io::Error;
-    type AddrInfo = Empty;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.broadcast(msg);
@@ -178,7 +178,7 @@ impl<T: Clone> Default for Star<T> {
 #[async_trait]
 impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
     type Err = io::Error;
-    type AddrInfo = Empty;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         let e = Event::Multicast {

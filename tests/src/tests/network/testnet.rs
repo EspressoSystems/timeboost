@@ -106,7 +106,7 @@ where
     C: Comm<T> + Send + std::fmt::Debug + 'static,
 {
     type Err = TestNetError<T, C>;
-    type AddrInfo = Empty;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));

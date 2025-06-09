@@ -5,13 +5,13 @@ use std::fmt;
 
 use bytes::Bytes;
 use cliquenet::{
-    Overlay, Role,
+    AddressableCommittee, Overlay, Role,
     MAX_MESSAGE_SIZE,
     overlay::{self, Data, NetworkDown},
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
-use multisig::{Unchecked, Validated, Committee, CommitteeId};
+use multisig::{Unchecked, Validated, CommitteeId};
 use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
@@ -21,7 +21,7 @@ use tracing::{debug, error, trace, warn};
 use crate::RbcError;
 use crate::digest::Digest;
 
-use super::{AddrInfo, Command, Nonce, Protocol, RbcConfig, serialize};
+use super::{Command, Nonce, Protocol, RbcConfig, serialize};
 
 type RbcResult<T> = std::result::Result<T, RbcError>;
 type SendResult<T> = std::result::Result<T, NetworkDown>;
@@ -307,8 +307,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             self.comm.gc(*round);
                             self.buffer.retain(|r, _| *r >= round);
                         }
-                        Some(Command::AddCommittee(c, i)) => {
-                            if let Err(err) = self.add_committee(c, i).await {
+                        Some(Command::AddCommittee(c)) => {
+                            if let Err(err) = self.add_committee(c).await {
                                 if matches!(err, RbcError::Shutdown) {
                                     debug!(node = %self.key, "network went down");
                                     return
@@ -337,20 +337,17 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
     }
 
-    async fn add_committee(&mut self, c: Committee, i: AddrInfo) -> RbcResult<()> {
-        debug!(node = %self.key, committee = %c.id(), "add committee");
+    async fn add_committee(&mut self, c: AddressableCommittee) -> RbcResult<()> {
+        debug!(node = %self.key, committee = %c.committee().id(), "add committee");
         let Some(committee) = self.config.committees.get(self.config.committee_id) else {
             return Err(RbcError::NoCommittee(self.config.committee_id))
         };
         let mut additional = Vec::new();
-        for k in c.parties().filter(|p| !committee.contains_key(p)).copied() {
-            let Some((x, a)) = i.get(&k) else {
-                return Err(RbcError::MissingAddrInfo(c.id(), k))
-            };
-            additional.push((k, *x, a.clone()))
+        for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
+            additional.push((k, x, a))
         }
         self.comm.add(additional).await?;
-        self.config.committees.add(c);
+        self.config.committees.add(c.committee().clone());
         Ok(())
     }
 

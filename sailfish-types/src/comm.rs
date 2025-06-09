@@ -2,7 +2,7 @@ use std::error::Error;
 
 use async_trait::async_trait;
 use committable::Committable;
-use multisig::{Committee, CommitteeId, PublicKey, Validated};
+use multisig::{CommitteeId, PublicKey, Validated};
 
 use crate::{Message, RoundNumber};
 
@@ -10,7 +10,7 @@ use crate::{Message, RoundNumber};
 #[async_trait]
 pub trait Comm<T: Committable> {
     type Err: Error + Send + Sync + 'static;
-    type AddrInfo: Send + Sync + 'static;
+    type CommitteeInfo: Send + Sync + 'static;
 
     /// Send a message to all nodes.
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err>;
@@ -26,10 +26,12 @@ pub trait Comm<T: Committable> {
         Ok(())
     }
 
-    async fn add_committee(&mut self, _: Committee, _: Self::AddrInfo) -> Result<(), Self::Err> {
+    /// Add a set of peers.
+    async fn add_committee(&mut self, _: Self::CommitteeInfo) -> Result<(), Self::Err> {
         Ok(())
     }
 
+    /// Switch over to a set of peers.
     async fn use_committee(&mut self, _: CommitteeId) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -38,7 +40,7 @@ pub trait Comm<T: Committable> {
 #[async_trait]
 impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
     type Err = T::Err;
-    type AddrInfo = T::AddrInfo;
+    type CommitteeInfo = T::CommitteeInfo;
 
     async fn broadcast(&mut self, msg: Message<A, Validated>) -> Result<(), Self::Err> {
         (**self).broadcast(msg).await

@@ -82,11 +82,11 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         &mut self,
         t: ConsensusTime,
         c: Committee,
-        a: C::AddrInfo,
+        a: C::CommitteeInfo,
     ) -> Result<(), C::Err> {
         self.buffer.retain(|m| m.committee() == c.id());
         self.current_mut().set_next_committee(t, c.id());
-        self.comm.add_committee(c, a).await
+        self.comm.add_committee(a).await
     }
 
     /// Get the current consensus instance.
