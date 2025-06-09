@@ -23,9 +23,37 @@ struct NewVertex<T>(Vertex<T>);
 
 /// Information about the next committee.
 struct NextCommittee {
+    id: CommitteeId,
     start: ConsensusTime,
-    committee: CommitteeId,
-    handover_started: bool,
+}
+
+/// Consensus instance state.
+///
+/// State transitions are directed and acyclic, e.g. an instance
+/// that shut down will not go back to `Startup` or `Running`.
+#[derive(Clone, Copy)]
+enum State {
+    /// Initial state.
+    Startup,
+    /// Normal operating state.
+    ///
+    /// Entered either via `Consensus::go` or after handover from
+    /// the previous committee is complete.
+    Running,
+    /// Instance is terminating.
+    ///
+    /// Entered when starting the handover to the next committee.
+    Shutdown(RoundNumber),
+}
+
+impl State {
+    fn is_running(self) -> bool {
+        matches!(self, Self::Running)
+    }
+
+    fn is_shutdown(self) -> bool {
+        matches!(self, Self::Shutdown(_))
+    }
 }
 
 pub struct Consensus<T> {
@@ -37,6 +65,9 @@ pub struct Consensus<T> {
 
     /// The DAG of vertices.
     dag: Dag<T>,
+
+    /// Operating state.
+    state: State,
 
     /// The quorum membership.
     committee: Committee,
@@ -107,11 +138,7 @@ impl<T> Consensus<T> {
     }
 
     pub fn set_next_committee(&mut self, start: ConsensusTime, c: CommitteeId) {
-        self.next_committee = Some(NextCommittee {
-            start,
-            committee: c,
-            handover_started: false,
-        })
+        self.next_committee = Some(NextCommittee { start, id: c })
     }
 }
 
@@ -125,6 +152,7 @@ where
     {
         Self {
             keypair,
+            state: State::Startup,
             clock: ConsensusTime(Default::default()),
             nodes: NodeInfo::new(&committee),
             dag: Dag::new(committee.size()),
@@ -157,6 +185,9 @@ where
         self.dag = d;
         self.round = r;
 
+        assert!(matches!(self.state, State::Startup));
+        self.state = State::Running;
+
         if r.is_genesis() {
             let vtx = Vertex::new(
                 Round::new(r, self.committee.id()),
@@ -186,6 +217,17 @@ where
             dag       = %self.dag.depth(),
             "handle message"
         );
+        if let State::Shutdown(r) = self.state {
+            if m.round().num() > r {
+                debug!(
+                    node     = %self.public_key(),
+                    shutdown = %r,
+                    msg      = %m,
+                    "consensus instance shut down"
+                );
+                return Vec::new();
+            }
+        }
         match m {
             Message::Vertex(e) => self.handle_vertex(e),
             Message::NoVote(e) => self.handle_no_vote(e),
@@ -1002,12 +1044,12 @@ where
     /// Called by the current committee to see if the handover should be started.
     fn handover(&mut self) -> Option<Handover> {
         let next = self.next_committee.as_mut()?;
-        if next.handover_started || next.start < self.clock {
+        if self.state.is_shutdown() || next.start < self.clock {
             return None;
         }
         let r = Round::new(self.committed_round, self.committee.id());
-        next.handover_started = true;
-        Some(Handover::new(r, next.committee))
+        self.state = State::Shutdown(self.committed_round);
+        Some(Handover::new(r, next.id))
     }
 
     /// A new committee starts here, once the handover is complete.
@@ -1018,10 +1060,11 @@ where
 
         let r = cert.data().round().num();
 
-        if r < self.round {
+        if self.state.is_running() {
             return actions;
         }
 
+        self.state = State::Running;
         self.committed_round = r;
         self.round = r + 1;
 
