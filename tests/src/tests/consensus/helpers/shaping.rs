@@ -6,7 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::types::{Evidence, PLACEHOLDER, RoundNumber};
+use sailfish::types::{Evidence, RoundNumber, UNKNOWN_COMMITTEE_ID};
 use tracing::debug;
 
 use crate::prelude::*;
@@ -313,7 +313,7 @@ impl Simulator {
             .collect();
 
         let committee = Committee::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             keypairs
                 .iter()
                 .enumerate()

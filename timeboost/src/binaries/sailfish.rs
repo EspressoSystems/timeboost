@@ -8,7 +8,7 @@ use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::{Action, HasTime, PLACEHOLDER, Timestamp},
+    types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
@@ -264,7 +264,7 @@ async fn main() -> Result<()> {
     let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
 
     let committee = Committee::new(
-        PLACEHOLDER,
+        UNKNOWN_COMMITTEE_ID,
         peer_hosts_and_keys
             .iter()
             .map(|b| b.0)

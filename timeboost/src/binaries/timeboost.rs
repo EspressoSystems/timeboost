@@ -15,7 +15,7 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
-use timeboost::types::PLACEHOLDER;
+use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
 
     let sailfish_peers = {
         let c = Committee::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             sailfish_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
 
     let decrypt_peers = {
         let c = Committee::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             decrypt_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -169,7 +169,7 @@ async fn main() -> Result<()> {
 
     let producer_peers = {
         let c = Committee::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             producer_peer_hosts_and_keys
                 .iter()
                 .enumerate()

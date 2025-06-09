@@ -5,7 +5,7 @@ use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
-use sailfish::types::PLACEHOLDER;
+use sailfish::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 
@@ -19,7 +19,7 @@ fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
         .map(|_| x25519::Keypair::generate().unwrap())
         .collect();
     let co = Committee::new(
-        PLACEHOLDER,
+        UNKNOWN_COMMITTEE_ID,
         ks.iter()
             .enumerate()
             .map(|(i, kp)| (i as u8, kp.public_key())),

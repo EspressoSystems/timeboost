@@ -1,4 +1,4 @@
-use sailfish::types::{PLACEHOLDER, Round, RoundNumber, Timeout};
+use sailfish::types::{Round, RoundNumber, Timeout, UNKNOWN_COMMITTEE_ID};
 use timeboost_utils::types::logging;
 
 use crate::prelude::*;
@@ -16,15 +16,15 @@ async fn test_single_node_advance() {
     let committee = node_handle.committee().clone();
 
     // Setup expectations
-    let expected_round = Round::new(9, PLACEHOLDER);
+    let expected_round = Round::new(9, UNKNOWN_COMMITTEE_ID);
     let edges = manager.edges_for_round(expected_round.num(), &committee, false);
     let vertex_proposal = node_handle.expected_vertex_proposal(expected_round.num(), edges, None);
     node_handle.insert_expected_actions(vec![
-        Action::Gc(Round::new(0, PLACEHOLDER)),
+        Action::Gc(Round::new(0, UNKNOWN_COMMITTEE_ID)),
         Action::ResetTimer(expected_round),
         Action::SendProposal(vertex_proposal),
-        Action::Gc(Round::new(0, PLACEHOLDER)),
-        Action::Gc(Round::new(0, PLACEHOLDER)),
+        Action::Gc(Round::new(0, UNKNOWN_COMMITTEE_ID)),
+        Action::Gc(Round::new(0, UNKNOWN_COMMITTEE_ID)),
     ]);
 
     // Setup up consensus state
@@ -64,7 +64,7 @@ async fn test_single_node_timeout() {
     let expected_round = RoundNumber::new(5);
     let timeout = node_handle.expected_timeout(expected_round);
     let signers = manager.signers(
-        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        Timeout::new(Round::new(expected_round, UNKNOWN_COMMITTEE_ID)),
         committee.quorum_size().get(),
     );
     let send_cert = node_handle.expected_timeout_certificate(signers);
@@ -114,7 +114,7 @@ async fn test_single_node_timeout_cert() {
 
     // Signers and cert for 2f + 1 nodes
     let signers = manager.signers(
-        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        Timeout::new(Round::new(expected_round, UNKNOWN_COMMITTEE_ID)),
         committee.quorum_size().get(),
     );
     // The first cert is sent when we see 2f + 1 timeouts
@@ -123,7 +123,7 @@ async fn test_single_node_timeout_cert() {
 
     // Signers from all nodes and cert
     let signers = manager.signers(
-        Timeout::new(Round::new(expected_round, PLACEHOLDER)),
+        Timeout::new(Round::new(expected_round, UNKNOWN_COMMITTEE_ID)),
         committee.size().get(),
     );
     // Proposal will send with a certificate with all signers
@@ -135,11 +135,11 @@ async fn test_single_node_timeout_cert() {
         Some(expected_cert),
     );
     node_handle.insert_expected_actions(vec![
-        Action::Gc(Round::new(0, PLACEHOLDER)),
+        Action::Gc(Round::new(0, UNKNOWN_COMMITTEE_ID)),
         Action::SendTimeout(timeout),
         Action::SendTimeoutCert(send_cert.clone()),
         Action::SendNoVote(committee.leader(*expected_round as usize + 1), no_vote),
-        Action::ResetTimer(Round::new(expected_round + 1, PLACEHOLDER)),
+        Action::ResetTimer(Round::new(expected_round + 1, UNKNOWN_COMMITTEE_ID)),
         Action::SendProposal(vertex_proposal),
     ]);
 

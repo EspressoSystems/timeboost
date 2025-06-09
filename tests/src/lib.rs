@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey, x25519};
-use sailfish_types::PLACEHOLDER;
+use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::{unsafe_zero_dh_keypair, unsafe_zero_keypair};
 
 #[cfg(test)]
@@ -83,7 +83,7 @@ impl Group {
         Self {
             size,
             peers: peers.collect(),
-            committee: Committee::new(PLACEHOLDER, pubks),
+            committee: Committee::new(UNKNOWN_COMMITTEE_ID, pubks),
             sign_keypairs,
             dh_keypairs,
         }

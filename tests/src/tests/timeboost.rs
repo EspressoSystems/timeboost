@@ -1,4 +1,5 @@
 mod block_order;
+mod handover;
 mod test_timeboost_startup;
 mod transaction_order;
 
@@ -8,7 +9,7 @@ use cliquenet::{Address, AddressableCommittee};
 use multisig::{Committee, Keypair, x25519};
 use timeboost::types::BundleVariant;
 use timeboost::types::DecryptionKey;
-use timeboost::types::PLACEHOLDER;
+use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_builder::BlockProducerConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::TrustedKeyMaterial;
@@ -48,7 +49,7 @@ where
         .collect::<Vec<_>>();
 
     let committee = Committee::new(
-        PLACEHOLDER,
+        UNKNOWN_COMMITTEE_ID,
         parts
             .iter()
             .enumerate()

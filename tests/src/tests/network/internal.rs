@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use multisig::PublicKey;
 use net::{Conn, Star};
 use sailfish::Coordinator;
-use sailfish::types::PLACEHOLDER;
+use sailfish::types::UNKNOWN_COMMITTEE_ID;
 use tokio::task::{JoinHandle, JoinSet};
 
 use super::message_interceptor::NetworkMessageInterceptor;

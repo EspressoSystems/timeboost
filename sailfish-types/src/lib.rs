@@ -19,6 +19,7 @@ pub use time::{ConsensusTime, HasTime, Timestamp};
 pub use vertex::Vertex;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
 /// The empty type has no values.
@@ -45,4 +46,4 @@ impl Committable for Unit {
     }
 }
 
-pub const PLACEHOLDER: multisig::CommitteeId = multisig::CommitteeId::new(0);
+pub const UNKNOWN_COMMITTEE_ID: CommitteeId = CommitteeId::new(u64::MAX);

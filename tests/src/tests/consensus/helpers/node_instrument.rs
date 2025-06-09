@@ -5,7 +5,9 @@ use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
 use sailfish::types::CommitteeVec;
-use sailfish::types::{NoVoteMessage, PLACEHOLDER, Round, RoundNumber, Timeout, TimeoutMessage};
+use sailfish::types::{
+    NoVoteMessage, Round, RoundNumber, Timeout, TimeoutMessage, UNKNOWN_COMMITTEE_ID,
+};
 
 use crate::prelude::*;
 
@@ -80,14 +82,14 @@ impl TestNodeInstrument {
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
             Vertex::new(
-                Round::new(round, PLACEHOLDER),
+                Round::new(round, UNKNOWN_COMMITTEE_ID),
                 tc,
                 EmptyBlocks.next(round),
                 &self.kpair,
             )
         } else {
             Vertex::new(
-                Round::new(round, PLACEHOLDER),
+                Round::new(round, UNKNOWN_COMMITTEE_ID),
                 self.manager.gen_round_cert(round - 1),
                 EmptyBlocks.next(round),
                 &self.kpair,
@@ -102,7 +104,7 @@ impl TestNodeInstrument {
         round: RoundNumber,
     ) -> Envelope<TimeoutMessage, Validated> {
         let d = TimeoutMessage::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             self.manager.gen_round_cert(round - 1).into(),
             &self.kpair,
         );
@@ -140,7 +142,9 @@ impl TestNodeInstrument {
 
         if let Some(accumulator) = accumulator {
             assert_eq!(
-                accumulator.votes(&Timeout::new(Round::new(expected_round, PLACEHOLDER)).commit()),
+                accumulator.votes(
+                    &Timeout::new(Round::new(expected_round, UNKNOWN_COMMITTEE_ID)).commit()
+                ),
                 votes as usize,
                 "Timeout votes accumulated do not match expected votes"
             );

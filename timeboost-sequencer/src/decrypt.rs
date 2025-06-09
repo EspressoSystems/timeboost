@@ -692,7 +692,7 @@ mod tests {
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
     use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
-    use sailfish::types::{CommitteeVec, PLACEHOLDER, Round, RoundNumber};
+    use sailfish::types::{CommitteeVec, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
@@ -749,8 +749,11 @@ mod tests {
             let mut va = VoteAccumulator::new(committee);
             for sk in signature_keys {
                 let keypair = Keypair::from(sk);
-                va.add(Signed::new(Round::new(round - 1, PLACEHOLDER), &keypair))
-                    .unwrap();
+                va.add(Signed::new(
+                    Round::new(round - 1, UNKNOWN_COMMITTEE_ID),
+                    &keypair,
+                ))
+                .unwrap();
             }
             let cert = va.into_certificate().unwrap();
             cert.into()
@@ -869,7 +872,7 @@ mod tests {
             })
             .collect();
         let committee = Committee::new(
-            PLACEHOLDER,
+            UNKNOWN_COMMITTEE_ID,
             signature_keys
                 .iter()
                 .map(SecretKey::public_key)
