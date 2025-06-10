@@ -17,6 +17,7 @@ impl<const N: usize> CommitteeVec<N> {
 
     /// Create a committee vector with the given entry.
     pub fn singleton(c: Committee) -> Self {
+        const { assert!(N > 0) }
         let mut this = Self::new();
         this.add(c);
         this
@@ -37,6 +38,7 @@ impl<const N: usize> CommitteeVec<N> {
     /// If an entry with the given ID already exists, `add` is a NOOP.
     /// This method will remove the oldest entry when at capacity.
     pub fn add(&mut self, c: Committee) {
+        const { assert!(N > 0) }
         if self.contains(c.id()) {
             return;
         }
@@ -52,5 +54,12 @@ impl<const N: usize> CommitteeVec<N> {
     /// Get an iterator over all committees.
     pub fn iter(&self) -> impl Iterator<Item = &Committee> {
         self.vec.iter()
+    }
+}
+
+impl<const N: usize> From<Committee> for CommitteeVec<N> {
+    fn from(c: Committee) -> Self {
+        const { assert!(N > 0) }
+        Self::singleton(c)
     }
 }

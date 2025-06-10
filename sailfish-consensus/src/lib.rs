@@ -76,7 +76,7 @@ pub struct Consensus<T> {
     next_committee: Option<NextCommittee>,
 
     /// Handover votes from the previous committee.
-    handovers: VoteAccumulator<Handover>,
+    handovers: Option<VoteAccumulator<Handover>>,
 
     /// The current round number.
     round: RoundNumber,
@@ -140,6 +140,10 @@ impl<T> Consensus<T> {
     pub fn set_next_committee(&mut self, start: ConsensusTime, c: CommitteeId) {
         self.next_committee = Some(NextCommittee { start, id: c })
     }
+
+    pub fn set_handover_committee(&mut self, c: Committee) {
+        self.handovers = Some(VoteAccumulator::new(c))
+    }
 }
 
 impl<T> Consensus<T>
@@ -163,7 +167,7 @@ where
             rounds: BTreeMap::new(),
             timeouts: BTreeMap::new(),
             no_votes: BTreeMap::new(),
-            handovers: VoteAccumulator::new(committee.clone()),
+            handovers: None,
             committee,
             next_committee: None,
             leader_stack: Vec::new(),
@@ -520,25 +524,24 @@ where
 
         let mut actions = Vec::new();
 
-        let (handover, evidence) = e.into_signed().into_data().into_parts();
-        let commit = handover.commitment();
-        let votes1 = self.handovers.votes(&commit);
-        let data = handover.data().clone();
+        let (handover, _) = e.into_signed().into_data().into_parts();
 
-        match self.handovers.add(handover) {
-            Ok(None) => {
-                let votes2 = self.handovers.votes(&commit);
-                if votes1 != votes2 && votes2 == self.committee.one_honest_threshold().get() {
-                    let h = HandoverMessage::new(data, evidence, &self.keypair);
-                    let e = Envelope::signed(h, &self.keypair);
-                    actions.push(Action::SendHandover(e));
-                }
-            }
+        let Some(handovers) = &mut self.handovers else {
+            warn!(
+                node     = %self.keypair.public_key(),
+                handover = %handover.data(),
+                "unexpected handover message"
+            );
+            return actions;
+        };
+
+        match handovers.add(handover) {
             Ok(Some(cert)) => {
                 let cert = cert.clone();
                 actions.push(Action::SendHandoverCert(cert.clone()));
                 actions.extend(self.start_committee(cert))
             }
+            Ok(None) => {}
             Err(err) => {
                 warn!(
                     node = %self.keypair.public_key(),
@@ -554,7 +557,10 @@ where
     /// Members of the next committee receive handover certificates.
     pub fn handle_handover_cert(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), round = %cert.data().round(), "handover certificate");
-        self.handovers.set_certificate(cert.clone());
+        let Some(handovers) = &mut self.handovers else {
+            return Vec::new();
+        };
+        handovers.set_certificate(cert.clone());
         self.start_committee(cert)
     }
 
@@ -1044,9 +1050,10 @@ where
     /// Called by the current committee to see if the handover should be started.
     fn handover(&mut self) -> Option<Handover> {
         let next = self.next_committee.as_mut()?;
-        if self.state.is_shutdown() || next.start < self.clock {
+        if self.state.is_shutdown() || next.start > self.clock {
             return None;
         }
+        info!(node = %self.keypair.public_key(), round = %self.committed_round, "starting handover");
         let r = Round::new(self.committed_round, self.committee.id());
         self.state = State::Shutdown(self.committed_round);
         Some(Handover::new(r, next.id))

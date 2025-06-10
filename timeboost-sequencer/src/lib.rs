@@ -185,6 +185,7 @@ impl Sequencer {
 
             let rcf = RbcConfig::new(
                 cfg.sign_keypair.clone(),
+                cfg.sailfish_peers.committee().id(),
                 cfg.sailfish_peers.committee().clone(),
             )
             .recover(cfg.recover);
@@ -432,7 +433,7 @@ impl Task {
                             warn!(node = %self.label, id = %r.committee(), "committee not found");
                         }
                     }
-                    Ok(None) => {}
+                    Ok(Some(Event::Deliver(_)) | None) => {}
                     Err(err) => {
                         error!(node = %self.label, %err, "coordinator error");
                         return Err(err.into());

@@ -279,7 +279,8 @@ async fn main() -> Result<()> {
         tokio::fs::try_exists(&cli.stamp).await?
     };
 
-    let cfg = RbcConfig::new(signing_keypair.clone(), committee.clone()).recover(recover);
+    let cfg =
+        RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone()).recover(recover);
 
     let rbc = Rbc::new(
         committee.size().get() * 5,

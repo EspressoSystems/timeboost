@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use cliquenet::{AddressableCommittee, Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, Committee, CommitteeId, Envelope, Keypair, PublicKey, Validated};
+use multisig::{Certificate, CommitteeId, Envelope, Keypair, PublicKey, Validated};
 use sailfish_types::CommitteeVec;
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -84,11 +84,16 @@ pub struct RbcConfig {
 }
 
 impl RbcConfig {
-    pub fn new(k: Keypair, c: Committee) -> Self {
+    pub fn new<C>(k: Keypair, id: CommitteeId, c: C) -> Self
+    where
+        C: Into<CommitteeVec<2>>,
+    {
+        let c = c.into();
+        assert!(c.contains(id));
         Self {
             keypair: k,
-            committee_id: c.id(),
-            committees: CommitteeVec::singleton(c),
+            committee_id: id,
+            committees: c,
             recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),

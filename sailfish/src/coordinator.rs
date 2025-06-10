@@ -5,8 +5,8 @@ use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
 use multisig::{Committee, CommitteeId, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::ConsensusTime;
 use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
+use sailfish_types::{ConsensusTime, Payload};
 use tokio::select;
 use tokio::time::sleep;
 
@@ -50,13 +50,15 @@ pub struct Coordinator<T: Committable, C> {
 
 /// Events this coordinator can produce.
 #[derive(Debug, Clone)]
-pub enum Event {
+pub enum Event<T: Committable> {
     /// A new committee is in use.
     UseCommittee(Round),
     /// Gargabe collection has been performed.
     Gc(Round),
     /// Consensus was catching up.
     Catchup(Round),
+    /// Some payload is being delivered
+    Deliver(Payload<T>),
 }
 
 impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
@@ -227,7 +229,7 @@ where
     }
 
     /// Execute a given consensus `Action`.
-    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Event>, C::Err> {
+    pub async fn execute(&mut self, action: Action<T>) -> Result<Option<Event<T>>, C::Err> {
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
@@ -265,9 +267,7 @@ where
                 }
             }
             Action::Catchup(r) => return Ok(Some(Event::Catchup(r))),
-            Action::Deliver(_) => {
-                // nothing to do
-            }
+            Action::Deliver(v) => return Ok(Some(Event::Deliver(v))),
         }
         Ok(None)
     }

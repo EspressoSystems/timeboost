@@ -149,18 +149,41 @@ impl AddressableCommittee {
         I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
         A: Into<Address>,
     {
-        let mut addresses = HashMap::new();
-        for (k, x, a) in addrs.into_iter() {
-            assert!(c.contains_key(&k));
-            addresses.insert(k, (x, a.into()));
-        }
-        for p in c.parties() {
-            assert!(addresses.contains_key(p))
-        }
-        Self {
+        let this = Self {
             committee: c,
+            addresses: addrs
+                .into_iter()
+                .map(|(k, x, a)| (k, (x, a.into())))
+                .collect(),
+        };
+        this.assert_shared_domain();
+        this
+    }
+
+    pub fn with<I, A>(&self, c: Committee, addrs: I) -> Self
+    where
+        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
+        A: Into<Address>,
+    {
+        let committee = self
+            .committee
+            .with(c.id(), c.entries().map(|(i, k)| (i, *k)));
+
+        let addresses = self
+            .addresses
+            .iter()
+            .filter(|(k, _)| committee.contains_key(k))
+            .map(|(k, (x, a))| (*k, (*x, a.clone())))
+            .chain(addrs.into_iter().map(|(k, x, a)| (k, (x, a.into()))))
+            .collect();
+
+        let this = Self {
+            committee,
             addresses,
-        }
+        };
+
+        this.assert_shared_domain();
+        this
     }
 
     pub fn committee(&self) -> &Committee {
@@ -177,6 +200,26 @@ impl AddressableCommittee {
 
     pub fn entries(&self) -> impl Iterator<Item = (PublicKey, x25519::PublicKey, Address)> {
         self.addresses.iter().map(|(k, (x, a))| (*k, *x, a.clone()))
+    }
+
+    pub fn difference(
+        &self,
+        other: &Self,
+    ) -> impl Iterator<Item = (PublicKey, x25519::PublicKey, Address)> {
+        self.addresses
+            .iter()
+            .filter(|(k, _)| !other.addresses.contains_key(k))
+            .map(|(k, (x, a))| (*k, *x, a.clone()))
+    }
+
+    /// Assert that addresses and committee have the same keys.
+    fn assert_shared_domain(&self) {
+        for p in self.committee.parties() {
+            assert!(self.addresses.contains_key(p), "{p} has no address")
+        }
+        for k in self.addresses.keys() {
+            assert!(self.committee.contains_key(k), "{k} not in committee")
+        }
     }
 }
 

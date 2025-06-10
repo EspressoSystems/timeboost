@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }
+futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 portpicker = { workspace = true }
@@ -24,5 +25,6 @@ timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils", features = ["test"] }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 turmoil = { workspace = true }
 tracing = { workspace = true }

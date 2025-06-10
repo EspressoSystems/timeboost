@@ -592,6 +592,12 @@ where
                                 );
                                 continue
                             }
+                            info!(
+                                name = %self.name,
+                                node = %self.key,
+                                peer = %k,
+                                "adding peer"
+                            );
                             let p = Peer { addr: a, role: Role::Passive };
                             self.peers.insert(k, p);
                             self.index.insert(k, x);
@@ -600,6 +606,12 @@ where
                     }
                     Some(Command::Remove(peers)) => {
                         for k in &peers {
+                            info!(
+                                name = %self.name,
+                                node = %self.key,
+                                peer = %k,
+                                "removing peer"
+                            );
                             self.peers.remove(k);
                             self.index.remove_by_left(k);
                             self.connecting.remove(k);

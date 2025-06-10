@@ -276,8 +276,8 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // Validate the signature of the previous round evidence:
-                if !env.data().evidence().is_valid(round.num(), cc) {
+                // Validate the signature of the round evidence.
+                if !env.data().evidence().is_valid(round.num() + 1, cc) {
                     warn!(%signer, "invalid handover evidence");
                     return None;
                 }
@@ -692,9 +692,7 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
                 write!(f, "TimeoutCert({})", c.data().round())
             }
             Self::Handover(h) => {
-                let r = h.data().handover().data().round();
-                let t = h.data().handover().data().next();
-                write!(f, "Handover({}--[{}]->{})", r.committee(), r.num(), t)
+                write!(f, "Handover({})", h.data().handover().data())
             }
             Self::HandoverCert(c) => {
                 write!(f, "HandoverCert({})", c.data().round())
@@ -707,10 +705,10 @@ impl fmt::Display for Handover {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{}--[{}]->{}",
+            "{{ committee := {}, next := {}, round := {} }}",
             self.round.committee(),
-            self.round.num(),
-            self.next
+            self.next,
+            self.round.num()
         )
     }
 }
