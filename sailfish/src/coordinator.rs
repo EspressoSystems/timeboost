@@ -33,19 +33,36 @@ pub struct Coordinator<T: Committable, C> {
     current_committee: CommitteeId,
 
     /// Old committee IDs.
-    previous_committee: ArrayVec<CommitteeId, MAX_OLD_COMMITTEE_IDS>,
+    previous_committees: ArrayVec<CommitteeId, MAX_OLD_COMMITTEE_IDS>,
 
     /// The timeout timer for a sailfish consensus round.
     timer: BoxFuture<'static, Round>,
 
-    /// Have we started consensus?
-    init: bool,
+    /// Coordinator state.
+    state: State,
 
     /// Buffer of messages.
     ///
     /// If messages arrive before we know about the next committee, we buffer
     /// them and use them as soon as `set_next_consensus` is called.
     buffer: Vec<Message<T, Validated>>,
+}
+
+/// Internal coordinator state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum State {
+    /// Initial state.
+    ///
+    /// After `Coordinator::init` is called the coordinator transitions
+    /// to `State::Running`.
+    Start,
+    /// Coordinator starts as a new committee member.
+    ///
+    /// Once handover completes the coordinator transitions to
+    /// `State::Running`.
+    AwaitHandover,
+    /// Operating state after initialization/handover.
+    Running,
 }
 
 /// Events this coordinator can produce.
@@ -68,21 +85,25 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
             key: cons.public_key(),
             comm,
             current_committee: cons.committee().id(),
-            previous_committee: ArrayVec::new(),
+            previous_committees: ArrayVec::new(),
             instances: {
                 let mut a = ArrayVec::new();
                 a.push(cons);
                 a
             },
             timer: pending().boxed(),
-            init: await_handover,
+            state: if await_handover {
+                State::AwaitHandover
+            } else {
+                State::Start
+            },
             buffer: Vec::new(),
         }
     }
 
     /// Has this coordinator been initialized?
     pub fn is_init(&self) -> bool {
-        self.init
+        matches!(self.state, State::Running | State::AwaitHandover)
     }
 
     /// The public key of this coordinator.
@@ -100,6 +121,11 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         self.buffer.retain(|m| m.committee() == c.id());
         self.current_consensus_mut().set_next_committee(t, c.id());
         self.comm.add_committee(a).await
+    }
+
+    /// Is there a consensus instance for the given committee ID?
+    pub fn contains(&self, id: CommitteeId) -> bool {
+        self.instances.iter().any(|c| id == c.committee().id())
     }
 
     /// Get the current consensus instance.
@@ -128,18 +154,13 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         self.instances.iter_mut().find(|c| id == c.committee().id())
     }
 
-    /// Is there a consensus instance for the given committee ID?
-    fn contains(&self, id: CommitteeId) -> bool {
-        self.instances.iter().any(|c| id == c.committee().id())
-    }
-
     /// Update the current consensus instance.
     fn update_consensus(&mut self, r: Round) -> bool {
         if self.current_committee == r.committee() {
             return false;
         }
         if self
-            .previous_committee
+            .previous_committees
             .iter()
             .any(|id| *id == r.committee())
         {
@@ -147,8 +168,8 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
             return false;
         }
         self.instances.truncate(1);
-        self.previous_committee.truncate(MAX_OLD_COMMITTEE_IDS - 1);
-        self.previous_committee.insert(0, self.current_committee);
+        self.previous_committees.truncate(MAX_OLD_COMMITTEE_IDS - 1);
+        self.previous_committees.insert(0, self.current_committee);
         self.current_committee = r.committee();
         debug_assert_eq!(
             self.current_committee,
@@ -169,10 +190,10 @@ where
     /// consensus actions is returned and `Coordinator::execute` should
     /// be applied to each one.
     pub fn init(&mut self) -> Vec<Action<T>> {
-        if self.init {
+        if self.is_init() {
             return Vec::new();
         }
-        self.init = true;
+        self.state = State::Running;
         let d = Dag::new(self.current_consensus().committee().size());
         self.current_consensus_mut().go(d, Evidence::Genesis)
     }
@@ -181,17 +202,20 @@ where
     ///
     /// The instance will be applied to any buffered messages.
     /// The resulting actions should be passed to `Coordinator::execute` as usual.
+    ///
+    /// # Panics
+    ///
+    /// If a consensus instance with the same committee ID already exists.
     pub fn set_next_consensus(&mut self, mut cons: Consensus<T>) -> Vec<Action<T>> {
+        assert!(!self.contains(cons.committee().id()));
         let mut actions = Vec::new();
         for m in self.buffer.drain(..) {
             if m.committee() == cons.committee().id() {
                 actions.extend(cons.handle_message(m))
             }
         }
-        if !self.contains(cons.committee().id()) {
-            self.instances.truncate(MAX_CONSENSUS_INSTANCES - 1);
-            self.instances.insert(0, cons);
-        }
+        self.instances.truncate(MAX_CONSENSUS_INSTANCES - 1);
+        self.instances.insert(0, cons);
         actions
     }
 
@@ -218,7 +242,7 @@ where
                     return Ok(cons.handle_message(m))
                 }
 
-                if !self.previous_committee.contains(&c) {
+                if !self.previous_committees.contains(&c) {
                     // Message is for a committee we do not know (yet), so we buffer it.
                     self.buffer.push(m);
                 }
@@ -233,7 +257,8 @@ where
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
-                if self.update_consensus(r) {
+                if self.update_consensus(r) || self.state == State::AwaitHandover {
+                    self.state = State::Running;
                     self.comm.use_committee(r.committee()).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
@@ -261,7 +286,8 @@ where
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
             Action::UseCommittee(r) => {
-                if self.update_consensus(r) {
+                if self.update_consensus(r) || self.state == State::AwaitHandover {
+                    self.state = State::Running;
                     self.comm.use_committee(r.committee()).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
