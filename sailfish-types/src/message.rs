@@ -276,8 +276,12 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                // Validate the signature of the round evidence.
-                if !env.data().evidence().is_valid(round.num() + 1, cc) {
+                // Validate evidence of this handover message.
+                let Evidence::Regular(evi) = env.data().evidence() else {
+                    warn!(%signer, "unexpected handover evidence");
+                    return None;
+                };
+                if evi.data() != &round || !evi.is_valid_par(c) {
                     warn!(%signer, "invalid handover evidence");
                     return None;
                 }
