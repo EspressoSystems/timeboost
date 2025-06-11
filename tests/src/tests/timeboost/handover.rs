@@ -68,7 +68,7 @@ where
 
     let old = if let Some(prev) = &prev {
         vec.add(prev.committee().clone());
-        prev.difference(&addressable).collect::<Vec<_>>()
+        prev.diff(&addressable).collect::<Vec<_>>()
     } else {
         Vec::new()
     };

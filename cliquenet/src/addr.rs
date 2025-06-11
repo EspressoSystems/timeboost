@@ -160,33 +160,6 @@ impl AddressableCommittee {
         this
     }
 
-    /// Create a modified clone of this addressable committee.
-    pub fn with<I, A>(&self, c: Committee, addrs: I) -> Self
-    where
-        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
-        A: Into<Address>,
-    {
-        let committee = self
-            .committee
-            .with(c.id(), c.entries().map(|(i, k)| (i, *k)));
-
-        let addresses = self
-            .addresses
-            .iter()
-            .filter(|(k, _)| committee.contains_key(k))
-            .map(|(k, (x, a))| (*k, (*x, a.clone())))
-            .chain(addrs.into_iter().map(|(k, x, a)| (k, (x, a.into()))))
-            .collect();
-
-        let this = Self {
-            committee,
-            addresses,
-        };
-
-        this.assert_shared_domain();
-        this
-    }
-
     pub fn committee(&self) -> &Committee {
         &self.committee
     }
@@ -203,7 +176,7 @@ impl AddressableCommittee {
         self.addresses.iter().map(|(k, (x, a))| (*k, *x, a.clone()))
     }
 
-    pub fn difference(
+    pub fn diff(
         &self,
         other: &Self,
     ) -> impl Iterator<Item = (PublicKey, x25519::PublicKey, Address)> {
