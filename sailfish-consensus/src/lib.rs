@@ -558,6 +558,11 @@ where
     pub fn handle_handover_cert(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), round = %cert.data().round(), "handover certificate");
         let Some(handovers) = &mut self.handovers else {
+            warn!(
+                node     = %self.keypair.public_key(),
+                handover = %cert.data(),
+                "unexpected handover certificate"
+            );
             return Vec::new();
         };
         handovers.set_certificate(cert.clone());

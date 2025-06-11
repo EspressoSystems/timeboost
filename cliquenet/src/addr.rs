@@ -160,6 +160,7 @@ impl AddressableCommittee {
         this
     }
 
+    /// Create a modified clone of this addressable committee.
     pub fn with<I, A>(&self, c: Committee, addrs: I) -> Self
     where
         I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,

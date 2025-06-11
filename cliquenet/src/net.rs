@@ -375,6 +375,9 @@ impl Network {
     }
 
     /// Add the given peers to the network.
+    ///
+    /// NB that peers added here are passive. See `Network::assign` for
+    /// giving peers a different `Role`.
     pub async fn add(&mut self, peers: Vec<(PublicKey, x25519::PublicKey, Address)>) -> Result<()> {
         self.parties
             .extend(peers.iter().map(|(p, ..)| (*p, Role::Passive)));

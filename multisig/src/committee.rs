@@ -33,6 +33,10 @@ impl Committee {
     /// Create a modified copy of this committee.
     ///
     /// New entries are added, existing entries overwritten.
+    ///
+    /// # Panics
+    ///
+    /// If the given committee ID equals the one of this committee.
     pub fn with<C, I, T>(&self, id: C, it: I) -> Self
     where
         C: Into<CommitteeId>,
@@ -42,7 +46,7 @@ impl Committee {
         let id = id.into();
         assert_ne!(id, self.id);
 
-        let mut parties = BiBTreeMap::from_iter(self.parties.iter().map(|(kid, pk)| (*kid, *pk)));
+        let mut parties = (*self.parties).clone();
 
         for (kid, pk) in it.into_iter().map(|(i, k)| (i.into(), k)) {
             parties.insert(kid, pk);

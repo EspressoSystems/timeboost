@@ -58,7 +58,7 @@ impl Includer {
         evidence: Evidence,
         lists: Vec<CandidateList>,
     ) -> Outcome {
-        if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r == round) {
+        if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r <= round) {
             self.committee = c;
             self.clear_cache()
         }

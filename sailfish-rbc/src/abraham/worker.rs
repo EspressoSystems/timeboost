@@ -337,6 +337,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         }
     }
 
+    /// Add a new committee.
+    ///
+    /// Peers that do not exist in the current committee are added to the network
+    /// as passive nodes.
     async fn add_committee(&mut self, c: AddressableCommittee) -> RbcResult<()> {
         debug!(node = %self.key, committee = %c.committee().id(), "add committee");
         let Some(committee) = self.config.committees.get(self.config.committee_id) else {
@@ -351,9 +355,14 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         Ok(())
     }
 
+    /// Switch over to use a committee that has previously been added.
+    ///
+    /// Peers that do not exist in the given committee are removed from the
+    /// network and all committee peers are assigned an active role.
     async fn use_committee(&mut self, id: CommitteeId) -> RbcResult<()> {
         debug!(node = %self.key, committee = %id, "use committee");
         let Some(committee) = self.config.committees.get(id) else {
+            error!(node = %self.key, %id, "committee to use does not exist");
             return Err(RbcError::NoCommittee(id))
         };
         let old = self.comm
@@ -388,6 +397,9 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let digest = Digest::of_msg(&msg);
         let committee_id = msg.committee();
 
+        // Messages not directed to the current committee will be multicasted.
+        // This only affects handover messages and certificates which cross
+        // committee boundaries.
         if committee_id != self.config.committee_id {
             let Some(committee) = self.config.committees.get(committee_id) else {
                 return Err(RbcError::NoCommittee(committee_id))

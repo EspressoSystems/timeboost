@@ -23,9 +23,15 @@ pub const MAX_MESSAGE_SIZE: usize = 5 * 1024 * 1024;
 /// Max. number of messages to queue for a peer.
 pub const PEER_CAPACITY: usize = 256;
 
+/// Network peer role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Role {
+    /// Active peers receive broadcast messages.
     Active,
+    /// Passive peers are excluded from broadcasts.
+    ///
+    /// Note however that passive peers can be addressed directly in
+    /// unicast or multicast operations.
     Passive,
 }
 
