@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package transaction;
+
+import "google/protobuf/timestamp.proto";
+
+message Transaction {
+    TxEnvelope tx = 1;
+    Address addr = 2;
+    google.protobuf.Timestamp time = 3;
+}
+
+message TxEnvelope {
+    bytes raw_data = 1;
+    string type = 2;
+}
+
+message Address {
+    string hex = 1;
+    bytes raw = 2;
+}
+
+message InclusionList {
+    repeated Transaction transactions = 1;
+    uint64 round = 2;
+}
