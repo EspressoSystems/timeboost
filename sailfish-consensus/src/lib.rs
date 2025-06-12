@@ -869,14 +869,18 @@ where
                 self.delivered.insert((r, s));
             }
         }
-        tick(&actions, &mut self.clock);
-        if let Some(handover) = self.handover() {
-            let e = self
-                .evidence(handover.round().num())
-                .expect("evidence for committed round");
-            let m = HandoverMessage::new(handover, e, &self.keypair);
-            let e = Envelope::signed(m, &self.keypair);
-            actions.push(Action::SendHandover(e))
+        // If there is an upcoming committee change, start the clock and
+        // eventually send a handover message to the next committee.
+        if self.next_committee.is_some() {
+            tick(&actions, &mut self.clock);
+            if let Some(handover) = self.handover() {
+                let e = self
+                    .evidence(handover.round().num())
+                    .expect("evidence for committed round");
+                let m = HandoverMessage::new(handover, e, &self.keypair);
+                let e = Envelope::signed(m, &self.keypair);
+                actions.push(Action::SendHandover(e))
+            }
         }
         actions.extend(self.cleanup());
         actions
