@@ -56,21 +56,21 @@ where
             .map(|(i, (kp, ..))| (i as u8, kp.public_key())),
     );
 
-    let sailfish_peers = AddressableCommittee::new(
+    let sailfish_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
             .map(|(kp, xp, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone())),
     );
 
-    let decrypt_peers = AddressableCommittee::new(
+    let decrypt_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
             .map(|(kp, xp, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone())),
     );
 
-    let produce_peers = AddressableCommittee::new(
+    let produce_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
@@ -82,20 +82,23 @@ where
 
     for (i, (kpair, xpair, sa, da, pa, share)) in parts.iter().cloned().enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
-        let mut cfg = SequencerConfig::new(
-            kpair.clone(),
-            xpair.clone(),
-            dkey,
-            sa,
-            da,
-            sailfish_peers.clone(),
-            decrypt_peers.clone(),
-        );
-        if let Some(r) = recover_index {
-            cfg = cfg.recover(i == r);
-        }
-        let pcf = BlockProducerConfig::new(kpair, xpair, pa).with_peers(produce_peers.entries());
-        cfgs.push((cfg, pcf));
+        let conf = SequencerConfig::builder()
+            .sign_keypair(kpair.clone())
+            .dh_keypair(xpair.clone())
+            .decryption_key(dkey)
+            .sailfish_addr(sa)
+            .decrypt_addr(da)
+            .sailfish_committee(sailfish_committee.clone())
+            .decrypt_committee(decrypt_committee.clone())
+            .recover(recover_index.map(|r| r == i).unwrap_or(false))
+            .build();
+        let pcf = BlockProducerConfig::builder()
+            .sign_keypair(kpair)
+            .dh_keypair(xpair)
+            .address(pa)
+            .committee(produce_committee.clone())
+            .build();
+        cfgs.push((conf, pcf));
     }
 
     cfgs

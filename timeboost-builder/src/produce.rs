@@ -4,7 +4,6 @@ use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
 use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
-use timeboost_types::UNKNOWN_COMMITTEE_ID;
 use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Transaction};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -53,28 +52,23 @@ impl BlockProducer {
         let (block_tx, block_rx) = channel(MAX_BLOCKS);
         let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
 
-        let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
-            cfg.peers
-                .iter()
-                .map(|(k, ..)| *k)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
-        );
-
-        let net_metrics = NetworkMetrics::new("block", metrics, cfg.peers.iter().map(|(k, ..)| *k));
+        let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
 
         let net = Network::create(
             "block",
-            cfg.bind.clone(),
+            cfg.address.clone(),
             cfg.sign_keypair.clone(),
             cfg.dh_keypair.clone(),
-            cfg.peers.clone(),
+            cfg.committee.entries(),
             net_metrics,
         )
         .await?;
 
-        let worker = Worker::new(cfg.sign_keypair.clone(), Overlay::new(net), committee);
+        let worker = Worker::new(
+            cfg.sign_keypair.clone(),
+            Overlay::new(net),
+            cfg.committee.committee().clone(),
+        );
 
         Ok(Self {
             label: cfg.sign_keypair,

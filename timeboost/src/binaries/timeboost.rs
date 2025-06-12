@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let sailfish_peers = {
+    let sailfish_committee = {
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             sailfish_peer_hosts_and_keys
@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, sailfish_peer_hosts_and_keys.iter().cloned())
     };
 
-    let decrypt_peers = {
+    let decrypt_committee = {
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             decrypt_peer_hosts_and_keys
@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, decrypt_peer_hosts_and_keys.iter().cloned())
     };
 
-    let producer_peers = {
+    let producer_committee = {
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             producer_peer_hosts_and_keys
@@ -194,26 +194,28 @@ async fn main() -> Result<()> {
         task_handle
     };
 
-    let init = TimeboostConfig {
-        rpc_port: cli.rpc_port,
-        metrics_port: cli.metrics_port,
-        sailfish_peers,
-        decrypt_peers,
-        producer_peers,
-        sign_keypair,
-        dh_keypair,
-        dec_sk,
-        sailfish_address: my_keyset.sailfish_address.clone(),
-        decrypt_address: my_keyset.decrypt_address.clone(),
-        producer_address: my_keyset.producer_address.clone(),
-        nitro_url: cli.nitro_node_url,
-        sender: tb_app_tx,
-        receiver: tb_app_rx,
-        stamp: cli.stamp,
-        ignore_stamp: cli.ignore_stamp,
-    };
+    let is_recover = !cli.ignore_stamp && cli.stamp.is_file();
 
-    let timeboost = Timeboost::new(init).await?;
+    tokio::fs::File::create(&cli.stamp)
+        .await?
+        .sync_all()
+        .await?;
+
+    let config = TimeboostConfig::builder()
+        .metrics_port(cli.metrics_port)
+        .sailfish_committee(sailfish_committee)
+        .decrypt_committee(decrypt_committee)
+        .producer_committee(producer_committee)
+        .sign_keypair(sign_keypair)
+        .dh_keypair(dh_keypair)
+        .decryption_key(dec_sk)
+        .sailfish_addr(my_keyset.sailfish_address.clone())
+        .decrypt_addr(my_keyset.decrypt_address.clone())
+        .producer_addr(my_keyset.producer_address.clone())
+        .recover(is_recover)
+        .build();
+
+    let timeboost = Timeboost::new(config, tb_app_rx).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {
