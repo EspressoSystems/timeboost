@@ -1,4 +1,4 @@
-use std::{future::pending, time::Duration};
+use std::{collections::HashMap, future::pending, time::Duration};
 
 use arrayvec::ArrayVec;
 use committable::Committable;
@@ -41,11 +41,20 @@ pub struct Coordinator<T: Committable, C> {
     /// Coordinator state.
     state: State,
 
-    /// Buffer of messages.
+    /// Buffer of handover messages and certificate.
     ///
-    /// If messages arrive before we know about the next committee, we buffer
-    /// them and use them as soon as `set_next_consensus` is called.
-    buffer: Vec<Message<T, Validated>>,
+    /// If handover messages or certificates arrive before we know about
+    /// the next committee, we buffer them and use them as soon as
+    /// `set_next_consensus` is called.
+    ///
+    /// We only allow one handover message per party to avoid attacks by
+    /// malicious committee members.
+    ///
+    /// NB that a handover certificate has no signing key, so all handover
+    /// certificates that arrive overwrite each other in this buffer. This
+    /// is safe if they are all equal, which they should be if committee
+    /// changes do not overlap.
+    buffer: HashMap<Option<PublicKey>, Message<T, Validated>>,
 }
 
 /// Internal coordinator state.
@@ -97,7 +106,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
             } else {
                 State::Start
             },
-            buffer: Vec::new(),
+            buffer: HashMap::new(),
         }
     }
 
@@ -118,7 +127,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         c: Committee,
         a: C::CommitteeInfo,
     ) -> Result<(), C::Err> {
-        self.buffer.retain(|m| m.committee() == c.id());
+        self.buffer.retain(|_, m| m.committee() == c.id());
         self.current_consensus_mut().set_next_committee(t, c.id());
         self.comm.add_committee(a).await
     }
@@ -209,7 +218,7 @@ where
     pub fn set_next_consensus(&mut self, mut cons: Consensus<T>) -> Vec<Action<T>> {
         assert!(!self.contains(cons.committee().id()));
         let mut actions = Vec::new();
-        for m in self.buffer.drain(..) {
+        for (_, m) in self.buffer.drain() {
             if m.committee() == cons.committee().id() {
                 actions.extend(cons.handle_message(m))
             }
@@ -242,10 +251,19 @@ where
                     return Ok(cons.handle_message(m))
                 }
 
-                if !self.previous_committees.contains(&c) {
-                    // Message is for a committee we do not know (yet), so we buffer it.
-                    self.buffer.push(m);
+                // Message is for a committee we do not know, so we buffer it
+                // if it is a handover message or certificate and does not
+                // belong to an old committee.
+
+                if !(m.is_handover() || m.is_handover_cert()) {
+                    return Ok(Vec::new())
                 }
+
+                if self.previous_committees.contains(&c) {
+                    return Ok(Vec::new())
+                }
+
+                self.buffer.insert(m.signing_key().copied(), m);
 
                 Ok(Vec::new())
             }
