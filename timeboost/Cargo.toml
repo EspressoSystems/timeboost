@@ -16,6 +16,7 @@ ark-std = { workspace = true }
 async-lock = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+bon = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }

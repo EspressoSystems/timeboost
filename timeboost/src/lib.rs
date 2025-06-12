@@ -1,16 +1,16 @@
+mod config;
+
 use std::iter::once;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
 use api::metrics::serve_metrics_api;
-use cliquenet::{Address, AddressableCommittee};
 use metrics::TimeboostMetrics;
-use multisig::{Keypair, PublicKey, x25519};
+use multisig::PublicKey;
 use reqwest::Url;
-use timeboost_builder::{BlockProducer, BlockProducerConfig, ProducerDown};
-use timeboost_sequencer::{Sequencer, SequencerConfig};
-use timeboost_types::{BundleVariant, DecryptionKey};
+use timeboost_builder::{BlockProducer, ProducerDown};
+use timeboost_sequencer::Sequencer;
+use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -19,64 +19,18 @@ use tokio::task::spawn;
 use tracing::{error, info, instrument};
 use vbs::version::StaticVersion;
 
+pub use config::{TimeboostConfig, TimeboostConfigBuilder};
+pub use timeboost_builder as builder;
+pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
 pub mod api;
 pub mod metrics;
 
-pub struct TimeboostConfig {
-    /// The port to bind the RPC server to.
-    pub rpc_port: u16,
-
-    /// The port to bind the metrics API server to.
-    pub metrics_port: u16,
-
-    /// The sailfish peers that this node will connect to.
-    pub sailfish_peers: AddressableCommittee,
-
-    /// The decrypt peers that this node will connect to.
-    pub decrypt_peers: AddressableCommittee,
-
-    /// The block producer peers that this node will connect to.
-    pub producer_peers: AddressableCommittee,
-
-    /// The keypair for the node to sign messages.
-    pub sign_keypair: Keypair,
-
-    /// The keypair for Diffie-Hellman key exchange.
-    pub dh_keypair: x25519::Keypair,
-
-    /// The decryption key material for the node.
-    pub dec_sk: DecryptionKey,
-
-    /// The bind address for the sailfish node.
-    pub sailfish_address: Address,
-
-    /// The bind address for the decrypter node.
-    pub decrypt_address: Address,
-
-    /// The bind address for the block producer node.
-    pub producer_address: Address,
-
-    /// The url for arbitrum nitro node for gas calculations
-    pub nitro_url: Option<reqwest::Url>,
-
-    /// The sender for transactions.
-    pub sender: Sender<BundleVariant>,
-
-    /// The receiver for transactions.
-    pub receiver: Receiver<BundleVariant>,
-
-    /// Path to a file that this process creates or reads as execution proof.
-    pub stamp: PathBuf,
-
-    /// Ignore any existing stamp file and start with genesis round.
-    pub ignore_stamp: bool,
-}
-
 pub struct Timeboost {
     label: PublicKey,
-    init: TimeboostConfig,
+    config: TimeboostConfig,
+    receiver: Receiver<BundleVariant>,
     sequencer: Sequencer,
     producer: BlockProducer,
     prometheus: Arc<PrometheusMetrics>,
@@ -85,39 +39,16 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
-    pub async fn new(init: TimeboostConfig) -> Result<Self> {
-        let recover = if init.ignore_stamp {
-            false
-        } else {
-            tokio::fs::try_exists(&init.stamp).await?
-        };
-
-        let scf = SequencerConfig::new(
-            init.sign_keypair.clone(),
-            init.dh_keypair.clone(),
-            init.dec_sk.clone(),
-            init.sailfish_address.clone(),
-            init.decrypt_address.clone(),
-            init.sailfish_peers.clone(),
-            init.decrypt_peers.clone(),
-        )
-        .recover(recover);
-
-        let bcf = BlockProducerConfig::new(
-            init.sign_keypair.clone(),
-            init.dh_keypair.clone(),
-            init.producer_address.clone(),
-        )
-        .with_peers(init.producer_peers.entries());
-
+    pub async fn new(cfg: TimeboostConfig, rx: Receiver<BundleVariant>) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
-        let seq = Sequencer::new(scf, &*pro).await?;
-        let blk = BlockProducer::new(bcf, &*pro).await?;
         let met = Arc::new(TimeboostMetrics::new(&*pro));
+        let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
+        let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
         Ok(Self {
-            label: init.sign_keypair.public_key(),
-            init,
+            label: cfg.sign_keypair.public_key(),
+            config: cfg,
+            receiver: rx,
             sequencer: seq,
             producer: blk,
             prometheus: pro,
@@ -131,17 +62,12 @@ impl Timeboost {
     pub async fn go(mut self) -> Result<()> {
         self.children.push(spawn(metrics_api(
             self.prometheus.clone(),
-            self.init.metrics_port,
+            self.config.metrics_port,
         )));
-
-        tokio::fs::File::create(self.init.stamp)
-            .await?
-            .sync_all()
-            .await?;
 
         loop {
             select! {
-                trx = self.init.receiver.recv() => {
+                trx = self.receiver.recv() => {
                     if let Some(t) = trx {
                         self.sequencer.add_bundles(once(t))
                     }
