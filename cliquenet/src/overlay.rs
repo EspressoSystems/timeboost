@@ -11,7 +11,7 @@ use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
 use thiserror::Error;
 use tokio::spawn;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, Instant};
 use tracing::warn;
@@ -91,6 +91,8 @@ struct Message {
     retries: usize,
     /// The remaining number of parties that have to acknowledge the message.
     remaining: Vec<PublicKey>,
+    /// Report back when all remaining parties acknowledged.
+    sync: Option<oneshot::Sender<()>>,
 }
 
 /// Meta information appended at the end of a message.
@@ -102,10 +104,15 @@ struct Trailer {
     id: Id,
 }
 
-enum Target {
-    Single(PublicKey),
-    Multi(Vec<PublicKey>),
+/// Where to send messages to.
+#[derive(Debug)]
+pub enum Target {
+    /// All parties.
     All,
+    /// A subset of parties.
+    Multi(Vec<PublicKey>),
+    /// An individual party.
+    Single(PublicKey),
 }
 
 impl Overlay {
@@ -131,21 +138,21 @@ impl Overlay {
     where
         B: Into<Bucket>,
     {
-        self.send(b.into(), Target::All, data).await
+        self.send(b, Target::All, data, None).await
     }
 
     pub async fn multicast<B>(&mut self, to: Vec<PublicKey>, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
-        self.send(b.into(), Target::Multi(to), data).await
+        self.send(b, Target::Multi(to), data, None).await
     }
 
     pub async fn unicast<B>(&mut self, to: PublicKey, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
-        self.send(b.into(), Target::Single(to), data).await
+        self.send(b, Target::Single(to), data, None).await
     }
 
     pub async fn add(&mut self, peers: Vec<(PublicKey, x25519::PublicKey, Address)>) -> Result<()> {
@@ -192,6 +199,9 @@ impl Overlay {
                 if let Some(m) = buckets.get_mut(&trailer.id) {
                     m.remaining.retain(|k| *k != src);
                     if m.remaining.is_empty() {
+                        if let Some(sync) = m.sync.take() {
+                            let _ = sync.send(());
+                        }
                         buckets.remove(&trailer.id);
                     }
                 }
@@ -211,13 +221,20 @@ impl Overlay {
         }
     }
 
-    async fn send(&mut self, b: Bucket, to: Target, data: Data) -> Result<Id> {
+    pub async fn send<B>(
+        &mut self,
+        bucket: B,
+        to: Target,
+        data: Data,
+        sync: Option<oneshot::Sender<()>>,
+    ) -> Result<Id>
+    where
+        B: Into<Bucket>,
+    {
         let id = self.next_id();
-
-        let trailer = Trailer { bucket: b, id };
-
+        let bucket = bucket.into();
+        let trailer = Trailer { bucket, id };
         let trailer_bytes = trailer.encode(&mut self.encoded);
-
         let mut msg = data.bytes;
 
         msg.extend_from_slice(trailer_bytes);
@@ -254,13 +271,14 @@ impl Overlay {
             }
         };
 
-        self.buffer.0.lock().entry(b).or_default().insert(
+        self.buffer.0.lock().entry(bucket).or_default().insert(
             id,
             Message {
                 data: msg,
                 time: now,
                 retries: 0,
                 remaining: rem,
+                sync,
             },
         );
 
