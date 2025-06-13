@@ -7,7 +7,7 @@ use std::sync::Arc;
 use bincode::config::{Configuration, Limit, LittleEndian, Varint};
 use bincode::{Decode, Encode};
 use bytes::{Bytes, BytesMut};
-use multisig::PublicKey;
+use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
 use thiserror::Error;
 use tokio::spawn;
@@ -16,7 +16,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, Instant};
 use tracing::warn;
 
-use crate::{Id, Network};
+use crate::net::Command;
+use crate::{Address, Id, Network, Role};
 
 type Result<T> = std::result::Result<T, NetworkDown>;
 
@@ -44,8 +45,7 @@ pub const MAX_BUCKET: Bucket = Bucket(u64::MAX);
 pub struct Overlay {
     this: PublicKey,
     net: Network,
-    sender: Sender<(Option<PublicKey>, Option<Id>, Bytes)>,
-    parties: Vec<PublicKey>,
+    sender: Sender<Command>,
     id: Id,
     buffer: Buffer,
     encoded: [u8; Trailer::MAX_LEN],
@@ -102,13 +102,18 @@ struct Trailer {
     id: Id,
 }
 
+enum Target {
+    Single(PublicKey),
+    Multi(Vec<PublicKey>),
+    All,
+}
+
 impl Overlay {
     pub fn new(net: Network) -> Self {
         let buffer = Buffer::default();
         let retry = spawn(retry(buffer.clone(), net.sender()));
         Self {
             this: net.public_key(),
-            parties: net.parties().copied().collect(),
             sender: net.sender(),
             net,
             buffer,
@@ -118,18 +123,41 @@ impl Overlay {
         }
     }
 
+    pub fn parties(&self) -> impl Iterator<Item = (&PublicKey, &Role)> {
+        self.net.parties()
+    }
+
     pub async fn broadcast<B>(&mut self, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
-        self.send(b.into(), None, data).await
+        self.send(b.into(), Target::All, data).await
+    }
+
+    pub async fn multicast<B>(&mut self, to: Vec<PublicKey>, b: B, data: Data) -> Result<Id>
+    where
+        B: Into<Bucket>,
+    {
+        self.send(b.into(), Target::Multi(to), data).await
     }
 
     pub async fn unicast<B>(&mut self, to: PublicKey, b: B, data: Data) -> Result<Id>
     where
         B: Into<Bucket>,
     {
-        self.send(b.into(), Some(to), data).await
+        self.send(b.into(), Target::Single(to), data).await
+    }
+
+    pub async fn add(&mut self, peers: Vec<(PublicKey, x25519::PublicKey, Address)>) -> Result<()> {
+        self.net.add(peers).await.map_err(|_| NetworkDown(()))
+    }
+
+    pub async fn remove(&mut self, peers: Vec<PublicKey>) -> Result<()> {
+        self.net.remove(peers).await.map_err(|_| NetworkDown(()))
+    }
+
+    pub async fn assign(&mut self, r: Role, peers: Vec<PublicKey>) -> Result<()> {
+        self.net.assign(r, peers).await.map_err(|_| NetworkDown(()))
     }
 
     pub async fn receive(&mut self) -> Result<(PublicKey, Bytes)> {
@@ -152,7 +180,7 @@ impl Overlay {
             if !bytes.is_empty() {
                 // Send the trailer back as acknowledgement:
                 self.sender
-                    .send((Some(src), None, trailer_bytes))
+                    .send(Command::Unicast(src, None, trailer_bytes))
                     .await
                     .map_err(|_| NetworkDown(()))?;
                 return Ok((src, bytes));
@@ -183,7 +211,7 @@ impl Overlay {
         }
     }
 
-    async fn send(&mut self, b: Bucket, to: Option<PublicKey>, data: Data) -> Result<Id> {
+    async fn send(&mut self, b: Bucket, to: Target, data: Data) -> Result<Id> {
         let id = self.next_id();
 
         let trailer = Trailer { bucket: b, id };
@@ -198,18 +226,32 @@ impl Overlay {
 
         let now = Instant::now();
 
-        let rem = if let Some(to) = to {
-            self.sender
-                .send((Some(to), Some(id), msg.clone()))
-                .await
-                .map_err(|_| NetworkDown(()))?;
-            vec![to]
-        } else {
-            self.sender
-                .send((None, Some(id), msg.clone()))
-                .await
-                .map_err(|_| NetworkDown(()))?;
-            self.parties.clone()
+        let rem = match to {
+            Target::Single(to) => {
+                self.sender
+                    .send(Command::Unicast(to, Some(id), msg.clone()))
+                    .await
+                    .map_err(|_| NetworkDown(()))?;
+                vec![to]
+            }
+            Target::Multi(peers) => {
+                self.sender
+                    .send(Command::Multicast(peers.clone(), Some(id), msg.clone()))
+                    .await
+                    .map_err(|_| NetworkDown(()))?;
+                peers
+            }
+            Target::All => {
+                self.sender
+                    .send(Command::Broadcast(Some(id), msg.clone()))
+                    .await
+                    .map_err(|_| NetworkDown(()))?;
+                self.net
+                    .parties()
+                    .filter(|(_, r)| r.is_active())
+                    .map(|(p, _)| *p)
+                    .collect()
+            }
         };
 
         self.buffer.0.lock().entry(b).or_default().insert(
@@ -232,7 +274,7 @@ impl Overlay {
     }
 }
 
-async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Option<Id>, Bytes)>) -> Infallible {
+async fn retry(buf: Buffer, net: Sender<Command>) -> Infallible {
     const DELAYS: [u64; 4] = [1, 3, 5, 15];
 
     let mut i = time::interval(Duration::from_secs(1));
@@ -281,7 +323,9 @@ async fn retry(buf: Buffer, net: Sender<(Option<PublicKey>, Option<Id>, Bytes)>)
                 }
 
                 for p in remaining {
-                    let _ = net.send((Some(p), Some(id), message.clone())).await;
+                    let _ = net
+                        .send(Command::Unicast(p, Some(id), message.clone()))
+                        .await;
                 }
             }
         }

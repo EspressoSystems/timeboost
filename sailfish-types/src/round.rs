@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Sub};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
 /// The sailfish genesis round number.
@@ -101,5 +102,51 @@ impl Committable for RoundNumber {
 impl fmt::Display for RoundNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Round {
+    num: RoundNumber,
+    com: CommitteeId,
+}
+
+impl Round {
+    pub fn new<C, N>(r: N, c: C) -> Self
+    where
+        C: Into<CommitteeId>,
+        N: Into<RoundNumber>,
+    {
+        Self {
+            num: r.into(),
+            com: c.into(),
+        }
+    }
+
+    pub fn num(&self) -> RoundNumber {
+        self.num
+    }
+
+    pub fn committee(&self) -> CommitteeId {
+        self.com
+    }
+
+    pub fn into_parts(self) -> (RoundNumber, CommitteeId) {
+        (self.num, self.com)
+    }
+}
+
+impl fmt::Display for Round {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}@{}", self.num, self.com)
+    }
+}
+
+impl Committable for Round {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("Round")
+            .field("num", self.num.commit())
+            .field("com", self.com.commit())
+            .finalize()
     }
 }

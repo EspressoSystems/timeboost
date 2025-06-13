@@ -6,7 +6,7 @@ use committable::Committable;
 use crossbeam_queue::SegQueue;
 use multisig::{PublicKey, Validated};
 
-use sailfish_types::{Comm, Message};
+use sailfish_types::{Comm, Empty, Message};
 
 use super::message_interceptor::NetworkMessageInterceptor;
 
@@ -106,6 +106,7 @@ where
     C: Comm<T> + Send + std::fmt::Debug + 'static,
 {
     type Err = TestNetError<T, C>;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));

@@ -1,26 +1,37 @@
+use std::fmt;
 use std::num::NonZeroUsize;
+
 use std::sync::Arc;
 
 use bimap::BiBTreeMap;
+use committable::{Commitment, Committable, RawCommitmentBuilder};
+use serde::{Deserialize, Serialize};
 
 use super::{KeyId, PublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Committee {
+    id: CommitteeId,
     parties: Arc<BiBTreeMap<KeyId, PublicKey>>,
 }
 
 impl Committee {
-    pub fn new<I, T>(it: I) -> Self
+    pub fn new<C, I, T>(id: C, it: I) -> Self
     where
+        C: Into<CommitteeId>,
         I: IntoIterator<Item = (T, PublicKey)>,
         T: Into<KeyId>,
     {
         let map = BiBTreeMap::from_iter(it.into_iter().map(|(i, k)| (i.into(), k)));
         assert!(!map.is_empty());
         Self {
+            id: id.into(),
             parties: Arc::new(map),
         }
+    }
+
+    pub fn id(&self) -> CommitteeId {
+        self.id
     }
 
     /// Returns the size of the committee as a non-zero unsigned integer.
@@ -84,5 +95,41 @@ impl Committee {
             .nth(i)
             .copied()
             .expect("round % len < len")
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CommitteeId(u64);
+
+impl CommitteeId {
+    pub const fn new(n: u64) -> Self {
+        Self(n)
+    }
+}
+
+impl From<u64> for CommitteeId {
+    fn from(val: u64) -> Self {
+        Self(val)
+    }
+}
+
+impl From<CommitteeId> for u64 {
+    fn from(val: CommitteeId) -> Self {
+        val.0
+    }
+}
+
+impl fmt::Display for CommitteeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Committable for CommitteeId {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("CommitteeId")
+            .u64(self.0)
+            .finalize()
     }
 }

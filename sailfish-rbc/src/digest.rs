@@ -2,11 +2,11 @@ use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Envelope};
-use sailfish_types::{Message, RoundNumber, Vertex};
+use sailfish_types::{Message, Round, Vertex};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Digest(RoundNumber, [u8; 32]);
+pub struct Digest(Round, [u8; 32]);
 
 impl Digest {
     pub fn of_vertex<T: Committable, S>(e: &Envelope<Vertex<T>, S>) -> Self {
@@ -21,7 +21,7 @@ impl Digest {
         Self(c.data().round(), c.commit().into())
     }
 
-    pub fn round(&self) -> RoundNumber {
+    pub fn round(&self) -> Round {
         self.0
     }
 }

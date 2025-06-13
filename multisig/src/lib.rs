@@ -14,12 +14,13 @@ use secp256k1::rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub use cert::Certificate;
-pub use committee::Committee;
+pub use committee::{Committee, CommitteeId};
 pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct KeyId(u8);
 
 impl KeyId {

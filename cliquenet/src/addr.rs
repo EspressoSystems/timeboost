@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
+use multisig::{Committee, PublicKey, x25519};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 /// A network address.
@@ -131,6 +133,67 @@ impl<'de> Deserialize<'de> for Address {
         let s = String::deserialize(d)?;
         let a = s.parse().map_err(de::Error::custom)?;
         Ok(a)
+    }
+}
+
+/// A `Committee` plus address information.
+#[derive(Debug, Clone)]
+pub struct AddressableCommittee {
+    committee: Committee,
+    addresses: HashMap<PublicKey, (x25519::PublicKey, Address)>,
+}
+
+impl AddressableCommittee {
+    pub fn new<I, A>(c: Committee, addrs: I) -> Self
+    where
+        I: IntoIterator<Item = (PublicKey, x25519::PublicKey, A)>,
+        A: Into<Address>,
+    {
+        let this = Self {
+            committee: c,
+            addresses: addrs
+                .into_iter()
+                .map(|(k, x, a)| (k, (x, a.into())))
+                .collect(),
+        };
+        this.assert_shared_domain();
+        this
+    }
+
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
+    pub fn address(&self, p: &PublicKey) -> Option<&(x25519::PublicKey, Address)> {
+        self.addresses.get(p)
+    }
+
+    pub fn parties(&self) -> impl Iterator<Item = &PublicKey> {
+        self.addresses.keys()
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (PublicKey, x25519::PublicKey, Address)> {
+        self.addresses.iter().map(|(k, (x, a))| (*k, *x, a.clone()))
+    }
+
+    pub fn diff(
+        &self,
+        other: &Self,
+    ) -> impl Iterator<Item = (PublicKey, x25519::PublicKey, Address)> {
+        self.addresses
+            .iter()
+            .filter(|(k, _)| !other.addresses.contains_key(k))
+            .map(|(k, (x, a))| (*k, *x, a.clone()))
+    }
+
+    /// Assert that addresses and committee have the same keys.
+    fn assert_shared_domain(&self) {
+        for p in self.committee.parties() {
+            assert!(self.addresses.contains_key(p), "{p} has no address")
+        }
+        for k in self.addresses.keys() {
+            assert!(self.committee.contains_key(k), "{k} not in committee")
+        }
     }
 }
 

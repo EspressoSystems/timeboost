@@ -1,7 +1,7 @@
-use crate::RoundNumber;
+use crate::{HasTime, RoundNumber};
 
 pub trait DataSource {
-    type Data;
+    type Data: HasTime;
 
     fn next(&mut self, r: RoundNumber) -> Self::Data;
 }
@@ -14,7 +14,7 @@ impl<P: DataSource> DataSource for Box<P> {
     }
 }
 
-impl<T: Clone> DataSource for std::iter::Repeat<T> {
+impl<T: HasTime + Clone> DataSource for std::iter::Repeat<T> {
     type Data = T;
 
     fn next(&mut self, _: RoundNumber) -> Self::Data {
@@ -22,7 +22,7 @@ impl<T: Clone> DataSource for std::iter::Repeat<T> {
     }
 }
 
-impl<F, T> DataSource for std::iter::RepeatWith<F>
+impl<F, T: HasTime> DataSource for std::iter::RepeatWith<F>
 where
     F: FnMut() -> T,
 {

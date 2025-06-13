@@ -5,7 +5,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Bundle, DelayedInboxIndex, Epoch, SignedPriorityBundle, Timestamp};
+use crate::{Bundle, DelayedInboxIndex, Epoch, HasTime, SignedPriorityBundle, Timestamp};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -71,7 +71,7 @@ impl CandidateList {
     }
 
     pub fn epoch(&self) -> Epoch {
-        self.0.time.epoch()
+        self.0.time.into()
     }
 
     pub fn timestamp(&self) -> Timestamp {
@@ -124,14 +124,13 @@ impl Committable for CandidateList {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct CandidateListBytes(pub Bytes);
+pub struct CandidateListBytes(pub Timestamp, pub Bytes);
 
 impl Deref for CandidateListBytes {
     type Target = Bytes;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.1
     }
 }
 
@@ -139,16 +138,17 @@ impl TryFrom<CandidateList> for CandidateListBytes {
     type Error = bincode::error::EncodeError;
 
     fn try_from(val: CandidateList) -> Result<Self, Self::Error> {
+        let time = val.timestamp();
         let mut w = BytesMut::new().writer();
         bincode::serde::encode_into_std_write(val, &mut w, bincode::config::standard())?;
-        Ok(CandidateListBytes(w.into_inner().freeze()))
+        Ok(CandidateListBytes(time, w.into_inner().freeze()))
     }
 }
 
 impl CandidateListBytes {
     pub fn decode<const N: usize>(&self) -> Result<CandidateList, bincode::error::DecodeError> {
         let config = bincode::config::standard().with_limit::<N>();
-        let (list, _) = bincode::serde::decode_from_slice(&self.0, config)?;
+        let (list, _) = bincode::serde::decode_from_slice(&self.1, config)?;
         Ok(list)
     }
 }
@@ -156,7 +156,14 @@ impl CandidateListBytes {
 impl Committable for CandidateListBytes {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("CandidateListBytes")
-            .var_size_bytes(&self.0)
+            .field("time", self.0.commit())
+            .var_size_bytes(&self.1)
             .finalize()
+    }
+}
+
+impl HasTime for CandidateListBytes {
+    fn time(&self) -> Timestamp {
+        self.0
     }
 }

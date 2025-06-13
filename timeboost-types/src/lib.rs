@@ -9,7 +9,8 @@ mod retry_list;
 mod seqno;
 mod time;
 
-pub mod math;
+pub use sailfish_types::UNKNOWN_COMMITTEE_ID;
+pub use sailfish_types::math;
 
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
@@ -23,4 +24,4 @@ pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
-pub use time::{Epoch, Timestamp};
+pub use time::{ConsensusTime, Epoch, HasTime, Timestamp};

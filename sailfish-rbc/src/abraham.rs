@@ -3,9 +3,10 @@ use std::fmt;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use cliquenet::{Overlay, overlay::Data};
+use cliquenet::{AddressableCommittee, Overlay, overlay::Data};
 use committable::Committable;
-use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated};
+use multisig::{Certificate, CommitteeId, Envelope, Keypair, PublicKey, Validated};
+use sailfish_types::CommitteeVec;
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
@@ -65,23 +66,34 @@ enum Command<T: Committable> {
     RbcBroadcast(Envelope<Vertex<T>, Validated>, Data),
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
+    /// Add the next committee.
+    AddCommittee(AddressableCommittee),
+    /// Use the committee denoted by the given ID.
+    UseCommittee(CommitteeId),
 }
 
 /// RBC configuration
 #[derive(Debug)]
 pub struct RbcConfig {
     keypair: Keypair,
-    committee: Committee,
+    committees: CommitteeVec<2>,
+    committee_id: CommitteeId,
     recover: bool,
     early_delivery: bool,
     metrics: RbcMetrics,
 }
 
 impl RbcConfig {
-    pub fn new(k: Keypair, c: Committee) -> Self {
+    pub fn new<C>(k: Keypair, id: CommitteeId, c: C) -> Self
+    where
+        C: Into<CommitteeVec<2>>,
+    {
+        let c = c.into();
+        assert!(c.contains(id));
         Self {
             keypair: k,
-            committee: c,
+            committee_id: id,
+            committees: c,
             recover: true,
             early_delivery: true,
             metrics: RbcMetrics::default(),
@@ -142,9 +154,9 @@ impl<T: Committable> Drop for Rbc<T> {
 }
 
 impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'static> Rbc<T> {
-    pub fn new(net: Overlay, c: RbcConfig) -> Self {
-        let (obound_tx, obound_rx) = mpsc::channel(2 * c.committee.size().get());
-        let (ibound_tx, ibound_rx) = mpsc::channel(3 * c.committee.size().get());
+    pub fn new(cap: usize, net: Overlay, c: RbcConfig) -> Self {
+        let (obound_tx, obound_rx) = mpsc::channel(cap);
+        let (ibound_tx, ibound_rx) = mpsc::channel(cap);
         let worker = Worker::new(ibound_tx, obound_rx, c, net);
         Self {
             rx: ibound_rx,
@@ -157,6 +169,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
 #[async_trait]
 impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     type Err = RbcError;
+    type CommitteeInfo = AddressableCommittee;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
@@ -197,6 +210,20 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     async fn gc(&mut self, r: RoundNumber) -> Result<(), Self::Err> {
         self.tx
             .send(Command::Gc(r))
+            .await
+            .map_err(|_| RbcError::Shutdown)
+    }
+
+    async fn add_committee(&mut self, i: Self::CommitteeInfo) -> Result<(), Self::Err> {
+        self.tx
+            .send(Command::AddCommittee(i))
+            .await
+            .map_err(|_| RbcError::Shutdown)
+    }
+
+    async fn use_committee(&mut self, c: CommitteeId) -> Result<(), Self::Err> {
+        self.tx
+            .send(Command::UseCommittee(c))
             .await
             .map_err(|_| RbcError::Shutdown)
     }

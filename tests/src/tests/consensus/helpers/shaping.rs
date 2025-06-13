@@ -6,7 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::types::{Evidence, RoundNumber};
+use sailfish::types::{Evidence, RoundNumber, UNKNOWN_COMMITTEE_ID};
 use tracing::debug;
 
 use crate::prelude::*;
@@ -313,6 +313,7 @@ impl Simulator {
             .collect();
 
         let committee = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
             keypairs
                 .iter()
                 .enumerate()
@@ -498,10 +499,38 @@ impl Simulator {
                         }
                     }
                 }
+                Action::SendHandover(e) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::Handover(e.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::Handover(e.clone()))
+                        }
+                    }
+                }
+                Action::SendHandoverCert(c) => {
+                    if let Some(rule) = rule {
+                        for (name, delay) in rule.edges.get(party).into_iter().flatten() {
+                            if let Some(p) = self.parties.get_mut(name) {
+                                let m = Message::HandoverCert(c.clone());
+                                p.add_message(self.time + delay(&m), m)
+                            }
+                        }
+                    } else {
+                        for p in self.parties.values_mut() {
+                            p.add_message(self.time, Message::HandoverCert(c.clone()))
+                        }
+                    }
+                }
                 Action::ResetTimer(r) => {
                     if let Some(p) = self.parties.get_mut(party) {
                         p.timeout.0 = self.time + self.timeout;
-                        p.timeout.1 = r;
+                        p.timeout.1 = r.num();
                     }
                 }
                 Action::Deliver(data) => {
@@ -509,7 +538,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) => {}
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
             }
         }
     }

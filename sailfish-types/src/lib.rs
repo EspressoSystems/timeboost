@@ -1,17 +1,25 @@
 mod comm;
+mod committee;
 mod message;
 mod payload;
 mod round;
+mod time;
 mod vertex;
 
+pub mod math;
+
 pub use comm::{Comm, CommError};
+pub use committee::CommitteeVec;
 pub use message::{Action, Evidence, Payload};
+pub use message::{Handover, HandoverMessage};
 pub use message::{Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 pub use payload::DataSource;
-pub use round::RoundNumber;
+pub use round::{Round, RoundNumber};
+pub use time::{ConsensusTime, HasTime, Timestamp};
 pub use vertex::Vertex;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
 /// The empty type has no values.
@@ -37,3 +45,5 @@ impl Committable for Unit {
         RawCommitmentBuilder::new("Unit").finalize()
     }
 }
+
+pub const UNKNOWN_COMMITTEE_ID: CommitteeId = CommitteeId::new(u64::MAX);

@@ -37,6 +37,10 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
         }
     }
 
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     pub fn is_empty(&self) -> bool {
         self.votes.is_empty()
     }

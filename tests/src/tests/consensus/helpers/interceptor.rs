@@ -26,7 +26,7 @@ impl Interceptor {
         msg: Message,
         node_handle: &mut TestNodeInstrument,
     ) -> Vec<Message> {
-        let round = msg.round();
+        let round = msg.round().num();
         if self.modify_at_round == round {
             let new_msg = (self.msg_modifier)(&msg, node_handle);
             return new_msg;
