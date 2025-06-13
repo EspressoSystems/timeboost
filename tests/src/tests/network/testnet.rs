@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::future::{Ready, ready};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -107,6 +108,7 @@ where
 {
     type Err = TestNetError<T, C>;
     type CommitteeInfo = Empty;
+    type Sync = Ready<bool>;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.msgs.obox.push((None, msg.clone()));
@@ -114,6 +116,14 @@ where
             return Err(TestNetError::Broadcast(e));
         }
         Ok(())
+    }
+
+    async fn broadcast_sync(
+        &mut self,
+        msg: Message<T, Validated>,
+    ) -> Result<Self::Sync, Self::Err> {
+        self.broadcast(msg).await?;
+        Ok(ready(true))
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {

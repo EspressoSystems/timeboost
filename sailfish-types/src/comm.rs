@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::future::Future;
 
 use async_trait::async_trait;
 use committable::Committable;
@@ -11,9 +12,17 @@ use crate::{Message, RoundNumber};
 pub trait Comm<T: Committable> {
     type Err: Error + Send + Sync + 'static;
     type CommitteeInfo: Send + Sync + 'static;
+    type Sync: Future<Output = bool> + Send + 'static;
 
     /// Send a message to all nodes.
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err>;
+
+    /// Send a message to all nodes.
+    ///
+    /// This method returns a future as a synchronisation point to await
+    /// the completion of the broadcast.
+    async fn broadcast_sync(&mut self, msg: Message<T, Validated>)
+    -> Result<Self::Sync, Self::Err>;
 
     /// Send a message to one node.
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err>;
@@ -41,9 +50,17 @@ pub trait Comm<T: Committable> {
 impl<A: Committable + Send + 'static, T: Comm<A> + Send> Comm<A> for Box<T> {
     type Err = T::Err;
     type CommitteeInfo = T::CommitteeInfo;
+    type Sync = T::Sync;
 
     async fn broadcast(&mut self, msg: Message<A, Validated>) -> Result<(), Self::Err> {
         (**self).broadcast(msg).await
+    }
+
+    async fn broadcast_sync(
+        &mut self,
+        msg: Message<A, Validated>,
+    ) -> Result<Self::Sync, Self::Err> {
+        (**self).broadcast_sync(msg).await
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<A, Validated>) -> Result<(), Self::Err> {

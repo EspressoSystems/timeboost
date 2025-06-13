@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::{Ready, ready};
 use std::{io, iter};
 
 use async_trait::async_trait;
@@ -153,10 +154,19 @@ impl<T: Clone> Star<T> {
 impl<T: Committable + Clone + Send> Comm<T> for Star<Message<T, Validated>> {
     type Err = io::Error;
     type CommitteeInfo = Empty;
+    type Sync = Ready<bool>;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.broadcast(msg);
         Ok(())
+    }
+
+    async fn broadcast_sync(
+        &mut self,
+        msg: Message<T, Validated>,
+    ) -> Result<Self::Sync, Self::Err> {
+        self.broadcast(msg);
+        Ok(ready(true))
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {
@@ -179,6 +189,7 @@ impl<T: Clone> Default for Star<T> {
 impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
     type Err = io::Error;
     type CommitteeInfo = Empty;
+    type Sync = Ready<bool>;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         let e = Event::Multicast {
@@ -188,6 +199,14 @@ impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
         self.tx
             .send(e)
             .map_err(|_| io::Error::other("Comm: failed to broadcast"))
+    }
+
+    async fn broadcast_sync(
+        &mut self,
+        msg: Message<T, Validated>,
+    ) -> Result<Self::Sync, Self::Err> {
+        self.broadcast(msg).await?;
+        Ok(ready(true))
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {

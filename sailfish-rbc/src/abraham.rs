@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::pin::Pin;
 
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -9,7 +10,7 @@ use multisig::{Certificate, CommitteeId, Envelope, Keypair, PublicKey, Validated
 use sailfish_types::CommitteeVec;
 use sailfish_types::{Comm, Evidence, Message, RoundNumber, Vertex};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::digest::Digest;
@@ -61,9 +62,13 @@ enum Command<T: Committable> {
     /// Send message to a party identified by the given public key.
     Send(PublicKey, Message<T, Validated>, Data),
     /// Do a best-effort broadcast of the given message.
-    Broadcast(Message<T, Validated>, Data),
+    Broadcast(Message<T, Validated>, Data, Option<oneshot::Sender<()>>),
     /// Do a byzantine reliable broadcast of the given message.
-    RbcBroadcast(Envelope<Vertex<T>, Validated>, Data),
+    RbcBroadcast(
+        Envelope<Vertex<T>, Validated>,
+        Data,
+        Option<oneshot::Sender<()>>,
+    ),
     /// Cleanup buffers up to the given round number.
     Gc(RoundNumber),
     /// Add the next committee.
@@ -170,6 +175,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned + Send + Sync + 'stat
 impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
     type Err = RbcError;
     type CommitteeInfo = AddressableCommittee;
+    type Sync = Pin<Box<dyn Future<Output = bool> + Send>>;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         if self.rx.is_closed() {
@@ -178,17 +184,43 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
         if let Message::Vertex(v) = msg {
             let data = serialize(&Protocol::Propose(Cow::Borrowed(&v)))?;
             self.tx
-                .send(Command::RbcBroadcast(v, data))
+                .send(Command::RbcBroadcast(v, data, None))
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
         } else {
             let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
             self.tx
-                .send(Command::Broadcast(msg, data))
+                .send(Command::Broadcast(msg, data, None))
                 .await
                 .map_err(|_| RbcError::Shutdown)?;
         }
         Ok(())
+    }
+
+    async fn broadcast_sync(
+        &mut self,
+        msg: Message<T, Validated>,
+    ) -> Result<Self::Sync, Self::Err> {
+        if self.rx.is_closed() {
+            return Err(RbcError::Shutdown);
+        }
+        if let Message::Vertex(v) = msg {
+            let data = serialize(&Protocol::Propose(Cow::Borrowed(&v)))?;
+            let (tx, rx) = oneshot::channel();
+            self.tx
+                .send(Command::RbcBroadcast(v, data, Some(tx)))
+                .await
+                .map_err(|_| RbcError::Shutdown)?;
+            Ok(Box::pin(async move { rx.await.is_ok() }))
+        } else {
+            let data = serialize(&Protocol::Send(Cow::Borrowed(&msg)))?;
+            let (tx, rx) = oneshot::channel();
+            self.tx
+                .send(Command::Broadcast(msg, data, Some(tx)))
+                .await
+                .map_err(|_| RbcError::Shutdown)?;
+            Ok(Box::pin(async move { rx.await.is_ok() }))
+        }
     }
 
     async fn send(&mut self, to: PublicKey, msg: Message<T, Validated>) -> Result<(), Self::Err> {

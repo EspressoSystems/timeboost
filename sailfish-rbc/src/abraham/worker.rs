@@ -7,14 +7,14 @@ use bytes::Bytes;
 use cliquenet::{
     AddressableCommittee, Overlay, Role,
     MAX_MESSAGE_SIZE,
-    overlay::{self, Data, NetworkDown},
+    overlay::{self, Data, NetworkDown, Target},
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
 use multisig::{Unchecked, Validated, CommitteeId};
 use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Duration, Instant, Interval};
 use tracing::{debug, error, trace, warn};
 
@@ -273,8 +273,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 },
                 cmd = self.rx.recv() => {
                     match cmd {
-                        Some(Command::RbcBroadcast(v, data)) => {
-                            if let Err(err) = self.propose(v, data).await {
+                        Some(Command::RbcBroadcast(v, data, sync)) => {
+                            if let Err(err) = self.propose(v, data, sync).await {
                                 if matches!(err, RbcError::Shutdown) {
                                     debug!(node = %self.key, "network went down");
                                     return
@@ -292,8 +292,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                             }
                         }
                         // Best-effort broadcast without RBC properties.
-                        Some(Command::Broadcast(msg, data)) => {
-                            if let Err(err) = self.broadcast(msg, data).await {
+                        Some(Command::Broadcast(msg, data, sync)) => {
+                            if let Err(err) = self.broadcast(msg, data, sync).await {
                                 if matches!(err, RbcError::Shutdown) {
                                     debug!(node = %self.key, "network went down");
                                     return
@@ -388,7 +388,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Best effort broadcast.
-    async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data) -> RbcResult<()> {
+    async fn broadcast(&mut self, msg: Message<T, Validated>, data: Data, sync: Option<oneshot::Sender<()>>) -> RbcResult<()> {
         if self.barrier().is_gt() {
             debug!(node = %self.key, "suppressing message broadcast");
             return Ok(())
@@ -405,10 +405,10 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 return Err(RbcError::NoCommittee(committee_id))
             };
             let dest = committee.parties().copied().collect();
-            self.comm.multicast(dest, *msg.round().num(), data).await?;
+            self.comm.send(*msg.round().num(), Target::Multi(dest), data, sync).await?;
             debug!(node = %self.key, %digest, "message multicasted");
         } else {
-            self.comm.broadcast(*msg.round().num(), data).await?;
+            self.comm.send(*msg.round().num(), Target::All, data, sync).await?;
             debug!(node = %self.key, %digest, "message broadcasted");
         }
 
@@ -429,7 +429,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     }
 
     /// Start RBC broadcast.
-    async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> RbcResult<()> {
+    async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data, sync: Option<oneshot::Sender<()>>) -> RbcResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
 
@@ -461,7 +461,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(())
         }
 
-        self.comm.broadcast(*digest.round().num(), data).await?;
+        self.comm.send(*digest.round().num(), Target::All, data, sync).await?;
         messages.map.insert(digest, tracker);
 
         debug!(node = %self.key, %digest, "proposal broadcasted");
