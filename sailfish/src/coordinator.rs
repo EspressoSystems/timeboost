@@ -9,6 +9,7 @@ use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
 use sailfish_types::{ConsensusTime, Payload};
 use tokio::select;
 use tokio::time::sleep;
+use tracing::{error, info};
 
 /// Max. number of consensus instances.
 const MAX_CONSENSUS_INSTANCES: usize = 2;
@@ -55,6 +56,11 @@ pub struct Coordinator<T: Committable, C> {
     /// is safe if they are all equal, which they should be if committee
     /// changes do not overlap.
     buffer: HashMap<Option<PublicKey>, Message<T, Validated>>,
+
+    /// If a handover is taking place this future completes when the handover
+    /// messages have been acknowledged by all peers. Once this happens the
+    /// instance belonging to the old committee can be dropped.
+    handover_done: BoxFuture<'static, bool>,
 }
 
 /// Internal coordinator state.
@@ -107,6 +113,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
                 State::Start
             },
             buffer: HashMap::new(),
+            handover_done: pending().boxed(),
         }
     }
 
@@ -176,7 +183,6 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
             // Never go back to a previous instance.
             return false;
         }
-        self.instances.truncate(1);
         self.previous_committees.truncate(MAX_OLD_COMMITTEE_IDS - 1);
         self.previous_committees.insert(0, self.current_committee);
         self.current_committee = r.committee();
@@ -235,37 +241,44 @@ where
     /// - timeout a sailfish round if no progress was made, or
     /// - process a validated consensus `Message` that was RBC-delivered over the network.
     pub async fn next(&mut self) -> Result<Vec<Action<T>>, C::Err> {
-        select! { biased;
-            r = &mut self.timer => {
-                Ok(if let Some(cons) = self.consensus_mut(r.committee()) {
-                    cons.timeout(r.num())
-                } else {
-                    Vec::new()
-                })
-            }
-            m = self.comm.receive() => {
-                let m = m?;
-                let c = m.committee();
-
-                if let Some(cons) = self.consensus_mut(c) {
-                    return Ok(cons.handle_message(m))
+        loop {
+            select! {
+                r = &mut self.timer => {
+                    if let Some(cons) = self.consensus_mut(r.committee()) {
+                        return Ok(cons.timeout(r.num()))
+                    }
+                    error!(node = %self.key, committee = %r.committee(), "no instance for timeout");
                 }
+                m = self.comm.receive() => {
+                    let m = m?;
+                    let c = m.committee();
 
-                // Message is for a committee we do not know, so we buffer it
-                // if it is a handover message or certificate and does not
-                // belong to an old committee.
+                    if let Some(cons) = self.consensus_mut(c) {
+                        return Ok(cons.handle_message(m))
+                    }
 
-                if !(m.is_handover() || m.is_handover_cert()) {
+                    // Message is for a committee we do not know, so we buffer it
+                    // if it is a handover message or certificate and does not
+                    // belong to an old committee.
+
+                    if !(m.is_handover() || m.is_handover_cert()) {
+                        return Ok(Vec::new())
+                    }
+
+                    if self.previous_committees.contains(&c) {
+                        return Ok(Vec::new())
+                    }
+
+                    self.buffer.insert(m.signing_key().copied(), m);
+
                     return Ok(Vec::new())
                 }
-
-                if self.previous_committees.contains(&c) {
-                    return Ok(Vec::new())
+                _ = &mut self.handover_done => {
+                    // After handover messages have been sent and acknowledged,
+                    // the old committee can be dropped.
+                    info!(node = %self.key, "handover complete");
+                    self.instances.truncate(1)
                 }
-
-                self.buffer.insert(m.signing_key().copied(), m);
-
-                Ok(Vec::new())
             }
         }
     }
@@ -298,7 +311,12 @@ where
                 return Ok(Some(Event::Gc(r)));
             }
             Action::SendHandover(e) => {
-                self.comm.broadcast(Message::Handover(e)).await?;
+                self.handover_done = self
+                    .comm
+                    .broadcast_sync(Message::Handover(e))
+                    .await?
+                    .fuse()
+                    .boxed();
             }
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;

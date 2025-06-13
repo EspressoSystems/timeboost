@@ -18,6 +18,7 @@ sailfish-consensus = { path = "../sailfish-consensus" }
 sailfish-rbc = { path = "../sailfish-rbc" }
 sailfish-types = { path = "../sailfish-types" }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
