@@ -467,7 +467,9 @@ impl Worker {
     }
 
     /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if
-    /// insufficient shares. Local cache are garbage collected for hatched rounds.
+    /// insufficient shares or inclusion list yet received (hatching target arrive later than
+    /// decrypted shares is possible due to out-of-order delivery).
+    /// Local cache are garbage collected for hatched rounds.
     fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
         // first check if hatchable, if not, return Ok(None)
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
@@ -487,17 +489,16 @@ impl Worker {
             return Ok(None);
         }
 
-        // retreive ciphertext again from the original encrypted inclusion list, and some sanity
-        // check
-        let mut incl = self
-            .incls
-            .get(&round)
-            .ok_or_else(|| {
-                DecryptError::Internal(format!(
-                    "missing inclusion list for round={round} in local cache"
-                ))
-            })?
-            .clone();
+        // retreive ciphertext again from the original encrypted inclusion list
+        let Some(incl) = self.incls.get(&round) else {
+            trace!(
+                node = %self.label,
+                %round,
+                "out-of-order delivery: ready to hatch but inclusion list yet received"
+            );
+            return Ok(None);
+        };
+        let mut incl = incl.clone();
         let ciphertexts = Self::extract_ciphertexts(self.keyset.id(), &incl);
 
         // hatching ciphertext
