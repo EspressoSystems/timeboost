@@ -40,6 +40,7 @@ alloy-signer = "1.0.5"
 alloy-signer-local = "1.0.5"
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
+arbtest = "0.3.2"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
 ark-ff = "0.5"
@@ -48,6 +49,7 @@ ark-secp256k1 = "0.5"
 ark-bls12-381 = "0.5"
 ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
+arrayvec = "0.7.6"
 async-lock = "3.3"
 async-trait = "0.1"
 bimap = "0.6.3"
@@ -91,6 +93,7 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
 thiserror = "2.0"
 tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
+tokio-stream = "0.1.17"
 toml = "0.8.19"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }

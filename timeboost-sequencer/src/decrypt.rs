@@ -1,8 +1,8 @@
 use bytes::{BufMut, BytesMut};
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use multisig::{Committee, PublicKey};
-use sailfish::types::{Evidence, RoundNumber};
+use multisig::PublicKey;
+use sailfish::types::{CommitteeVec, Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
@@ -73,13 +73,13 @@ impl Decrypter {
     pub fn new(
         label: PublicKey,
         net: Overlay,
-        committee: Committee,
+        committees: CommitteeVec<2>,
         keyset: Keyset,
         dec_sk: DecryptionKey,
     ) -> Self {
         let (req_tx, req_rx) = channel(MAX_ROUNDS);
         let (res_tx, res_rx) = channel(MAX_ROUNDS);
-        let worker = Worker::new(label, net, committee, keyset, dec_sk);
+        let worker = Worker::new(label, net, committees, keyset, dec_sk);
 
         Self {
             label,
@@ -196,8 +196,8 @@ struct Worker {
     label: PublicKey,
     /// overlay network to connect to other decrypters
     net: Overlay,
-    /// consensus committee
-    committee: Committee,
+    /// consensus committees
+    committees: CommitteeVec<2>,
     /// keyset metadata about the decryption committee
     keyset: Keyset,
     /// round number of the first decrypter request, used to ignore received decryption shares for
@@ -225,14 +225,14 @@ impl Worker {
     pub fn new(
         label: PublicKey,
         net: Overlay,
-        committee: Committee,
+        committees: CommitteeVec<2>,
         keyset: Keyset,
         dec_sk: DecryptionKey,
     ) -> Self {
         Self {
             label,
             net,
-            committee,
+            committees,
             keyset,
             first_requested_round: None,
             dec_sk,
@@ -447,7 +447,7 @@ impl Worker {
             return Err(DecryptError::EmptyDecShares);
         }
         let round = batch.round;
-        if !batch.evidence.is_valid(round, &self.committee) {
+        if !batch.evidence.is_valid(round, &self.committees) {
             debug!(node = %self.label, %round, "invalid round evidence");
             return Err(DecryptError::MissingRoundEvidence(round));
         }
@@ -693,7 +693,7 @@ mod tests {
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
     use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
-    use sailfish::types::RoundNumber;
+    use sailfish::types::{CommitteeVec, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
@@ -750,7 +750,11 @@ mod tests {
             let mut va = VoteAccumulator::new(committee);
             for sk in signature_keys {
                 let keypair = Keypair::from(sk);
-                va.add(Signed::new(round - 1, &keypair)).unwrap();
+                va.add(Signed::new(
+                    Round::new(round - 1, UNKNOWN_COMMITTEE_ID),
+                    &keypair,
+                ))
+                .unwrap();
             }
             let cert = va.into_certificate().unwrap();
             cert.into()
@@ -869,6 +873,7 @@ mod tests {
             })
             .collect();
         let committee = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
             signature_keys
                 .iter()
                 .map(SecretKey::public_key)
@@ -896,7 +901,7 @@ mod tests {
             let decrypter = Decrypter::new(
                 sig_key.public_key(),
                 Overlay::new(network),
-                committee.clone(),
+                CommitteeVec::singleton(committee.clone()),
                 keyset,
                 decryption_keys[i].clone(),
             );

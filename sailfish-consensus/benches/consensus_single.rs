@@ -5,7 +5,7 @@ use committable::Committable;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use multisig::{Committee, Keypair, PublicKey};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Evidence, Message, Unit};
+use sailfish_types::{Action, Evidence, Message, Timestamp, UNKNOWN_COMMITTEE_ID};
 
 #[derive(Debug, Clone, Copy)]
 struct MultiRoundTestSpec {
@@ -25,7 +25,7 @@ impl fmt::Display for MultiRoundTestSpec {
 
 struct Net {
     /// Mapping of public key to the corresponding cx node.
-    nodes: HashMap<PublicKey, Consensus<Unit>>,
+    nodes: HashMap<PublicKey, Consensus<Timestamp>>,
 
     /// How many rounds to run until.
     rounds: u64,
@@ -34,7 +34,7 @@ struct Net {
     iteration: u64,
 
     /// Message buffer.
-    messages: Vec<Message<Unit>>,
+    messages: Vec<Message<Timestamp>>,
 }
 
 impl Net {
@@ -43,17 +43,20 @@ impl Net {
         let kps = (0..nodes).map(|_| Keypair::generate()).collect::<Vec<_>>();
 
         let com = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
             kps.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
         );
+
+        let now = Timestamp::now();
 
         let mut nodes = kps
             .into_iter()
             .map(|kp| {
                 (
                     kp.public_key(),
-                    Consensus::new(kp, com.clone(), repeat(Unit)),
+                    Consensus::new(kp, com.clone(), repeat(now)),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -93,9 +96,9 @@ impl Net {
 
 /// Many-to-many broadcast of a message stack.
 fn send(
-    nodes: &mut HashMap<PublicKey, Consensus<Unit>>,
-    msgs: &[Message<Unit>],
-) -> Vec<Action<Unit>> {
+    nodes: &mut HashMap<PublicKey, Consensus<Timestamp>>,
+    msgs: &[Message<Timestamp>],
+) -> Vec<Action<Timestamp>> {
     use rayon::prelude::*;
 
     if nodes.len() == 1 {
@@ -127,10 +130,13 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::SendProposal(e) => Some(Message::Vertex(e)),
         Action::SendTimeout(e) => Some(Message::Timeout(e)),
         Action::SendTimeoutCert(c) => Some(Message::TimeoutCert(c)),
+        Action::SendHandover(e) => Some(Message::Handover(e)),
+        Action::SendHandoverCert(c) => Some(Message::HandoverCert(c)),
         Action::ResetTimer(_) => None,
         Action::Deliver(..) => None,
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
+        Action::UseCommittee(_) => None,
     }
 }
 

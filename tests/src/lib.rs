@@ -1,6 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey, x25519};
+use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::{unsafe_zero_dh_keypair, unsafe_zero_keypair};
 
 #[cfg(test)]
@@ -11,14 +12,14 @@ pub(crate) mod prelude {
     use committable::{Commitment, Committable, RawCommitmentBuilder};
     use serde::{Deserialize, Serialize};
 
-    pub use sailfish::types::DataSource;
+    pub use sailfish::types::{DataSource, HasTime};
     pub use timeboost::types::Timestamp;
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SailfishBlock(Timestamp);
 
-    impl SailfishBlock {
-        pub fn timestamp(&self) -> Timestamp {
+    impl HasTime for SailfishBlock {
+        fn time(&self) -> Timestamp {
             self.0
         }
     }
@@ -82,7 +83,7 @@ impl Group {
         Self {
             size,
             peers: peers.collect(),
-            committee: Committee::new(pubks),
+            committee: Committee::new(UNKNOWN_COMMITTEE_ID, pubks),
             sign_keypairs,
             dh_keypairs,
         }

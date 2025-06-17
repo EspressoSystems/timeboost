@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::pending;
 use std::iter::repeat;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use crate::error::Empty;
 use crate::frame::{Header, Type};
 use crate::tcp::{self, Stream};
 use crate::time::{Countdown, Timestamp};
-use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY};
+use crate::{Address, Id, MAX_MESSAGE_SIZE, NetworkError, NetworkMetrics, PEER_CAPACITY, Role};
 
 type Result<T> = std::result::Result<T, NetworkError>;
 
@@ -67,13 +67,10 @@ pub struct Network {
     label: PublicKey,
 
     /// The network participants.
-    parties: HashSet<PublicKey>,
+    parties: HashMap<PublicKey, Role>,
 
-    /// MPSC sender of messages to be sent to remote parties.
-    ///
-    /// If a public key is present, it will result in a uni-cast,
-    /// otherwise the message will be sent to all parties.
-    tx: Sender<(Option<PublicKey>, Option<Id>, Bytes)>,
+    /// MPSC sender of server task instructions.
+    tx: Sender<Command>,
 
     /// MPSC receiver of messages from a remote party.
     ///
@@ -90,6 +87,23 @@ impl Drop for Network {
     }
 }
 
+/// Server task instructions.
+#[derive(Debug)]
+pub(crate) enum Command {
+    /// Add the given peers.
+    Add(Vec<(PublicKey, x25519::PublicKey, Address)>),
+    /// Remove the given peers.
+    Remove(Vec<PublicKey>),
+    /// Assign a `Role` to the given peers.
+    Assign(Role, Vec<PublicKey>),
+    /// Send a message to one peer.
+    Unicast(PublicKey, Option<Id>, Bytes),
+    /// Send a message to some peers.
+    Multicast(Vec<PublicKey>, Option<Id>, Bytes),
+    /// Send a message to all peers with `Role::Active`.
+    Broadcast(Option<Id>, Bytes),
+}
+
 /// The `Server` is accepting connections and also establishing and
 /// maintaining connections with all parties.
 #[derive(Debug)]
@@ -100,6 +114,9 @@ struct Server<T: tcp::Listener> {
     /// This server's public key.
     key: PublicKey,
 
+    /// This server's role.
+    role: Role,
+
     /// The X25519 keypair, used with Noise.
     keypair: x25519::Keypair,
 
@@ -108,13 +125,13 @@ struct Server<T: tcp::Listener> {
     /// (see `Network` for the accompanying receiver).
     ibound: Sender<(PublicKey, Bytes)>,
 
-    /// MPSC receiver for messages to be sent to remote parties.
+    /// MPSC receiver for server task instructions.
     ///
     /// (see `Network` for the accompanying sender).
-    obound: Receiver<(Option<PublicKey>, Option<Id>, Bytes)>,
+    obound: Receiver<Command>,
 
     /// All parties of the network and their addresses.
-    peers: HashMap<PublicKey, Address>,
+    peers: HashMap<PublicKey, Peer>,
 
     /// Bi-directional mapping of Ed25519 and X25519 keys to identify
     /// remote parties.
@@ -143,6 +160,12 @@ struct Server<T: tcp::Listener> {
 
     /// Interval at which to ping peers.
     ping_interval: Interval,
+}
+
+#[derive(Debug)]
+struct Peer {
+    addr: Address,
+    role: Role,
 }
 
 /// A connect task.
@@ -252,14 +275,20 @@ impl Network {
 
         debug!(%name, n = %label, a = %listener.local_addr()?, "listening");
 
-        let mut parties = HashSet::new();
+        let mut parties = HashMap::new();
         let mut peers = HashMap::new();
         let mut index = BiHashMap::new();
 
         for (k, x, a) in group {
-            parties.insert(k);
+            parties.insert(k, Role::Active);
             index.insert(k, x);
-            peers.insert(k, a.into());
+            peers.insert(
+                k,
+                Peer {
+                    addr: a.into(),
+                    role: Role::Active,
+                },
+            );
         }
 
         let (otx, orx) = mpsc::channel(PEER_CAPACITY * peers.len());
@@ -272,6 +301,7 @@ impl Network {
             name,
             keypair: xp,
             key: label,
+            role: Role::Active,
             ibound: itx,
             obound: orx,
             peers,
@@ -300,7 +330,7 @@ impl Network {
         self.label
     }
 
-    pub fn parties(&self) -> impl Iterator<Item = &PublicKey> {
+    pub fn parties(&self) -> impl Iterator<Item = (&PublicKey, &Role)> {
         self.parties.iter()
     }
 
@@ -317,13 +347,13 @@ impl Network {
             return Err(NetworkError::MessageTooLarge);
         }
         self.tx
-            .send((Some(to), None, msg))
+            .send(Command::Unicast(to, None, msg))
             .await
             .map_err(|_| NetworkError::ChannelClosed)
     }
 
     /// Send a message to all parties.
-    pub async fn multicast(&self, msg: Bytes) -> Result<()> {
+    pub async fn broadcast(&self, msg: Bytes) -> Result<()> {
         if msg.len() > MAX_MESSAGE_SIZE {
             warn!(
                 name = %self.name,
@@ -334,7 +364,7 @@ impl Network {
             return Err(NetworkError::MessageTooLarge);
         }
         self.tx
-            .send((None, None, msg))
+            .send(Command::Broadcast(None, msg))
             .await
             .map_err(|_| NetworkError::ChannelClosed)
     }
@@ -344,8 +374,45 @@ impl Network {
         self.rx.recv().await.ok_or(NetworkError::ChannelClosed)
     }
 
+    /// Add the given peers to the network.
+    ///
+    /// NB that peers added here are passive. See `Network::assign` for
+    /// giving peers a different `Role`.
+    pub async fn add(&mut self, peers: Vec<(PublicKey, x25519::PublicKey, Address)>) -> Result<()> {
+        self.parties
+            .extend(peers.iter().map(|(p, ..)| (*p, Role::Passive)));
+        self.tx
+            .send(Command::Add(peers))
+            .await
+            .map_err(|_| NetworkError::ChannelClosed)
+    }
+
+    /// Remove the given peers from the network.
+    pub async fn remove(&mut self, peers: Vec<PublicKey>) -> Result<()> {
+        for p in &peers {
+            self.parties.remove(p);
+        }
+        self.tx
+            .send(Command::Remove(peers))
+            .await
+            .map_err(|_| NetworkError::ChannelClosed)
+    }
+
+    /// Assign the given role to the given peers.
+    pub async fn assign(&mut self, r: Role, peers: Vec<PublicKey>) -> Result<()> {
+        for p in &peers {
+            if let Some(role) = self.parties.get_mut(p) {
+                *role = r
+            }
+        }
+        self.tx
+            .send(Command::Assign(r, peers))
+            .await
+            .map_err(|_| NetworkError::ChannelClosed)
+    }
+
     /// Get a clone of the MPSC sender.
-    pub(crate) fn sender(&self) -> Sender<(Option<PublicKey>, Option<Id>, Bytes)> {
+    pub(crate) fn sender(&self) -> Sender<Command> {
         self.tx.clone()
     }
 }
@@ -516,10 +583,60 @@ where
                         }
                     };
                 },
-                // A new message to send out has been given to us:
-                msg = self.obound.recv() => match msg {
-                    // Uni-cast
-                    Some((Some(to), id, m)) => {
+                cmd = self.obound.recv() => match cmd {
+                    Some(Command::Add(peers)) => {
+                        for (k, x, a) in peers {
+                            if self.peers.contains_key(&k) {
+                                warn!(
+                                    name = %self.name,
+                                    node = %self.key,
+                                    peer = %k,
+                                    "peer to add already exists"
+                                );
+                                continue
+                            }
+                            info!(
+                                name = %self.name,
+                                node = %self.key,
+                                peer = %k,
+                                "adding peer"
+                            );
+                            let p = Peer { addr: a, role: Role::Passive };
+                            self.peers.insert(k, p);
+                            self.index.insert(k, x);
+                            self.spawn_connect(k)
+                        }
+                    }
+                    Some(Command::Remove(peers)) => {
+                        for k in &peers {
+                            info!(
+                                name = %self.name,
+                                node = %self.key,
+                                peer = %k,
+                                "removing peer"
+                            );
+                            self.peers.remove(k);
+                            self.index.remove_by_left(k);
+                            self.connecting.remove(k);
+                            self.active.remove(k);
+                        }
+                    }
+                    Some(Command::Assign(role, peers)) => {
+                        for k in &peers {
+                            if let Some(p) = self.peers.get_mut(k) {
+                                p.role = role
+                            } else {
+                                warn!(
+                                    name = %self.name,
+                                    node = %self.key,
+                                    peer = %k,
+                                    role = ?role,
+                                    "peer to assign role to not found"
+                                );
+                            }
+                        }
+                    }
+                    Some(Command::Unicast(to, id, m)) => {
                         self.metrics.sent_message_len.add_point(m.len() as f64);
                         if to == self.key {
                             trace!(
@@ -559,26 +676,76 @@ where
                             }
                         }
                     }
-                    // Multi-cast
-                    Some((None, id, m)) => {
+                    Some(Command::Multicast(peers, id, m)) => {
                         self.metrics.sent_message_len.add_point(m.len() as f64);
-                        trace!(
-                            name  = %self.name,
-                            node  = %self.key,
-                            to    = %self.key,
-                            len   = %m.len(),
-                            queue = self.ibound.capacity(),
-                            "sending message"
-                        );
-                        if self.ibound.try_send((self.key, m.clone())).is_err() {
-                            warn!(
-                                name = %self.name,
-                                node = %self.key,
-                                "channel full => dropping message"
-                            )
+                        if peers.contains(&self.key) {
+                            trace!(
+                                name  = %self.name,
+                                node  = %self.key,
+                                to    = %self.key,
+                                len   = %m.len(),
+                                queue = self.ibound.capacity(),
+                                "sending message"
+                            );
+                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                                warn!(
+                                    name = %self.name,
+                                    node = %self.key,
+                                    "channel full => dropping message"
+                                )
+                            }
                         }
                         let mut reconnect = Vec::new();
                         for (to, task) in &self.active {
+                            if !peers.contains(to) {
+                                continue
+                            }
+                            trace!(
+                                name  = %self.name,
+                                node  = %self.key,
+                                to    = %to,
+                                len   = %m.len(),
+                                queue = task.tx.capacity(),
+                                "sending message"
+                            );
+                            if task.tx.try_send(id, Message::Data(m.clone())).is_err() {
+                                warn!(
+                                    name = %self.name,
+                                    node = %self.key,
+                                    %to,
+                                    "channel full => reconnecting"
+                                );
+                                reconnect.push(*to);
+                            }
+                        }
+                        for k in reconnect {
+                            self.reconnect(k)
+                        }
+                    }
+                    Some(Command::Broadcast(id, m)) => {
+                        self.metrics.sent_message_len.add_point(m.len() as f64);
+                        if self.role.is_active() {
+                            trace!(
+                                name  = %self.name,
+                                node  = %self.key,
+                                to    = %self.key,
+                                len   = %m.len(),
+                                queue = self.ibound.capacity(),
+                                "sending message"
+                            );
+                            if self.ibound.try_send((self.key, m.clone())).is_err() {
+                                warn!(
+                                    name = %self.name,
+                                    node = %self.key,
+                                    "channel full => dropping message"
+                                )
+                            }
+                        }
+                        let mut reconnect = Vec::new();
+                        for (to, task) in &self.active {
+                            if Some(Role::Active) != self.peers.get(to).map(|p| p.role) {
+                                continue
+                            }
                             trace!(
                                 name  = %self.name,
                                 node  = %self.key,
@@ -686,12 +853,12 @@ where
             return;
         }
         let x = self.index.get_by_left(&k).expect("known public key");
-        let a = self.peers.get(&k).expect("known address");
+        let p = self.peers.get(&k).expect("known peer");
         let h = self.connect_tasks.spawn(connect(
             self.name,
             (self.key, self.keypair.clone()),
             (k, *x),
-            a.clone(),
+            p.addr.clone(),
             self.metrics.clone(),
         ));
         assert!(self.task2key.insert(h.id(), k).is_none());
@@ -772,9 +939,11 @@ where
     fn is_valid_ip(&self, k: &PublicKey, s: &T::Stream) -> bool {
         self.peers
             .get(k)
-            .map(|a| {
-                let Address::Inet(ip, _) = a else { return true };
-                Some(*ip) == s.peer_addr().ok().map(|a| a.ip())
+            .map(|p| {
+                let Address::Inet(ip, _) = p.addr else {
+                    return true;
+                };
+                Some(ip) == s.peer_addr().ok().map(|a| a.ip())
             })
             .unwrap_or(false)
     }

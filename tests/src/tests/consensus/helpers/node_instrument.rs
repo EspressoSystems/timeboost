@@ -4,7 +4,10 @@ use crate::tests::consensus::helpers::key_manager::KeyManager;
 use committable::Committable;
 use multisig::{Certificate, Committee, PublicKey};
 use multisig::{Envelope, Keypair, Validated, VoteAccumulator};
-use sailfish::types::{NoVoteMessage, RoundNumber, Timeout, TimeoutMessage};
+use sailfish::types::CommitteeVec;
+use sailfish::types::{
+    NoVoteMessage, Round, RoundNumber, Timeout, TimeoutMessage, UNKNOWN_COMMITTEE_ID,
+};
 
 use crate::prelude::*;
 
@@ -33,9 +36,10 @@ impl TestNodeInstrument {
 
     pub(crate) fn handle_message_and_verify_actions(&mut self, msg: Message) {
         let c = self.manager.committee();
+        let cc = self.manager.committees();
         for a in self.node.handle_message(msg) {
             if let Some(expected) = self.expected_actions.pop_front() {
-                assert_equiv(&expected, &a, &c)
+                assert_equiv(&expected, &a, &c, cc)
             } else {
                 panic!("Action was processed but expected actions was empty");
             }
@@ -77,10 +81,15 @@ impl TestNodeInstrument {
         timeout_cert: Option<Certificate<Timeout>>,
     ) -> Envelope<Vertex, Validated> {
         let mut v = if let Some(tc) = timeout_cert {
-            Vertex::new(round, tc, EmptyBlocks.next(round), &self.kpair)
+            Vertex::new(
+                Round::new(round, UNKNOWN_COMMITTEE_ID),
+                tc,
+                EmptyBlocks.next(round),
+                &self.kpair,
+            )
         } else {
             Vertex::new(
-                round,
+                Round::new(round, UNKNOWN_COMMITTEE_ID),
                 self.manager.gen_round_cert(round - 1),
                 EmptyBlocks.next(round),
                 &self.kpair,
@@ -94,7 +103,11 @@ impl TestNodeInstrument {
         &self,
         round: RoundNumber,
     ) -> Envelope<TimeoutMessage, Validated> {
-        let d = TimeoutMessage::new(self.manager.gen_round_cert(round - 1).into(), &self.kpair);
+        let d = TimeoutMessage::new(
+            UNKNOWN_COMMITTEE_ID,
+            self.manager.gen_round_cert(round - 1).into(),
+            &self.kpair,
+        );
         self.sign(d.clone())
     }
 
@@ -129,7 +142,9 @@ impl TestNodeInstrument {
 
         if let Some(accumulator) = accumulator {
             assert_eq!(
-                accumulator.votes(&Timeout::new(expected_round).commit()),
+                accumulator.votes(
+                    &Timeout::new(Round::new(expected_round, UNKNOWN_COMMITTEE_ID)).commit()
+                ),
                 votes as usize,
                 "Timeout votes accumulated do not match expected votes"
             );
@@ -144,7 +159,7 @@ impl TestNodeInstrument {
     }
 }
 
-fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
+fn assert_equiv<const N: usize>(a: &Action, b: &Action, c: &Committee, cc: &CommitteeVec<N>) {
     let parties: BTreeSet<PublicKey> = c.parties().copied().collect();
     match (a, b) {
         (Action::ResetTimer(x), Action::ResetTimer(y)) => {
@@ -159,8 +174,8 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             assert_eq!(x.is_valid(c), y.is_valid(c));
             let xv = x.data();
             let yv = y.data();
-            let xe = xv.evidence().is_valid(*xv.round().data(), c);
-            let ye = yv.evidence().is_valid(*yv.round().data(), c);
+            let xe = xv.evidence().is_valid(xv.round().data().num(), cc);
+            let ye = yv.evidence().is_valid(yv.round().data().num(), cc);
             let xn = xv.no_vote_cert().map(|crt| crt.is_valid(c));
             let yn = yv.no_vote_cert().map(|crt| crt.is_valid(c));
             let xve = xv.edges().copied().collect::<BTreeSet<_>>();
@@ -180,8 +195,12 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
             let xt = x.data();
             let yt = y.data();
             assert_eq!(xt.timeout(), yt.timeout());
-            let xe = xt.evidence().is_valid(xt.timeout().data().round(), c);
-            let ye = yt.evidence().is_valid(yt.timeout().data().round(), c);
+            let xe = xt
+                .evidence()
+                .is_valid(xt.timeout().data().round().num(), cc);
+            let ye = yt
+                .evidence()
+                .is_valid(yt.timeout().data().round().num(), cc);
             assert_eq!(xe, ye);
         }
         (Action::SendNoVote(xto, x), Action::SendNoVote(yto, y)) => {
@@ -207,7 +226,7 @@ fn assert_equiv(a: &Action, b: &Action, c: &Committee) {
 
 fn block_equiv(l: &SailfishBlock, r: &SailfishBlock) {
     assert!(
-        l.timestamp().abs_diff(*r.timestamp()) <= 5,
+        l.time().abs_diff(*r.time()) <= 5,
         "Drift is too high from expected to actual block timestamps"
     );
 }

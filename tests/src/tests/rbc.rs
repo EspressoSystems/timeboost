@@ -5,6 +5,7 @@ use cliquenet::{Address, Network, NetworkMetrics, Overlay};
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
+use sailfish::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 
@@ -18,6 +19,7 @@ fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
         .map(|_| x25519::Keypair::generate().unwrap())
         .collect();
     let co = Committee::new(
+        UNKNOWN_COMMITTEE_ID,
         ks.iter()
             .enumerate()
             .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -66,10 +68,10 @@ fn mk_host<A, const N: usize>(
                 NetworkMetrics::default(),
             )
             .await?;
-            let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
-            let rbc = Rbc::new(Overlay::new(comm), cfg);
+            let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
+            let rbc = Rbc::new(10, Overlay::new(comm), cfg);
             let cons = Consensus::new(k, c, EmptyBlocks);
-            let mut coor = Coordinator::new(rbc, cons);
+            let mut coor = Coordinator::new(rbc, cons, false);
             let mut actions = coor.init();
             loop {
                 for a in actions {
@@ -113,10 +115,10 @@ fn small_committee() {
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
         let comm = Network::create_turmoil("C", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
-        let rbc = Rbc::new(Overlay::new(comm), cfg);
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
+        let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
             for a in actions {
@@ -125,7 +127,7 @@ fn small_committee() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
             actions = coor.next().await?
@@ -171,10 +173,10 @@ fn medium_committee() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
-        let rbc = Rbc::new(Overlay::new(comm), cfg);
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
+        let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
             for a in actions {
@@ -183,7 +185,7 @@ fn medium_committee() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
             actions = coor.next().await?
@@ -228,10 +230,10 @@ fn medium_committee_partition_network() {
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
         let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
-        let cfg = RbcConfig::new(k.clone(), c.clone()).recover(false);
-        let rbc = Rbc::new(Overlay::new(comm), cfg);
+        let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
+        let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
-        let mut coor = Coordinator::new(rbc, cons);
+        let mut coor = Coordinator::new(rbc, cons, false);
         let mut actions = coor.init();
         loop {
 
@@ -247,7 +249,7 @@ fn medium_committee_partition_network() {
                         return Ok(());
                     }
                 } else {
-                    coor.execute(a).await?
+                    coor.execute(a).await?;
                 }
             }
 
