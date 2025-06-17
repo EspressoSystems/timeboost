@@ -37,13 +37,10 @@ impl Forwarder {
     ) -> Result<(), Error> {
         let encoded_txns: Vec<ProtoTransaction> = txs
             .iter()
-            .map(|tx| {
-                let p = ProtoTransaction {
-                    encoded_txn: tx.encoded_2718(),
-                    address: Some(ProtoAddress::from(*tx.address())),
-                    timestamp: **tx.time(),
-                };
-                p
+            .map(|tx| ProtoTransaction {
+                encoded_txn: tx.encoded_2718(),
+                address: Some(ProtoAddress::from(*tx.address())),
+                timestamp: **tx.time(),
             })
             .collect();
         let list = ProtoInclusionList {
@@ -68,7 +65,7 @@ impl Forwarder {
         if let Some(s) = &mut self.stream {
             let len = u32::try_from(inclusion.encoded_len())
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "length exceeds u32::MAX"))?;
-            
+
             if let Err(e) = s.write_u32(len).await {
                 self.retry_cache.insert(inclusion.round, inclusion);
                 return Err(e);
@@ -77,8 +74,13 @@ impl Forwarder {
                 self.retry_cache.insert(inclusion.round, inclusion);
                 return Err(e);
             };
+            return Ok(());
         }
-        Ok(())
+        self.retry_cache.insert(inclusion.round, inclusion);
+        Err(Error::new(
+            ErrorKind::NotConnected,
+            "not connected to nitro node",
+        ))
     }
 
     async fn retry(&mut self) -> Result<(), Error> {
