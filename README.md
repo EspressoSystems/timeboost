@@ -22,9 +22,12 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `sailfish-types`: Data type definitions exported by sailfish.
 - `tests`: Battery of integration tests.
 - `timeboost`: Contains the core implementation of the decentralized Timeboost builder protocol.
-- `timeboost-core`: Contains essential type definitions of timeboost.
+- `timeboost-builder`: Contains the builder implementation for the Timeboost protocol.
+- `timeboost-sequencer`: Contains the sequencer implementation for the Timeboost protocol.
+- `timeboost-types`: Contains essential type definitions of Timeboost.
 - `timeboost-crypto`: Contains the threshold encryption scheme used by timeboost.
 - `timeboost-utils`: Contains some utility functions.
+- `yapper`: Transaction submission test tool.
 
 ## MSRV (minimum supported Rust version)
 The MSRV of this repository is 1.85.
