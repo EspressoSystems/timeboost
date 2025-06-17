@@ -853,7 +853,7 @@ where
             return;
         }
         let x = self.index.get_by_left(&k).expect("known public key");
-        let p = self.peers.get(&k).expect("known address");
+        let p = self.peers.get(&k).expect("known peer");
         let h = self.connect_tasks.spawn(connect(
             self.name,
             (self.key, self.keypair.clone()),
