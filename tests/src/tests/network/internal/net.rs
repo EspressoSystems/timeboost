@@ -4,7 +4,7 @@ use std::{io, iter};
 use async_trait::async_trait;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
-use sailfish_types::{Comm, Message};
+use sailfish_types::{Comm, Empty, Message};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -152,6 +152,7 @@ impl<T: Clone> Star<T> {
 #[async_trait]
 impl<T: Committable + Clone + Send> Comm<T> for Star<Message<T, Validated>> {
     type Err = io::Error;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         self.broadcast(msg);
@@ -177,6 +178,7 @@ impl<T: Clone> Default for Star<T> {
 #[async_trait]
 impl<T: Committable + Clone + Send> Comm<T> for Conn<Message<T, Validated>> {
     type Err = io::Error;
+    type CommitteeInfo = Empty;
 
     async fn broadcast(&mut self, msg: Message<T, Validated>) -> Result<(), Self::Err> {
         let e = Event::Multicast {

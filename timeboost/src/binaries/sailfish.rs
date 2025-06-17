@@ -8,7 +8,7 @@ use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::Action,
+    types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
@@ -73,19 +73,26 @@ struct Cli {
 
 /// Payload data type is a block of 512 random bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-struct Block(#[serde(with = "serde_bytes")] [u8; 512]);
+struct Block(Timestamp, #[serde(with = "serde_bytes")] [u8; 512]);
 
 impl Block {
     fn random() -> Self {
-        Self(rand::random())
+        Self(Timestamp::now(), rand::random())
     }
 }
 
 impl Committable for Block {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("Block")
-            .var_size_bytes(&self.0)
+            .field("time", self.0.commit())
+            .var_size_bytes(&self.1)
             .finalize()
+    }
+}
+
+impl HasTime for Block {
+    fn time(&self) -> Timestamp {
+        self.0
     }
 }
 
@@ -257,6 +264,7 @@ async fn main() -> Result<()> {
     let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
 
     let committee = Committee::new(
+        UNKNOWN_COMMITTEE_ID,
         peer_hosts_and_keys
             .iter()
             .map(|b| b.0)
@@ -271,12 +279,18 @@ async fn main() -> Result<()> {
         tokio::fs::try_exists(&cli.stamp).await?
     };
 
-    let cfg = RbcConfig::new(signing_keypair.clone(), committee.clone()).recover(recover);
-    let rbc = Rbc::new(Overlay::new(network), cfg.with_metrics(rbc_metrics));
+    let cfg =
+        RbcConfig::new(signing_keypair.clone(), committee.id(), committee.clone()).recover(recover);
+
+    let rbc = Rbc::new(
+        committee.size().get() * 5,
+        Overlay::new(network),
+        cfg.with_metrics(rbc_metrics),
+    );
 
     let consensus = Consensus::new(signing_keypair, committee, repeat_with(Block::random))
         .with_metrics(sf_metrics);
-    let mut coordinator = Coordinator::new(rbc, consensus);
+    let mut coordinator = Coordinator::new(rbc, consensus, false);
 
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;

@@ -65,14 +65,14 @@ impl TestableNetwork for BasicNetworkTest {
             )
             .await
             .expect("failed to make network");
-            let cfg = RbcConfig::new(kpr.clone(), committee.clone()).recover(false);
-            let net = Rbc::new(Overlay::new(net), cfg);
+            let cfg = RbcConfig::new(kpr.clone(), committee.id(), committee.clone()).recover(false);
+            let net = Rbc::new(committee.size().get() * 5, Overlay::new(net), cfg);
             tracing::debug!(%i, "created rbc");
             let test_net = TestNet::new(net, i as u64, self.interceptor.clone());
             let messages = test_net.messages();
             tracing::debug!(%i, "created testnet");
             let consensus = Consensus::new(kpr, committee.clone(), EmptyBlocks);
-            let coord = Coordinator::new(test_net, consensus);
+            let coord = Coordinator::new(test_net, consensus, false);
             nodes.push((coord, messages))
         }
         nodes

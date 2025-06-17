@@ -1,6 +1,8 @@
-use anyhow::{Context, Result, anyhow};
-use multisig::{Keypair, x25519};
 use std::path::PathBuf;
+
+use anyhow::{Context, Result, anyhow};
+use cliquenet::AddressableCommittee;
+use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
 use tokio::signal;
@@ -13,6 +15,7 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
+use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
@@ -142,6 +145,39 @@ async fn main() -> Result<()> {
         ));
     }
 
+    let sailfish_peers = {
+        let c = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            sailfish_peer_hosts_and_keys
+                .iter()
+                .enumerate()
+                .map(|(i, (k, ..))| (i as u8, *k)),
+        );
+        AddressableCommittee::new(c, sailfish_peer_hosts_and_keys.iter().cloned())
+    };
+
+    let decrypt_peers = {
+        let c = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            decrypt_peer_hosts_and_keys
+                .iter()
+                .enumerate()
+                .map(|(i, (k, ..))| (i as u8, *k)),
+        );
+        AddressableCommittee::new(c, decrypt_peer_hosts_and_keys.iter().cloned())
+    };
+
+    let producer_peers = {
+        let c = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            producer_peer_hosts_and_keys
+                .iter()
+                .enumerate()
+                .map(|(i, (k, ..))| (i as u8, *k)),
+        );
+        AddressableCommittee::new(c, producer_peer_hosts_and_keys.iter().cloned())
+    };
+
     #[cfg(feature = "until")]
     let handle = {
         ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
@@ -161,9 +197,9 @@ async fn main() -> Result<()> {
     let init = TimeboostConfig {
         rpc_port: cli.rpc_port,
         metrics_port: cli.metrics_port,
-        sailfish_peers: sailfish_peer_hosts_and_keys,
-        decrypt_peers: decrypt_peer_hosts_and_keys,
-        producer_peers: producer_peer_hosts_and_keys,
+        sailfish_peers,
+        decrypt_peers,
+        producer_peers,
         sign_keypair,
         dh_keypair,
         dec_sk,

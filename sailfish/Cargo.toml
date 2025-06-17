@@ -9,6 +9,7 @@ rust-version.workspace = true
 test = ["sailfish-consensus/test"]
 
 [dependencies]
+arrayvec = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 futures = { workspace = true }
