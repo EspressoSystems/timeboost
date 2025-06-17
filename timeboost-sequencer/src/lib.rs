@@ -1,3 +1,4 @@
+mod config;
 mod decrypt;
 mod forwarder;
 mod include;
@@ -8,17 +9,17 @@ mod sort;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use cliquenet::{self as net, MAX_MESSAGE_SIZE};
+use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
-use multisig::{Keypair, PublicKey, x25519};
+use multisig::{Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
-use sailfish::rbc::{Rbc, RbcConfig, RbcError, RbcMetrics};
+use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::Keyset;
-use timeboost_types::{Address, BundleVariant, DecryptionKey, Transaction};
-use timeboost_types::{CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList};
+use timeboost_types::{BundleVariant, Transaction};
+use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
@@ -29,84 +30,10 @@ use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
 
+pub use config::{SequencerConfig, SequencerConfigBuilder};
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
-
-#[derive(Debug, Clone)]
-pub struct SequencerConfig {
-    sign_keypair: Keypair,
-    dh_keypair: x25519::Keypair,
-    dec_sk: DecryptionKey,
-    sailfish_bind: net::Address,
-    decrypt_bind: net::Address,
-    sailfish_peers: AddressableCommittee,
-    decrypt_peers: AddressableCommittee,
-    index: DelayedInboxIndex,
-    priority_addr: Address,
-    recover: bool,
-    join_sailfish: bool,
-}
-
-impl SequencerConfig {
-    pub fn new<A>(
-        sign_keypair: Keypair,
-        dh_keypair: x25519::Keypair,
-        dec_sk: DecryptionKey,
-        sailfish_bind: A,
-        decrypt_bind: A,
-        sailfish_peers: AddressableCommittee,
-        decrypt_peers: AddressableCommittee,
-    ) -> Self
-    where
-        A: Into<net::Address>,
-    {
-        Self {
-            priority_addr: Address::default(),
-            sign_keypair,
-            dh_keypair,
-            sailfish_peers,
-            decrypt_peers,
-            sailfish_bind: sailfish_bind.into(),
-            decrypt_bind: decrypt_bind.into(),
-            index: DelayedInboxIndex::default(),
-            dec_sk,
-            recover: true,
-            join_sailfish: false,
-        }
-    }
-
-    pub fn with_priority_addr(mut self, a: Address) -> Self {
-        self.priority_addr = a;
-        self
-    }
-
-    pub fn with_delayed_inbox_index(mut self, i: DelayedInboxIndex) -> Self {
-        self.index = i;
-        self
-    }
-
-    pub fn join_sailfish(mut self, val: bool) -> Self {
-        self.join_sailfish = val;
-        self
-    }
-
-    pub fn recover(mut self, val: bool) -> Self {
-        self.recover = val;
-        self
-    }
-
-    pub fn is_recover(&self) -> bool {
-        self.recover
-    }
-
-    pub fn sailfish_peers(&self) -> &AddressableCommittee {
-        &self.sailfish_peers
-    }
-
-    pub fn decrypt_peers(&self) -> &AddressableCommittee {
-        &self.decrypt_peers
-    }
-}
 
 pub struct Sequencer {
     label: PublicKey,
@@ -165,59 +92,72 @@ impl Sequencer {
 
         let public_key = cfg.sign_keypair.public_key();
 
-        let queue = BundleQueue::new(cfg.priority_addr, cfg.index, seq_metrics.clone());
+        let queue = BundleQueue::new(
+            cfg.priority_addr,
+            cfg.delayed_inbox_index,
+            seq_metrics.clone(),
+        );
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
         let sailfish = {
-            let met =
-                NetworkMetrics::new("sailfish", metrics, cfg.sailfish_peers.parties().copied());
-
-            let net = Network::create(
+            let met = NetworkMetrics::new(
                 "sailfish",
-                cfg.sailfish_bind,
+                metrics,
+                cfg.sailfish_committee.parties().copied(),
+            );
+
+            let mut net = Network::create(
+                "sailfish",
+                cfg.sailfish_addr.clone(),
                 cfg.sign_keypair.clone(),
                 cfg.dh_keypair.clone(),
-                cfg.sailfish_peers.entries(),
+                cfg.sailfish_committee.entries(),
                 met,
             )
             .await?;
 
-            let rcf = RbcConfig::new(
-                cfg.sign_keypair.clone(),
-                cfg.sailfish_peers.committee().id(),
-                cfg.sailfish_peers.committee().clone(),
-            )
-            .recover(cfg.recover);
+            if let Some(prev) = &cfg.previous_sailfish_committee {
+                // Add peers from the previous committee which are not members of
+                // the current one for a proper handover.
+                let old = prev.diff(&cfg.sailfish_committee);
+                net.add(old.collect()).await?
+            }
 
             let rbc = Rbc::new(
-                5 * cfg.sailfish_peers.committee().size().get(),
+                5 * cfg.sailfish_committee.committee().size().get(),
                 Overlay::new(net),
-                rcf.with_metrics(rbc_metrics),
+                cfg.rbc_config().with_metrics(rbc_metrics),
             );
 
-            let cons = Consensus::new(
+            let mut cons = Consensus::new(
                 cfg.sign_keypair.clone(),
-                cfg.sailfish_peers.committee().clone(),
+                cfg.sailfish_committee.committee().clone(),
                 queue.clone(),
             )
             .with_metrics(cons_metrics);
 
-            Coordinator::new(rbc, cons, cfg.join_sailfish)
+            if let Some(prev) = &cfg.previous_sailfish_committee {
+                // Inform consensus about the previous committee.
+                cons.set_handover_committee(prev.committee().clone())
+            }
+
+            Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
         let decrypter = {
-            let keyset = Keyset::new(1, cfg.decrypt_peers.committee().size());
+            let keyset = Keyset::new(1, cfg.decrypt_committee.committee().size());
 
-            let met = NetworkMetrics::new("decrypt", metrics, cfg.decrypt_peers.parties().copied());
+            let met =
+                NetworkMetrics::new("decrypt", metrics, cfg.decrypt_committee.parties().copied());
 
             let net = Network::create(
                 "decrypt",
-                cfg.decrypt_bind,
+                cfg.decrypt_addr,
                 cfg.sign_keypair.clone(), // same auth
                 cfg.dh_keypair.clone(),   // same auth
-                cfg.decrypt_peers.entries(),
+                cfg.decrypt_committee.entries(),
                 met,
             )
             .await?;
@@ -225,9 +165,9 @@ impl Sequencer {
             Decrypter::new(
                 public_key,
                 Overlay::new(net),
-                CommitteeVec::singleton(cfg.decrypt_peers.committee().clone()),
+                CommitteeVec::singleton(cfg.decrypt_committee.committee().clone()),
                 keyset,
-                cfg.dec_sk,
+                cfg.decryption_key,
             )
         };
 
@@ -239,7 +179,10 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(cfg.sailfish_peers.committee().clone(), cfg.index),
+            includer: Includer::new(
+                cfg.sailfish_committee.committee().clone(),
+                cfg.delayed_inbox_index,
+            ),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,
