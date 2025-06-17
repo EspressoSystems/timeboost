@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::VecDeque;
 
 use alloy_eips::eip2718::Encodable2718;
 use prost::Message;
@@ -9,14 +9,14 @@ use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 #[allow(unused)]
 pub struct Forwarder {
-    retry_cache: BTreeMap<u64, ProtoInclusionList>,
+    retry_cache: VecDeque<ProtoInclusionList>,
     stream: Option<TcpStream>,
 }
 
 impl Forwarder {
     pub fn new() -> Self {
         Self {
-            retry_cache: BTreeMap::new(),
+            retry_cache: VecDeque::new(),
             stream: None,
         }
     }
@@ -43,21 +43,21 @@ impl Forwarder {
                 timestamp: **tx.time(),
             })
             .collect();
-        let list = ProtoInclusionList {
+        let inclusion = ProtoInclusionList {
             round,
             encoded_txns,
             consensus_timestamp: *time,
         };
         if self.stream.is_none() {
             if let Err(e) = self.connect().await {
-                self.retry_cache.insert(round, list);
+                self.retry_cache.push_back(inclusion);
                 return Err(e);
             }
         }
 
         self.retry().await?;
 
-        self.send(list).await?;
+        self.send(inclusion).await?;
         Ok(())
     }
 
@@ -67,16 +67,16 @@ impl Forwarder {
                 .map_err(|_| Error::new(ErrorKind::InvalidInput, "length exceeds u32::MAX"))?;
 
             if let Err(e) = s.write_u32(len).await {
-                self.retry_cache.insert(inclusion.round, inclusion);
+                self.retry_cache.push_back(inclusion);
                 return Err(e);
             }
             if let Err(e) = s.write_all(&inclusion.encode_to_vec()).await {
-                self.retry_cache.insert(inclusion.round, inclusion);
+                self.retry_cache.push_back(inclusion);
                 return Err(e);
             };
             return Ok(());
         }
-        self.retry_cache.insert(inclusion.round, inclusion);
+        self.retry_cache.push_back(inclusion);
         Err(Error::new(
             ErrorKind::NotConnected,
             "not connected to nitro node",
@@ -84,11 +84,10 @@ impl Forwarder {
     }
 
     async fn retry(&mut self) -> Result<(), Error> {
-        if self.retry_cache.is_empty() {
-            return Ok(());
+        while let Some(inclusion) = self.retry_cache.pop_front() {
+            self.send(inclusion).await?;
         }
-        let (_, i) = self.retry_cache.pop_first().unwrap();
-        self.send(i).await?;
+
         Ok(())
     }
 }
@@ -96,7 +95,7 @@ impl Forwarder {
 #[cfg(test)]
 mod tests {
 
-    use std::{collections::BTreeMap, io::Read, net::TcpListener};
+    use std::{collections::VecDeque, io::Read, net::TcpListener};
 
     use super::Forwarder;
     use prost::Message;
@@ -121,7 +120,7 @@ mod tests {
     async fn test_forward() {
         init_logging();
         let mut f = Forwarder {
-            retry_cache: BTreeMap::new(),
+            retry_cache: VecDeque::new(),
             stream: None,
         };
         let r = f.connect().await;
