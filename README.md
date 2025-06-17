@@ -24,7 +24,7 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost`: Contains the core implementation of the decentralized Timeboost builder protocol.
 - `timeboost-builder`: Contains the builder implementation for the Timeboost protocol.
 - `timeboost-sequencer`: Contains the sequencer implementation for the Timeboost protocol.
-- `timeboost-types`: Contains essential type definitions of timeboost.
+- `timeboost-types`: Contains essential type definitions of Timeboost.
 - `timeboost-crypto`: Contains the threshold encryption scheme used by timeboost.
 - `timeboost-utils`: Contains some utility functions.
 - `yapper`: Transaction submission test tool.
