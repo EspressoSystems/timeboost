@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
 blake3 = { workspace = true }
 bincode = { workspace = true }
 bimap = { workspace = true }
@@ -17,6 +18,7 @@ ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
+prost = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -25,7 +27,6 @@ timeboost-types = { path = "../timeboost-types" }
 timeboost-proto = { path = "../timeboost-proto" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-prost = "0.11"
 
 [dev-dependencies]
 ark-std = { workspace = true }

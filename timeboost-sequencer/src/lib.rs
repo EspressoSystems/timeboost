@@ -32,6 +32,8 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
+use crate::forwarder::Forwarder;
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -60,6 +62,7 @@ struct Task {
     commands: Receiver<Command>,
     output: Sender<Vec<Transaction>>,
     mode: Mode,
+    nitro_forwarder: Forwarder,
 }
 
 enum Command {
@@ -174,6 +177,9 @@ impl Sequencer {
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
 
+        let mut f = Forwarder::new();
+        let _ = f.connect().await;
+
         let task = Task {
             kpair: cfg.sign_keypair,
             label: public_key,
@@ -188,6 +194,7 @@ impl Sequencer {
             output: tx,
             commands: cr,
             mode: Mode::Passive,
+            nitro_forwarder: f,
         };
 
         Ok(Self {
@@ -292,8 +299,11 @@ impl Task {
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
+                        let r = incl.round();
+                        let t = incl.timestamp();
                         let txs = self.sorter.sort(incl);
                         if !txs.is_empty() {
+                            let _ = self.nitro_forwarder.try_send(txs.clone(), *r, t).await;
                             self.output.send(txs).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
