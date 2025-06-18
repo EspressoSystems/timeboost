@@ -196,7 +196,6 @@ async fn main() -> Result<()> {
 
     let is_recover = !cli.ignore_stamp && cli.stamp.is_file();
 
-    // Create stamp file with improved error handling
     tokio::fs::File::create(&cli.stamp)
         .await
         .with_context(|| format!("Failed to create stamp file: {:?}", cli.stamp))?
