@@ -378,7 +378,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                 continue
             }
             // Remove all messages from the old committee starting at round.
-            m.map.retain(|d, _| d.round() == round)
+            m.map.retain(|d, _| d.round().committee() == round.committee())
         }
         Ok(())
     }
