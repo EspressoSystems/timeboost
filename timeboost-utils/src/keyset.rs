@@ -158,7 +158,8 @@ mod tests {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
         "dec_share": "jbJKBjBMYvZhrtFwzDohY5rWSvVSsSu2X5qjQyFJAZQCcF"
-      }
+      },
+      "nitro_port": 55000
     }
   ],
   "dec_keyset": {
