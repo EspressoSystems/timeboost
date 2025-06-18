@@ -328,14 +328,14 @@ impl<T: Committable> Message<T, Unchecked> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Payload<T: Committable> {
-    round: RoundNumber,
+    round: Round,
     source: PublicKey,
     data: T,
     evidence: Evidence,
 }
 
 impl<T: Committable> Payload<T> {
-    pub fn new(round: RoundNumber, source: PublicKey, data: T, evidence: Evidence) -> Self {
+    pub fn new(round: Round, source: PublicKey, data: T, evidence: Evidence) -> Self {
         Self {
             round,
             source,
@@ -344,7 +344,7 @@ impl<T: Committable> Payload<T> {
         }
     }
 
-    pub fn round(&self) -> RoundNumber {
+    pub fn round(&self) -> Round {
         self.round
     }
 
@@ -368,7 +368,7 @@ impl<T: Committable> Payload<T> {
         self.evidence
     }
 
-    pub fn into_parts(self) -> (RoundNumber, PublicKey, T, Evidence) {
+    pub fn into_parts(self) -> (Round, PublicKey, T, Evidence) {
         (self.round, self.source, self.data, self.evidence)
     }
 }

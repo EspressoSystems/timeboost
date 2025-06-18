@@ -536,7 +536,7 @@ impl Simulator {
                 Action::Deliver(data) => {
                     let k = self.resolve.get(&data.source()).expect("known public key");
                     self.events
-                        .push(Event::Deliver(self.time, party, data.round(), k))
+                        .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }
                 Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
             }

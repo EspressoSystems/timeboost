@@ -108,7 +108,7 @@ async fn run(
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
-                                info!(round_number = *payload.round(), "payload delivered");
+                                info!(round_number = %payload.round().num(), "payload delivered");
                             } else if let Err(e) = coordinator.execute(a).await {
                                 tracing::error!("Error receiving message: {}", e);
                             }
@@ -136,7 +136,7 @@ async fn run(
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
-                                info!(round_number = *payload.round(), "payload delivered");
+                                info!(round_number = %payload.round().num(), "payload delivered");
                             } else if let Err(e) = coordinator.execute(a).await {
                                 tracing::error!("Error receiving message: {}", e);
                             }

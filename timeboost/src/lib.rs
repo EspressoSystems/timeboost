@@ -21,6 +21,7 @@ use vbs::version::StaticVersion;
 
 pub use config::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
+pub use timeboost_crypto as crypto;
 pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 

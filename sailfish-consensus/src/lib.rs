@@ -857,16 +857,16 @@ where
                 .vertex_range(RoundNumber::genesis() + 1..)
                 .filter(|w| self.dag.is_connected(&v, w))
             {
-                let r = to_deliver.round().data().num();
+                let r = to_deliver.round().data();
                 let s = *to_deliver.source();
-                if self.delivered.contains(&(r, s)) {
+                if self.delivered.contains(&(r.num(), s)) {
                     continue;
                 }
                 let b = to_deliver.payload().clone();
                 let e = to_deliver.evidence().clone();
                 info!(node = %self.public_key(), vertex = %to_deliver, "deliver");
-                actions.push(Action::Deliver(Payload::new(r, s, b, e)));
-                self.delivered.insert((r, s));
+                actions.push(Action::Deliver(Payload::new(*r, s, b, e)));
+                self.delivered.insert((r.num(), s));
             }
         }
         // If there is an upcoming committee change, start the clock and
@@ -1171,14 +1171,14 @@ mod tests {
     use multisig::Keypair;
     use sailfish_types::{Evidence, Round, Timestamp, math};
 
-    use super::{Action, ConsensusTime, Payload, RoundNumber, tick};
+    use super::{Action, ConsensusTime, Payload, tick};
 
     #[test]
     fn consensus_time() {
         const N: usize = 19; // number of timestamps
         arbtest(|u| {
             // Some fake values of no concern to this test:
-            let r = RoundNumber::from(u64::arbitrary(u)?);
+            let r = Round::new(u64::arbitrary(u)?, u64::arbitrary(u)?);
             let k = Keypair::generate().public_key();
             let e = Evidence::Genesis;
 

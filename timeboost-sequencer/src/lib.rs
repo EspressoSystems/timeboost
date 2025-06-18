@@ -337,7 +337,7 @@ impl Task {
                 if let Action::Deliver(payload) = action {
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
-                            round = payload.round();
+                            round = payload.round().num();
                             evidence = payload.into_evidence();
                             lists.push(data)
                         }
