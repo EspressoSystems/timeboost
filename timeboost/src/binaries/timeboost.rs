@@ -196,10 +196,22 @@ async fn main() -> Result<()> {
 
     let is_recover = !cli.ignore_stamp && cli.stamp.is_file();
 
+    // Ensure parent directory exists before creating stamp file
+    if let Some(parent) = cli.stamp.parent() {
+        if !parent.exists() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("Failed to create parent directory for stamp file: {:?}", parent))?;
+        }
+    }
+
+    // Create stamp file with proper error handling
     tokio::fs::File::create(&cli.stamp)
-        .await?
+        .await
+        .with_context(|| format!("Failed to create stamp file: {:?}", cli.stamp))?
         .sync_all()
-        .await?;
+        .await
+        .with_context(|| "Failed to sync stamp file to disk")?;
 
     let config = TimeboostConfig::builder()
         .metrics_port(cli.metrics_port)
