@@ -234,7 +234,7 @@ fn basic_liveness() {
                                 delivered
                                     .entry(*id)
                                     .or_default()
-                                    .push((data.round(), data.source()));
+                                    .push((data.round().num(), data.source()));
                             }
                             continue;
                         }

@@ -46,6 +46,34 @@ pub struct SequencerConfig {
 }
 
 impl SequencerConfig {
+    pub fn sign_keypair(&self) -> &Keypair {
+        &self.sign_keypair
+    }
+
+    pub fn dh_keypair(&self) -> &x25519::Keypair {
+        &self.dh_keypair
+    }
+
+    pub fn sailfish_address(&self) -> &net::Address {
+        &self.sailfish_addr
+    }
+
+    pub fn sailfish_committee(&self) -> &AddressableCommittee {
+        &self.sailfish_committee
+    }
+
+    pub fn previous_sailfish_committee(&self) -> Option<&AddressableCommittee> {
+        self.previous_sailfish_committee.as_ref()
+    }
+
+    pub fn decrypt_address(&self) -> &net::Address {
+        &self.decrypt_addr
+    }
+
+    pub fn decrypt_committee(&self) -> &AddressableCommittee {
+        &self.decrypt_committee
+    }
+
     pub fn is_recover(&self) -> bool {
         self.recover
     }

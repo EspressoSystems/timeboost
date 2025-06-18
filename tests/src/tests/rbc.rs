@@ -123,7 +123,7 @@ fn small_committee() {
         loop {
             for a in actions {
                 if let Action::Deliver(data) = a {
-                    if data.round() >= 3.into() {
+                    if data.round().num() >= 3.into() {
                         return Ok(());
                     }
                 } else {
@@ -181,7 +181,7 @@ fn medium_committee() {
         loop {
             for a in actions {
                 if let Action::Deliver(data) = a {
-                    if data.round() >= 3.into() {
+                    if data.round().num() >= 3.into() {
                         return Ok(());
                     }
                 } else {
@@ -239,13 +239,13 @@ fn medium_committee_partition_network() {
 
             for a in actions.clone() {
                 if let Action::Deliver(data) = a {
-                    if data.round() == 3.into() {
+                    if data.round().num() == 3.into() {
                         turmoil::partition("E", "A");
                         turmoil::partition("E", "B");
                         turmoil::partition("E", "C");
                         turmoil::partition("E", "D");
                     }
-                    if data.round() >= 20.into() {
+                    if data.round().num() >= 20.into() {
                         return Ok(());
                     }
                 } else {
