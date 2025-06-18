@@ -129,9 +129,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_forward() {
-        init_logging();
+        let p = portpicker::pick_unused_port().unwrap();
         let mut f = NitroForwarder {
-            nitro_port: 55000,
+            nitro_port: p,
             retry_cache: BTreeMap::new(),
             stream: None,
         };
