@@ -48,13 +48,13 @@ impl NitroForwarder {
         };
 
         while let Some((_, retry)) = self.retry_cache.pop_first() {
-            if let Err(e) = self.forward(&retry).await {
+            if let Err(e) = self.write(&retry).await {
                 self.on_failure(vec![retry, inclusion]).await?;
                 return Err(e);
             }
         }
 
-        if let Err(e) = self.forward(&inclusion).await {
+        if let Err(e) = self.write(&inclusion).await {
             self.on_failure(vec![inclusion]).await?;
             return Err(e);
         }
@@ -70,7 +70,7 @@ impl NitroForwarder {
         Ok(())
     }
 
-    async fn forward(&mut self, inclusion: &InclusionList) -> Result<(), Error> {
+    async fn write(&mut self, inclusion: &InclusionList) -> Result<(), Error> {
         self.connect().await?;
 
         let len = u32::try_from(inclusion.encoded_len())
@@ -89,7 +89,6 @@ impl NitroForwarder {
         for i in incls {
             self.retry_cache.insert(i.round, i);
         }
-        tracing::error!("retry cache len: {}", self.retry_cache.len());
         if let Some(stream) = &mut self.stream.take() {
             // in case of bad tcp connection close stream and create new one
             self.stream = None;
