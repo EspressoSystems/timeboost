@@ -217,6 +217,7 @@ where
     /// If a consensus instance with the same committee ID already exists.
     pub fn set_next_consensus(&mut self, mut cons: Consensus<T>) -> Vec<Action<T>> {
         assert!(!self.contains(cons.committee().id()));
+        cons.set_handover_committee(self.current_consensus().committee().clone());
         let mut actions = Vec::new();
         for (_, m) in self.buffer.drain() {
             if m.committee() == cons.committee().id() {
