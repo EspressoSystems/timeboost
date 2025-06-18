@@ -2,9 +2,9 @@ use std::error::Error;
 
 use async_trait::async_trait;
 use committable::Committable;
-use multisig::{CommitteeId, PublicKey, Validated};
+use multisig::{PublicKey, Validated};
 
-use crate::{Message, RoundNumber};
+use crate::{Message, Round, RoundNumber};
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
@@ -32,7 +32,7 @@ pub trait Comm<T: Committable> {
     }
 
     /// Switch over to a set of peers.
-    async fn use_committee(&mut self, _: CommitteeId) -> Result<(), Self::Err> {
+    async fn use_committee(&mut self, _: Round) -> Result<(), Self::Err> {
         Ok(())
     }
 }

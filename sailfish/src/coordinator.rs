@@ -278,7 +278,7 @@ where
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
-                    self.comm.use_committee(r.committee()).await?;
+                    self.comm.use_committee(r).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
             }
@@ -307,7 +307,7 @@ where
             Action::UseCommittee(r) => {
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
-                    self.comm.use_committee(r.committee()).await?;
+                    self.comm.use_committee(r).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
             }
