@@ -321,10 +321,12 @@ impl Task {
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
                     Some(Command::NextCommittee(t, a, b)) => {
-                        let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
-                        self.sailfish.set_next_committee(t, a.committee().clone(), a).await?;
-                        let actions = self.sailfish.set_next_consensus(cons);
-                        candidates = self.execute(actions).await?
+                        self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
+                        if a.committee().contains_key(&self.kpair.public_key()) {
+                            let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
+                            let acts = self.sailfish.set_next_consensus(cons);
+                            candidates = self.execute(acts).await?
+                        }
                     }
                     None => {
                         return Err(TimeboostError::ChannelClosed)
@@ -346,7 +348,7 @@ impl Task {
                 if let Action::Deliver(payload) = action {
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
-                            round = payload.round();
+                            round = payload.round().num();
                             evidence = payload.into_evidence();
                             lists.push(data)
                         }

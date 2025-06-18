@@ -11,8 +11,8 @@ use cliquenet::{
 };
 use committable::{Commitment, Committable};
 use multisig::{Certificate, Envelope, PublicKey, VoteAccumulator};
-use multisig::{Unchecked, Validated, CommitteeId};
-use sailfish_types::{Evidence, Message, RoundNumber, Vertex};
+use multisig::{Unchecked, Validated};
+use sailfish_types::{Evidence, Message, Round, RoundNumber, Vertex};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration, Instant, Interval};
@@ -317,8 +317,8 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
                                 }
                             }
                         }
-                        Some(Command::UseCommittee(c)) => {
-                            if let Err(err) = self.use_committee(c).await {
+                        Some(Command::UseCommittee(r)) => {
+                            if let Err(err) = self.use_committee(r).await {
                                 if matches!(err, RbcError::Shutdown) {
                                     debug!(node = %self.key, "network went down");
                                     return
@@ -359,11 +359,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     ///
     /// Peers that do not exist in the given committee are removed from the
     /// network and all committee peers are assigned an active role.
-    async fn use_committee(&mut self, id: CommitteeId) -> RbcResult<()> {
-        debug!(node = %self.key, committee = %id, "use committee");
-        let Some(committee) = self.config.committees.get(id) else {
-            error!(node = %self.key, %id, "committee to use does not exist");
-            return Err(RbcError::NoCommittee(id))
+    async fn use_committee(&mut self, round: Round) -> RbcResult<()> {
+        debug!(node = %self.key, %round, "use committee");
+        let Some(committee) = self.config.committees.get(round.committee()) else {
+            error!(node = %self.key, id = %round.committee(), "committee to use does not exist");
+            return Err(RbcError::NoCommittee(round.committee()))
         };
         let old = self.comm
             .parties()
@@ -372,7 +372,11 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             .copied();
         self.comm.remove(old.collect()).await?;
         self.comm.assign(Role::Active, committee.parties().copied().collect()).await?;
-        self.config.committee_id = id;
+        self.config.committee_id = round.committee();
+        for (_, m) in self.buffer.range_mut(round.num() ..) {
+            // Remove all messages from the old committee starting at round.
+            m.map.retain(|d, _| d.round().committee() == round.committee())
+        }
         Ok(())
     }
 
@@ -623,7 +627,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         if let Some(messages) = self.buffer.get(&digest.round().num()) {
             if let Some(d) = messages.digest(&src) {
                 if d != digest {
-                    warn!(node = %self.key, %src, "multiple proposals received");
+                    warn!(node = %self.key, %src, fst = %d, snd = %digest, "multiple proposals received");
                     return Err(RbcError::InvalidMessage);
                 }
             }
@@ -948,7 +952,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Ok(());
         }
 
-        warn!(node = %self.key, %src, "ignoring get request for data we do not have");
+        warn!(node = %self.key, %src, %digest, "ignoring get request for data we do not have");
 
         Ok(())
     }
