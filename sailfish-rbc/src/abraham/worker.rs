@@ -373,10 +373,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         self.comm.remove(old.collect()).await?;
         self.comm.assign(Role::Active, committee.parties().copied().collect()).await?;
         self.config.committee_id = round.committee();
-        for (r, m) in &mut self.buffer {
-            if *r < round.num() {
-                continue
-            }
+        for (_, m) in self.buffer.range_mut(round.num() ..) {
             // Remove all messages from the old committee starting at round.
             m.map.retain(|d, _| d.round().committee() == round.committee())
         }
