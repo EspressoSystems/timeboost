@@ -111,7 +111,6 @@ mod tests {
     use prost::Message;
     use timeboost_proto::inclusion_list::{InclusionList, Transaction};
     use timeboost_types::Timestamp;
-    use timeboost_utils::types::logging::init_logging;
     use tokio::io::AsyncWriteExt;
     #[test]
     fn simple_encode_and_decode() {
