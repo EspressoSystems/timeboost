@@ -213,6 +213,7 @@ async fn main() -> Result<()> {
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .producer_addr(my_keyset.producer_address.clone())
         .recover(is_recover)
+        .nitro_port(my_keyset.nitro_port)
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;

@@ -128,6 +128,7 @@ where
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())
                 .decrypt_committee(de_committee.clone())
+                .nitro_port(portpicker::pick_unused_port().unwrap())
                 .recover(false)
         })
         .map(move |b| {

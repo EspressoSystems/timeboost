@@ -24,6 +24,7 @@ pub struct NodeInfo {
     pub producer_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
+    pub nitro_port: u16,
 
     #[serde(default)]
     pub private: Option<PrivateKeys>,
