@@ -214,15 +214,11 @@ async fn main() -> Result<()> {
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .producer_addr(my_keyset.producer_address.clone())
-        .recover(is_recover);
+        .maybe_nitro_addr(my_keyset.nitro_addr.clone())
+        .recover(is_recover)
+        .build();
 
-    let config = if let Some(nitro_addr) = my_keyset.nitro_addr {
-        builder.nitro_addr(nitro_addr).build()
-    } else {
-        builder.build()
-    };
-
-    let timeboost = Timeboost::new(config, tb_app_rx).await?;
+    let timeboost = Timeboost::new(builder, tb_app_rx).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {

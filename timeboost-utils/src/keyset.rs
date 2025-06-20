@@ -1,4 +1,4 @@
-use std::{fmt, fs, net::SocketAddr, path::Path, time::Duration};
+use std::{fmt, fs, path::Path, time::Duration};
 
 use anyhow::Result;
 use cliquenet::Address;

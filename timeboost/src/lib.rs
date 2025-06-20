@@ -51,10 +51,9 @@ impl Timeboost {
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
-        let f = if let Some(nitro_addr) = cfg.nitro_addr {
+        let f = if let Some(nitro_addr) = &cfg.nitro_addr {
             Some(NitroForwarder::connect(nitro_addr).await?)
         } else {
-            tracing::error!("nothing!");
             None
         };
 

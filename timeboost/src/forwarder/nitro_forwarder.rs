@@ -1,31 +1,33 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{collections::VecDeque, net::SocketAddr};
 
+use cliquenet::Address;
 use std::io::{Error, ErrorKind};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tracing::{info, warn};
 
 use crate::forwarder::data::Data;
 
 pub struct NitroForwarder {
     retry_cache: VecDeque<Data>,
     stream: Arc<Mutex<TcpStream>>,
-    addr: SocketAddr,
+    addr: Address,
     jh: JoinHandle<()>,
 }
 
 impl NitroForwarder {
-    pub async fn connect(addr: SocketAddr) -> Result<Self, Error> {
-        let s = timeout(Duration::from_secs(5), TcpStream::connect(addr)).await??;
+    pub async fn connect(addr: &Address) -> Result<Self, Error> {
+        let s = Self::try_get_stream(addr).await?;
         s.set_nodelay(true)?;
         Ok(Self {
             retry_cache: VecDeque::new(),
             stream: Arc::new(Mutex::new(s)),
-            addr,
+            addr: addr.clone(),
             jh: tokio::spawn(async {}),
         })
     }
@@ -60,38 +62,41 @@ impl NitroForwarder {
         }
     }
 
+    async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
+        match addr {
+            Address::Inet(a, p) => {
+                timeout(Duration::from_secs(5), TcpStream::connect((*a, *p))).await?
+            }
+            Address::Name(h, p) => {
+                timeout(Duration::from_secs(5), TcpStream::connect((h.as_ref(), *p))).await?
+            }
+        }
+    }
+
     fn spawn_reconnect(&mut self) {
         if !self.jh.is_finished() {
             return;
         }
-        let addr = self.addr;
+        let addr = self.addr.clone();
         let old = Arc::clone(&self.stream);
         self.jh = tokio::spawn(async move {
             for time in [0, 1, 3, 5] {
-                match timeout(Duration::from_secs(5), TcpStream::connect(addr)).await {
-                    Ok(Ok(s)) => {
-                        tracing::info!("reconnected successfully to nitro node");
+                let r = Self::try_get_stream(&addr).await;
+                match r {
+                    Ok(s) => {
                         if let Err(e) = s.set_nodelay(true) {
-                            tracing::warn!("failed to set nodelay: {}", e);
+                            warn!("failed to set nodelay: {}", e);
                             continue;
                         }
+                        info!("reconnected successfully to nitro node");
                         let mut stream = old.lock().await;
                         *stream = s;
                         break;
                     }
-                    Ok(Err(e)) => {
-                        tracing::warn!(
-                            "reconnect attempt failed. next retry in: {}, error: {}",
-                            time,
-                            e
-                        );
-                        sleep(Duration::from_secs(time)).await;
-                    }
                     Err(e) => {
-                        tracing::warn!(
+                        warn!(
                             "reconnect attempt timed out. next retry in: {}, error: {}",
-                            time,
-                            e
+                            time, e
                         );
                         sleep(Duration::from_secs(time)).await;
                     }
@@ -112,6 +117,7 @@ mod tests {
     use crate::forwarder::data::Data;
 
     use super::NitroForwarder;
+    use cliquenet::Address;
     use prost::Message;
     use timeboost_proto::proto_types::{InclusionList, Transaction};
     use timeboost_types::Timestamp;
@@ -141,8 +147,9 @@ mod tests {
         init_logging();
 
         let p = portpicker::pick_unused_port().expect("available port");
-        let addr = std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
-        let l = TcpListener::bind(addr).await.expect("socket to be bound");
+        let a = std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
+        let addr = &Address::from(a);
+        let l = TcpListener::bind(a).await.expect("socket to be bound");
         let mut f = NitroForwarder::connect(addr)
             .await
             .expect("forwarder connection to succeed");
@@ -162,7 +169,7 @@ mod tests {
             assert_eq!(f.retry_cache.len() as u64, i + 1);
         }
 
-        let l = TcpListener::bind(addr).await.expect("listener to start");
+        let l = TcpListener::bind(a).await.expect("listener to start");
         let (mut s, _) = l.accept().await.expect("connection to be established");
 
         // wait for reconnect

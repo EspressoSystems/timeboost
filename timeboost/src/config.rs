@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};

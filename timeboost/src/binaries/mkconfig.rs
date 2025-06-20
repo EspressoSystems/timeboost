@@ -1,4 +1,4 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::num::NonZeroU8;
 use std::{io, iter};
 
@@ -40,7 +40,7 @@ struct Args {
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
-    nitro_addr: Option<SocketAddr>,
+    nitro_addr: Option<Address>,
 }
 
 /// How should addresses be updated?
@@ -86,7 +86,7 @@ impl Args {
                         dh_key: xp.secret_key(),
                         dec_share: share.clone(),
                     }),
-                    nitro_addr: self.nitro_addr,
+                    nitro_addr: self.nitro_addr.clone(),
                 })
             })
     }
