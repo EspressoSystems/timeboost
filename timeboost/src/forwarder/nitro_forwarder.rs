@@ -20,11 +20,11 @@ pub struct NitroForwarder {
 
 impl NitroForwarder {
     pub async fn connect(addr: SocketAddr) -> Result<Self, Error> {
-        let stream = timeout(Duration::from_secs(5), TcpStream::connect(addr)).await??;
-        stream.set_nodelay(true)?;
+        let s = timeout(Duration::from_secs(5), TcpStream::connect(addr)).await??;
+        s.set_nodelay(true)?;
         Ok(Self {
             retry_cache: VecDeque::new(),
-            stream: Arc::new(Mutex::new(stream)),
+            stream: Arc::new(Mutex::new(s)),
             addr,
             jh: tokio::spawn(async {}),
         })
@@ -55,10 +55,7 @@ impl NitroForwarder {
 
         let mut buf = [0u8; 1];
         match timeout(Duration::from_secs(5), s.read_exact(&mut buf)).await {
-            Ok(r) => {
-                r?;
-                Ok(())
-            }
+            Ok(r) => r.map(|_| ()),
             Err(_) => Err(Error::new(ErrorKind::TimedOut, "read operation timed out")),
         }
     }
@@ -74,6 +71,10 @@ impl NitroForwarder {
                 match timeout(Duration::from_secs(5), TcpStream::connect(addr)).await {
                     Ok(Ok(s)) => {
                         tracing::info!("reconnected successfully to nitro node");
+                        if let Err(e) = s.set_nodelay(true) {
+                            tracing::warn!("failed to set nodelay: {}", e);
+                            continue;
+                        }
                         let mut stream = old.lock().await;
                         *stream = s;
                         break;
@@ -153,7 +154,8 @@ mod tests {
         drop(l);
 
         // We should fail, so push onto our retry queue
-        for i in 0..=1 {
+        let max = 3;
+        for i in 0..max {
             let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
             let r = f.send(d).await;
             assert!(r.is_err());
@@ -164,11 +166,11 @@ mod tests {
         let (mut s, _) = l.accept().await.expect("connection to be established");
 
         // wait for reconnect
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(50)).await;
 
         let server = async {
             let mut buf = [0u8; 1024];
-            for i in 0..=2 {
+            for i in 0..=max {
                 let size = s.read_u32().await.expect("size to be read") as usize;
                 s.read_exact(&mut buf[..size])
                     .await
@@ -186,7 +188,7 @@ mod tests {
             sleep(Duration::from_millis(500)).await;
         };
 
-        let d = Data::encode(2, 2, Vec::new()).expect("data to be encoded");
+        let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
         let (r, _) = tokio::join!(f.send(d), server);
         assert!(r.is_ok());
 
