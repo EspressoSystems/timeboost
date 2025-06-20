@@ -1,8 +1,11 @@
+use std::future::pending;
 use std::iter::repeat_with;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
+use futures::FutureExt;
 use futures::stream::{self, StreamExt};
 use metrics::NoMetrics;
 use multisig::{Committee, CommitteeId, Keypair, x25519};
@@ -17,6 +20,7 @@ use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
@@ -128,15 +132,11 @@ where
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())
                 .decrypt_committee(de_committee.clone())
+                .maybe_previous_sailfish_committee(
+                    set_prev.then(|| prev[0].sailfish_committee().clone()),
+                )
                 .recover(false)
-        })
-        .map(move |b| {
-            if set_prev {
-                b.previous_sailfish_committee(prev[0].sailfish_committee().clone())
-                    .build()
-            } else {
-                b.build()
-            }
+                .build()
         })
 }
 
@@ -187,6 +187,8 @@ async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>
 
 /// Run a handover test between a current and a next set of nodes.
 async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
+    const NEXT_COMMITTEE_DELAY: u64 = 5;
+
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
 
@@ -212,10 +214,18 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
             for a in n.init() {
                 n.execute(a).await.unwrap();
             }
+            let mut delayed_cmd = pending().boxed();
             loop {
                 select! {
                     cmd = cmd.recv() => match cmd {
-                        Ok(Cmd::NextCommittee(t, a)) => {
+                        Ok(cmd) => {
+                            let d = Duration::from_secs(rand::random_range(0 .. NEXT_COMMITTEE_DELAY));
+                            delayed_cmd = (async move { sleep(d).await; cmd }).fuse().boxed()
+                        }
+                        Err(err) => panic!("{err}")
+                    },
+                    cmd = &mut delayed_cmd => match cmd {
+                        Cmd::NextCommittee(t, a) => {
                             n.set_next_committee(t, a.committee().clone(), a.clone()).await.unwrap();
                             if a.committee().contains_key(&n.public_key()) {
                                 let d = repeat_with(Timestamp::now);
@@ -224,7 +234,6 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
                                 assert!(n.set_next_consensus(c).is_empty())
                             }
                         }
-                        Err(err) => panic!("{err}")
                     },
                     act = n.next() => {
                         for a in act.unwrap() {
@@ -240,8 +249,11 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
     }
 
     // Inform about upcoming committee change:
-    let t = ConsensusTime(Timestamp::now() + 5);
+    let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
     bcast.send(Cmd::NextCommittee(t, a2)).unwrap();
+
+    let d = Duration::from_secs(rand::random_range(0..NEXT_COMMITTEE_DELAY));
+    sleep(d).await;
 
     let mut add_nodes = Vec::new();
     for cfg in next {
