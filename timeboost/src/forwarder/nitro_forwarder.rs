@@ -6,6 +6,7 @@ use cliquenet::Address;
 use std::io::{Error, ErrorKind};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
@@ -29,6 +30,12 @@ pub struct NitroForwarder {
     jh: JoinHandle<()>,
 }
 
+impl Drop for NitroForwarder {
+    fn drop(&mut self) {
+        self.jh.abort();
+    }
+}
+
 impl NitroForwarder {
     pub async fn connect(addr: &Address) -> Result<Self, Error> {
         let s = Self::try_get_stream(addr).await?;
@@ -41,7 +48,34 @@ impl NitroForwarder {
         })
     }
 
-    pub async fn send(&mut self, d: Data) -> Result<(), Error> {
+    pub async fn go(mut self, mut incls_rx: Receiver<Data>) {
+        loop {
+            tokio::select! {
+                val = incls_rx.recv() => match val {
+                    Some(d) => {
+                        if let Err(e) = self.send(d).await {
+                            warn!("failed to send inclusion list to nitro node. error: {}", e);
+                        }
+                    }
+                    None => {
+                        warn!("disconnected receiver");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
+        match addr {
+            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
+            Address::Name(h, p) => {
+                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
+            }
+        }
+    }
+
+    async fn send(&mut self, d: Data) -> Result<(), Error> {
         while let Some(retry) = self.retry_cache.pop_front() {
             if let Err(e) = self.write_and_wait_for_ack(&retry).await {
                 self.retry_cache.push_front(retry);
@@ -69,7 +103,6 @@ impl NitroForwarder {
             Ok(r) => {
                 r?;
                 if ack[0] != ACK_FLAG {
-                    warn!("forwarder received unexpected ack flag");
                     return Err(Error::new(
                         ErrorKind::Unsupported,
                         "received unexpected acknowledgement flag from server",
@@ -81,41 +114,35 @@ impl NitroForwarder {
         }
     }
 
-    async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
-        match addr {
-            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
-            Address::Name(h, p) => {
-                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
-            }
-        }
-    }
-
     fn spawn_reconnect(&mut self) {
         if !self.jh.is_finished() {
             return;
         }
         let addr = self.addr.clone();
-        let old = Arc::clone(&self.stream);
+        let stream = Arc::clone(&self.stream);
+        info!("spawning nitro reconnect task");
         self.jh = tokio::spawn(async move {
-            for time in [0, 1, 3, 5] {
+            let mut intervals = [0, 1, 3, 5, 10].iter().cycle();
+            loop {
                 let r = Self::try_get_stream(&addr).await;
                 match r {
-                    Ok(s) => {
-                        if let Err(e) = s.set_nodelay(true) {
+                    Ok(new) => {
+                        if let Err(e) = new.set_nodelay(true) {
                             warn!("failed to set nodelay: {}", e);
                             continue;
                         }
                         info!("forwarder reconnected successfully to nitro node");
-                        let mut stream = old.lock().await;
-                        *stream = s;
+                        let mut s = stream.lock().await;
+                        *s = new;
                         break;
                     }
                     Err(e) => {
+                        let interval = intervals.next().expect("cycle to never end");
                         warn!(
                             "forwarder reconnect attempt failed with error: {}. retry in: {}",
-                            time, e
+                            interval, e
                         );
-                        sleep(Duration::from_secs(time)).await;
+                        sleep(Duration::from_secs(*interval)).await;
                     }
                 }
             }

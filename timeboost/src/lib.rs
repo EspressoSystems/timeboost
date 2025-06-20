@@ -13,7 +13,7 @@ use timeboost_sequencer::Sequencer;
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tracing::{error, info, instrument};
@@ -41,7 +41,7 @@ pub struct Timeboost {
     prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
     children: Vec<JoinHandle<()>>,
-    nitro_forwarder: Option<NitroForwarder>,
+    incls_tx: Option<Sender<Data>>,
 }
 
 impl Timeboost {
@@ -51,12 +51,21 @@ impl Timeboost {
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
-        let f = if let Some(nitro_addr) = &cfg.nitro_addr {
-            Some(NitroForwarder::connect(nitro_addr).await?)
+        // TODO: Once we have e2e listener this check wont be needed
+        let (tx, task) = if let Some(nitro_addr) = &cfg.nitro_addr {
+            let (tx, rx) = channel(1000);
+            let f = NitroForwarder::connect(nitro_addr).await?;
+            (Some(tx), Some(tokio::spawn(f.go(rx))))
         } else {
-            None
+            (None, None)
         };
 
+        // TODO: Once we have e2e listener this check wont be needed
+        let children = if let Some(task) = task {
+            vec![task]
+        } else {
+            vec![]
+        };
         Ok(Self {
             label: cfg.sign_keypair.public_key(),
             config: cfg,
@@ -65,8 +74,8 @@ impl Timeboost {
             producer: blk,
             prometheus: pro,
             _metrics: met,
-            children: Vec::new(),
-            nitro_forwarder: f,
+            children,
+            incls_tx: tx,
         })
     }
 
@@ -88,9 +97,9 @@ impl Timeboost {
                 trx = self.sequencer.next_transactions() => match trx {
                     Ok((trx, r, t)) => {
                         info!(node = %self.label, len = %trx.len(), "next batch of transactions");
-                        if let Some(ref mut f) = self.nitro_forwarder {
+                        if let Some(ref mut tx) = self.incls_tx {
                             let d = Data::encode(r, t, &trx)?;
-                            let _ = f.send(d).await;
+                            let _ = tx.send(d).await;
                         }
                         let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
                         res?
