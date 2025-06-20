@@ -2,7 +2,6 @@ mod config;
 mod decrypt;
 mod include;
 mod metrics;
-mod nitro_forwarder;
 mod queue;
 mod sort;
 
@@ -18,7 +17,7 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::Keyset;
-use timeboost_types::{BundleVariant, Transaction};
+use timeboost_types::{BundleVariant, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -32,8 +31,6 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
-use crate::nitro_forwarder::NitroForwarder;
-
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -42,7 +39,7 @@ pub struct Sequencer {
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
     commands: Sender<Command>,
-    output: Receiver<Vec<Transaction>>,
+    output: Receiver<(Vec<Transaction>, RoundNumber, Timestamp)>,
 }
 
 impl Drop for Sequencer {
@@ -60,9 +57,8 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     commands: Receiver<Command>,
-    output: Sender<Vec<Transaction>>,
+    output: Sender<(Vec<Transaction>, RoundNumber, Timestamp)>,
     mode: Mode,
-    nitro_forwarder: NitroForwarder,
 }
 
 enum Command {
@@ -191,7 +187,6 @@ impl Sequencer {
             output: tx,
             commands: cr,
             mode: Mode::Passive,
-            nitro_forwarder: NitroForwarder::new(cfg.nitro_port),
         };
 
         Ok(Self {
@@ -214,7 +209,9 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transactions(&mut self) -> Result<Vec<Transaction>> {
+    pub async fn next_transactions(
+        &mut self,
+    ) -> Result<(Vec<Transaction>, RoundNumber, Timestamp)> {
         select! {
             txs = self.output.recv() => txs.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
@@ -300,8 +297,7 @@ impl Task {
                         let t = incl.timestamp();
                         let txs = self.sorter.sort(incl);
                         if !txs.is_empty() {
-                            let _ = self.nitro_forwarder.send(&txs, *r, t, 0).await;
-                            self.output.send(txs).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                            self.output.send((txs, r, t)).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {

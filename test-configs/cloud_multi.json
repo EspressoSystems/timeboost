@@ -10,8 +10,7 @@
         "signing_key": "5iBRNWFq7rKJ99ASyrq2gk7BCoy7eyFxLBkRVYV4gT2f",
         "dh_key": "7NqVJPDUDJjPbmG4EzYyw7hcftLUXjYVqW5EB5ofAFq9",
         "dec_share": "jb44wzagZNYMcRZCUGtXnrKKtmn8AwtjRpeHdj3tSfngyD"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8001",
@@ -23,8 +22,7 @@
         "signing_key": "BcM5b4qDxYJfAyMhW5rPtfWNhactTtzHyxewp4W6g88k",
         "dh_key": "AGMjm6NGhR8T9cNudrzQj3mSh3HLC7pNE86zBWXVh74h",
         "dec_share": "iyMQgob5Fd5g1njYPsdWBkXr76VbME2o1y4MK84XYDT9Ct"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8002",
@@ -36,8 +34,7 @@
         "signing_key": "EkQnHcmZXXSdaLDTyPABgF1aDSwHRm9LrxgRtZYoywPU",
         "dh_key": "FJX2pz48TMDtQ2E1yeQr3huZUkjY62SJWuk5c1Mqb5ET",
         "dec_share": "jyk6UAEpdEjignGkakAHdRr7QoLrdxeQQoAPV5WntthrY9"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8003",
@@ -49,8 +46,7 @@
         "signing_key": "6Y7C3iwYLYbziZP3nLFW3BUJAtWi9RXgU1NSQq5uRj8U",
         "dh_key": "DaBuXB7Ye5XRY3nYwHVkqEu56b78hhqdvJuNBFjsYUSp",
         "dec_share": "kE4SXGfY79qpzDbMyVaKGaxpPd3Nq6A1JD3zETV2TZ85g6"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8004",
@@ -62,8 +58,7 @@
         "signing_key": "77XrMDV18fnCJnYLPkvn228TmcoSpnYhSgJoZPiZPJyL",
         "dh_key": "57BRDBvZYf5zt33QaqHJrm7CcaXyPQW2J4SJE4FpZScw",
         "dec_share": "jquUfWcpa676JthjYzbvbKhwNwUWvNq3H2WVCwdBULzo1M"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8005",
@@ -75,8 +70,7 @@
         "signing_key": "8FSVnHVab6xqv3JWrbjgUzt1yShqAqbyawWCbgKHhgRX",
         "dh_key": "3zGe9929LgtPeTmeKzzP6aGXxkSxBmwJS3BtyASTa6Kg",
         "dec_share": "jCMrSZ4syRjmBfaW5bzrEA5k35mf57EVRAbZJoU8NEkwec"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8006",
@@ -88,8 +82,7 @@
         "signing_key": "58VjNQnivzJuB8bQqKTdad63UMko6kH7VgnwmTjciGJV",
         "dh_key": "DLYvELuA8JsaUPt5hHZ9piJMJA2itjB2xhKc2sm8wGh",
         "dec_share": "iz7r8BSmYded3HwETAuq5GjHTsJhs14vbQk6WqaoTxKJYV"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8007",
@@ -101,8 +94,7 @@
         "signing_key": "9KtLS6Ld46BjzyuJLt2jpTaPCcWiatBgy7ZctKUnDkM3",
         "dh_key": "ByF15mWGRTk2CdciysP7ZJywFLi8ebVagtFSUEm5gHz",
         "dec_share": "j7p5pBESjYLhkFFVzXh5H4Eq59rbJcSKq3GAeWSiW7ewZg"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8008",
@@ -114,8 +106,7 @@
         "signing_key": "6iZCeU4stAhyAFK3QpxNhn9crGMhZQqCFFX5wQNfPUVV",
         "dh_key": "EVYR64MJsjtrN7XoxxYejpDicBJMsdAugd6UHLxtxgvC",
         "dec_share": "jTfyATN4qLAgEccCbWNbmgKSs2P1QDyYYZctPKCiu4r3MZ"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8009",
@@ -127,8 +118,7 @@
         "signing_key": "HDmp2ZTLsoSvaAaruQ1vqFcwKULzEDgMGexrdxRbobxZ",
         "dh_key": "EAJkVUcRa3hPJG1tgGUCo7cxp91si2XQBbBWCY89ZHJm",
         "dec_share": "k3KXd6KooPSYqSevpdFemPNfiYeZWarqrHxEx46NJZ3ExG"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8010",
@@ -140,8 +130,7 @@
         "signing_key": "54B3X7VmiqA6PEHDMScXjb8gJgXHN3CoVwgmZJbkbjqU",
         "dh_key": "EPisHSRTgYhSJMUoxjYZdPhGDZqHCt1n1FWYpbYQSsog",
         "dec_share": "jfLmFwAxkXvyqYBUt9TrjvNrf2cma8syf1wh7tpsvYDqwX"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8011",
@@ -153,8 +142,7 @@
         "signing_key": "AS6DJfPYe7fwz3xgEV8qYo3bJANff52iQ2NPf23ZuaBi",
         "dh_key": "8amP3X5YoRnp841fccdG9EkW9CdJa9YxznQa4BTesdte",
         "dec_share": "j5nSv96baZGdyowwBkUoH5GsYQNJCcfaHEtF8NTUFcUd5k"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "timeboost-lb-50d346419d44f480.elb.us-east-2.amazonaws.com:8012",
@@ -166,8 +154,7 @@
         "signing_key": "DDXAiDsQb4oxoCpsDRf2LepfrLXEpxuUFQNTKdxMfvxf",
         "dh_key": "6VUiUKo4LNj8cDeNzyLLf2cmparoixn3MT218xrwH7d9",
         "dec_share": "kEZwPZDVrMHCDL2XEHzbyAbJVxpPUPvvvpTKtdq9sNQgG3"
-      },
-      "nitro_port": 55000
+      }
     }
   ],
   "dec_keyset": {

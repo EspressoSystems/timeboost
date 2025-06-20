@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
@@ -38,7 +40,7 @@ pub struct TimeboostConfig {
     pub(crate) producer_addr: Address,
 
     /// The port of the Arbitrum Nitro node listener where we forward inclusion list to.
-    pub(crate) nitro_port: u16,
+    pub(crate) nitro_addr: Option<SocketAddr>,
 
     #[builder(default = true)]
     pub(crate) recover: bool,
@@ -55,7 +57,6 @@ impl TimeboostConfig {
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
-            .nitro_port(self.nitro_port)
             .build()
     }
 

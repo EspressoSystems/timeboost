@@ -10,8 +10,7 @@
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
         "dec_share": "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8001",
@@ -23,8 +22,7 @@
         "signing_key": "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
         "dh_key": "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
         "dec_share": "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8002",
@@ -36,8 +34,7 @@
         "signing_key": "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
         "dh_key": "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
         "dec_share": "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8003",
@@ -49,8 +46,7 @@
         "signing_key": "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
         "dh_key": "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
         "dec_share": "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8004",
@@ -62,8 +58,7 @@
         "signing_key": "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
         "dh_key": "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         "dec_share": "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX"
-      },
-      "nitro_port": 55000
+      }
     }
   ],
   "dec_keyset": {

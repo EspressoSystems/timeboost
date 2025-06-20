@@ -25,7 +25,11 @@ pub use timeboost_crypto as crypto;
 pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
+use crate::forwarder::data::Data;
+use crate::forwarder::nitro_forwarder::NitroForwarder;
+
 pub mod api;
+pub mod forwarder;
 pub mod metrics;
 
 pub struct Timeboost {
@@ -37,6 +41,7 @@ pub struct Timeboost {
     prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
     children: Vec<JoinHandle<()>>,
+    nitro_forwarder: Option<NitroForwarder>,
 }
 
 impl Timeboost {
@@ -45,6 +50,13 @@ impl Timeboost {
         let met = Arc::new(TimeboostMetrics::new(&*pro));
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
+
+        let f = if let Some(nitro_addr) = cfg.nitro_addr {
+            Some(NitroForwarder::connect(nitro_addr).await?)
+        } else {
+            tracing::error!("nothing!");
+            None
+        };
 
         Ok(Self {
             label: cfg.sign_keypair.public_key(),
@@ -55,6 +67,7 @@ impl Timeboost {
             prometheus: pro,
             _metrics: met,
             children: Vec::new(),
+            nitro_forwarder: f,
         })
     }
 
@@ -74,8 +87,12 @@ impl Timeboost {
                     }
                 },
                 trx = self.sequencer.next_transactions() => match trx {
-                    Ok(trx) => {
+                    Ok((trx, r, t)) => {
                         info!(node = %self.label, len = %trx.len(), "next batch of transactions");
+                        if let Some(ref mut f) = self.nitro_forwarder {
+                            let d = Data::encode(r, t, &trx)?;
+                            let _ = f.send(d).await;
+                        }
                         let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
                         res?
                     }

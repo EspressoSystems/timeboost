@@ -91,7 +91,6 @@ where
             .sailfish_committee(sailfish_committee.clone())
             .decrypt_committee(decrypt_committee.clone())
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
-            .nitro_port(portpicker::pick_unused_port().unwrap())
             .build();
         let pcf = BlockProducerConfig::builder()
             .sign_keypair(kpair)

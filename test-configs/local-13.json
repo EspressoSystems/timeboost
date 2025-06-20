@@ -10,8 +10,7 @@
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
         "dec_share": "j4cJPrjKCXFzNYTkucEKSxXqvG6Km6Hyjk1UWM2JrTkajZ"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8001",
@@ -23,8 +22,7 @@
         "signing_key": "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
         "dh_key": "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
         "dec_share": "k4KV6jkgD774y3yAYNpTuqqrd6xg8v4R99kHLiDwGaE5RA"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8002",
@@ -36,8 +34,7 @@
         "signing_key": "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
         "dh_key": "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
         "dec_share": "k3fokNUop4fQyPvALHap6KUCSpxbKhCtpPCXx6N162s7Cm"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8003",
@@ -49,8 +46,7 @@
         "signing_key": "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
         "dh_key": "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
         "dec_share": "kEL5faZy3Lvv3zw3FxupQWFUnNf3YbmN1542p43ppjDyGW"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8004",
@@ -62,8 +58,7 @@
         "signing_key": "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
         "dh_key": "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         "dec_share": "jWVC1bpSRfRS75zAH3Sfb3Pd63PZKXkmoXGEdgHPtd6Lc3"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8005",
@@ -75,8 +70,7 @@
         "signing_key": "6YJc9asDJQsFFHHg8iX23oL1sySx2EgTGM8CqDd71WMa",
         "dh_key": "Ho9ZZCkP1i6f12fkWGUZucJxX2qbv9L3UbB56sqwjvkw",
         "dec_share": "jVfdLMLkN5KvuYHKh6hYqitsELuefGSGq8MZLcgLMa9XHW"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8006",
@@ -88,8 +82,7 @@
         "signing_key": "6NZdk8EGRSVS7sSjcjMiC8vL4KcSY41ELU6HaKyk1Drk",
         "dh_key": "F5E9cp5qUe4z2wdaRYvEhFMYXaLy4sEX1rwCWRcTH69i",
         "dec_share": "kCtp4nZqu3rdj8C4RzUPpZXC6ADHod6a9TkYSDGdmSqo7b"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8007",
@@ -101,8 +94,7 @@
         "signing_key": "AMJEYXVhS4FfoqfD6VL5nZTNbzJQdtgdxBcVEAwZnLJ3",
         "dh_key": "5zhwDWJ1ut6q871aHCHmH7QRCHDykXjUSEriGTLkwezL",
         "dec_share": "jw28YJTt36EFxLdr1xwiCcHTwPixFLFq52mtyZFGJKv5Cr"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8008",
@@ -114,8 +106,7 @@
         "signing_key": "5mLCMSVT4f8HPqCqdKChxugpMcQ3x1C7hwfEnsTApFfp",
         "dh_key": "2PojAT3g5iqGTrgLhTRKKHqwbeoFhRkzkYLM9AttFoKK",
         "dec_share": "juMGG22fBaNaKd5QZstZPZe8ibVteho18JfKNcrCknCFiX"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8009",
@@ -127,8 +118,7 @@
         "signing_key": "4yhZYmNvAouKFpiYomrV9aH8kUZTLRH2hiCZtJzcAASa",
         "dh_key": "Bk2wY7o2YE9gpu6jxiRSbWiMU88H8s9D9MQGMaF2LJ7h",
         "dec_share": "jTswDFqpwZgNLgGk5Vko2vGkqtwrJGQwwKc8aRrQ9z2k16"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8010",
@@ -140,8 +130,7 @@
         "signing_key": "4DXdtKDNBs1DeLGP7GeqGWeSuX3RgkRhwcT9aXKwzu9p",
         "dh_key": "7X3bBjha3wEUGvCNUWf7627RTqpNFGo6uwUtHM1nFYrW",
         "dec_share": "izViS5iAMLBncNfiiS8iXKz6pLRqaqAqbheTQ793NquTjX"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8011",
@@ -153,8 +142,7 @@
         "signing_key": "FL84xojYc59vAMuKibGA797nvFgCp7uRZfgx3GZN5PK4",
         "dh_key": "BWqUqoQPHgBwQ782YHyJAsvJDAxwTBs6EskCEDmrffuT",
         "dec_share": "k8AMtL9nEgqRh5i5F817LdZRJ1Nx4EZanNDm41Udfka8cA"
-      },
-      "nitro_port": 55000
+      }
     },
     {
       "sailfish_address": "127.0.0.1:8012",
@@ -166,8 +154,7 @@
         "signing_key": "6x7qJcNonz7sJKXDeL3RmhJwiBMSdJfkgqPGdy4qDBp3",
         "dh_key": "7EKaoCRyA56NAuxGVTpVysJkKUCSYosxZFb7ExBrvmBn",
         "dec_share": "k8qbB9r5p7Xw5ZZHnMvyHtqQ9MpWu5DnLdSBD8FcMLDLEX"
-      },
-      "nitro_port": 55000
+      }
     }
   ],
   "dec_keyset": {

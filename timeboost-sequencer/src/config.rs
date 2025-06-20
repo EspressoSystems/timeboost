@@ -43,9 +43,6 @@ pub struct SequencerConfig {
 
     /// The previous Sailfish committee.
     pub(crate) previous_sailfish_committee: Option<AddressableCommittee>,
-
-    /// The port of the Arbitrum Nitro node listener where we forward inclusion list to.
-    pub(crate) nitro_port: u16,
 }
 
 impl SequencerConfig {

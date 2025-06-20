@@ -201,7 +201,7 @@ async fn main() -> Result<()> {
         .sync_all()
         .await?;
 
-    let config = TimeboostConfig::builder()
+    let builder = TimeboostConfig::builder()
         .metrics_port(cli.metrics_port)
         .sailfish_committee(sailfish_committee)
         .decrypt_committee(decrypt_committee)
@@ -212,9 +212,13 @@ async fn main() -> Result<()> {
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .producer_addr(my_keyset.producer_address.clone())
-        .recover(is_recover)
-        .nitro_port(my_keyset.nitro_port)
-        .build();
+        .recover(is_recover);
+
+    let config = if let Some(nitro_addr) = my_keyset.nitro_addr {
+        builder.nitro_addr(nitro_addr).build()
+    } else {
+        builder.build()
+    };
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;
 
