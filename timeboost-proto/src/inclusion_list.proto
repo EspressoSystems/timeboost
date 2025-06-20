@@ -12,5 +12,5 @@ message InclusionList {
     repeated Transaction encoded_txns = 1;
     uint64 round = 2;
     uint64 consensus_timestamp = 3;
-    uint64 delayedMessagesRead = 4;
+    uint64 delayed_messages_read = 4;
 }
