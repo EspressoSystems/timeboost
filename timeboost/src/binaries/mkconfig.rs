@@ -38,7 +38,7 @@ struct Args {
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
 
-    /// The port of the Arbitrum Nitro node listener where we forward inclusion list to.
+    /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<SocketAddr>,
 }
