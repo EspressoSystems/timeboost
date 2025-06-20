@@ -33,13 +33,14 @@ pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
+type Output = (Vec<Transaction>, RoundNumber, Timestamp);
 
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
     commands: Sender<Command>,
-    output: Receiver<(Vec<Transaction>, RoundNumber, Timestamp)>,
+    output: Receiver<Output>,
 }
 
 impl Drop for Sequencer {
@@ -57,7 +58,7 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     commands: Receiver<Command>,
-    output: Sender<(Vec<Transaction>, RoundNumber, Timestamp)>,
+    output: Sender<Output>,
     mode: Mode,
 }
 
@@ -209,9 +210,7 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transactions(
-        &mut self,
-    ) -> Result<(Vec<Transaction>, RoundNumber, Timestamp)> {
+    pub async fn next_transactions(&mut self) -> Result<Output> {
         select! {
             txs = self.output.recv() => txs.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {

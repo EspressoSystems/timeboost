@@ -13,6 +13,15 @@ use tracing::{info, warn};
 
 use crate::forwarder::data::Data;
 
+/// Expected ack value from nitro node
+const ACK_FLAG: u8 = 0xc0;
+
+/// Max. allowed duration of a single TCP connect attempt.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Max. nitro acknowledgement read timeout
+const ACK_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub struct NitroForwarder {
     retry_cache: VecDeque<Data>,
     stream: Arc<Mutex<TcpStream>>,
@@ -55,20 +64,28 @@ impl NitroForwarder {
         s.write_u32(d.len()).await?;
         s.write_all(d.bytes()).await?;
 
-        let mut buf = [0u8; 1];
-        match timeout(Duration::from_secs(5), s.read_exact(&mut buf)).await {
-            Ok(r) => r.map(|_| ()),
+        let mut ack = [0u8; 1];
+        match timeout(ACK_TIMEOUT, s.read_exact(&mut ack)).await {
+            Ok(r) => {
+                r?;
+                if ack[0] != ACK_FLAG {
+                    warn!("forwarder received unexpected ack flag");
+                    return Err(Error::new(
+                        ErrorKind::Unsupported,
+                        "received unexpected acknowledgement flag from server",
+                    ));
+                }
+                Ok(())
+            }
             Err(_) => Err(Error::new(ErrorKind::TimedOut, "read operation timed out")),
         }
     }
 
     async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
         match addr {
-            Address::Inet(a, p) => {
-                timeout(Duration::from_secs(5), TcpStream::connect((*a, *p))).await?
-            }
+            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
             Address::Name(h, p) => {
-                timeout(Duration::from_secs(5), TcpStream::connect((h.as_ref(), *p))).await?
+                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
             }
         }
     }
@@ -88,14 +105,14 @@ impl NitroForwarder {
                             warn!("failed to set nodelay: {}", e);
                             continue;
                         }
-                        info!("reconnected successfully to nitro node");
+                        info!("forwarder reconnected successfully to nitro node");
                         let mut stream = old.lock().await;
                         *stream = s;
                         break;
                     }
                     Err(e) => {
                         warn!(
-                            "reconnect attempt timed out. next retry in: {}, error: {}",
+                            "forwarder reconnect attempt failed with error: {}. retry in: {}",
                             time, e
                         );
                         sleep(Duration::from_secs(time)).await;
@@ -110,11 +127,11 @@ impl NitroForwarder {
 mod tests {
 
     use std::{
-        net::{Ipv4Addr, SocketAddrV4},
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         time::Duration,
     };
 
-    use crate::forwarder::data::Data;
+    use crate::forwarder::{data::Data, nitro_forwarder::ACK_FLAG};
 
     use super::NitroForwarder;
     use cliquenet::Address;
@@ -147,7 +164,7 @@ mod tests {
         init_logging();
 
         let p = portpicker::pick_unused_port().expect("available port");
-        let a = std::net::SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
+        let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let addr = &Address::from(a);
         let l = TcpListener::bind(a).await.expect("socket to be bound");
         let mut f = NitroForwarder::connect(addr)
@@ -155,12 +172,12 @@ mod tests {
             .expect("forwarder connection to succeed");
         let (mut s, _) = l.accept().await.expect("connection to be established");
 
-        // After successful connection simulate nitro going down, close socket
+        // after successful connection simulate nitro going down, close socket
         s.shutdown().await.expect("disconnect");
         drop(s);
         drop(l);
 
-        // We should fail, so push onto our retry queue
+        // we should fail, so push onto our retry queue
         let max = 3;
         for i in 0..max {
             let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
@@ -173,7 +190,7 @@ mod tests {
         let (mut s, _) = l.accept().await.expect("connection to be established");
 
         // wait for reconnect
-        sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(100)).await;
 
         let server = async {
             let mut buf = [0u8; 1024];
@@ -186,13 +203,12 @@ mod tests {
                     InclusionList::decode(&buf[..size]).expect("inclusion list to be decoded");
                 assert_eq!(incl.round, i);
                 assert_eq!(incl.consensus_timestamp, i);
-
-                let ack = [0u8; 1];
+                let ack = [ACK_FLAG; 1];
                 s.write_all(&ack).await.expect("ack to be sent");
             }
 
-            // wait to ensure client receives ack
-            sleep(Duration::from_millis(500)).await;
+            // wait to ensure client receives ack before we teriminate future
+            sleep(Duration::from_millis(100)).await;
         };
 
         let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
