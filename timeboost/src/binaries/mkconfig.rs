@@ -37,6 +37,10 @@ struct Args {
     /// Address modification mode.
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
+
+    /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
+    #[clap(long)]
+    nitro_addr: Option<Address>,
 }
 
 /// How should addresses be updated?
@@ -82,6 +86,7 @@ impl Args {
                         dh_key: xp.secret_key(),
                         dec_share: share.clone(),
                     }),
+                    nitro_addr: self.nitro_addr.clone(),
                 })
             })
     }

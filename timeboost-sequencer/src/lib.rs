@@ -17,7 +17,7 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::Keyset;
-use timeboost_types::{BundleVariant, Transaction};
+use timeboost_types::{BundleVariant, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -33,13 +33,14 @@ pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
+type Output = (Vec<Transaction>, RoundNumber, Timestamp);
 
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
     bundles: BundleQueue,
     commands: Sender<Command>,
-    output: Receiver<Vec<Transaction>>,
+    output: Receiver<Output>,
 }
 
 impl Drop for Sequencer {
@@ -57,7 +58,7 @@ struct Task {
     decrypter: Decrypter,
     sorter: Sorter,
     commands: Receiver<Command>,
-    output: Sender<Vec<Transaction>>,
+    output: Sender<Output>,
     mode: Mode,
 }
 
@@ -209,7 +210,7 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transactions(&mut self) -> Result<Vec<Transaction>> {
+    pub async fn next_transactions(&mut self) -> Result<Output> {
         select! {
             txs = self.output.recv() => txs.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
@@ -291,9 +292,11 @@ impl Task {
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
+                        let r = incl.round();
+                        let t = incl.timestamp();
                         let txs = self.sorter.sort(incl);
                         if !txs.is_empty() {
-                            self.output.send(txs).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                            self.output.send((txs, r, t)).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {

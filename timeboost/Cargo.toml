@@ -10,6 +10,7 @@ until = []
 
 [dependencies]
 alloy-chains = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 ark-std = { workspace = true }
@@ -25,6 +26,8 @@ dashmap = "6.1.0"
 futures = { workspace = true }
 metrics = { path = "../metrics" }
 parking_lot = { workspace = true }
+prost = { workspace = true }
+portpicker = { workspace = true }
 multisig = { path = "../multisig" }
 rand = { workspace = true }
 reqwest = { workspace = true }
@@ -39,6 +42,7 @@ timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
+timeboost-proto = { path = "../timeboost-proto" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }

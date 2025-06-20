@@ -37,6 +37,9 @@ pub struct TimeboostConfig {
     /// The bind address for the block producer node.
     pub(crate) producer_addr: Address,
 
+    /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
+    pub(crate) nitro_addr: Option<Address>,
+
     #[builder(default = true)]
     pub(crate) recover: bool,
 }

@@ -27,6 +27,7 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-types`: Contains essential type definitions of Timeboost.
 - `timeboost-crypto`: Contains the threshold encryption scheme used by timeboost.
 - `timeboost-utils`: Contains some utility functions.
+- `timeboost-proto`: Contains protobuf schema and protobuf generated code for inlusion list
 - `yapper`: Transaction submission test tool.
 
 ## MSRV (minimum supported Rust version)
