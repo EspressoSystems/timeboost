@@ -1,15 +1,13 @@
-use std::num::TryFromIntError;
-
 use alloy_eips::Encodable2718;
 use prost::Message;
 use sailfish::types::RoundNumber;
 use timeboost_proto::proto_types::InclusionList;
 use timeboost_types::{Timestamp, Transaction};
 
-pub struct Data(u32, Vec<u8>);
+pub struct Data(u64, Vec<u8>);
 
 impl Data {
-    pub fn len(&self) -> u32 {
+    pub fn len(&self) -> u64 {
         self.0
     }
 
@@ -21,7 +19,7 @@ impl Data {
         &self.1
     }
 
-    pub fn encode<'a, R, T, I>(r: R, t: T, txs: I) -> Result<Self, TryFromIntError>
+    pub fn encode<'a, R, T, I>(r: R, t: T, txs: I) -> Self
     where
         R: Into<RoundNumber>,
         T: Into<Timestamp>,
@@ -43,8 +41,8 @@ impl Data {
         };
 
         let bytes = inclusion.encode_to_vec();
-        let len: u32 = bytes.len().try_into()?;
+        let len: u64 = bytes.len() as u64;
 
-        Ok(Self(len, bytes))
+        Self(len, bytes)
     }
 }

@@ -95,7 +95,7 @@ impl NitroForwarder {
 
     async fn write_and_wait_for_ack(&mut self, d: &Data) -> Result<(), Error> {
         let mut s = self.stream.lock().await;
-        s.write_u32(d.len()).await?;
+        s.write_u64(d.len()).await?;
         s.write_all(d.bytes()).await?;
 
         let mut ack = [0u8; 1];
@@ -139,8 +139,8 @@ impl NitroForwarder {
                     Err(e) => {
                         let interval = intervals.next().expect("cycle to never end");
                         warn!(
-                            "forwarder reconnect attempt failed with error: {}. retry in: {}",
-                            interval, e
+                            "forwarder reconnect attempt failed with error: {}. retry in {} seconds",
+                            e, interval
                         );
                         sleep(Duration::from_secs(*interval)).await;
                     }
@@ -207,7 +207,7 @@ mod tests {
         // we should fail, so push onto our retry queue
         let max = 3;
         for i in 0..max {
-            let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
+            let d = Data::encode(i, i, Vec::new());
             let r = f.send(d).await;
             assert!(r.is_err());
             assert_eq!(f.retry_cache.len() as u64, i + 1);
@@ -222,7 +222,7 @@ mod tests {
         let server = async {
             let mut buf = [0u8; 1024];
             for i in 0..=max {
-                let size = s.read_u32().await.expect("size to be read") as usize;
+                let size = s.read_u64().await.expect("size to be read") as usize;
                 s.read_exact(&mut buf[..size])
                     .await
                     .expect("encoded bytes to be read");
@@ -238,7 +238,7 @@ mod tests {
             sleep(Duration::from_millis(100)).await;
         };
 
-        let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
+        let d = Data::encode(max, max, Vec::new());
         let (r, _) = tokio::join!(f.send(d), server);
         assert!(r.is_ok());
 

@@ -98,7 +98,7 @@ impl Timeboost {
                     Ok((trx, r, t)) => {
                         info!(node = %self.label, len = %trx.len(), "next batch of transactions");
                         if let Some(ref mut tx) = self.incls_tx {
-                            let d = Data::encode(r, t, &trx)?;
+                            let d = Data::encode(r, t, &trx);
                             let _ = tx.send(d).await;
                         }
                         let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
