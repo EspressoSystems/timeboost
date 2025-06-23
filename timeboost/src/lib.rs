@@ -13,7 +13,7 @@ use timeboost_sequencer::Sequencer;
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tracing::{error, info, instrument};
@@ -40,8 +40,8 @@ pub struct Timeboost {
     producer: BlockProducer,
     prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
+    nitro_forwarder: Option<NitroForwarder>,
     children: Vec<JoinHandle<()>>,
-    incls_tx: Option<Sender<Data>>,
 }
 
 impl Timeboost {
@@ -52,20 +52,12 @@ impl Timeboost {
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
         // TODO: Once we have e2e listener this check wont be needed
-        let (tx, task) = if let Some(nitro_addr) = &cfg.nitro_addr {
-            let (tx, rx) = channel(1000);
-            let f = NitroForwarder::connect(nitro_addr).await?;
-            (Some(tx), Some(tokio::spawn(f.go(rx))))
+        let nitro_forwarder = if let Some(nitro_addr) = &cfg.nitro_addr {
+            Some(NitroForwarder::connect(nitro_addr).await?)
         } else {
-            (None, None)
+            None
         };
 
-        // TODO: Once we have e2e listener this check wont be needed
-        let children = if let Some(task) = task {
-            vec![task]
-        } else {
-            vec![]
-        };
         Ok(Self {
             label: cfg.sign_keypair.public_key(),
             config: cfg,
@@ -74,8 +66,8 @@ impl Timeboost {
             producer: blk,
             prometheus: pro,
             _metrics: met,
-            children,
-            incls_tx: tx,
+            nitro_forwarder,
+            children: Vec::new(),
         })
     }
 
@@ -95,13 +87,18 @@ impl Timeboost {
                     }
                 },
                 trx = self.sequencer.next_transactions() => match trx {
-                    Ok((trx, r, t)) => {
-                        info!(node = %self.label, len = %trx.len(), "next batch of transactions");
-                        if let Some(ref mut tx) = self.incls_tx {
-                            let d = Data::encode(r, t, &trx);
-                            let _ = tx.send(d).await;
+                    Ok(o) => {
+                        let (txns, r, t) = o.into_parts();
+                        info!(node = %self.label, len = %txns.len(), "next batch of transactions");
+                        if let Some(ref mut f) = self.nitro_forwarder {
+                            if let Ok(d) = Data::encode(r, t, &txns) {
+                                // TODO: error handling, maybe back pressure
+                                let _ = f.enqueue(d).await;
+                            } else {
+                                error!(node = %self.label, "failed to encode inclusion list")
+                            }
                         }
-                        let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
+                        let res: Result<(), ProducerDown> = self.producer.enqueue(txns).await;
                         res?
                     }
                     Err(err) => {

@@ -33,7 +33,18 @@ pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
-type Output = (Vec<Transaction>, RoundNumber, Timestamp);
+
+pub struct Output {
+    txns: Vec<Transaction>,
+    round: RoundNumber,
+    timestamp: Timestamp,
+}
+
+impl Output {
+    pub fn into_parts(self) -> (Vec<Transaction>, RoundNumber, Timestamp) {
+        (self.txns, self.round, self.timestamp)
+    }
+}
 
 pub struct Sequencer {
     label: PublicKey,
@@ -292,11 +303,11 @@ impl Task {
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
-                        let r = incl.round();
-                        let t = incl.timestamp();
-                        let txs = self.sorter.sort(incl);
-                        if !txs.is_empty() {
-                            self.output.send((txs, r, t)).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        let round = incl.round();
+                        let timestamp = incl.timestamp();
+                        let txns = self.sorter.sort(incl);
+                        if !txns.is_empty() {
+                            self.output.send(Output { txns, round, timestamp }).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
