@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
     io::{Error, ErrorKind},
+    iter::repeat,
     time::Duration,
 };
 
@@ -63,7 +64,7 @@ impl Worker {
                 val = self.incls_rx.recv() => match val {
                     Some(d) => {
                         if let Err(e) = self.send(d).await {
-                            warn!(error = %e, "failed sending inclusion list");
+                            warn!(err = %e, "failed sending inclusion list");
                         }
                     }
                     None => {
@@ -118,7 +119,10 @@ impl Worker {
                 }
                 Ok(())
             }
-            Err(_) => Err(Error::new(ErrorKind::TimedOut, "read operation timed out")),
+            Err(_) => Err(Error::new(
+                ErrorKind::TimedOut,
+                "ack read operation timed out",
+            )),
         }
     }
 
@@ -139,26 +143,28 @@ impl Worker {
         let addr = self.nitro_addr.clone();
         let tx = self.stream_tx.clone();
         self.jh = tokio::spawn(async move {
-            let mut intervals = [0, 1, 3, 5, 10].iter().cycle();
-            loop {
+            for d in [0, 1000, 3000, 6000, 10_000, 15_000]
+                .into_iter()
+                .chain(repeat(20_000))
+            {
                 let r = Self::try_get_stream(&addr).await;
                 match r {
                     Ok(s) => {
                         if let Err(e) = s.set_nodelay(true) {
-                            warn!(error = %e, "failed to set nodelay");
+                            warn!(err = %e, "failed to set nodelay");
                             continue;
                         }
 
                         if let Err(e) = tx.send(s).await {
-                            warn!(error = %e, "failed to send stream");
+                            warn!(err = %e, "failed to send tcp stream");
+                            continue;
                         }
                         info!("reconnected successfully to nitro node");
                         break;
                     }
                     Err(e) => {
-                        let interval = intervals.next().expect("cycle to never end");
-                        warn!(error = %e, interval = %interval, "failed to reconnect to nitro server");
-                        sleep(Duration::from_secs(*interval)).await;
+                        warn!(err = %e, interval = %d, "failed to reconnect to nitro server");
+                        sleep(Duration::from_millis(d)).await;
                     }
                 }
             }
