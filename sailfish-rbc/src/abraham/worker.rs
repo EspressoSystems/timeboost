@@ -448,6 +448,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
 
+        debug_assert!(
+            vertex.data().round().data().num() > self.round.0.num()
+                || vertex.data().evidence().is_handover()
+                || self.round.0.num().is_genesis()
+        );
+
         self.round = (*vertex.data().round().data(), vertex.data().evidence().clone());
 
         let cid = vertex.data().round().data().committee();
