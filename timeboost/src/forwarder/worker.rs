@@ -35,6 +35,12 @@ pub struct Worker {
     jh: JoinHandle<()>,
 }
 
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.jh.abort();
+    }
+}
+
 impl Worker {
     pub async fn connect(addr: &Address, incls_rx: Receiver<Data>) -> Result<Self, Error> {
         let s = Self::try_get_stream(addr).await?;
@@ -78,15 +84,6 @@ impl Worker {
         }
     }
 
-    pub async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
-        match addr {
-            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
-            Address::Name(h, p) => {
-                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
-            }
-        }
-    }
-
     async fn send(&mut self, d: Data) -> Result<(), Error> {
         while let Some(retry) = self.retry_cache.pop_front() {
             if let Err(e) = self.write_and_wait_for_ack(&retry).await {
@@ -122,6 +119,15 @@ impl Worker {
                 Ok(())
             }
             Err(_) => Err(Error::new(ErrorKind::TimedOut, "read operation timed out")),
+        }
+    }
+
+    async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
+        match addr {
+            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
+            Address::Name(h, p) => {
+                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
+            }
         }
     }
 
