@@ -13,7 +13,7 @@ use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Level, debug, enabled, error, info, trace, warn};
 
 pub use dag::Dag;
 pub use metrics::ConsensusMetrics;
@@ -246,13 +246,13 @@ where
     ///
     /// This means we did not receive a leader vertex in a round and
     /// results in a timeout message being broadcasted to all nodes.
-    pub fn timeout(&mut self, r: RoundNumber) -> Vec<Action<T>> {
+    pub fn timeout(&mut self, r: Round) -> Vec<Action<T>> {
         info!(node = %self.public_key(), round = %r, "internal timeout");
-        debug_assert_eq!(r, self.round());
-        let e = if r.is_genesis() {
+        debug_assert_eq!(r.num(), self.round());
+        let e = if r.num().is_genesis() {
             Evidence::Genesis
         } else {
-            self.evidence(r - 1)
+            self.evidence(r.num() - 1)
                 .expect("evidence for previous round exists")
         };
         let t = TimeoutMessage::new(self.committee.id(), e, &self.keypair);
@@ -723,7 +723,15 @@ where
         let r = v.round().data().num();
 
         if v.edges().any(|w| self.dag.vertex(r - 1, w).is_none()) {
-            debug!(node = %self.public_key(), vertex = %v, "not all edges are resolved in dag");
+            if enabled!(Level::DEBUG) {
+                let missing = v.edges().filter(|w| self.dag.vertex(r - 1, w).is_none());
+                debug!(
+                    node    = %self.public_key(),
+                    vertex  = %v,
+                    missing = ?missing.take(3).collect::<Vec<_>>(),
+                    "not all edges are resolved in dag"
+                );
+            }
             return Err(v);
         }
 
@@ -1086,16 +1094,18 @@ where
 
         let round = Round::new(self.round, self.committee.id());
 
+        let evidence = Evidence::Handover(cert);
+
         let vertex = Vertex::new(
             round,
-            Evidence::Handover(cert),
+            evidence.clone(),
             self.datasource.next(self.round),
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
 
         actions.extend([
-            Action::UseCommittee(round),
+            Action::UseCommittee(round, evidence),
             Action::SendProposal(env),
             Action::ResetTimer(Round::new(self.round, self.committee.id())),
         ]);

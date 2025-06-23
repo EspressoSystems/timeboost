@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use committable::Committable;
 use multisig::{PublicKey, Validated};
 
-use crate::{Message, Round, RoundNumber};
+use crate::{Evidence, Message, Round, RoundNumber};
 
 /// Types that provide broadcast and 1:1 message communication.
 #[async_trait]
@@ -32,7 +32,7 @@ pub trait Comm<T: Committable> {
     }
 
     /// Switch over to a set of peers.
-    async fn use_committee(&mut self, _: Round) -> Result<(), Self::Err> {
+    async fn use_committee(&mut self, _: Round, _: Evidence) -> Result<(), Self::Err> {
         Ok(())
     }
 }

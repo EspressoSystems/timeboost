@@ -239,7 +239,7 @@ where
         select! { biased;
             r = &mut self.timer => {
                 Ok(if let Some(cons) = self.consensus_mut(r.committee()) {
-                    cons.timeout(r.num())
+                    cons.timeout(r)
                 } else {
                     Vec::new()
                 })
@@ -276,13 +276,15 @@ where
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
-                if self.update_consensus(r) || self.state == State::AwaitHandover {
-                    self.state = State::Running;
-                    self.comm.use_committee(r).await?;
-                    return Ok(Some(Event::UseCommittee(r)));
-                }
             }
             Action::SendProposal(e) => {
+                let r = *e.data().round().data();
+                if self.update_consensus(r) || self.state == State::AwaitHandover {
+                    self.state = State::Running;
+                    let e = e.data().evidence().clone();
+                    self.comm.use_committee(r, e).await?;
+                    return Ok(Some(Event::UseCommittee(r)));
+                }
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }
             Action::SendTimeout(e) => {
@@ -304,10 +306,10 @@ where
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
-            Action::UseCommittee(r) => {
+            Action::UseCommittee(r, e) => {
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
-                    self.comm.use_committee(r).await?;
+                    self.comm.use_committee(r, e).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
             }

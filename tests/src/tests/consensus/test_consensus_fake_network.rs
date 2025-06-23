@@ -250,7 +250,7 @@ fn basic_liveness() {
                         | Action::ResetTimer(..)
                         | Action::Gc(_)
                         | Action::Catchup(_)
-                        | Action::UseCommittee(_) => continue,
+                        | Action::UseCommittee(..) => continue,
                     };
                     if !na.is_empty() {
                         next.push((n.public_key(), na))

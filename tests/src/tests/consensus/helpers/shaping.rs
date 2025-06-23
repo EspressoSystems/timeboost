@@ -6,7 +6,7 @@ use std::{fmt, mem};
 
 use multisig::{Committee, Keypair, PublicKey};
 use rand::prelude::*;
-use sailfish::types::{Evidence, RoundNumber, UNKNOWN_COMMITTEE_ID};
+use sailfish::types::{Evidence, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
 use tracing::debug;
 
 use crate::prelude::*;
@@ -538,7 +538,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(..) => {}
             }
         }
     }
@@ -565,7 +565,8 @@ impl Simulator {
                 let l = self.resolve.get(&k).expect("known public key");
                 self.events
                     .push(Event::Timeout(self.time, name, party.timeout.1, l));
-                actions.push((*name, party.logic.timeout(party.timeout.1)))
+                let r = Round::new(party.timeout.1, self.committee.id());
+                actions.push((*name, party.logic.timeout(r)))
             }
         }
         actions

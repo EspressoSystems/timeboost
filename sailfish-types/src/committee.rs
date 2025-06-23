@@ -28,6 +28,14 @@ impl<const N: usize> CommitteeVec<N> {
         self.vec.iter().any(|c| c.id() == id)
     }
 
+    /// Get the index position of the given committee ID (if any).
+    ///
+    /// Committees are ordered by recency, i.e. the higher the index,
+    /// the older the committee.
+    pub fn position(&self, id: CommitteeId) -> Option<usize> {
+        self.vec.iter().position(|c| c.id() == id)
+    }
+
     /// Get the committee corresponding to the given ID (if any).
     pub fn get(&self, id: CommitteeId) -> Option<&Committee> {
         self.vec.iter().find(|c| c.id() == id)
