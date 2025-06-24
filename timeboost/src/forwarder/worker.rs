@@ -56,7 +56,7 @@ impl Worker {
         addr: &Address,
         incls_rx: Receiver<Command>,
     ) -> Result<Self, Error> {
-        let stream = Self::try_get_stream(addr).await?;
+        let stream = Self::try_connect(addr).await?;
         stream.set_nodelay(true)?;
         let (tx, rx) = channel(1);
         Ok(Self {
@@ -149,7 +149,7 @@ impl Worker {
         }
     }
 
-    async fn try_get_stream(addr: &Address) -> Result<TcpStream, Error> {
+    async fn try_connect(addr: &Address) -> Result<TcpStream, Error> {
         match addr {
             Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
             Address::Name(h, p) => {
@@ -169,8 +169,7 @@ impl Worker {
                 .into_iter()
                 .chain(repeat(20_000))
             {
-                let r = Self::try_get_stream(&addr).await;
-                match r {
+                match Self::try_connect(&addr).await {
                     Ok(s) => {
                         if let Err(err) = s.set_nodelay(true) {
                             warn!(%node, %err, "failed to set nodelay");
