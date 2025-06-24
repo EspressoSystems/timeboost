@@ -343,15 +343,24 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     /// as passive nodes.
     async fn add_committee(&mut self, c: AddressableCommittee) -> RbcResult<()> {
         debug!(node = %self.key, committee = %c.committee().id(), "add committee");
+
+        if self.config.committees.contains(c.committee().id()) {
+            warn!(node = %self.key, committee = %c.committee().id(), "committee already added");
+            return Ok(())
+        }
+
         let Some(committee) = self.config.committees.get(self.config.committee_id) else {
             return Err(RbcError::NoCommittee(self.config.committee_id))
         };
+
         let mut additional = Vec::new();
         for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
             additional.push((k, x, a))
         }
         self.comm.add(additional).await?;
+
         self.config.committees.add(c.committee().clone());
+
         Ok(())
     }
 
@@ -436,6 +445,12 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn propose(&mut self, vertex: Envelope<Vertex<T>, Validated>, data: Data) -> RbcResult<()> {
         trace!(node = %self.key, vertex = %vertex.data(), "proposing");
         let digest = Digest::of_vertex(&vertex);
+
+        debug_assert!(
+            vertex.data().round().data().num() > self.round.0
+                || vertex.data().evidence().is_handover()
+                || self.round.0.is_genesis()
+        );
 
         self.round = (vertex.data().round().data().num(), vertex.data().evidence().clone());
 
@@ -607,7 +622,7 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
     async fn on_propose(&mut self, src: PublicKey, vertex: Envelope<Vertex<T>, Unchecked>) -> RbcResult<()> {
         debug!(node = %self.key, %src, digest = %Digest::of_vertex(&vertex), "proposal received");
 
-        let round = vertex.data().round().data();
+        let round = *vertex.data().round().data();
 
         let Some(committee) = self.config.committees.get(round.committee()) else {
             return Err(RbcError::NoCommittee(round.committee()))
@@ -619,6 +634,24 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
 
         if *vertex.signing_key() != src {
             warn!(node = %self.key, %src, "message sender != message signer");
+            return Err(RbcError::InvalidMessage);
+        }
+
+        let our_committee_pos =
+            self.config.committees.position(self.config.committee_id)
+                .expect("current committee is member of committee vec");
+
+        let their_committee_pos =
+            self.config.committees.position(round.committee())
+                .expect("validated vertex committee is member of committee vec");
+
+        if their_committee_pos > our_committee_pos {
+            debug!(
+                node   = %self.key,
+                src    = %src,
+                vertex = %vertex.data(),
+                "rejecting proposal from older committee"
+            );
             return Err(RbcError::InvalidMessage);
         }
 
