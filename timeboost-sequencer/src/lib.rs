@@ -41,8 +41,20 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn into_parts(self) -> (Vec<Transaction>, RoundNumber, Timestamp) {
-        (self.txns, self.round, self.timestamp)
+    pub fn round(&self) -> RoundNumber {
+        self.round
+    }
+
+    pub fn time(&self) -> Timestamp {
+        self.timestamp
+    }
+
+    pub fn txns(&self) -> &[Transaction] {
+        &self.txns
+    }
+
+    pub fn into_txns(self) -> Vec<Transaction> {
+        self.txns
     }
 }
 
@@ -307,7 +319,8 @@ impl Task {
                         let timestamp = incl.timestamp();
                         let txns = self.sorter.sort(incl);
                         if !txns.is_empty() {
-                            self.output.send(Output { txns, round, timestamp }).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                            let out = Output { txns, round, timestamp };
+                            self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {

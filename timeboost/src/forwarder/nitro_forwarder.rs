@@ -1,19 +1,17 @@
+mod worker;
+
+use std::io;
+
 use cliquenet::Address;
 use multisig::PublicKey;
-use std::io::Error;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
+use worker::Worker;
 
 use crate::forwarder::data::Data;
-use crate::forwarder::worker::Worker;
-
-pub(crate) enum Command {
-    Send(Data),
-}
 
 pub struct NitroForwarder {
-    incls_tx: Sender<Command>,
+    incls_tx: Sender<Data>,
     jh: JoinHandle<()>,
 }
 
@@ -25,7 +23,7 @@ impl Drop for NitroForwarder {
 
 impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: &Address) -> Result<Self, Error> {
-        let (tx, rx) = channel(100);
+        let (tx, rx) = channel(100_000);
         let w = Worker::connect(key, addr, rx).await?;
         Ok(Self {
             incls_tx: tx,
@@ -33,8 +31,20 @@ impl NitroForwarder {
         })
     }
 
-    pub(crate) async fn enqueue(&self, d: Data) -> Result<(), SendError<Command>> {
-        self.incls_tx.send(Command::Send(d)).await?;
+    pub async fn enqueue(&self, d: Data) -> Result<(), Error> {
+        self.incls_tx
+            .send(d)
+            .await
+            .map_err(|_| Error::WorkerStopped)?;
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("i/o error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("nitro forwarder worker stopped")]
+    WorkerStopped,
 }

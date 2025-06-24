@@ -88,17 +88,15 @@ impl Timeboost {
                 },
                 trx = self.sequencer.next_transactions() => match trx {
                     Ok(o) => {
-                        let (txns, r, t) = o.into_parts();
-                        info!(node = %self.label, len = %txns.len(), "next batch of transactions");
+                        info!(node = %self.label, len = %o.txns().len(), "next batch of transactions");
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(r, t, &txns) {
-                                // TODO: error handling, maybe back pressure
-                                let _ = f.enqueue(d).await;
+                            if let Ok(d) = Data::encode(o.round(), o.time(), o.txns()) {
+                                f.enqueue(d).await?;
                             } else {
                                 error!(node = %self.label, "failed to encode inclusion list")
                             }
                         }
-                        let res: Result<(), ProducerDown> = self.producer.enqueue(txns).await;
+                        let res: Result<(), ProducerDown> = self.producer.enqueue(o.into_txns()).await;
                         res?
                     }
                     Err(err) => {

@@ -60,7 +60,7 @@ async fn transaction_order() {
                     },
                     txs = s.next_transactions() => {
                         debug!(node = %s.public_key(), transactions = %i);
-                        let (txs, _, _) = txs.unwrap().into_parts();
+                        let txs = txs.unwrap().into_txns();
                         i += txs.len();
                         for t in txs {
                             tx.send(t).unwrap()
