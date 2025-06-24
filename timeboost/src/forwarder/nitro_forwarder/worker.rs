@@ -210,7 +210,8 @@ mod tests {
         let p = portpicker::pick_unused_port().expect("available port");
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let l = TcpListener::bind(a).await.expect("socket to be bound");
-        let (tx, rx) = channel(10);
+        let cap = 10;
+        let (tx, rx) = channel(cap);
         let keypair = Keypair::generate();
         let w = Worker::connect(keypair.public_key(), &Address::from(a), rx)
             .await
@@ -223,12 +224,15 @@ mod tests {
         drop(s);
         drop(l);
 
-        // we should fail, so push onto our retry queue
+        // we should fail
         let max = 3;
         for i in 0..max {
             let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
             let r = tx.send(d).await;
             assert!(r.is_ok());
+            // wait for worker.go() to receive
+            sleep(Duration::from_millis(20)).await;
+            assert_eq!(tx.capacity(), cap - i as usize);
         }
 
         let l = TcpListener::bind(a).await.expect("listener to start");
@@ -258,6 +262,8 @@ mod tests {
         let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
         let (r, _) = tokio::join!(tx.send(d), server);
         assert!(r.is_ok());
+        // all data should be processed from channel, back to max cap
+        assert_eq!(tx.capacity(), cap);
         jh.abort();
     }
 }

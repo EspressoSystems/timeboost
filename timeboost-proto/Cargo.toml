@@ -1,6 +1,6 @@
 [package]
 name = "timeboost-proto"
-description = "Timeboost API types"
+description = "Timeboost protobuf types"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
