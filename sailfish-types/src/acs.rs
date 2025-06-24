@@ -7,26 +7,30 @@ use thiserror::Error;
 /// and all honest parties eventually obtain as output the same size-k subset of the inputs.
 #[async_trait]
 pub trait ACS {
-    /// Input proposal.
-    type Proposal;
-    /// Validity predicate for validating incoming proposals.
-    type Predicate;
-    /// Agreed-upon subset of proposals.
+    type AcsId;
+    type PartyId;
+    type CommitteeId;
+    type Proposal: Clone;
     type Subset;
 
-    /// Submit a `proposal` and expect as result an agreed-upon size-`k` subset of
-    /// proposals which satifies `predicate`.
     async fn propose(
         &mut self,
         proposal: Self::Proposal,
-        predicate: Self::Predicate,
-        k: u32,
-    ) -> Result<Self::Subset, ACSError>;
+        subset_size: usize,
+    ) -> Result<Self::AcsId, AcsError>;
+
+    async fn subset<S>(&self, id: &Self::AcsId) -> Option<Result<S, AcsError>>
+    where
+        S: IntoIterator<Item = (Self::PartyId, Self::Proposal)>;
+
+    fn is_valid(&self, sender: &Self::PartyId, proposal: &Self::Proposal) -> bool;
+
+    fn acs_info(&self, id: &Self::AcsId) -> Option<(Self::CommitteeId, usize)>;
 }
 
 /// The error type for `ACS`.
 #[derive(Error, Debug)]
-pub enum ACSError {
+pub enum AcsError {
     #[error("Invalid argument: {0}")]
     Argument(String),
     #[error("Invalid proposal: {0} for predicate: {1}")]
@@ -34,5 +38,5 @@ pub enum ACSError {
     #[error("Insufficient proposals")]
     NotEnoughProposals,
     #[error("Internal Error: {0}")]
-    Internal(anyhow::Error),
+    Internal(String),
 }
