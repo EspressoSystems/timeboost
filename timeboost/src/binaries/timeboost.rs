@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
 
-    let builder = TimeboostConfig::builder()
+    let config = TimeboostConfig::builder()
         .metrics_port(cli.metrics_port)
         .sailfish_committee(sailfish_committee)
         .decrypt_committee(decrypt_committee)
@@ -218,7 +218,7 @@ async fn main() -> Result<()> {
         .recover(is_recover)
         .build();
 
-    let timeboost = Timeboost::new(builder, tb_app_rx).await?;
+    let timeboost = Timeboost::new(config, tb_app_rx).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {
