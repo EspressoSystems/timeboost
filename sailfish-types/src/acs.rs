@@ -6,25 +6,34 @@ use thiserror::Error;
 /// An ACS protocol is an interactive protocol, where each party contributes an input,
 /// and all honest parties eventually obtain as output the same size-k subset of the inputs.
 #[async_trait]
-pub trait ACS {
+pub trait Acs {
+    /// Id of the current instance of Acs.
     type AcsId;
-    type PartyId;
+    /// Public identifier of the a node.
+    type NodeId;
+    /// Committee executing the Acs instance.
     type CommitteeId;
+    /// A concrete proposal subject to Acs.
     type Proposal: Clone;
+    /// A resulting subset output of Acs.
     type Subset;
 
+    /// Proposes a new `proposal` for Acs with subset of size `subset_size`.
     async fn propose(
         &mut self,
         proposal: Self::Proposal,
         subset_size: usize,
     ) -> Result<Self::AcsId, AcsError>;
 
+    /// Retrieves the subset of proposals agreed upon for a given ACS instance.
     async fn subset<S>(&self, id: &Self::AcsId) -> Option<Result<S, AcsError>>
     where
-        S: IntoIterator<Item = (Self::PartyId, Self::Proposal)>;
+        S: IntoIterator<Item = (Self::NodeId, Self::Proposal)>;
 
-    fn is_valid(&self, sender: &Self::PartyId, proposal: &Self::Proposal) -> bool;
+    /// Method for evaluating validity of the proposal.
+    fn is_valid(&self, sender: &Self::NodeId, proposal: &Self::Proposal) -> bool;
 
+    /// Extracts information of the specific ACS instance.
     fn acs_info(&self, id: &Self::AcsId) -> Option<(Self::CommitteeId, usize)>;
 }
 
