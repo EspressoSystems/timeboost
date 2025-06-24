@@ -6,6 +6,7 @@ use std::{
 };
 
 use cliquenet::Address;
+use multisig::PublicKey;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -15,7 +16,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use crate::forwarder::data::Data;
+use crate::forwarder::{data::Data, nitro_forwarder::Command};
 
 /// Expected ack value from nitro node
 const ACK_FLAG: u8 = 0xc0;
@@ -26,10 +27,17 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Max. nitro acknowledgement read timeout
 const ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
+enum WorkerState {
+    Connected,
+    Reconnecting,
+}
+
 pub struct Worker {
+    key: PublicKey,
     stream: TcpStream,
+    state: WorkerState,
     nitro_addr: Address,
-    incls_rx: Receiver<Data>,
+    incls_rx: Receiver<Command>,
     stream_rx: Receiver<TcpStream>,
     stream_tx: Sender<TcpStream>,
     retry_cache: VecDeque<Data>,
@@ -43,12 +51,18 @@ impl Drop for Worker {
 }
 
 impl Worker {
-    pub async fn connect(addr: &Address, incls_rx: Receiver<Data>) -> Result<Self, Error> {
-        let s = Self::try_get_stream(addr).await?;
-        s.set_nodelay(true)?;
+    pub(crate) async fn connect(
+        key: PublicKey,
+        addr: &Address,
+        incls_rx: Receiver<Command>,
+    ) -> Result<Self, Error> {
+        let stream = Self::try_get_stream(addr).await?;
+        stream.set_nodelay(true)?;
         let (tx, rx) = channel(1);
         Ok(Self {
-            stream: s,
+            key,
+            stream,
+            state: WorkerState::Connected,
             nitro_addr: addr.clone(),
             incls_rx,
             stream_rx: rx,
@@ -58,26 +72,27 @@ impl Worker {
         })
     }
 
-    pub async fn go(mut self) {
+    pub(crate) async fn go(mut self) {
         loop {
             tokio::select! {
                 val = self.incls_rx.recv() => match val {
-                    Some(d) => {
-                        if let Err(e) = self.send(d).await {
-                            warn!(err = %e, "failed sending inclusion list");
+                    Some(Command::Send(d)) => {
+                        if let Err(err) = self.send(d).await {
+                            warn!(node = %self.key, %err, "failed sending inclusion list");
                         }
                     }
                     None => {
-                        warn!("disconnected inclusion list receiver");
+                        warn!(node = %self.key, "disconnected inclusion list receiver");
                         break;
                     }
                 },
                 val = self.stream_rx.recv() => match val {
                     Some(s) => {
-                        self.stream = s
+                        self.stream = s;
+                        self.state = WorkerState::Connected;
                     }
                     None => {
-                        warn!("disconnected stream receiver");
+                        warn!(node = %self.key, "disconnected stream receiver");
                         break;
                     }
                 }
@@ -86,6 +101,14 @@ impl Worker {
     }
 
     async fn send(&mut self, d: Data) -> Result<(), Error> {
+        if matches!(self.state, WorkerState::Reconnecting) {
+            self.retry_cache.push_back(d);
+            return Err(Error::new(
+                ErrorKind::NotConnected,
+                "worker not connected to nitro",
+            ));
+        }
+
         while let Some(retry) = self.retry_cache.pop_front() {
             if let Err(e) = self.write_and_wait_for_ack(&retry).await {
                 self.retry_cache.push_front(retry);
@@ -136,12 +159,11 @@ impl Worker {
     }
 
     fn spawn_reconnect(&mut self) {
-        if !self.jh.is_finished() {
-            return;
-        }
-        info!("spawning nitro reconnect task");
+        info!(node = %self.key, "spawning nitro reconnect task");
+        self.state = WorkerState::Reconnecting;
         let addr = self.nitro_addr.clone();
         let tx = self.stream_tx.clone();
+        let node = self.key;
         self.jh = tokio::spawn(async move {
             for d in [0, 1000, 3000, 6000, 10_000, 15_000]
                 .into_iter()
@@ -150,20 +172,20 @@ impl Worker {
                 let r = Self::try_get_stream(&addr).await;
                 match r {
                     Ok(s) => {
-                        if let Err(e) = s.set_nodelay(true) {
-                            warn!(err = %e, "failed to set nodelay");
+                        if let Err(err) = s.set_nodelay(true) {
+                            warn!(%node, %err, "failed to set nodelay");
                             continue;
                         }
 
-                        if let Err(e) = tx.send(s).await {
-                            warn!(err = %e, "failed to send tcp stream");
+                        if let Err(err) = tx.send(s).await {
+                            warn!(%node, %err, "failed to send tcp stream");
                             continue;
                         }
-                        info!("reconnected successfully to nitro node");
+                        info!(%node, "reconnected successfully to nitro node");
                         break;
                     }
-                    Err(e) => {
-                        warn!(err = %e, interval = %d, "failed to reconnect to nitro server");
+                    Err(err) => {
+                        warn!(%node, %err, interval = %d, "failed to reconnect to nitro server");
                         sleep(Duration::from_millis(d)).await;
                     }
                 }
@@ -182,10 +204,11 @@ mod tests {
 
     use crate::forwarder::{
         data::Data,
-        worker::{ACK_FLAG, Worker},
+        worker::{ACK_FLAG, Command, Worker},
     };
 
     use cliquenet::Address;
+    use multisig::Keypair;
     use prost::Message;
     use timeboost_proto::proto_types::{InclusionList, Transaction};
     use timeboost_types::Timestamp;
@@ -219,7 +242,8 @@ mod tests {
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let l = TcpListener::bind(a).await.expect("socket to be bound");
         let (tx, rx) = channel(10);
-        let w = Worker::connect(&Address::from(a), rx)
+        let keypair = Keypair::generate();
+        let w = Worker::connect(keypair.public_key(), &Address::from(a), rx)
             .await
             .expect("forwarder connection to succeed");
         let jh = tokio::spawn(w.go());
@@ -234,9 +258,8 @@ mod tests {
         let max = 3;
         for i in 0..max {
             let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
-            let r = tx.send(d).await;
+            let r = tx.send(Command::Send(d)).await;
             assert!(r.is_ok());
-            // assert_eq!(w.retry_cache_len() as u64, i + 1);
         }
 
         let l = TcpListener::bind(a).await.expect("listener to start");
@@ -264,10 +287,8 @@ mod tests {
         };
 
         let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
-        let (r, _) = tokio::join!(tx.send(d), server);
+        let (r, _) = tokio::join!(tx.send(Command::Send(d)), server);
         assert!(r.is_ok());
         jh.abort();
-        // assert_eq!(w.retry_cache.len(), 0);
-        // let _ = w.stream.shutdown().await;
     }
 }

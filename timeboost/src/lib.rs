@@ -53,7 +53,7 @@ impl Timeboost {
 
         // TODO: Once we have e2e listener this check wont be needed
         let nitro_forwarder = if let Some(nitro_addr) = &cfg.nitro_addr {
-            Some(NitroForwarder::connect(nitro_addr).await?)
+            Some(NitroForwarder::connect(cfg.sign_keypair.public_key(), nitro_addr).await?)
         } else {
             None
         };
