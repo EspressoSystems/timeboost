@@ -239,7 +239,7 @@ where
         select! { biased;
             r = &mut self.timer => {
                 Ok(if let Some(cons) = self.consensus_mut(r.committee()) {
-                    cons.timeout(r.num())
+                    cons.timeout(r)
                 } else {
                     Vec::new()
                 })
