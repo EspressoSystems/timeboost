@@ -230,7 +230,7 @@ mod tests {
             let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
             let r = tx.send(d).await;
             assert!(r.is_ok());
-            assert_eq!(tx.capacity(), cap - (i+1) as usize);
+            assert_eq!(tx.capacity(), cap - (i + 1) as usize);
         }
 
         let l = TcpListener::bind(a).await.expect("listener to start");
