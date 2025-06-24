@@ -234,7 +234,6 @@ mod tests {
             sleep(Duration::from_millis(20)).await;
             assert_eq!(tx.capacity(), cap - i as usize);
         }
-        
 
         let l = TcpListener::bind(a).await.expect("listener to start");
         let (mut s, _) = l.accept().await.expect("connection to be established");
