@@ -3,22 +3,20 @@ use thiserror::Error;
 
 /// Agreement on Common Subset (ACS).
 ///
-/// An ACS protocol is an interactive protocol, where each party contributes an input,
+/// An ACS protocol is an interactive protocol where each party contributes an input,
 /// and all honest parties eventually obtain as output the same size-k subset of the inputs.
 #[async_trait]
 pub trait Acs {
-    /// Id of the current instance of Acs.
+    /// ID of the current instance of ACS.
     type AcsId;
-    /// Public identifier of the a node.
+    /// Public identifier of a node.
     type NodeId;
-    /// Committee executing the Acs instance.
+    /// Committee executing the ACS instance.
     type CommitteeId;
-    /// A concrete proposal subject to Acs.
+    /// A concrete proposal subject to ACS.
     type Proposal: Clone;
-    /// A resulting subset output of Acs.
-    type Subset;
 
-    /// Proposes a new `proposal` for Acs with subset of size `subset_size`.
+    /// Proposes a new `proposal` value for ACS with a subset of size `subset_size`.
     async fn propose(
         &mut self,
         proposal: Self::Proposal,
@@ -30,14 +28,14 @@ pub trait Acs {
     where
         S: IntoIterator<Item = (Self::NodeId, Self::Proposal)>;
 
-    /// Method for evaluating validity of the proposal.
+    /// Evaluates the validity of a proposal.
     fn is_valid(&self, sender: &Self::NodeId, proposal: &Self::Proposal) -> bool;
 
-    /// Extracts information of the specific ACS instance.
+    /// Extracts information about a specific ACS instance.
     fn acs_info(&self, id: &Self::AcsId) -> Option<(Self::CommitteeId, usize)>;
 }
 
-/// The error type for `ACS`.
+/// The error type for ACS.
 #[derive(Error, Debug)]
 pub enum AcsError {
     #[error("Invalid argument: {0}")]
@@ -46,6 +44,6 @@ pub enum AcsError {
     PredicateError(String, String),
     #[error("Insufficient proposals")]
     NotEnoughProposals,
-    #[error("Internal Error: {0}")]
+    #[error("Internal error: {0}")]
     Internal(String),
 }
