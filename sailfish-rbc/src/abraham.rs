@@ -68,7 +68,7 @@ enum Command<T: Committable> {
     /// Add the next committee.
     AddCommittee(AddressableCommittee),
     /// Use the given committee as specified by `Round`.
-    UseCommittee(Round, Evidence),
+    UseCommittee(Round),
 }
 
 /// RBC configuration
@@ -220,9 +220,9 @@ impl<T: Committable + Send + Serialize + Clone + 'static> Comm<T> for Rbc<T> {
             .map_err(|_| RbcError::Shutdown)
     }
 
-    async fn use_committee(&mut self, r: Round, e: Evidence) -> Result<(), Self::Err> {
+    async fn use_committee(&mut self, r: Round) -> Result<(), Self::Err> {
         self.tx
-            .send(Command::UseCommittee(r, e))
+            .send(Command::UseCommittee(r))
             .await
             .map_err(|_| RbcError::Shutdown)
     }

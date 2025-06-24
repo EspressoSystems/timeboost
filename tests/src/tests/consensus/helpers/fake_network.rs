@@ -121,7 +121,7 @@ impl FakeNetwork {
             | Action::Deliver(_)
             | Action::Gc(_)
             | Action::Catchup(_)
-            | Action::UseCommittee(..) => {
+            | Action::UseCommittee(_) => {
                 return;
             }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),

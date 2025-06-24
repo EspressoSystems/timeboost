@@ -276,15 +276,13 @@ where
         match action {
             Action::ResetTimer(r) => {
                 self.timer = sleep(TIMEOUT_DURATION).map(move |_| r).fuse().boxed();
-            }
-            Action::SendProposal(e) => {
-                let r = *e.data().round().data();
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
-                    let e = e.data().evidence().clone();
-                    self.comm.use_committee(r, e).await?;
+                    self.comm.use_committee(r).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
+            }
+            Action::SendProposal(e) => {
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }
             Action::SendTimeout(e) => {
@@ -306,10 +304,10 @@ where
             Action::SendHandoverCert(c) => {
                 self.comm.broadcast(Message::HandoverCert(c)).await?;
             }
-            Action::UseCommittee(r, e) => {
+            Action::UseCommittee(r) => {
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
-                    self.comm.use_committee(r, e).await?;
+                    self.comm.use_committee(r).await?;
                     return Ok(Some(Event::UseCommittee(r)));
                 }
             }

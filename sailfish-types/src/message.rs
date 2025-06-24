@@ -406,7 +406,7 @@ pub enum Action<T: Committable> {
     Gc(Round),
 
     /// Use a committee starting at the given round.
-    UseCommittee(Round, Evidence),
+    UseCommittee(Round),
 }
 
 impl<T: Committable> Action<T> {
@@ -457,7 +457,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::Catchup(r) => {
                 write!(f, "Catchup({r})")
             }
-            Action::UseCommittee(r, _) => {
+            Action::UseCommittee(r) => {
                 write!(f, "UseCommittee({r})")
             }
         }

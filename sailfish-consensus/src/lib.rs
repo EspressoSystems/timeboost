@@ -1094,18 +1094,16 @@ where
 
         let round = Round::new(self.round, self.committee.id());
 
-        let evidence = Evidence::Handover(cert);
-
         let vertex = Vertex::new(
             round,
-            evidence.clone(),
+            Evidence::Handover(cert),
             self.datasource.next(self.round),
             &self.keypair,
         );
         let env = Envelope::signed(vertex, &self.keypair);
 
         actions.extend([
-            Action::UseCommittee(round, evidence),
+            Action::UseCommittee(round),
             Action::SendProposal(env),
             Action::ResetTimer(Round::new(self.round, self.committee.id())),
         ]);
