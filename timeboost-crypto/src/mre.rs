@@ -1,4 +1,4 @@
-//! Multi-recipient Encryption (MRE) allows encryption of a vector of message to all n parties.
+//! Multi-recipient Encryption (MRE) allows encryption of a vector of messages to all n parties.
 //! Proposed as MEGa in <https://eprint.iacr.org/2022/506>, this code implements the simplified
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
@@ -24,8 +24,8 @@ pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest> {
 
 impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
     /// Extract the recipient-specific ciphertext
-    pub fn get_recipient_ct(&self, index: usize) -> Option<SingleRecvCiphertext<C, H>> {
-        self.cts.get(index).map(|ct| SingleRecvCiphertext {
+    pub fn get_recipient_ct(&self, index: usize) -> Option<Ciphertext<C, H>> {
+        self.cts.get(index).map(|ct| Ciphertext {
             epk: self.epk,
             ct: ct.clone(),
         })
@@ -35,7 +35,7 @@ impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
 /// (Part of) [`MultiRecvCiphertext`] for a specific recipient.
 /// Only appropriate construction is [`MultiRecvCiphertext::get_recipient_ct()`]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SingleRecvCiphertext<C: CurveGroup, H: Digest> {
+pub struct Ciphertext<C: CurveGroup, H: Digest> {
     pub(crate) epk: C::Affine,
     pub(crate) ct: Output<H>,
 }
@@ -127,7 +127,7 @@ fn derive_enc_key<C: CurveGroup, H: Digest>(
 pub fn decrypt<C, H>(
     index: usize,
     recv_sk: &<C::Config as CurveConfig>::ScalarField,
-    ct: &SingleRecvCiphertext<C, H>,
+    ct: &Ciphertext<C, H>,
     aad: &[u8],
 ) -> Result<Vec<u8>, MultiRecvEncError>
 where
