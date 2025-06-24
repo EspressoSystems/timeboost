@@ -17,7 +17,7 @@ pub trait ACS {
     /// Submit a `proposal` and expect as result an agreed-upon size-`k` subset of
     /// proposals which satifies `predicate`.
     async fn propose(
-        self,
+        &mut self,
         proposal: Self::Proposal,
         predicate: Self::Predicate,
         k: u32,
