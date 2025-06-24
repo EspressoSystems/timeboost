@@ -25,7 +25,11 @@ pub use timeboost_crypto as crypto;
 pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
+use crate::forwarder::data::Data;
+use crate::forwarder::nitro_forwarder::NitroForwarder;
+
 pub mod api;
+pub mod forwarder;
 pub mod metrics;
 
 pub struct Timeboost {
@@ -36,6 +40,7 @@ pub struct Timeboost {
     producer: BlockProducer,
     prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
+    nitro_forwarder: Option<NitroForwarder>,
     children: Vec<JoinHandle<()>>,
 }
 
@@ -46,6 +51,13 @@ impl Timeboost {
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
+        // TODO: Once we have e2e listener this check wont be needed
+        let nitro_forwarder = if let Some(nitro_addr) = &cfg.nitro_addr {
+            Some(NitroForwarder::connect(cfg.sign_keypair.public_key(), nitro_addr).await?)
+        } else {
+            None
+        };
+
         Ok(Self {
             label: cfg.sign_keypair.public_key(),
             config: cfg,
@@ -54,6 +66,7 @@ impl Timeboost {
             producer: blk,
             prometheus: pro,
             _metrics: met,
+            nitro_forwarder,
             children: Vec::new(),
         })
     }
@@ -74,9 +87,16 @@ impl Timeboost {
                     }
                 },
                 trx = self.sequencer.next_transactions() => match trx {
-                    Ok(trx) => {
-                        info!(node = %self.label, len = %trx.len(), "next batch of transactions");
-                        let res: Result<(), ProducerDown> = self.producer.enqueue(trx).await;
+                    Ok(o) => {
+                        info!(node = %self.label, len = %o.txns().len(), "next batch of transactions");
+                        if let Some(ref mut f) = self.nitro_forwarder {
+                            if let Ok(d) = Data::encode(o.round(), o.time(), o.txns()) {
+                                f.enqueue(d).await?;
+                            } else {
+                                error!(node = %self.label, "failed to encode inclusion list")
+                            }
+                        }
+                        let res: Result<(), ProducerDown> = self.producer.enqueue(o.into_txns()).await;
                         res?
                     }
                     Err(err) => {

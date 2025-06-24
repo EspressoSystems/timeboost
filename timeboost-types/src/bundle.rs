@@ -382,6 +382,10 @@ impl Transaction {
         &self.addr
     }
 
+    pub fn time(&self) -> &Timestamp {
+        &self.time
+    }
+
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
         let tx = TxEnvelope::arbitrary(u)?;

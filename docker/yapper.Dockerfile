@@ -4,7 +4,7 @@ FROM rust:bullseye AS builder
 WORKDIR /app
 
 COPY . .
-
+RUN apt update && apt-get install -y protobuf-compiler
 RUN cargo build --release --bin yapper
 
 # Non-root app container stage

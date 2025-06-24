@@ -53,7 +53,8 @@ async fn block_order() {
                         Err(err) => panic!("{err}")
                     },
                     t = s.next_transactions() => {
-                        p.enqueue(t.expect("transaction")).await.unwrap()
+                        let t = t.expect("transaction").into_txns();
+                        p.enqueue(t).await.unwrap()
                     }
                     b = p.next_block() => {
                         debug!(node = %s.public_key(), blocks = %i);
