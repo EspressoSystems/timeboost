@@ -1,0 +1,15 @@
+[package]
+name = "timeboost-proto"
+description = "Timeboost protobuf types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prost = { workspace = true }
+timeboost-types = { path = "../timeboost-types" }
+prost-types = "0.11"
+
+[build-dependencies]
+prost-build = "0.13.5"
+protoc-rust = "^2.0"
