@@ -14,7 +14,7 @@ pub trait Acs {
     /// Committee executing the ACS instance.
     type CommitteeId;
     /// A concrete proposal subject to ACS.
-    type Proposal: Clone;
+    type Proposal;
 
     /// Proposes a new `proposal` value for ACS with a subset of size `subset_size`.
     async fn propose(
@@ -24,9 +24,10 @@ pub trait Acs {
     ) -> Result<Self::AcsId, AcsError>;
 
     /// Retrieves the subset of proposals agreed upon for a given ACS instance.
-    async fn subset<S>(&self, id: &Self::AcsId) -> Option<Result<S, AcsError>>
-    where
-        S: IntoIterator<Item = (Self::NodeId, Self::Proposal)>;
+    async fn subset<S>(
+        &self,
+        id: &Self::AcsId,
+    ) -> Result<impl Iterator<Item = (Self::NodeId, Self::Proposal)>, AcsError>;
 
     /// Evaluates the validity of a proposal.
     fn is_valid(&self, sender: &Self::NodeId, proposal: &Self::Proposal) -> bool;
