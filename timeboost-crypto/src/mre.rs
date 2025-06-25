@@ -47,9 +47,9 @@ pub struct Ciphertext<C: CurveGroup, H: Digest> {
 /// - `aad` is the associated data
 /// - `C` is the DL group, `H` is the choice of H_enc whose output space = message space
 ///   - preprocess messages to pad them to proper length before passing in
-pub fn encrypt<'pk, 'msg, C, H, R>(
-    recipients: impl IntoIterator<Item = &'pk C::Affine>,
-    messages: impl IntoIterator<Item = &'msg Vec<u8>>,
+pub fn encrypt<C, H, R>(
+    recipients: &[C::Affine],
+    messages: &[Vec<u8>],
     aad: &[u8],
     rng: &mut R,
 ) -> Result<MultiRecvCiphertext<C, H>, MultiRecvEncError>
@@ -58,26 +58,36 @@ where
     H: Digest,
     R: Rng + CryptoRng,
 {
+    // input validation
+    if recipients.is_empty() || messages.is_empty() {
+        return Err(MultiRecvEncError::EmptyInput);
+    }
+    if recipients.len() != messages.len() {
+        return Err(MultiRecvEncError::MismatchedInputLength(
+            recipients.len(),
+            messages.len(),
+        ));
+    }
+    let expected_msg_len = <H as Digest>::output_size();
+    for m in messages.iter() {
+        if m.len() != expected_msg_len {
+            return Err(MultiRecvEncError::MessageWrongSize(
+                m.len(),
+                expected_msg_len,
+            ));
+        }
+    }
+
     // random sample a shared ephemeral keypair
     let esk = <C::Config as CurveConfig>::ScalarField::rand(rng);
     let epk = C::generator().mul(&esk);
 
     // generate recipient-specific ciphertext parts
-    let mut pk_iter = recipients.into_iter();
-    let mut msg_iter = messages.into_iter();
-    let expected_msg_len = <H as Digest>::output_size();
-
-    let cts = pk_iter
-        .by_ref()
-        .zip(msg_iter.by_ref())
+    let cts = recipients
+        .iter()
+        .zip(messages.iter())
         .enumerate()
         .map(|(idx, (pk, msg))| {
-            if msg.len() != expected_msg_len {
-                return Err(MultiRecvEncError::MessageWrongSize(
-                    msg.len(),
-                    expected_msg_len,
-                ));
-            }
             // compute the ephemeral DH shared secret (w_j in the paper)
             let edh = pk.into_group().mul(&esk);
             // derive the symmetric encryption key
@@ -94,16 +104,11 @@ where
             let ct = Output::<H>::from_iter(k.iter().zip(msg).map(|(ki, m)| ki ^ m));
             Ok(ct)
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // check if two iterators have left-overs (thus mismatched length)
-    match (pk_iter.next(), msg_iter.next()) {
-        (None, None) => Ok(MultiRecvCiphertext {
-            epk: epk.into_affine(),
-            cts,
-        }),
-        _ => Err(MultiRecvEncError::MismatchedInputLength),
-    }
+        .collect::<Result<Vec<_>, MultiRecvEncError>>()?;
+    Ok(MultiRecvCiphertext {
+        epk: epk.into_affine(),
+        cts,
+    })
 }
 
 // deriving the symmetric encryption/decryption key
@@ -147,8 +152,10 @@ where
 /// Error types for Multi-Recipient Encryption scheme
 #[derive(Error, Debug)]
 pub enum MultiRecvEncError {
-    #[error("expect the same input lengths")]
-    MismatchedInputLength,
+    #[error("unexpected empty input")]
+    EmptyInput,
+    #[error("expect the same input lengths, but got {0} and {1}")]
+    MismatchedInputLength(usize, usize),
     #[error("message length {0} should equal hash output length {1}")]
     MessageWrongSize(usize, usize),
     #[error("de/serialization err: {0}")]
