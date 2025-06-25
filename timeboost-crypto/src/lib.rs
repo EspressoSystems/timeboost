@@ -1,4 +1,5 @@
 pub mod cp_proof;
+pub mod feldman;
 mod interpolation;
 pub mod sg_encryption;
 pub mod traits;

@@ -71,4 +71,10 @@ pub enum VssError {
     IndexOutOfBound(usize, usize),
     #[error("invalid secret share at index {0}: {1}")]
     InvalidShare(usize, String),
+    #[error("invalid VSS commitment")]
+    InvalidCommitment,
+    #[error("failed to reconstruct: {0}")]
+    FailedReconstruction(String),
+    #[error("internal err: {0}")]
+    InternalError(String),
 }
