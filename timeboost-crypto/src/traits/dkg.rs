@@ -1,0 +1,74 @@
+//! Traits related to Distributed Key Generation (DKG) and Key Resharing
+
+use ark_std::rand::Rng;
+use thiserror::Error;
+
+/// A trait for (t, n)-Verifiable Secret Sharing (VSS) schemes.
+/// See: <https://en.wikipedia.org/wiki/Verifiable_secret_sharing>
+///
+/// Note: We avoid using const generics for `(t, n)` to support scenarios where
+/// these parameters are determined at runtime. While const generics offer stronger
+/// type-level guarantees, they require compile-time constants, which would limit flexibility.
+pub trait VerifiableSecretSharing {
+    /// system parameters such as t, n, sometimes common reference string for PCS-based VSS
+    type PublicParam;
+    type Secret;
+    type SecretShare;
+    type Commitment;
+    type ShareProof;
+
+    /// Generates a (t, n)-secret sharing of the given `secret`.
+    ///
+    /// System parameters like threshold t and total nodes n are in `pp`.
+    ///
+    /// Returns a tuple of:
+    ///   - a vector of `n` secret shares,
+    ///   - a global proof/commitment (e.g., Feldman commitments; may be unused in some schemes),
+    ///   - a vector of `n` per-share proofs/openings (e.g., Pedersen openings).
+    fn share<R: Rng>(
+        pp: &Self::PublicParam,
+        rng: &mut R,
+        secret: Self::Secret,
+    ) -> (
+        Vec<Self::SecretShare>,
+        Self::Commitment,
+        Vec<Self::ShareProof>,
+    );
+
+    /// Verifies a secret share against the global and per-share proofs.
+    ///
+    /// - `node_idx`: index of the share to verify
+    /// - `share`: the secret share to verify
+    /// - `commitment`: the global commitment (if any)
+    /// - `share_proof`: the per-share proof/opening (if any)
+    ///
+    /// Returns Ok(true) if valid, Ok(false) if invalid, or an appropriate `VssError` otherwise.
+    fn verify(
+        pp: &Self::PublicParam,
+        node_idx: usize,
+        share: &Self::SecretShare,
+        commitment: &Self::Commitment,
+        share_proof: &Self::ShareProof,
+    ) -> Result<bool, VssError>;
+
+    /// Reconstructs the original secret from a set of (index, share) pairs.
+    ///
+    /// System parameters like threshold t and total nodes n are in `pp`.
+    ///
+    /// Returns `Ok(secret)` if reconstruction succeeds, or an appropriate `VssError` otherwise.
+    fn reconstruct(
+        pp: &Self::PublicParam,
+        shares: impl Iterator<Item = (usize, Self::SecretShare)>,
+    ) -> Result<Self::Secret, VssError>;
+}
+
+/// Error types for [`VerifiableSecretSharing`]
+#[derive(Error, Debug, Clone)]
+pub enum VssError {
+    #[error("insufficient secret shares, expected: {0}, got: {1}")]
+    InsufficientShares(usize, usize),
+    #[error("share index out of bound, max: {0}, got: {1}")]
+    IndexOutOfBound(usize, usize),
+    #[error("invalid secret share at index {0}: {1}")]
+    InvalidShare(usize, String),
+}
