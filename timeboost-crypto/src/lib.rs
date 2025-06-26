@@ -1,6 +1,7 @@
 pub mod cp_proof;
 pub mod feldman;
 mod interpolation;
+pub mod mre;
 pub mod sg_encryption;
 pub mod traits;
 
@@ -23,6 +24,7 @@ use std::{convert::TryFrom, num::NonZeroUsize};
 use traits::threshold_enc::ThresholdEncScheme;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+// TODO(alex): we should relocate these types to sg_encryption?
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nonce(u128);
 
