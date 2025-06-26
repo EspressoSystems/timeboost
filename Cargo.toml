@@ -3,6 +3,7 @@ members = [
     "cliquenet",
     "metrics",
     "multisig",
+    "robusta",
     "sailfish",
     "sailfish-consensus",
     "sailfish-rbc",
@@ -82,7 +83,7 @@ quickcheck = "1.0.3"
 rand = "0.9"
 rayon = "1.10"
 secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
-reqwest = { version = "0.12" }
+reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
@@ -105,5 +106,10 @@ tonic-build = { version = "0.13.1", features = ["prost"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
+url = "2.5.4"
 vbs = "0.1"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
+
+espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
+hotshot-query-service = { git = "https://github.com/EspressoSystems/espresso-network.git" }
+hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
