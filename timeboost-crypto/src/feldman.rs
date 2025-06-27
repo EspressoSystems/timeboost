@@ -34,17 +34,12 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVSS<C> {
     type Secret = C::ScalarField;
     type SecretShare = C::ScalarField;
     type Commitment = Vec<C::Affine>;
-    type ShareProof = (); // unused
 
     fn share<R: Rng>(
         pp: &Self::PublicParam,
         rng: &mut R,
         secret: Self::Secret,
-    ) -> (
-        Vec<Self::SecretShare>,
-        Self::Commitment,
-        Vec<Self::ShareProof>,
-    ) {
+    ) -> (Vec<Self::SecretShare>, Self::Commitment) {
         // sample random polynomial of degree t-1 (s.t. any t evaluations can interpolate this poly)
         // f(X) = Sum a_i * X^i
         let mut poly = DensePolynomial::<Self::Secret>::rand(pp.t.get() as usize - 1, rng);
@@ -59,7 +54,7 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVSS<C> {
         // prepare commitment, u = (g^a_0, g^a_1, ..., g^a_t-1)
         let commitment = C::generator().batch_mul(&poly.coeffs);
 
-        (shares, commitment, vec![])
+        (shares, commitment)
     }
 
     fn verify(
@@ -67,7 +62,6 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVSS<C> {
         node_idx: usize,
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
-        _share_proof: &Self::ShareProof,
     ) -> Result<bool, VssError> {
         let n = pp.n.get() as usize;
         let t = pp.t.get() as usize;
@@ -104,7 +98,7 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVSS<C> {
         let t = pp.t.get() as usize;
         // input validation
         if shares.len() != t {
-            return Err(VssError::InsufficientShares(t, shares.len()));
+            return Err(VssError::MismatchedSharesCount(t, shares.len()));
         }
         for (idx, _) in shares.iter() {
             if *idx >= n {
@@ -143,17 +137,15 @@ mod tests {
             let t = NonZeroU32::new(t).unwrap();
             let pp = FeldmanVSSPublicParam::new(t, n);
 
-            let (shares, commitment, _proofs) = FeldmanVSS::<C>::share(&pp, rng, secret);
-            let proof = (); // not used
+            let (shares, commitment) = FeldmanVSS::<C>::share(&pp, rng, secret);
             for (node_idx, s) in shares.iter().enumerate() {
                 // happy path
-                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &commitment, &proof).unwrap());
+                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &commitment).unwrap());
 
                 // sad path
                 // wrong node_idx should fail
                 assert!(
-                    !FeldmanVSS::<C>::verify(&pp, node_idx + 1, s, &commitment, &proof)
-                        .unwrap_or(false)
+                    !FeldmanVSS::<C>::verify(&pp, node_idx + 1, s, &commitment).unwrap_or(false)
                 );
 
                 // wrong secret share should fail
@@ -163,7 +155,6 @@ mod tests {
                         node_idx,
                         &C::ScalarField::rand(rng),
                         &commitment,
-                        &proof
                     )
                     .unwrap()
                 );
@@ -171,11 +162,11 @@ mod tests {
                 // wrong commitment should fail
                 let mut bad_comm = commitment.clone();
                 bad_comm[1] = C::Affine::default();
-                assert!(!FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm, &proof).unwrap());
+                assert!(!FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm).unwrap());
 
                 // incomplete/dropped commitment should fail
                 bad_comm.pop();
-                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm, &proof).is_err());
+                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
             }
 
             // 1. Randomly select t-share subset and reconstruct (should succeed)
