@@ -1,7 +1,7 @@
 use aes_gcm::{AeadCore, Aes256Gcm, aead};
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup, hashing::HashToCurve};
-use ark_ff::{One, PrimeField, UniformRand, batch_inversion};
+use ark_ff::{PrimeField, UniformRand};
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
 use ark_poly::{DenseUVPolynomial, polynomial::univariate::DensePolynomial};
@@ -17,6 +17,7 @@ use std::{
 };
 use zeroize::Zeroize;
 
+use crate::interpolation::interpolate_in_exponent;
 use crate::{
     Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
@@ -233,44 +234,14 @@ where
         }
 
         // Collect eval points for decryption shares
-        let x = dec_shares
+        let (x, w_vec): (Vec<_>, Vec<_>) = dec_shares
             .iter()
-            .map(|share| domain.element(share.index as usize))
-            .collect::<Vec<_>>();
+            .take(threshold)
+            .map(|share| (domain.element(share.index as usize), share.w))
+            .unzip();
 
-        // Calculate lagrange coefficients using barycentric form
-        let l = {
-            // l(0) = \prod {0-x_i} is common to all basis
-            let l_common = x[..threshold]
-                .iter()
-                .fold(C::ScalarField::one(), |acc, x_i| acc * (-*x_i));
-
-            // w: barycentric weights
-            let mut w = vec![C::ScalarField::one(); threshold];
-            for i in 0..threshold {
-                for j in 0..threshold {
-                    if i != j {
-                        w[i] *= x[i] - x[j];
-                    }
-                }
-            }
-            batch_inversion(&mut w);
-
-            x.iter()
-                .zip(w.iter())
-                .map(|(x_i, w_i)| l_common * w_i / (-*x_i))
-                .collect::<Vec<_>>()
-        };
-
-        // Lagrange interpolation in the exponent
-        let w = C::msm(
-            &dec_shares[..threshold]
-                .iter()
-                .map(|share| share.w.into_affine())
-                .collect::<Vec<_>>(),
-            &l,
-        )
-        .map_err(|e| {
+        // interpolate in the exponent
+        let w = interpolate_in_exponent(&x, &C::normalize_batch(&w_vec)).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Interpolate in the exponent failed: {:?}", e))
         })?;
 

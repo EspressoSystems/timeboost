@@ -15,7 +15,6 @@ pub trait VerifiableSecretSharing {
     type Secret;
     type SecretShare;
     type Commitment;
-    type ShareProof;
 
     /// Generates a (t, n)-secret sharing of the given `secret`.
     ///
@@ -24,23 +23,17 @@ pub trait VerifiableSecretSharing {
     /// Returns a tuple of:
     ///   - a vector of `n` secret shares,
     ///   - a global proof/commitment (e.g., Feldman commitments; may be unused in some schemes),
-    ///   - a vector of `n` per-share proofs/openings (e.g., Pedersen openings).
     fn share<R: Rng>(
         pp: &Self::PublicParam,
         rng: &mut R,
         secret: Self::Secret,
-    ) -> (
-        Vec<Self::SecretShare>,
-        Self::Commitment,
-        Vec<Self::ShareProof>,
-    );
+    ) -> (Vec<Self::SecretShare>, Self::Commitment);
 
     /// Verifies a secret share against the global and per-share proofs.
     ///
     /// - `node_idx`: index of the share to verify
     /// - `share`: the secret share to verify
     /// - `commitment`: the global commitment (if any)
-    /// - `share_proof`: the per-share proof/opening (if any)
     ///
     /// Returns Ok(true) if valid, Ok(false) if invalid, or an appropriate `VssError` otherwise.
     fn verify(
@@ -48,7 +41,6 @@ pub trait VerifiableSecretSharing {
         node_idx: usize,
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
-        share_proof: &Self::ShareProof,
     ) -> Result<bool, VssError>;
 
     /// Reconstructs the original secret from a set of (index, share) pairs.
@@ -65,10 +57,16 @@ pub trait VerifiableSecretSharing {
 /// Error types for [`VerifiableSecretSharing`]
 #[derive(Error, Debug, Clone)]
 pub enum VssError {
-    #[error("insufficient secret shares, expected: {0}, got: {1}")]
-    InsufficientShares(usize, usize),
+    #[error("mismatched number of secret shares, expected: {0}, got: {1}")]
+    MismatchedSharesCount(usize, usize),
     #[error("share index out of bound, max: {0}, got: {1}")]
     IndexOutOfBound(usize, usize),
     #[error("invalid secret share at index {0}: {1}")]
     InvalidShare(usize, String),
+    #[error("invalid VSS commitment")]
+    InvalidCommitment,
+    #[error("failed to reconstruct: {0}")]
+    FailedReconstruction(String),
+    #[error("internal err: {0}")]
+    InternalError(String),
 }
