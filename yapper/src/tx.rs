@@ -13,10 +13,10 @@ fn setup_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Url, Url)>> {
     let mut urls = Vec::new();
 
     for addr in all_hosts_as_addresses {
-        let regular_url = Url::parse(&format!("http://{}/v0/submit-regular", addr))
-            .with_context(|| format!("parsing {} into a url", addr))?;
-        let priority_url = Url::parse(&format!("http://{}/v0/submit-priority", addr))
-            .with_context(|| format!("parsing {} into a url", addr))?;
+        let regular_url = Url::parse(&format!("http://{addr}/v0/submit-regular"))
+            .with_context(|| format!("parsing {addr} into a url"))?;
+        let priority_url = Url::parse(&format!("http://{addr}/v0/submit-priority"))
+            .with_context(|| format!("parsing {addr} into a url"))?;
 
         urls.push((regular_url, priority_url));
     }

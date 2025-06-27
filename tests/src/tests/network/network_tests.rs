@@ -275,7 +275,7 @@ where
         let round = *msg.round().num();
         // Late start 1 node
         if round <= online_at_round && id == 4 {
-            return Err(format!("Node: {}, dropping msg for round: {}", id, round));
+            return Err(format!("Node: {id}, dropping msg for round: {round}"));
         }
         Ok(msg.clone())
     });
@@ -336,7 +336,7 @@ where
         let round = *msg.round().num();
         // Turn node offline for one round
         if round == offline_at_round && id == node_id {
-            return Err(format!("Node: {}, dropping msg for round: {}", id, round));
+            return Err(format!("Node: {id}, dropping msg for round: {round}"));
         }
         if let Message::Vertex(v) = msg {
             // Simulate coming online in middle of round so drop some vertex messages
@@ -346,10 +346,7 @@ where
                     || v.signing_key() == committee.get_key(1).unwrap()
                     || v.signing_key() == committee.get_key(2).unwrap())
             {
-                return Err(format!(
-                    "Node: {}, dropping vertex for round: {}",
-                    id, round
-                ));
+                return Err(format!("Node: {id}, dropping vertex for round: {round}"));
             }
         }
 

@@ -45,7 +45,7 @@ impl TimeboostApi for TimeboostApiState {
             .await
             .map_err(|e| ServerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("Failed to broadcast transaction: {}", e),
+                message: format!("Failed to broadcast transaction: {e}"),
             })?;
 
         Ok(())
@@ -57,7 +57,7 @@ impl TimeboostApi for TimeboostApiState {
             .await
             .map_err(|e| ServerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("Failed to broadcast transaction: {}", e),
+                message: format!("Failed to broadcast transaction: {e}"),
             })?;
 
         Ok(())

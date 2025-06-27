@@ -86,10 +86,10 @@ pub enum TestNetError<T: Committable, C: Comm<T>> {
 impl<T: Committable + Send, C: Comm<T> + Send> std::fmt::Display for TestNetError<T, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestNetError::Recv(err) => write!(f, "receive Error: {}", err),
-            TestNetError::Send(err) => write!(f, "send Error: {}", err),
-            TestNetError::Broadcast(err) => write!(f, "broadcast Error: {}", err),
-            TestNetError::Intercept(err) => write!(f, "intercept Error: {}", err),
+            TestNetError::Recv(err) => write!(f, "receive Error: {err}"),
+            TestNetError::Send(err) => write!(f, "send Error: {err}"),
+            TestNetError::Broadcast(err) => write!(f, "broadcast Error: {err}"),
+            TestNetError::Intercept(err) => write!(f, "intercept Error: {err}"),
         }
     }
 }

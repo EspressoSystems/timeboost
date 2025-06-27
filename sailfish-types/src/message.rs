@@ -418,7 +418,7 @@ impl<T: Committable> Action<T> {
 impl<T: Committable> fmt::Display for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Action::ResetTimer(round) => write!(f, "ResetTimer({})", round),
+            Action::ResetTimer(round) => write!(f, "ResetTimer({round})"),
             Action::Deliver(data) => write!(f, "Deliver({},{})", data.round, data.source),
             Action::SendProposal(envelope) => {
                 write!(f, "SendProposal({})", envelope.data().round().data())
@@ -440,8 +440,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::SendNoVote(ver_key, envelope) => {
                 write!(
                     f,
-                    "SendNoVote({}, {})",
-                    ver_key,
+                    "SendNoVote({ver_key}, {})",
                     envelope.data().no_vote().data().round()
                 )
             }
