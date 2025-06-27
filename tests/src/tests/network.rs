@@ -206,7 +206,7 @@ impl<N: TestableNetwork> NetworkTest<N> {
                                     results.insert(handle_res.key, handle_res.outcome);
                                 },
                                 Err(err) => {
-                                    panic!("Join Err: {}", err);
+                                    panic!("Join Err: {err}");
                                 },
                             }
                         },

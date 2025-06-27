@@ -125,7 +125,7 @@ pub async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
 
 pub async fn rpc_api(sender: Sender<BundleVariant>, rpc_port: u16) {
     if let Err(e) = api::endpoints::TimeboostApiState::new(sender)
-        .run(Url::parse(&format!("http://0.0.0.0:{}", rpc_port)).unwrap())
+        .run(Url::parse(&format!("http://0.0.0.0:{rpc_port}")).unwrap())
         .await
     {
         error!("failed to run timeboost api: {}", e);
