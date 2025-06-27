@@ -1035,6 +1035,11 @@ where
         if let Some(cert) = self.timeouts.get(&r).and_then(|a| a.certificate()) {
             return Some(Evidence::Timeout(cert.clone()));
         }
+        if let Some(cert) = self.handovers.as_ref().and_then(|a| a.certificate()) {
+            if cert.data().round().num() == r {
+                return Some(Evidence::Handover(cert.clone()));
+            }
+        }
         None
     }
 
