@@ -42,9 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: taiki-e/install-action@v2
-      with:
-        tool: nextest@0.9.98
+    - uses: taiki-e/install-action@nextest
     - name: Install protobuf compiler
       run: sudo apt-get install -y protobuf-compiler
     - name: Install Just
