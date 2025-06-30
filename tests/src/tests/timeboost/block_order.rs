@@ -3,10 +3,12 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use metrics::NoMetrics;
 use timeboost_builder::BlockProducer;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_sequencer::Sequencer;
+use timeboost_types::Block;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -52,15 +54,15 @@ async fn block_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    t = s.next_transactions() => {
-                        let t = t.expect("transaction").into_txns();
-                        p.enqueue(t).await.unwrap()
+                    o = s.next_transactions() => {
+                        let o = o.expect("sequencer output");
+                        let b = Block::new(0, *o.round(), Default::default(), Bytes::new());
+                        p.enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {
                         debug!(node = %s.public_key(), blocks = %i);
                         let b = b.expect("block");
                         i += 1;
-                        p.gc(b.num()).await.unwrap();
                         tx.send(b).unwrap()
                     }
                 }

@@ -40,8 +40,13 @@ pub struct TimeboostConfig {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     pub(crate) nitro_addr: Option<Address>,
 
+    /// Is this node recovering from a crash?
     #[builder(default = true)]
     pub(crate) recover: bool,
+
+    /// Length of the leash between Sailfish an other phases.
+    #[builder(default = 100)]
+    pub(crate) leash_len: usize,
 }
 
 impl TimeboostConfig {
@@ -55,6 +60,7 @@ impl TimeboostConfig {
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
+            .leash_len(self.leash_len)
             .build()
     }
 
@@ -64,6 +70,7 @@ impl TimeboostConfig {
             .dh_keypair(self.dh_keypair.clone())
             .address(self.producer_addr.clone())
             .committee(self.producer_committee.clone())
+            .retain(self.leash_len)
             .build()
     }
 }

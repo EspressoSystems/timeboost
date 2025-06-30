@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::iter;
+use std::num::NonZeroUsize;
 
 use committable::{Commitment, Committable};
 use either::Either;
@@ -11,6 +12,7 @@ pub struct VoteAccumulator<D: Committable> {
     committee: Committee,
     votes: HashMap<Commitment<D>, Entry<D>>,
     cert: Option<Certificate<D>>,
+    threshold: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -31,10 +33,26 @@ impl<D> Entry<D> {
 impl<D: Committable + Clone> VoteAccumulator<D> {
     pub fn new(committee: Committee) -> Self {
         Self {
+            threshold: committee.quorum_size().get(),
             committee,
             votes: HashMap::new(),
             cert: None,
         }
+    }
+
+    /// Set an arbitrary certificate threshold.
+    ///
+    /// When the given number of certificates has been collected, a certificate
+    /// is created. By default this is the quorum size of the committee.
+    pub fn set_threshold(&mut self, t: NonZeroUsize) {
+        debug_assert!(t <= self.committee.size());
+        self.threshold = t.get()
+    }
+
+    /// Like `set_threshold`, but moves `self`.
+    pub fn with_threshold(mut self, t: NonZeroUsize) -> Self {
+        self.set_threshold(t);
+        self
     }
 
     pub fn committee(&self) -> &Committee {
@@ -113,7 +131,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 
         entry.sigs.insert(ix, sig);
 
-        if entry.sigs.len() < self.committee.quorum_size().get() {
+        if entry.sigs.len() < self.threshold {
             return Ok(None);
         }
 

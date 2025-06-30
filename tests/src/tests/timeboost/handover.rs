@@ -136,6 +136,7 @@ where
                     set_prev.then(|| prev[0].sailfish_committee().clone()),
                 )
                 .recover(false)
+                .leash_len(100)
                 .build()
         })
 }

@@ -95,6 +95,7 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
 ] }
 thiserror = "2.0"
 tide-disco = "0.9.3"
+smallvec = "1.15.1"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 toml = "0.8.19"

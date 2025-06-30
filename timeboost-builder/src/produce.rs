@@ -1,56 +1,48 @@
-use bytes::{BufMut, BytesMut};
+use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroUsize;
+use std::result::Result as StdResult;
+
+use bon::Builder;
+use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
-use multisig::{Certificate, Committee, Envelope, Keypair, Unchecked, Validated, VoteAccumulator};
-use serde::Serialize;
-use std::collections::{BTreeMap, VecDeque};
-use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock, Transaction};
+use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::{
+    Certificate, Committee, Envelope, KeyId, Keypair, PublicKey, Unchecked, VoteAccumulator,
+};
+use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
+use timeboost_types::{Block, BlockInfo, BlockNumber, CertifiedBlock};
+use tokio::select;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::BlockProducerConfig;
 
-const MAX_BLOCKS: usize = 100;
-
-#[derive(Clone)]
-enum Status {
-    Uncertified(Block),
-    Certified(Certificate<BlockHash>, Block),
-}
-
-struct WorkerResponse(BlockNumber, Certificate<BlockHash>);
-
-enum WorkerCommand {
-    Send(BlockNumber, BlockHash),
-    Gc(BlockNumber),
-}
+type Result<T> = StdResult<T, ProducerError>;
 
 pub struct BlockProducer {
-    /// Keypair of the node.
-    label: Keypair,
-    /// Incoming transactions
-    queue: VecDeque<Transaction>,
-    /// Last block produced.
-    parent: Option<(BlockNumber, BlockHash)>,
-    /// Blocks subject to certification.
-    blocks: BTreeMap<(BlockNumber, BlockHash), Status>,
-    /// Sender for worker request.
-    block_tx: Sender<WorkerCommand>,
-    /// Receiver for worker response.
-    cert_rx: Receiver<WorkerResponse>,
+    /// Log label of the node.
+    label: PublicKey,
+    /// Sender for blocks to certify.
+    block_tx: Sender<(BlockNumber, Block)>,
+    /// Receiver certified blocks.
+    block_rx: Receiver<CertifiedBlock>,
     /// Worker task handle.
-    jh: JoinHandle<()>,
+    worker: JoinHandle<EndOfPlay>,
+    /// Block number counter.
+    counter: BlockNumber,
 }
 
 impl BlockProducer {
-    pub async fn new<M>(cfg: BlockProducerConfig, metrics: &M) -> Result<Self, ProducerError>
+    pub async fn new<M>(cfg: BlockProducerConfig, metrics: &M) -> Result<Self>
     where
         M: metrics::Metrics,
     {
-        let (block_tx, block_rx) = channel(MAX_BLOCKS);
-        let (cert_tx, cert_rx) = channel(MAX_BLOCKS);
+        let (block_tx, block_rx) = channel(cfg.retain);
+        let (cert_tx, cert_rx) = channel(cfg.retain);
 
         let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
 
@@ -64,273 +56,374 @@ impl BlockProducer {
         )
         .await?;
 
-        let worker = Worker::new(
-            cfg.sign_keypair.clone(),
-            Overlay::new(net),
-            cfg.committee.committee().clone(),
-        );
+        let worker = Worker::builder()
+            .label(cfg.sign_keypair.public_key())
+            .committee(cfg.committee.committee().clone())
+            .keypair(cfg.sign_keypair.clone())
+            .net(Overlay::new(net))
+            .tx(cert_tx)
+            .rx(block_rx)
+            .trackers(Default::default())
+            .retain(cfg.retain)
+            .build();
 
         Ok(Self {
-            label: cfg.sign_keypair,
-            queue: VecDeque::new(),
-            parent: None,
-            blocks: BTreeMap::new(),
+            label: cfg.sign_keypair.public_key(),
             block_tx,
-            cert_rx,
-            jh: spawn(worker.go(block_rx, cert_tx)),
+            block_rx: cert_rx,
+            worker: spawn(worker.go()),
+            counter: BlockNumber::genesis(),
         })
     }
 
-    pub async fn gc(&mut self, r: BlockNumber) -> Result<(), ProducerDown> {
+    pub async fn enqueue(&mut self, b: Block) -> StdResult<(), ProducerDown> {
+        debug!(
+            node  = %self.label,
+            round = %b.round(),
+            num   = %self.counter,
+            hash  = ?b.hash(),
+            "enqueuing block"
+        );
         self.block_tx
-            .send(WorkerCommand::Gc(r))
+            .send((self.counter, b))
             .await
-            .map_err(|_| ProducerDown(()))
-    }
-
-    pub async fn enqueue<I>(&mut self, txs: I) -> Result<(), ProducerDown>
-    where
-        I: IntoIterator<Item = Transaction>,
-    {
-        self.queue.extend(txs);
-
-        // TODO: produce blocks deterministically according to spec.
-        // Useful links:
-        // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/execution/gethexec/sequencer.go#L1001
-        // https://github.com/OffchainLabs/nitro/blob/66acaf2ce12de4c55290fad85083f31b14cec3cf/arbos/block_processor.go#L164
-        const BLOCK_SIZE: usize = 10;
-
-        if self.queue.len() >= BLOCK_SIZE {
-            let txs: Vec<_> = self.queue.drain(..BLOCK_SIZE).collect();
-
-            let (num, block) = match self.parent {
-                Some((num, parent)) => {
-                    let block = Block::new(parent, txs);
-                    (num + 1, block)
-                }
-                None => {
-                    let block = Block::new(BlockHash::default(), txs);
-                    (BlockNumber::genesis(), block)
-                }
-            };
-
-            let hash = BlockHash::from(*block.hash_slow());
-            self.blocks
-                .insert((num, hash), Status::Uncertified(block.clone()));
-            self.block_tx
-                .send(WorkerCommand::Send(num, hash))
-                .await
-                .map_err(|_| ProducerDown(()))?;
-            self.parent = Some((num, hash));
-
-            trace!(node = %self.label.public_key(), %num, block = ?hash, "certifying");
-        }
-
+            .map_err(|_| ProducerDown(()))?;
+        self.counter = self.counter + 1;
         Ok(())
     }
 
-    pub async fn next_block(&mut self) -> Result<CertifiedBlock, ProducerDown> {
-        if let Some(cb) = self.first_certified() {
-            return Ok(cb);
-        }
-        while let Some(WorkerResponse(num, cert)) = self.cert_rx.recv().await {
-            trace!(
-                node = %self.label.public_key(),
-                num  = %num,
-                hash = ?cert.data(),
-                "certified"
-            );
-            if let Some(status) = self.blocks.get_mut(&(num, *cert.data())) {
-                if let Status::Uncertified(block) = status {
-                    *status = Status::Certified(cert, block.to_owned());
+    /// Get the next certified block.
+    ///
+    /// # Panics
+    ///
+    /// Once a `ProducerDown` error is returned, calling `next_block` again panics.
+    pub async fn next_block(&mut self) -> StdResult<CertifiedBlock, ProducerDown> {
+        select! {
+            end = &mut self.worker => match end {
+                Ok(end) => {
+                    let end: EndOfPlay = end;
+                    error!(node = %self.label, %end, "worker terminated");
                 }
-            };
-            if let Some(cb) = self.first_certified() {
-                return Ok(cb);
-            } else {
-                debug!(node = %self.label.public_key(), %num, "received future certified block");
+                Err(err) => {
+                    error!(node = %self.label, %err, "worker panic");
+                }
+            },
+            blk = self.block_rx.recv() => {
+                if let Some(b) = blk {
+                    info!(
+                        node  = %self.label,
+                        round = %b.data().round(),
+                        hash  = ?b.data().hash(),
+                        "certified block"
+                    );
+                    return Ok(b)
+                }
+                error!(node = %self.label, "worker terminated");
             }
         }
         Err(ProducerDown(()))
-    }
-
-    /// Pop the first certified block.
-    fn first_certified(&mut self) -> Option<CertifiedBlock> {
-        let entry = self.blocks.first_entry()?;
-        if matches!(entry.get(), Status::Certified(..)) {
-            let ((num, _hash), status) = entry.remove_entry();
-            let Status::Certified(cert, block) = status else {
-                unreachable!("`Status::Certified` has been checked above.");
-            };
-            Some(CertifiedBlock::new(num, cert, block))
-        } else {
-            None
-        }
     }
 }
 
 impl Drop for BlockProducer {
     fn drop(&mut self) {
-        self.jh.abort()
+        self.worker.abort()
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum CertStatus {
-    Unknown,
-    Certified,
+#[derive(Builder)]
+struct Worker {
+    /// Our signing keypair.
+    keypair: Keypair,
+
+    /// Log label.
+    label: PublicKey,
+
+    /// Network handle.
+    net: Overlay,
+
+    /// The committee of block signers.
+    committee: Committee,
+
+    /// Blocks to certify.
+    rx: Receiver<(BlockNumber, Block)>,
+
+    /// Sender to return certified blocks back to the application.
+    tx: Sender<CertifiedBlock>,
+
+    /// Track votes for block signatures.
+    trackers: BTreeMap<BlockNumber, BTreeMap<BlockInfo, Tracker>>,
+
+    /// Keep the given number of blocks around when garbage collecting.
+    retain: usize,
+
+    /// Blocks to certify that wait for `Evidence` of previous rounds.
+    #[builder(default)]
+    pending: HashMap<BlockNumber, Block>,
+
+    /// The next expected block to deliver.
+    #[builder(default = BlockNumber::genesis())]
+    next: BlockNumber,
 }
 
 struct Tracker {
-    votes: VoteAccumulator<BlockHash>,
-    num: Option<BlockNumber>,
-    status: CertStatus,
-}
-
-struct Worker {
-    keypair: Keypair,
-    net: Overlay,
-    committee: Committee,
-    trackers: BTreeMap<BlockHash, Tracker>,
+    /// The block to certify.
+    ///
+    /// `None` in case we receive votes before the block itself is produced.
+    block: Option<Block>,
+    /// The vote accumulator for the block info.
+    votes: VoteAccumulator<BlockInfo>,
+    /// We remember the voters and only allow one vote per party and block.
+    voters: SmallVec<[KeyId; 16]>,
 }
 
 impl Worker {
-    pub fn new(keypair: Keypair, net: Overlay, committee: Committee) -> Self {
-        Self {
-            keypair,
-            net,
-            committee,
-            trackers: BTreeMap::new(),
+    pub async fn go(mut self) -> EndOfPlay {
+        loop {
+            select! {
+                msg = self.net.receive() => match msg {
+                    Ok((src, data)) =>
+                        match self.on_message(src, data).await {
+                            Ok(()) => {}
+                            Err(ProducerError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, %src, "error on message")
+                        }
+                    Err(err) => {
+                        let _: NetworkDown = err;
+                        debug!(node = %self.label, "network down");
+                        return EndOfPlay::NetworkDown
+                    }
+                },
+                req = self.rx.recv() => match req {
+                    Some((num, blk)) =>
+                        match self.on_certify_request(num, blk).await {
+                            Ok(()) => {}
+                            Err(ProducerError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, "error on certify request")
+                        }
+                    None => {
+                        debug!(node = %self.label, "parent down");
+                        return EndOfPlay::ProducerDown
+                    }
+                }
+            }
+            match self.deliver().await {
+                Ok(()) => {}
+                Err(ProducerError::End(end)) => return end,
+                Err(err) => warn!(node = %self.label, %err, "delivery error"),
+            }
         }
     }
 
-    pub async fn go(
-        mut self,
-        mut block_rx: Receiver<WorkerCommand>,
-        cert_tx: Sender<WorkerResponse>,
-    ) {
-        let label = self.keypair.public_key();
-        let mut recv_block: (Option<BlockNumber>, Envelope<BlockHash, Validated>);
-        loop {
-            tokio::select! {
-                val = self.net.receive() => match val {
-                    Ok((src, data)) => {
-                        let b = match deserialize::<BlockInfo<Unchecked>>(&data) {
-                            Ok(block) => block,
-                            Err(err) => {
-                                warn!(node = %label, %err, "deserialization error");
-                                continue;
-                            }
-                        };
-                        let num = b.number();
-                        let env = b.into_envelope();
-                        trace!(
-                            node = %label,
-                            num  = %num,
-                            vote = ?env.data(),
-                            from = %src,
-                            "receive"
-                        );
-                        if let Some(e) = env.validated(&self.committee) {
-                            recv_block = (None, e);
-                        } else {
-                            warn!(node = %label, %num, "invalid block info received");
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        let _: NetworkDown = e;
-                        debug!(node = %label, "network down");
-                        return;
-                    }
-                },
+    /// The application asked to certify the given block.
+    async fn on_certify_request(&mut self, num: BlockNumber, block: Block) -> Result<()> {
+        debug!(
+            node  = %self.label,
+            round = %block.round(),
+            num   = %num,
+            hash  = ?block.hash(),
+            "certify request"
+        );
 
-                val = block_rx.recv() => match val {
-                    Some(WorkerCommand::Send(num, hash)) => {
-                        trace!(node = %label, %num, hash = ?hash, "produced");
-                        let env = Envelope::signed(hash, &self.keypair);
-                        recv_block = (Some(num), env.clone());
-                        let b = BlockInfo::new(num, env);
-                        let data = match serialize(&b) {
-                            Ok(data) => data,
-                            Err(err) => {
-                                warn!(node = %label, %err, %num, ?hash, "serialization error");
-                                continue;
-                            }
-                        };
-                        self.net.broadcast(*num, data).await.ok();
-                    },
-                    Some(WorkerCommand::Gc(num)) => {
-                        let num = num.saturating_sub(MAX_BLOCKS as u64);
-                        if num > 0 {
-                            self.net.gc(num)
-                        }
-                        continue;
-                    }
-                    None => {
-                        debug!(node = %label, "worker request channel closed");
-                        return;
-                    }
-                },
-            }
+        let info = BlockInfo::new(num, *block.hash(), self.committee.id());
 
-            let (block_num, block_hash) = recv_block;
+        let Some(evi) = self.evidence(num) else {
+            debug!(
+                node  = %self.label,
+                round = %block.round(),
+                num   = %num,
+                hash  = ?block.hash(),
+                "stashing block until evidence is available"
+            );
+            self.pending.insert(info.num(), block);
+            return Ok(());
+        };
 
-            let tracker = self
-                .trackers
-                .entry(*block_hash.data())
-                .or_insert_with(|| Tracker {
-                    votes: VoteAccumulator::new(self.committee.clone()),
-                    num: None,
-                    status: CertStatus::Unknown,
-                });
+        self.send(block, info, evi).await
+    }
 
-            if tracker.status == CertStatus::Certified {
-                continue;
-            }
+    /// Broadcast the certification message to everyone.
+    async fn send(&mut self, block: Block, info: BlockInfo, evi: Evidence) -> Result<()> {
+        debug!(
+            node  = %self.label,
+            round = %block.round(),
+            num   = %info.num(),
+            hash  = ?block.hash(),
+            "propose block hash"
+        );
 
-            if let Some(num) = block_num {
-                // Block number provided => block produced/signed by the local node.
-                tracker.num = Some(num);
-            }
+        let tracker = self
+            .trackers
+            .entry(info.num())
+            .or_default()
+            .entry(info.clone())
+            .or_insert_with(|| Tracker {
+                block: Some(block.clone()),
+                votes: VoteAccumulator::new(self.committee.clone())
+                    .with_threshold(self.committee.one_honest_threshold()),
+                voters: SmallVec::new(),
+            });
 
-            match tracker.votes.add(block_hash.into_signed()) {
-                Ok(Some(cert)) => {
-                    if let Some(num) = tracker.num {
-                        if cert_tx
-                            .send(WorkerResponse(num, cert.clone()))
-                            .await
-                            .is_err()
-                        {
-                            error!(node = %label, "failed to send certified block");
-                            return;
-                        }
-                        tracker.status = CertStatus::Certified;
-                    }
+        if tracker.block.is_none() {
+            tracker.block = Some(block.clone())
+        }
+
+        let msg = Message {
+            info: Envelope::signed(info.clone(), &self.keypair),
+            evidence: evi,
+        };
+
+        let data = serialize(&msg)?;
+        self.net
+            .broadcast(*info.num(), data)
+            .await
+            .map_err(|e| ProducerError::End(e.into()))?;
+
+        Ok(())
+    }
+
+    /// A message from another block signer has been received.
+    async fn on_message(&mut self, src: PublicKey, data: Bytes) -> Result<()> {
+        debug!(node = %self.label, %src, "incoming message");
+
+        let msg: Message<Unchecked> = deserialize(&data)?;
+
+        let Some(info) = msg.info.validated(&self.committee) else {
+            warn!(node = %self.label, %src, "invalid envelope signature");
+            return Ok(());
+        };
+
+        if !msg.evidence.is_valid(
+            info.data().num(),
+            &self.committee,
+            self.committee.one_honest_threshold(),
+        ) {
+            warn!(
+                node = %self.label,
+                src  = %src,
+                num  = %info.data().num(),
+                evi  = %msg.evidence.num(),
+                "invalid message evidence"
+            );
+            return Ok(());
+        }
+
+        if self.has_voted(info.data().num(), &src) {
+            debug!(node = %self.label, %src, num = %info.data().num(), "vote already counted");
+            return Ok(());
+        }
+
+        let tracker = self
+            .trackers
+            .entry(info.data().num())
+            .or_default()
+            .entry(info.data().clone())
+            .or_insert_with(|| Tracker {
+                block: None,
+                votes: VoteAccumulator::new(self.committee.clone())
+                    .with_threshold(self.committee.one_honest_threshold()),
+                voters: SmallVec::new(),
+            });
+
+        let num = info.data().num();
+
+        match tracker.votes.add(info.into_signed()) {
+            Ok(Some(cert)) => {
+                // Check if a waiting block can be broadcasted, now that new evidence exists.
+                if let Some(b) = self.pending.remove(&(num + 1)) {
+                    let i = BlockInfo::new(num + 1, *b.hash(), self.committee.id());
+                    let e = Evidence::Previous(cert.clone());
+                    self.send(b, i, e).await?
                 }
-                Err(err) => {
-                    warn!(node = %label, %err, "failed to add vote to tracker");
-                }
-                _ => {}
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(node = %self.label, %err, %src, %num, "failed to add block info vote");
             }
         }
+
+        Ok(())
+    }
+
+    /// Go over trackers and deliver the next certified block, if any.
+    async fn deliver(&mut self) -> Result<()> {
+        let n = self.next;
+        for t in self
+            .trackers
+            .get(&self.next)
+            .into_iter()
+            .flat_map(|tt| tt.values())
+        {
+            if let Some(cert) = t.votes.certificate()
+                && let Some(block) = &t.block
+            {
+                let cb = CertifiedBlock::new(cert.clone(), block.clone());
+                self.tx
+                    .send(cb)
+                    .await
+                    .map_err(|_| EndOfPlay::ProducerDown)?;
+                self.next = self.next + 1;
+                break;
+            }
+        }
+        if n != self.next {
+            self.gc(self.next);
+        } else {
+            debug!(node = %self.label, num = %self.next, "still awaiting block");
+        }
+        Ok(())
+    }
+
+    fn gc(&mut self, num: BlockNumber) {
+        let num: BlockNumber = num.saturating_sub(self.retain as u64).into();
+        if *num > 0 {
+            self.net.gc(*num)
+        }
+        self.trackers.retain(|n, _| *n >= num);
+    }
+
+    fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
+        if num.is_genesis() {
+            return Some(Evidence::Genesis);
+        }
+        let trackers = self.trackers.get(&(num - 1))?;
+        for t in trackers.values() {
+            if let Some(cert) = t.votes.certificate() {
+                return Some(Evidence::Previous(cert.clone()));
+            }
+        }
+        None
+    }
+
+    fn has_voted(&self, num: BlockNumber, src: &PublicKey) -> bool {
+        let Some(kid) = self.committee.get_index(src) else {
+            error!(node = %self.label, %src, "unknown committee member");
+            return false;
+        };
+        for (_, t) in self.trackers.get(&num).into_iter().flatten() {
+            if t.voters.contains(&kid) {
+                return true;
+            }
+        }
+        false
     }
 }
 
-fn serialize<T: Serialize>(d: &T) -> Result<Data, ProducerError> {
+fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
     let bytes = b.into_inner();
     Ok(Data::try_from(bytes)?)
 }
 
-fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T, ProducerError> {
-    bincode::serde::decode_from_slice(
-        d,
-        bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
-    )
-    .map(|(msg, _)| msg)
-    .map_err(Into::into)
+fn deserialize<T>(d: &bytes::Bytes) -> Result<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let cfg = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
+    bincode::serde::decode_from_slice(d, cfg)
+        .map(|(msg, _)| msg)
+        .map_err(Into::into)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -343,12 +436,75 @@ pub enum ProducerError {
     #[error("network error: {0}")]
     Net(#[from] NetworkError),
 
+    #[error("terminal error: {0}")]
+    End(#[from] EndOfPlay),
+
     #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
+    Encode(#[from] bincode::error::EncodeError),
 
     #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    Decode(#[from] bincode::error::DecodeError),
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
+}
+
+/// Fatal errors.
+#[derive(Debug, thiserror::Error)]
+pub enum EndOfPlay {
+    #[error("network down")]
+    NetworkDown,
+    #[error("producer down")]
+    ProducerDown,
+}
+
+impl From<NetworkDown> for EndOfPlay {
+    fn from(_: NetworkDown) -> Self {
+        Self::NetworkDown
+    }
+}
+
+/// Evidence to include in certify messages.
+#[derive(Serialize, Deserialize)]
+enum Evidence {
+    /// For block number 0.
+    Genesis,
+    /// For any block number > 0, the certificate of the previous block.
+    Previous(Certificate<BlockInfo>),
+}
+
+impl Evidence {
+    fn num(&self) -> BlockNumber {
+        match self {
+            Self::Genesis => BlockNumber::genesis(),
+            Self::Previous(crt) => crt.data().num(),
+        }
+    }
+
+    fn is_valid(&self, n: BlockNumber, c: &Committee, t: NonZeroUsize) -> bool {
+        match self {
+            Self::Genesis => n.is_genesis(),
+            Self::Previous(cert) => {
+                cert.data().num() + 1 == n && cert.is_valid_with_threshold_par(c, t)
+            }
+        }
+    }
+}
+
+/// The certify message broadcasted to every block signer.
+#[derive(Serialize, Deserialize)]
+struct Message<S> {
+    info: Envelope<BlockInfo, S>,
+    evidence: Evidence,
+}
+
+impl Committable for Evidence {
+    fn commit(&self) -> Commitment<Self> {
+        match self {
+            Self::Genesis => RawCommitmentBuilder::new("ProducerEvidence::Genesis").finalize(),
+            Self::Previous(crt) => RawCommitmentBuilder::new("ProducerEvidence::Previous")
+                .field("cert", crt.commit())
+                .finalize(),
+        }
+    }
 }
