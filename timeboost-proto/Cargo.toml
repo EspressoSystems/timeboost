@@ -11,5 +11,5 @@ timeboost-types = { path = "../timeboost-types" }
 prost-types = "0.11"
 
 [build-dependencies]
-prost-build = "0.13.5"
+prost-build = "0.14.1"
 protoc-rust = "^2.0"
