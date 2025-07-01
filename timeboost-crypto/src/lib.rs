@@ -4,6 +4,7 @@ mod interpolation;
 pub mod mre;
 pub mod sg_encryption;
 pub mod traits;
+pub mod vess;
 
 use ark_ec::CurveGroup;
 use ark_ec::hashing::curve_maps::wb::WBMap;
