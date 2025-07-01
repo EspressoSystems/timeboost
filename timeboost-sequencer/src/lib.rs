@@ -14,7 +14,7 @@ use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
-use sailfish::types::{Action, ConsensusTime, Evidence, RoundNumber};
+use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_types::{BundleVariant, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
@@ -33,28 +33,14 @@ pub use config::{SequencerConfig, SequencerConfigBuilder};
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
-pub struct Output {
-    txns: Vec<Transaction>,
-    round: RoundNumber,
-    timestamp: Timestamp,
-}
-
-impl Output {
-    pub fn round(&self) -> RoundNumber {
-        self.round
-    }
-
-    pub fn time(&self) -> Timestamp {
-        self.timestamp
-    }
-
-    pub fn txns(&self) -> &[Transaction] {
-        &self.txns
-    }
-
-    pub fn into_txns(self) -> Vec<Transaction> {
-        self.txns
-    }
+#[derive(Debug)]
+pub enum Output {
+    Transactions {
+        round: RoundNumber,
+        timestamp: Timestamp,
+        transactions: Vec<Transaction>,
+    },
+    UseCommittee(Round),
 }
 
 pub struct Sequencer {
@@ -224,7 +210,7 @@ impl Sequencer {
         self.bundles.add_bundles(it)
     }
 
-    pub async fn next_transactions(&mut self) -> Result<Output> {
+    pub async fn next(&mut self) -> Result<Output> {
         select! {
             txs = self.output.recv() => txs.ok_or(TimeboostError::ChannelClosed),
             res = &mut self.task => match res {
@@ -308,8 +294,8 @@ impl Task {
                     Ok(incl) => {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
-                        let txns = self.sorter.sort(incl);
-                        let out = Output { txns, round, timestamp };
+                        let transactions = self.sorter.sort(incl);
+                        let out = Output::Transactions { round, timestamp, transactions };
                         self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
@@ -389,7 +375,11 @@ impl Task {
                     Ok(Some(Event::UseCommittee(r))) => {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
-                            self.includer.set_next_committee(r.num(), c)
+                            self.includer.set_next_committee(r.num(), c);
+                            self.output
+                                .send(Output::UseCommittee(r))
+                                .await
+                                .map_err(|_| TimeboostError::ChannelClosed)?;
                         } else {
                             warn!(node = %self.label, id = %r.committee(), "committee not found");
                         }

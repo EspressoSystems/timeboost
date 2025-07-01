@@ -7,7 +7,7 @@ use bytes::Bytes;
 use metrics::NoMetrics;
 use timeboost_builder::BlockProducer;
 use timeboost_crypto::DecryptionScheme;
-use timeboost_sequencer::Sequencer;
+use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::Block;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
@@ -54,9 +54,11 @@ async fn block_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    o = s.next_transactions() => {
-                        let o = o.expect("sequencer output");
-                        let b = Block::new(0, *o.round(), Default::default(), Bytes::new());
+                    o = s.next() => {
+                        let Output::Transactions { round, .. } = o.unwrap() else {
+                            continue
+                        };
+                        let b = Block::new(0, *round, Default::default(), Bytes::new());
                         p.enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {
