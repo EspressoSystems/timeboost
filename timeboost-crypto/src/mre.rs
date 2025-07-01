@@ -2,7 +2,7 @@
 //! Proposed as MEGa in <https://eprint.iacr.org/2022/506>, this code implements the simplified
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
-use ark_ec::{AffineRepr, CurveConfig, CurveGroup};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::serialize_to_vec;
 use ark_std::{
     UniformRand,
@@ -15,7 +15,7 @@ use thiserror::Error;
 
 /// Ciphertext for multiple recipients in MRE scheme
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest> {
+pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     // the shared ephemeral public key (v:=g^beta in the paper)
     epk: C::Affine,
     // individual ciphertexts (e_i in the paper)
@@ -35,7 +35,7 @@ impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
 /// (Part of) [`MultiRecvCiphertext`] for a specific recipient.
 /// Only appropriate construction is [`MultiRecvCiphertext::get_recipient_ct()`]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Ciphertext<C: CurveGroup, H: Digest> {
+pub struct Ciphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     pub(crate) epk: C::Affine,
     pub(crate) ct: Output<H>,
 }
@@ -79,7 +79,7 @@ where
     }
 
     // random sample a shared ephemeral keypair
-    let esk = <C::Config as CurveConfig>::ScalarField::rand(rng);
+    let esk = C::ScalarField::rand(rng);
     let epk = C::generator().mul(&esk);
 
     // generate recipient-specific ciphertext parts
@@ -131,7 +131,7 @@ fn derive_enc_key<C: CurveGroup, H: Digest>(
 /// Decryption for an individual ciphertext produced and extracted from [`encrypt()`]
 pub fn decrypt<C, H>(
     index: usize,
-    recv_sk: &<C::Config as CurveConfig>::ScalarField,
+    recv_sk: &C::ScalarField,
     ct: &Ciphertext<C, H>,
     aad: &[u8],
 ) -> Result<Vec<u8>, MultiRecvEncError>
