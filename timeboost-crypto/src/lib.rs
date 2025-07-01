@@ -2,6 +2,7 @@ pub mod cp_proof;
 pub mod feldman;
 mod interpolation;
 pub mod mre;
+pub mod prelude;
 pub mod sg_encryption;
 pub mod traits;
 
