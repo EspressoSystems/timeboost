@@ -3,7 +3,7 @@
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
 use ark_ec::{AffineRepr, CurveConfig, CurveGroup};
-use ark_serialize::serialize_to_vec;
+use ark_serialize::{SerializationError, serialize_to_vec};
 use ark_std::{
     UniformRand,
     rand::{CryptoRng, Rng},
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::Digest;
 use thiserror::Error;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Encryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
@@ -39,9 +39,24 @@ impl<C: CurveGroup> From<&DecryptionKey<C>> for EncryptionKey<C> {
     }
 }
 
+impl<C: CurveGroup> EncryptionKey<C> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing enc key")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        crate::try_from_bytes::<Self, N>(value)
+    }
+
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        crate::try_from_str::<Self, N>(value)
+    }
+}
+
 /// Decryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct DecryptionKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     pub(crate) alpha: C::ScalarField,
@@ -62,12 +77,26 @@ impl<C: CurveGroup> DecryptionKey<C> {
             node_idx,
         }
     }
+
+    // FIXME(alex): these boilerplate are annoying, we should dedup these logic later
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing dec key")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        crate::try_from_bytes::<Self, N>(value)
+    }
+
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        crate::try_from_str::<Self, N>(value)
+    }
 }
 
 /// [`DecryptionKey`] labeled with node index (while caching public key),
 /// constructed via [`DecryptionKey::label()`]
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct LabeledDecryptionKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     pub(crate) alpha: C::ScalarField,

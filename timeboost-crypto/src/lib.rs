@@ -224,7 +224,7 @@ impl<C: CurveGroup> KeyShare<C> {
     }
 }
 
-fn try_from_bytes<T, const N: usize>(value: &[u8]) -> Result<T, SerializationError>
+pub(crate) fn try_from_bytes<T, const N: usize>(value: &[u8]) -> Result<T, SerializationError>
 where
     T: DeserializeOwned,
 {
@@ -234,7 +234,7 @@ where
         .map_err(|_| SerializationError::InvalidData)
 }
 
-fn try_from_str<T, const N: usize>(value: &str) -> Result<T, SerializationError>
+pub(crate) fn try_from_str<T, const N: usize>(value: &str) -> Result<T, SerializationError>
 where
     T: DeserializeOwned,
 {
