@@ -354,16 +354,16 @@ impl Worker {
             .into_iter()
             .flat_map(|tt| tt.values())
         {
-            if let Some(cert) = t.votes.certificate()
-                && let Some(block) = &t.block
-            {
-                let cb = CertifiedBlock::new(cert.clone(), block.clone());
-                self.tx
-                    .send(cb)
-                    .await
-                    .map_err(|_| EndOfPlay::ProducerDown)?;
-                self.next = self.next + 1;
-                break;
+            if let Some(cert) = t.votes.certificate() {
+                if let Some(block) = &t.block {
+                    let cb = CertifiedBlock::new(cert.clone(), block.clone());
+                    self.tx
+                        .send(cb)
+                        .await
+                        .map_err(|_| EndOfPlay::ProducerDown)?;
+                    self.next = self.next + 1;
+                    break;
+                }
             }
         }
         if n != self.next {
