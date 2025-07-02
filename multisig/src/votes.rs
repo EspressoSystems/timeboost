@@ -42,7 +42,7 @@ impl<D: Committable + Clone> VoteAccumulator<D> {
 
     /// Set an arbitrary certificate threshold.
     ///
-    /// When the given number of certificates has been collected, a certificate
+    /// When the given number of votes has been collected, a certificate
     /// is created. By default this is the quorum size of the committee.
     pub fn set_threshold(&mut self, t: NonZeroUsize) {
         debug_assert!(t <= self.committee.size());
