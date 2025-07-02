@@ -7,7 +7,7 @@ use alloy::{
 use alloy_{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
 use committable::{Commitment, Committable};
 use futures::future::join_all;
-use timeboost_core::types::block::sailfish::SailfishBlock;
+use crate::gas::sailfish::SailfishBlock;
 use tokio::time::timeout;
 use tracing::warn;
 
