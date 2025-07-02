@@ -3,7 +3,7 @@ use std::num::TryFromIntError;
 use alloy_eips::Encodable2718;
 use prost::Message;
 use sailfish::types::RoundNumber;
-use timeboost_proto::proto_types::InclusionList;
+use timeboost_proto::inclusion as proto;
 use timeboost_types::{Timestamp, Transaction};
 
 pub struct Data(u32, Vec<u8>);
@@ -28,11 +28,11 @@ impl Data {
         I: IntoIterator<Item = &'a Transaction>,
     {
         let round = r.into();
-        let inclusion = InclusionList {
+        let inclusion = proto::InclusionList {
             round: *round,
             encoded_txns: txs
                 .into_iter()
-                .map(|tx| timeboost_proto::proto_types::Transaction {
+                .map(|tx| proto::Transaction {
                     encoded_txn: tx.encoded_2718(),
                     address: tx.address().as_slice().to_vec(),
                     timestamp: **tx.time(),

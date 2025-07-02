@@ -14,9 +14,8 @@ use metrics::SequencerMetrics;
 use multisig::{Keypair, PublicKey};
 use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
-use sailfish::types::{Action, CommitteeVec, ConsensusTime, Evidence, RoundNumber};
+use sailfish::types::{Action, ConsensusTime, Evidence, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::Keyset;
 use timeboost_types::{BundleVariant, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
@@ -170,14 +169,12 @@ impl Sequencer {
         };
 
         let decrypter = {
-            let keyset = Keyset::new(1, cfg.decrypt_committee.committee().size());
-
             let met =
                 NetworkMetrics::new("decrypt", metrics, cfg.decrypt_committee.parties().copied());
 
             let net = Network::create(
                 "decrypt",
-                cfg.decrypt_addr,
+                cfg.decrypt_addr.clone(),
                 cfg.sign_keypair.clone(), // same auth
                 cfg.dh_keypair.clone(),   // same auth
                 cfg.decrypt_committee.entries(),
@@ -185,13 +182,7 @@ impl Sequencer {
             )
             .await?;
 
-            Decrypter::new(
-                public_key,
-                Overlay::new(net),
-                CommitteeVec::singleton(cfg.decrypt_committee.committee().clone()),
-                keyset,
-                cfg.decryption_key,
-            )
+            Decrypter::new(cfg.decrypter_config(), Overlay::new(net))
         };
 
         let (tx, rx) = mpsc::channel(1024);
@@ -318,10 +309,8 @@ impl Task {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
                         let txns = self.sorter.sort(incl);
-                        if !txns.is_empty() {
-                            let out = Output { txns, round, timestamp };
-                            self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
-                        }
+                        let out = Output { txns, round, timestamp };
+                        self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
                                 continue
