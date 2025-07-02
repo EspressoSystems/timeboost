@@ -31,6 +31,8 @@ use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
 pub mod forwarder;
+pub mod gas;
+pub mod mempool;
 pub mod metrics;
 
 pub struct Timeboost {
