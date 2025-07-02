@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use parking_lot::RwLock;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
-use timeboost_core::types::block::sailfish::SailfishBlock;
+use crate::gas::sailfish::SailfishBlock;
 use tokio::{
     sync::mpsc::Receiver,
     task::JoinHandle,
