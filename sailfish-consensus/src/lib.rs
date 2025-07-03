@@ -3,6 +3,7 @@ mod info;
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt;
 use std::time::Instant;
 
 use committable::Committable;
@@ -192,7 +193,7 @@ where
         assert!(matches!(self.state, State::Startup));
         self.state = State::Running;
 
-        if r.is_genesis() {
+        let actions = if r.is_genesis() {
             let vtx = Vertex::new(
                 Round::new(r, self.committee.id()),
                 Evidence::Genesis,
@@ -204,7 +205,17 @@ where
             vec![Action::SendProposal(env), Action::ResetTimer(rnd)]
         } else {
             self.advance_from_round(r, e)
-        }
+        };
+
+        trace!(
+            target: "sf-trace",
+            node    = %self.public_key(),
+            round   = %self.round,
+            rleader = %self.committee.leader(*self.round as usize),
+            trace   = ?actions.iter().map(|a| Trace::Action(a).to_string()).collect::<Vec<_>>()
+        );
+
+        actions
     }
 
     /// Main entry point to process a `Message`.
@@ -221,8 +232,20 @@ where
             dag       = %self.dag.depth(),
             "handle message"
         );
+
+        let round = m.round().num();
+
+        trace!(
+            target: "sf-trace",
+            node    = %self.public_key(),
+            round   = %self.round,
+            mleader = %self.committee.leader(*round as usize),
+            trace  = ?[Trace::Message(&m).to_string()],
+            dag    = ?self.dag.vertices(round).map(|v| v.to_string()).collect::<Vec<_>>()
+        );
+
         if let State::Shutdown(r) = self.state {
-            if m.round().num() > r {
+            if round > r {
                 debug!(
                     node     = %self.public_key(),
                     shutdown = %r,
@@ -232,14 +255,35 @@ where
                 return Vec::new();
             }
         }
-        match m {
-            Message::Vertex(e) => self.handle_vertex(e),
+
+        let actions = match m {
+            Message::Vertex(e) => {
+                trace!(
+                    target: "sf-trace",
+                    node    = %self.public_key(),
+                    round   = %self.round,
+                    mleader = %self.committee.leader(*round as usize),
+                    vertex  = %e.data(),
+                    edges   = ?e.data().edges().collect::<Vec<_>>(),
+                );
+                self.handle_vertex(e)
+            }
             Message::NoVote(e) => self.handle_no_vote(e),
             Message::Timeout(e) => self.handle_timeout(e),
             Message::Handover(e) => self.handle_handover(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
             Message::HandoverCert(c) => self.handle_handover_cert(c),
-        }
+        };
+
+        trace!(
+            target: "sf-trace",
+            node    = %self.public_key(),
+            round   = %self.round,
+            rleader = %self.committee.leader(*self.round as usize),
+            trace   = ?actions.iter().map(|a| Trace::Action(a).to_string()).collect::<Vec<_>>()
+        );
+
+        actions
     }
 
     /// An internal timeout occurred.
@@ -248,6 +292,13 @@ where
     /// results in a timeout message being broadcasted to all nodes.
     pub fn timeout(&mut self, r: Round) -> Vec<Action<T>> {
         info!(node = %self.public_key(), round = %r, "internal timeout");
+        trace!(
+            target: "sf-trace",
+            node    = %self.public_key(),
+            round   = %self.round,
+            tleader = %self.committee.leader(*r.num() as usize),
+            trace   = ?[Trace::<T>::Timeout(r).to_string()]
+        );
         debug_assert_eq!(r.num(), self.round());
         let e = if r.num().is_genesis() {
             Evidence::Genesis
@@ -1114,6 +1165,24 @@ where
         ]);
 
         actions
+    }
+}
+
+/// Trace log helper.
+#[derive(Debug)]
+enum Trace<'a, T: Committable> {
+    Timeout(Round),
+    Action(&'a Action<T>),
+    Message(&'a Message<T, Validated>),
+}
+
+impl<T: Committable> fmt::Display for Trace<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Timeout(r) => write!(f, "T({r})"),
+            Self::Action(a) => write!(f, "A({a})"),
+            Self::Message(m) => write!(f, "M({m})"),
+        }
     }
 }
 
