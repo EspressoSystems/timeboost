@@ -174,6 +174,7 @@ mod tests {
     use cliquenet::Address;
     use multisig::Keypair;
     use prost::Message;
+    use sailfish::types::Evidence;
     use timeboost_utils::types::logging::init_logging;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -226,7 +227,7 @@ mod tests {
         // we should fail
         let max = 3;
         for i in 0..max {
-            let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
+            let d = Data::encode(i, i, Evidence::Genesis, &[]).expect("data to be encoded");
             let r = tx.send(d).await;
             assert!(r.is_ok());
             // wait for worker.go() to receive
@@ -253,7 +254,7 @@ mod tests {
             s.shutdown().await.unwrap();
         };
 
-        let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
+        let d = Data::encode(max, max, Evidence::Genesis, &[]).expect("data to be encoded");
         let (r, _) = tokio::join!(tx.send(d), server);
         assert!(r.is_ok());
         // all data should be processed from channel, back to max cap

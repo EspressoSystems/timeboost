@@ -95,9 +95,8 @@ impl Timeboost {
                             trxs  = %transactions.len(),
                             "sequencer output"
                         );
-                        self.producer.add_evidence(evidence);
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(round, timestamp, &transactions) {
+                            if let Ok(d) = Data::encode(round, timestamp, evidence, &transactions) {
                                 f.enqueue(d).await?;
                             } else {
                                 error!(node = %self.label, "failed to encode inclusion list")

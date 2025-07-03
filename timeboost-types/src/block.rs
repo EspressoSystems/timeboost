@@ -122,7 +122,7 @@ impl BlockInfo {
     pub fn new<R, C>(r: R, hash: BlockHash, committee: C) -> Self
     where
         R: Into<RoundNumber>,
-        C: Into<CommitteeId>
+        C: Into<CommitteeId>,
     {
         Self {
             round: r.into(),
