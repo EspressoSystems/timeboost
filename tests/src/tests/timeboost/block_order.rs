@@ -20,7 +20,6 @@ use tracing::{debug, info};
 use super::{gen_bundles, make_configs};
 
 const NUM_OF_BLOCKS: usize = 50;
-const RECOVER_INDEX: usize = 2;
 
 #[tokio::test]
 async fn block_order() {
@@ -28,7 +27,7 @@ async fn block_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let dec = DecryptionScheme::trusted_keygen(num);
-    let cfg = make_configs(&dec, RECOVER_INDEX);
+    let cfg = make_configs(&dec, None);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -55,11 +54,11 @@ async fn block_order() {
                         Err(err) => panic!("{err}")
                     },
                     o = s.next() => {
-                        let Output::Transactions { round, .. } = o.unwrap() else {
+                        let Output::Transactions { round, evidence, .. } = o.unwrap() else {
                             continue
                         };
                         let b = Block::new(0, *round, Default::default(), Bytes::new());
-                        p.enqueue(b).await.unwrap()
+                        p.enqueue(b, Some(evidence)).await.unwrap()
                     }
                     b = p.next_block() => {
                         debug!(node = %s.public_key(), blocks = %i);

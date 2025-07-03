@@ -88,13 +88,14 @@ impl Timeboost {
                     }
                 },
                 out = self.sequencer.next() => match out {
-                    Ok(Output::Transactions { round, timestamp, transactions }) => {
+                    Ok(Output::Transactions { round, timestamp, transactions, evidence }) => {
                         info!(
                             node  = %self.label,
                             round = %round,
                             trxs  = %transactions.len(),
                             "sequencer output"
                         );
+                        self.producer.add_evidence(evidence);
                         if let Some(ref mut f) = self.nitro_forwarder {
                             if let Ok(d) = Data::encode(round, timestamp, &transactions) {
                                 f.enqueue(d).await?;

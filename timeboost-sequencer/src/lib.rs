@@ -39,6 +39,7 @@ pub enum Output {
         round: RoundNumber,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
+        evidence: Evidence,
     },
     UseCommittee(Round),
 }
@@ -294,8 +295,9 @@ impl Task {
                     Ok(incl) => {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
+                        let evidence = incl.evidence().clone();
                         let transactions = self.sorter.sort(incl);
-                        let out = Output::Transactions { round, timestamp, transactions };
+                        let out = Output::Transactions { round, timestamp, transactions, evidence };
                         self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
