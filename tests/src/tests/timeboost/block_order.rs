@@ -57,8 +57,8 @@ async fn block_order() {
                         let Output::Transactions { round, evidence, .. } = o.unwrap() else {
                             continue
                         };
-                        let b = Block::new(0, *round, Default::default(), Bytes::new());
-                        p.enqueue(b, Some(evidence)).await.unwrap()
+                        let b = Block::new(0, *round, Default::default(), Bytes::new(), evidence);
+                        p.enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {
                         debug!(node = %s.public_key(), blocks = %i);

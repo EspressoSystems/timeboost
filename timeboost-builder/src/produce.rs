@@ -34,14 +34,12 @@ pub struct BlockProducer {
     worker_rx: Receiver<CertifiedBlock>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
-    /// Round evidence provided by Sailfish.
-    evidence: BTreeMap<RoundNumber, Evidence>,
 }
 
 /// Worker commands.
 enum Command {
     /// Certify the given block.
-    Certify(Block, Evidence),
+    Certify(Block),
     /// Prepare for the next committee.
     NextCommittee(AddressableCommittee),
     /// Use a committee starting at the given round.
@@ -89,29 +87,14 @@ impl BlockProducer {
             worker_tx: cmd_tx,
             worker_rx: crt_rx,
             worker: spawn(worker.go()),
-            evidence: BTreeMap::new(),
         })
     }
 
-    pub fn add_evidence(&mut self, e: Evidence) {
-        let r = e.round() + if e.round().is_genesis() { 0 } else { 1 };
-        self.evidence.insert(r, e);
-    }
-
     /// Enqueue the given block for certification.
-    ///
-    /// Evidence of the previous round needs to be present, either by providing
-    /// it as an argument here, or by having it previously added via `add_evidence`,
-    /// otherwise the block will be dropped.
-    pub async fn enqueue(&mut self, b: Block, e: Option<Evidence>) -> StdResult<(), ProducerDown> {
+    pub async fn enqueue(&mut self, b: Block) -> StdResult<(), ProducerDown> {
         debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
-        self.evidence = self.evidence.split_off(&b.round()); // Remove old rounds.
-        let Some(e) = e.or_else(|| self.evidence.remove(&b.round())) else {
-            warn!(node = %self.label, round = %b.round(), "missing evidence => dropping block");
-            return Ok(());
-        };
         self.worker_tx
-            .send(Command::Certify(b, e))
+            .send(Command::Certify(b))
             .await
             .map_err(|_| ProducerDown(()))?;
         Ok(())
@@ -276,8 +259,8 @@ impl Worker {
                     }
                 },
                 cmd = self.rx.recv() => match cmd {
-                    Some(Command::Certify(b, e)) =>
-                        match self.on_certify_request(b, e).await {
+                    Some(Command::Certify(b)) =>
+                        match self.on_certify_request(b).await {
                             Ok(()) => {}
                             Err(ProducerError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on certify request")
@@ -309,7 +292,7 @@ impl Worker {
     }
 
     /// The application asked to certify the given block.
-    async fn on_certify_request(&mut self, block: Block, evi: Evidence) -> Result<()> {
+    async fn on_certify_request(&mut self, block: Block) -> Result<()> {
         debug!(node = %self.label, round = %block.round(), hash = ?block.hash(), "certify request");
 
         self.next_blocks.push_back(block.round());
@@ -339,14 +322,14 @@ impl Worker {
                 },
             });
 
+        let msg = Message {
+            info: Envelope::signed(info.clone(), &self.keypair),
+            evidence: block.evidence().clone(),
+        };
+
         if tracker.block.is_none() {
             tracker.block = Some(block)
         }
-
-        let msg = Message {
-            info: Envelope::signed(info.clone(), &self.keypair),
-            evidence: evi,
-        };
 
         let data = serialize(&msg)?;
         self.net

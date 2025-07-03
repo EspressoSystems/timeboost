@@ -4,7 +4,7 @@ use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, CommitteeId};
-use sailfish_types::RoundNumber;
+use sailfish_types::{Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
 use timeboost_proto::block as proto;
 
@@ -56,10 +56,11 @@ pub struct Block {
     round: RoundNumber,
     hash: BlockHash,
     payload: Bytes,
+    evidence: Evidence,
 }
 
 impl Block {
-    pub fn new<N, R>(n: N, r: R, h: BlockHash, payload: Bytes) -> Self
+    pub fn new<N, R>(n: N, r: R, h: BlockHash, p: Bytes, e: Evidence) -> Self
     where
         N: Into<NamespaceId>,
         R: Into<RoundNumber>,
@@ -68,7 +69,8 @@ impl Block {
             namespace: n.into(),
             round: r.into(),
             hash: h,
-            payload,
+            payload: p,
+            evidence: e,
         }
     }
 
@@ -86,6 +88,10 @@ impl Block {
 
     pub fn payload(&self) -> &[u8] {
         &self.payload
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
     }
 }
 
@@ -107,6 +113,12 @@ impl TryFrom<proto::Block> for Block {
             round: b.round.into(),
             hash: BlockHash::from(h),
             payload: b.payload,
+            evidence: {
+                let cfg = bincode::config::standard();
+                bincode::serde::decode_from_slice(&b.evidence, cfg)
+                    .map(|(e, _)| e)
+                    .map_err(|_| InvalidBlock("failed to decode block evidence"))?
+            },
         })
     }
 }
