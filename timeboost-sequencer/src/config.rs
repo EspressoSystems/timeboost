@@ -4,7 +4,6 @@ use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_crypto::Keyset;
 use timeboost_types::{Address, DecryptionKey, DelayedInboxIndex};
 
 #[derive(Debug, Clone, Builder)]
@@ -97,7 +96,6 @@ impl SequencerConfig {
         DecrypterConfig::builder()
             .label(self.sign_keypair.public_key())
             .retain(self.leash_len)
-            .keyset(Keyset::new(1, self.decrypt_committee.committee().size()))
             .decryption_key(self.decryption_key.clone())
             .committee(self.decrypt_committee.committee().clone())
             .build()
@@ -108,7 +106,6 @@ impl SequencerConfig {
 pub struct DecrypterConfig {
     pub(crate) label: PublicKey,
     pub(crate) retain: usize,
-    pub(crate) keyset: Keyset,
     pub(crate) committee: Committee,
     pub(crate) decryption_key: DecryptionKey,
 }
