@@ -21,6 +21,7 @@ bytes = { workspace = true }
 committable = { workspace = true }
 digest = { workspace = true }
 generic-array = { workspace = true }
+multisig = { path = "../multisig" }
 serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }

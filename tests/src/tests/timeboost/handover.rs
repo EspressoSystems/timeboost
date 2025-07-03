@@ -113,8 +113,7 @@ where
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
 
-    let total = NonZeroUsize::new(sign_keys.len()).unwrap();
-    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(total);
+    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee);
 
     sign_keys
         .into_iter()

@@ -3,9 +3,7 @@ use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
-use timeboost_crypto::{
-    DecryptionScheme, KeysetId, Plaintext, traits::threshold_enc::ThresholdEncScheme,
-};
+use timeboost_crypto::{DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme};
 use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
 
 pub type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -17,16 +15,15 @@ pub fn make_bundle(pubkey: &EncKey) -> anyhow::Result<BundleVariant> {
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let kid = KeysetId::from(1);
     let mut bundle = Bundle::arbitrary(&mut u)?;
 
     if rng.gen_bool(0.5) {
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, &kid, pubkey, &plaintext, &vec![])?;
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
         let encoded = serialize(&ciphertext)?;
-        bundle.set_encrypted_data(encoded.into(), kid);
+        bundle.set_encrypted_data(encoded.into());
     }
     if rng.gen_bool(0.5) {
         // priority

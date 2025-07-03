@@ -1,8 +1,5 @@
-use std::collections::BTreeSet;
-
 use crate::{Bundle, Bytes, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
 use sailfish_types::{Evidence, RoundNumber};
-use timeboost_crypto::KeysetId;
 
 /// List of bundles to be included, selected from `CandidateList`.
 #[derive(Debug, Clone)]
@@ -53,31 +50,6 @@ impl InclusionList {
             .iter()
             .any(|pb| pb.bundle().is_encrypted())
             || self.regular_bundles().iter().any(|b| b.is_encrypted())
-    }
-
-    /// Returns the keysets (their IDs) required to decrypt the encryted bundles in this list, or
-    /// empty vec if not encrypted.
-    pub fn kids(&self) -> Vec<KeysetId> {
-        let mut kids = BTreeSet::new();
-        for pb in self.priority_bundles() {
-            if let Some(kid) = pb.bundle().kid() {
-                kids.insert(kid);
-            }
-        }
-        for b in self.regular_bundles() {
-            if let Some(kid) = b.kid() {
-                kids.insert(kid);
-            }
-        }
-
-        if kids.len() > 1 {
-            tracing::error!(
-                round = %self.round,
-                num_keysets = %kids.len(),
-                "expect 1 keyset per inclusion list for now."
-            );
-        }
-        kids.into_iter().collect()
     }
 
     pub fn has_priority_bundles(&self) -> bool {
@@ -137,16 +109,15 @@ impl InclusionList {
     }
 
     /// scan through the inclusion list and extract the relevant ciphertext from encrypted
-    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset `kid`
-    pub fn filter_ciphertexts(&self, kid: KeysetId) -> impl Iterator<Item = &Bytes> {
+    pub fn filter_ciphertexts(&self) -> impl Iterator<Item = &Bytes> {
         self.priority_bundles()
             .iter()
-            .filter(move |pb| pb.bundle().kid() == Some(kid))
+            .filter(move |pb| pb.bundle().is_encrypted())
             .map(|pb| pb.bundle().data())
             .chain(
                 self.regular_bundles()
                     .iter()
-                    .filter(move |b| b.kid() == Some(kid))
+                    .filter(move |b| b.is_encrypted())
                     .map(|b| b.data()),
             )
     }

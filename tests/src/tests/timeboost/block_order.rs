@@ -6,7 +6,6 @@ use std::time::Duration;
 use bytes::Bytes;
 use metrics::NoMetrics;
 use timeboost_builder::BlockProducer;
-use timeboost_crypto::DecryptionScheme;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::Block;
 use timeboost_utils::types::logging::init_logging;
@@ -27,8 +26,7 @@ async fn block_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
-    let dec = DecryptionScheme::trusted_keygen(num);
-    let cfg = make_configs(&dec, RECOVER_INDEX);
+    let (enc_key, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -75,7 +73,7 @@ async fn block_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(dec.0, bcast.clone()));
+    tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
     for _ in 0..NUM_OF_BLOCKS {
         let first = rxs[0].recv().await.unwrap();
