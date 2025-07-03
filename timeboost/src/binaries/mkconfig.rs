@@ -6,9 +6,9 @@ use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
-use multisig::x25519;
+use multisig::{Committee, KeyId, x25519};
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
+use timeboost_crypto::DecryptionScheme;
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
 
@@ -54,11 +54,7 @@ enum Mode {
 }
 
 impl Args {
-    fn mk_node_infos(
-        &self,
-        dec: &TrustedKeyMaterial,
-        seed: Option<u64>,
-    ) -> impl Iterator<Item = Result<NodeInfo>> {
+    fn mk_config(&self, seed: Option<u64>) -> Result<KeysetConfig> {
         let num_nodes: u8 = self.num.into();
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
@@ -66,14 +62,35 @@ impl Args {
         let mut d_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(3)).unwrap_or_else(rand::random),
         );
-        iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
-            .zip(iter::repeat_with(move || {
-                x25519::Keypair::generate_with_rng(&mut d_rng).unwrap()
-            }))
-            .zip(&dec.2)
+        let signing_keys: Vec<_> =
+            iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
+                .take(num_nodes as usize)
+                .collect();
+        let auth_keys: Vec<_> =
+            iter::repeat_with(move || x25519::Keypair::generate_with_rng(&mut d_rng).unwrap())
+                .take(num_nodes as usize)
+                .collect();
+        let committee = Committee::new(
+            u64::MAX,
+            signing_keys
+                .iter()
+                .enumerate()
+                .map(|(i, kp)| (KeyId::from(i as u8), kp.public_key())),
+        );
+
+        let decryption_keys = match seed {
+            Some(seed) => {
+                let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
+                DecryptionScheme::trusted_keygen_with_rng(committee, &mut rng)
+            }
+            None => DecryptionScheme::trusted_keygen(committee),
+        };
+        let configs: Vec<_> = signing_keys
+            .into_iter()
             .enumerate()
-            .take(num_nodes as usize)
-            .map(|(i, ((kp, xp), share))| {
+            .zip(auth_keys.into_iter())
+            .zip(decryption_keys.2.into_iter())
+            .map(|(((i, kp), xp), share)| {
                 let i = i as u8;
                 Ok(NodeInfo {
                     sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr)?,
@@ -89,6 +106,14 @@ impl Args {
                     nitro_addr: self.nitro_addr.clone(),
                 })
             })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(KeysetConfig {
+            keyset: configs,
+            dec_keyset: PublicDecInfo {
+                pubkey: decryption_keys.0.clone(),
+                combkey: decryption_keys.1.clone(),
+            },
+        })
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
@@ -112,21 +137,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     logging::init_logging();
+    let cfg = args.mk_config(args.seed)?;
 
-    let tkm = match args.seed {
-        Some(seed) => {
-            let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
-            DecryptionScheme::trusted_keygen_with_rng(args.num.into(), &mut rng)
-        }
-        None => DecryptionScheme::trusted_keygen(args.num.into()),
-    };
-    let cfg = KeysetConfig {
-        keyset: args.mk_node_infos(&tkm, args.seed).collect::<Result<_>>()?,
-        dec_keyset: PublicDecInfo {
-            pubkey: tkm.0.clone(),
-            combkey: tkm.1.clone(),
-        },
-    };
     serde_json::to_writer(io::stdout(), &cfg)?;
 
     Ok(())

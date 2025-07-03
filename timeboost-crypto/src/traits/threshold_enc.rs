@@ -1,10 +1,10 @@
 use ark_ec::hashing;
 use ark_std::rand::Rng;
+use multisig::Committee;
 use std::collections::BTreeSet;
 use thiserror::Error;
 
 use crate::traits::dleq_proof::DleqProofError;
-use crate::{Keyset, KeysetId};
 
 /// A Threshold Encryption Scheme.
 pub trait ThresholdEncScheme {
@@ -22,13 +22,12 @@ pub trait ThresholdEncScheme {
     #[allow(clippy::type_complexity)]
     fn keygen<R: Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        committee: &Committee,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError>;
 
     /// Encrypt a `message` using the encryption key `pk`.
     fn encrypt<R: Rng>(
         rng: &mut R,
-        kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
         aad: &Self::AssociatedData,
@@ -43,7 +42,7 @@ pub trait ThresholdEncScheme {
 
     /// Combine a set of `dec_shares` using `comb_key` into a plaintext message.
     fn combine(
-        committee: &Keyset,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,

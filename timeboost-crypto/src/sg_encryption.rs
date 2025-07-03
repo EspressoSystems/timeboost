@@ -8,6 +8,7 @@ use ark_poly::{DenseUVPolynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use digest::{Digest, generic_array::GenericArray};
+use multisig::Committee;
 use spongefish::DuplexSpongeInterface;
 use std::marker::PhantomData;
 use std::{
@@ -19,7 +20,7 @@ use zeroize::Zeroize;
 
 use crate::interpolation::interpolate_in_exponent;
 use crate::{
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, KeysetId, Nonce, Plaintext, PublicKey,
+    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
@@ -65,9 +66,9 @@ where
 
     fn keygen<R: Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        committee: &Committee,
     ) -> Result<(Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>), ThresholdEncError> {
-        let committee_size = committee.size.get();
+        let committee_size = committee.size().get();
         let degree = committee.one_honest_threshold().get() - 1;
         let generator = C::generator();
         let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
@@ -101,7 +102,6 @@ where
 
     fn encrypt<R: Rng>(
         rng: &mut R,
-        kid: &KeysetId,
         pub_key: &Self::PublicKey,
         message: &Self::Plaintext,
         aad: &Self::AssociatedData,
@@ -111,13 +111,9 @@ where
         let v = generator * beta;
         let w = pub_key.key * beta;
 
-        // hash to symmetric key `k`
-        // TODO: (alex) consider moving kid as part of `aad` instead
-        let key = hash_to_key::<C, H>(v, w, (*kid).into())
+        let key = hash_to_key::<C, H>(v, w)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
-
-        // TODO: use committee id for hashing
 
         // AES encrypt using `k`, `nonce` and `message`
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
@@ -176,13 +172,13 @@ where
     }
 
     fn combine(
-        committee: &Keyset,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = committee.size.get();
+        let committee_size: usize = committee.size().get();
         let threshold = committee.one_honest_threshold().get();
         let generator = C::generator();
 
@@ -246,7 +242,7 @@ where
         })?;
 
         // Hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w, committee.id.into())
+        let key = hash_to_key::<C, H>(v, w)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
         let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
@@ -323,17 +319,12 @@ where
     }
 }
 
-fn hash_to_key<C: CurveGroup, H: Digest>(
-    v: C,
-    w: C,
-    id: u64,
-) -> Result<Vec<u8>, ThresholdEncError> {
+fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, ThresholdEncError> {
     let mut hasher = H::new();
     let mut buffer = Vec::new();
     let mut writer = BufWriter::new(&mut buffer);
     v.serialize_compressed(&mut writer)?;
     w.serialize_compressed(&mut writer)?;
-    writer.write_all(&id.to_be_bytes())?;
     writer.flush()?;
     drop(writer);
     hasher.update(buffer);
@@ -343,11 +334,11 @@ fn hash_to_key<C: CurveGroup, H: Digest>(
 
 #[cfg(test)]
 mod test {
-    use std::{collections::BTreeSet, num::NonZeroUsize};
+    use std::collections::BTreeSet;
 
     use crate::{
         cp_proof::Proof,
-        sg_encryption::{DecShare, Keyset, Plaintext, ShoupGennaro},
+        sg_encryption::{DecShare, Plaintext, ShoupGennaro},
         traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
     };
 
@@ -356,6 +347,7 @@ mod test {
     use ark_ff::field_hashers::DefaultFieldHasher;
     use ark_std::rand::seq::SliceRandom;
     use ark_std::test_rng;
+    use multisig::{Committee, KeyId, Keypair};
     use sha2::Sha256;
     use spongefish::DigestBridge;
 
@@ -367,7 +359,7 @@ mod test {
     #[test]
     fn test_correctness() {
         let rng = &mut test_rng();
-        let committee = Keyset::new(0, NonZeroUsize::new(20).unwrap());
+        let committee = generate_committee(20);
 
         // setup schemes
         let (pk, comb_key, key_shares) =
@@ -375,9 +367,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
-        let ciphertext =
-            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                .unwrap();
+        let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad).unwrap();
 
         let dec_shares: Vec<_> = key_shares
             .iter()
@@ -417,7 +407,7 @@ mod test {
     #[test]
     fn test_not_enough_shares() {
         let rng = &mut test_rng();
-        let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
+        let committee = generate_committee(10);
 
         // setup schemes
         let (pk, comb_key, key_shares) =
@@ -425,9 +415,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
-        let ciphertext =
-            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                .unwrap();
+        let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad).unwrap();
 
         let threshold = committee.one_honest_threshold().get();
         let dec_shares: Vec<_> = key_shares
@@ -460,7 +448,7 @@ mod test {
     // the slight mismatch of notation.
     fn test_combine_invalid_shares() {
         let rng = &mut test_rng();
-        let committee = Keyset::new(0, NonZeroUsize::new(10).unwrap());
+        let committee = generate_committee(10);
 
         // setup schemes
         let (pk, comb_key, key_shares) =
@@ -468,9 +456,7 @@ mod test {
         let message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let plaintext = Plaintext(message.clone());
         let aad = b"cred~abcdef".to_vec();
-        let ciphertext =
-            ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                .unwrap();
+        let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad).unwrap();
 
         let mut dec_shares: Vec<_> = key_shares
             .iter()
@@ -533,5 +519,15 @@ mod test {
             result.is_ok(),
             "Should succeed; we have exactly t+1 valid shares"
         );
+    }
+
+    fn generate_committee(nodes: usize) -> Committee {
+        let public_keys = (0..nodes)
+            .map(|i| {
+                let kp = Keypair::generate();
+                (KeyId::from(i as u8), kp.public_key())
+            })
+            .collect::<Vec<_>>();
+        Committee::new(0, public_keys)
     }
 }
