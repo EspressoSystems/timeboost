@@ -14,7 +14,7 @@ use thiserror::Error;
 use crate::{
     feldman::{FeldmanVss, FeldmanVssPublicParam},
     mre::{self, MultiRecvCiphertext},
-    traits::dkg::{VerifiableSecretSharing, VssError},
+    traits::dkg::VerifiableSecretSharing,
 };
 
 /// Implementation of [Shoup25](https://eprint.iacr.org/2025/1175)
@@ -36,7 +36,6 @@ where
     vss_pp: VSS::PublicParam,
     _group: PhantomData<C>,
     _mre_hash: PhantomData<H>,
-    _vss: PhantomData<VSS>,
 }
 
 /// Ciphertext of [`ShoupVess`] scheme, verifiable by itself as its constructed as a sigma proof
@@ -56,7 +55,6 @@ impl<C: CurveGroup> ShoupVess<C> {
             vss_pp,
             _group: PhantomData,
             _mre_hash: PhantomData,
-            _vss: PhantomData,
         }
     }
 
@@ -69,7 +67,6 @@ impl<C: CurveGroup> ShoupVess<C> {
             vss_pp,
             _group: PhantomData,
             _mre_hash: PhantomData,
-            _vss: PhantomData,
         }
     }
 
@@ -153,8 +150,6 @@ impl<C: CurveGroup> ShoupVess<C> {
 pub enum VessError {
     #[error("mre failed: {0}")]
     Mre(#[from] mre::MultiRecvEncError),
-    #[error("vss failed: {0}")]
-    Vss(#[from] VssError),
     #[error("serde err: {0}")]
     SerdeError(String),
     #[error("num of recipients, expect: {0}, got: {1}")]
