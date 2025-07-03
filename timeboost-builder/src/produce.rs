@@ -82,7 +82,7 @@ impl BlockProducer {
             .net(Overlay::new(net))
             .tx(crt_tx)
             .rx(cmd_rx)
-            .trackers(Default::default())
+            .tracking(Default::default())
             .retain(cfg.retain)
             .build();
 
@@ -203,7 +203,7 @@ struct Worker {
     tx: Sender<CertifiedBlock>,
 
     /// Track votes for block signatures.
-    trackers: BTreeMap<BlockNumber, BTreeMap<BlockInfo, Tracker>>,
+    tracking: BTreeMap<BlockNumber, Tracking>,
 
     /// Keep the given number of blocks around when garbage collecting.
     retain: usize,
@@ -217,6 +217,19 @@ struct Worker {
     next: BlockNumber,
 }
 
+#[derive(Default)]
+struct Tracking {
+    /// We keep one tracker per block info.
+    ///
+    /// The reason for that is that a `VoteAccumulator` corresponds to one
+    /// committee and the block info contains a committee ID that is used
+    /// to select the committee. The committee can therefore not be subject
+    /// to voting.
+    trackers: BTreeMap<BlockInfo, Tracker>,
+    /// We remember the voters and only allow one vote per party and block number.
+    voters: SmallVec<[KeyId; 16]>,
+}
+
 struct Tracker {
     /// The block to certify.
     ///
@@ -224,8 +237,6 @@ struct Tracker {
     block: Option<Block>,
     /// The vote accumulator for the block info.
     votes: VoteAccumulator<BlockInfo>,
-    /// We remember the voters and only allow one vote per party and block.
-    voters: SmallVec<[KeyId; 16]>,
 }
 
 impl Worker {
@@ -382,9 +393,10 @@ impl Worker {
         };
 
         let tracker = self
-            .trackers
+            .tracking
             .entry(info.num())
             .or_default()
+            .trackers
             .entry(info.clone())
             .or_insert_with(|| Tracker {
                 block: Some(block.clone()),
@@ -392,7 +404,6 @@ impl Worker {
                     let t = committee.one_honest_threshold();
                     VoteAccumulator::new(committee).with_threshold(t)
                 },
-                voters: SmallVec::new(),
             });
 
         if tracker.block.is_none() {
@@ -439,15 +450,19 @@ impl Worker {
             return Ok(());
         }
 
-        if self.has_voted(info.data(), &src) {
+        let tracking = self.tracking.entry(info.data().num()).or_default();
+
+        let kid = committee
+            .get_index(&src)
+            .expect("valid signing key => member of committee");
+
+        if tracking.voters.contains(&kid) {
             debug!(node = %self.label, %src, num = %info.data().num(), "vote already counted");
             return Ok(());
         }
 
-        let tracker = self
+        let tracker = tracking
             .trackers
-            .entry(info.data().num())
-            .or_default()
             .entry(info.data().clone())
             .or_insert_with(|| Tracker {
                 block: None,
@@ -455,13 +470,13 @@ impl Worker {
                     let t = committee.one_honest_threshold();
                     VoteAccumulator::new(committee).with_threshold(t)
                 },
-                voters: SmallVec::new(),
             });
 
         let num = info.data().num();
 
         match tracker.votes.add(info.into_signed()) {
             Ok(Some(cert)) => {
+                tracking.voters.push(kid);
                 // Check if a waiting block can be broadcasted, now that new evidence exists.
                 if let Some(b) = self.pending.remove(&(num + 1)) {
                     let e = Evidence::Previous(cert.clone());
@@ -473,7 +488,9 @@ impl Worker {
                     self.send(b, i, e).await?
                 }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                tracking.voters.push(kid);
+            }
             Err(err) => {
                 warn!(node = %self.label, %err, %src, %num, "failed to add block info vote");
             }
@@ -486,10 +503,10 @@ impl Worker {
     async fn deliver(&mut self) -> Result<()> {
         let n = self.next;
         for t in self
-            .trackers
+            .tracking
             .get(&self.next)
             .into_iter()
-            .flat_map(|tt| tt.values())
+            .flat_map(|t| t.trackers.values())
         {
             if let Some(cert) = t.votes.certificate() {
                 if let Some(block) = &t.block {
@@ -516,15 +533,14 @@ impl Worker {
         if *num > 0 {
             self.net.gc(*num)
         }
-        self.trackers.retain(|n, _| *n >= num);
+        self.tracking.retain(|n, _| *n >= num);
     }
 
     fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
         if num.is_genesis() {
             return Some(Evidence::Genesis);
         }
-        let trackers = self.trackers.get(&(num - 1))?;
-        for t in trackers.values() {
+        for t in self.tracking.get(&(num - 1))?.trackers.values() {
             if let Some(cert) = t.votes.certificate() {
                 return Some(Evidence::Previous(cert.clone()));
             }
@@ -532,24 +548,6 @@ impl Worker {
         None
     }
 
-    fn has_voted(&self, i: &BlockInfo, src: &PublicKey) -> bool {
-        let Some(com) = self.committee(i.committee()) else {
-            error!(node = %self.label, %src, committee = %i.committee(), "unknown committee");
-            return false;
-        };
-        let Some(kid) = com.get_index(src) else {
-            error!(node = %self.label, %src, "unknown committee member");
-            return false;
-        };
-        for (_, t) in self.trackers.get(&i.num()).into_iter().flatten() {
-            if t.voters.contains(&kid) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Get the committee of the current epoch.
     fn current_committee(&self) -> &Committee {
         self.committees
             .iter()
@@ -557,14 +555,12 @@ impl Worker {
             .expect("`use_committee` ensures that committee of epoch exists")
     }
 
-    /// Lookup a committee by ID.
     fn committee(&self, i: CommitteeId) -> Option<&Committee> {
         self.committees
             .iter()
             .find_map(|(_, c)| (c.id() == i).then_some(c))
     }
 
-    /// Get the committee corresponding to the given round number.
     fn committee_of_round(&self, r: RoundNumber) -> Option<&Committee> {
         self.committees
             .iter()
