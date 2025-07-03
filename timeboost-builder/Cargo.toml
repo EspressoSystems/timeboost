@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+arrayvec = { workspace = true }
 bincode = { workspace = true }
 committable = { workspace = true }
 bon = { workspace = true }

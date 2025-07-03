@@ -29,7 +29,7 @@ impl KeyManager {
             UNKNOWN_COMMITTEE_ID,
             key_pairs.clone().map(|(i, k)| (i, k.public_key())),
         );
-        let cv = CommitteeVec::singleton(committee.clone());
+        let cv = CommitteeVec::new(committee.clone());
         Self {
             keys: key_pairs.collect(),
             committee,

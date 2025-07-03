@@ -7,4 +7,5 @@ message Block {
     uint64 round     = 2;
     bytes  payload   = 3;
     bytes  hash      = 4;
+    bytes  evidence  = 5;
 }

@@ -1,7 +1,7 @@
+mod inclusion_list;
+
 pub mod inclusion {
-    include!("inclusion_list.rs");
+    pub use super::inclusion_list::*;
 }
 
-pub mod block {
-    include!("block.rs");
-}
+pub mod block;

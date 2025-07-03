@@ -224,7 +224,7 @@ impl Worker {
         Self {
             label: cfg.label,
             net,
-            committees: CommitteeVec::singleton(cfg.committee),
+            committees: CommitteeVec::new(cfg.committee),
             keyset: cfg.keyset,
             first_requested_round: None,
             dec_sk: cfg.decryption_key,

@@ -7,7 +7,7 @@ use bytes::Bytes;
 use metrics::NoMetrics;
 use timeboost_builder::BlockProducer;
 use timeboost_crypto::DecryptionScheme;
-use timeboost_sequencer::Sequencer;
+use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::Block;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
@@ -20,7 +20,6 @@ use tracing::{debug, info};
 use super::{gen_bundles, make_configs};
 
 const NUM_OF_BLOCKS: usize = 50;
-const RECOVER_INDEX: usize = 2;
 
 #[tokio::test]
 async fn block_order() {
@@ -28,7 +27,7 @@ async fn block_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let dec = DecryptionScheme::trusted_keygen(num);
-    let cfg = make_configs(&dec, RECOVER_INDEX);
+    let cfg = make_configs(&dec, None);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -54,9 +53,11 @@ async fn block_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    o = s.next_transactions() => {
-                        let o = o.expect("sequencer output");
-                        let b = Block::new(0, *o.round(), Default::default(), Bytes::new());
+                    o = s.next() => {
+                        let Output::Transactions { round, evidence, .. } = o.unwrap() else {
+                            continue
+                        };
+                        let b = Block::new(0, *round, Default::default(), Bytes::new(), evidence);
                         p.enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {

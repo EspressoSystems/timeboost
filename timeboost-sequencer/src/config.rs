@@ -84,11 +84,12 @@ impl SequencerConfig {
 
     /// Derive an RBC config from this sequencer config.
     pub fn rbc_config(&self) -> RbcConfig {
-        let mut cv = CommitteeVec::new();
-        if let Some(prev) = &self.previous_sailfish_committee {
-            cv.add(prev.committee().clone());
-        }
-        cv.add(self.sailfish_committee.committee().clone());
+        let cv = if let Some(prev) = &self.previous_sailfish_committee {
+            CommitteeVec::new(prev.committee().clone())
+                .with(self.sailfish_committee.committee().clone())
+        } else {
+            CommitteeVec::new(self.sailfish_committee.committee().clone())
+        };
         let id = self.sailfish_committee.committee().id();
         RbcConfig::new(self.sign_keypair.clone(), id, cv).recover(self.recover)
     }
