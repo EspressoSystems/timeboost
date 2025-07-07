@@ -3,23 +3,29 @@
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_serialize::serialize_to_vec;
+use ark_serialize::{SerializationError, serialize_to_vec};
 use ark_std::{
     UniformRand,
     rand::{CryptoRng, Rng},
 };
 use digest::Output;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use sha2::Digest;
 use thiserror::Error;
 
+use crate::try_from_bytes;
+
 /// Ciphertext for multiple recipients in MRE scheme
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound = "H: Digest")]
 pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     // the shared ephemeral public key (v:=g^beta in the paper)
-    epk: C::Affine,
+    #[serde_as(as = "crate::SerdeAs")]
+    pub(crate) epk: C::Affine,
     // individual ciphertexts (e_i in the paper)
-    cts: Vec<Output<H>>,
+    pub(crate) cts: Vec<Output<H>>,
 }
 
 impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
@@ -29,6 +35,15 @@ impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
             epk: self.epk,
             ct: ct.clone(),
         })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing mre ciphertext")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        try_from_bytes::<Self, N>(value)
     }
 }
 

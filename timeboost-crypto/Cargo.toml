@@ -21,6 +21,10 @@ bytes = { workspace = true }
 committable = { workspace = true }
 digest = { workspace = true }
 generic-array = { workspace = true }
+num-integer = "0.1"
+# sadly, ark_std depends on rand_core@0.6.0, while rand_chacha@0.9.0 depends on rand_core@0.9.0
+rand_chacha = "0.3.1"
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
