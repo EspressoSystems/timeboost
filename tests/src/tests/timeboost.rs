@@ -82,9 +82,7 @@ where
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    for (i, ((kpair, xpair, sa, da, pa), share)) in
-        parts.into_iter().zip(shares.into_iter()).enumerate()
-    {
+    for (i, ((kpair, xpair, sa, da, pa), share)) in parts.into_iter().zip(shares).enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
