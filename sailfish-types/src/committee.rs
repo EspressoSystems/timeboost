@@ -1,24 +1,20 @@
 use arrayvec::ArrayVec;
 use multisig::{Committee, CommitteeId};
 
-/// A small collection of committees.
+/// A small, non-empty collection of committees.
 #[derive(Debug, Default, Clone)]
+#[allow(clippy::len_without_is_empty)]
 pub struct CommitteeVec<const N: usize> {
     vec: ArrayVec<Committee, N>,
 }
 
 impl<const N: usize> CommitteeVec<N> {
-    /// Create a new empty committee collection.
-    pub fn new() -> Self {
-        Self {
-            vec: ArrayVec::new(),
-        }
-    }
-
     /// Create a committee vector with the given entry.
-    pub fn singleton(c: Committee) -> Self {
+    pub fn new(c: Committee) -> Self {
         const { assert!(N > 0) }
-        let mut this = Self::new();
+        let mut this = Self {
+            vec: ArrayVec::new(),
+        };
         this.add(c);
         this
     }
@@ -41,6 +37,21 @@ impl<const N: usize> CommitteeVec<N> {
         self.vec.iter().find(|c| c.id() == id)
     }
 
+    /// Get the first (newest) committee.
+    pub fn first(&self) -> &Committee {
+        self.vec.first().expect("non-empty vector")
+    }
+
+    /// Get the last (oldest) committee.
+    pub fn last(&self) -> &Committee {
+        self.vec.last().expect("non-empty vector")
+    }
+
+    /// Get the number of committees stored.
+    pub fn len(&self) -> usize {
+        self.vec.len()
+    }
+
     /// Add a commmittee entry.
     ///
     /// If an entry with the given ID already exists, `add` is a NOOP.
@@ -54,9 +65,10 @@ impl<const N: usize> CommitteeVec<N> {
         self.vec.insert(0, c);
     }
 
-    /// Removes a committee entry.
-    pub fn remove(&mut self, id: CommitteeId) {
-        self.vec.retain(|c| c.id() != id);
+    /// Like `add`, but moves `self`.
+    pub fn with(mut self, c: Committee) -> Self {
+        self.add(c);
+        self
     }
 
     /// Get an iterator over all committees.
@@ -68,6 +80,6 @@ impl<const N: usize> CommitteeVec<N> {
 impl<const N: usize> From<Committee> for CommitteeVec<N> {
     fn from(c: Committee) -> Self {
         const { assert!(N > 0) }
-        Self::singleton(c)
+        Self::new(c)
     }
 }

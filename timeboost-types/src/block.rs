@@ -1,87 +1,12 @@
-use core::fmt;
-use std::ops::{Add, Deref, Sub};
+use std::ops::Deref;
 
 use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, CommitteeId};
-use sailfish_types::RoundNumber;
+use sailfish_types::{Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
 use timeboost_proto::block as proto;
-
-/// The genesis timeboost block number.
-pub const GENESIS_BLOCK: BlockNumber = BlockNumber::new(0);
-
-/// A timeboost block number.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct BlockNumber(u64);
-
-impl BlockNumber {
-    pub const fn new(val: u64) -> Self {
-        Self(val)
-    }
-
-    pub fn u64(&self) -> u64 {
-        self.0
-    }
-
-    pub fn genesis() -> Self {
-        GENESIS_BLOCK
-    }
-
-    pub fn is_genesis(self) -> bool {
-        self == GENESIS_BLOCK
-    }
-}
-
-impl From<u64> for BlockNumber {
-    fn from(val: u64) -> Self {
-        Self(val)
-    }
-}
-
-impl From<BlockNumber> for u64 {
-    fn from(val: BlockNumber) -> Self {
-        val.0
-    }
-}
-
-impl Add<u64> for BlockNumber {
-    type Output = BlockNumber;
-
-    fn add(self, rhs: u64) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-impl Sub<u64> for BlockNumber {
-    type Output = BlockNumber;
-
-    fn sub(self, rhs: u64) -> Self::Output {
-        Self(self.0 - rhs)
-    }
-}
-
-impl Deref for BlockNumber {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Committable for BlockNumber {
-    fn commit(&self) -> Commitment<Self> {
-        let builder = RawCommitmentBuilder::new("Block Number Commitment");
-        builder.u64(self.0).finalize()
-    }
-}
-
-impl fmt::Display for BlockNumber {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 #[derive(
     Debug, Default, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd, PartialEq, Eq, Hash,
@@ -131,10 +56,11 @@ pub struct Block {
     round: RoundNumber,
     hash: BlockHash,
     payload: Bytes,
+    evidence: Evidence,
 }
 
 impl Block {
-    pub fn new<N, R>(n: N, r: R, h: BlockHash, payload: Bytes) -> Self
+    pub fn new<N, R>(n: N, r: R, h: BlockHash, p: Bytes, e: Evidence) -> Self
     where
         N: Into<NamespaceId>,
         R: Into<RoundNumber>,
@@ -143,7 +69,8 @@ impl Block {
             namespace: n.into(),
             round: r.into(),
             hash: h,
-            payload,
+            payload: p,
+            evidence: e,
         }
     }
 
@@ -161,6 +88,10 @@ impl Block {
 
     pub fn payload(&self) -> &[u8] {
         &self.payload
+    }
+
+    pub fn evidence(&self) -> &Evidence {
+        &self.evidence
     }
 }
 
@@ -182,28 +113,38 @@ impl TryFrom<proto::Block> for Block {
             round: b.round.into(),
             hash: BlockHash::from(h),
             payload: b.payload,
+            evidence: {
+                let cfg = bincode::config::standard();
+                bincode::serde::decode_from_slice(&b.evidence, cfg)
+                    .map(|(e, _)| e)
+                    .map_err(|_| InvalidBlock("failed to decode block evidence"))?
+            },
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct BlockInfo {
-    num: BlockNumber,
+    round: RoundNumber,
     hash: BlockHash,
     committee: CommitteeId,
 }
 
 impl BlockInfo {
-    pub fn new(num: BlockNumber, hash: BlockHash, com: CommitteeId) -> Self {
+    pub fn new<R, C>(r: R, hash: BlockHash, committee: C) -> Self
+    where
+        R: Into<RoundNumber>,
+        C: Into<CommitteeId>,
+    {
         Self {
-            num,
+            round: r.into(),
             hash,
-            committee: com,
+            committee: committee.into(),
         }
     }
 
-    pub fn num(&self) -> BlockNumber {
-        self.num
+    pub fn round(&self) -> RoundNumber {
+        self.round
     }
 
     pub fn hash(&self) -> &BlockHash {
@@ -218,7 +159,7 @@ impl BlockInfo {
 impl Committable for BlockInfo {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("BlockInfo")
-            .field("num", self.num.commit())
+            .field("round", self.round.commit())
             .field("hash", self.hash.commit())
             .field("committee", self.committee.commit())
             .finalize()

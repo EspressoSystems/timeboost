@@ -9,7 +9,7 @@ use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
 use timeboost_builder::{BlockProducer, ProducerDown};
-use timeboost_sequencer::Sequencer;
+use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
@@ -87,26 +87,28 @@ impl Timeboost {
                         self.sequencer.add_bundles(once(t))
                     }
                 },
-                trx = self.sequencer.next_transactions() => match trx {
-                    Ok(o) => {
+                out = self.sequencer.next() => match out {
+                    Ok(Output::Transactions { round, timestamp, transactions, evidence }) => {
                         info!(
                             node  = %self.label,
-                            round = %o.round(),
-                            trxs  = %o.txns().len(),
+                            round = %round,
+                            trxs  = %transactions.len(),
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(o.round(), o.time(), o.txns()) {
+                            if let Ok(d) = Data::encode(round, timestamp, evidence, &transactions) {
                                 f.enqueue(d).await?;
                             } else {
                                 error!(node = %self.label, "failed to encode inclusion list")
                             }
                         } else {
-                            warn!(
-                                node  = %self.label,
-                                round = %o.round(),
-                                "no forwarder configured => dropping sequencer output"
-                            )
+                            warn!(node = %self.label, %round, "no forwarder => dropping output")
+                        }
+                    }
+                    Ok(Output::UseCommittee(r)) => {
+                        if let Err(e) = self.producer.use_committee(r).await {
+                            let e: ProducerDown = e;
+                            return Err(e.into())
                         }
                     }
                     Err(err) => {
