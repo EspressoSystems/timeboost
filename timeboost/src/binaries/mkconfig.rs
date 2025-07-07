@@ -1,6 +1,6 @@
+use std::io;
 use std::net::IpAddr;
 use std::num::NonZeroU8;
-use std::{io, iter};
 
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
@@ -8,6 +8,7 @@ use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
+use timeboost_crypto::prelude::{DecryptionKey, EncryptionKey};
 use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
@@ -58,11 +59,7 @@ enum Mode {
 }
 
 impl Args {
-    fn mk_node_infos(
-        &self,
-        dec: &TrustedKeyMaterial,
-        seed: Option<u64>,
-    ) -> impl Iterator<Item = Result<NodeInfo>> {
+    fn mk_node_infos(&self, dec: &TrustedKeyMaterial, seed: Option<u64>) -> Result<Vec<NodeInfo>> {
         let num_nodes: u8 = self.num.into();
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
@@ -70,15 +67,25 @@ impl Args {
         let mut d_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(3)).unwrap_or_else(rand::random),
         );
-        iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
-            .zip(iter::repeat_with(move || {
-                x25519::Keypair::generate_with_rng(&mut d_rng).unwrap()
-            }))
-            .zip(&dec.2)
+        let mut p_rng = ark_std::rand::rngs::StdRng::seed_from_u64(
+            seed.map(|s| s.wrapping_pow(4)).unwrap_or_else(rand::random),
+        );
+
+        let nodes: Vec<_> = dec
+            .2
+            .iter()
             .enumerate()
             .take(num_nodes as usize)
-            .map(|(i, ((kp, xp), share))| {
+            .map(|(i, share)| {
                 let i = i as u8;
+                // Generate multisig keypair
+                let kp = multisig::Keypair::generate_with_rng(&mut s_rng);
+                // Generate x25519 keypair
+                let xp = x25519::Keypair::generate_with_rng(&mut d_rng)?;
+                // Generate HPKE keypair for this node using p_rng
+                let hpke_dec_key = DecryptionKey::rand(&mut p_rng);
+                let hpke_enc_key = EncryptionKey::from(&hpke_dec_key);
+
                 Ok(NodeInfo {
                     sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr)?,
                     decrypt_address: self.adjust_addr(i, &self.decrypt_base_addr)?,
@@ -86,14 +93,19 @@ impl Args {
                     internal_address: self.adjust_addr(i, &self.internal_base_addr)?,
                     signing_key: kp.public_key(),
                     dh_key: xp.public_key(),
+                    enc_key: hpke_enc_key,
                     private: Some(PrivateKeys {
                         signing_key: kp.secret_key(),
                         dh_key: xp.secret_key(),
                         dec_share: share.clone(),
+                        dec_key: hpke_dec_key,
                     }),
                     nitro_addr: self.nitro_addr.clone(),
                 })
             })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(nodes)
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
@@ -126,7 +138,7 @@ fn main() -> Result<()> {
         None => DecryptionScheme::trusted_keygen(args.num.into()),
     };
     let cfg = KeysetConfig {
-        keyset: args.mk_node_infos(&tkm, args.seed).collect::<Result<_>>()?,
+        keyset: args.mk_node_infos(&tkm, args.seed)?,
         dec_keyset: PublicDecInfo {
             pubkey: tkm.0.clone(),
             combkey: tkm.1.clone(),

@@ -4,7 +4,11 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::{DecryptionScheme, traits::threshold_enc::ThresholdEncScheme};
+use timeboost_crypto::{
+    DecryptionScheme,
+    prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey},
+    traits::threshold_enc::ThresholdEncScheme,
+};
 use timeboost_types::DecryptionKey;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
@@ -26,6 +30,10 @@ pub struct NodeInfo {
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
 
+    /// public key in hybrid public key encryption (HPKE) for secure communication
+    #[serde(with = "hpkeenckey")]
+    pub enc_key: HpkeEncKey,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro_addr: Option<Address>,
 
@@ -39,6 +47,9 @@ pub struct PrivateKeys {
     pub dh_key: x25519::SecretKey,
     #[serde(with = "keyshare")]
     pub dec_share: KeyShare,
+    /// secret key in hybrid public key encryption (HPKE) for secure communication
+    #[serde(with = "hpkedeckey")]
+    pub dec_key: HpkeDecKey,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +118,8 @@ macro_rules! mk_serde_mod {
 mk_serde_mod!(keyshare, KeyShare);
 mk_serde_mod!(pubkey, PublicKey);
 mk_serde_mod!(combkey, CombKey);
+mk_serde_mod!(hpkeenckey, HpkeEncKey);
+mk_serde_mod!(hpkedeckey, HpkeDecKey);
 
 /// NON PRODUCTION
 /// This function takes the provided host and hits the healthz endpoint. This to ensure that when
@@ -158,10 +171,12 @@ mod tests {
       "internal_address": "127.0.0.1:5000",
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
+      "enc_key": "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK",
       "private": {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
-        "dec_share": "jbJKBjBMYvZhrtFwzDohY5rWSvVSsSu2X5qjQyFJAZQCcF"
+        "dec_share": "jbJKBjBMYvZhrtFwzDohY5rWSvVSsSu2X5qjQyFJAZQCcF",
+        "dec_key": "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1"
       }
     }
   ],

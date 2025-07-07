@@ -108,7 +108,11 @@ impl<C: CurveGroup> ShoupVess<C> {
             .map(|s| serialize_to_vec![s])
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
 
-        let mre_ct = mre::encrypt::<C, sha2::Sha256, R>(recipients, &shares_bytes, aad, rng)?;
+        let enc_keys: Vec<mre::EncryptionKey<C>> = recipients
+            .iter()
+            .map(|u| mre::EncryptionKey { u: *u })
+            .collect();
+        let mre_ct = mre::encrypt::<C, sha2::Sha256, R>(&enc_keys, &shares_bytes, aad, rng)?;
 
         let ct = VessCiphertext { mre_ct };
         Ok((ct, comm))
@@ -138,7 +142,9 @@ impl<C: CurveGroup> ShoupVess<C> {
             .get_recipient_ct(node_idx)
             .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
 
-        let pt = mre::decrypt::<C, sha2::Sha256>(node_idx, recv_sk, &recv_ct, aad)?;
+        let dec_key = mre::DecryptionKey { alpha: *recv_sk };
+        let labeled_key = dec_key.label(node_idx);
+        let pt = labeled_key.decrypt::<sha2::Sha256>(&recv_ct, aad)?;
         let share: C::ScalarField = CanonicalDeserialize::deserialize_compressed(&*pt)?;
 
         Ok(share)

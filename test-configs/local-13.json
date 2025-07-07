@@ -6,10 +6,13 @@
       "producer_address": "127.0.0.1:11000",
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
+      "enc_key": "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK",
+      "nitro_addr": null,
       "private": {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
-        "dec_share": "j4cJPrjKCXFzNYTkucEKSxXqvG6Km6Hyjk1UWM2JrTkajZ"
+        "dec_share": "j4cJPrjKCXFzNYTkucEKSxXqvG6Km6Hyjk1UWM2JrTkajZ",
+        "dec_key": "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1"
       }
     },
     {
@@ -18,10 +21,13 @@
       "producer_address": "127.0.0.1:11001",
       "signing_key": "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR",
       "dh_key": "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb",
+      "enc_key": "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb",
+      "nitro_addr": null,
       "private": {
         "signing_key": "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
         "dh_key": "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
-        "dec_share": "k4KV6jkgD774y3yAYNpTuqqrd6xg8v4R99kHLiDwGaE5RA"
+        "dec_share": "k4KV6jkgD774y3yAYNpTuqqrd6xg8v4R99kHLiDwGaE5RA",
+        "dec_key": "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt"
       }
     },
     {
@@ -30,10 +36,13 @@
       "producer_address": "127.0.0.1:11002",
       "signing_key": "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE",
       "dh_key": "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj",
+      "enc_key": "8rnMdtoAnvm7e8WZjERVtgnHQSiSRe4nbvHijE9RozRBJczci1J7amqR8G4EArDtVDd",
+      "nitro_addr": null,
       "private": {
         "signing_key": "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
         "dh_key": "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
-        "dec_share": "k3fokNUop4fQyPvALHap6KUCSpxbKhCtpPCXx6N162s7Cm"
+        "dec_share": "k3fokNUop4fQyPvALHap6KUCSpxbKhCtpPCXx6N162s7Cm",
+        "dec_key": "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM"
       }
     },
     {
@@ -42,10 +51,13 @@
       "producer_address": "127.0.0.1:11003",
       "signing_key": "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA",
       "dh_key": "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh",
+      "enc_key": "8tLK2zC3ZTA5Kw3jbXar4PxrS22SvFxu3o2xEoGfRjD81jsFb6Xc1G8GXjP79CKntmg",
+      "nitro_addr": null,
       "private": {
         "signing_key": "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
         "dh_key": "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
-        "dec_share": "kEL5faZy3Lvv3zw3FxupQWFUnNf3YbmN1542p43ppjDyGW"
+        "dec_share": "kEL5faZy3Lvv3zw3FxupQWFUnNf3YbmN1542p43ppjDyGW",
+        "dec_key": "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw"
       }
     },
     {
@@ -54,10 +66,13 @@
       "producer_address": "127.0.0.1:11004",
       "signing_key": "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J",
       "dh_key": "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL",
+      "enc_key": "8sAr1CcnzuMv61MwqQm6EGNPG4ajT6VssCC2ZndZUDjnyq6TngHcB6g8bnesCZ9FG7X",
+      "nitro_addr": null,
       "private": {
         "signing_key": "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
         "dh_key": "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
-        "dec_share": "jWVC1bpSRfRS75zAH3Sfb3Pd63PZKXkmoXGEdgHPtd6Lc3"
+        "dec_share": "jWVC1bpSRfRS75zAH3Sfb3Pd63PZKXkmoXGEdgHPtd6Lc3",
+        "dec_key": "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76"
       }
     },
     {
@@ -66,10 +81,13 @@
       "producer_address": "127.0.0.1:11005",
       "signing_key": "hcUWjmK8pTz5AY39CDh1gVnVbaF4nNuEf2dQ5SWXZQyh",
       "dh_key": "95KhKesfhSgMubqtjv8f13d6XosWFME4Ya33LH9jkX23",
+      "enc_key": "8rp8YwxgLZdgHdR1TAD2aUYggq71ePszMgm49XcV2ZL19d1nkb2AjfxeBN9vFuYj2qy",
+      "nitro_addr": null,
       "private": {
         "signing_key": "6YJc9asDJQsFFHHg8iX23oL1sySx2EgTGM8CqDd71WMa",
         "dh_key": "Ho9ZZCkP1i6f12fkWGUZucJxX2qbv9L3UbB56sqwjvkw",
-        "dec_share": "jVfdLMLkN5KvuYHKh6hYqitsELuefGSGq8MZLcgLMa9XHW"
+        "dec_share": "jVfdLMLkN5KvuYHKh6hYqitsELuefGSGq8MZLcgLMa9XHW",
+        "dec_key": "AYUPadq8BAQBV5RYNUuLQe4cXuWNhQzYLKDo7uEBJSzbt"
       }
     },
     {
@@ -78,10 +96,13 @@
       "producer_address": "127.0.0.1:11006",
       "signing_key": "ufyeJDrHnH7BuuBvwaonu86YYZKYW47VedCdZ2yqAanm",
       "dh_key": "ER5CSn1QjRZ6rJ2d3m6HSyyDoLDr4ab29GkfVhNf3Eoo",
+      "enc_key": "8suZYXAuGAGb4bWAL4LGpX3xcHakDmt8z5pby5F6K9USBGfsgoDNpyfrctsUfbWPEAe",
+      "nitro_addr": null,
       "private": {
         "signing_key": "6NZdk8EGRSVS7sSjcjMiC8vL4KcSY41ELU6HaKyk1Drk",
         "dh_key": "F5E9cp5qUe4z2wdaRYvEhFMYXaLy4sEX1rwCWRcTH69i",
-        "dec_share": "kCtp4nZqu3rdj8C4RzUPpZXC6ADHod6a9TkYSDGdmSqo7b"
+        "dec_share": "kCtp4nZqu3rdj8C4RzUPpZXC6ADHod6a9TkYSDGdmSqo7b",
+        "dec_key": "Ag5Dn7DkMcxNLpbHBgrcWchmXx2GZmj9ZSwo7Fo8MyfkM"
       }
     },
     {
@@ -90,10 +111,13 @@
       "producer_address": "127.0.0.1:11007",
       "signing_key": "24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU",
       "dh_key": "4FmHYY46oj2kwzm5Ddyvd4hQHHWMgwPmLMbzgBNHcfiD",
+      "enc_key": "8soCMbjBW4DbtpKkpMkPUq1WjgUcU5CYUCkhtYtSkm2BTVkoJ9abQhFYHqQpczRS6pF",
+      "nitro_addr": null,
       "private": {
         "signing_key": "AMJEYXVhS4FfoqfD6VL5nZTNbzJQdtgdxBcVEAwZnLJ3",
         "dh_key": "5zhwDWJ1ut6q871aHCHmH7QRCHDykXjUSEriGTLkwezL",
-        "dec_share": "jw28YJTt36EFxLdr1xwiCcHTwPixFLFq52mtyZFGJKv5Cr"
+        "dec_share": "jw28YJTt36EFxLdr1xwiCcHTwPixFLFq52mtyZFGJKv5Cr",
+        "dec_key": "AcbRDbHhXpw3DsaxA3gWRTyw2W6FP9V2X1NNNwSvJkSwq"
       }
     },
     {
@@ -102,10 +126,13 @@
       "producer_address": "127.0.0.1:11008",
       "signing_key": "fkTFXcMaEEzutGCreYpDb1B2h8hNMf6UMNRbt8dnhi2v",
       "dh_key": "vzvao6vfQtWpBJvPsVCk9FL7RsJBNE4W8SvNWtofxqB",
+      "enc_key": "8rkTnCugdPNcoCzYLh5p6WgKKk9oRv5GCMSFB4LfDVrGooCLUw67xB1KNgZ8N8vgRFf",
+      "nitro_addr": null,
       "private": {
         "signing_key": "5mLCMSVT4f8HPqCqdKChxugpMcQ3x1C7hwfEnsTApFfp",
         "dh_key": "2PojAT3g5iqGTrgLhTRKKHqwbeoFhRkzkYLM9AttFoKK",
-        "dec_share": "juMGG22fBaNaKd5QZstZPZe8ibVteho18JfKNcrCknCFiX"
+        "dec_share": "juMGG22fBaNaKd5QZstZPZe8ibVteho18JfKNcrCknCFiX",
+        "dec_key": "AjgeTwBByktco4Y5Y1k7oxofF1A7C8zRtiXnkCbpVKixH"
       }
     },
     {
@@ -114,10 +141,13 @@
       "producer_address": "127.0.0.1:11009",
       "signing_key": "28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3",
       "dh_key": "69BWDWEuKYvsF9EfCjDYJpxrNpSymvX23o3JHxQxhVfQ",
+      "enc_key": "8tVEfRb6HHKezELAYetMd6MWBkHtH3KALvmawms9eVnHqQiLYdSLRKoi7ZvdpBmak6G",
+      "nitro_addr": null,
       "private": {
         "signing_key": "4yhZYmNvAouKFpiYomrV9aH8kUZTLRH2hiCZtJzcAASa",
         "dh_key": "Bk2wY7o2YE9gpu6jxiRSbWiMU88H8s9D9MQGMaF2LJ7h",
-        "dec_share": "jTswDFqpwZgNLgGk5Vko2vGkqtwrJGQwwKc8aRrQ9z2k16"
+        "dec_share": "jTswDFqpwZgNLgGk5Vko2vGkqtwrJGQwwKc8aRrQ9z2k16",
+        "dec_key": "AeJSq3Ef4BuC4CqwB6fKbKL77CeJNHFoHeMJ9hsK8ESo4"
       }
     },
     {
@@ -126,10 +156,13 @@
       "producer_address": "127.0.0.1:11010",
       "signing_key": "pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es",
       "dh_key": "EBPENaYdA28xAV7cHh6q1ESJcsf7P2LpZUWv5dEmo2Sv",
+      "enc_key": "8sj5are6EaimGZFjy13gUTW8NJ8cJV1Gn9X5QTBpAJrreDUn5r53HWtrVSKccFzhBPt",
+      "nitro_addr": null,
       "private": {
         "signing_key": "4DXdtKDNBs1DeLGP7GeqGWeSuX3RgkRhwcT9aXKwzu9p",
         "dh_key": "7X3bBjha3wEUGvCNUWf7627RTqpNFGo6uwUtHM1nFYrW",
-        "dec_share": "izViS5iAMLBncNfiiS8iXKz6pLRqaqAqbheTQ793NquTjX"
+        "dec_share": "izViS5iAMLBncNfiiS8iXKz6pLRqaqAqbheTQ793NquTjX",
+        "dec_key": "AZ3KRDwEVkZJModQDYaheTnQAc3X8wAx38fB8doYrSreM"
       }
     },
     {
@@ -138,10 +171,13 @@
       "producer_address": "127.0.0.1:11011",
       "signing_key": "iNJBiPwwdA53Gds2rnJnSm1sjvnR8Ep72LZKf8fxVo2e",
       "dh_key": "D2dCHzbNYVo18z9yH4KnuiRbGMj3qxxRLAGwFEUrBUM3",
+      "enc_key": "8rz293vGWYmF94xVNQXKFY2955NXdgqHDVQJdViVdGSfPP1xpcZfz5GtfhkPEQttgCq",
+      "nitro_addr": null,
       "private": {
         "signing_key": "FL84xojYc59vAMuKibGA797nvFgCp7uRZfgx3GZN5PK4",
         "dh_key": "BWqUqoQPHgBwQ782YHyJAsvJDAxwTBs6EskCEDmrffuT",
-        "dec_share": "k8AMtL9nEgqRh5i5F817LdZRJ1Nx4EZanNDm41Udfka8cA"
+        "dec_share": "k8AMtL9nEgqRh5i5F817LdZRJ1Nx4EZanNDm41Udfka8cA",
+        "dec_key": "AmS9eEYZ6NoF2TttjiAKybXsxqubsuyHwKV9ejDE6m3o6"
       }
     },
     {
@@ -150,10 +186,13 @@
       "producer_address": "127.0.0.1:11012",
       "signing_key": "op7c28pHtcAH3qtKVAPz8amCfs7mcctxeM5ztJKURmzJ",
       "dh_key": "HBen32g4EtpoyA4hUWeqmHybw52xPWrkJapvHDo45AQi",
+      "enc_key": "8s3o6t3skFeCWjT6ZSEm2o8G6J9UQeCFGoR2DohA8LH7m118BbrpDc4Wc9EKvN6qUmn",
+      "nitro_addr": null,
       "private": {
         "signing_key": "6x7qJcNonz7sJKXDeL3RmhJwiBMSdJfkgqPGdy4qDBp3",
         "dh_key": "7EKaoCRyA56NAuxGVTpVysJkKUCSYosxZFb7ExBrvmBn",
-        "dec_share": "k8qbB9r5p7Xw5ZZHnMvyHtqQ9MpWu5DnLdSBD8FcMLDLEX"
+        "dec_share": "k8qbB9r5p7Xw5ZZHnMvyHtqQ9MpWu5DnLdSBD8FcMLDLEX",
+        "dec_key": "AcpNJHxRdmHQCgfcJXxqdfiQmLS7xdDFQtPsV774zteTw"
       }
     }
   ],
