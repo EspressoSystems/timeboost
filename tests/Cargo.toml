@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+bytes = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }
 committable = { workspace = true }
 crossbeam-queue = { workspace = true }

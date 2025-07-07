@@ -188,8 +188,14 @@ fn is_valid_delivery(sim: &Simulator) -> bool {
     if m.is_empty() {
         return false;
     }
-    if m.values().zip(m.values().skip(1)).any(|(a, b)| a != b) {
-        return false;
+    for r in 0..sim.events().len() {
+        let mut d = 0;
+        for (a, b) in m.values().zip(m.values().skip(1)) {
+            d += (a.get(r) != b.get(r)) as usize
+        }
+        if d >= sim.committee().one_honest_threshold().get() {
+            return false;
+        }
     }
     let mut s = HashSet::new();
     for e in m.values() {

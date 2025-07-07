@@ -5,6 +5,7 @@ pub mod mre;
 pub mod prelude;
 pub mod sg_encryption;
 pub mod traits;
+pub mod vess;
 
 use ark_ec::CurveGroup;
 use ark_ec::hashing::curve_maps::wb::WBMap;
@@ -72,7 +73,7 @@ impl Committable for KeysetId {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Keyset {
     id: KeysetId,
     size: NonZeroUsize,

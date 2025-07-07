@@ -91,12 +91,14 @@ where
             .sailfish_committee(sailfish_committee.clone())
             .decrypt_committee(decrypt_committee.clone())
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
+            .leash_len(100)
             .build();
         let pcf = BlockProducerConfig::builder()
             .sign_keypair(kpair)
             .dh_keypair(xpair)
             .address(pa)
             .committee(produce_committee.clone())
+            .retain(100)
             .build();
         cfgs.push((conf, pcf));
     }

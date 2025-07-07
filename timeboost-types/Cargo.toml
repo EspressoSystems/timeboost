@@ -29,6 +29,7 @@ sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
+timeboost-proto = { path = "../timeboost-proto" }
 tracing = { workspace = true }
 
 [dev-dependencies]

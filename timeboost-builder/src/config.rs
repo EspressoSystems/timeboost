@@ -8,4 +8,5 @@ pub struct BlockProducerConfig {
     pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) committee: AddressableCommittee,
     pub(crate) address: Address,
+    pub(crate) retain: usize,
 }

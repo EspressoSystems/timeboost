@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 prost = { workspace = true }
-timeboost-types = { path = "../timeboost-types" }
+thiserror = { workspace = true }
 prost-types = "0.14"
 
 [build-dependencies]

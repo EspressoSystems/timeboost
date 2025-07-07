@@ -6,7 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+arrayvec = { workspace = true }
 bincode = { workspace = true }
+committable = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
@@ -14,7 +16,8 @@ metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+timeboost-proto = { path = "../timeboost-proto" }
 timeboost-types = { path = "../timeboost-types" }
+smallvec = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-

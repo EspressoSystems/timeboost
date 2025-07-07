@@ -49,15 +49,15 @@ impl Drop for Worker {
 impl Worker {
     pub async fn connect(
         key: PublicKey,
-        addr: &Address,
+        addr: Address,
         incls_rx: Receiver<Data>,
     ) -> Result<Self, Error> {
-        let stream = Self::try_connect(addr).await?;
+        let stream = Self::try_connect(&addr).await?;
         stream.set_nodelay(true)?;
         Ok(Self {
             key,
             stream,
-            nitro_addr: addr.clone(),
+            nitro_addr: addr,
             incls_rx,
             pending: None,
             connect_task: None,
@@ -159,9 +159,7 @@ impl Worker {
     async fn try_connect(addr: &Address) -> Result<TcpStream, Error> {
         match addr {
             Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
-            Address::Name(h, p) => {
-                timeout(CONNECT_TIMEOUT, TcpStream::connect((h.as_ref(), *p))).await?
-            }
+            Address::Name(h, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((&**h, *p))).await?,
         }
     }
 }
@@ -176,8 +174,7 @@ mod tests {
     use cliquenet::Address;
     use multisig::Keypair;
     use prost::Message;
-    use timeboost_proto::proto_types::{InclusionList, Transaction};
-    use timeboost_types::Timestamp;
+    use sailfish::types::Evidence;
     use timeboost_utils::types::logging::init_logging;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -186,19 +183,22 @@ mod tests {
         time::sleep,
     };
 
+    use crate::proto::inclusion as proto;
+    use crate::types::Timestamp;
+
     use super::{ACK_FLAG, Worker};
     use crate::forwarder::data::Data;
 
     #[test]
     fn simple_encode_and_decode() {
-        let old = Transaction {
+        let old = proto::Transaction {
             encoded_txn: Vec::new(),
             address: "0x00".as_bytes().to_vec(),
             timestamp: *Timestamp::now(),
         };
         let bytes = old.encode_to_vec();
 
-        let new = Transaction::decode(bytes.as_slice()).unwrap();
+        let new = proto::Transaction::decode(bytes.as_slice()).unwrap();
 
         assert_eq!(new, old);
     }
@@ -213,7 +213,7 @@ mod tests {
         let cap = 10;
         let (tx, rx) = channel(cap);
         let keypair = Keypair::generate();
-        let w = Worker::connect(keypair.public_key(), &Address::from(a), rx)
+        let w = Worker::connect(keypair.public_key(), Address::from(a), rx)
             .await
             .expect("forwarder connection to succeed");
         let jh = tokio::spawn(w.go());
@@ -227,7 +227,7 @@ mod tests {
         // we should fail
         let max = 3;
         for i in 0..max {
-            let d = Data::encode(i, i, Vec::new()).expect("data to be encoded");
+            let d = Data::encode(i, i, Evidence::Genesis, &[]).expect("data to be encoded");
             let r = tx.send(d).await;
             assert!(r.is_ok());
             // wait for worker.go() to receive
@@ -238,9 +238,6 @@ mod tests {
         let l = TcpListener::bind(a).await.expect("listener to start");
         let (mut s, _) = l.accept().await.expect("connection to be established");
 
-        // wait for reconnect
-        sleep(Duration::from_millis(100)).await;
-
         let server = async {
             let mut buf = [0u8; 1024];
             for i in 0..=max {
@@ -248,18 +245,16 @@ mod tests {
                 s.read_exact(&mut buf[..size])
                     .await
                     .expect("encoded bytes to be read");
-                let incl =
-                    InclusionList::decode(&buf[..size]).expect("inclusion list to be decoded");
+                let incl = proto::InclusionList::decode(&buf[..size])
+                    .expect("inclusion list to be decoded");
                 assert_eq!(incl.round, i);
                 assert_eq!(incl.consensus_timestamp, i);
                 s.write_all(&[ACK_FLAG]).await.expect("ack to be sent");
             }
-
-            // wait to ensure client receives ack before we teriminate future
-            sleep(Duration::from_millis(100)).await;
+            s.shutdown().await.unwrap();
         };
 
-        let d = Data::encode(max, max, Vec::new()).expect("data to be encoded");
+        let d = Data::encode(max, max, Evidence::Genesis, &[]).expect("data to be encoded");
         let (r, _) = tokio::join!(tx.send(d), server);
         assert!(r.is_ok());
         // all data should be processed from channel, back to max cap

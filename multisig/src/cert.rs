@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, num::NonZeroUsize};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
@@ -42,6 +42,10 @@ impl<D: Committable> Certificate<D> {
     }
 
     pub fn is_valid(&self, committee: &Committee) -> bool {
+        self.is_valid_with_threshold(committee, committee.quorum_size())
+    }
+
+    pub fn is_valid_with_threshold(&self, committee: &Committee, t: NonZeroUsize) -> bool {
         let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
         let n: usize = self
             .signatures
@@ -54,7 +58,7 @@ impl<D: Committable> Certificate<D> {
             })
             .sum();
 
-        d && n >= committee.quorum_size().get()
+        d && n >= t.get()
     }
 
     pub(crate) fn signatures(&self) -> &BTreeMap<KeyId, Signature> {
@@ -64,6 +68,10 @@ impl<D: Committable> Certificate<D> {
 
 impl<D: Committable + Sync> Certificate<D> {
     pub fn is_valid_par(&self, committee: &Committee) -> bool {
+        self.is_valid_with_threshold_par(committee, committee.quorum_size())
+    }
+
+    pub fn is_valid_with_threshold_par(&self, committee: &Committee, t: NonZeroUsize) -> bool {
         use rayon::prelude::*;
 
         let d = constant_time_eq(self.data.commit().as_ref(), self.commitment.as_ref());
@@ -79,7 +87,7 @@ impl<D: Committable + Sync> Certificate<D> {
             })
             .sum();
 
-        d && n >= committee.quorum_size().get()
+        d && n >= t.get()
     }
 }
 

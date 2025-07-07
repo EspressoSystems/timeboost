@@ -1,9 +1,10 @@
 use bon::Builder;
 use cliquenet as net;
 use cliquenet::AddressableCommittee;
-use multisig::{Keypair, x25519};
+use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
+use timeboost_crypto::Keyset;
 use timeboost_types::{Address, DecryptionKey, DelayedInboxIndex};
 
 #[derive(Debug, Clone, Builder)]
@@ -43,6 +44,9 @@ pub struct SequencerConfig {
 
     /// The previous Sailfish committee.
     pub(crate) previous_sailfish_committee: Option<AddressableCommittee>,
+
+    /// Length of the leash between Sailfish and other phases.
+    pub(crate) leash_len: usize,
 }
 
 impl SequencerConfig {
@@ -80,12 +84,32 @@ impl SequencerConfig {
 
     /// Derive an RBC config from this sequencer config.
     pub fn rbc_config(&self) -> RbcConfig {
-        let mut cv = CommitteeVec::new();
-        if let Some(prev) = &self.previous_sailfish_committee {
-            cv.add(prev.committee().clone());
-        }
-        cv.add(self.sailfish_committee.committee().clone());
+        let cv = if let Some(prev) = &self.previous_sailfish_committee {
+            CommitteeVec::new(prev.committee().clone())
+                .with(self.sailfish_committee.committee().clone())
+        } else {
+            CommitteeVec::new(self.sailfish_committee.committee().clone())
+        };
         let id = self.sailfish_committee.committee().id();
         RbcConfig::new(self.sign_keypair.clone(), id, cv).recover(self.recover)
     }
+
+    pub fn decrypter_config(&self) -> DecrypterConfig {
+        DecrypterConfig::builder()
+            .label(self.sign_keypair.public_key())
+            .retain(self.leash_len)
+            .keyset(Keyset::new(1, self.decrypt_committee.committee().size()))
+            .decryption_key(self.decryption_key.clone())
+            .committee(self.decrypt_committee.committee().clone())
+            .build()
+    }
+}
+
+#[derive(Debug, Clone, Builder)]
+pub struct DecrypterConfig {
+    pub(crate) label: PublicKey,
+    pub(crate) retain: usize,
+    pub(crate) keyset: Keyset,
+    pub(crate) committee: Committee,
+    pub(crate) decryption_key: DecryptionKey,
 }

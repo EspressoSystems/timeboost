@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use metrics::NoMetrics;
 use timeboost_crypto::DecryptionScheme;
-use timeboost_sequencer::Sequencer;
+use timeboost_sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -58,11 +58,13 @@ async fn transaction_order() {
                         Err(RecvError::Lagged(_)) => continue,
                         Err(err) => panic!("{err}")
                     },
-                    txs = s.next_transactions() => {
+                    out = s.next() => {
                         debug!(node = %s.public_key(), transactions = %i);
-                        let txs = txs.unwrap().into_txns();
-                        i += txs.len();
-                        for t in txs {
+                        let Output::Transactions { transactions, .. } = out.unwrap() else {
+                            continue
+                        };
+                        i += transactions.len();
+                        for t in transactions {
                             tx.send(t).unwrap()
                         }
                     }

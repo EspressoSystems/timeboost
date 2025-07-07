@@ -22,7 +22,7 @@ impl Drop for NitroForwarder {
 }
 
 impl NitroForwarder {
-    pub async fn connect(key: PublicKey, addr: &Address) -> Result<Self, Error> {
+    pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let (tx, rx) = channel(100_000);
         let w = Worker::connect(key, addr, rx).await?;
         Ok(Self {

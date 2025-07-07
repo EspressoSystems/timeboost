@@ -2,7 +2,7 @@
 //! Proposed as MEGa in <https://eprint.iacr.org/2022/506>, this code implements the simplified
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
-use ark_ec::{AffineRepr, CurveConfig, CurveGroup};
+use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::{SerializationError, serialize_to_vec};
 use ark_std::{
     UniformRand,
@@ -187,7 +187,7 @@ where
     }
 
     // random sample a shared ephemeral keypair
-    let esk = <C::Config as CurveConfig>::ScalarField::rand(rng);
+    let esk = C::ScalarField::rand(rng);
     let epk = C::generator().mul(&esk);
 
     // generate recipient-specific ciphertext parts

@@ -13,11 +13,11 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, trace, warn};
 
+use crate::config::DecrypterConfig;
+
 type Result<T> = std::result::Result<T, DecryptError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
-
-const MAX_ROUNDS: usize = 100;
 
 /// Command sent to Decrypter's background worker
 enum WorkerRequest {
@@ -70,24 +70,20 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub fn new(
-        label: PublicKey,
-        net: Overlay,
-        committees: CommitteeVec<2>,
-        keyset: Keyset,
-        dec_sk: DecryptionKey,
-    ) -> Self {
-        let (req_tx, req_rx) = channel(MAX_ROUNDS);
-        let (res_tx, res_rx) = channel(MAX_ROUNDS);
-        let worker = Worker::new(label, net, committees, keyset, dec_sk);
+    pub fn new(cfg: DecrypterConfig, net: Overlay) -> Self {
+        let (req_tx, req_rx) = channel(cfg.retain);
+        let (res_tx, res_rx) = channel(cfg.retain);
 
         Self {
-            label,
-            keyset,
+            label: cfg.label,
+            keyset: cfg.keyset,
             incls: BTreeMap::new(),
             req_tx,
             res_rx,
-            jh: spawn(worker.go(req_rx, res_tx)),
+            jh: {
+                let w = Worker::new(cfg, net);
+                spawn(w.go(req_rx, res_tx))
+            },
         }
     }
 
@@ -205,6 +201,8 @@ struct Worker {
     first_requested_round: Option<RoundNumber>,
     /// decryption key used to decrypt and combine
     dec_sk: DecryptionKey,
+    /// Number of rounds to retain.
+    retain: usize,
 
     /// cache of decrtyped shares (keyed by round number), each entry value is a nested vector: an
     /// ordered list of per-ciphertext decryption shares. the order is derived from the
@@ -222,24 +220,19 @@ struct Worker {
 }
 
 impl Worker {
-    pub fn new(
-        label: PublicKey,
-        net: Overlay,
-        committees: CommitteeVec<2>,
-        keyset: Keyset,
-        dec_sk: DecryptionKey,
-    ) -> Self {
+    pub fn new(cfg: DecrypterConfig, net: Overlay) -> Self {
         Self {
-            label,
+            label: cfg.label,
             net,
-            committees,
-            keyset,
+            committees: CommitteeVec::new(cfg.committee),
+            keyset: cfg.keyset,
             first_requested_round: None,
-            dec_sk,
+            dec_sk: cfg.decryption_key,
             dec_shares: BTreeMap::default(),
             acks: BTreeMap::default(),
             incls: BTreeMap::default(),
             last_hatched_round: RoundNumber::genesis(),
+            retain: cfg.retain,
         }
     }
 
@@ -390,7 +383,7 @@ impl Worker {
 
     /// logic to garbage collect a round (and all prior rounds)
     async fn on_gc_request(&mut self, round: RoundNumber) -> Result<()> {
-        let round = round.saturating_sub(MAX_ROUNDS as u64);
+        let round = round.saturating_sub(self.retain as u64);
         if round > 0 && !self.dec_shares.is_empty() {
             debug!(node = %self.label, %round, "performing garbage collection");
             self.net.gc(round);
@@ -693,7 +686,7 @@ mod tests {
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
     use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
-    use sailfish::types::{CommitteeVec, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
+    use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
@@ -703,7 +696,7 @@ mod tests {
     };
     use tracing::warn;
 
-    use crate::decrypt::Decrypter;
+    use crate::{config::DecrypterConfig, decrypt::Decrypter};
 
     #[tokio::test]
     async fn test_with_encrypted_data() {
@@ -898,13 +891,15 @@ mod tests {
             .await
             .expect("starting network");
 
-            let decrypter = Decrypter::new(
-                sig_key.public_key(),
-                Overlay::new(network),
-                CommitteeVec::singleton(committee.clone()),
-                keyset,
-                decryption_keys[i].clone(),
-            );
+            let conf = DecrypterConfig::builder()
+                .label(sig_key.public_key())
+                .committee(committee.clone())
+                .keyset(keyset)
+                .decryption_key(decryption_keys[i].clone())
+                .retain(100)
+                .build();
+
+            let decrypter = Decrypter::new(conf, Overlay::new(network));
             decrypters.push(decrypter);
         }
         // wait for network

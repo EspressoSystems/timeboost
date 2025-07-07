@@ -9,19 +9,20 @@ use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
 use timeboost_builder::{BlockProducer, ProducerDown};
-use timeboost_sequencer::Sequencer;
+use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 use vbs::version::StaticVersion;
 
 pub use config::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
 pub use timeboost_crypto as crypto;
+pub use timeboost_proto as proto;
 pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
@@ -52,7 +53,7 @@ impl Timeboost {
         let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
 
         // TODO: Once we have e2e listener this check wont be needed
-        let nitro_forwarder = if let Some(nitro_addr) = &cfg.nitro_addr {
+        let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
             Some(NitroForwarder::connect(cfg.sign_keypair.public_key(), nitro_addr).await?)
         } else {
             None
@@ -86,18 +87,29 @@ impl Timeboost {
                         self.sequencer.add_bundles(once(t))
                     }
                 },
-                trx = self.sequencer.next_transactions() => match trx {
-                    Ok(o) => {
-                        info!(node = %self.label, len = %o.txns().len(), "next batch of transactions");
+                out = self.sequencer.next() => match out {
+                    Ok(Output::Transactions { round, timestamp, transactions, evidence }) => {
+                        info!(
+                            node  = %self.label,
+                            round = %round,
+                            trxs  = %transactions.len(),
+                            "sequencer output"
+                        );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(o.round(), o.time(), o.txns()) {
+                            if let Ok(d) = Data::encode(round, timestamp, evidence, &transactions) {
                                 f.enqueue(d).await?;
                             } else {
                                 error!(node = %self.label, "failed to encode inclusion list")
                             }
+                        } else {
+                            warn!(node = %self.label, %round, "no forwarder => dropping output")
                         }
-                        let res: Result<(), ProducerDown> = self.producer.enqueue(o.into_txns()).await;
-                        res?
+                    }
+                    Ok(Output::UseCommittee(r)) => {
+                        if let Err(e) = self.producer.use_committee(r).await {
+                            let e: ProducerDown = e;
+                            return Err(e.into())
+                        }
                     }
                     Err(err) => {
                         return Err(err.into())
@@ -105,9 +117,7 @@ impl Timeboost {
                 },
                 blk = self.producer.next_block() => match blk {
                     Ok(b) => {
-                        info!(node = %self.label, block = %b.num(), "certified block");
-                        let res: Result<(), ProducerDown> = self.producer.gc(b.num()).await;
-                        res?
+                        info!(node = %self.label, block = %b.data().round(), "certified block");
                     }
                     Err(e) => {
                         let e: ProducerDown = e;

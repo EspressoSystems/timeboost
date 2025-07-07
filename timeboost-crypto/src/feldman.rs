@@ -13,24 +13,24 @@ use crate::{
 
 /// Feldman VSS: <https://www.cs.umd.edu/~gasarch/TOPICS/secretsharing/feldmanVSS.pdf>
 #[derive(Debug, Clone)]
-pub struct FeldmanVSS<C: CurveGroup>(PhantomData<C>);
+pub struct FeldmanVss<C: CurveGroup>(PhantomData<C>);
 
 #[derive(Debug, Clone, Copy)]
-pub struct FeldmanVSSPublicParam {
+pub struct FeldmanVssPublicParam {
     // reconstruction threshold t
     pub(crate) t: NonZeroU32,
     // total number of nodes
     pub(crate) n: NonZeroU32,
 }
 
-impl FeldmanVSSPublicParam {
+impl FeldmanVssPublicParam {
     pub fn new(t: NonZeroU32, n: NonZeroU32) -> Self {
         Self { t, n }
     }
 }
 
-impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVSS<C> {
-    type PublicParam = FeldmanVSSPublicParam;
+impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
+    type PublicParam = FeldmanVssPublicParam;
     type Secret = C::ScalarField;
     type SecretShare = C::ScalarField;
     type Commitment = Vec<C::Affine>;
@@ -135,22 +135,22 @@ mod tests {
 
             let n = NonZeroU32::new(n).unwrap();
             let t = NonZeroU32::new(t).unwrap();
-            let pp = FeldmanVSSPublicParam::new(t, n);
+            let pp = FeldmanVssPublicParam::new(t, n);
 
-            let (shares, commitment) = FeldmanVSS::<C>::share(&pp, rng, secret);
+            let (shares, commitment) = FeldmanVss::<C>::share(&pp, rng, secret);
             for (node_idx, s) in shares.iter().enumerate() {
                 // happy path
-                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &commitment).unwrap());
+                assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &commitment).unwrap());
 
                 // sad path
                 // wrong node_idx should fail
                 assert!(
-                    !FeldmanVSS::<C>::verify(&pp, node_idx + 1, s, &commitment).unwrap_or(false)
+                    !FeldmanVss::<C>::verify(&pp, node_idx + 1, s, &commitment).unwrap_or(false)
                 );
 
                 // wrong secret share should fail
                 assert!(
-                    !FeldmanVSS::<C>::verify(
+                    !FeldmanVss::<C>::verify(
                         &pp,
                         node_idx,
                         &C::ScalarField::rand(rng),
@@ -162,24 +162,24 @@ mod tests {
                 // wrong commitment should fail
                 let mut bad_comm = commitment.clone();
                 bad_comm[1] = C::Affine::default();
-                assert!(!FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm).unwrap());
+                assert!(!FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).unwrap());
 
                 // incomplete/dropped commitment should fail
                 bad_comm.pop();
-                assert!(FeldmanVSS::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
+                assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
             }
 
             // 1. Randomly select t-share subset and reconstruct (should succeed)
             let mut indices: Vec<_> = (0..n_usize).collect();
             indices.shuffle(rng);
             let t_indices = &indices[..t_usize];
-            let rec = FeldmanVSS::<C>::reconstruct(&pp, t_indices.iter().map(|&i| (i, shares[i])))
+            let rec = FeldmanVss::<C>::reconstruct(&pp, t_indices.iter().map(|&i| (i, shares[i])))
                 .unwrap();
             assert_eq!(rec, secret);
 
             // 2. Remove one from t-share subset (t-1 shares, should fail)
             assert!(
-                FeldmanVSS::<C>::reconstruct(
+                FeldmanVss::<C>::reconstruct(
                     &pp,
                     t_indices[..t_usize - 1].iter().map(|&i| (i, shares[i]))
                 )
@@ -194,7 +194,7 @@ mod tests {
             // Replace the first share with a random value
             bad_shares[0] = (bad_shares[0].0, C::ScalarField::rand(rng));
             assert_ne!(
-                FeldmanVSS::<C>::reconstruct(&pp, bad_shares.into_iter()).unwrap(),
+                FeldmanVss::<C>::reconstruct(&pp, bad_shares.into_iter()).unwrap(),
                 secret
             );
         }
