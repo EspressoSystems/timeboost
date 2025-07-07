@@ -8,7 +8,7 @@ use ark_std::{
     marker::PhantomData,
     rand::{Rng, SeedableRng},
 };
-use num_integer::binomial;
+use num_integer::{binomial, gcd};
 use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
 use sha2::Digest;
@@ -422,6 +422,19 @@ impl<C: CurveGroup> ShoupVess<C> {
     }
 }
 
+// returns x * a / b without overflow panic, assuming the result < u128::MAX
+// since x * a could overflow, we divide first before multiply;
+// since x / b could truncate, we apply x / (b / gcd) * (a / gcd) where gcd = gcd(a, b)
+fn overflow_safe_mul_then_div(x: u128, a: u128, b: u128) -> u128 {
+    debug_assert!(b != 0);
+    if a == b {
+        x
+    } else {
+        let g = gcd(a, b);
+        x / (b / g) * (a / g)
+    }
+}
+
 /// Returns the `idx`-th combinations in all "n chooses k" lexicologically ordered subsets.
 /// The returned subsets are k indices in the set {0,.., n-1}.
 /// See doc of [`ShoupVess::map_subset_seed()`] for pseudocode for this algorithm.
@@ -436,7 +449,7 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
     let mut cnk1 = binomial(n - 1, k - 1);
     // C(n, k) = C(n-1, k-1) * n / k
     // we never use cnk, only cache its value for easier cnk1 derivation
-    let mut _cnk = cnk1 * n / k;
+    let mut _cnk = overflow_safe_mul_then_div(cnk1, n, k);
 
     while k > 0 {
         if idx < cnk1 {
@@ -444,7 +457,7 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
             _cnk = cnk1;
             // cnk1' = binom(n-2, k-2) = binom(n-1, k-1) * (k-1) / (n-1)
             cnk1 = if n > 1 {
-                cnk1 * (k - 1) / (n - 1)
+                overflow_safe_mul_then_div(cnk1, k - 1, n - 1)
             } else {
                 1 // terminal case: binom(0,0) = 1
             };
@@ -459,10 +472,10 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
             // only decrement n, thus cnk' = binom(n-1, k) = binom(n,k) - binom(n-1, k-1)
             _cnk -= cnk1;
             // cnk1' = binom(n-2, k-1) = binom(n-1, k-1) * (n-k) / (n-1)
-            cnk1 = if n > 1 {
-                cnk1 * (n - k) / (n - 1)
+            cnk1 = if n > k {
+                overflow_safe_mul_then_div(cnk1, n - k, n - 1)
             } else {
-                0 // binom(0, k-1) = 0 when n == 0
+                0 // when n-1 = k-1, then all future indices should be selected
             };
         }
         n -= 1;
@@ -565,6 +578,7 @@ mod tests {
             let share = vess.decrypt_share(node_idx, recv_sk, &ct, aad).unwrap();
             assert!(Vss::verify(&vess.vss_pp, node_idx, &share, &comm).unwrap());
         }
+        assert!(vess.verify(&recv_pks, &ct, &comm, aad).unwrap());
     }
 
     #[test]
