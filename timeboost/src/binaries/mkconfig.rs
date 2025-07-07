@@ -30,6 +30,10 @@ struct Args {
     #[clap(long, short)]
     producer_base_addr: Address,
 
+    /// The internal API address.
+    #[clap(long, short)]
+    internal_base_addr: Address,
+
     /// RNG seed for deterministic key generation
     #[clap(long)]
     seed: Option<u64>,
@@ -79,6 +83,7 @@ impl Args {
                     sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr)?,
                     decrypt_address: self.adjust_addr(i, &self.decrypt_base_addr)?,
                     producer_address: self.adjust_addr(i, &self.producer_base_addr)?,
+                    internal_address: self.adjust_addr(i, &self.internal_base_addr)?,
                     signing_key: kp.public_key(),
                     dh_key: xp.public_key(),
                     private: Some(PrivateKeys {

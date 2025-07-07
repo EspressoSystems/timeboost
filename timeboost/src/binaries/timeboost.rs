@@ -214,6 +214,7 @@ async fn main() -> Result<()> {
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .producer_addr(my_keyset.producer_address.clone())
+        .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
         .build();

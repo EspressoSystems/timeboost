@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package inclusion_list;
+package inclusion;
 
 message Transaction {
     bytes encoded_txn = 1;

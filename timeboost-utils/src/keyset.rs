@@ -22,6 +22,7 @@ pub struct NodeInfo {
     pub sailfish_address: Address,
     pub decrypt_address: Address,
     pub producer_address: Address,
+    pub internal_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
     pub nitro_addr: Option<Address>,
