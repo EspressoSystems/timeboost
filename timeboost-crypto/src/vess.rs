@@ -1,25 +1,25 @@
 //! Verifiable Encrypted Secret Sharing (VESS) schemes
-
-use std::num::NonZeroU32;
-
+#![allow(clippy::type_complexity)]
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_poly::univariate::DensePolynomial;
-use ark_serialize::{CanonicalDeserialize, serialize_to_vec};
+use ark_serialize::serialize_to_vec;
 use ark_std::{
     UniformRand,
     marker::PhantomData,
-    rand::{CryptoRng, Rng, SeedableRng},
+    rand::{Rng, SeedableRng},
 };
 use num_integer::binomial;
 use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
 use sha2::Digest;
 use spongefish::{
-    ByteWriter, DefaultHash, UnitToBytes,
+    ByteReader, ByteWriter, DefaultHash, UnitToBytes,
     codecs::arkworks_algebra::{
-        FieldDomainSeparator, FieldToUnit, GroupDomainSeparator, GroupToUnit,
+        DeserializeField, DeserializeGroup, FieldDomainSeparator, FieldToUnit,
+        GroupDomainSeparator, GroupToUnit,
     },
 };
+use std::{collections::VecDeque, num::NonZeroU32};
 use thiserror::Error;
 
 use crate::{
@@ -167,8 +167,37 @@ impl<C: CurveGroup> ShoupVess<C> {
             self.subset_size as u128,
             u128::from_le_bytes(seed),
         );
-        debug_assert_eq!(subset.len(), self.subset_size as usize);
+        debug_assert_eq!(subset.len(), self.subset_size);
         subset
+    }
+
+    // deterministically generate a dealing from a random seed
+    // each dealing contains (Shamir poly + Feldman commitment + MRE ciphertext)
+    fn new_dealing(
+        &self,
+        seed: &[u8; 32],
+        recipients: &[C::Affine],
+        aad: &[u8],
+    ) -> Result<
+        (
+            DensePolynomial<C::ScalarField>,
+            <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+            MultiRecvCiphertext<C, sha2::Sha256>,
+        ),
+        VessError,
+    > {
+        let mut rng = ChaCha20Rng::from_seed(*seed);
+        let vss_secret = C::ScalarField::rand(&mut rng);
+
+        let (poly, comm) =
+            FeldmanVss::<C>::rand_poly_and_commit(&self.vss_pp, vss_secret, &mut rng);
+        let serialized_shares: Vec<Vec<u8>> =
+            FeldmanVss::<C>::compute_serialized_shares(&self.vss_pp, &poly).collect();
+
+        // TODO: use aad'= aad | k instead?
+        let mre_ct =
+            mre::encrypt::<C, sha2::Sha256, _>(recipients, &serialized_shares, aad, &mut rng)?;
+        Ok((poly, comm, mre_ct))
     }
 
     /// Encrypt secret sharing from `VSS::share()` with publicly verifiable proof.
@@ -216,31 +245,14 @@ impl<C: CurveGroup> ShoupVess<C> {
             seeds.push(r_k);
         }
 
-        // prepare N random dealings (Shamir poly + Feldman commitment + MRE ciphertext)
+        // prepare N random dealings
         let dealings: Vec<(
             DensePolynomial<C::ScalarField>,
             <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
             MultiRecvCiphertext<C, sha2::Sha256>,
         )> = seeds
             .par_iter()
-            .map(|r| {
-                let mut rng = ChaCha20Rng::from_seed(*r);
-                let vss_secret = C::ScalarField::rand(&mut rng);
-
-                let (poly, comm) =
-                    FeldmanVss::<C>::rand_poly_and_commit(&self.vss_pp, vss_secret, &mut rng);
-                let serialized_shares: Vec<Vec<u8>> =
-                    FeldmanVss::<C>::compute_serialized_shares(&self.vss_pp, &poly).collect();
-
-                // TODO: use aad'= aad | k instead?
-                let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(
-                    recipients,
-                    &serialized_shares,
-                    aad,
-                    &mut rng,
-                )?;
-                Ok((poly, comm, mre_ct))
-            })
+            .map(|r| self.new_dealing(r, recipients, aad))
             .collect::<Result<_, VessError>>()?;
 
         // compute h:= H_compress(aad, dealings)
@@ -302,19 +314,99 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// verifiable by anyone.
     pub fn verify(
         &self,
-        _ct: &VessCiphertext,
-        _comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+        recipients: &[C::Affine],
+        ct: &VessCiphertext,
+        comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+        aad: &[u8],
     ) -> Result<bool, VessError> {
-        todo!("to be implemented in phase 2")
+        let t = self.vss_pp.t.get() as usize;
+        let n = self.vss_pp.n.get() as usize;
+        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
+
+        // read C and h from transcript
+        let mut expected_comm = vec![C::default(); t];
+        verifier_state.fill_next_points(&mut expected_comm)?;
+        if &C::normalize_batch(&expected_comm) != comm {
+            return Err(VessError::WrongCommitment);
+        }
+        let h: [u8; 32] = verifier_state.next_bytes()?;
+
+        // derive the challenge as the subset seed
+        let mut subset_seed = [0u8; 16];
+        verifier_state.fill_challenge_bytes(&mut subset_seed)?;
+        let subset_indices = self.map_subset_seed(subset_seed);
+
+        // parse out prover's openings
+        let mut shifted_polys = VecDeque::new();
+        let mut mre_cts: VecDeque<MultiRecvCiphertext<C>> = VecDeque::new();
+        let mut seeds = VecDeque::new();
+        for _ in 0..self.subset_size {
+            let mut coeffs = vec![C::ScalarField::default(); t];
+            verifier_state.fill_next_scalars(&mut coeffs)?;
+            shifted_polys.push_back(coeffs);
+
+            let epk: [C; 1] = verifier_state.next_points()?;
+            let epk = epk[0].into_affine();
+
+            let mut cts = vec![];
+            for _ in 0..n {
+                let ct: [u8; 32] = verifier_state.next_bytes()?;
+                cts.push(digest::Output::<sha2::Sha256>::from(ct));
+            }
+            mre_cts.push_back(MultiRecvCiphertext { epk, cts });
+        }
+        for _ in self.subset_size..self.num_repetition {
+            let seed: [u8; 32] = verifier_state.next_bytes()?;
+            seeds.push_back(seed);
+        }
+
+        // recompute the hash of all the dealings,
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(aad);
+
+        // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
+        let mut subset_iter = subset_indices.iter().peekable();
+        let mut next_subset_idx = subset_iter.next();
+        for i in 0..self.num_repetition {
+            match next_subset_idx {
+                Some(j) if i == *j => {
+                    // k in S, shift the commitment
+                    let shifted_comm =
+                        C::generator().batch_mul(&shifted_polys.pop_front().expect("infalliable"));
+                    for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
+                        // g^omega'' / C in paper
+                        hasher.update(serialize_to_vec![shifted - delta]?)
+                    }
+
+                    let mre_ct = mre_cts.pop_front().expect("infalliable");
+                    hasher.update(mre_ct.to_bytes());
+
+                    next_subset_idx = subset_iter.next();
+                }
+                _ => {
+                    // k notin S, reproduce the dealing deterministically from seed
+                    let seed = seeds.pop_front().expect("infalliable");
+                    let (_poly, cm, mre_ct) = self.new_dealing(&seed, recipients, aad)?;
+
+                    hasher.update(serialize_to_vec![cm]?);
+                    hasher.update(mre_ct.to_bytes());
+                }
+            }
+        }
+        debug_assert!(shifted_polys.is_empty());
+        debug_assert!(mre_cts.is_empty());
+        debug_assert!(seeds.is_empty());
+
+        Ok(h != hasher.finalize().as_slice())
     }
 
     /// Decrypt as the `node_idx`-th receiver with decryption key `recv_sk`
     pub fn decrypt_share(
         &self,
-        node_idx: usize,
-        recv_sk: &C::ScalarField,
-        ct: &VessCiphertext,
-        aad: &[u8],
+        _node_idx: usize,
+        _recv_sk: &C::ScalarField,
+        _ct: &VessCiphertext,
+        _aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
         // let n = self.vss_pp.n.get() as usize;
         // let recv_ct = ct
@@ -343,12 +435,13 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
 
     let mut cnk1 = binomial(n - 1, k - 1);
     // C(n, k) = C(n-1, k-1) * n / k
-    let mut cnk = cnk1 * n / k;
+    // we never use cnk, only cache its value for easier cnk1 derivation
+    let mut _cnk = cnk1 * n / k;
 
     while k > 0 {
         if idx < cnk1 {
             // decrement both n and k, thus cnk' = binom(n-1, k-1)
-            cnk = cnk1;
+            _cnk = cnk1;
             // cnk1' = binom(n-2, k-2) = binom(n-1, k-1) * (k-1) / (n-1)
             cnk1 = if n > 1 {
                 cnk1 * (k - 1) / (n - 1)
@@ -364,7 +457,7 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
             idx -= cnk1;
 
             // only decrement n, thus cnk' = binom(n-1, k) = binom(n,k) - binom(n-1, k-1)
-            cnk = cnk - cnk1;
+            _cnk -= cnk1;
             // cnk1' = binom(n-2, k-1) = binom(n-1, k-1) * (n-k) / (n-1)
             cnk1 = if n > 1 {
                 cnk1 * (n - k) / (n - 1)
@@ -424,6 +517,8 @@ pub enum VessError {
     WrongRecipientsLength(usize, usize),
     #[error("max length: {0}, access index: {1}")]
     IndexOutOfBound(usize, usize),
+    #[error("wrong vss commitment supplied")]
+    WrongCommitment,
 }
 
 impl From<ark_serialize::SerializationError> for VessError {
