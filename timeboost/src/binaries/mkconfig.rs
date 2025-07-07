@@ -9,6 +9,7 @@ use cliquenet::Address;
 use multisig::{Committee, KeyId, x25519};
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::DecryptionScheme;
+use timeboost_types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
 
@@ -87,7 +88,7 @@ impl Args {
                 .collect();
         // Generate committee from signature keys
         let committee = Committee::new(
-            u64::MAX,
+            UNKNOWN_COMMITTEE_ID,
             signing_keys
                 .iter()
                 .enumerate()
