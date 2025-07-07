@@ -109,25 +109,22 @@ impl Args {
             .zip(auth_keys)
             .zip(encryption_keys)
             .zip(decryption_keys.2)
-            .map(|((((i, kp), xp), ep), share)| {
-                Ok(NodeInfo {
-                    sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr)?,
-                    decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr)?,
-                    producer_address: self.adjust_addr(i as u8, &self.producer_base_addr)?,
-                    internal_address: self.adjust_addr(i as u8, &self.internal_base_addr)?,
-                    signing_key: kp.public_key(),
-                    dh_key: xp.public_key(),
-                    enc_key: timeboost_crypto::prelude::EncryptionKey::from(&ep),
-                    private: Some(PrivateKeys {
-                        signing_key: kp.secret_key(),
-                        dh_key: xp.secret_key(),
-                        dec_share: share.clone(),
-                        dec_key: ep,
-                    }),
-                    nitro_addr: self.nitro_addr.clone(),
-                })
+            .map(|((((i, kp), xp), hpke), share)| NodeInfo {
+                sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
+                decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
+                producer_address: self.adjust_addr(i as u8, &self.producer_base_addr).unwrap(),
+                signing_key: kp.public_key(),
+                dh_key: xp.public_key(),
+                enc_key: timeboost_crypto::prelude::EncryptionKey::from(&hpke),
+                private: Some(PrivateKeys {
+                    signing_key: kp.secret_key(),
+                    dh_key: xp.secret_key(),
+                    dec_share: share.clone(),
+                    dec_key: hpke,
+                }),
+                nitro_addr: self.nitro_addr.clone(),
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
         Ok(KeysetConfig {
             keyset: configs,
             dec_keyset: PublicDecInfo {
