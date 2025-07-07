@@ -1,8 +1,8 @@
 //! Verifiable Encrypted Secret Sharing (VESS) schemes
 #![allow(clippy::type_complexity)]
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_poly::univariate::DensePolynomial;
-use ark_serialize::serialize_to_vec;
+use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
+use ark_serialize::{CanonicalDeserialize, serialize_to_vec};
 use ark_std::{
     UniformRand,
     marker::PhantomData,
@@ -13,7 +13,7 @@ use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
 use sha2::Digest;
 use spongefish::{
-    ByteReader, ByteWriter, DefaultHash, UnitToBytes,
+    ByteReader, ByteWriter, DefaultHash, UnitToBytes, VerifierState,
     codecs::arkworks_algebra::{
         DeserializeField, DeserializeGroup, FieldDomainSeparator, FieldToUnit,
         GroupDomainSeparator, GroupToUnit,
@@ -25,7 +25,7 @@ use thiserror::Error;
 use crate::{
     feldman::{FeldmanVss, FeldmanVssPublicParam},
     mre::{self, MultiRecvCiphertext},
-    traits::dkg::VerifiableSecretSharing,
+    traits::dkg::{VerifiableSecretSharing, VssError},
 };
 
 /// Implementation of [Shoup25](https://eprint.iacr.org/2025/1175)
@@ -310,36 +310,27 @@ impl<C: CurveGroup> ShoupVess<C> {
         ))
     }
 
-    /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
-    /// verifiable by anyone.
-    pub fn verify(
+    // Verifier's logic until step 4.b (exclusive), shared between `verify()` and `decrypt()`.
+    fn verify_internal(
         &self,
-        recipients: &[C::Affine],
-        ct: &VessCiphertext,
-        comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
-        aad: &[u8],
-    ) -> Result<bool, VessError> {
+        verifier_state: &mut VerifierState,
+    ) -> Result<ProverMessageUntilStep4b<C>, VessError> {
         let t = self.vss_pp.t.get() as usize;
         let n = self.vss_pp.n.get() as usize;
-        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
         // read C and h from transcript
         let mut expected_comm = vec![C::default(); t];
         verifier_state.fill_next_points(&mut expected_comm)?;
-        if &C::normalize_batch(&expected_comm) != comm {
-            return Err(VessError::WrongCommitment);
-        }
+        let comm = C::normalize_batch(&expected_comm);
         let h: [u8; 32] = verifier_state.next_bytes()?;
 
         // derive the challenge as the subset seed
         let mut subset_seed = [0u8; 16];
         verifier_state.fill_challenge_bytes(&mut subset_seed)?;
-        let subset_indices = self.map_subset_seed(subset_seed);
 
-        // parse out prover's openings
+        // parse out prover's in-Subset responses (shifted polys and their MRE ciphertexts)
         let mut shifted_polys = VecDeque::new();
         let mut mre_cts: VecDeque<MultiRecvCiphertext<C>> = VecDeque::new();
-        let mut seeds = VecDeque::new();
         for _ in 0..self.subset_size {
             let mut coeffs = vec![C::ScalarField::default(); t];
             verifier_state.fill_next_scalars(&mut coeffs)?;
@@ -355,6 +346,29 @@ impl<C: CurveGroup> ShoupVess<C> {
             }
             mre_cts.push_back(MultiRecvCiphertext { epk, cts });
         }
+        Ok((comm, h, subset_seed, shifted_polys, mre_cts))
+    }
+
+    /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
+    /// verifiable by anyone.
+    pub fn verify(
+        &self,
+        recipients: &[C::Affine],
+        ct: &VessCiphertext,
+        comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+        aad: &[u8],
+    ) -> Result<bool, VessError> {
+        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
+
+        // verifier logic until Step 4b
+        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts) =
+            self.verify_internal(&mut verifier_state)?;
+        if &expected_comm != comm {
+            return Err(VessError::WrongCommitment);
+        }
+
+        // parse out prover's response for k notin S
+        let mut seeds = VecDeque::new();
         for _ in self.subset_size..self.num_repetition {
             let seed: [u8; 32] = verifier_state.next_bytes()?;
             seeds.push_back(seed);
@@ -365,14 +379,15 @@ impl<C: CurveGroup> ShoupVess<C> {
         hasher.update(aad);
 
         // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
+        let subset_indices = self.map_subset_seed(subset_seed);
         let mut subset_iter = subset_indices.iter().peekable();
         let mut next_subset_idx = subset_iter.next();
         for i in 0..self.num_repetition {
             match next_subset_idx {
                 Some(j) if i == *j => {
                     // k in S, shift the commitment
-                    let shifted_comm =
-                        C::generator().batch_mul(&shifted_polys.pop_front().expect("infalliable"));
+                    let shifted_comm = C::generator()
+                        .batch_mul(shifted_polys.pop_front().expect("infalliable").as_ref());
                     for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
                         // g^omega'' / C in paper
                         hasher.update(serialize_to_vec![shifted - delta]?)
@@ -403,35 +418,76 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// Decrypt as the `node_idx`-th receiver with decryption key `recv_sk`
     pub fn decrypt_share(
         &self,
-        _node_idx: usize,
-        _recv_sk: &C::ScalarField,
-        _ct: &VessCiphertext,
-        _aad: &[u8],
+        node_idx: usize,
+        recv_sk: &C::ScalarField,
+        ct: &VessCiphertext,
+        aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
-        // let n = self.vss_pp.n.get() as usize;
-        // let recv_ct = ct
-        //     .mre_ct
-        //     .get_recipient_ct(node_idx)
-        //     .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
+        let n = self.vss_pp.n.get() as usize;
+        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
-        // let pt = mre::decrypt::<C, sha2::Sha256>(node_idx, recv_sk, &recv_ct, aad)?;
-        // let share: C::ScalarField = CanonicalDeserialize::deserialize_compressed(&*pt)?;
+        // verifier logic until Step 4b
+        let (comm, _h, _subset_seed, shifted_polys, mre_cts) =
+            self.verify_internal(&mut verifier_state)?;
 
-        // Ok(share)
-        todo!()
+        for (shifted_coeffs, mre_ct) in shifted_polys.iter().zip(mre_cts.iter()) {
+            let recv_ct = mre_ct
+                .get_recipient_ct(node_idx)
+                .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
+            let pt = mre::decrypt::<C, sha2::Sha256>(node_idx, recv_sk, &recv_ct, aad)?;
+            // mu'_kj in paper
+            let unshifted_eval: C::ScalarField =
+                CanonicalDeserialize::deserialize_compressed(&*pt)?;
+
+            let shifted_poly = DensePolynomial::from_coefficients_slice(shifted_coeffs);
+            let shifted_eval = shifted_poly.evaluate(&C::ScalarField::from(node_idx as u64 + 1));
+
+            // mu_kj in paper
+            let share = shifted_eval - unshifted_eval;
+
+            // check correctness
+            if FeldmanVss::<C>::verify(&self.vss_pp, node_idx, &share, &comm)? {
+                return Ok(share);
+            }
+        }
+        Err(VessError::DecryptionFailed)
     }
 }
 
+/// (C, h, s, { rho_k.shifted_poly }_{k in S}, { rho_k.mre_ciphertext }_{k in S})
+/// where C is Feldman commitment, h is output of H_compress of all dealings,
+/// s is subset seed, S is the corresponding subset
+/// shifted_poly is omega''_k in paper
+#[allow(type_alias_bounds)]
+type ProverMessageUntilStep4b<C: CurveGroup> = (
+    Vec<C::Affine>,
+    [u8; 32],
+    [u8; 16],
+    VecDeque<Vec<C::ScalarField>>,
+    VecDeque<MultiRecvCiphertext<C>>,
+);
+
 // returns x * a / b without overflow panic, assuming the result < u128::MAX
 // since x * a could overflow, we divide first before multiply;
-// since x / b could truncate, we apply x / (b / gcd) * (a / gcd) where gcd = gcd(a, b)
+// since x / b could truncate, we reduce a and b by their gcd first;
+// even after reduction, x / b_reduced could still truncate, thus further gcd reduce
 fn overflow_safe_mul_then_div(x: u128, a: u128, b: u128) -> u128 {
     debug_assert!(b != 0);
     if a == b {
         x
     } else {
+        // Reduce the fraction a/b to lowest terms
         let g = gcd(a, b);
-        x / (b / g) * (a / g)
+        let a_reduced = a / g;
+        let b_reduced = b / g;
+
+        // To avoid overflow and precision loss, try to divide x by b_reduced first
+        let g2 = gcd(x, b_reduced);
+        let x_reduced = x / g2;
+        let b_final = b_reduced / g2;
+
+        // Now compute x_reduced * a_reduced / b_final
+        x_reduced * a_reduced / b_final
     }
 }
 
@@ -524,6 +580,8 @@ pub enum VessError {
     Mre(#[from] mre::MultiRecvEncError),
     #[error("transcript err: {0}")]
     Transcript(#[from] spongefish::ProofError),
+    #[error("feldman vss err: {0}")]
+    Vss(#[from] VssError),
     #[error("serde err: {0}")]
     SerdeError(String),
     #[error("num of recipients, expect: {0}, got: {1}")]
@@ -532,6 +590,8 @@ pub enum VessError {
     IndexOutOfBound(usize, usize),
     #[error("wrong vss commitment supplied")]
     WrongCommitment,
+    #[error("decryption fail")]
+    DecryptionFailed,
 }
 
 impl From<ark_serialize::SerializationError> for VessError {
@@ -574,11 +634,11 @@ mod tests {
         let aad = b"Associated data";
         let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad).unwrap();
 
+        assert!(vess.verify(&recv_pks, &ct, &comm, aad).unwrap());
         for (node_idx, recv_sk) in recv_sks.iter().enumerate() {
             let share = vess.decrypt_share(node_idx, recv_sk, &ct, aad).unwrap();
             assert!(Vss::verify(&vess.vss_pp, node_idx, &share, &comm).unwrap());
         }
-        assert!(vess.verify(&recv_pks, &ct, &comm, aad).unwrap());
     }
 
     #[test]
