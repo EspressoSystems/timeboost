@@ -121,6 +121,7 @@ impl Committable for Bundle {
         RawCommitmentBuilder::new("Bundle")
             .field("chain", self.chain_id().commit())
             .field("epoch", self.epoch().commit())
+            .u64(if self.is_encrypted() { 1 } else { 0 })
             .var_size_field("data", self.data())
             .finalize()
     }
