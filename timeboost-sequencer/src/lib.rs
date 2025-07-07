@@ -272,6 +272,9 @@ impl Task {
         loop {
             if pending.is_none() {
                 while let Some(ilist) = self.next_inclusion(&mut candidates) {
+                    if ilist.is_empty() {
+                        continue;
+                    }
                     if !self.decrypter.has_capacity() {
                         pending = Some(ilist);
                         break;
@@ -293,12 +296,15 @@ impl Task {
                 },
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
-                        let round = incl.round();
-                        let timestamp = incl.timestamp();
-                        let evidence = incl.evidence().clone();
-                        let transactions = self.sorter.sort(incl);
-                        let out = Output::Transactions { round, timestamp, transactions, evidence };
-                        self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        if !incl.is_empty() {
+                            let round = incl.round();
+                            let timestamp = incl.timestamp();
+                            let evidence = incl.evidence().clone();
+                            let transactions = self.sorter.sort(incl);
+                            let out = Output::Transactions { round, timestamp, transactions, evidence };
+                            self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        }
+
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
                                 continue
