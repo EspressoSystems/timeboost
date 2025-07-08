@@ -13,6 +13,113 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::Digest;
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// Encryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct EncryptionKey<C: CurveGroup> {
+    // u = g^alpha where alpha is the secret key
+    #[serde_as(as = "crate::SerdeAs")]
+    pub(crate) u: C::Affine,
+}
+
+impl<C: CurveGroup> From<C> for EncryptionKey<C> {
+    fn from(proj: C) -> Self {
+        Self {
+            u: proj.into_affine(),
+        }
+    }
+}
+
+impl<C: CurveGroup> From<&DecryptionKey<C>> for EncryptionKey<C> {
+    fn from(sk: &DecryptionKey<C>) -> Self {
+        let u: C = C::generator().mul(&sk.alpha);
+        Self::from(u)
+    }
+}
+
+impl<C: CurveGroup> EncryptionKey<C> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing enc key")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        crate::try_from_bytes::<Self, N>(value)
+    }
+
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        crate::try_from_str::<Self, N>(value)
+    }
+}
+
+/// Decryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
+pub struct DecryptionKey<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
+    pub(crate) alpha: C::ScalarField,
+}
+
+impl<C: CurveGroup> DecryptionKey<C> {
+    pub fn rand<R: Rng>(rng: &mut R) -> Self {
+        let alpha = C::ScalarField::rand(rng);
+        Self { alpha }
+    }
+
+    /// label this key with system-wide info `node_idx`
+    pub fn label(self, node_idx: usize) -> LabeledDecryptionKey<C> {
+        let pk: EncryptionKey<C> = (&self).into();
+        LabeledDecryptionKey {
+            alpha: self.alpha,
+            u: pk.u,
+            node_idx,
+        }
+    }
+
+    // FIXME(alex): these boilerplate are annoying, we should dedup these logic later
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing dec key")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        crate::try_from_bytes::<Self, N>(value)
+    }
+
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        crate::try_from_str::<Self, N>(value)
+    }
+}
+
+/// [`DecryptionKey`] labeled with node index (while caching public key),
+/// constructed via [`DecryptionKey::label()`]
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
+pub struct LabeledDecryptionKey<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
+    pub(crate) alpha: C::ScalarField,
+    pub(crate) u: C::Affine,
+    pub(crate) node_idx: usize,
+}
+
+impl<C: CurveGroup> LabeledDecryptionKey<C> {
+    /// Decryption for an individual ciphertext produced and extracted from [`encrypt()`]
+    pub fn decrypt<H: Digest>(
+        &self,
+        ct: &Ciphertext<C, H>,
+        aad: &[u8],
+    ) -> Result<Vec<u8>, MultiRecvEncError> {
+        // derive the shared DH value
+        let edh = ct.epk.into_group().mul(&self.alpha);
+        // derive the symmetric encryption key
+        let k = derive_enc_key::<C, H>(self.node_idx, self.u, ct.epk, edh.into_affine(), aad)?;
+        // finally, XOR with the ciphertext to decrypt
+        let m = k.iter().zip(ct.ct.iter()).map(|(ki, c)| ki ^ c).collect();
+        Ok(m)
+    }
+}
 
 use crate::try_from_bytes;
 
@@ -63,7 +170,7 @@ pub struct Ciphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
 /// - `C` is the DL group, `H` is the choice of H_enc whose output space = message space
 ///   - preprocess messages to pad them to proper length before passing in
 pub fn encrypt<C, H, R>(
-    recipients: &[C::Affine],
+    recipients: &[EncryptionKey<C>],
     messages: &[Vec<u8>],
     aad: &[u8],
     rng: &mut R,
@@ -104,11 +211,11 @@ where
         .enumerate()
         .map(|(idx, (pk, msg))| {
             // compute the ephemeral DH shared secret (w_j in the paper)
-            let edh = pk.into_group().mul(&esk);
+            let edh = pk.u.into_group().mul(&esk);
             // derive the symmetric encryption key
             let k = derive_enc_key::<C, H>(
                 idx,
-                pk.to_owned(),
+                pk.u.to_owned(),
                 epk.into_affine(),
                 edh.into_affine(),
                 aad,
@@ -143,27 +250,6 @@ fn derive_enc_key<C: CurveGroup, H: Digest>(
     Ok(key)
 }
 
-/// Decryption for an individual ciphertext produced and extracted from [`encrypt()`]
-pub fn decrypt<C, H>(
-    index: usize,
-    recv_sk: &C::ScalarField,
-    ct: &Ciphertext<C, H>,
-    aad: &[u8],
-) -> Result<Vec<u8>, MultiRecvEncError>
-where
-    C: CurveGroup,
-    H: Digest,
-{
-    let pk = C::generator().mul(recv_sk);
-    // derive the shared DH value
-    let edh = ct.epk.into_group().mul(recv_sk);
-    // derive the symmetric encryption key
-    let k = derive_enc_key::<C, H>(index, pk.into_affine(), ct.epk, edh.into_affine(), aad)?;
-    // finally, XOR with the ciphertext to decrypt
-    let m = k.iter().zip(ct.ct.iter()).map(|(ki, c)| ki ^ c).collect();
-    Ok(m)
-}
-
 /// Error types for Multi-Recipient Encryption scheme
 #[derive(Error, Debug)]
 pub enum MultiRecvEncError {
@@ -187,8 +273,7 @@ impl From<ark_serialize::SerializationError> for MultiRecvEncError {
 mod tests {
     use std::iter::repeat_with;
 
-    use ark_bls12_381::{Fr, G1Affine, G1Projective};
-    use ark_ec::PrimeGroup;
+    use ark_bls12_381::G1Projective;
     use ark_std::rand;
 
     use super::*;
@@ -198,10 +283,14 @@ mod tests {
     fn test_mre_correctness() {
         let rng = &mut rand::thread_rng();
         let n = 10; // num of recipients
-        let recv_sks: Vec<Fr> = repeat_with(|| Fr::rand(rng)).take(n).collect();
-        let recv_pks: Vec<G1Affine> = recv_sks
-            .iter()
-            .map(|sk| (G1Projective::generator() * sk).into_affine())
+        let recv_sks: Vec<DecryptionKey<G1Projective>> =
+            repeat_with(|| DecryptionKey::rand(rng)).take(n).collect();
+        let recv_pks: Vec<EncryptionKey<G1Projective>> =
+            recv_sks.iter().map(EncryptionKey::from).collect();
+        let labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = recv_sks
+            .into_iter()
+            .enumerate()
+            .map(|(i, sk)| sk.label(i))
             .collect();
         let msgs = repeat_with(|| rng.r#gen::<[u8; 32]>().to_vec())
             .take(n)
@@ -212,31 +301,35 @@ mod tests {
         for i in 0..n {
             let ct = mre_ct.get_recipient_ct(i).unwrap();
             assert_eq!(
-                decrypt::<G1Projective, H>(i, &recv_sks[i], &ct, aad).expect("decryption failed"),
+                labeled_sks[i]
+                    .decrypt::<H>(&ct, aad)
+                    .expect("decryption failed"),
                 msgs[i]
             );
 
             // soundness test: any wrong index, sk, ciphertext, or associated data should fail
-            assert_ne!(
-                decrypt::<G1Projective, H>(i + 1, &recv_sks[i], &ct, aad).unwrap(),
-                msgs[i]
-            );
-            if let Some(wrong_sk) = recv_sks.get(i + 1) {
-                assert_ne!(
-                    decrypt::<G1Projective, H>(i, wrong_sk, &ct, aad).unwrap(),
-                    msgs[i]
-                );
+            // Test with wrong index (if available)
+            if let Some(_wrong_labeled_sk) = labeled_sks.get(i + 1) {
+                // Create a new labeled key with wrong index but correct secret
+                let wrong_idx_sk = DecryptionKey {
+                    alpha: labeled_sks[i].alpha,
+                }
+                .label(i + 1);
+                assert_ne!(wrong_idx_sk.decrypt::<H>(&ct, aad).unwrap(), msgs[i]);
             }
+            // Test with wrong secret key (if available)
+            if let Some(wrong_labeled_sk) = labeled_sks.get(i + 1) {
+                assert_ne!(wrong_labeled_sk.decrypt::<H>(&ct, aad).unwrap(), msgs[i]);
+            }
+            // Test with wrong ciphertext (if available)
             if let Some(wrong_ct) = mre_ct.get_recipient_ct(i + 1) {
                 assert_ne!(
-                    decrypt::<G1Projective, H>(i, &recv_sks[i], &wrong_ct, aad).unwrap(),
+                    labeled_sks[i].decrypt::<H>(&wrong_ct, aad).unwrap(),
                     msgs[i]
                 );
             }
-            assert_ne!(
-                decrypt::<G1Projective, H>(i, &recv_sks[i], &ct, b"Bob").unwrap(),
-                msgs[i]
-            );
+            // Test with wrong associated data
+            assert_ne!(labeled_sks[i].decrypt::<H>(&ct, b"Bob").unwrap(), msgs[i]);
         }
     }
 }

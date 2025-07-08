@@ -24,7 +24,7 @@ use thiserror::Error;
 
 use crate::{
     feldman::{FeldmanVss, FeldmanVssPublicParam},
-    mre::{self, MultiRecvCiphertext},
+    mre::{self, LabeledDecryptionKey, MultiRecvCiphertext},
     traits::dkg::{VerifiableSecretSharing, VssError},
 };
 
@@ -176,7 +176,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     fn new_dealing(
         &self,
         seed: &[u8; 32],
-        recipients: &[C::Affine],
+        recipients: &[mre::EncryptionKey<C>],
         aad: &[u8],
     ) -> Result<
         (
@@ -220,7 +220,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// - random subset seed s: see [`Self::map_subset_seed()`]
     pub fn encrypted_shares(
         &self,
-        recipients: &[C::Affine],
+        recipients: &[mre::EncryptionKey<C>],
         secret: C::ScalarField,
         aad: &[u8],
     ) -> Result<
@@ -353,7 +353,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// verifiable by anyone.
     pub fn verify(
         &self,
-        recipients: &[C::Affine],
+        recipients: &[mre::EncryptionKey<C>],
         ct: &VessCiphertext,
         comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
         aad: &[u8],
@@ -415,15 +415,15 @@ impl<C: CurveGroup> ShoupVess<C> {
         Ok(h != hasher.finalize().as_slice())
     }
 
-    /// Decrypt as the `node_idx`-th receiver with decryption key `recv_sk`
+    /// Decrypt with a decryption key `recv_sk` (labeled with node_idx, see `LabeledDecryptionKey`)
     pub fn decrypt_share(
         &self,
-        node_idx: usize,
-        recv_sk: &C::ScalarField,
+        recv_sk: &LabeledDecryptionKey<C>,
         ct: &VessCiphertext,
         aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
         let n = self.vss_pp.n.get() as usize;
+        let node_idx = recv_sk.node_idx;
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
         // verifier logic until Step 4b
@@ -434,7 +434,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             let recv_ct = mre_ct
                 .get_recipient_ct(node_idx)
                 .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
-            let pt = mre::decrypt::<C, sha2::Sha256>(node_idx, recv_sk, &recv_ct, aad)?;
+            let pt = recv_sk.decrypt(&recv_ct, aad)?;
             // mu'_kj in paper
             let unshifted_eval: C::ScalarField =
                 CanonicalDeserialize::deserialize_compressed(&*pt)?;
@@ -609,8 +609,7 @@ impl From<spongefish::DomainSeparatorMismatch> for VessError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bls12_381::{Fr, G1Affine, G1Projective};
-    use ark_ec::PrimeGroup;
+    use ark_bls12_381::{Fr, G1Projective};
     use ark_std::{
         UniformRand,
         rand::{SeedableRng, rngs::StdRng},
@@ -625,19 +624,25 @@ mod tests {
         let secret = Fr::rand(rng);
         let n = vess.vss_pp.n.get() as usize;
 
-        let recv_sks: Vec<Fr> = repeat_with(|| Fr::rand(rng)).take(n).collect();
-        let recv_pks: Vec<G1Affine> = recv_sks
-            .iter()
-            .map(|sk| (G1Projective::generator() * sk).into_affine())
+        let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
+            repeat_with(|| mre::DecryptionKey::rand(rng))
+                .take(n)
+                .collect();
+        let recv_pks: Vec<mre::EncryptionKey<G1Projective>> =
+            recv_sks.iter().map(mre::EncryptionKey::from).collect();
+        let labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = recv_sks
+            .into_iter()
+            .enumerate()
+            .map(|(i, sk)| sk.label(i))
             .collect();
 
         let aad = b"Associated data";
         let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad).unwrap();
 
         assert!(vess.verify(&recv_pks, &ct, &comm, aad).unwrap());
-        for (node_idx, recv_sk) in recv_sks.iter().enumerate() {
-            let share = vess.decrypt_share(node_idx, recv_sk, &ct, aad).unwrap();
-            assert!(Vss::verify(&vess.vss_pp, node_idx, &share, &comm).unwrap());
+        for labeled_recv_sk in labeled_sks {
+            let share = vess.decrypt_share(&labeled_recv_sk, &ct, aad).unwrap();
+            assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).unwrap());
         }
     }
 
