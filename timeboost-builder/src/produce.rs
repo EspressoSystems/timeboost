@@ -93,7 +93,7 @@ impl BlockProducer {
             .tracking(Default::default())
             .next_committee(NextCommittee::None)
             .retain(cfg.retain)
-            .maybe_next_block((!cfg.recover).then(|| BlockNumber::genesis()))
+            .maybe_next_block((!cfg.recover).then(BlockNumber::genesis))
             .build();
 
         Ok(Self {
