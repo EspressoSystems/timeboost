@@ -2,7 +2,7 @@ use std::num::TryFromIntError;
 
 use alloy_eips::Encodable2718;
 use prost::Message;
-use sailfish::types::{Evidence, RoundNumber};
+use sailfish::types::RoundNumber;
 use timeboost_proto::inclusion as proto;
 use timeboost_types::{Timestamp, Transaction};
 
@@ -21,7 +21,7 @@ impl Data {
         &self.1
     }
 
-    pub fn encode<'a, R, T, I>(r: R, t: T, e: Evidence, txs: I) -> Result<Self, DataError>
+    pub fn encode<'a, R, T, I>(r: R, t: T, txs: I) -> Result<Self, DataError>
     where
         R: Into<RoundNumber>,
         T: Into<Timestamp>,
@@ -40,7 +40,6 @@ impl Data {
                 .collect(),
             consensus_timestamp: *t.into(),
             delayed_messages_read: 0,
-            evidence: bincode::serde::encode_to_vec(e, bincode::config::standard())?,
         };
 
         let bytes = inclusion.encode_to_vec();

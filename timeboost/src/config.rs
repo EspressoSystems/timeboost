@@ -74,6 +74,7 @@ impl TimeboostConfig {
             .address(self.producer_addr.clone())
             .committee(self.producer_committee.clone())
             .retain(self.leash_len)
+            .recover(self.recover)
             .build()
     }
 }
