@@ -295,8 +295,10 @@ impl Task {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
                         let transactions = self.sorter.sort(incl);
-                        let out = Output::Transactions { round, timestamp, transactions };
-                        self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        if !transactions.is_empty() {
+                            let out = Output::Transactions { round, timestamp, transactions };
+                            self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
+                        }
                         if self.decrypter.has_capacity() {
                             let Some(ilist) = pending.take() else {
                                 continue
