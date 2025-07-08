@@ -4,15 +4,16 @@ mod test_timeboost_startup;
 mod transaction_order;
 
 use std::net::Ipv4Addr;
+use std::num::NonZeroUsize;
 
 use cliquenet::{Address, AddressableCommittee};
-use multisig::{Committee, Keypair, x25519};
+use multisig::Keypair;
+use multisig::{Committee, x25519};
+use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost::types::DecryptionKey;
-use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_builder::BlockProducerConfig;
 use timeboost_crypto::DecryptionScheme;
-use timeboost_crypto::TrustedKeyMaterial;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_utils::load_generation::make_bundle;
@@ -21,16 +22,17 @@ use tokio::time::{Duration, sleep};
 use tracing::warn;
 
 fn make_configs<R>(
-    (pubkey, combkey, shares): &TrustedKeyMaterial,
+    size: NonZeroUsize,
     recover_index: R,
-) -> Vec<(SequencerConfig, BlockProducerConfig)>
+) -> (
+    <DecryptionScheme as ThresholdEncScheme>::PublicKey,
+    Vec<(SequencerConfig, BlockProducerConfig)>,
+)
 where
     R: Into<Option<usize>>,
 {
-    let parts = shares
-        .iter()
-        .cloned()
-        .map(|s| {
+    let parts = (0..size.into())
+        .map(|_| {
             let p1 = portpicker::pick_unused_port().unwrap();
             let p2 = portpicker::pick_unused_port().unwrap();
             let p3 = portpicker::pick_unused_port().unwrap();
@@ -43,7 +45,6 @@ where
                 a1,
                 a2,
                 a3,
-                s,
             )
         })
         .collect::<Vec<_>>();
@@ -55,6 +56,7 @@ where
             .enumerate()
             .map(|(i, (kp, ..))| (i as u8, kp.public_key())),
     );
+    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee.clone());
 
     let sailfish_committee = AddressableCommittee::new(
         committee.clone(),
@@ -80,7 +82,7 @@ where
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    for (i, (kpair, xpair, sa, da, pa, share)) in parts.iter().cloned().enumerate() {
+    for (i, ((kpair, xpair, sa, da, pa), share)) in parts.into_iter().zip(shares).enumerate() {
         let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
@@ -103,7 +105,7 @@ where
         cfgs.push((conf, pcf));
     }
 
-    cfgs
+    (pubkey, cfgs)
 }
 
 /// Generate random bundles at a fixed frequency.

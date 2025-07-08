@@ -8,10 +8,11 @@ use ark_ff::{PrimeField, field_hashers::DefaultFieldHasher};
 use ark_std::rand::RngCore;
 use ark_std::test_rng;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use multisig::{Committee, KeyId, Keypair};
 use sha2::{Digest, Sha256};
 use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
-    Keyset, Plaintext, sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme,
+    Plaintext, sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme,
 };
 
 const KB: usize = 1 << 10;
@@ -29,6 +30,16 @@ where
     let byte_lens = [100 * KB, 200 * KB, 500 * KB, MB];
 
     let rng = &mut test_rng();
+    let committee_gen = |size: NonZeroUsize| {
+        let public_keys = (0..size.into())
+            .map(|i| {
+                let kp = Keypair::generate();
+                (KeyId::from(i as u8), kp.public_key())
+            })
+            .collect::<Vec<_>>();
+        Committee::new(u64::MAX, public_keys)
+    };
+
     for len in byte_lens {
         let payload_bytes = {
             let mut payload_bytes = vec![0u8; len];
@@ -41,7 +52,7 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("encrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
+            let committee = committee_gen(NonZeroUsize::new(size).unwrap());
             let (pk, _, _) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
                 .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
@@ -49,14 +60,8 @@ where
 
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
-                    ShoupGennaro::<G, H, D, H2C>::encrypt(
-                        rng,
-                        &committee.id(),
-                        &pk,
-                        &plaintext,
-                        &aad,
-                    )
-                    .expect("encrypt message");
+                    ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad)
+                        .expect("encrypt message");
                 });
             });
         }
@@ -66,14 +71,13 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("decrypt"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
+            let committee = committee_gen(NonZeroUsize::new(size).unwrap());
             let (pk, _, key_shares) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
                 .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let aad = b"cred~abcdef".to_vec();
-            let ciphertext =
-                ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                    .expect("encrypt message");
+            let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad)
+                .expect("encrypt message");
             grp.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
                 b.iter(|| {
                     ShoupGennaro::<G, H, D, H2C>::decrypt(&key_shares[0], &ciphertext, &aad)
@@ -87,14 +91,13 @@ where
         let mut grp = c.benchmark_group(benchmark_group_name("combine"));
         grp.throughput(Throughput::Bytes(len as u64));
         for size in committee_sizes {
-            let committee = Keyset::new(0, NonZeroUsize::new(size).unwrap());
+            let committee = committee_gen(NonZeroUsize::new(size).unwrap());
             let (pk, comb_key, key_shares) = ShoupGennaro::<G, H, D, H2C>::keygen(rng, &committee)
                 .expect("generate key material");
             let plaintext = Plaintext::new(payload_bytes.to_vec());
             let aad = b"cred~abcdef".to_vec();
-            let ciphertext =
-                ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &committee.id(), &pk, &plaintext, &aad)
-                    .expect("encrypt message");
+            let ciphertext = ShoupGennaro::<G, H, D, H2C>::encrypt(rng, &pk, &plaintext, &aad)
+                .expect("encrypt message");
             let dec_shares: Vec<_> = key_shares
                 .iter()
                 .map(|s| ShoupGennaro::<G, H, D, H2C>::decrypt(s, &ciphertext, &aad))

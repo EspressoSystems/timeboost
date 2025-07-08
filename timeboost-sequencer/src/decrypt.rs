@@ -6,7 +6,7 @@ use sailfish::types::{CommitteeVec, Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
-use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Plaintext};
+use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{Bytes, DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -56,8 +56,6 @@ pub struct Decrypter {
     /// Public key of the node. "Label" is termed to refer to node identity in SG01 decryption
     /// scheme
     label: PublicKey,
-    /// Decryption committee this decrypter belongs to
-    keyset: Keyset,
     /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
     /// of timeboost
     incls: BTreeMap<RoundNumber, Status>,
@@ -76,7 +74,6 @@ impl Decrypter {
 
         Self {
             label: cfg.label,
-            keyset: cfg.keyset,
             incls: BTreeMap::new(),
             req_tx,
             res_rx,
@@ -103,22 +100,11 @@ impl Decrypter {
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
-    /// decrypter will process any unencrypted inclusion list, or those encrypted under the keyset
-    /// this decrypter belongs to, but will reject bundles encrypted for totally a different
-    /// keyset.
+    /// decrypter will process any encrypted/unencrypted inclusion list
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
         let round = incl.round();
-        let required_keysets = incl.kids();
 
-        if !required_keysets.is_empty() {
-            // ensure encrypted inclusion list is sent to the correct decrypter
-            if !required_keysets.contains(&self.keyset.id()) {
-                return Err(DecryptError::WrongDecrypter(
-                    required_keysets[0], // safe index-access
-                    self.keyset.id(),
-                ));
-            }
-
+        if incl.is_encrypted() {
             self.req_tx
                 .send(WorkerRequest::Decrypt(incl))
                 .await
@@ -194,8 +180,6 @@ struct Worker {
     net: Overlay,
     /// consensus committees
     committees: CommitteeVec<2>,
-    /// keyset metadata about the decryption committee
-    keyset: Keyset,
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
@@ -225,7 +209,6 @@ impl Worker {
             label: cfg.label,
             net,
             committees: CommitteeVec::new(cfg.committee),
-            keyset: cfg.keyset,
             first_requested_round: None,
             dec_sk: cfg.decryption_key,
             dec_shares: BTreeMap::default(),
@@ -392,29 +375,33 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the relevant ciphertext from encrypted
-    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset this worker
-    /// belongs to.
+    /// scan through the inclusion list and extract the ciphertexts from encrypted
+    /// bundle/tx while preserving the order.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(
-        kid: KeysetId,
-        incl: &InclusionList,
-    ) -> impl Iterator<Item = Option<Ciphertext>> {
-        incl.filter_ciphertexts(kid)
+    fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
+        incl.priority_bundles()
+            .iter()
+            .filter(move |pb| pb.bundle().is_encrypted())
+            .map(|pb| pb.bundle().data())
+            .chain(
+                incl.regular_bundles()
+                    .iter()
+                    .filter(move |b| b.is_encrypted())
+                    .map(|b| b.data()),
+            )
             .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
     }
 
-    /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
-    /// where "relevant" means targetted to the same `KeysetId` as the current decrypter/worker.
-    /// Also see [`DecShareBatch`] doc.
+    /// Produce decryption shares for each encrypted bundles inside the inclusion list,
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     fn decrypt(&mut self, round: RoundNumber, incl: &InclusionList) -> DecShareBatch {
-        let dec_shares = Self::extract_ciphertexts(self.keyset.id(), incl)
+        let dec_shares = Self::extract_ciphertexts(incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
+                    // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
                         self.dec_sk.privkey(),
                         &ct,
@@ -427,7 +414,6 @@ impl Worker {
 
         DecShareBatch {
             round,
-            kid: self.keyset.id(),
             dec_shares,
             evidence: incl.evidence().clone(),
         }
@@ -475,8 +461,10 @@ impl Worker {
 
                 // for valid decryption shares, as long as reaching f+1, we may try to hatch
                 // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
-                num_valid_shares < self.keyset.one_honest_threshold().get()
-                    && num_invalid_shares < self.keyset.honest_majority_threshold().get()
+                // TODO: fix when dynamic committees
+                let committee = self.committees.iter().last().expect("singleton committee");
+                num_valid_shares < committee.one_honest_threshold().get()
+                    && num_invalid_shares < committee.quorum_size().get()
             })
         {
             return Ok(None);
@@ -492,7 +480,7 @@ impl Worker {
             return Ok(None);
         };
         let mut incl = incl.clone();
-        let ciphertexts = Self::extract_ciphertexts(self.keyset.id(), &incl);
+        let ciphertexts = Self::extract_ciphertexts(&incl);
 
         // hatching ciphertext
         // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
@@ -512,7 +500,9 @@ impl Worker {
                 .filter_map(|s| s.as_ref())
                 .collect::<Vec<_>>();
 
-            if dec_shares.len() < self.keyset.one_honest_threshold().get() {
+            // TODO: fix dynamic committees
+            let committee = self.committees.iter().last().expect("singleton committee");
+            if dec_shares.len() < committee.one_honest_threshold().into() {
                 decrypted.push(None);
                 continue;
             }
@@ -520,7 +510,7 @@ impl Worker {
             if let Some(ct) = opt_ct {
                 let aad = vec![];
                 match DecryptionScheme::combine(
-                    &self.keyset,
+                    committee,
                     self.dec_sk.combkey(),
                     dec_shares,
                     &ct,
@@ -547,11 +537,10 @@ impl Worker {
         }
 
         // construct/modify the inclusion list to replace with decrypted payload
-        let kid = self.keyset.id();
         let mut num_encrypted_priority_bundles = 0;
         incl.priority_bundles_mut()
             .iter_mut()
-            .filter(|pb| pb.bundle().kid() == Some(kid))
+            .filter(|pb| pb.bundle().is_encrypted())
             .zip(decrypted.clone())
             .for_each(|(pb, opt_plaintext)| {
                 num_encrypted_priority_bundles += 1;
@@ -563,7 +552,7 @@ impl Worker {
             });
         incl.regular_bundles_mut()
             .iter_mut()
-            .filter(|b| b.kid() == Some(kid))
+            .filter(|b| b.is_encrypted())
             .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
             .for_each(|(bundle, opt_plaintext)| {
                 match opt_plaintext {
@@ -586,13 +575,10 @@ impl Worker {
     }
 }
 
-/// A batch of decryption shares. Each batch is uniquely identified via (round_number, keyset_id).
-/// Each inclusion list, w/ a unique round number, may contain encrypted bundles with different
-/// keysets, those bundles are split into batches, one for each keyset.
+/// A batch of decryption shares. Each batch is uniquely identified via round_number.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
     round: RoundNumber,
-    kid: KeysetId,
     // note: each decrpytion share is for a different ciphertext;
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
@@ -637,9 +623,6 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DecryptError {
-    #[error("Decryption request for: {0}, but send to decrypter in: {1}")]
-    WrongDecrypter(KeysetId, KeysetId),
-
     #[error("decryption error: {0}")]
     Decryption(#[from] ThresholdEncError),
 
@@ -678,17 +661,16 @@ impl From<NetworkDown> for DecryptError {
 mod tests {
     use std::{
         net::{Ipv4Addr, SocketAddr},
-        num::NonZeroUsize,
         time::Duration,
     };
     use timeboost_utils::types::logging;
 
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
         Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
@@ -701,34 +683,18 @@ mod tests {
     #[tokio::test]
     async fn test_with_encrypted_data() {
         logging::init_logging();
-        let num_nodes = 5;
-        let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
-        let encryption_key: PublicKey<_> =
-            decode_bincode("8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu");
 
-        let (mut decrypters, signature_keys, committee) = setup(keyset).await;
+        let (enc_key, committee, mut decrypters, signature_keys) = setup().await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let tx_message = b"The slow brown fox jumps over the lazy dog".to_vec();
         let ptx_plaintext = Plaintext::new(ptx_message.clone());
         let tx_plaintext = Plaintext::new(tx_message.clone());
-        let ptx_ciphertext = DecryptionScheme::encrypt(
-            &mut test_rng(),
-            &keyset.id(),
-            &encryption_key,
-            &ptx_plaintext,
-            &vec![],
-        )
-        .unwrap();
-        let tx_ciphertext = DecryptionScheme::encrypt(
-            &mut test_rng(),
-            &keyset.id(),
-            &encryption_key,
-            &tx_plaintext,
-            &vec![],
-        )
-        .unwrap();
+        let ptx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &ptx_plaintext, &vec![]).unwrap();
+        let tx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &tx_plaintext, &vec![]).unwrap();
         let ptx_ciphertext_bytes =
             bincode::serde::encode_to_vec(&ptx_ciphertext, bincode::config::standard())
                 .expect("Failed to encode ciphertext");
@@ -753,19 +719,13 @@ mod tests {
             cert.into()
         };
         let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
-        let keyset_id = keyset.id();
         let chain_id = ChainId::from(0);
         let epoch = Epoch::from(42);
         let auction = Address::default();
         let seqno = SeqNo::from(10);
         let signer = Signer::default();
         let bundle = PriorityBundle::new(
-            Bundle::new(
-                chain_id,
-                epoch,
-                ptx_ciphertext_bytes.into(),
-                Some(keyset_id),
-            ),
+            Bundle::new(chain_id, epoch, ptx_ciphertext_bytes.into(), true),
             auction,
             seqno,
         );
@@ -775,7 +735,7 @@ mod tests {
             chain_id,
             epoch,
             tx_ciphertext_bytes.into(),
-            Some(keyset_id),
+            true,
         )]);
 
         // Enqueue inclusion lists to each decrypter
@@ -804,7 +764,12 @@ mod tests {
         }
     }
 
-    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<SecretKey>, Committee) {
+    async fn setup() -> (
+        <DecryptionScheme as ThresholdEncScheme>::PublicKey,
+        Committee,
+        Vec<Decrypter>,
+        Vec<SecretKey>,
+    ) {
         // these keys are generated via
         // `just mkconfig_local 5 --seed 42`
         let signature_private_keys = [
@@ -842,16 +807,22 @@ mod tests {
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
 
+        let enc_key: <DecryptionScheme as ThresholdEncScheme>::PublicKey =
+            decode_bincode(encryption_key);
         let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
             .iter()
             .map(|k| {
-                DecryptionKey::new(
-                    decode_bincode(encryption_key),
-                    decode_bincode(comb_key),
-                    decode_bincode(k),
-                )
+                DecryptionKey::new(enc_key.clone(), decode_bincode(comb_key), decode_bincode(k))
             })
             .collect();
+        let committee = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            signature_keys
+                .iter()
+                .enumerate()
+                .map(|(i, k)| (KeyId::from(i as u8), k.public_key()))
+                .collect::<Vec<_>>(),
+        );
 
         let peers: Vec<_> = signature_keys
             .iter()
@@ -865,14 +836,6 @@ mod tests {
                 )
             })
             .collect();
-        let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
-            signature_keys
-                .iter()
-                .map(SecretKey::public_key)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
-        );
 
         let mut decrypters = Vec::new();
         for i in 0..peers.len() {
@@ -894,7 +857,6 @@ mod tests {
             let conf = DecrypterConfig::builder()
                 .label(sig_key.public_key())
                 .committee(committee.clone())
-                .keyset(keyset)
                 .decryption_key(decryption_keys[i].clone())
                 .retain(100)
                 .build();
@@ -904,7 +866,7 @@ mod tests {
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-        (decrypters, signature_keys, committee)
+        (enc_key, committee, decrypters, signature_keys)
     }
 
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {

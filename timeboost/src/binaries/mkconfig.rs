@@ -1,15 +1,15 @@
-use std::io;
 use std::net::IpAddr;
 use std::num::NonZeroU8;
+use std::{io, iter};
 
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
-use multisig::x25519;
+use multisig::{Committee, KeyId, x25519};
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::prelude::{DecryptionKey, EncryptionKey};
-use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
+use timeboost_crypto::DecryptionScheme;
+use timeboost_types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
 
@@ -59,7 +59,7 @@ enum Mode {
 }
 
 impl Args {
-    fn mk_node_infos(&self, dec: &TrustedKeyMaterial, seed: Option<u64>) -> Result<Vec<NodeInfo>> {
+    fn mk_config(&self, seed: Option<u64>) -> Result<KeysetConfig> {
         let num_nodes: u8 = self.num.into();
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
@@ -71,41 +71,68 @@ impl Args {
             seed.map(|s| s.wrapping_pow(4)).unwrap_or_else(rand::random),
         );
 
-        let nodes: Vec<_> = dec
-            .2
-            .iter()
+        // Generate multisig keypair
+        let signing_keys: Vec<_> =
+            iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
+                .take(num_nodes as usize)
+                .collect();
+        // Generate x25519 keypair
+        let auth_keys: Vec<_> =
+            iter::repeat_with(move || x25519::Keypair::generate_with_rng(&mut d_rng).unwrap())
+                .take(num_nodes as usize)
+                .collect();
+        // Generate HPKE keypair for this node using p_rng
+        let encryption_keys: Vec<_> =
+            iter::repeat_with(move || timeboost_crypto::prelude::DecryptionKey::rand(&mut p_rng))
+                .take(num_nodes as usize)
+                .collect();
+        // Generate committee from signature keys
+        let committee = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            signing_keys
+                .iter()
+                .enumerate()
+                .map(|(i, kp)| (KeyId::from(i as u8), kp.public_key())),
+        );
+        // Generate threshold decryption trusted setup (incl. decryption key shares).
+        let decryption_keys = match seed {
+            Some(seed) => {
+                let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
+                DecryptionScheme::trusted_keygen_with_rng(committee, &mut rng)
+            }
+            None => DecryptionScheme::trusted_keygen(committee),
+        };
+
+        let configs: Vec<_> = signing_keys
+            .into_iter()
             .enumerate()
-            .take(num_nodes as usize)
-            .map(|(i, share)| {
-                let i = i as u8;
-                // Generate multisig keypair
-                let kp = multisig::Keypair::generate_with_rng(&mut s_rng);
-                // Generate x25519 keypair
-                let xp = x25519::Keypair::generate_with_rng(&mut d_rng)?;
-                // Generate HPKE keypair for this node using p_rng
-                let hpke_dec_key = DecryptionKey::rand(&mut p_rng);
-                let hpke_enc_key = EncryptionKey::from(&hpke_dec_key);
-
-                Ok(NodeInfo {
-                    sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr)?,
-                    decrypt_address: self.adjust_addr(i, &self.decrypt_base_addr)?,
-                    producer_address: self.adjust_addr(i, &self.producer_base_addr)?,
-                    internal_address: self.adjust_addr(i, &self.internal_base_addr)?,
-                    signing_key: kp.public_key(),
-                    dh_key: xp.public_key(),
-                    enc_key: hpke_enc_key,
-                    private: Some(PrivateKeys {
-                        signing_key: kp.secret_key(),
-                        dh_key: xp.secret_key(),
-                        dec_share: share.clone(),
-                        dec_key: hpke_dec_key,
-                    }),
-                    nitro_addr: self.nitro_addr.clone(),
-                })
+            .zip(auth_keys)
+            .zip(encryption_keys)
+            .zip(decryption_keys.2)
+            .map(|((((i, kp), xp), hpke), share)| NodeInfo {
+                sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
+                decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
+                producer_address: self.adjust_addr(i as u8, &self.producer_base_addr).unwrap(),
+                internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
+                signing_key: kp.public_key(),
+                dh_key: xp.public_key(),
+                enc_key: timeboost_crypto::prelude::EncryptionKey::from(&hpke),
+                private: Some(PrivateKeys {
+                    signing_key: kp.secret_key(),
+                    dh_key: xp.secret_key(),
+                    dec_share: share.clone(),
+                    dec_key: hpke,
+                }),
+                nitro_addr: self.nitro_addr.clone(),
             })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(nodes)
+            .collect();
+        Ok(KeysetConfig {
+            keyset: configs,
+            dec_keyset: PublicDecInfo {
+                pubkey: decryption_keys.0.clone(),
+                combkey: decryption_keys.1.clone(),
+            },
+        })
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
@@ -129,21 +156,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     logging::init_logging();
-
-    let tkm = match args.seed {
-        Some(seed) => {
-            let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
-            DecryptionScheme::trusted_keygen_with_rng(args.num.into(), &mut rng)
-        }
-        None => DecryptionScheme::trusted_keygen(args.num.into()),
-    };
-    let cfg = KeysetConfig {
-        keyset: args.mk_node_infos(&tkm, args.seed)?,
-        dec_keyset: PublicDecInfo {
-            pubkey: tkm.0.clone(),
-            combkey: tkm.1.clone(),
-        },
-    };
+    let cfg = args.mk_config(args.seed)?;
     serde_json::to_writer(io::stdout(), &cfg)?;
 
     Ok(())

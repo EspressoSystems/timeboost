@@ -15,6 +15,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
 use digest::{generic_array::GenericArray, typenum};
+use multisig::Committee;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -282,21 +283,17 @@ impl DecryptionScheme {
     /// - A single public key for clients to encrypt their transaction bundles.
     /// - A single combination key to all nodes for combining partially decrypted ciphertexts.
     /// - One distinct private key share per node for partial decryption.
-    pub fn trusted_keygen(size: NonZeroUsize) -> TrustedKeyMaterial {
+    pub fn trusted_keygen(committee: Committee) -> TrustedKeyMaterial {
         let mut rng = ark_std::rand::thread_rng();
-        // TODO: fix committee id when dynamic keysets
-        let keyset = Keyset::new(1, size);
-        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &keyset).unwrap()
+        <DecryptionScheme as ThresholdEncScheme>::keygen(&mut rng, &committee).unwrap()
     }
 
     /// Same as [`trusted_keygen`], except accepting a caller-provided RNG
     pub fn trusted_keygen_with_rng<R: ark_std::rand::Rng>(
-        size: NonZeroUsize,
+        committee: Committee,
         rng: &mut R,
     ) -> TrustedKeyMaterial {
-        // TODO: fix committee id when dynamic keysets
-        let keyset = Keyset::new(1, size);
-        <DecryptionScheme as ThresholdEncScheme>::keygen(rng, &keyset).unwrap()
+        <DecryptionScheme as ThresholdEncScheme>::keygen(rng, &committee).unwrap()
     }
 }
 
@@ -312,7 +309,7 @@ impl ThresholdEncScheme for DecryptionScheme {
 
     fn keygen<R: ark_std::rand::Rng>(
         rng: &mut R,
-        committee: &Keyset,
+        committee: &Committee,
     ) -> Result<
         (Self::PublicKey, Self::CombKey, Vec<Self::KeyShare>),
         traits::threshold_enc::ThresholdEncError,
@@ -322,12 +319,11 @@ impl ThresholdEncScheme for DecryptionScheme {
 
     fn encrypt<R: ark_std::rand::Rng>(
         rng: &mut R,
-        kid: &KeysetId,
         pk: &Self::PublicKey,
         message: &Self::Plaintext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::Ciphertext, traits::threshold_enc::ThresholdEncError> {
-        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::encrypt(rng, kid, pk, message, aad)
+        <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::encrypt(rng, pk, message, aad)
     }
 
     fn decrypt(
@@ -339,7 +335,7 @@ impl ThresholdEncScheme for DecryptionScheme {
     }
 
     fn combine(
-        committee: &Keyset,
+        committee: &Committee,
         comb_key: &Self::CombKey,
         dec_shares: Vec<&Self::DecShare>,
         ciphertext: &Self::Ciphertext,

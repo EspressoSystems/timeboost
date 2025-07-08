@@ -11,7 +11,6 @@ use alloy_signer_local::PrivateKeySigner;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::KeysetId;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
@@ -27,24 +26,22 @@ pub enum BundleVariant {
 }
 
 /// A bundle contains a list of transactions (encrypted or unencrypted, both encoded as `Bytes`).
-/// if `kid` is set to `Some<KeysetId>`, that signals an encrypted bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Bundle {
     chain: ChainId,
     epoch: Epoch,
     data: Bytes,
-    kid: Option<KeysetId>,
+    encrypted: bool,
     hash: [u8; 32],
 }
 
 impl Bundle {
-    /// Constructor of bundle, when `kid.is_some()`, we assume `data` is encrypted.
-    pub fn new(chain: ChainId, epoch: Epoch, data: Bytes, kid: Option<KeysetId>) -> Self {
+    pub fn new(chain: ChainId, epoch: Epoch, data: Bytes, encrypted: bool) -> Self {
         let mut this = Self {
             chain,
             epoch,
             data,
-            kid,
+            encrypted,
             hash: [0; 32],
         };
         this.update_hash();
@@ -70,23 +67,18 @@ impl Bundle {
         &self.data
     }
 
-    /// Returns true if the bundle is encrypted
     pub fn is_encrypted(&self) -> bool {
-        self.kid.is_some()
-    }
-
-    pub fn kid(&self) -> Option<KeysetId> {
-        self.kid
+        self.encrypted
     }
 
     pub fn digest(&self) -> &[u8; 32] {
         &self.hash
     }
 
-    /// Set the data payload to some ciphertext bytes, encrypted under the specified keyset
-    pub fn set_encrypted_data(&mut self, d: Bytes, kid: KeysetId) {
+    /// Set the data payload to some ciphertext bytes
+    pub fn set_encrypted_data(&mut self, d: Bytes) {
         self.data = d;
-        self.kid = Some(kid);
+        self.encrypted = true;
         self.update_hash()
     }
 
@@ -94,7 +86,7 @@ impl Bundle {
     /// Use this at the end of the decryption phase
     pub fn set_data(&mut self, d: Bytes) {
         self.data = d;
-        self.kid = None;
+        self.encrypted = false;
         self.update_hash();
     }
 
@@ -118,8 +110,7 @@ impl Bundle {
         let c = ChainId::default();
         let e = Epoch::now() + bool::arbitrary(u)? as u64;
         let encoded = ssz::ssz_encode(&vec![&d]);
-        let k = None;
-        let b = Bundle::new(c, e, encoded.into(), k);
+        let b = Bundle::new(c, e, encoded.into(), false);
 
         Ok(b)
     }
@@ -130,8 +121,8 @@ impl Committable for Bundle {
         RawCommitmentBuilder::new("Bundle")
             .field("chain", self.chain_id().commit())
             .field("epoch", self.epoch().commit())
+            .u64(if self.is_encrypted() { 1 } else { 0 })
             .var_size_field("data", self.data())
-            .field("keysetid", self.kid().unwrap_or_default().commit())
             .finalize()
     }
 }
@@ -259,7 +250,7 @@ impl SignedPriorityBundle {
     /// Set the data payload to un-encrypted, plaintext data.
     pub fn set_data(&mut self, d: Bytes) {
         self.bundle.data = d;
-        self.bundle.kid = None;
+        self.bundle.encrypted = false;
         self.update_hash()
     }
 
@@ -577,7 +568,7 @@ mod tests {
             ChainId::default(),
             Epoch::default(),
             ssz_encoded_txns.into(),
-            None,
+            false,
         );
         let unsigned_priority = PriorityBundle::new(bundle, Address::default(), SeqNo::zero());
 
