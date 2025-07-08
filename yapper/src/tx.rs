@@ -41,6 +41,10 @@ async fn send_bundle_to_node(
                 .send()
                 .await
         }
+        _ => {
+            warn!("Unsupported bundle variant");
+            return;
+        }
     };
 
     match result {

@@ -5,7 +5,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::{Bundle, DelayedInboxIndex, Epoch, HasTime, SignedPriorityBundle, Timestamp};
+use crate::{
+    Bundle, DealingBundle, DelayedInboxIndex, Epoch, HasTime, SignedPriorityBundle, Timestamp,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -18,6 +20,7 @@ struct Inner {
     index: DelayedInboxIndex,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
+    dealing: Option<DealingBundle>,
 }
 
 #[derive(Debug)]
@@ -26,6 +29,7 @@ pub struct Builder {
     index: DelayedInboxIndex,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
+    dealing: Option<DealingBundle>,
 }
 
 impl Builder {
@@ -39,12 +43,18 @@ impl Builder {
         self
     }
 
+    pub fn with_dealing(mut self, d: Option<DealingBundle>) -> Self {
+        self.dealing = d;
+        self
+    }
+
     pub fn finish(self) -> CandidateList {
         CandidateList(Arc::new(Inner {
             time: self.time,
             index: self.index,
             priority: self.priority,
             regular: self.regular,
+            dealing: self.dealing,
         }))
     }
 }
@@ -59,6 +69,7 @@ impl CandidateList {
             index: i.into(),
             regular: Vec::new(),
             priority: Vec::new(),
+            dealing: None,
         }
     }
 
@@ -82,10 +93,20 @@ impl CandidateList {
         self.0.regular.len() + self.0.priority.len()
     }
 
-    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>) {
+    pub fn into_bundles(
+        self,
+    ) -> (
+        Vec<SignedPriorityBundle>,
+        Vec<Bundle>,
+        Option<DealingBundle>,
+    ) {
         match Arc::try_unwrap(self.0) {
-            Ok(inner) => (inner.priority, inner.regular),
-            Err(arc) => (arc.priority.clone(), arc.regular.clone()),
+            Ok(inner) => (inner.priority, inner.regular, inner.dealing),
+            Err(arc) => (
+                arc.priority.clone(),
+                arc.regular.clone(),
+                arc.dealing.clone(),
+            ),
         }
     }
 
@@ -100,6 +121,10 @@ impl CandidateList {
     pub fn delayed_inbox_index(&self) -> DelayedInboxIndex {
         self.0.index
     }
+
+    pub fn dealing(&self) -> Option<DealingBundle> {
+        self.0.dealing.clone()
+    }
 }
 
 impl Committable for CandidateList {
@@ -107,8 +132,8 @@ impl Committable for CandidateList {
         let mut builder = RawCommitmentBuilder::new("CandidateList")
             .u64_field("time", self.0.time.into())
             .u64_field("index", self.0.index.into())
-            .u64_field("priority", self.0.priority.len() as u64)
-            .u64_field("regular", self.0.priority.len() as u64);
+            .optional("dealing", &self.0.dealing)
+            .u64_field("priority", self.0.priority.len() as u64);
         builder = self
             .0
             .priority

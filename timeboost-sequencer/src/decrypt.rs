@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Plaintext};
-use timeboost_types::{Bytes, DecryptionKey, InclusionList};
+use timeboost_types::{Bytes, DealingBundle, DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -21,6 +21,8 @@ const MAX_ROUNDS: usize = 100;
 
 /// Command sent to Decrypter's background worker
 enum WorkerRequest {
+    // request to inform the worker of dealings inside the inclusion list
+    Dealing(InclusionList),
     // request to decrypt all encrypted transactions inside the inclusion list
     Decrypt(InclusionList),
     // request to garbage collect all states related to a round (and previous rounds)
@@ -42,6 +44,8 @@ enum Status {
 /// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to
 /// collectively threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase
 /// ("Decryption phase") of timeboost.
+///
+/// The Decrypter also extracts dealings from inclusion lists and combines these to obtain new keys.
 ///
 /// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key
 /// share), and combiner's "hatching" (using the combiner key).
@@ -107,11 +111,21 @@ impl Decrypter {
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
+    /// If the inclusion list contains dealings then the list is forwarded to the worker.
+    ///
     /// decrypter will process any unencrypted inclusion list, or those encrypted under the keyset
     /// this decrypter belongs to, but will reject bundles encrypted for totally a different
     /// keyset.
     pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
         let round = incl.round();
+
+        if incl.has_dealings() {
+            self.req_tx
+                .send(WorkerRequest::Dealing(incl.clone()))
+                .await
+                .map_err(|_| DecryptError::Shutdown)?;
+        }
+
         let required_keysets = incl.kids();
 
         if !required_keysets.is_empty() {
@@ -217,8 +231,34 @@ struct Worker {
     acks: BTreeMap<RoundNumber, HashSet<PublicKey>>,
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
     incls: BTreeMap<RoundNumber, InclusionList>,
+    /// state machine of the worker
+    state: WorkerState,
     /// the latest rounds whose ciphertexts are hatched
     last_hatched_round: RoundNumber,
+}
+
+enum WorkerState {
+    /// No round number information is collected.
+    Genesis,
+    /// The worker did run previously and should collect round number information.
+    ///
+    /// While in this state, no messages will be sent to other parties,
+    /// but inbound messages will be processed and delivered to the
+    /// application as normal.
+    ///
+    /// Proposals, votes and certificates that would normally be sent are
+    /// stored and once the round number barrier for participation has been
+    /// reached, the deferred messages from that round number onwards will
+    /// be sent out.
+    Recover(
+        Nonce,
+        Option<cliquenet::Id>,
+        HashMap<PublicKey, RoundNumber>,
+    ),
+    /// This is the normal running state after round numbers have been collected.
+    /// The barrier is the maximum of at least 2t + 1 reported round numbers and
+    /// restricts when messages are eligible for sending.
+    Barrier(RoundNumber),
 }
 
 impl Worker {
@@ -254,10 +294,17 @@ impl Worker {
             tokio::select! {
                 // receiving a request from the decrypter
                 val = req_rx.recv() => match val {
+                    Some(WorkerRequest::Dealing(incl)) => {
+                        let round = incl.round();
+                        let committees = incl.dealing_bundles().into_iter().map(|d| d.committee_id());
+
+                        println!("received dealings round: {}, committees: {:?}", round, committees);
+                    },
+
                     Some(WorkerRequest::Decrypt(incl)) => {
                         let round = incl.round();
-                        trace!(%node, %round, "decrypt request");
 
+                        trace!(%node, %round, "decrypt request");
                         match self.on_decrypt_request(round, incl).await {
                             Err(DecryptError::Shutdown) => return,
                             Err(err) => {
@@ -692,18 +739,68 @@ mod tests {
 
     use ark_std::test_rng;
     use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use multisig::{Committee, CommitteeId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{CommitteeVec, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
-        Signer, Timestamp,
+        Address, Bundle, ChainId, DealingBundle, DecryptionKey, Epoch, InclusionList,
+        PriorityBundle, SeqNo, Signer, Timestamp,
     };
     use tracing::warn;
 
     use crate::decrypt::Decrypter;
+
+    #[tokio::test]
+    async fn key_generation() {
+        logging::init_logging();
+        let num_nodes = 5;
+        let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
+
+        let (mut decrypters, signature_keys, committee) = setup(keyset).await;
+
+        // Create inclusion lists with encrypted transactions
+        let round = RoundNumber::new(42);
+        // generate round evidence by signing for round-1
+        let evidence = {
+            let mut va = VoteAccumulator::new(committee);
+            for sk in signature_keys {
+                let keypair = Keypair::from(sk);
+                va.add(Signed::new(
+                    Round::new(round - 1, UNKNOWN_COMMITTEE_ID),
+                    &keypair,
+                ))
+                .unwrap();
+            }
+            let cert = va.into_certificate().unwrap();
+            cert.into()
+        };
+        let dealing = DealingBundle::new(CommitteeId::new(1), vec![]);
+        let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
+        incl_list.set_dealing_bundles(vec![dealing]);
+
+        // Enqueue inclusion lists to each decrypter
+        for d in decrypters.iter_mut() {
+            if let Err(e) = d.enqueue(incl_list.clone()).await {
+                warn!("failed to enqueue inclusion list: {:?}", e);
+            }
+        }
+        let _ = tokio::time::sleep(Duration::from_secs(4)).await;
+
+        // Collect decrypted inclusion lists
+        let mut decrypted_lists = Vec::new();
+        for d in decrypters.iter_mut() {
+            let incl = d.next().await.unwrap();
+            decrypted_lists.push(incl);
+        }
+
+        // // Verify that all decrypted inclusion lists are correct
+        // for d in decrypted_lists {
+        //     let decrypted_ptx_data = d.priority_bundles()[0].bundle().data();
+        //     let decrypted_tx_data = d.regular_bundles()[0].data();
+        // }
+    }
 
     #[tokio::test]
     async fn test_with_encrypted_data() {

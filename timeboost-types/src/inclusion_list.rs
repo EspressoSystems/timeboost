@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::{Bundle, Bytes, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
+use crate::{
+    Bundle, Bytes, DealingBundle, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle,
+};
 use sailfish_types::{Evidence, RoundNumber};
 use timeboost_crypto::KeysetId;
 
@@ -15,6 +17,7 @@ pub struct InclusionList {
     evidence: Evidence,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
+    dealing: Vec<DealingBundle>,
 }
 
 impl InclusionList {
@@ -26,7 +29,13 @@ impl InclusionList {
             evidence: e,
             priority: Vec::new(),
             regular: Vec::new(),
+            dealing: Vec::new(),
         }
+    }
+
+    pub fn set_dealing_bundles(&mut self, d: Vec<DealingBundle>) -> &mut Self {
+        self.dealing = d;
+        self
     }
 
     pub fn set_priority_bundles(&mut self, t: Vec<SignedPriorityBundle>) -> &mut Self {
@@ -80,6 +89,10 @@ impl InclusionList {
         kids.into_iter().collect()
     }
 
+    pub fn has_dealings(&self) -> bool {
+        !self.dealing.is_empty()
+    }
+
     pub fn has_priority_bundles(&self) -> bool {
         !self.priority.is_empty()
     }
@@ -126,6 +139,10 @@ impl InclusionList {
 
     pub fn delayed_inbox_index(&self) -> DelayedInboxIndex {
         self.index
+    }
+
+    pub fn dealing_bundles(&self) -> &[DealingBundle] {
+        &self.dealing
     }
 
     pub fn digest(&self) -> [u8; 32] {

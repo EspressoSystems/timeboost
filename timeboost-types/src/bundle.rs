@@ -10,6 +10,7 @@ use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::KeysetId;
 
@@ -24,6 +25,7 @@ const DOMAIN: &str = "TIMEBOOST_BID";
 pub enum BundleVariant {
     Regular(Bundle),
     Priority(SignedPriorityBundle),
+    Dealing(DealingBundle),
 }
 
 /// A bundle contains a list of transactions (encrypted or unencrypted, both encoded as `Bytes`).
@@ -300,6 +302,38 @@ impl Committable for SignedPriorityBundle {
             .field("auction", self.auction.commit())
             .field("seqno", self.seqno.commit())
             .field("signature", self.signature().commit())
+            .finalize()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct DealingBundle {
+    committee_id: CommitteeId,
+    transcript: Vec<u8>, // TODO: replace with VESS transcript
+}
+
+impl DealingBundle {
+    pub fn new(committee_id: CommitteeId, transcript: Vec<u8>) -> Self {
+        Self {
+            committee_id,
+            transcript,
+        }
+    }
+
+    pub fn committee_id(&self) -> &CommitteeId {
+        &self.committee_id
+    }
+
+    pub fn transcript(&self) -> &Vec<u8> {
+        &self.transcript
+    }
+}
+
+impl Committable for DealingBundle {
+    fn commit(&self) -> Commitment<Self> {
+        RawCommitmentBuilder::new("DealingBundle")
+            .field("committee", self.committee_id.commit())
+            .var_size_bytes(&self.transcript)
             .finalize()
     }
 }
