@@ -26,12 +26,17 @@ pub struct NodeInfo {
     pub sailfish_address: Address,
     pub decrypt_address: Address,
     pub producer_address: Address,
+    pub internal_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
+
     /// public key in hybrid public key encryption (HPKE) for secure communication
     #[serde(with = "hpkeenckey")]
     pub enc_key: HpkeEncKey,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro_addr: Option<Address>,
+
     #[serde(default)]
     pub private: Option<PrivateKeys>,
 }
@@ -163,10 +168,10 @@ mod tests {
       "sailfish_address": "127.0.0.1:8000",
       "decrypt_address": "127.0.0.1:10000",
       "producer_address": "127.0.0.1:11000",
+      "internal_address": "127.0.0.1:5000",
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
       "enc_key": "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK",
-      "nitro_addr": null,
       "private": {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",

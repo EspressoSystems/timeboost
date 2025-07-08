@@ -8,6 +8,7 @@ use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
+use timeboost_crypto::prelude::{DecryptionKey, EncryptionKey};
 use timeboost_crypto::{DecryptionScheme, TrustedKeyMaterial};
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
@@ -29,6 +30,10 @@ struct Args {
     /// The first producer address.
     #[clap(long, short)]
     producer_base_addr: Address,
+
+    /// The internal API address.
+    #[clap(long, short)]
+    internal_base_addr: Address,
 
     /// RNG seed for deterministic key generation
     #[clap(long)]
@@ -54,7 +59,7 @@ enum Mode {
 }
 
 impl Args {
-    fn mk_node_infos(&self, dec: &TrustedKeyMaterial, seed: Option<u64>) -> Vec<NodeInfo> {
+    fn mk_node_infos(&self, dec: &TrustedKeyMaterial, seed: Option<u64>) -> Result<Vec<NodeInfo>> {
         let num_nodes: u8 = self.num.into();
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
@@ -76,15 +81,16 @@ impl Args {
                 // Generate multisig keypair
                 let kp = multisig::Keypair::generate_with_rng(&mut s_rng);
                 // Generate x25519 keypair
-                let xp = x25519::Keypair::generate_with_rng(&mut d_rng).unwrap();
+                let xp = x25519::Keypair::generate_with_rng(&mut d_rng)?;
                 // Generate HPKE keypair for this node using p_rng
-                let hpke_dec_key = timeboost_crypto::prelude::DecryptionKey::rand(&mut p_rng);
-                let hpke_enc_key = timeboost_crypto::prelude::EncryptionKey::from(&hpke_dec_key);
+                let hpke_dec_key = DecryptionKey::rand(&mut p_rng);
+                let hpke_enc_key = EncryptionKey::from(&hpke_dec_key);
 
-                NodeInfo {
-                    sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr).unwrap(),
-                    decrypt_address: self.adjust_addr(i, &self.decrypt_base_addr).unwrap(),
-                    producer_address: self.adjust_addr(i, &self.producer_base_addr).unwrap(),
+                Ok(NodeInfo {
+                    sailfish_address: self.adjust_addr(i, &self.sailfish_base_addr)?,
+                    decrypt_address: self.adjust_addr(i, &self.decrypt_base_addr)?,
+                    producer_address: self.adjust_addr(i, &self.producer_base_addr)?,
+                    internal_address: self.adjust_addr(i, &self.internal_base_addr)?,
                     signing_key: kp.public_key(),
                     dh_key: xp.public_key(),
                     enc_key: hpke_enc_key,
@@ -95,10 +101,11 @@ impl Args {
                         dec_key: hpke_dec_key,
                     }),
                     nitro_addr: self.nitro_addr.clone(),
-                }
+                })
             })
-            .collect::<Vec<_>>();
-        nodes
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(nodes)
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
@@ -131,7 +138,7 @@ fn main() -> Result<()> {
         None => DecryptionScheme::trusted_keygen(args.num.into()),
     };
     let cfg = KeysetConfig {
-        keyset: args.mk_node_infos(&tkm, args.seed),
+        keyset: args.mk_node_infos(&tkm, args.seed)?,
         dec_keyset: PublicDecInfo {
             pubkey: tkm.0.clone(),
             combkey: tkm.1.clone(),

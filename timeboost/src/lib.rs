@@ -1,17 +1,20 @@
 mod config;
 
+use std::future::pending;
 use std::iter::once;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 use api::metrics::serve_metrics_api;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
 use timeboost_builder::{BlockProducer, ProducerDown};
+use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
+use tokio::net::lookup_host;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -26,6 +29,7 @@ pub use timeboost_proto as proto;
 pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
+use crate::api::internal::InternalApiService;
 use crate::forwarder::data::Data;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
@@ -35,14 +39,20 @@ pub mod metrics;
 
 pub struct Timeboost {
     label: PublicKey,
-    config: TimeboostConfig,
     receiver: Receiver<BundleVariant>,
     sequencer: Sequencer,
     producer: BlockProducer,
-    prometheus: Arc<PrometheusMetrics>,
     _metrics: Arc<TimeboostMetrics>,
     nitro_forwarder: Option<NitroForwarder>,
-    children: Vec<JoinHandle<()>>,
+    metrics_task: JoinHandle<()>,
+    internal_api: JoinHandle<Result<(), tonic::transport::Error>>,
+}
+
+impl Drop for Timeboost {
+    fn drop(&mut self) {
+        self.metrics_task.abort();
+        self.internal_api.abort()
+    }
 }
 
 impl Timeboost {
@@ -59,27 +69,31 @@ impl Timeboost {
             None
         };
 
+        let internal_api = {
+            let Some(addr) = lookup_host(cfg.internal_api.to_string()).await?.next() else {
+                bail!("{} does not resolve to a socket address", cfg.internal_api)
+            };
+            let svc = InternalApiService::new(cfg.sign_keypair.public_key(), blk.handle());
+            tonic::transport::Server::builder()
+                .add_service(InternalApiServer::new(svc))
+                .serve(addr)
+        };
+
         Ok(Self {
+            metrics_task: spawn(metrics_api(pro.clone(), cfg.metrics_port)),
             label: cfg.sign_keypair.public_key(),
-            config: cfg,
             receiver: rx,
             sequencer: seq,
             producer: blk,
-            prometheus: pro,
             _metrics: met,
             nitro_forwarder,
-            children: Vec::new(),
+            internal_api: spawn(internal_api),
         })
     }
 
     /// Run the timeboost app
     #[instrument(level = "info", skip_all)]
     pub async fn go(mut self) -> Result<()> {
-        self.children.push(spawn(metrics_api(
-            self.prometheus.clone(),
-            self.config.metrics_port,
-        )));
-
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -123,6 +137,25 @@ impl Timeboost {
                         let e: ProducerDown = e;
                         return Err(e.into())
                     }
+                },
+                int = &mut self.internal_api => {
+                    match int {
+                        Ok(Ok(()))   => error!(node = %self.label, "internal api terminated"),
+                        Ok(Err(err)) => error!(node = %self.label, %err, "internal api error"),
+                        Err(err)     => error!(node = %self.label, %err, "internal api panic")
+                    }
+                    return Err(anyhow!("internal api not available"))
+                },
+                met = &mut self.metrics_task => {
+                    match met {
+                        Ok(())   => warn!(node = %self.label, "metrics api terminated"),
+                        Err(err) => warn!(node = %self.label, %err, "metrics api panic")
+                    }
+                    // A terminating metrics task is not considered critical, i.e.
+                    // Timeboost keeps running. However we must not poll the existing
+                    // metrics_task join handle after it completed, therefore we
+                    // reset it to a never-ending task:
+                    self.metrics_task = spawn(pending())
                 }
             }
         }

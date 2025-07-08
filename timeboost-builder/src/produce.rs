@@ -36,6 +36,12 @@ pub struct BlockProducer {
     worker: JoinHandle<EndOfPlay>,
 }
 
+#[derive(Clone)]
+pub struct Handle {
+    label: PublicKey,
+    worker_tx: Sender<Command>,
+}
+
 /// Worker commands.
 enum Command {
     /// Certify the given block.
@@ -90,14 +96,11 @@ impl BlockProducer {
         })
     }
 
-    /// Enqueue the given block for certification.
-    pub async fn enqueue(&mut self, b: Block) -> StdResult<(), ProducerDown> {
-        debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
-        self.worker_tx
-            .send(Command::Certify(b))
-            .await
-            .map_err(|_| ProducerDown(()))?;
-        Ok(())
+    pub fn handle(&self) -> Handle {
+        Handle {
+            label: self.label,
+            worker_tx: self.worker_tx.clone(),
+        }
     }
 
     /// Get the next certified block.
@@ -156,6 +159,18 @@ impl BlockProducer {
 impl Drop for BlockProducer {
     fn drop(&mut self) {
         self.worker.abort()
+    }
+}
+
+impl Handle {
+    /// Enqueue the given block for certification.
+    pub async fn enqueue(&self, b: Block) -> StdResult<(), ProducerDown> {
+        debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
+        self.worker_tx
+            .send(Command::Certify(b))
+            .await
+            .map_err(|_| ProducerDown(()))?;
+        Ok(())
     }
 }
 
