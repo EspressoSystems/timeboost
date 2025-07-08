@@ -113,6 +113,7 @@ impl Args {
                 sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
                 decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
                 producer_address: self.adjust_addr(i as u8, &self.producer_base_addr).unwrap(),
+                internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
                 signing_key: kp.public_key(),
                 dh_key: xp.public_key(),
                 enc_key: timeboost_crypto::prelude::EncryptionKey::from(&hpke),

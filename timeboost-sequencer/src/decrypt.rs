@@ -375,9 +375,8 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the relevant ciphertext from encrypted
-    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset this worker
-    /// belongs to.
+    /// scan through the inclusion list and extract the ciphertexts from encrypted
+    /// bundle/tx while preserving the order.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
     fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
@@ -394,9 +393,7 @@ impl Worker {
             .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
     }
 
-    /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
-    /// where "relevant" means targetted to the same `KeysetId` as the current decrypter/worker.
-    /// Also see [`DecShareBatch`] doc.
+    /// Produce decryption shares for each encrypted bundles inside the inclusion list,
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
@@ -578,9 +575,7 @@ impl Worker {
     }
 }
 
-/// A batch of decryption shares. Each batch is uniquely identified via (round_number, keyset_id).
-/// Each inclusion list, w/ a unique round number, may contain encrypted bundles with different
-/// keysets, those bundles are split into batches, one for each keyset.
+/// A batch of decryption shares. Each batch is uniquely identified via round_number.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
     round: RoundNumber,
