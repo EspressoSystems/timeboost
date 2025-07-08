@@ -1,0 +1,19 @@
+[package]
+name = "robusta"
+description = "espresso client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bon = { workspace = true }
+bytes = { workspace = true }
+data-encoding = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
