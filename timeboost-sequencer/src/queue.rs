@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use sailfish::types::{DataSource, RoundNumber};
 use timeboost_types::{
-    Address, Bundle, BundleVariant, Epoch, RetryList, SeqNo, SignedPriorityBundle,
+    Address, Bundle, BundleVariant, DkgBundle, Epoch, RetryList, SeqNo, SignedPriorityBundle,
 };
 use timeboost_types::{
     CandidateList, CandidateListBytes, DelayedInboxIndex, InclusionList, Timestamp,
@@ -28,6 +28,7 @@ struct Inner {
     index: DelayedInboxIndex,
     priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,
     regular: VecDeque<(Instant, Bundle)>,
+    dkg: Option<DkgBundle>,
     metrics: Arc<SequencerMetrics>,
     max_len: usize,
     mode: Mode,
@@ -53,6 +54,7 @@ impl BundleQueue {
             index: idx,
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
+            dkg: None,
             metrics,
             max_len: usize::MAX,
             mode: Mode::Passive,
@@ -85,6 +87,7 @@ impl BundleQueue {
         let epoch_now = inner.time.into();
         for b in it.into_iter() {
             match b {
+                BundleVariant::Dkg(b) => inner.dkg = Some(b),
                 BundleVariant::Regular(b) => inner.regular.push_back((now, b)),
                 BundleVariant::Priority(b) => {
                     match b.validate(epoch_now, Some(inner.priority_addr)) {
