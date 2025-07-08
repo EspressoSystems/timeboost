@@ -468,26 +468,31 @@ type ProverMessageUntilStep4b<C: CurveGroup> = (
 );
 
 // returns x * a / b without overflow panic, assuming the result < u128::MAX
-// since x * a could overflow, we divide first before multiply;
-// since x / b could truncate, we reduce a and b by their gcd first;
-// even after reduction, x / b_reduced could still truncate, thus further gcd reduce
 fn overflow_safe_mul_then_div(x: u128, a: u128, b: u128) -> u128 {
     debug_assert!(b != 0);
+    if a == 0 {
+        return 0;
+    }
     if a == b {
-        x
+        return x;
+    }
+
+    // Reduce the fraction a/b to lowest terms
+    let g = gcd(a, b);
+    let a_reduced = a / g;
+    let b_reduced = b / g;
+
+    // To avoid overflow and precision loss, try to divide x by b_reduced first
+    let g2 = gcd(x, b_reduced);
+    let x_reduced = x / g2;
+    let b_final = b_reduced / g2;
+
+    // Now compute x_reduced * a_reduced / b_final
+    // Check for potential overflow in multiplication
+    if a_reduced <= u128::MAX / x_reduced {
+        (x_reduced * a_reduced) / b_final
     } else {
-        // Reduce the fraction a/b to lowest terms
-        let g = gcd(a, b);
-        let a_reduced = a / g;
-        let b_reduced = b / g;
-
-        // To avoid overflow and precision loss, try to divide x by b_reduced first
-        let g2 = gcd(x, b_reduced);
-        let x_reduced = x / g2;
-        let b_final = b_reduced / g2;
-
-        // Now compute x_reduced * a_reduced / b_final
-        x_reduced * a_reduced / b_final
+        (x_reduced / b_final) * a_reduced
     }
 }
 
@@ -508,11 +513,17 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
     let mut _cnk = overflow_safe_mul_then_div(cnk1, n, k);
 
     while k > 0 {
+        // Safety check: if we have exhausted all positions but still need to select more elements,
+        // something is wrong with the algorithm state or input
+        if n == 0 {
+            break;
+        }
+
         if idx < cnk1 {
             // decrement both n and k, thus cnk' = binom(n-1, k-1)
             _cnk = cnk1;
             // cnk1' = binom(n-2, k-2) = binom(n-1, k-1) * (k-1) / (n-1)
-            cnk1 = if n > 1 {
+            cnk1 = if n > 1 && k > 1 {
                 overflow_safe_mul_then_div(cnk1, k - 1, n - 1)
             } else {
                 1 // terminal case: binom(0,0) = 1
@@ -526,16 +537,31 @@ fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
             idx -= cnk1;
 
             // only decrement n, thus cnk' = binom(n-1, k) = binom(n,k) - binom(n-1, k-1)
-            _cnk -= cnk1;
+            if _cnk >= cnk1 {
+                _cnk -= cnk1;
+            } else {
+                _cnk = 0;
+            }
             // cnk1' = binom(n-2, k-1) = binom(n-1, k-1) * (n-k) / (n-1)
-            cnk1 = if n > k {
+            cnk1 = if n > k && n > 1 {
                 overflow_safe_mul_then_div(cnk1, n - k, n - 1)
             } else {
                 0 // when n-1 = k-1, then all future indices should be selected
             };
         }
+
         n -= 1;
         cur += 1;
+
+        // If we can't select enough elements from remaining positions, select all remaining
+        if n == k {
+            // Select all remaining positions
+            for _ in 0..k {
+                subset_indices.push(cur);
+                cur += 1;
+            }
+            break;
+        }
     }
 
     debug_assert_eq!(subset_indices.len(), subset_size);
