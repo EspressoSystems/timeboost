@@ -9,4 +9,6 @@ pub struct BlockProducerConfig {
     pub(crate) committee: AddressableCommittee,
     pub(crate) address: Address,
     pub(crate) retain: usize,
+    #[builder(default = true)]
+    pub(crate) recover: bool,
 }

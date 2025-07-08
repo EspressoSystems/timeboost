@@ -102,7 +102,7 @@ impl Timeboost {
                     }
                 },
                 out = self.sequencer.next() => match out {
-                    Ok(Output::Transactions { round, timestamp, transactions, evidence }) => {
+                    Ok(Output::Transactions { round, timestamp, transactions }) => {
                         info!(
                             node  = %self.label,
                             round = %round,
@@ -110,7 +110,7 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(round, timestamp, evidence, &transactions) {
+                            if let Ok(d) = Data::encode(round, timestamp, &transactions) {
                                 f.enqueue(d).await?;
                             } else {
                                 error!(node = %self.label, "failed to encode inclusion list")
