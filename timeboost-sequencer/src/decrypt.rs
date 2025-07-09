@@ -213,7 +213,7 @@ struct Worker {
     net: Overlay,
     /// decryption committees
     committees: ArrayVec<(RoundNumber, Committee), MAX_COMMITTEES>,
-    /// channel for sending inclusio lists back to parent
+    /// channel for sending inclusion lists back to parent
     tx: Sender<InclusionList>,
     /// channel for receiving commands from the parent
     rx: Receiver<Command>,
