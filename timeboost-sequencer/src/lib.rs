@@ -154,22 +154,7 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = {
-            let met =
-                NetworkMetrics::new("decrypt", metrics, cfg.decrypt_committee.parties().copied());
-
-            let net = Network::create(
-                "decrypt",
-                cfg.decrypt_addr.clone(),
-                cfg.sign_keypair.public_key(), // same label
-                cfg.dh_keypair.clone(),        // same auth
-                cfg.decrypt_committee.entries(),
-                met,
-            )
-            .await?;
-
-            Decrypter::new(cfg.decrypter_config(), Overlay::new(net))
-        };
+        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
