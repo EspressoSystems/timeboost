@@ -34,6 +34,12 @@ impl BlockNumber {
     }
 }
 
+impl Default for BlockNumber {
+    fn default() -> Self {
+        GENESIS_BLOCK
+    }
+}
+
 impl From<u64> for BlockNumber {
     fn from(val: u64) -> Self {
         Self(val)
@@ -245,5 +251,17 @@ impl CertifiedBlock {
 
     pub fn data(&self) -> &Block {
         &self.data
+    }
+}
+
+impl From<CertifiedBlock> for Certificate<BlockInfo> {
+    fn from(block: CertifiedBlock) -> Self {
+        block.cert
+    }
+}
+
+impl From<CertifiedBlock> for Block {
+    fn from(block: CertifiedBlock) -> Self {
+        block.data
     }
 }

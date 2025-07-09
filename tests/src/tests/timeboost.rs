@@ -100,7 +100,6 @@ where
             .dh_keypair(xpair)
             .address(pa)
             .committee(produce_committee.clone())
-            .retain(100)
             .build();
         cfgs.push((conf, pcf));
     }

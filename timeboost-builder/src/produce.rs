@@ -17,7 +17,7 @@ use multisig::{
 };
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use timeboost_types::sailfish::{Round, RoundNumber};
+use timeboost_types::sailfish::{NodeInfo, Round, RoundNumber};
 use timeboost_types::{Block, BlockInfo, BlockNumber, CertifiedBlock};
 use tokio::select;
 use tokio::spawn;
@@ -28,6 +28,9 @@ use tracing::{debug, error, info, warn};
 use crate::BlockProducerConfig;
 
 type Result<T> = StdResult<T, ProducerError>;
+
+const CAPACITY: usize = 128;
+const HISTORY: u64 = 100;
 
 pub struct BlockProducer {
     /// Log label of the node.
@@ -64,8 +67,8 @@ impl BlockProducer {
     where
         M: metrics::Metrics,
     {
-        let (cmd_tx, cmd_rx) = channel(cfg.retain);
-        let (crt_tx, crt_rx) = channel(cfg.retain);
+        let (cmd_tx, cmd_rx) = channel(CAPACITY);
+        let (crt_tx, crt_rx) = channel(CAPACITY);
 
         let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
 
@@ -92,8 +95,8 @@ impl BlockProducer {
             .rx(cmd_rx)
             .trackers(Default::default())
             .next_committee(NextCommittee::None)
-            .retain(cfg.retain)
             .maybe_next_block((!cfg.recover).then(BlockNumber::genesis))
+            .info(NodeInfo::new(cfg.committee.committee()))
             .build();
 
         Ok(Self {
@@ -228,8 +231,8 @@ struct Worker {
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
 
-    /// Keep the given number of blocks around when garbage collecting.
-    retain: usize,
+    /// Quorum of block numbers to use with garbale collection.
+    info: NodeInfo<BlockNumber>,
 }
 
 struct Tracker {
@@ -361,6 +364,7 @@ impl Worker {
         let msg = Message {
             info: Envelope::signed(info.clone(), &self.keypair),
             evidence: evi,
+            next: self.next_block.unwrap_or_default()
         };
 
         if tracker.block.is_none() {
@@ -401,6 +405,8 @@ impl Worker {
             );
             return Ok(());
         }
+
+        self.info.record(&src, msg.next);
 
         let kid = committee
             .get_index(&src)
@@ -448,6 +454,28 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
+        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(HISTORY).into();
+
+        // Check if we need to catch up to the others.
+        if self
+            .next_block
+            .map(|n| n + HISTORY < lower_bound)
+            .unwrap_or(false)
+        {
+            debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
+            // To catch up we first discard everything too old.
+            self.next_block = Some(lower_bound);
+            self.gc(lower_bound);
+            // Now we look for the first block number which has a certificate
+            // available and continue from there.
+            for (i, t) in &self.trackers {
+                if t.deliver(&self.tx).await? {
+                    self.next_block = Some(*i + 1);
+                    break;
+                }
+            }
+        }
+
         let start = self.next_block;
 
         'main: loop {
@@ -473,19 +501,17 @@ impl Worker {
         }
 
         if start != self.next_block {
-            self.gc();
+            self.gc(lower_bound);
         }
 
         Ok(())
     }
 
-    fn gc(&mut self) {
-        let Some(next) = self.next_block else { return };
-        let num: BlockNumber = next.saturating_sub(self.retain as u64).into();
-        if *num > 0 {
-            self.net.gc(*num)
+    fn gc(&mut self, lower_bound: BlockNumber) {
+        if !lower_bound.is_genesis() {
+            self.net.gc(*lower_bound);
+            self.trackers.retain(|n, _| *n >= lower_bound);
         }
-        self.trackers.retain(|n, _| *n >= num);
     }
 
     fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
@@ -496,6 +522,7 @@ impl Worker {
         t.votes.certificate().cloned().map(Evidence::Previous)
     }
 
+    /// Get the committee covering the given round number (if any).
     fn committee_of(&self, r: RoundNumber) -> Option<&Committee> {
         self.committees
             .iter()
@@ -592,6 +619,7 @@ impl Tracker {
 struct Message<S> {
     info: Envelope<BlockInfo, S>,
     evidence: Evidence,
+    next: BlockNumber
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
