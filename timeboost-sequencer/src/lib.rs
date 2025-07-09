@@ -119,7 +119,7 @@ impl Sequencer {
             let mut net = Network::create(
                 "sailfish",
                 cfg.sailfish_addr.clone(),
-                cfg.sign_keypair.clone(),
+                cfg.sign_keypair.public_key(),
                 cfg.dh_keypair.clone(),
                 cfg.sailfish_committee.entries(),
                 met,
@@ -161,8 +161,8 @@ impl Sequencer {
             let net = Network::create(
                 "decrypt",
                 cfg.decrypt_addr.clone(),
-                cfg.sign_keypair.clone(), // same auth
-                cfg.dh_keypair.clone(),   // same auth
+                cfg.sign_keypair.public_key(), // same label
+                cfg.dh_keypair.clone(),        // same auth
                 cfg.decrypt_committee.entries(),
                 met,
             )

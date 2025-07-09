@@ -72,7 +72,7 @@ impl BlockProducer {
         let net = Network::create(
             "block",
             cfg.address.clone(),
-            cfg.sign_keypair.clone(),
+            cfg.sign_keypair.public_key(),
             cfg.dh_keypair.clone(),
             cfg.committee.entries(),
             net_metrics,

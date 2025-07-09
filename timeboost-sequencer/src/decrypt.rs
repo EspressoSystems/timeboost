@@ -846,7 +846,7 @@ mod tests {
             let network = Network::create(
                 "decrypt",
                 addr,
-                sig_key.clone().into(),
+                sig_key.public_key(),
                 dh_key.clone().into(),
                 peers.clone(),
                 NetworkMetrics::default(),

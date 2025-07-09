@@ -62,7 +62,7 @@ fn mk_host<A, const N: usize>(
             let comm = Network::create_turmoil(
                 "test",
                 a,
-                k.clone(),
+                k.public_key(),
                 x.clone(),
                 p,
                 NetworkMetrics::default(),
@@ -114,7 +114,7 @@ fn small_committee() {
 
     sim.client("C", async move {
         let addr = (UNSPECIFIED, ports[2]);
-        let comm = Network::create_turmoil("C", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("C", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -172,7 +172,7 @@ fn medium_committee() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
@@ -229,7 +229,7 @@ fn medium_committee_partition_network() {
 
     sim.client("E", async move {
         let addr = (UNSPECIFIED, ports[4]);
-        let comm = Network::create_turmoil("E", addr, k.clone(), x, peers, NetworkMetrics::default()).await?;
+        let comm = Network::create_turmoil("E", addr, k.public_key(), x, peers, NetworkMetrics::default()).await?;
         let cfg = RbcConfig::new(k.clone(), c.id(), c.clone()).recover(false);
         let rbc = Rbc::new(10, Overlay::new(comm), cfg);
         let cons = Consensus::new(k, c, EmptyBlocks);
