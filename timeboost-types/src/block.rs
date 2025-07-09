@@ -4,7 +4,7 @@ use std::ops::{Add, Deref, Sub};
 use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, CommitteeId};
+use multisig::Certificate;
 use sailfish_types::RoundNumber;
 use serde::{Deserialize, Serialize};
 use timeboost_proto::block as proto;
@@ -189,20 +189,20 @@ impl TryFrom<proto::Block> for Block {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct BlockInfo {
     num: BlockNumber,
+    round: RoundNumber,
     hash: BlockHash,
-    committee: CommitteeId,
 }
 
 impl BlockInfo {
-    pub fn new<B, C>(num: B, hash: BlockHash, committee: C) -> Self
+    pub fn new<B, R>(num: B, r: R, hash: BlockHash) -> Self
     where
         B: Into<BlockNumber>,
-        C: Into<CommitteeId>,
+        R: Into<RoundNumber>,
     {
         Self {
             num: num.into(),
+            round: r.into(),
             hash,
-            committee: committee.into(),
         }
     }
 
@@ -210,12 +210,12 @@ impl BlockInfo {
         self.num
     }
 
-    pub fn hash(&self) -> &BlockHash {
-        &self.hash
+    pub fn round(&self) -> RoundNumber {
+        self.round
     }
 
-    pub fn committee(&self) -> CommitteeId {
-        self.committee
+    pub fn hash(&self) -> &BlockHash {
+        &self.hash
     }
 }
 
@@ -223,8 +223,8 @@ impl Committable for BlockInfo {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("BlockInfo")
             .field("num", self.num.commit())
+            .field("round", self.round.commit())
             .field("hash", self.hash.commit())
-            .field("committee", self.committee.commit())
             .finalize()
     }
 }
