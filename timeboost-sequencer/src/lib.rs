@@ -23,7 +23,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
 use tracing::{error, info, warn};
 
-use decrypt::{DecryptError, Decrypter};
+use decrypt::{Decrypter, DecrypterError};
 use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
@@ -354,7 +354,9 @@ impl Task {
                 }
                 match self.sailfish.execute(action).await {
                     Ok(Some(Event::Gc(r))) => {
-                        self.decrypter.gc(r.num()).await?;
+                        if let Err(err) = self.decrypter.gc(r.num()).await {
+                            error!(node = %self.label, %err, "decrypt gc error");
+                        }
                     }
                     Ok(Some(Event::Catchup(_))) => {
                         self.includer.clear_cache();
@@ -420,5 +422,5 @@ pub enum TimeboostError {
     TaskTerminated,
 
     #[error("decrypt error: {0}")]
-    Decrypt(#[from] DecryptError),
+    Decrypt(#[from] DecrypterError),
 }

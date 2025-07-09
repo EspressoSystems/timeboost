@@ -1,15 +1,16 @@
 use arrayvec::ArrayVec;
 use bon::Builder;
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{MAX_MESSAGE_SIZE, Network, NetworkMetrics};
+use cliquenet::{AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
 use multisig::{Committee, PublicKey};
-use sailfish::types::{Evidence, RoundNumber};
+use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
+use std::result::Result as StdResult;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
-use timeboost_types::{Bytes, DecryptionKey, InclusionList};
+use timeboost_types::{DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -17,22 +18,21 @@ use tracing::{debug, error, trace, warn};
 
 use crate::config::DecrypterConfig;
 
-type Result<T> = std::result::Result<T, DecryptError>;
+type Result<T> = std::result::Result<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
 /// Command sent to Decrypter's background worker
-enum WorkerRequest {
+#[allow(dead_code)]
+enum Command {
     // request to decrypt all encrypted transactions inside the inclusion list
     Decrypt(InclusionList),
+    /// Prepare for the next committee.
+    NextCommittee(AddressableCommittee),
+    /// Use a committee starting at the given round.
+    UseCommittee(Round),
     // request to garbage collect all states related to a round (and previous rounds)
     Gc(RoundNumber),
-}
-
-/// response from `WorkerRequest`
-enum WorkerResponse {
-    // response to decrypt request, return the decrypted inclusion list
-    Decrypt(InclusionList),
 }
 
 /// Inclusion list with status
@@ -61,12 +61,12 @@ pub struct Decrypter {
     /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
     /// of timeboost
     incls: BTreeMap<RoundNumber, Status>,
-    /// Sender end of the worker requests
-    req_tx: Sender<WorkerRequest>,
+    /// Sender end of the worker commands
+    worker_tx: Sender<Command>,
     /// Receiver end of the worker response
-    res_rx: Receiver<WorkerResponse>,
+    worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
-    jh: JoinHandle<()>,
+    worker: JoinHandle<EndOfPlay>,
 }
 
 impl Decrypter {
@@ -74,8 +74,8 @@ impl Decrypter {
     where
         M: metrics::Metrics,
     {
-        let (req_tx, req_rx) = channel(cfg.retain);
-        let (res_tx, res_rx) = channel(cfg.retain);
+        let (cmd_tx, cmd_rx) = channel(cfg.retain);
+        let (dec_tx, dec_rx) = channel(cfg.retain);
         let net_metrics = NetworkMetrics::new("decrypt", metrics, cfg.committee.parties().copied());
 
         let net = Network::create(
@@ -87,7 +87,7 @@ impl Decrypter {
             net_metrics,
         )
         .await
-        .map_err(|_| DecryptError::Shutdown)?;
+        .map_err(DecrypterError::Net)?;
 
         let worker = Worker::builder()
             .label(cfg.label)
@@ -97,8 +97,8 @@ impl Decrypter {
                 v
             })
             .net(Overlay::new(net))
-            .tx(res_tx)
-            .rx(req_rx)
+            .tx(dec_tx)
+            .rx(cmd_rx)
             .dec_sk(cfg.decryption_key)
             .last_hatched_round(RoundNumber::genesis())
             .retain(cfg.retain)
@@ -107,37 +107,37 @@ impl Decrypter {
         Ok(Self {
             label: cfg.label,
             incls: BTreeMap::new(),
-            req_tx,
-            res_rx,
-            jh: spawn(worker.go()),
+            worker_tx: cmd_tx,
+            worker_rx: dec_rx,
+            worker: spawn(worker.go()),
         })
     }
 
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
-        self.req_tx.capacity() > 0 && self.res_rx.capacity() > 0
+        self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
     }
 
     /// Garbage collect cached state of `r` (and prior) rounds
-    pub async fn gc(&mut self, r: RoundNumber) -> Result<()> {
-        self.req_tx
-            .send(WorkerRequest::Gc(r))
+    pub async fn gc(&mut self, r: RoundNumber) -> StdResult<(), DecrypterDown> {
+        self.worker_tx
+            .send(Command::Gc(r))
             .await
-            .map_err(|_| DecryptError::Shutdown)
+            .map_err(|_| DecrypterDown(()))
     }
 
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
     /// decrypter will process any encrypted/unencrypted inclusion list
-    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
+    pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
 
         if incl.is_encrypted() {
-            self.req_tx
-                .send(WorkerRequest::Decrypt(incl))
+            self.worker_tx
+                .send(Command::Decrypt(incl))
                 .await
-                .map_err(|_| DecryptError::Shutdown)?;
+                .map_err(|_| DecrypterDown(()))?;
             self.incls.insert(round, Status::Encrypted);
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
@@ -149,7 +149,7 @@ impl Decrypter {
     }
 
     /// Produces decrypted inclusion lists ordered by round number
-    pub async fn next(&mut self) -> Result<InclusionList> {
+    pub async fn next(&mut self) -> StdResult<InclusionList, DecrypterDown> {
         // first try to return the first inclusion list if it's already decrypted
         if let Some(entry) = self.incls.first_entry() {
             if matches!(entry.get(), Status::Decrypted(_)) {
@@ -160,7 +160,7 @@ impl Decrypter {
         }
 
         // normal loop: try to receive the next decrypted inclusion list
-        while let Some(WorkerResponse::Decrypt(dec_incl)) = self.res_rx.recv().await {
+        while let Some(dec_incl) = self.worker_rx.recv().await {
             let round = dec_incl.round();
             // update decrypter cache of inclusion list
             debug!(
@@ -188,13 +188,13 @@ impl Decrypter {
                 }
             }
         }
-        Err(DecryptError::Shutdown)
+        Err(DecrypterDown(()))
     }
 }
 
 impl Drop for Decrypter {
     fn drop(&mut self) {
-        self.jh.abort()
+        self.worker.abort()
     }
 }
 
@@ -213,10 +213,10 @@ struct Worker {
     net: Overlay,
     /// decryption committees
     committees: ArrayVec<(RoundNumber, Committee), MAX_COMMITTEES>,
-    /// channel for sending results back to parent
-    tx: Sender<WorkerResponse>,
+    /// channel for sending inclusion lists back to parent
+    tx: Sender<InclusionList>,
     /// channel for receiving commands from the parent
-    rx: Receiver<WorkerRequest>,
+    rx: Receiver<Command>,
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
@@ -245,79 +245,53 @@ struct Worker {
 
 impl Worker {
     // entry point of `worker` thread, it runs in a loop until shutdown or out of channel capacity.
-    pub async fn go(mut self) {
+    pub async fn go(mut self) -> EndOfPlay {
         let node = self.label;
 
         loop {
             // each event loop is triggered by receiving one of the following
-            // - a new request from Decrypter
             // - batch of decrypted shares from other decrypters
+            // - a new request from Decrypter
             tokio::select! {
+                // receiving a batch of decrypted shares from other decrypters
+                msg = self.net.receive() => match msg {
+                    Ok((src, data)) => {
+                        match self.on_message(src, data).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, %src, "error on message")
+                        }
+                    },
+                    Err(err) => {
+                        let _: NetworkDown = err;
+                        debug!(node = %self.label, "network down");
+                        return EndOfPlay::NetworkDown
+                    }
+                },
                 // receiving a request from the decrypter
-                val = self.rx.recv() => match val {
-                    Some(WorkerRequest::Decrypt(incl)) => {
+                cmd = self.rx.recv() => match cmd {
+                    Some(Command::Decrypt(incl)) => {
                         let round = incl.round();
                         trace!(%node, %round, "decrypt request");
 
                         match self.on_decrypt_request(round, incl).await {
-                            Err(DecryptError::Shutdown) => return,
-                            Err(err) => {
-                                error!(%node, %round, %err, "failed to process decrypt request");
-                                continue;
-                            },
-                            _ => trace!(%node, %round, "decrypt request... done"),
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %round, %err, "error on decrypt request")
                         }
                     },
-                    Some(WorkerRequest::Gc(round))=> {
-                        trace!(%node, %round, "gc request");
-                        if let Err(err) = self.on_gc_request(round).await {
-                            error!(%node, %round, %err, "failed to gc");
+                    Some(Command::Gc(round))=> {
+                        match self.on_gc_request(round).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, "error on gc request")
                         }
-                        trace!(%node, %round, "gc request... done");
                         continue;
                     },
+                    Some(_) => { /* todo: dynamic committees */ },
                     None => {
-                        debug!(%node, "decrypter has shutdown, shutting down its worker");
-                        return;
-                    }
-                },
-
-                // receiving a batch of decrypted shares from other decrypters
-                val = self.net.receive() => match val {
-                    Ok((src, data)) => {
-                        // ignore msg sent to self during broadcast
-                        if src == self.label {
-                            continue;
-                        }
-                        let Ok(dec_shares) = deserialize::<DecShareBatch>(&data) else {
-                            error!(%node, from = %src, "failed to deserialize decrypted shares");
-                            continue;
-                        };
-
-                        let round = dec_shares.round;
-                        // if already sent for this round, `src` will be re-inserted, thus returns false
-                        // in which case we skip processing this message since this peer has already sent once
-                        if !self.acks.entry(round).or_default().insert(src) {
-                            continue;
-                        };
-                        trace!(%node, from=%src, %round, "receive decrypted shares");
-
-                        if round <= self.last_hatched_round || round < self.oldest_cached_round() {
-                            // shares for which the ciphertexts have already hatched
-                            // or shares that are older than the first ciphertext in
-                            // the local cache are not inserted.
-                            continue;
-                        }
-                        if let Err(err) = self.insert_shares(dec_shares) {
-                            error!(%node, from = %src, %round, %err, "failed to process decrypted shares");
-                            continue;
-                        }
-                        trace!(%node, from = %src, %round, "receive decrypted shares... done");
-                    },
-                    Err(e) => {
-                        let _: NetworkDown = e; // ensure err type
-                        debug!(%node, "overlay network has shut down, shutting down worker");
-                        return;
+                        debug!(node = %self.label, "parent down");
+                        return EndOfPlay::DecrypterDown
                     }
                 },
             }
@@ -333,16 +307,45 @@ impl Worker {
             let round = self.oldest_cached_round();
             match self.hatch(round) {
                 Ok(Some(incl)) => {
-                    if let Err(err) = self.tx.send(WorkerResponse::Decrypt(incl.clone())).await {
+                    if let Err(err) = self.tx.send(incl.clone()).await {
                         error!(%node, %err, "failed to send hatched inclusion list");
-                        return;
+                        return EndOfPlay::DecrypterDown;
                     }
-                    debug!(%node, %round, "hatch inclusion list... done");
+                    trace!(%node, %round, "hatch inclusion list... done");
                 }
                 Err(err) => warn!(%node, %round, %err, "failed to hatch"),
                 Ok(None) => continue,
             }
         }
+    }
+
+    /// A batch of decryption shares from another node has been received.
+    async fn on_message(&mut self, src: PublicKey, data: Bytes) -> Result<()> {
+        debug!(node = %self.label, %src, "incoming message");
+        // ignore msg sent to self during broadcast
+        if src == self.label {
+            return Ok(());
+        }
+        let dec_shares = deserialize::<DecShareBatch>(&data)?;
+
+        let round = dec_shares.round;
+        // if already sent for this round, `src` will be re-inserted, thus returns false
+        // in which case we skip processing this message since this peer has already sent once
+        if !self.acks.entry(round).or_default().insert(src) {
+            return Ok(());
+        };
+
+        if round <= self.last_hatched_round || round < self.oldest_cached_round() {
+            // shares for which the ciphertexts have already hatched
+            // or shares that are older than the first ciphertext in
+            // the local cache are not inserted.
+            return Ok(());
+        }
+        trace!(node = %self.label, from=%src, %round, "inserting decrypted shares");
+
+        self.insert_shares(dec_shares)?;
+
+        Ok(())
     }
 
     /// returns the oldest round number in locally cached decryption shares (w/ smallest round
@@ -359,12 +362,13 @@ impl Worker {
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
         let dec_shares = self.decrypt(round, &incl);
         if dec_shares.is_empty() {
-            return Err(DecryptError::EmptyDecShares);
+            return Err(DecrypterError::EmptyDecShares);
         }
 
         self.net
             .broadcast(round.u64(), serialize(&dec_shares)?)
-            .await?;
+            .await
+            .map_err(|e| DecrypterError::End(e.into()))?;
         self.insert_shares(dec_shares)?;
         self.incls.insert(round, incl);
 
@@ -448,7 +452,7 @@ impl Worker {
     fn insert_shares(&mut self, batch: DecShareBatch) -> Result<()> {
         if batch.is_empty() {
             trace!(node = %self.label, "empty decryption share batch, skipped");
-            return Err(DecryptError::EmptyDecShares);
+            return Err(DecrypterError::EmptyDecShares);
         }
         let round = batch.round;
         // Validate evidence:
@@ -457,7 +461,7 @@ impl Worker {
 
             let Some(committee) = self.round_committee(pred) else {
                 warn!(node = %self.label, %round, "no committee for evidence round");
-                return Err(DecryptError::NoCommitteeForRound(pred));
+                return Err(DecrypterError::NoCommitteeForRound(pred));
             };
 
             let is_valid_evidence = match &batch.evidence {
@@ -474,7 +478,7 @@ impl Worker {
                     evidence = %batch.evidence.round(),
                     "invalid evidence"
                 );
-                return Err(DecryptError::MissingRoundEvidence(round));
+                return Err(DecrypterError::MissingRoundEvidence(round));
             }
         }
         // This operation is doing the following: assumme local cache for this round is:
@@ -576,7 +580,7 @@ impl Worker {
                         // not ready to hatch this ciphertext, thus the containing inclusion list
                         return Ok(None);
                     }
-                    Err(e) => return Err(DecryptError::Decryption(e)),
+                    Err(e) => return Err(DecrypterError::Decryption(e)),
                 }
             } else {
                 decrypted.push(None);
@@ -592,7 +596,7 @@ impl Worker {
             .for_each(|(pb, opt_plaintext)| {
                 num_encrypted_priority_bundles += 1;
                 match opt_plaintext {
-                    Some(pt) => pb.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    Some(pt) => pb.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
                     // None means garbage (undecryptable ciphertext), simply mark as decrypted
                     None => pb.set_data(pb.bundle().data().clone()),
                 }
@@ -603,13 +607,13 @@ impl Worker {
             .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
             .for_each(|(bundle, opt_plaintext)| {
                 match opt_plaintext {
-                    Some(pt) => bundle.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    Some(pt) => bundle.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
                     // None means garbage (undecryptable ciphertext), simply mark as decrypted
                     None => bundle.set_data(bundle.data().clone()),
                 }
             });
         if incl.is_encrypted() {
-            return Err(DecryptError::Internal(
+            return Err(DecrypterError::Internal(
                 "didn't fully decrypt inclusion list".to_string(),
             ));
         }
@@ -674,22 +678,29 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("decrypter down")]
+pub struct DecrypterDown(());
+
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum DecryptError {
-    #[error("decryption error: {0}")]
-    Decryption(#[from] ThresholdEncError),
+pub enum DecrypterError {
+    #[error("network error: {0}")]
+    Net(#[from] NetworkError),
+
+    #[error("terminal error: {0}")]
+    End(#[from] EndOfPlay),
 
     #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
+    Encode(#[from] bincode::error::EncodeError),
 
     #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    Decode(#[from] bincode::error::DecodeError),
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
 
-    #[error("decrypter has shut down")]
-    Shutdown,
+    #[error("decryption error: {0}")]
+    Decryption(#[from] ThresholdEncError),
 
     #[error("unexpected internal err: {0}")]
     Internal(String),
@@ -707,9 +718,18 @@ pub enum DecryptError {
     NoCommitteeForRound(RoundNumber),
 }
 
-impl From<NetworkDown> for DecryptError {
+/// Fatal errors.
+#[derive(Debug, thiserror::Error)]
+pub enum EndOfPlay {
+    #[error("network down")]
+    NetworkDown,
+    #[error("decrypter down")]
+    DecrypterDown,
+}
+
+impl From<NetworkDown> for EndOfPlay {
     fn from(_: NetworkDown) -> Self {
-        Self::Shutdown
+        Self::NetworkDown
     }
 }
 
