@@ -75,7 +75,7 @@ impl BlockProducer {
         let net = Network::create(
             "block",
             cfg.address.clone(),
-            cfg.sign_keypair.clone(),
+            cfg.sign_keypair.public_key(),
             cfg.dh_keypair.clone(),
             cfg.committee.entries(),
             net_metrics,
@@ -364,7 +364,7 @@ impl Worker {
         let msg = Message {
             info: Envelope::signed(info.clone(), &self.keypair),
             evidence: evi,
-            next: self.next_block.unwrap_or_default()
+            next: self.next_block.unwrap_or_default(),
         };
 
         if tracker.block.is_none() {
@@ -619,7 +619,7 @@ impl Tracker {
 struct Message<S> {
     info: Envelope<BlockInfo, S>,
     evidence: Evidence,
-    next: BlockNumber
+    next: BlockNumber,
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {

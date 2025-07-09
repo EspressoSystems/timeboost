@@ -1,7 +1,7 @@
 use bon::Builder;
 use cliquenet as net;
 use cliquenet::AddressableCommittee;
-use multisig::{Committee, Keypair, PublicKey, x25519};
+use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
 use timeboost_types::{Address, DecryptionKey, DelayedInboxIndex};
@@ -96,9 +96,11 @@ impl SequencerConfig {
     pub fn decrypter_config(&self) -> DecrypterConfig {
         DecrypterConfig::builder()
             .label(self.sign_keypair.public_key())
-            .retain(self.leash_len)
+            .address(self.decrypt_addr.clone())
+            .dh_keypair(self.dh_keypair.clone())
             .decryption_key(self.decryption_key.clone())
-            .committee(self.decrypt_committee.committee().clone())
+            .committee(self.decrypt_committee.clone())
+            .retain(self.leash_len)
             .build()
     }
 }
@@ -106,7 +108,9 @@ impl SequencerConfig {
 #[derive(Debug, Clone, Builder)]
 pub struct DecrypterConfig {
     pub(crate) label: PublicKey,
-    pub(crate) retain: usize,
-    pub(crate) committee: Committee,
+    pub(crate) address: net::Address,
+    pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) decryption_key: DecryptionKey,
+    pub(crate) committee: AddressableCommittee,
+    pub(crate) retain: usize,
 }

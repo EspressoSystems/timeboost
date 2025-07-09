@@ -23,7 +23,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
 use tracing::{error, info, warn};
 
-use decrypt::{DecryptError, Decrypter};
+use decrypt::{Decrypter, DecrypterError};
 use include::Includer;
 use queue::BundleQueue;
 use sort::Sorter;
@@ -119,7 +119,7 @@ impl Sequencer {
             let mut net = Network::create(
                 "sailfish",
                 cfg.sailfish_addr.clone(),
-                cfg.sign_keypair.clone(),
+                cfg.sign_keypair.public_key(),
                 cfg.dh_keypair.clone(),
                 cfg.sailfish_committee.entries(),
                 met,
@@ -154,22 +154,7 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = {
-            let met =
-                NetworkMetrics::new("decrypt", metrics, cfg.decrypt_committee.parties().copied());
-
-            let net = Network::create(
-                "decrypt",
-                cfg.decrypt_addr.clone(),
-                cfg.sign_keypair.clone(), // same auth
-                cfg.dh_keypair.clone(),   // same auth
-                cfg.decrypt_committee.entries(),
-                met,
-            )
-            .await?;
-
-            Decrypter::new(cfg.decrypter_config(), Overlay::new(net))
-        };
+        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
@@ -369,7 +354,9 @@ impl Task {
                 }
                 match self.sailfish.execute(action).await {
                     Ok(Some(Event::Gc(r))) => {
-                        self.decrypter.gc(r.num()).await?;
+                        if let Err(err) = self.decrypter.gc(r.num()).await {
+                            error!(node = %self.label, %err, "decrypt gc error");
+                        }
                     }
                     Ok(Some(Event::Catchup(_))) => {
                         self.includer.clear_cache();
@@ -435,5 +422,5 @@ pub enum TimeboostError {
     TaskTerminated,
 
     #[error("decrypt error: {0}")]
-    Decrypt(#[from] DecryptError),
+    Decrypt(#[from] DecrypterError),
 }
