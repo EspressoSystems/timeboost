@@ -100,9 +100,6 @@ impl Decrypter {
             .tx(res_tx)
             .rx(req_rx)
             .dec_sk(cfg.decryption_key)
-            .dec_shares(BTreeMap::default())
-            .acks(BTreeMap::default())
-            .incls(BTreeMap::default())
             .last_hatched_round(RoundNumber::genesis())
             .retain(cfg.retain)
             .build();
@@ -233,11 +230,14 @@ struct Worker {
     /// ciphertext payload from the inclusion list `self.incls` of the same round
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
+    #[builder(default)]
     dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
     /// Acknowledgement of the set of peers whose decryption share for a round has been received
     /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
+    #[builder(default)]
     acks: BTreeMap<RoundNumber, HashSet<PublicKey>>,
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
+    #[builder(default)]
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// the latest rounds whose ciphertexts are hatched
     last_hatched_round: RoundNumber,
