@@ -58,7 +58,7 @@ impl TestableNetwork for BasicNetworkTest {
             let net = Network::create(
                 "test",
                 addr,
-                kpr.clone(),
+                kpr.public_key(),
                 xpr.clone(),
                 self.group.peers.clone(),
                 NetworkMetrics::default(),

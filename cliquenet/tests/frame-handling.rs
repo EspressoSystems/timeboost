@@ -33,7 +33,7 @@ async fn multiple_frames() {
         Network::create(
             "f1",
             all_parties[0].2,
-            party_a_sign,
+            party_a_sign.public_key(),
             party_a_dh,
             all_parties,
             NetworkMetrics::default(),
@@ -45,7 +45,7 @@ async fn multiple_frames() {
         Network::create(
             "f2",
             all_parties[1].2,
-            party_b_sign,
+            party_b_sign.public_key(),
             party_b_dh,
             all_parties,
             NetworkMetrics::default(),
