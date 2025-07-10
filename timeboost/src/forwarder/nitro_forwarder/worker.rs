@@ -56,7 +56,6 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashSet,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         sync::{
             Arc,
