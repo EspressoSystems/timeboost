@@ -26,6 +26,7 @@ pub trait VerifiableSecretSharing {
     fn share<R: Rng>(
         pp: &Self::PublicParam,
         rng: &mut R,
+        // TODO(alex): consider accept Zeroizing<Self::Secret> instead
         secret: Self::Secret,
     ) -> (Vec<Self::SecretShare>, Self::Commitment);
 

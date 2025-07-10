@@ -2,6 +2,7 @@
 
 use ark_ec::CurveGroup;
 use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
+use ark_serialize::serialize_to_vec;
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
 use std::{iter::successors, num::NonZeroU32};
@@ -29,6 +30,44 @@ impl FeldmanVssPublicParam {
     }
 }
 
+impl<C: CurveGroup> FeldmanVss<C> {
+    /// sample a random polynomial for VSS `secret`, returns the poly and its feldman commitment
+    pub(crate) fn rand_poly_and_commit<R: Rng>(
+        pp: &FeldmanVssPublicParam,
+        secret: C::ScalarField,
+        rng: &mut R,
+    ) -> (DensePolynomial<C::ScalarField>, Vec<C::Affine>) {
+        // sample random polynomial of degree t-1 (s.t. any t evaluations can interpolate this poly)
+        // f(X) = Sum a_i * X^i
+        let mut poly = DensePolynomial::<C::ScalarField>::rand(pp.t.get() as usize - 1, rng);
+        // f(0) = a_0 set to the secret, this index access will never panic since t>0
+        poly.coeffs[0] = secret;
+
+        // prepare commitment, u = (g^a_0, g^a_1, ..., g^a_t-1)
+        let commitment = C::generator().batch_mul(&poly.coeffs);
+
+        (poly, commitment)
+    }
+
+    /// given a secret-embedded polynomial, compute the Shamir secret shares
+    /// node i \in {0,.. ,n-1} get f(i+1)
+    pub(crate) fn compute_shares(
+        pp: &FeldmanVssPublicParam,
+        poly: &DensePolynomial<C::ScalarField>,
+    ) -> impl Iterator<Item = C::ScalarField> {
+        (0..pp.n.get()).map(|node_idx| poly.evaluate(&(node_idx + 1).into()))
+    }
+
+    /// same as [`Self::compute_shares()`], but output an iterator of bytes
+    pub(crate) fn compute_serialized_shares(
+        pp: &FeldmanVssPublicParam,
+        poly: &DensePolynomial<C::ScalarField>,
+    ) -> impl Iterator<Item = Vec<u8>> {
+        Self::compute_shares(pp, poly)
+            .map(|s| serialize_to_vec![s].expect("ark_serialize valid shares never panic"))
+    }
+}
+
 impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
     type PublicParam = FeldmanVssPublicParam;
     type Secret = C::ScalarField;
@@ -40,21 +79,9 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         rng: &mut R,
         secret: Self::Secret,
     ) -> (Vec<Self::SecretShare>, Self::Commitment) {
-        // sample random polynomial of degree t-1 (s.t. any t evaluations can interpolate this poly)
-        // f(X) = Sum a_i * X^i
-        let mut poly = DensePolynomial::<Self::Secret>::rand(pp.t.get() as usize - 1, rng);
-        // f(0) = a_0 set to the secret, this index access will never panic since t>0
-        poly.coeffs[0] = secret;
-
-        // prepare shares, node i \in {0,.. ,n-1} get f(i+1)
-        let shares: Vec<Self::SecretShare> = (0..pp.n.get())
-            .map(|node_idx| poly.evaluate(&(node_idx + 1).into()))
-            .collect();
-
-        // prepare commitment, u = (g^a_0, g^a_1, ..., g^a_t-1)
-        let commitment = C::generator().batch_mul(&poly.coeffs);
-
-        (shares, commitment)
+        let (poly, comm) = Self::rand_poly_and_commit(pp, secret, rng);
+        let shares = Self::compute_shares(pp, &poly).collect();
+        (shares, comm)
     }
 
     fn verify(

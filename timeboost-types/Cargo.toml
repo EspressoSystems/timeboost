@@ -10,8 +10,8 @@ arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
 
 [dependencies]
 alloy-consensus = { workspace = true }
-alloy-primitives = { workspace = true }
 alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
