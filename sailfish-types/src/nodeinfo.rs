@@ -14,6 +14,7 @@ impl<T: Default + PartialOrd + Clone> NodeInfo<T> {
         }
     }
 
+    /// Store a value of a party.
     pub fn record(&mut self, k: &PublicKey, new: T) -> bool {
         let Some(i) = self.nodes.iter().position(|(p, _)| p == k) else {
             return false;
@@ -41,7 +42,7 @@ impl<T: Default + PartialOrd + Clone> NodeInfo<T> {
         true
     }
 
-    /// Gets the smallest round number the quorum of nodes has committed.
+    /// Gets the lower bound of the highest quorum interval.
     pub fn quorum(&self) -> T {
         debug_assert!(self.quorum <= self.nodes.len());
         self.nodes[self.quorum - 1].1.clone()
