@@ -3,7 +3,6 @@ use std::result::Result as StdResult;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use arrayvec::ArrayVec;
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
@@ -12,12 +11,11 @@ use cliquenet::{
 };
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{
-    Certificate, Committee, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked,
-    VoteAccumulator,
+    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked, VoteAccumulator,
 };
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use timeboost_types::sailfish::{Round, RoundNumber};
+use timeboost_types::sailfish::{CommitteeVec, NodeInfo, Round, RoundNumber};
 use timeboost_types::{Block, BlockInfo, BlockNumber, CertifiedBlock};
 use tokio::select;
 use tokio::spawn;
@@ -28,6 +26,8 @@ use tracing::{debug, error, info, warn};
 use crate::BlockProducerConfig;
 
 type Result<T> = StdResult<T, ProducerError>;
+
+const CAPACITY: usize = 128;
 
 pub struct BlockProducer {
     /// Log label of the node.
@@ -64,8 +64,8 @@ impl BlockProducer {
     where
         M: metrics::Metrics,
     {
-        let (cmd_tx, cmd_rx) = channel(cfg.retain);
-        let (crt_tx, crt_rx) = channel(cfg.retain);
+        let (cmd_tx, cmd_rx) = channel(CAPACITY);
+        let (crt_tx, crt_rx) = channel(CAPACITY);
 
         let net_metrics = NetworkMetrics::new("block", metrics, cfg.committee.parties().copied());
 
@@ -81,19 +81,16 @@ impl BlockProducer {
 
         let worker = Worker::builder()
             .label(cfg.sign_keypair.public_key())
-            .committees({
-                let mut v = ArrayVec::new();
-                v.push((RoundNumber::genesis(), cfg.committee.committee().clone()));
-                v
-            })
+            .committees(CommitteeVec::new(cfg.committee.committee().clone()))
+            .current(cfg.committee.committee().id())
             .keypair(cfg.sign_keypair.clone())
             .net(Overlay::new(net))
             .tx(crt_tx)
             .rx(cmd_rx)
             .tracking(Default::default())
-            .next_committee(NextCommittee::None)
-            .retain(cfg.retain)
             .maybe_next_block((!cfg.recover).then(BlockNumber::genesis))
+            .info(NodeInfo::new(cfg.committee.committee()))
+            .history(cfg.committee.committee().quorum_size().get() as u64)
             .build();
 
         Ok(Self {
@@ -185,9 +182,6 @@ impl Handle {
     }
 }
 
-/// Max. supported number of committees.
-const MAX_COMMITTEES: usize = 2;
-
 #[derive(Builder)]
 struct Worker {
     /// Our signing keypair.
@@ -200,13 +194,13 @@ struct Worker {
     net: Overlay,
 
     /// The committees of block signers.
-    ///
-    /// The round number denotes the start of the epoch where a
-    /// committee is active.
-    committees: ArrayVec<(RoundNumber, Committee), MAX_COMMITTEES>,
+    committees: CommitteeVec<2>,
 
-    /// The next committee to use, if any.
-    next_committee: NextCommittee,
+    /// Current committee ID.
+    current: CommitteeId,
+
+    /// The next committee ID and its round number (if any).
+    next_committee: Option<Round>,
 
     /// Command channel receiver.
     rx: Receiver<Command>,
@@ -219,7 +213,7 @@ struct Worker {
 
     /// Blocks to certify that wait for `Evidence` of previous rounds.
     #[builder(default)]
-    pending: HashMap<BlockNumber, Block>,
+    pending: HashMap<BlockNumber, (Block, BlockInfo)>,
 
     /// The next expected block to deliver.
     next_block: Option<BlockNumber>,
@@ -228,20 +222,16 @@ struct Worker {
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
 
-    /// Keep the given number of blocks around when garbage collecting.
-    retain: usize,
+    /// Quorum of block numbers to use with garbage collection.
+    info: NodeInfo<BlockNumber>,
+
+    /// How many extra blocks to keep before GC.
+    history: u64,
 }
 
 #[derive(Default)]
 struct Tracking {
-    /// We keep one tracker per block info.
-    ///
-    /// The reason for that is that a `VoteAccumulator` corresponds to one
-    /// committee and the block info contains a committee ID that is used
-    /// to select the committee. The committee can therefore not be subject
-    /// to voting.
-    trackers: BTreeMap<BlockInfo, Tracker>,
-    /// We remember the voters and only allow one vote per party and block number.
+    trackers: HashMap<BlockInfo, Tracker>,
     voters: SmallVec<[KeyId; 16]>,
 }
 
@@ -252,22 +242,6 @@ struct Tracker {
     block: Option<Block>,
     /// The vote accumulator for the block info.
     votes: VoteAccumulator<BlockInfo>,
-}
-
-/// Information about the next committee.
-enum NextCommittee {
-    /// None expected
-    None,
-    /// A new committee is known, but we have no round number yet.
-    Next(Committee),
-    /// We wait for the given round before we activate the next committee.
-    ActivateIn(RoundNumber),
-}
-
-impl NextCommittee {
-    fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
 }
 
 impl Worker {
@@ -295,10 +269,10 @@ impl Worker {
                             Err(err) => warn!(node = %self.label, %err, "error on certify request")
                         }
                     Some(Command::NextCommittee(c)) =>
-                        if let Err(err) = self.on_next_committee(c).await {
-                            let _: NetworkDown = err;
-                            debug!(node = %self.label, "network down");
-                            return EndOfPlay::NetworkDown
+                        match self.on_next_committee(c).await {
+                            Ok(()) => {}
+                            Err(ProducerError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, "error on use committee")
                         }
                     Some(Command::UseCommittee(r)) =>
                         match self.on_use_committee(r).await {
@@ -328,22 +302,18 @@ impl Worker {
         self.clock = block.round();
         self.maybe_switch_committee().await?;
 
-        let Some(committee) = self.round_committee(block.round()).cloned() else {
-            error!(node = %self.label, round = %block.round(), "no committee for round");
-            return Err(ProducerError::NoCommitteeForRound(block.round()));
-        };
-
-        let info = BlockInfo::new(num, *block.hash(), committee.id());
+        let round = Round::new(block.round(), self.current);
+        let info = BlockInfo::new(num, round, *block.hash());
 
         let Some(evi) = self.evidence(num) else {
             debug!(
                 node  = %self.label,
-                round = %block.round(),
+                round = %round,
                 num   = %num,
                 hash  = ?block.hash(),
                 "stashing block until evidence is available"
             );
-            self.pending.insert(info.num(), block);
+            self.pending.insert(info.num(), (block, info));
             return Ok(());
         };
 
@@ -360,9 +330,9 @@ impl Worker {
             "propose block hash"
         );
 
-        let Some(committee) = self.round_committee(block.round()).cloned() else {
-            error!(node = %self.label, round = %block.round(), "no committee for round");
-            return Err(ProducerError::NoCommitteeForRound(block.round()));
+        let Some(committee) = self.committees.get(info.round().committee()).cloned() else {
+            error!(node = %self.label, committee = %info.round().committee(), "no committee");
+            return Err(ProducerError::NoCommittee(info.round().committee()));
         };
 
         let tracker = self
@@ -382,6 +352,7 @@ impl Worker {
         let msg = Message {
             info: Envelope::signed(info.clone(), &self.keypair),
             evidence: evi,
+            next: self.next_block.unwrap_or_default(),
         };
 
         if tracker.block.is_none() {
@@ -403,8 +374,14 @@ impl Worker {
 
         let msg: Message<Unchecked> = deserialize(&data)?;
 
-        let Some(committee) = self.committee(msg.info.data().committee()).cloned() else {
-            return Err(ProducerError::NoCommittee(msg.info.data().committee()));
+        let Some(committee) = self
+            .committees
+            .get(msg.info.data().round().committee())
+            .cloned()
+        else {
+            return Err(ProducerError::NoCommittee(
+                msg.info.data().round().committee(),
+            ));
         };
 
         let Some(info) = msg.info.validated(&committee) else {
@@ -422,6 +399,8 @@ impl Worker {
             );
             return Ok(());
         }
+
+        self.info.record(&src, msg.next);
 
         let tracking = self.tracking.entry(info.data().num()).or_default();
 
@@ -451,13 +430,8 @@ impl Worker {
             Ok(Some(cert)) => {
                 tracking.voters.push(kid);
                 // Check if a waiting block can be broadcasted, now that new evidence exists.
-                if let Some(b) = self.pending.remove(&(num + 1)) {
+                if let Some((b, i)) = self.pending.remove(&(num + 1)) {
                     let e = Evidence::Previous(cert.clone());
-                    let Some(c) = self.round_committee(b.round()) else {
-                        error!(node = %self.label, round = %b.round(), "no committee for round");
-                        return Err(ProducerError::NoCommitteeForRound(b.round()));
-                    };
-                    let i = BlockInfo::new(num + 1, *b.hash(), c.id());
                     self.send(b, i, e).await?
                 }
             }
@@ -474,6 +448,28 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
+        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
+
+        // Check if we need to catch up to the others.
+        if self
+            .next_block
+            .map(|n| n + self.history < lower_bound)
+            .unwrap_or(false)
+        {
+            debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
+            // To catch up we first discard everything too old.
+            self.next_block = Some(lower_bound);
+            self.gc(lower_bound);
+            // Now we look for the first block number which has a certificate
+            // available and continue from there.
+            for (i, t) in self.tracking.values().flat_map(|t| t.trackers.iter()) {
+                if t.deliver(&self.tx).await? {
+                    self.next_block = Some(i.num() + 1);
+                    break;
+                }
+            }
+        }
+
         let start = self.next_block;
 
         'main: loop {
@@ -504,19 +500,17 @@ impl Worker {
         }
 
         if start != self.next_block {
-            self.gc();
+            self.gc(lower_bound);
         }
 
         Ok(())
     }
 
-    fn gc(&mut self) {
-        let Some(next) = self.next_block else { return };
-        let num: BlockNumber = next.saturating_sub(self.retain as u64).into();
-        if *num > 0 {
-            self.net.gc(*num)
+    fn gc(&mut self, lower_bound: BlockNumber) {
+        if !lower_bound.is_genesis() {
+            self.net.gc(*lower_bound);
+            self.tracking.retain(|n, _| *n >= lower_bound);
         }
-        self.tracking.retain(|n, _| *n >= num);
     }
 
     fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
@@ -525,77 +519,55 @@ impl Worker {
         }
         let t = self.tracking.get(&(num - 1))?;
         for t in t.trackers.values() {
-            if let Some(cert) = t.votes.certificate() {
-                return Some(Evidence::Previous(cert.clone()));
+            if let Some(cert) = t.votes.certificate().cloned() {
+                return Some(Evidence::Previous(cert));
             }
         }
         None
     }
 
-    fn committee(&self, i: CommitteeId) -> Option<&Committee> {
-        self.committees
-            .iter()
-            .find_map(|(_, c)| (c.id() == i).then_some(c))
-    }
-
-    fn round_committee(&self, r: RoundNumber) -> Option<&Committee> {
-        self.committees
-            .iter()
-            .find_map(|(n, c)| (r >= *n).then_some(c))
-    }
-
-    /// Add the next committee.
-    ///
-    /// This adds any new parties to the network and stores the committee as
-    /// the next one to use.
-    async fn on_next_committee(&mut self, c: AddressableCommittee) -> StdResult<(), NetworkDown> {
+    async fn on_next_committee(&mut self, c: AddressableCommittee) -> Result<()> {
         info!(node = %self.label, committee = %c.committee().id(), "add next committee");
-        if !self.next_committee.is_none() {
-            error!(node = %self.label, id = %c.committee().id(), "next committee already pending");
+        if self.committees.contains(c.committee().id()) {
+            warn!(node = %self.label, committee = %c.committee().id(), "committee already added");
             return Ok(());
         }
-        if let Some(current) = self.round_committee(self.clock) {
-            let mut additional = Vec::new();
-            for (k, x, a) in c.entries().filter(|(k, ..)| !current.contains_key(k)) {
-                additional.push((k, x, a))
-            }
-            self.net.add(additional).await?;
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(ProducerError::NoCommittee(self.current));
+        };
+        let mut additional = Vec::new();
+        for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
+            additional.push((k, x, a))
         }
-        self.next_committee = NextCommittee::Next(c.committee().clone());
+        self.net
+            .add(additional)
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
+        self.committees.add(c.committee().clone());
         Ok(())
     }
 
-    /// Use a committee starting at the given round.
-    ///
-    /// Assuming the committee ID corresponds to the next committee we move it
-    /// into our committee collection with the round number as its epoch start.
     async fn on_use_committee(&mut self, round: Round) -> Result<()> {
         info!(node = %self.label, %round, "use committee");
-        let NextCommittee::Next(committee) = &self.next_committee else {
-            error!(node = %self.label, %round, "committee to use does not exist");
+        if self.committees.get(round.committee()).is_none() {
+            error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");
             return Err(ProducerError::NoCommittee(round.committee()));
         };
-        if committee.id() != round.committee() {
-            error!(node = %self.label, next = %committee.id(), %round, "unexpected committee to use");
-            return Err(ProducerError::NoCommittee(round.committee()));
-        }
-        self.committees.truncate(MAX_COMMITTEES - 1);
-        self.committees.insert(0, (round.num(), committee.clone()));
-        self.next_committee = NextCommittee::ActivateIn(round.num());
+        self.next_committee = Some(round);
         Ok(())
     }
 
-    /// Activate a committee at the correct round number.
     async fn maybe_switch_committee(&mut self) -> Result<()> {
-        let NextCommittee::ActivateIn(start) = self.next_committee else {
+        let Some(start) = self.next_committee else {
             return Ok(());
         };
-        if self.clock < start {
+        if self.clock < start.num() {
             return Ok(());
         }
-        let Some(committee) = self.round_committee(start).cloned() else {
-            error!(node = %self.label, "committee to activate does not exist");
-            return Err(ProducerError::NoCommitteeForRound(start));
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(ProducerError::NoCommittee(self.current));
         };
         let old = self
             .net
@@ -611,7 +583,8 @@ impl Worker {
             .assign(Role::Active, committee.parties().copied().collect())
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        self.next_committee = NextCommittee::None;
+        self.current = start.committee();
+        self.history = committee.quorum_size().get() as u64;
         Ok(())
     }
 }
@@ -634,6 +607,7 @@ impl Tracker {
 struct Message<S> {
     info: Envelope<BlockInfo, S>,
     evidence: Evidence,
+    next: BlockNumber,
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
@@ -677,9 +651,6 @@ pub enum ProducerError {
 
     #[error("unknown committee: {0}")]
     NoCommittee(CommitteeId),
-
-    #[error("no committee for round: {0}")]
-    NoCommitteeForRound(RoundNumber),
 }
 
 /// Fatal errors.
@@ -714,18 +685,11 @@ impl Evidence {
         }
     }
 
-    fn is_valid<const N: usize>(
-        &self,
-        i: &BlockInfo,
-        v: &ArrayVec<(RoundNumber, Committee), N>,
-    ) -> bool {
+    fn is_valid(&self, i: &BlockInfo, v: &CommitteeVec<2>) -> bool {
         match self {
             Self::Genesis => i.num().is_genesis(),
             Self::Previous(cert) => {
-                let Some(c) = v
-                    .iter()
-                    .find_map(|(_, c)| (c.id() == i.committee()).then_some(c))
-                else {
+                let Some(c) = v.get(i.round().committee()) else {
                     return false;
                 };
                 let t = c.one_honest_threshold();

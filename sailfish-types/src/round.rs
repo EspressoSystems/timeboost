@@ -30,6 +30,12 @@ impl RoundNumber {
     }
 }
 
+impl Default for RoundNumber {
+    fn default() -> Self {
+        GENESIS_ROUND
+    }
+}
+
 impl From<u64> for RoundNumber {
     fn from(val: u64) -> Self {
         Self(val)

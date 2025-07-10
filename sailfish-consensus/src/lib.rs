@@ -1,5 +1,4 @@
 mod dag;
-mod info;
 mod metrics;
 
 use std::collections::{BTreeMap, HashSet};
@@ -7,12 +6,11 @@ use std::fmt;
 use std::time::Instant;
 
 use committable::Committable;
-use info::NodeInfo;
 use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
 use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
-use sailfish_types::{ConsensusTime, Handover, HandoverMessage};
+use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
@@ -86,7 +84,7 @@ pub struct Consensus<T> {
     committed_round: RoundNumber,
 
     /// Information about committee members.
-    nodes: NodeInfo,
+    nodes: NodeInfo<RoundNumber>,
 
     /// The set of vertices that we've received so far.
     buffer: Dag<T>,
@@ -351,8 +349,7 @@ where
             return actions;
         }
 
-        self.nodes
-            .set_committed_round(v.source(), v.committed_round());
+        self.nodes.record(v.source(), v.committed_round());
 
         if self.committed_round < self.lower_round_bound() {
             actions.extend(self.cleanup());
@@ -977,7 +974,7 @@ where
                 }
                 actions.push(Action::Catchup(Round::new(r, self.committee.id())));
             }
-        } else if self.committed_round >= self.nodes.committed_round_quorum() {
+        } else if self.committed_round >= self.nodes.quorum() {
             for v in self.buffer.drain_round(r) {
                 self.dag.add(v)
             }
@@ -1115,7 +1112,7 @@ where
     /// minus an extra margin to avoid overly aggressive cleanup.
     fn lower_round_bound(&self) -> RoundNumber {
         self.nodes
-            .committed_round_quorum()
+            .quorum()
             .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
     }

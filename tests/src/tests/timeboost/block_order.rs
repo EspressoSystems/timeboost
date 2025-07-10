@@ -1,20 +1,21 @@
 use std::iter::once;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use metrics::NoMetrics;
+use multisig::Certificate;
 use timeboost_builder::BlockProducer;
 use timeboost_sequencer::{Output, Sequencer};
-use timeboost_types::Block;
+use timeboost_types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{Barrier, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use super::{gen_bundles, make_configs};
 
@@ -31,7 +32,7 @@ async fn block_order() {
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
-    let finish = Arc::new(Barrier::new(5));
+    let finish = CancellationToken::new();
 
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
@@ -44,8 +45,7 @@ async fn block_order() {
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut p = BlockProducer::new(b, &NoMetrics).await.unwrap();
-            let mut i = 0;
-            while i < NUM_OF_BLOCKS {
+            loop {
                 select! {
                     t = brx.recv() => match t {
                         Ok(trx) => s.add_bundles(once(trx)),
@@ -60,32 +60,44 @@ async fn block_order() {
                         p.handle().enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {
-                        debug!(node = %s.public_key(), blocks = %i);
                         let b = b.expect("block");
-                        i += 1;
-                        tx.send(b).unwrap()
+                        let c: Certificate<BlockInfo> = b.into();
+                        tx.send(c.into_data()).unwrap()
+                    }
+                    _ = finish.cancelled() => {
+                        info!(node = %s.public_key(), "done");
+                        return
                     }
                 }
             }
-            finish.wait().await;
-            info!(node = %s.public_key(), "done")
         });
         rxs.push(rx)
     }
 
     tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
+    // Collect all outputs:
+    let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];
     for _ in 0..NUM_OF_BLOCKS {
-        let first = rxs[0].recv().await.unwrap();
-        for rx in &mut rxs[1..] {
-            let b = rx.recv().await.unwrap();
-            assert_eq!(first.cert().data(), b.cert().data())
+        for (i, o) in outputs.iter_mut().enumerate() {
+            let x = rxs[i].recv().await.unwrap();
+            o.push(x);
         }
     }
 
-    while let Some(result) = tasks.join_next().await {
-        if let Err(err) = result {
-            panic!("task panic: {err}")
+    finish.cancel();
+
+    // Compare outputs:
+    for (a, b) in outputs.iter().zip(outputs.iter().skip(1)) {
+        if a != b {
+            for infos in &outputs {
+                let xy = infos
+                    .iter()
+                    .map(|i| (*i.num(), *i.round()))
+                    .collect::<Vec<_>>();
+                eprintln!("{xy:?}")
+            }
+            panic!("outputs do not match")
         }
     }
 }
