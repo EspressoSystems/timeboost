@@ -225,7 +225,7 @@ struct Worker {
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
 
-    /// Quorum of block numbers to use with garbale collection.
+    /// Quorum of block numbers to use with garbage collection.
     info: NodeInfo<BlockNumber>,
 }
 
