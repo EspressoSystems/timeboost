@@ -5,7 +5,7 @@ use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::Certificate;
-use sailfish_types::RoundNumber;
+use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use timeboost_proto::block as proto;
 
@@ -195,19 +195,18 @@ impl TryFrom<proto::Block> for Block {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct BlockInfo {
     num: BlockNumber,
-    round: RoundNumber,
+    round: Round,
     hash: BlockHash,
 }
 
 impl BlockInfo {
-    pub fn new<B, R>(num: B, r: R, hash: BlockHash) -> Self
+    pub fn new<B>(num: B, r: Round, hash: BlockHash) -> Self
     where
         B: Into<BlockNumber>,
-        R: Into<RoundNumber>,
     {
         Self {
             num: num.into(),
-            round: r.into(),
+            round: r,
             hash,
         }
     }
@@ -216,8 +215,8 @@ impl BlockInfo {
         self.num
     }
 
-    pub fn round(&self) -> RoundNumber {
-        self.round
+    pub fn round(&self) -> &Round {
+        &self.round
     }
 
     pub fn hash(&self) -> &BlockHash {
