@@ -585,11 +585,10 @@ impl Worker {
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
         };
-        let Some(committee) = self.round_committee(round) else {
+        let Some(committee) = self.round_committee(round).cloned() else {
             warn!(node = %self.label, %round, "no committee for hatching round");
             return Err(DecrypterError::NoCommitteeForRound(round));
         };
-        let c: Committee = committee.clone();
         if per_ct_opt_dec_shares.is_empty()
             || per_ct_opt_dec_shares.iter().any(|opt_dec_shares| {
                 let num_valid_shares = opt_dec_shares.iter().filter(|s| s.is_some()).count();
@@ -597,8 +596,8 @@ impl Worker {
 
                 // for valid decryption shares, as long as reaching f+1, we may try to hatch
                 // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
-                num_valid_shares < c.one_honest_threshold().get()
-                    && num_invalid_shares < c.quorum_size().get()
+                num_valid_shares < committee.one_honest_threshold().get()
+                    && num_invalid_shares < committee.quorum_size().get()
             })
         {
             return Ok(None);
@@ -634,14 +633,20 @@ impl Worker {
                 .filter_map(|s| s.as_ref())
                 .collect::<Vec<_>>();
 
-            if dec_shares.len() < c.one_honest_threshold().into() {
+            if dec_shares.len() < committee.one_honest_threshold().into() {
                 decrypted.push(None);
                 continue;
             }
 
             if let Some(ct) = opt_ct {
                 let aad = vec![];
-                match DecryptionScheme::combine(&c, self.dec_sk.combkey(), dec_shares, &ct, &aad) {
+                match DecryptionScheme::combine(
+                    &committee,
+                    self.dec_sk.combkey(),
+                    dec_shares,
+                    &ct,
+                    &aad,
+                ) {
                     Ok(pt) => decrypted.push(Some(pt)),
                     // with f+1 decryption shares, which means ciphertext is valid, we just need to
                     // remove bad decryption shares and wait for enough shares from honest nodes
