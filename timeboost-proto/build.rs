@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "protos/inclusion_list.proto",
                 "protos/block.proto",
                 "protos/internal.proto",
+                "protos/forward.proto",
             ],
             &["protos/"],
         )?;
