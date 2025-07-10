@@ -306,7 +306,7 @@ impl Task {
                             candidates = self.execute(acts).await?
                         }
                         if let Err(err) = self.decrypter.next_committee(a).await {
-                            warn!(node = %self.label, %err, "decrypt next committee error");
+                            error!(node = %self.label, %err, "decrypt next committee error");
                         }
                     }
                     None => {
@@ -369,7 +369,7 @@ impl Task {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c);
                             if let Err(err) = self.decrypter.use_committee(r).await {
-                                warn!(node = %self.label, %err, "decrypt use committee error");
+                                error!(node = %self.label, %err, "decrypt use committee error");
                             }
                             self.output
                                 .send(Output::UseCommittee(r))
