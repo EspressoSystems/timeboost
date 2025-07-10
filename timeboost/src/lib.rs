@@ -9,7 +9,7 @@ use api::metrics::serve_metrics_api;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
-use timeboost_builder::{BlockProducer, ProducerDown};
+use timeboost_builder::{Certifier, CertifierDown};
 use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
@@ -41,7 +41,7 @@ pub struct Timeboost {
     label: PublicKey,
     receiver: Receiver<BundleVariant>,
     sequencer: Sequencer,
-    producer: BlockProducer,
+    certifier: Certifier,
     _metrics: Arc<TimeboostMetrics>,
     nitro_forwarder: Option<NitroForwarder>,
     metrics_task: JoinHandle<()>,
@@ -60,7 +60,7 @@ impl Timeboost {
         let pro = Arc::new(PrometheusMetrics::default());
         let met = Arc::new(TimeboostMetrics::new(&*pro));
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
-        let blk = BlockProducer::new(cfg.producer_config(), &*pro).await?;
+        let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
 
         // TODO: Once we have e2e listener this check wont be needed
         let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
@@ -84,7 +84,7 @@ impl Timeboost {
             label: cfg.sign_keypair.public_key(),
             receiver: rx,
             sequencer: seq,
-            producer: blk,
+            certifier: blk,
             _metrics: met,
             nitro_forwarder,
             internal_api: spawn(internal_api),
@@ -120,8 +120,8 @@ impl Timeboost {
                         }
                     }
                     Ok(Output::UseCommittee(r)) => {
-                        if let Err(e) = self.producer.use_committee(r).await {
-                            let e: ProducerDown = e;
+                        if let Err(e) = self.certifier.use_committee(r).await {
+                            let e: CertifierDown = e;
                             return Err(e.into())
                         }
                     }
@@ -129,12 +129,12 @@ impl Timeboost {
                         return Err(err.into())
                     }
                 },
-                blk = self.producer.next_block() => match blk {
+                blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
                     }
                     Err(e) => {
-                        let e: ProducerDown = e;
+                        let e: CertifierDown = e;
                         return Err(e.into())
                     }
                 },

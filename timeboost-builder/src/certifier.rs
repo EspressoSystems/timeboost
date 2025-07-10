@@ -23,13 +23,13 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use crate::BlockProducerConfig;
+use crate::CertifierConfig;
 
-type Result<T> = StdResult<T, ProducerError>;
+type Result<T> = StdResult<T, CertifierError>;
 
 const CAPACITY: usize = 128;
 
-pub struct BlockProducer {
+pub struct Certifier {
     /// Log label of the node.
     label: PublicKey,
     /// Command channel to worker.
@@ -59,8 +59,8 @@ enum Command {
     UseCommittee(Round),
 }
 
-impl BlockProducer {
-    pub async fn new<M>(cfg: BlockProducerConfig, metrics: &M) -> Result<Self>
+impl Certifier {
+    pub async fn new<M>(cfg: CertifierConfig, metrics: &M) -> Result<Self>
     where
         M: metrics::Metrics,
     {
@@ -114,8 +114,8 @@ impl BlockProducer {
     ///
     /// # Panics
     ///
-    /// Once a `ProducerDown` error is returned, calling `next_block` again panics.
-    pub async fn next_block(&mut self) -> StdResult<CertifiedBlock, ProducerDown> {
+    /// Once a `CertifierDown` error is returned, calling `next_block` again panics.
+    pub async fn next_block(&mut self) -> StdResult<CertifiedBlock, CertifierDown> {
         select! {
             end = &mut self.worker => match end {
                 Ok(end) => {
@@ -139,31 +139,34 @@ impl BlockProducer {
                 error!(node = %self.label, "worker terminated");
             }
         }
-        Err(ProducerDown(()))
+        Err(CertifierDown(()))
     }
 
     /// Prepare for the next committee.
-    pub async fn next_committee(&mut self, c: AddressableCommittee) -> StdResult<(), ProducerDown> {
+    pub async fn next_committee(
+        &mut self,
+        c: AddressableCommittee,
+    ) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
-            .map_err(|_| ProducerDown(()))?;
+            .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
 
     /// Use a committee starting at the given round.
-    pub async fn use_committee(&mut self, r: Round) -> StdResult<(), ProducerDown> {
+    pub async fn use_committee(&mut self, r: Round) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, round = %r, "use committee");
         self.worker_tx
             .send(Command::UseCommittee(r))
             .await
-            .map_err(|_| ProducerDown(()))?;
+            .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
 }
 
-impl Drop for BlockProducer {
+impl Drop for Certifier {
     fn drop(&mut self) {
         self.worker.abort()
     }
@@ -171,13 +174,13 @@ impl Drop for BlockProducer {
 
 impl Handle {
     /// Enqueue the given block for certification.
-    pub async fn enqueue(&self, b: Block) -> StdResult<(), ProducerDown> {
+    pub async fn enqueue(&self, b: Block) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
         let num = self.counter.fetch_add(1, Ordering::Relaxed);
         self.worker_tx
             .send(Command::Certify(num.into(), b))
             .await
-            .map_err(|_| ProducerDown(()))?;
+            .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
 }
@@ -252,7 +255,7 @@ impl Worker {
                     Ok((src, data)) =>
                         match self.on_message(src, data).await {
                             Ok(()) => {}
-                            Err(ProducerError::End(end)) => return end,
+                            Err(CertifierError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, %src, "error on message")
                         }
                     Err(err) => {
@@ -265,30 +268,30 @@ impl Worker {
                     Some(Command::Certify(n, b)) =>
                         match self.on_certify_request(n, b).await {
                             Ok(()) => {}
-                            Err(ProducerError::End(end)) => return end,
+                            Err(CertifierError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on certify request")
                         }
                     Some(Command::NextCommittee(c)) =>
                         match self.on_next_committee(c).await {
                             Ok(()) => {}
-                            Err(ProducerError::End(end)) => return end,
+                            Err(CertifierError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on use committee")
                         }
                     Some(Command::UseCommittee(r)) =>
                         match self.on_use_committee(r).await {
                             Ok(()) => {}
-                            Err(ProducerError::End(end)) => return end,
+                            Err(CertifierError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on use committee")
                         }
                     None => {
                         debug!(node = %self.label, "parent down");
-                        return EndOfPlay::ProducerDown
+                        return EndOfPlay::CertifierDown
                     }
                 }
             }
             match self.deliver().await {
                 Ok(()) => {}
-                Err(ProducerError::End(end)) => return end,
+                Err(CertifierError::End(end)) => return end,
                 Err(err) => warn!(node = %self.label, %err, "delivery error"),
             }
         }
@@ -332,7 +335,7 @@ impl Worker {
 
         let Some(committee) = self.committees.get(info.round().committee()).cloned() else {
             error!(node = %self.label, committee = %info.round().committee(), "no committee");
-            return Err(ProducerError::NoCommittee(info.round().committee()));
+            return Err(CertifierError::NoCommittee(info.round().committee()));
         };
 
         let tracker = self
@@ -363,7 +366,7 @@ impl Worker {
         self.net
             .broadcast(*info.num(), data)
             .await
-            .map_err(|e| ProducerError::End(e.into()))?;
+            .map_err(|e| CertifierError::End(e.into()))?;
 
         Ok(())
     }
@@ -379,7 +382,7 @@ impl Worker {
             .get(msg.info.data().round().committee())
             .cloned()
         else {
-            return Err(ProducerError::NoCommittee(
+            return Err(CertifierError::NoCommittee(
                 msg.info.data().round().committee(),
             ));
         };
@@ -534,7 +537,7 @@ impl Worker {
         }
         let Some(committee) = self.committees.get(self.current) else {
             error!(node = %self.label, committee = %self.current, "current committee not found");
-            return Err(ProducerError::NoCommittee(self.current));
+            return Err(CertifierError::NoCommittee(self.current));
         };
         let mut additional = Vec::new();
         for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
@@ -552,7 +555,7 @@ impl Worker {
         info!(node = %self.label, %round, "use committee");
         if self.committees.get(round.committee()).is_none() {
             error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");
-            return Err(ProducerError::NoCommittee(round.committee()));
+            return Err(CertifierError::NoCommittee(round.committee()));
         };
         self.next_committee = Some(round);
         Ok(())
@@ -567,7 +570,7 @@ impl Worker {
         }
         let Some(committee) = self.committees.get(self.current) else {
             error!(node = %self.label, committee = %self.current, "current committee not found");
-            return Err(ProducerError::NoCommittee(self.current));
+            return Err(CertifierError::NoCommittee(self.current));
         };
         let old = self
             .net
@@ -594,7 +597,7 @@ impl Tracker {
         if let Some(cert) = self.votes.certificate() {
             if let Some(block) = &self.block {
                 let cb = CertifiedBlock::new(cert.clone(), block.clone());
-                tx.send(cb).await.map_err(|_| EndOfPlay::ProducerDown)?;
+                tx.send(cb).await.map_err(|_| EndOfPlay::CertifierDown)?;
                 return Ok(true);
             }
         }
@@ -628,12 +631,12 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("producer down")]
-pub struct ProducerDown(());
+#[error("block certifier down")]
+pub struct CertifierDown(());
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum ProducerError {
+pub enum CertifierError {
     #[error("network error: {0}")]
     Net(#[from] NetworkError),
 
@@ -658,8 +661,8 @@ pub enum ProducerError {
 pub enum EndOfPlay {
     #[error("network down")]
     NetworkDown,
-    #[error("producer down")]
-    ProducerDown,
+    #[error("block certifier down")]
+    CertifierDown,
 }
 
 impl From<NetworkDown> for EndOfPlay {
@@ -702,8 +705,8 @@ impl Evidence {
 impl Committable for Evidence {
     fn commit(&self) -> Commitment<Self> {
         match self {
-            Self::Genesis => RawCommitmentBuilder::new("ProducerEvidence::Genesis").finalize(),
-            Self::Previous(crt) => RawCommitmentBuilder::new("ProducerEvidence::Previous")
+            Self::Genesis => RawCommitmentBuilder::new("CertifierEvidence::Genesis").finalize(),
+            Self::Previous(crt) => RawCommitmentBuilder::new("CertifierEvidence::Previous")
                 .field("cert", crt.commit())
                 .finalize(),
         }
