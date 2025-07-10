@@ -278,7 +278,7 @@ mod tests {
             .enumerate()
             .map(|(i, sk)| sk.label(i))
             .collect();
-        let msgs = repeat_with(|| rng.r#gen::<[u8; 32]>().to_vec())
+        let msgs = repeat_with(|| rng.gen::<[u8; 32]>().to_vec())
             .take(n)
             .collect::<Vec<_>>();
         let aad = b"Alice";
