@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use bimap::BiHashMap;
 use bytes::{Bytes, BytesMut};
-use multisig::{Keypair, PublicKey, x25519};
+use multisig::{PublicKey, x25519};
 use parking_lot::Mutex;
 use snow::{Builder, HandshakeState, TransportState};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -215,7 +215,7 @@ impl Network {
     pub async fn create<P, A1, A2>(
         name: &'static str,
         bind_to: A1,
-        kp: Keypair,
+        label: PublicKey,
         xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
@@ -226,7 +226,7 @@ impl Network {
         A2: Into<Address>,
     {
         Self::generic_create::<tokio::net::TcpListener, _, _, _>(
-            name, bind_to, kp, xp, group, metrics,
+            name, bind_to, label, xp, group, metrics,
         )
         .await
     }
@@ -238,7 +238,7 @@ impl Network {
     pub async fn create_turmoil<P, A1, A2>(
         name: &'static str,
         bind_to: A1,
-        kp: Keypair,
+        label: PublicKey,
         xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
@@ -249,7 +249,7 @@ impl Network {
         A2: Into<Address>,
     {
         Self::generic_create::<turmoil::net::TcpListener, _, _, _>(
-            name, bind_to, kp, xp, group, metrics,
+            name, bind_to, label, xp, group, metrics,
         )
         .await
     }
@@ -257,7 +257,7 @@ impl Network {
     async fn generic_create<T, P, A1, A2>(
         name: &'static str,
         bind_to: A1,
-        kp: Keypair,
+        label: PublicKey,
         xp: x25519::Keypair,
         group: P,
         metrics: NetworkMetrics,
@@ -269,8 +269,6 @@ impl Network {
         T: tcp::Listener + Send + 'static,
         T::Stream: Unpin + Send,
     {
-        let label = kp.public_key();
-
         let listener = T::bind(&bind_to.into()).await?;
 
         debug!(%name, n = %label, a = %listener.local_addr()?, "listening");

@@ -7,9 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 alloy-consensus = { workspace = true }
-blake3 = { workspace = true }
-bincode = { workspace = true }
+arrayvec = { workspace = true }
 bimap = { workspace = true }
+bincode = { workspace = true }
+blake3 = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }

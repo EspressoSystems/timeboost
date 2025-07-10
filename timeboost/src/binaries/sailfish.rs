@@ -254,7 +254,7 @@ async fn main() -> Result<()> {
     let network = Network::create(
         "sailfish",
         my_keyset.sailfish_address.clone(),
-        signing_keypair.clone(),
+        signing_keypair.public_key(),
         dh_keypair.clone(),
         peer_hosts_and_keys.clone(),
         net_metrics,

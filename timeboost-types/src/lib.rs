@@ -13,7 +13,7 @@ pub use sailfish_types as sailfish;
 pub use sailfish_types::UNKNOWN_COMMITTEE_ID;
 pub use sailfish_types::math;
 
-pub use block::{Block, BlockHash, BlockInfo, CertifiedBlock};
+pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
     Address, Bundle, BundleVariant, ChainId, PriorityBundle, SignedPriorityBundle, Signer,
     Transaction,

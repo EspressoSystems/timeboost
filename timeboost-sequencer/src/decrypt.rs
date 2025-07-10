@@ -1,13 +1,16 @@
-use bytes::{BufMut, BytesMut};
-use cliquenet::MAX_MESSAGE_SIZE;
+use arrayvec::ArrayVec;
+use bon::Builder;
+use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use multisig::PublicKey;
-use sailfish::types::{CommitteeVec, Evidence, RoundNumber};
+use cliquenet::{AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics};
+use multisig::{Committee, PublicKey};
+use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
+use std::result::Result as StdResult;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
-use timeboost_crypto::{DecryptionScheme, Keyset, KeysetId, Plaintext};
-use timeboost_types::{Bytes, DecryptionKey, InclusionList};
+use timeboost_crypto::{DecryptionScheme, Plaintext};
+use timeboost_types::{DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -15,22 +18,21 @@ use tracing::{debug, error, trace, warn};
 
 use crate::config::DecrypterConfig;
 
-type Result<T> = std::result::Result<T, DecryptError>;
+type Result<T> = std::result::Result<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
 /// Command sent to Decrypter's background worker
-enum WorkerRequest {
+#[allow(dead_code)]
+enum Command {
     // request to decrypt all encrypted transactions inside the inclusion list
     Decrypt(InclusionList),
+    /// Prepare for the next committee.
+    NextCommittee(AddressableCommittee),
+    /// Use a committee starting at the given round.
+    UseCommittee(Round),
     // request to garbage collect all states related to a round (and previous rounds)
     Gc(RoundNumber),
-}
-
-/// response from `WorkerRequest`
-enum WorkerResponse {
-    // response to decrypt request, return the decrypted inclusion list
-    Decrypt(InclusionList),
 }
 
 /// Inclusion list with status
@@ -56,73 +58,86 @@ pub struct Decrypter {
     /// Public key of the node. "Label" is termed to refer to node identity in SG01 decryption
     /// scheme
     label: PublicKey,
-    /// Decryption committee this decrypter belongs to
-    keyset: Keyset,
     /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
     /// of timeboost
     incls: BTreeMap<RoundNumber, Status>,
-    /// Sender end of the worker requests
-    req_tx: Sender<WorkerRequest>,
+    /// Sender end of the worker commands
+    worker_tx: Sender<Command>,
     /// Receiver end of the worker response
-    res_rx: Receiver<WorkerResponse>,
+    worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
-    jh: JoinHandle<()>,
+    worker: JoinHandle<EndOfPlay>,
 }
 
 impl Decrypter {
-    pub fn new(cfg: DecrypterConfig, net: Overlay) -> Self {
-        let (req_tx, req_rx) = channel(cfg.retain);
-        let (res_tx, res_rx) = channel(cfg.retain);
+    pub async fn new<M>(cfg: DecrypterConfig, metrics: &M) -> Result<Self>
+    where
+        M: metrics::Metrics,
+    {
+        let (cmd_tx, cmd_rx) = channel(cfg.retain);
+        let (dec_tx, dec_rx) = channel(cfg.retain);
+        let net_metrics = NetworkMetrics::new("decrypt", metrics, cfg.committee.parties().copied());
 
-        Self {
+        let net = Network::create(
+            "decrypt",
+            cfg.address.clone(),
+            cfg.label,
+            cfg.dh_keypair.clone(),
+            cfg.committee.entries(),
+            net_metrics,
+        )
+        .await
+        .map_err(DecrypterError::Net)?;
+
+        let worker = Worker::builder()
+            .label(cfg.label)
+            .committees({
+                let mut v = ArrayVec::new();
+                v.push((RoundNumber::genesis(), cfg.committee.committee().clone()));
+                v
+            })
+            .net(Overlay::new(net))
+            .tx(dec_tx)
+            .rx(cmd_rx)
+            .dec_sk(cfg.decryption_key)
+            .last_hatched_round(RoundNumber::genesis())
+            .retain(cfg.retain)
+            .build();
+
+        Ok(Self {
             label: cfg.label,
-            keyset: cfg.keyset,
             incls: BTreeMap::new(),
-            req_tx,
-            res_rx,
-            jh: {
-                let w = Worker::new(cfg, net);
-                spawn(w.go(req_rx, res_tx))
-            },
-        }
+            worker_tx: cmd_tx,
+            worker_rx: dec_rx,
+            worker: spawn(worker.go()),
+        })
     }
 
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
-        self.req_tx.capacity() > 0 && self.res_rx.capacity() > 0
+        self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
     }
 
     /// Garbage collect cached state of `r` (and prior) rounds
-    pub async fn gc(&mut self, r: RoundNumber) -> Result<()> {
-        self.req_tx
-            .send(WorkerRequest::Gc(r))
+    pub async fn gc(&mut self, r: RoundNumber) -> StdResult<(), DecrypterDown> {
+        self.worker_tx
+            .send(Command::Gc(r))
             .await
-            .map_err(|_| DecryptError::Shutdown)
+            .map_err(|_| DecrypterDown(()))
     }
 
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
-    /// decrypter will process any unencrypted inclusion list, or those encrypted under the keyset
-    /// this decrypter belongs to, but will reject bundles encrypted for totally a different
-    /// keyset.
-    pub async fn enqueue(&mut self, incl: InclusionList) -> Result<()> {
+    /// decrypter will process any encrypted/unencrypted inclusion list
+    pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
-        let required_keysets = incl.kids();
 
-        if !required_keysets.is_empty() {
-            // ensure encrypted inclusion list is sent to the correct decrypter
-            if !required_keysets.contains(&self.keyset.id()) {
-                return Err(DecryptError::WrongDecrypter(
-                    required_keysets[0], // safe index-access
-                    self.keyset.id(),
-                ));
-            }
-
-            self.req_tx
-                .send(WorkerRequest::Decrypt(incl))
+        if incl.is_encrypted() {
+            self.worker_tx
+                .send(Command::Decrypt(incl))
                 .await
-                .map_err(|_| DecryptError::Shutdown)?;
+                .map_err(|_| DecrypterDown(()))?;
             self.incls.insert(round, Status::Encrypted);
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
@@ -134,7 +149,7 @@ impl Decrypter {
     }
 
     /// Produces decrypted inclusion lists ordered by round number
-    pub async fn next(&mut self) -> Result<InclusionList> {
+    pub async fn next(&mut self) -> StdResult<InclusionList, DecrypterDown> {
         // first try to return the first inclusion list if it's already decrypted
         if let Some(entry) = self.incls.first_entry() {
             if matches!(entry.get(), Status::Decrypted(_)) {
@@ -145,7 +160,7 @@ impl Decrypter {
         }
 
         // normal loop: try to receive the next decrypted inclusion list
-        while let Some(WorkerResponse::Decrypt(dec_incl)) = self.res_rx.recv().await {
+        while let Some(dec_incl) = self.worker_rx.recv().await {
             let round = dec_incl.round();
             // update decrypter cache of inclusion list
             debug!(
@@ -173,29 +188,35 @@ impl Decrypter {
                 }
             }
         }
-        Err(DecryptError::Shutdown)
+        Err(DecrypterDown(()))
     }
 }
 
 impl Drop for Decrypter {
     fn drop(&mut self) {
-        self.jh.abort()
+        self.worker.abort()
     }
 }
+
+/// Max. supported number of committees.
+const MAX_COMMITTEES: usize = 2;
 
 /// Worker is responsible for "hatching" ciphertexts.
 ///
 /// When ciphertexts in a round have received t+1 decryption shares
 /// the shares can be combined to decrypt the ciphertext (hatching).
+#[derive(Builder)]
 struct Worker {
     /// labeling the node by its signing/consensus public key
     label: PublicKey,
     /// overlay network to connect to other decrypters
     net: Overlay,
-    /// consensus committees
-    committees: CommitteeVec<2>,
-    /// keyset metadata about the decryption committee
-    keyset: Keyset,
+    /// decryption committees
+    committees: ArrayVec<(RoundNumber, Committee), MAX_COMMITTEES>,
+    /// channel for sending inclusion lists back to parent
+    tx: Sender<InclusionList>,
+    /// channel for receiving commands from the parent
+    rx: Receiver<Command>,
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
@@ -209,107 +230,68 @@ struct Worker {
     /// ciphertext payload from the inclusion list `self.incls` of the same round
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
+    #[builder(default)]
     dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
     /// Acknowledgement of the set of peers whose decryption share for a round has been received
     /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
+    #[builder(default)]
     acks: BTreeMap<RoundNumber, HashSet<PublicKey>>,
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
+    #[builder(default)]
     incls: BTreeMap<RoundNumber, InclusionList>,
     /// the latest rounds whose ciphertexts are hatched
     last_hatched_round: RoundNumber,
 }
 
 impl Worker {
-    pub fn new(cfg: DecrypterConfig, net: Overlay) -> Self {
-        Self {
-            label: cfg.label,
-            net,
-            committees: CommitteeVec::new(cfg.committee),
-            keyset: cfg.keyset,
-            first_requested_round: None,
-            dec_sk: cfg.decryption_key,
-            dec_shares: BTreeMap::default(),
-            acks: BTreeMap::default(),
-            incls: BTreeMap::default(),
-            last_hatched_round: RoundNumber::genesis(),
-            retain: cfg.retain,
-        }
-    }
-
     // entry point of `worker` thread, it runs in a loop until shutdown or out of channel capacity.
-    pub async fn go(mut self, mut req_rx: Receiver<WorkerRequest>, res_tx: Sender<WorkerResponse>) {
+    pub async fn go(mut self) -> EndOfPlay {
         let node = self.label;
 
         loop {
             // each event loop is triggered by receiving one of the following
-            // - a new request from Decrypter
             // - batch of decrypted shares from other decrypters
+            // - a new request from Decrypter
             tokio::select! {
+                // receiving a batch of decrypted shares from other decrypters
+                msg = self.net.receive() => match msg {
+                    Ok((src, data)) => {
+                        match self.on_message(src, data).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, %src, "error on message")
+                        }
+                    },
+                    Err(err) => {
+                        let _: NetworkDown = err;
+                        debug!(node = %self.label, "network down");
+                        return EndOfPlay::NetworkDown
+                    }
+                },
                 // receiving a request from the decrypter
-                val = req_rx.recv() => match val {
-                    Some(WorkerRequest::Decrypt(incl)) => {
+                cmd = self.rx.recv() => match cmd {
+                    Some(Command::Decrypt(incl)) => {
                         let round = incl.round();
                         trace!(%node, %round, "decrypt request");
 
                         match self.on_decrypt_request(round, incl).await {
-                            Err(DecryptError::Shutdown) => return,
-                            Err(err) => {
-                                error!(%node, %round, %err, "failed to process decrypt request");
-                                continue;
-                            },
-                            _ => trace!(%node, %round, "decrypt request... done"),
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %round, %err, "error on decrypt request")
                         }
                     },
-                    Some(WorkerRequest::Gc(round))=> {
-                        trace!(%node, %round, "gc request");
-                        if let Err(err) = self.on_gc_request(round).await {
-                            error!(%node, %round, %err, "failed to gc");
+                    Some(Command::Gc(round))=> {
+                        match self.on_gc_request(round).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, "error on gc request")
                         }
-                        trace!(%node, %round, "gc request... done");
                         continue;
                     },
+                    Some(_) => { /* todo: dynamic committees */ },
                     None => {
-                        debug!(%node, "decrypter has shutdown, shutting down its worker");
-                        return;
-                    }
-                },
-
-                // receiving a batch of decrypted shares from other decrypters
-                val = self.net.receive() => match val {
-                    Ok((src, data)) => {
-                        // ignore msg sent to self during broadcast
-                        if src == self.label {
-                            continue;
-                        }
-                        let Ok(dec_shares) = deserialize::<DecShareBatch>(&data) else {
-                            error!(%node, from = %src, "failed to deserialize decrypted shares");
-                            continue;
-                        };
-
-                        let round = dec_shares.round;
-                        // if already sent for this round, `src` will be re-inserted, thus returns false
-                        // in which case we skip processing this message since this peer has already sent once
-                        if !self.acks.entry(round).or_default().insert(src) {
-                            continue;
-                        };
-                        trace!(%node, from=%src, %round, "receive decrypted shares");
-
-                        if round <= self.last_hatched_round || round < self.oldest_cached_round() {
-                            // shares for which the ciphertexts have already hatched
-                            // or shares that are older than the first ciphertext in
-                            // the local cache are not inserted.
-                            continue;
-                        }
-                        if let Err(err) = self.insert_shares(dec_shares) {
-                            error!(%node, from = %src, %round, %err, "failed to process decrypted shares");
-                            continue;
-                        }
-                        trace!(%node, from = %src, %round, "receive decrypted shares... done");
-                    },
-                    Err(e) => {
-                        let _: NetworkDown = e; // ensure err type
-                        debug!(%node, "overlay network has shut down, shutting down worker");
-                        return;
+                        debug!(node = %self.label, "parent down");
+                        return EndOfPlay::DecrypterDown
                     }
                 },
             }
@@ -325,16 +307,45 @@ impl Worker {
             let round = self.oldest_cached_round();
             match self.hatch(round) {
                 Ok(Some(incl)) => {
-                    if let Err(err) = res_tx.send(WorkerResponse::Decrypt(incl.clone())).await {
+                    if let Err(err) = self.tx.send(incl.clone()).await {
                         error!(%node, %err, "failed to send hatched inclusion list");
-                        return;
+                        return EndOfPlay::DecrypterDown;
                     }
-                    debug!(%node, %round, "hatch inclusion list... done");
+                    trace!(%node, %round, "hatch inclusion list... done");
                 }
                 Err(err) => warn!(%node, %round, %err, "failed to hatch"),
                 Ok(None) => continue,
             }
         }
+    }
+
+    /// A batch of decryption shares from another node has been received.
+    async fn on_message(&mut self, src: PublicKey, data: Bytes) -> Result<()> {
+        debug!(node = %self.label, %src, "incoming message");
+        // ignore msg sent to self during broadcast
+        if src == self.label {
+            return Ok(());
+        }
+        let dec_shares = deserialize::<DecShareBatch>(&data)?;
+
+        let round = dec_shares.round;
+        // if already sent for this round, `src` will be re-inserted, thus returns false
+        // in which case we skip processing this message since this peer has already sent once
+        if !self.acks.entry(round).or_default().insert(src) {
+            return Ok(());
+        };
+
+        if round <= self.last_hatched_round || round < self.oldest_cached_round() {
+            // shares for which the ciphertexts have already hatched
+            // or shares that are older than the first ciphertext in
+            // the local cache are not inserted.
+            return Ok(());
+        }
+        trace!(node = %self.label, from=%src, %round, "inserting decrypted shares");
+
+        self.insert_shares(dec_shares)?;
+
+        Ok(())
     }
 
     /// returns the oldest round number in locally cached decryption shares (w/ smallest round
@@ -351,12 +362,13 @@ impl Worker {
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
         let dec_shares = self.decrypt(round, &incl);
         if dec_shares.is_empty() {
-            return Err(DecryptError::EmptyDecShares);
+            return Err(DecrypterError::EmptyDecShares);
         }
 
         self.net
             .broadcast(round.u64(), serialize(&dec_shares)?)
-            .await?;
+            .await
+            .map_err(|e| DecrypterError::End(e.into()))?;
         self.insert_shares(dec_shares)?;
         self.incls.insert(round, incl);
 
@@ -392,29 +404,33 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the relevant ciphertext from encrypted
-    /// bundle/tx, preserving the order, "relevant" means encrypted under the keyset this worker
-    /// belongs to.
+    /// scan through the inclusion list and extract the ciphertexts from encrypted
+    /// bundle/tx while preserving the order.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(
-        kid: KeysetId,
-        incl: &InclusionList,
-    ) -> impl Iterator<Item = Option<Ciphertext>> {
-        incl.filter_ciphertexts(kid)
+    fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
+        incl.priority_bundles()
+            .iter()
+            .filter(move |pb| pb.bundle().is_encrypted())
+            .map(|pb| pb.bundle().data())
+            .chain(
+                incl.regular_bundles()
+                    .iter()
+                    .filter(move |b| b.is_encrypted())
+                    .map(|b| b.data()),
+            )
             .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
     }
 
-    /// Produce decryption shares for each *relevant* encrypted bundles inside the inclusion list,
-    /// where "relevant" means targetted to the same `KeysetId` as the current decrypter/worker.
-    /// Also see [`DecShareBatch`] doc.
+    /// Produce decryption shares for each encrypted bundles inside the inclusion list,
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     fn decrypt(&mut self, round: RoundNumber, incl: &InclusionList) -> DecShareBatch {
-        let dec_shares = Self::extract_ciphertexts(self.keyset.id(), incl)
+        let dec_shares = Self::extract_ciphertexts(incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
+                    // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
                         self.dec_sk.privkey(),
                         &ct,
@@ -427,7 +443,6 @@ impl Worker {
 
         DecShareBatch {
             round,
-            kid: self.keyset.id(),
             dec_shares,
             evidence: incl.evidence().clone(),
         }
@@ -437,12 +452,34 @@ impl Worker {
     fn insert_shares(&mut self, batch: DecShareBatch) -> Result<()> {
         if batch.is_empty() {
             trace!(node = %self.label, "empty decryption share batch, skipped");
-            return Err(DecryptError::EmptyDecShares);
+            return Err(DecrypterError::EmptyDecShares);
         }
         let round = batch.round;
-        if !batch.evidence.is_valid(round, &self.committees) {
-            debug!(node = %self.label, %round, "invalid round evidence");
-            return Err(DecryptError::MissingRoundEvidence(round));
+        // Validate evidence:
+        {
+            let pred: RoundNumber = round.saturating_sub(1).into();
+
+            let Some(committee) = self.round_committee(pred) else {
+                warn!(node = %self.label, %round, "no committee for evidence round");
+                return Err(DecrypterError::NoCommitteeForRound(pred));
+            };
+
+            let is_valid_evidence = match &batch.evidence {
+                Evidence::Genesis => pred.is_genesis(),
+                e @ Evidence::Regular(x) => e.round() == pred && x.is_valid_par(committee),
+                e @ Evidence::Timeout(x) => e.round() == pred && x.is_valid_par(committee),
+                e @ Evidence::Handover(x) => e.round() == pred && x.is_valid_par(committee),
+            };
+
+            if !is_valid_evidence {
+                warn!(
+                    node     = %self.label,
+                    round    = %round,
+                    evidence = %batch.evidence.round(),
+                    "invalid evidence"
+                );
+                return Err(DecrypterError::MissingRoundEvidence(round));
+            }
         }
         // This operation is doing the following: assumme local cache for this round is:
         // [[s1a, s1b], [s2a, s2b], [s3a, s3b]]
@@ -475,8 +512,10 @@ impl Worker {
 
                 // for valid decryption shares, as long as reaching f+1, we may try to hatch
                 // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
-                num_valid_shares < self.keyset.one_honest_threshold().get()
-                    && num_invalid_shares < self.keyset.honest_majority_threshold().get()
+                // TODO: fix when dynamic committees
+                let committee = self.committees.iter().last().expect("singleton committee");
+                num_valid_shares < committee.1.one_honest_threshold().get()
+                    && num_invalid_shares < committee.1.quorum_size().get()
             })
         {
             return Ok(None);
@@ -492,7 +531,7 @@ impl Worker {
             return Ok(None);
         };
         let mut incl = incl.clone();
-        let ciphertexts = Self::extract_ciphertexts(self.keyset.id(), &incl);
+        let ciphertexts = Self::extract_ciphertexts(&incl);
 
         // hatching ciphertext
         // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
@@ -512,7 +551,9 @@ impl Worker {
                 .filter_map(|s| s.as_ref())
                 .collect::<Vec<_>>();
 
-            if dec_shares.len() < self.keyset.one_honest_threshold().get() {
+            // TODO: fix dynamic committees
+            let committee = self.committees.iter().last().expect("singleton committee");
+            if dec_shares.len() < committee.1.one_honest_threshold().into() {
                 decrypted.push(None);
                 continue;
             }
@@ -520,7 +561,7 @@ impl Worker {
             if let Some(ct) = opt_ct {
                 let aad = vec![];
                 match DecryptionScheme::combine(
-                    &self.keyset,
+                    &committee.1,
                     self.dec_sk.combkey(),
                     dec_shares,
                     &ct,
@@ -539,7 +580,7 @@ impl Worker {
                         // not ready to hatch this ciphertext, thus the containing inclusion list
                         return Ok(None);
                     }
-                    Err(e) => return Err(DecryptError::Decryption(e)),
+                    Err(e) => return Err(DecrypterError::Decryption(e)),
                 }
             } else {
                 decrypted.push(None);
@@ -547,33 +588,32 @@ impl Worker {
         }
 
         // construct/modify the inclusion list to replace with decrypted payload
-        let kid = self.keyset.id();
         let mut num_encrypted_priority_bundles = 0;
         incl.priority_bundles_mut()
             .iter_mut()
-            .filter(|pb| pb.bundle().kid() == Some(kid))
+            .filter(|pb| pb.bundle().is_encrypted())
             .zip(decrypted.clone())
             .for_each(|(pb, opt_plaintext)| {
                 num_encrypted_priority_bundles += 1;
                 match opt_plaintext {
-                    Some(pt) => pb.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    Some(pt) => pb.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
                     // None means garbage (undecryptable ciphertext), simply mark as decrypted
                     None => pb.set_data(pb.bundle().data().clone()),
                 }
             });
         incl.regular_bundles_mut()
             .iter_mut()
-            .filter(|b| b.kid() == Some(kid))
+            .filter(|b| b.is_encrypted())
             .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
             .for_each(|(bundle, opt_plaintext)| {
                 match opt_plaintext {
-                    Some(pt) => bundle.set_data(Bytes::from(<Vec<u8>>::from(pt))),
+                    Some(pt) => bundle.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
                     // None means garbage (undecryptable ciphertext), simply mark as decrypted
                     None => bundle.set_data(bundle.data().clone()),
                 }
             });
         if incl.is_encrypted() {
-            return Err(DecryptError::Internal(
+            return Err(DecrypterError::Internal(
                 "didn't fully decrypt inclusion list".to_string(),
             ));
         }
@@ -584,15 +624,18 @@ impl Worker {
 
         Ok(Some(incl))
     }
+
+    fn round_committee(&self, r: RoundNumber) -> Option<&Committee> {
+        self.committees
+            .iter()
+            .find_map(|(n, c)| (r >= *n).then_some(c))
+    }
 }
 
-/// A batch of decryption shares. Each batch is uniquely identified via (round_number, keyset_id).
-/// Each inclusion list, w/ a unique round number, may contain encrypted bundles with different
-/// keysets, those bundles are split into batches, one for each keyset.
+/// A batch of decryption shares. Each batch is uniquely identified via round_number.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
     round: RoundNumber,
-    kid: KeysetId,
     // note: each decrpytion share is for a different ciphertext;
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
@@ -635,25 +678,29 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 }
 
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum DecryptError {
-    #[error("Decryption request for: {0}, but send to decrypter in: {1}")]
-    WrongDecrypter(KeysetId, KeysetId),
+#[error("decrypter down")]
+pub struct DecrypterDown(());
 
-    #[error("decryption error: {0}")]
-    Decryption(#[from] ThresholdEncError),
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum DecrypterError {
+    #[error("network error: {0}")]
+    Net(#[from] NetworkError),
+
+    #[error("terminal error: {0}")]
+    End(#[from] EndOfPlay),
 
     #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
+    Encode(#[from] bincode::error::EncodeError),
 
     #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    Decode(#[from] bincode::error::DecodeError),
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
 
-    #[error("decrypter has shut down")]
-    Shutdown,
+    #[error("decryption error: {0}")]
+    Decryption(#[from] ThresholdEncError),
 
     #[error("unexpected internal err: {0}")]
     Internal(String),
@@ -666,29 +713,41 @@ pub enum DecryptError {
 
     #[error("received inclusion list is outdated (already received or hatched)")]
     OutdatedRound,
+
+    #[error("no committee for round: {0}")]
+    NoCommitteeForRound(RoundNumber),
 }
 
-impl From<NetworkDown> for DecryptError {
+/// Fatal errors.
+#[derive(Debug, thiserror::Error)]
+pub enum EndOfPlay {
+    #[error("network down")]
+    NetworkDown,
+    #[error("decrypter down")]
+    DecrypterDown,
+}
+
+impl From<NetworkDown> for EndOfPlay {
     fn from(_: NetworkDown) -> Self {
-        Self::Shutdown
+        Self::NetworkDown
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use metrics::NoMetrics;
     use std::{
         net::{Ipv4Addr, SocketAddr},
-        num::NonZeroUsize,
         time::Duration,
     };
     use timeboost_utils::types::logging;
 
     use ark_std::test_rng;
-    use cliquenet::{Network, NetworkMetrics, Overlay};
-    use multisig::{Committee, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
+    use cliquenet::AddressableCommittee;
+    use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Keyset, Plaintext, PublicKey, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
         Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
@@ -701,34 +760,18 @@ mod tests {
     #[tokio::test]
     async fn test_with_encrypted_data() {
         logging::init_logging();
-        let num_nodes = 5;
-        let keyset = timeboost_crypto::Keyset::new(1, NonZeroUsize::new(num_nodes).unwrap());
-        let encryption_key: PublicKey<_> =
-            decode_bincode("8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu");
 
-        let (mut decrypters, signature_keys, committee) = setup(keyset).await;
+        let (enc_key, committee, mut decrypters, signature_keys) = setup().await;
 
         // Craft a ciphertext for decryption
         let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
         let tx_message = b"The slow brown fox jumps over the lazy dog".to_vec();
         let ptx_plaintext = Plaintext::new(ptx_message.clone());
         let tx_plaintext = Plaintext::new(tx_message.clone());
-        let ptx_ciphertext = DecryptionScheme::encrypt(
-            &mut test_rng(),
-            &keyset.id(),
-            &encryption_key,
-            &ptx_plaintext,
-            &vec![],
-        )
-        .unwrap();
-        let tx_ciphertext = DecryptionScheme::encrypt(
-            &mut test_rng(),
-            &keyset.id(),
-            &encryption_key,
-            &tx_plaintext,
-            &vec![],
-        )
-        .unwrap();
+        let ptx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &ptx_plaintext, &vec![]).unwrap();
+        let tx_ciphertext =
+            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &tx_plaintext, &vec![]).unwrap();
         let ptx_ciphertext_bytes =
             bincode::serde::encode_to_vec(&ptx_ciphertext, bincode::config::standard())
                 .expect("Failed to encode ciphertext");
@@ -753,19 +796,13 @@ mod tests {
             cert.into()
         };
         let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
-        let keyset_id = keyset.id();
         let chain_id = ChainId::from(0);
         let epoch = Epoch::from(42);
         let auction = Address::default();
         let seqno = SeqNo::from(10);
         let signer = Signer::default();
         let bundle = PriorityBundle::new(
-            Bundle::new(
-                chain_id,
-                epoch,
-                ptx_ciphertext_bytes.into(),
-                Some(keyset_id),
-            ),
+            Bundle::new(chain_id, epoch, ptx_ciphertext_bytes.into(), true),
             auction,
             seqno,
         );
@@ -775,7 +812,7 @@ mod tests {
             chain_id,
             epoch,
             tx_ciphertext_bytes.into(),
-            Some(keyset_id),
+            true,
         )]);
 
         // Enqueue inclusion lists to each decrypter
@@ -804,7 +841,12 @@ mod tests {
         }
     }
 
-    async fn setup(keyset: Keyset) -> (Vec<Decrypter>, Vec<SecretKey>, Committee) {
+    async fn setup() -> (
+        <DecryptionScheme as ThresholdEncScheme>::PublicKey,
+        Committee,
+        Vec<Decrypter>,
+        Vec<SecretKey>,
+    ) {
         // these keys are generated via
         // `just mkconfig_local 5 --seed 42`
         let signature_private_keys = [
@@ -842,16 +884,22 @@ mod tests {
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
 
+        let enc_key: <DecryptionScheme as ThresholdEncScheme>::PublicKey =
+            decode_bincode(encryption_key);
         let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
             .iter()
             .map(|k| {
-                DecryptionKey::new(
-                    decode_bincode(encryption_key),
-                    decode_bincode(comb_key),
-                    decode_bincode(k),
-                )
+                DecryptionKey::new(enc_key.clone(), decode_bincode(comb_key), decode_bincode(k))
             })
             .collect();
+        let c = Committee::new(
+            UNKNOWN_COMMITTEE_ID,
+            signature_keys
+                .iter()
+                .enumerate()
+                .map(|(i, k)| (KeyId::from(i as u8), k.public_key()))
+                .collect::<Vec<_>>(),
+        );
 
         let peers: Vec<_> = signature_keys
             .iter()
@@ -865,46 +913,28 @@ mod tests {
                 )
             })
             .collect();
-        let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
-            signature_keys
-                .iter()
-                .map(SecretKey::public_key)
-                .enumerate()
-                .map(|(i, key)| (i as u8, key)),
-        );
-
+        let ac = AddressableCommittee::new(c.clone(), peers.clone());
         let mut decrypters = Vec::new();
         for i in 0..peers.len() {
             let sig_key = signature_keys[i].clone();
             let dh_key = dh_keys[i].clone();
             let (_, _, addr) = peers[i];
 
-            let network = Network::create(
-                "decrypt",
-                addr,
-                sig_key.clone().into(),
-                dh_key.clone().into(),
-                peers.clone(),
-                NetworkMetrics::default(),
-            )
-            .await
-            .expect("starting network");
-
             let conf = DecrypterConfig::builder()
                 .label(sig_key.public_key())
-                .committee(committee.clone())
-                .keyset(keyset)
+                .address(addr.into())
+                .dh_keypair(dh_key.into())
+                .committee(ac.clone())
                 .decryption_key(decryption_keys[i].clone())
                 .retain(100)
                 .build();
 
-            let decrypter = Decrypter::new(conf, Overlay::new(network));
+            let decrypter = Decrypter::new(conf, &NoMetrics).await.unwrap();
             decrypters.push(decrypter);
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-        (decrypters, signature_keys, committee)
+        (enc_key, c, decrypters, signature_keys)
     }
 
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {

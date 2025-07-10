@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package internal;
+
+import "google/protobuf/empty.proto";
+import "block.proto";
+
+service InternalApi {
+    rpc SubmitBlock (block.Block) returns (google.protobuf.Empty) {}
+}

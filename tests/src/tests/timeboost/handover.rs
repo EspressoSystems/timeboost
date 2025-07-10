@@ -113,8 +113,7 @@ where
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
 
-    let total = NonZeroUsize::new(sign_keys.len()).unwrap();
-    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(total);
+    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee);
 
     sign_keys
         .into_iter()
@@ -154,7 +153,7 @@ async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>
     let mut net = Network::create(
         "sailfish",
         cfg.sailfish_address().clone(),
-        cfg.sign_keypair().clone(),
+        cfg.sign_keypair().public_key(),
         cfg.dh_keypair().clone(),
         cfg.sailfish_committee().entries(),
         met,
