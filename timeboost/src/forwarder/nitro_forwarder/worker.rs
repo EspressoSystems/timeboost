@@ -147,9 +147,9 @@ mod tests {
                 })
                 .await
         });
+        sleep(Duration::from_millis(10)).await;
 
-        let uri = format!("http://{}", a);
-        let inner = Channel::from_shared(uri)
+        let inner = Channel::from_shared(format!("http://{a}"))
             .expect("valid url")
             .connect()
             .await

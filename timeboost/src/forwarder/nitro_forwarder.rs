@@ -24,7 +24,7 @@ impl Drop for NitroForwarder {
 
 impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
-        let uri = format!("http://{}", addr);
+        let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
         let chan = endpoint.connect().await?;
         let c = ForwardApiClient::new(chan);
