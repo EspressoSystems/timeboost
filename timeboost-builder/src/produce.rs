@@ -83,10 +83,7 @@ impl BlockProducer {
         let worker = Worker::builder()
             .label(cfg.sign_keypair.public_key())
             .committees(CommitteeVec::new(cfg.committee.committee().clone()))
-            .epoch(Round::new(
-                RoundNumber::genesis(),
-                cfg.committee.committee().id(),
-            ))
+            .current(cfg.committee.committee().id())
             .keypair(cfg.sign_keypair.clone())
             .net(Overlay::new(net))
             .tx(crt_tx)
@@ -199,11 +196,11 @@ struct Worker {
     /// The committees of block signers.
     committees: CommitteeVec<2>,
 
-    /// Current committee, starting at some round.
-    epoch: Round,
+    /// Current committee ID.
+    current: CommitteeId,
 
-    /// The next committee and its start round (if any).
-    next_epoch: Option<Round>,
+    /// The next committee ID and its round number (if any).
+    next_committee: Option<Round>,
 
     /// Command channel receiver.
     rx: Receiver<Command>,
@@ -302,7 +299,7 @@ impl Worker {
         self.clock = block.round();
         self.maybe_switch_committee().await?;
 
-        let round = Round::new(block.round(), self.epoch.committee());
+        let round = Round::new(block.round(), self.current);
         let info = BlockInfo::new(num, round, *block.hash());
 
         let Some(evi) = self.evidence(num) else {
@@ -532,9 +529,9 @@ impl Worker {
             warn!(node = %self.label, committee = %c.committee().id(), "committee already added");
             return Ok(());
         }
-        let Some(committee) = self.committees.get(self.epoch.committee()) else {
-            error!(node = %self.label, committee = %self.epoch.committee(), "current committee not found");
-            return Err(ProducerError::NoCommittee(self.epoch.committee()));
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(ProducerError::NoCommittee(self.current));
         };
         let mut additional = Vec::new();
         for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
@@ -554,20 +551,20 @@ impl Worker {
             error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");
             return Err(ProducerError::NoCommittee(round.committee()));
         };
-        self.next_epoch = Some(round);
+        self.next_committee = Some(round);
         Ok(())
     }
 
     async fn maybe_switch_committee(&mut self) -> Result<()> {
-        let Some(start) = self.next_epoch else {
+        let Some(start) = self.next_committee else {
             return Ok(());
         };
         if self.clock < start.num() {
             return Ok(());
         }
-        let Some(committee) = self.committees.get(self.epoch.committee()) else {
-            error!(node = %self.label, committee = %self.epoch.committee(), "current committee not found");
-            return Err(ProducerError::NoCommittee(self.epoch.committee()));
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(ProducerError::NoCommittee(self.current));
         };
         let old = self
             .net
@@ -583,7 +580,7 @@ impl Worker {
             .assign(Role::Active, committee.parties().copied().collect())
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        self.epoch = start;
+        self.current = start.committee();
         Ok(())
     }
 }
