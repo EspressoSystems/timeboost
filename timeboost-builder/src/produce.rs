@@ -28,7 +28,6 @@ use crate::BlockProducerConfig;
 type Result<T> = StdResult<T, ProducerError>;
 
 const CAPACITY: usize = 128;
-const HISTORY: u64 = 100;
 
 pub struct BlockProducer {
     /// Log label of the node.
@@ -91,6 +90,7 @@ impl BlockProducer {
             .tracking(Default::default())
             .maybe_next_block((!cfg.recover).then(BlockNumber::genesis))
             .info(NodeInfo::new(cfg.committee.committee()))
+            .history(cfg.committee.committee().quorum_size().get() as u64)
             .build();
 
         Ok(Self {
@@ -224,6 +224,9 @@ struct Worker {
 
     /// Quorum of block numbers to use with garbage collection.
     info: NodeInfo<BlockNumber>,
+
+    /// How many extra blocks to keep before GC.
+    history: u64,
 }
 
 #[derive(Default)]
@@ -445,12 +448,12 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
-        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(HISTORY).into();
+        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
 
         // Check if we need to catch up to the others.
         if self
             .next_block
-            .map(|n| n + HISTORY < lower_bound)
+            .map(|n| n + self.history < lower_bound)
             .unwrap_or(false)
         {
             debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
@@ -581,6 +584,7 @@ impl Worker {
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
         self.current = start.committee();
+        self.history = committee.quorum_size().get() as u64;
         Ok(())
     }
 }
