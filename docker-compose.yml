@@ -17,7 +17,7 @@ services:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_CERTIFIER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
     ports:
@@ -44,7 +44,7 @@ services:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_CERTIFIER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
     ports:
@@ -71,7 +71,7 @@ services:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_CERTIFIER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
     ports:
@@ -98,7 +98,7 @@ services:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_CERTIFIER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
     ports:
@@ -125,7 +125,7 @@ services:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
       - TIMEBOOST_SAILFISH_PORT=8000
       - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_PRODUCER_PORT=8002
+      - TIMEBOOST_CERTIFIER_PORT=8002
       - TIMEBOOST_RPC_PORT=8800
       - TIMEBOOST_METRICS_PORT=9000
     ports:

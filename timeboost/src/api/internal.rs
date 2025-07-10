@@ -1,6 +1,6 @@
 use multisig::PublicKey;
 use proto::internal::internal_api_server::InternalApi;
-use timeboost_builder::{Handle, ProducerDown};
+use timeboost_builder::{CertifierDown, Handle};
 use timeboost_types::Block;
 use tonic::{Request, Response, Status};
 
@@ -24,7 +24,7 @@ impl InternalApi for InternalApiService {
         match Block::try_from(r.into_inner()) {
             Ok(b) => {
                 if let Err(err) = self.block_handler.enqueue(b).await {
-                    let _: ProducerDown = err;
+                    let _: CertifierDown = err;
                     return Err(Status::internal("timeboost is shutting down"));
                 }
                 Ok(Response::new(()))

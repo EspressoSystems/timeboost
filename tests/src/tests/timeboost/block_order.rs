@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use metrics::NoMetrics;
 use multisig::Certificate;
-use timeboost_builder::BlockProducer;
+use timeboost_builder::Certifier;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
@@ -44,7 +44,7 @@ async fn block_order() {
                 sleep(Duration::from_secs(5)).await
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
-            let mut p = BlockProducer::new(b, &NoMetrics).await.unwrap();
+            let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             loop {
                 select! {
                     t = brx.recv() => match t {

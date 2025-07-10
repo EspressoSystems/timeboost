@@ -3,81 +3,81 @@
     {
       "sailfish_address": "172.20.0.2:8000",
       "decrypt_address": "172.20.0.2:8001",
-      "producer_address": "172.20.0.2:8002",
+      "certifier_address": "172.20.0.2:8002",
       "internal_address": "172.20.0.2:5000",
-      "signing_key": "qkoZ7xPFuTjNpKmn3SyWL2Y6WLm89wi9jNkDuu9KefXv",
-      "dh_key": "JCriD5gjwBBvJRX6XsVeM6SZCqJVpjeMSdWUmyWsB6fG",
-      "enc_key": "8shQ2jx13sU9x2BHchmjGDtMq9x7VBE1okyRYuAifa8YdaP8rtZaf3xeARSWadr9ABU",
+      "signing_key": "mabJfy2xVRAFtHjESot4L94B6rXnnC3PJt45JTaFxMaE",
+      "dh_key": "EJNBd8TbipWa7KTUxeRhRG38AVmHpugEfGZaD5BmLfbk",
+      "enc_key": "8tBQZfJHAHx6jjSSWbP3Y332mGZd3Zf2xyNchCANTFYNYRqPMnaPTkHVdK8zcJ9BEqs",
       "private": {
-        "signing_key": "9xTovKuXbwvBxk56Vb5Rs8rQ8e4zYuDueVMzU8Dp2X4X",
-        "dh_key": "HvQwBVK7idXEHsWxjDLtjewSqtTy3quG2SABsX1V4eew",
-        "dec_share": "kCg6ctxoCcjtnX9ATbdXR85KoPJ6M74yzYfdTee3cMf8qM",
-        "dec_key": "AbtRhN1rvGzZjeqmuZo8HQDNvH6YUEfJjPhDWCZFjM29E"
+        "signing_key": "8Z37mrH658eN89GSecRLfyxNNKZMH782du7M3XYP2X6U",
+        "dh_key": "5L5AaqFYZVDKAgb9zjj9G9MpPuA2c9LheRWTSzUPBynV",
+        "dec_share": "j8TwNjSeTV4zQuWpQt1mzSriNpoxAB47fj6Traqm6bGPUs",
+        "dec_key": "AYfiNqLSeVgvadjhfeqGSQhVYgbiW5BYqmaBwBNSPXQuQ"
       }
     },
     {
       "sailfish_address": "172.20.0.3:8000",
       "decrypt_address": "172.20.0.3:8001",
-      "producer_address": "172.20.0.3:8002",
+      "certifier_address": "172.20.0.3:8002",
       "internal_address": "172.20.0.3:5000",
-      "signing_key": "28y18s4egBUnxoLSJY8vCYXV8KXaKYysD6tUen7syFyPt",
-      "dh_key": "2wkSkQr7f3H5rXHjbo2YTBsyZ6kaKZKzatRB4ZFm8aMx",
-      "enc_key": "8snAicyAEjCvD3MnEZaSsgxXPGQBGDp8yKroaeCAFA1Kz8RGUcGNfJjqemuKC42Nf9U",
+      "signing_key": "rutfSyh5UWrijiYZqCKTWa7BnoZpyb9grbWFqcyR1Q2d",
+      "dh_key": "Gx95VSY3eXaUK8HQmhGWooonDsx8Mn7RJ6Zcx4hsLTdh",
+      "enc_key": "8s6ZT3ewef135iprpmUPxQWKXQfSPLig8rhHV4n9UBXbhwThX4Zfb6vii3h5LYE3xoh",
       "private": {
-        "signing_key": "ELRLgE3jPkErc6cmp1gQjveku2gvvGCgAYEFS1tvJhEx",
-        "dh_key": "2WWHd5cL3t281CUwA3ysiqLh1iK7UZf6hLQkAqAYj2W5",
-        "dec_share": "jTwqWYdKHfPr6JaU1jdGxCCTArKqFi21TURkuibQx4jm5A",
-        "dec_key": "AdvSYbrGgJrJRsXAvUQAG3cqmD8hQ4VAhyFEp1qXPgjKg"
+        "signing_key": "DVZ8rAB6XYyvmXHimaUAhFR6Rp3hkcYPUYWrMEorx9hB",
+        "dh_key": "6F6jMUgJKGbDskXJftqGdKz3e1Z5v58L9KSxFkz5y16p",
+        "dec_share": "k86XXDcJHoCpNswo9uUqfz3TjubgyJDVu13YphkPSQHXAp",
+        "dec_key": "AYAZyCqddyB1zrtJVkkepDgcFqsCY1fMgj3SVVtNt2rqx"
       }
     },
     {
       "sailfish_address": "172.20.0.4:8000",
       "decrypt_address": "172.20.0.4:8001",
-      "producer_address": "172.20.0.4:8002",
+      "certifier_address": "172.20.0.4:8002",
       "internal_address": "172.20.0.4:5000",
-      "signing_key": "hG6JFzeyG4oiJMMFVyHLi1jwHxJU7Ja2fpuiXdrGtvXt",
-      "dh_key": "3Ln31Ue94p7Z2pnnwxc9mzr8uCLeNjCYNaC1r6CahCWu",
-      "enc_key": "8stroHBcghf4kRbm8b7Wa3kUmvz4KSPCFevvxQitgDvfbe47928giJjyASYRrvfHyB7",
+      "signing_key": "29qEaVvt87rxxyAHZ4NRf3JunuAPDhvmrcp1R1MXGAqiU",
+      "dh_key": "2ejy4LEdETjHSGb8TyB9BQGAtjkFryCkRu6P8fzYmDPJ",
+      "enc_key": "8sKWDkvTz9isARzTwuoYuGZqq9W79XV4rF3cmymCQn1RQNDzcwCLoFumb72Mi4e5qMV",
       "private": {
-        "signing_key": "5GMUZhwXmg44v8QY9qo7AB6Cwx5T63HM1wB62EGFqUAg",
-        "dh_key": "AnwcLW2ADLygaQdUtQrED5uDtdoU1XQGWgSthSjewS69",
-        "dec_share": "juxCiGSJYnZBcKbprPZyj8iWAmEVHSdQJdbExjoJYU5psb",
-        "dec_key": "AXCxqx1D8yqg2n69fh5cqPXPjFddfyThdFicPpUMcCuwc"
+        "signing_key": "5eePPupbhTkbL6LhkMEMVch2X31U8LJPVUbVBccbdY15",
+        "dh_key": "HqhMHhfMZCDzCsWD3TqfndoyJCCkopRWQzXDcfvBv98U",
+        "dec_share": "jAfEdJ6VBd47g1FBpaENRyJvdQRGr9mAXMPhsN73QcMoBP",
+        "dec_key": "AjbUxitqpbrKLSazegdRJgfZQLqzZDfCvSob3w4Q928jb"
       }
     },
     {
       "sailfish_address": "172.20.0.5:8000",
       "decrypt_address": "172.20.0.5:8001",
-      "producer_address": "172.20.0.5:8002",
+      "certifier_address": "172.20.0.5:8002",
       "internal_address": "172.20.0.5:5000",
-      "signing_key": "zTeKzrcicpRSubwjnEKvPX6pSFNQb4MzhWXqbiMBwJfy",
-      "dh_key": "BdZToJhuKmAq5Wf4BEAqYzWCAk3D5WuGbdkLfYtyS789",
-      "enc_key": "8rgZ3LTJgKhBZk2LWDoVoFhAnc8u6NYtTTJx4JyTsFsSYp81D4SdNovMoWeecrwsbRX",
+      "signing_key": "2AMEFVNCANpdauEh59emL2oPtcQYdn8qqNbTBYDGGrKsW",
+      "dh_key": "F3TaCT3u4jVNi825XgV3J7LxXyCFtkL7BkwbRSFG5JGb",
+      "enc_key": "8s1vYUWqyZxUokRNq38AK63dkJ2kgritDpEHbt3diy24v31RDdsKdRwjhyai11AyboP",
       "private": {
-        "signing_key": "31sLZMKkqx1Kh8ZmdA1dk5qdYd3TUoPFPysKEXWBbF6T",
-        "dh_key": "HmUAV7aLEieHjSLAtYgjNHAvsc5iN15ZYp7aCvkHn6sR",
-        "dec_share": "j9BU6g5q9uVSKjWDbPuCQjYUtgV1D291299T5HGWszjuxW",
-        "dec_key": "AXhuvASxYzhBLopg2M3EzVwJ5tVPSCiQiVCEaA7DVMGoX"
+        "signing_key": "AwcuSRqcPwP9Ndjt662Vbe3g2vh583sX7YJDhjBuALTk",
+        "dh_key": "9KLJY1ajLULibT5Kf5oUjtGEezB8ZGvK2wj8WcJdjBde",
+        "dec_share": "jVpgaAMtNEiSAqmCXzP2qJ2tV76cfQ4DVyBRQKta1xjR9L",
+        "dec_key": "AjbCfqk49STyaHEwwesBCaScnMZdabvGuceZgxhHTESe9"
       }
     },
     {
       "sailfish_address": "172.20.0.6:8000",
       "decrypt_address": "172.20.0.6:8001",
-      "producer_address": "172.20.0.6:8002",
+      "certifier_address": "172.20.0.6:8002",
       "internal_address": "172.20.0.6:5000",
-      "signing_key": "kPGFQGGzakoyBzSmQ8AkjKwgWELAiJzgxzVPkiFasFPr",
-      "dh_key": "AV8736Yv3FUucj4fKjvn8mTfVYtd2PuZK3reCvSKhjWZ",
-      "enc_key": "8tNMoAG63saKxzPYvkHNoT4riberyBus7cZ7uc8kMomiAUGP8VrqX8UEVbPJYyEPQkb",
+      "signing_key": "yoqYPL1jTuRBYA1qybsVGMhNxupKnNbUpww1sVyZTDri",
+      "dh_key": "B1QAv777X99KG2xQEZCSk8iEHZsJT7sx7NhSBCuXdg9U",
+      "enc_key": "8sNCrh45MBdubPvZPuEvvqGHVpsWEhFZukyBG6g2cgjPEkRgxGtj7YDeCvMxmz76gRt",
       "private": {
-        "signing_key": "7dd5KH6sZXsL3HcAMxT51tWJzrW6GDGcVx5VcdWDPQCn",
-        "dh_key": "BbabRgw6bBMsFS2Q8Qh9vQP33CvMCfL9wY71Gg4Y7L4J",
-        "dec_share": "j4PvEuepFM8Rb91dgiQxNSTkbmMhRrKk3tjwpiA4i2ZGXm",
-        "dec_key": "AdFyv8xcG7jG99yUVsvGBMoqrTqPMDmVadGFYpSQvnFHN"
+        "signing_key": "BSbbhNKYgs7urSMZ82fyDEKzwDnJG4DPjjQWJbRmqYuR",
+        "dh_key": "4ArVbho57oh7GTtR71o95jPokLq9CUvZVGQjSo1VN8rU",
+        "dec_share": "j46WwQT5Ln3So6ewcUACXMEPmwHnAQCXqiZwyQinugEzUj",
+        "dec_key": "AdWqv2U6amCuhVzzPzWTGkJUySWh2tCGu6KGcd83qnQ67"
       }
     }
   ],
   "dec_keyset": {
-    "pubkey": "8syLo56xRWqj3skbEVPd62HPrsx1zZV9vWNNXDeSJPoMEJ3GJHVpCbABJgZ1nHhV4tc",
-    "combkey": "y78eyefKAdSxBLhQHNz6R1nA6QrUx1tfoen1ngS3dgyFg7UvUSdcppoogxpBZhjVtyt33DC9r45WrstrWcGoa7RPJGUBdLpGKMh9GZVSL25MqBwNuvaVjb9dwwvC2st86u9mT23GaQ999NYgXKh9XFicqUKfc7iAHdLy4eVd7sJ3Nj3JRkUdMjcbDAxr6gHGzYWz8WCBFq6g6Z8WQfzwekbWVKwuoTgZNSAvzhi7f3M4ZfVNFc5c1VBbcfeMuwxQNVtWihiVm3Vz87SsgPZZBbYE9Ruz3VjEuVpvgLWCxkUVFXZatNqEa1FSaZrUA45vYrgiGo517xpoMVm"
+    "pubkey": "8sKeY3xQMXkxEhrJarDxwPwnfeNX4dadFZLtrt2gRv9By8aUTkY59LHvvbC1fd6ydEg",
+    "combkey": "y7AnuKz7QtPWJvW5iWCWCcrWuNj1BoWj4skXFYvo9z5mBM5z4RTpiyc6a5of9KDnfBfv2Y5Lv2vVRvuJmR8764D4S9PhfSRJ1FhXK9ECDznyLG6SxY8iH4qCG67f8aazR7G1zonZnTTchZ3a32mdCrHTpF5ApZ2hzYMtyKWFuah6QZTGxk1Q95Fi5Vbm399LJFjwVpaDFJcyQ5wdnxkwzzCbVrmQtXe8RVF9CudZbgyEdspRx3p9pLbUp7Z1Suvn943UiE8WcwDrjrwDa8j9c6oDQeSxa3pEa5eUeV3MKCgGsLuTjj1WyTq3tCLZ3zfXyoeNKtAjQfjTj8X"
   }
 }
