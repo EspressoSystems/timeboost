@@ -82,7 +82,7 @@ mod tests {
     };
 
     use multisig::Keypair;
-    use prost::Message;
+    use prost::{Message, bytes::Bytes};
     use timeboost_proto::{
         forward::{
             forward_api_client::ForwardApiClient,
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn simple_encode_and_decode() {
         let old = Transaction {
-            encoded_txn: Vec::new(),
+            encoded_txn: Bytes::new(),
             address: "0x00".as_bytes().to_vec(),
             timestamp: *Timestamp::now(),
         };
