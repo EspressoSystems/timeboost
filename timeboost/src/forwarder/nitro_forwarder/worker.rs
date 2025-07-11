@@ -33,7 +33,7 @@ impl Worker {
         loop {
             if let Some(incl) = self.pending.take() {
                 if self.send(incl).await.is_err() {
-                    sleep(Duration::from_secs(d.next().expect("next"))).await;
+                    sleep(Duration::from_secs(d.next().expect("iterator repeats endlessly"))).await;
                 }
                 continue;
             };
