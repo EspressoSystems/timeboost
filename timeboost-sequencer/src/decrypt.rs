@@ -14,7 +14,7 @@ use timeboost_types::{DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
 
@@ -23,8 +23,10 @@ type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
 /// Command sent to Decrypter's background worker
-#[allow(dead_code)]
+#[allow(unused)]
 enum Command {
+    // request to inform the worker of DKG shares (dealings) in the inclusion list
+    Dkg(InclusionList),
     // request to decrypt all encrypted transactions inside the inclusion list
     Decrypt(InclusionList),
     /// Prepare for the next committee.
@@ -44,6 +46,8 @@ enum Status {
 /// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to
 /// collectively threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase
 /// ("Decryption phase") of timeboost.
+///
+/// The Decrypter also extracts DKG shares from inclusion lists and combines these to obtain keys.
 ///
 /// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key
 /// share), and combiner's "hatching" (using the combiner key).
@@ -129,9 +133,18 @@ impl Decrypter {
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
     /// Else append to local cache waiting to be pulled.
     ///
+    /// If the inclusion list contains dealings then the list is forwarded to the worker.
+    ///
     /// decrypter will process any encrypted/unencrypted inclusion list
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
+
+        if incl.has_dkg_bundles() {
+            self.worker_tx
+                .send(Command::Dkg(incl.clone()))
+                .await
+                .map_err(|_| DecrypterDown(()))?;
+        }
 
         if incl.is_encrypted() {
             self.worker_tx
@@ -270,10 +283,16 @@ impl Worker {
                 },
                 // receiving a request from the decrypter
                 cmd = self.rx.recv() => match cmd {
+                    Some(Command::Dkg(incl)) => {
+                        let round = incl.round();
+                        let bundles = incl.dkg_bundles();
+                        info!("received: {} dkg bundles in round: {}", bundles.len(), round);
+                        // TODO: ACS state machine
+                    },
                     Some(Command::Decrypt(incl)) => {
                         let round = incl.round();
-                        trace!(%node, %round, "decrypt request");
 
+                        trace!(%node, %round, "decrypt request");
                         match self.on_decrypt_request(round, incl).await {
                             Ok(()) => {}
                             Err(DecrypterError::End(end)) => return end,

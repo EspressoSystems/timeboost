@@ -15,8 +15,8 @@ pub use sailfish_types::math;
 
 pub use block::{Block, BlockHash, BlockInfo, BlockNumber, CertifiedBlock};
 pub use bundle::{
-    Address, Bundle, BundleVariant, ChainId, PriorityBundle, SignedPriorityBundle, Signer,
-    Transaction,
+    Address, Bundle, BundleVariant, ChainId, DkgBundle, PriorityBundle, SignedPriorityBundle,
+    Signer, Transaction,
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
