@@ -115,4 +115,11 @@ pub enum VssError {
     FailedReconstruction(String),
     #[error("internal err: {0}")]
     InternalError(String),
+
+    #[error("reshare data is empty")]
+    EmptyReshare,
+    #[error("input length mismatched")]
+    MismatchedInputLength,
+    #[error("failed to combine reshares: {0}")]
+    FailedCombine(String),
 }
