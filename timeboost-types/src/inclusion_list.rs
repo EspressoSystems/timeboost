@@ -1,4 +1,6 @@
-use crate::{Bundle, Bytes, DelayedInboxIndex, Epoch, Timestamp, bundle::SignedPriorityBundle};
+use crate::{
+    Bundle, Bytes, DelayedInboxIndex, DkgBundle, Epoch, Timestamp, bundle::SignedPriorityBundle,
+};
 use sailfish_types::{Evidence, RoundNumber};
 
 /// List of bundles to be included, selected from `CandidateList`.
@@ -12,6 +14,7 @@ pub struct InclusionList {
     evidence: Evidence,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
+    dkg: Vec<DkgBundle>,
 }
 
 impl InclusionList {
@@ -23,7 +26,13 @@ impl InclusionList {
             evidence: e,
             priority: Vec::new(),
             regular: Vec::new(),
+            dkg: Vec::new(),
         }
+    }
+
+    pub fn set_dkg_bundles(&mut self, d: Vec<DkgBundle>) -> &mut Self {
+        self.dkg = d;
+        self
     }
 
     pub fn set_priority_bundles(&mut self, t: Vec<SignedPriorityBundle>) -> &mut Self {
@@ -54,6 +63,10 @@ impl InclusionList {
 
     pub fn has_priority_bundles(&self) -> bool {
         !self.priority.is_empty()
+    }
+
+    pub fn has_dkg_bundles(&self) -> bool {
+        !self.dkg.is_empty()
     }
 
     pub fn epoch(&self) -> Epoch {
@@ -98,6 +111,10 @@ impl InclusionList {
 
     pub fn delayed_inbox_index(&self) -> DelayedInboxIndex {
         self.index
+    }
+
+    pub fn dkg_bundles(&self) -> &[DkgBundle] {
+        &self.dkg
     }
 
     pub fn digest(&self) -> [u8; 32] {
