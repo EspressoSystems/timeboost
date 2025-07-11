@@ -29,7 +29,7 @@ pub trait VerifiableSecretSharing {
         secret: Self::Secret,
     ) -> (Vec<Self::SecretShare>, Self::Commitment);
 
-    /// Verifies a secret share against the global and per-share proofs.
+    /// Verifies a secret share against the commitment.
     ///
     /// - `node_idx`: index of the share to verify
     /// - `share`: the secret share to verify
@@ -52,6 +52,52 @@ pub trait VerifiableSecretSharing {
         pp: &Self::PublicParam,
         shares: impl Iterator<Item = (usize, Self::SecretShare)>,
     ) -> Result<Self::Secret, VssError>;
+}
+
+/// Publicly verifiable key resharing scheme for a VSS where existing share holders of a Shamir
+/// secret sharing can create a new Shamir secret sharing of the same secret and distribute it to a
+/// set of receivers in a confidential, yet verifiable manner.
+///
+/// # Notation
+///
+/// Resharing from (t,n) to (t', n') committee, all the reshares are arranged in a (n x n') matrix
+/// each row is a resharing dealing containing n' reshares, sent by Party i \in [n];
+/// each row is accompanied by a row_commitment
+/// each col is reshares received by a Party j' \in [n'].
+///
+/// `reshare()` invoked by Party i outputs the i-th row of (n x n')-matrix, and i-th row_commitment
+/// `verify_reshare()` invoked by anyone to verify (i,j)-cell
+/// `combine()` invoked by Parth j', takes a subset of rows in the matrix and their row commitments
+/// and outputs j'-th new secret share and new commitment
+pub trait KeyResharing<VSS: VerifiableSecretSharing> {
+    /// Given the new public parameter (t', n'), and holding secret share,
+    /// generates a dealing (resharing of a share) for the new VSS set/committee
+    fn reshare<R: Rng>(
+        new_pp: &VSS::PublicParam,
+        old_share: &VSS::SecretShare,
+        rng: &mut R,
+    ) -> (Vec<VSS::SecretShare>, VSS::Commitment);
+
+    /// Publicly verify the correctness of a reshare
+    fn verify_reshare(
+        old_pp: &VSS::PublicParam,
+        new_pp: &VSS::PublicParam,
+        send_node_idx: usize,
+        recv_node_idx: usize,
+        old_commitment: &VSS::Commitment,
+        row_commitment: &VSS::Commitment,
+        reshare: &VSS::SecretShare,
+    ) -> Result<bool, VssError>;
+
+    /// Combine resharings to derive the new secret share
+    fn combine(
+        old_pp: &VSS::PublicParam,
+        new_pp: &VSS::PublicParam,
+        send_node_indices: &[usize],
+        row_commitments: &[VSS::Commitment],
+        recv_node_idx: usize,
+        recv_reshares: &[VSS::SecretShare],
+    ) -> Result<(VSS::Secret, VSS::Commitment), VssError>;
 }
 
 /// Error types for [`VerifiableSecretSharing`]
