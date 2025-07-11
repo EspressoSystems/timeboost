@@ -28,7 +28,8 @@ impl Worker {
     }
 
     pub async fn go(mut self) {
-        let mut d = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        let mut d = delays();
         loop {
             if let Some(incl) = self.pending.take() {
                 if self.send(incl).await.is_err() {
