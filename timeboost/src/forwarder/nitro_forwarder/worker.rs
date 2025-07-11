@@ -3,14 +3,13 @@ use std::{iter::repeat, time::Duration};
 use multisig::PublicKey;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use tokio::{sync::mpsc::Receiver, time::sleep};
-use tonic::{Status, transport::Channel};
+use tonic::transport::Channel;
 use tracing::warn;
 
 pub struct Worker {
     key: PublicKey,
     client: ForwardApiClient<Channel>,
     incls_rx: Receiver<InclusionList>,
-    pending: Option<InclusionList>,
 }
 
 impl Worker {
@@ -23,50 +22,19 @@ impl Worker {
             key,
             client,
             incls_rx,
-            pending: None,
         }
     }
 
     pub async fn go(mut self) {
         let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
-        let mut d = delays();
-        loop {
-            if let Some(incl) = self.pending.take() {
-                if self.send(incl).await.is_err() {
-                    sleep(Duration::from_secs(
-                        d.next().expect("iterator repeats endlessly"),
-                    ))
-                    .await;
-                }
-                continue;
-            };
-            match self.incls_rx.recv().await {
-                Some(incl) => {
-                    if self.send(incl).await.is_err() {
-                        sleep(Duration::from_secs(
-                            d.next().expect("iterator repeats endlessly"),
-                        ))
-                        .await;
-                        continue;
-                    }
-                }
-                None => {
-                    warn!(node = %self.key, "disconnected inclusion list receiver");
-                    break;
-                }
+        while let Some(incl) = self.incls_rx.recv().await {
+            let mut d = delays();
+            while let Err(err) = self.client.submit_inclusion_list(incl.clone()).await {
+                warn!(node = %self.key, %err, "failed to forward data to nitro");
+                let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+                sleep(t).await;
             }
-            d = delays();
         }
-    }
-
-    async fn send(&mut self, incl: InclusionList) -> Result<(), Status> {
-        if let Err(err) = self.client.submit_inclusion_list(incl.clone()).await {
-            warn!(node = %self.key, %err, "failed to forward data to nitro");
-            debug_assert!(self.pending.is_none());
-            self.pending = Some(incl);
-            return Err(err);
-        }
-        Ok(())
     }
 }
 
