@@ -54,8 +54,7 @@ impl Worker {
     }
 
     async fn send(&mut self, incl: InclusionList) -> Result<(), Status> {
-        let req = Request::new(incl.clone());
-        if let Err(err) = self.client.submit_inclusion_list(req).await {
+        if let Err(err) = self.client.submit_inclusion_list(incl.clone()).await {
             warn!(node = %self.key, %err, "failed to forward data to nitro");
             debug_assert!(self.pending.is_none());
             self.pending = Some(incl);
