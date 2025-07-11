@@ -2,10 +2,13 @@ mod worker;
 
 use std::io;
 
+use alloy_eips::Encodable2718;
 use cliquenet::Address;
 use multisig::PublicKey;
+use sailfish::types::RoundNumber;
 use timeboost_proto::forward::forward_api_client::ForwardApiClient;
 use timeboost_proto::inclusion::InclusionList;
+use timeboost_types::{Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
@@ -26,7 +29,7 @@ impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.connect().await?;
+        let chan = endpoint.concurrency_limit(1).connect().await?;
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
@@ -36,9 +39,27 @@ impl NitroForwarder {
         })
     }
 
-    pub async fn enqueue(&self, d: InclusionList) -> Result<(), Error> {
+    pub async fn enqueue(
+        &self,
+        round: RoundNumber,
+        timestamp: Timestamp,
+        txns: &[Transaction],
+    ) -> Result<(), Error> {
+        let incl = InclusionList {
+            round: *round,
+            encoded_txns: txns
+                .iter()
+                .map(|tx| timeboost_proto::inclusion::Transaction {
+                    encoded_txn: tx.encoded_2718(),
+                    address: tx.address().as_slice().to_vec(),
+                    timestamp: **tx.time(),
+                })
+                .collect(),
+            consensus_timestamp: timestamp.into(),
+            delayed_messages_read: 0,
+        };
         self.incls_tx
-            .send(d)
+            .send(incl)
             .await
             .map_err(|_| Error::WorkerStopped)?;
         Ok(())

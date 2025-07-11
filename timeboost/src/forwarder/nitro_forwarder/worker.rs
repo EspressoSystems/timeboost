@@ -1,7 +1,9 @@
+use std::{iter::repeat, time::Duration};
+
 use multisig::PublicKey;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
-use tokio::sync::mpsc::Receiver;
-use tonic::{Request, transport::Channel};
+use tokio::{sync::mpsc::Receiver, time::sleep};
+use tonic::{Request, Status, transport::Channel};
 use tracing::warn;
 
 pub struct Worker {
@@ -26,30 +28,39 @@ impl Worker {
     }
 
     pub async fn go(mut self) {
+        let mut d = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
         loop {
             if let Some(incl) = self.pending.take() {
-                self.send(incl).await;
+                if self.send(incl).await.is_err() {
+                    sleep(Duration::from_secs(d.next().expect("next"))).await;
+                }
                 continue;
             };
             match self.incls_rx.recv().await {
-                Some(d) => {
-                    self.send(d).await;
+                Some(incl) => {
+                    if self.send(incl).await.is_err() {
+                        sleep(Duration::from_secs(d.next().expect("next"))).await;
+                        continue;
+                    }
                 }
                 None => {
                     warn!(node = %self.key, "disconnected inclusion list receiver");
                     break;
                 }
             }
+            d = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
         }
     }
 
-    async fn send(&mut self, incl: InclusionList) {
+    async fn send(&mut self, incl: InclusionList) -> Result<(), Status> {
         let req = Request::new(incl.clone());
         if let Err(err) = self.client.submit_inclusion_list(req).await {
             warn!(node = %self.key, %err, "failed to forward data to nitro");
             debug_assert!(self.pending.is_none());
             self.pending = Some(incl);
+            return Err(err);
         }
+        Ok(())
     }
 }
 

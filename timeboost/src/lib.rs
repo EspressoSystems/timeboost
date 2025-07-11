@@ -4,7 +4,6 @@ use std::future::pending;
 use std::iter::once;
 use std::sync::Arc;
 
-use alloy_eips::Encodable2718;
 use anyhow::{Result, anyhow, bail};
 use api::metrics::serve_metrics_api;
 use metrics::TimeboostMetrics;
@@ -110,20 +109,7 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            let incl = proto::inclusion::InclusionList {
-                                round: *round,
-                                encoded_txns: transactions
-                                    .into_iter()
-                                    .map(|tx| proto::inclusion::Transaction {
-                                        encoded_txn: tx.encoded_2718(),
-                                        address: tx.address().as_slice().to_vec(),
-                                        timestamp: **tx.time(),
-                                    })
-                                    .collect(),
-                                    consensus_timestamp: timestamp.into(),
-                                    delayed_messages_read: 0,
-                            };
-                            f.enqueue(incl).await?;
+                            f.enqueue(round, timestamp, &transactions).await?;
                         }
                         else {
                             warn!(node = %self.label, %round, "no forwarder => dropping output")
