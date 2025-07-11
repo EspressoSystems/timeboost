@@ -231,7 +231,7 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
 
 #[cfg(test)]
 mod tests {
-    use ark_bls12_381::G1Projective;
+    use ark_bls12_381::{Fr, G1Projective};
     use ark_std::{UniformRand, rand::seq::SliceRandom, test_rng};
 
     use super::*;
@@ -317,8 +317,158 @@ mod tests {
         test_feldman_vss_helper::<G1Projective>();
     }
 
+    // Core key resharing workflow
+    fn run_reshare_scenario(old_t: u32, old_n: u32, new_t: u32, new_n: u32, rng: &mut impl Rng) {
+        let old_pp = FeldmanVssPublicParam::new(
+            NonZeroU32::new(old_t).unwrap(),
+            NonZeroU32::new(old_n).unwrap(),
+        );
+        let new_pp = FeldmanVssPublicParam::new(
+            NonZeroU32::new(new_t).unwrap(),
+            NonZeroU32::new(new_n).unwrap(),
+        );
+
+        let secret = Fr::rand(rng);
+
+        let (old_shares, old_commitment) = FeldmanVss::<G1Projective>::share(&old_pp, rng, secret);
+
+        // Verify original shares
+        for (node_idx, share) in old_shares.iter().enumerate() {
+            assert!(
+                FeldmanVss::<G1Projective>::verify(&old_pp, node_idx, share, &old_commitment)
+                    .unwrap()
+            );
+        }
+
+        let mut reshare_matrix = Vec::new();
+        let mut row_commitments = Vec::new();
+
+        for old_share in old_shares.iter() {
+            let (reshare_row, row_commitment) =
+                FeldmanVss::<G1Projective>::reshare(&new_pp, old_share, rng);
+            reshare_matrix.push(reshare_row);
+            row_commitments.push(row_commitment);
+        }
+
+        // Verify reshares
+        for i in 0..old_n as usize {
+            for j in 0..new_n as usize {
+                let is_valid = FeldmanVss::<G1Projective>::verify_reshare(
+                    &old_pp,
+                    &new_pp,
+                    i,
+                    j,
+                    &old_commitment,
+                    &row_commitments[i],
+                    &reshare_matrix[i][j],
+                )
+                .unwrap();
+                assert!(is_valid);
+            }
+        }
+
+        let mut new_shares = Vec::new();
+        let mut new_commitments = Vec::new();
+
+        for j in 0..new_n as usize {
+            let recv_reshares: Vec<Fr> = (0..old_t as usize)
+                .collect::<Vec<_>>()
+                .iter()
+                .map(|&i| reshare_matrix[i][j])
+                .collect();
+            let selected_row_commitments: Vec<Vec<_>> = (0..old_t as usize)
+                .map(|i| row_commitments[i].clone())
+                .collect();
+
+            let (new_secret_share, new_commitment) = FeldmanVss::<G1Projective>::combine(
+                &old_pp,
+                &new_pp,
+                &(0..old_t as usize).collect::<Vec<_>>(),
+                &selected_row_commitments,
+                j,
+                &recv_reshares,
+            )
+            .unwrap();
+
+            new_shares.push(new_secret_share);
+            new_commitments.push(new_commitment);
+
+            assert!(
+                FeldmanVss::<G1Projective>::verify(
+                    &new_pp,
+                    j,
+                    &new_secret_share,
+                    &new_commitments[j]
+                )
+                .unwrap()
+            );
+        }
+
+        // Reconstruct secret
+        let reconstructed_secret = FeldmanVss::<G1Projective>::reconstruct(
+            &new_pp,
+            (0..new_t as usize).map(|i| (i, new_shares[i])),
+        )
+        .unwrap();
+
+        assert_eq!(reconstructed_secret, secret);
+    }
+
+    // Test success-path for identical (t,n) → (t',n') case
     #[test]
-    fn test_key_resharing() {
+    fn test_key_resharing_identical_params() {
         let rng = &mut test_rng();
+
+        // Run 7 random trials (between 5-10)
+        for _ in 0..7 {
+            // Generate random (t,n) parameters
+            let n = rng.gen_range(5..12);
+            let t = rng.gen_range(2..n);
+            run_reshare_scenario(t, n, t, n, rng);
+        }
+    }
+
+    // Test success-path for different (t,n) → (t',n') cases
+    #[test]
+    fn test_key_resharing_different_threshold_committee_sizes() {
+        let rng = &mut test_rng();
+
+        // Run multiple random trials with different parameter combinations
+        for _ in 0..10 {
+            // Randomly choose (t,n) parameters for the original committee
+            let old_n = rng.gen_range(5..15);
+            let old_t = rng.gen_range(2..old_n);
+
+            // Randomly choose (t',n') parameters for the new committee with variations
+            // Sometimes larger, sometimes smaller than original
+            let new_n = match rng.gen_range(0..3) {
+                0 => rng.gen_range(5..old_n),  // Smaller committee
+                1 => rng.gen_range(old_n..20), // Larger committee
+                _ => rng.gen_range(5..20),     // Random size
+            };
+            let new_t = rng.gen_range(2..new_n);
+
+            run_reshare_scenario(old_t, old_n, new_t, new_n, rng);
+        }
+    }
+
+    // Test specific edge cases for minimal thresholds and committee size limits
+    #[test]
+    fn test_edge_case_minimal_thresholds() {
+        let rng = &mut test_rng();
+
+        // Edge case scenarios: (t, n) → (t', n')
+        let test_cases = vec![
+            ((1, 3), (1, 5)), // (t=1, n=3) → (t'=1, n'=5): minimal threshold expanding committee
+            ((2, 2), (2, 2)), // (t=2, n=2) → (t'=2, n'=2): minimal committee size (t=n)
+            ((1, 2), (1, 3)), // (t=1, n=2) → (t'=1, n'=3): minimal viable committee expanding
+            ((1, 4), (1, 2)), // (t=1, n=4) → (t'=1, n'=2): shrinking to minimal viable size
+            ((2, 3), (1, 4)), // (t=2, n=3) → (t'=1, n'=4): threshold reduction with expansion
+            ((1, 5), (2, 3)), // (t=1, n=5) → (t'=2, n'=3): threshold increase with shrinking
+        ];
+
+        for ((old_t, old_n), (new_t, new_n)) in test_cases {
+            run_reshare_scenario(old_t, old_n, new_t, new_n, rng);
+        }
     }
 }
