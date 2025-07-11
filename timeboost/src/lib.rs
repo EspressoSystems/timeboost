@@ -30,7 +30,6 @@ pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
 use crate::api::internal::InternalApiService;
-use crate::forwarder::data::Data;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
@@ -110,12 +109,9 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            if let Ok(d) = Data::encode(round, timestamp, &transactions) {
-                                f.enqueue(d).await?;
-                            } else {
-                                error!(node = %self.label, "failed to encode inclusion list")
-                            }
-                        } else {
+                            f.enqueue(round, timestamp, &transactions).await?;
+                        }
+                        else {
                             warn!(node = %self.label, %round, "no forwarder => dropping output")
                         }
                     }

@@ -1,165 +1,39 @@
-use std::{
-    future::pending,
-    io::{Error, ErrorKind},
-    iter::repeat,
-    time::Duration,
-};
+use std::{iter::repeat, time::Duration};
 
-use cliquenet::Address;
-use futures::future::Either;
 use multisig::PublicKey;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    select,
-    sync::mpsc::Receiver,
-    task::JoinHandle,
-    time::{sleep, timeout},
-};
-use tracing::{error, info, warn};
-
-use crate::forwarder::data::Data;
-
-/// Expected ack value from nitro node
-const ACK_FLAG: u8 = 0xc0;
-
-/// Max. allowed duration of a single TCP connect attempt.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Max. nitro acknowledgement read timeout
-const ACK_TIMEOUT: Duration = Duration::from_secs(5);
+use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
+use tokio::{sync::mpsc::Receiver, time::sleep};
+use tonic::transport::Channel;
+use tracing::warn;
 
 pub struct Worker {
     key: PublicKey,
-    stream: TcpStream,
-    nitro_addr: Address,
-    incls_rx: Receiver<Data>,
-    pending: Option<Data>,
-    connect_task: Option<JoinHandle<TcpStream>>,
-}
-
-impl Drop for Worker {
-    fn drop(&mut self) {
-        if let Some(h) = self.connect_task.take() {
-            h.abort();
-        }
-    }
+    client: ForwardApiClient<Channel>,
+    incls_rx: Receiver<InclusionList>,
 }
 
 impl Worker {
-    pub async fn connect(
+    pub fn new(
         key: PublicKey,
-        addr: Address,
-        incls_rx: Receiver<Data>,
-    ) -> Result<Self, Error> {
-        let stream = Self::try_connect(&addr).await?;
-        stream.set_nodelay(true)?;
-        Ok(Self {
+        client: ForwardApiClient<Channel>,
+        incls_rx: Receiver<InclusionList>,
+    ) -> Self {
+        Self {
             key,
-            stream,
-            nitro_addr: addr,
+            client,
             incls_rx,
-            pending: None,
-            connect_task: None,
-        })
+        }
     }
 
     pub async fn go(mut self) {
-        loop {
-            let connect = if let Some(f) = &mut self.connect_task {
-                Either::Right(f)
-            } else {
-                Either::Left(pending())
-            };
-            select! {
-                val = self.incls_rx.recv(), if self.pending.is_none() => match val {
-                    Some(d) => {
-                        self.send(d).await
-                    }
-                    None => {
-                        warn!(node = %self.key, "disconnected inclusion list receiver");
-                        break;
-                    }
-                },
-                val = connect => match val {
-                    Ok(s) => {
-                        self.stream = s;
-                        self.connect_task = None;
-                        if let Some(d) = self.pending.take() {
-                            self.send(d).await
-                        }
-                    }
-                    Err(err) => {
-                        error!(node = %self.key, %err, "disconnected stream receiver");
-                        break;
-                    }
-                }
+        let delays = || [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+        while let Some(incl) = self.incls_rx.recv().await {
+            let mut d = delays();
+            while let Err(err) = self.client.submit_inclusion_list(incl.clone()).await {
+                warn!(node = %self.key, %err, "failed to forward data to nitro");
+                let t = Duration::from_secs(d.next().expect("iterator repeats endlessly"));
+                sleep(t).await;
             }
-        }
-    }
-
-    async fn send(&mut self, d: Data) {
-        if let Err(err) = self.write(&d).await {
-            warn!(node = %self.key, %err, "failed to forward data to nitro");
-            debug_assert!(self.pending.is_none());
-            self.pending = Some(d);
-            self.spawn_reconnect();
-        }
-    }
-
-    async fn write(&mut self, d: &Data) -> Result<(), Error> {
-        self.stream.write_u32(d.len()).await?;
-        self.stream.write_all(d.bytes()).await?;
-
-        let mut ack = [0u8; 1];
-        match timeout(ACK_TIMEOUT, self.stream.read_exact(&mut ack)).await {
-            Ok(r) => {
-                r?;
-                if ack[0] != ACK_FLAG {
-                    return Err(Error::new(
-                        ErrorKind::Unsupported,
-                        "received unexpected acknowledgement flag from server",
-                    ));
-                }
-                Ok(())
-            }
-            Err(_) => Err(Error::new(
-                ErrorKind::TimedOut,
-                "ack read operation timed out",
-            )),
-        }
-    }
-
-    fn spawn_reconnect(&mut self) {
-        info!(node = %self.key, "spawning nitro reconnect task");
-        let addr = self.nitro_addr.clone();
-        let node = self.key;
-        debug_assert!(self.connect_task.is_none());
-        self.connect_task = Some(tokio::spawn(async move {
-            for d in [0, 1, 3, 6, 10, 15].into_iter().chain(repeat(20)) {
-                match Self::try_connect(&addr).await {
-                    Ok(s) => {
-                        if let Err(err) = s.set_nodelay(true) {
-                            warn!(%node, %err, "failed to set nodelay");
-                        } else {
-                            info!(%node, %addr, "reconnected successfully to nitro node");
-                            return s;
-                        }
-                    }
-                    Err(err) => {
-                        warn!(%node, %err, interval = %d, "failed to reconnect to nitro server");
-                    }
-                }
-                sleep(Duration::from_secs(d)).await;
-            }
-            unreachable!("for-loop repeats forever")
-        }))
-    }
-
-    async fn try_connect(addr: &Address) -> Result<TcpStream, Error> {
-        match addr {
-            Address::Inet(a, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((*a, *p))).await?,
-            Address::Name(h, p) => timeout(CONNECT_TIMEOUT, TcpStream::connect((&**h, *p))).await?,
         }
     }
 }
@@ -168,38 +42,72 @@ impl Worker {
 mod tests {
     use std::{
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
         time::Duration,
     };
 
-    use cliquenet::Address;
     use multisig::Keypair;
-    use prost::Message;
+    use prost::{Message, bytes::Bytes};
+    use timeboost_proto::{
+        forward::{
+            forward_api_client::ForwardApiClient,
+            forward_api_server::{ForwardApi, ForwardApiServer},
+        },
+        inclusion::{InclusionList, Transaction},
+    };
     use timeboost_utils::types::logging::init_logging;
     use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
         sync::mpsc::channel,
-        time::sleep,
+        time::{sleep, timeout},
+    };
+    use tonic::{
+        Request, Response, Status,
+        transport::{Channel, Server},
     };
 
-    use crate::proto::inclusion as proto;
     use crate::types::Timestamp;
 
-    use super::{ACK_FLAG, Worker};
-    use crate::forwarder::data::Data;
+    use super::Worker;
 
     #[test]
     fn simple_encode_and_decode() {
-        let old = proto::Transaction {
-            encoded_txn: Vec::new(),
+        let old = Transaction {
+            encoded_txn: Bytes::new(),
             address: "0x00".as_bytes().to_vec(),
             timestamp: *Timestamp::now(),
         };
         let bytes = old.encode_to_vec();
 
-        let new = proto::Transaction::decode(bytes.as_slice()).unwrap();
+        let new = Transaction::decode(bytes.as_slice()).unwrap();
 
         assert_eq!(new, old);
+    }
+
+    struct ForwarderApiService {
+        counter: Arc<AtomicU64>,
+    }
+    impl ForwarderApiService {
+        pub fn new(counter: Arc<AtomicU64>) -> Self {
+            Self { counter }
+        }
+    }
+
+    #[tonic::async_trait]
+    impl ForwardApi for ForwarderApiService {
+        async fn submit_inclusion_list(
+            &self,
+            req: Request<InclusionList>,
+        ) -> Result<Response<()>, Status> {
+            let incl = req.into_inner();
+            let current = self.counter.load(Ordering::Relaxed);
+            assert_eq!(incl.round, current);
+            assert_eq!(incl.consensus_timestamp, current);
+            self.counter.fetch_add(1, Ordering::Relaxed);
+            return Ok(Response::new(()));
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -208,56 +116,84 @@ mod tests {
 
         let p = portpicker::pick_unused_port().expect("available port");
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
-        let l = TcpListener::bind(a).await.expect("socket to be bound");
         let cap = 10;
         let (tx, rx) = channel(cap);
-        let keypair = Keypair::generate();
-        let w = Worker::connect(keypair.public_key(), Address::from(a), rx)
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // start server and wait for up
+        let counter = Arc::new(AtomicU64::new(0));
+        let svc = ForwarderApiService::new(counter.clone());
+        let sh = tokio::spawn(async move {
+            Server::builder()
+                .add_service(ForwardApiServer::new(svc))
+                .serve_with_shutdown(a, async {
+                    shutdown_rx.await.ok();
+                })
+                .await
+        });
+        sleep(Duration::from_millis(10)).await;
+
+        let inner = Channel::from_shared(format!("http://{a}"))
+            .expect("valid url")
+            .connect()
             .await
-            .expect("forwarder connection to succeed");
-        let jh = tokio::spawn(w.go());
-        let (mut s, _) = l.accept().await.expect("connection to be established");
+            .expect("connection");
+        let c = ForwardApiClient::new(inner);
+        let w = Worker::new(Keypair::generate().public_key(), c, rx);
+        let wh = tokio::spawn(w.go());
 
-        // after successful connection simulate nitro going down, close socket
-        s.shutdown().await.expect("disconnect");
-        drop(s);
-        drop(l);
+        // shutdown server
+        shutdown_tx.send(()).ok();
+        sh.abort();
+        sleep(Duration::from_millis(10)).await;
 
-        // we should fail
+        // we should fail, server is down
         let max = 3;
         for i in 0..max {
-            let d = Data::encode(i, i, &[]).expect("data to be encoded");
-            let r = tx.send(d).await;
-            assert!(r.is_ok());
-            // wait for worker.go() to receive
-            sleep(Duration::from_millis(20)).await;
+            let incl = InclusionList {
+                round: i,
+                consensus_timestamp: i,
+                encoded_txns: Vec::new(),
+                delayed_messages_read: 0,
+            };
+            tx.send(incl).await.expect("inclusion to be sent");
+            sleep(Duration::from_millis(10)).await;
             assert_eq!(tx.capacity(), cap - i as usize);
+            assert_eq!(0, counter.load(Ordering::Relaxed));
         }
 
-        let l = TcpListener::bind(a).await.expect("listener to start");
-        let (mut s, _) = l.accept().await.expect("connection to be established");
+        // restart server
+        let svc = ForwarderApiService::new(counter.clone());
+        let sh = tokio::spawn(
+            Server::builder()
+                .add_service(ForwardApiServer::new(svc))
+                .serve(a),
+        );
 
-        let server = async {
-            let mut buf = [0u8; 1024];
-            for i in 0..=max {
-                let size = s.read_u32().await.expect("size to be read") as usize;
-                s.read_exact(&mut buf[..size])
-                    .await
-                    .expect("encoded bytes to be read");
-                let incl = proto::InclusionList::decode(&buf[..size])
-                    .expect("inclusion list to be decoded");
-                assert_eq!(incl.round, i);
-                assert_eq!(incl.consensus_timestamp, i);
-                s.write_all(&[ACK_FLAG]).await.expect("ack to be sent");
-            }
-            s.shutdown().await.unwrap();
+        let incl = InclusionList {
+            round: max,
+            encoded_txns: Vec::new(),
+            consensus_timestamp: max,
+            delayed_messages_read: 0,
         };
-
-        let d = Data::encode(max, max, &[]).expect("data to be encoded");
-        let (r, _) = tokio::join!(tx.send(d), server);
-        assert!(r.is_ok());
+        tx.send(incl).await.expect("inclusion to be sent");
+        let f = async {
+            loop {
+                let c = counter.load(Ordering::Relaxed);
+                if c == max + 1 {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        };
+        // wait for processing to be complete
+        timeout(Duration::from_secs(1), f)
+            .await
+            .expect("data to be processed");
         // all data should be processed from channel, back to max cap
         assert_eq!(tx.capacity(), cap);
-        jh.abort();
+        assert_eq!(max, counter.load(Ordering::Relaxed) - 1);
+        sh.abort();
+        wh.abort();
     }
 }

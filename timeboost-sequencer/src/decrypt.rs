@@ -22,6 +22,7 @@ use crate::config::DecrypterConfig;
 type Result<T> = StdResult<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
+type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecShare>>>>>;
 
 /// Command sent to Decrypter's background worker
 enum Command {
@@ -273,7 +274,7 @@ struct Worker {
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
     #[builder(default)]
-    dec_shares: BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecShare>>>>>,
+    dec_shares: DecSharesCache,
 
     /// Acknowledgement of the set of peers whose decryption share for a round has been received
     /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
@@ -586,7 +587,7 @@ impl Worker {
             {
                 None
             } else {
-                Some((r.clone(), committee.clone()))
+                Some((*r, committee.clone()))
             }
         }) else {
             return Ok(None);
