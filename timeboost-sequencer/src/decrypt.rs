@@ -543,7 +543,7 @@ impl Worker {
                 evidence = %batch.evidence.round(),
                 "invalid evidence"
             );
-            return Err(DecrypterError::NoCommittee(round.committee()));
+            return Err(DecrypterError::MissingRoundEvidence(round));
         }
 
         // This operation is doing the following: assumme local cache for this round is:
@@ -552,10 +552,7 @@ impl Worker {
         // far. with node c's batch [s1c, s2c, s3c], the new local cache is:
         // [[s1a, s1b, s1c], [s2a, s2b, s2c], [s3a, s3b, s3c]]
         let round_num = round.num();
-        let round_map = self
-            .dec_shares
-            .entry(round_num)
-            .or_insert_with(HashMap::new);
+        let round_map = self.dec_shares.entry(round_num).or_default();
         let entry = round_map
             .entry(round)
             .or_insert_with(|| vec![vec![]; batch.len()]);
@@ -837,6 +834,9 @@ pub enum DecrypterError {
 
     #[error("empty set of valid decryption shares")]
     EmptyDecShares,
+
+    #[error("missing evidence for round: {0}")]
+    MissingRoundEvidence(Round),
 
     #[error("received inclusion list is outdated (already received or hatched)")]
     OutdatedRound,
