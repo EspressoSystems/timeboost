@@ -3,7 +3,7 @@ use std::{iter::repeat, time::Duration};
 use multisig::PublicKey;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use tokio::{sync::mpsc::Receiver, time::sleep};
-use tonic::{Request, Status, transport::Channel};
+use tonic::{Status, transport::Channel};
 use tracing::warn;
 
 pub struct Worker {
@@ -33,14 +33,20 @@ impl Worker {
         loop {
             if let Some(incl) = self.pending.take() {
                 if self.send(incl).await.is_err() {
-                    sleep(Duration::from_secs(d.next().expect("iterator repeats endlessly"))).await;
+                    sleep(Duration::from_secs(
+                        d.next().expect("iterator repeats endlessly"),
+                    ))
+                    .await;
                 }
                 continue;
             };
             match self.incls_rx.recv().await {
                 Some(incl) => {
                     if self.send(incl).await.is_err() {
-                        sleep(Duration::from_secs(d.next().expect("next"))).await;
+                        sleep(Duration::from_secs(
+                            d.next().expect("iterator repeats endlessly"),
+                        ))
+                        .await;
                         continue;
                     }
                 }
@@ -49,7 +55,7 @@ impl Worker {
                     break;
                 }
             }
-            d = [1, 1, 1, 3, 5, 10].into_iter().chain(repeat(15));
+            d = delays();
         }
     }
 

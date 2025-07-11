@@ -29,7 +29,7 @@ impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.concurrency_limit(1).connect().await?;
+        let chan = endpoint.connect().await?;
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
