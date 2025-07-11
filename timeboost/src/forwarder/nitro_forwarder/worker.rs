@@ -2,7 +2,7 @@ use multisig::PublicKey;
 use timeboost_proto::{forward::forward_api_client::ForwardApiClient, inclusion::InclusionList};
 use tokio::sync::mpsc::Receiver;
 use tonic::{Request, transport::Channel};
-use tracing::{error, warn};
+use tracing::warn;
 
 pub struct Worker {
     key: PublicKey,
@@ -46,7 +46,7 @@ impl Worker {
     async fn send(&mut self, incl: InclusionList) {
         let req = Request::new(incl.clone());
         if let Err(err) = self.client.submit_inclusion_list(req).await {
-            error!(node = %self.key, %err, "failed to forward data to nitro");
+            warn!(node = %self.key, %err, "failed to forward data to nitro");
             debug_assert!(self.pending.is_none());
             self.pending = Some(incl);
         }
@@ -134,9 +134,9 @@ mod tests {
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let cap = 10;
         let (tx, rx) = channel(cap);
-        let keypair = Keypair::generate();
-
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        // start server and wait for up
         let counter = Arc::new(AtomicU64::new(0));
         let svc = ForwarderApiService::new(counter.clone());
         let sh = tokio::spawn(async move {
@@ -155,13 +155,15 @@ mod tests {
             .await
             .expect("connection");
         let c = ForwardApiClient::new(inner);
-        let w = Worker::new(keypair.public_key(), c, rx);
+        let w = Worker::new(Keypair::generate().public_key(), c, rx);
         let wh = tokio::spawn(w.go());
+
+        // shutdown server
         shutdown_tx.send(()).ok();
         sh.abort();
         sleep(Duration::from_millis(10)).await;
 
-        // we should fail
+        // we should fail, server is down
         let max = 3;
         for i in 0..max {
             let incl = InclusionList {
@@ -170,12 +172,13 @@ mod tests {
                 encoded_txns: Vec::new(),
                 delayed_messages_read: 0,
             };
-            let r = tx.send(incl).await;
-            assert!(r.is_ok());
-            sleep(Duration::from_millis(20)).await;
+            tx.send(incl).await.expect("inclusion to be sent");
+            sleep(Duration::from_millis(10)).await;
             assert_eq!(tx.capacity(), cap - i as usize);
+            assert_eq!(0, counter.load(Ordering::Relaxed));
         }
 
+        // restart server
         let svc = ForwarderApiService::new(counter.clone());
         let sh = tokio::spawn(
             Server::builder()
@@ -189,20 +192,20 @@ mod tests {
             consensus_timestamp: max,
             delayed_messages_read: 0,
         };
-        let r = tx.send(incl).await;
-        assert!(r.is_ok());
+        tx.send(incl).await.expect("inclusion to be sent");
         let f = async {
             loop {
-                let count = counter.load(Ordering::Relaxed);
-                if count == max + 1 {
+                let c = counter.load(Ordering::Relaxed);
+                if c == max + 1 {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                sleep(Duration::from_millis(10)).await;
             }
         };
-        // wait for processing to be complete or timeout
-        let r = timeout(Duration::from_secs(1), f).await;
-        assert!(r.is_ok());
+        // wait for processing to be complete
+        timeout(Duration::from_secs(1), f)
+            .await
+            .expect("data to be processed");
         // all data should be processed from channel, back to max cap
         assert_eq!(tx.capacity(), cap);
         assert_eq!(max, counter.load(Ordering::Relaxed) - 1);
