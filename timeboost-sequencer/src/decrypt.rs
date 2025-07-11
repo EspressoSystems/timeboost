@@ -1,14 +1,13 @@
-use arrayvec::ArrayVec;
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
-use multisig::{Committee, CommitteeId, PublicKey};
-use sailfish::types::{Evidence, Round, RoundNumber};
+use multisig::{CommitteeId, PublicKey};
+use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
@@ -20,7 +19,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
 
-type Result<T> = std::result::Result<T, DecrypterError>;
+type Result<T> = StdResult<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
@@ -96,15 +95,11 @@ impl Decrypter {
 
         let worker = Worker::builder()
             .label(cfg.label)
-            .committees({
-                let mut v = ArrayVec::new();
-                v.push((RoundNumber::genesis(), cfg.committee.committee().clone()));
-                v
-            })
+            .committees(CommitteeVec::new(cfg.committee.committee().clone()))
+            .current(cfg.committee.committee().id())
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .next_committee(NextCommittee::None)
             .dec_sk(cfg.decryption_key)
             .retain(cfg.retain)
             .build();
@@ -235,9 +230,6 @@ impl Drop for Decrypter {
     }
 }
 
-/// Max. supported number of committees.
-const MAX_COMMITTEES: usize = 2;
-
 /// Worker is responsible for "hatching" ciphertexts.
 ///
 /// When ciphertexts in a round have received t+1 decryption shares
@@ -246,60 +238,59 @@ const MAX_COMMITTEES: usize = 2;
 struct Worker {
     /// labeling the node by its signing/consensus public key
     label: PublicKey,
+
     /// overlay network to connect to other decrypters
     net: Overlay,
+
     /// decryption committees
-    committees: ArrayVec<(RoundNumber, Committee), MAX_COMMITTEES>,
+    committees: CommitteeVec<2>,
+
+    /// Current committee.
+    current: CommitteeId,
+
     /// The next committee to use, if any.
-    next_committee: NextCommittee,
+    next_committee: Option<Round>,
+
     /// channel for sending inclusion lists back to parent
     tx: Sender<InclusionList>,
+
     /// channel for receiving commands from the parent
     rx: Receiver<Command>,
+
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
+
     /// decryption key used to decrypt and combine
     dec_sk: DecryptionKey,
+
     /// Number of rounds to retain.
     retain: usize,
 
-    /// cache of decrypted shares (keyed by round number), each entry value is a nested vector: an
+    /// cache of decrypted shares (keyed by round), each entry value is a nested vector: an
     /// ordered list of per-ciphertext decryption shares. the order is derived from the
     /// ciphertext payload from the inclusion list `self.incls` of the same round
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
     #[builder(default)]
-    dec_shares: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
+    dec_shares: BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecShare>>>>>,
+
     /// Acknowledgement of the set of peers whose decryption share for a round has been received
     /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
     #[builder(default)]
     acks: BTreeMap<RoundNumber, HashSet<PublicKey>>,
+
     /// cache of encrypted inclusion list waiting to be hatched using `dec_shares`
     #[builder(default)]
     incls: BTreeMap<RoundNumber, InclusionList>,
+
     /// The local clock, driven by round number.
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
+
     /// the latest rounds whose ciphertexts are hatched
     #[builder(default = RoundNumber::genesis())]
     last_hatched_round: RoundNumber,
-}
-
-/// Information about the next committee.
-enum NextCommittee {
-    /// None expected
-    None,
-    /// A new committee is known, but we have no round number yet.
-    Next(Committee),
-    /// We wait for the given round before we activate the next committee.
-    ActivateIn(RoundNumber),
-}
-
-impl NextCommittee {
-    fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
 }
 
 impl Worker {
@@ -334,10 +325,10 @@ impl Worker {
                         let bundles = incl.dkg_bundles();
                         info!("received: {} dkg bundles in round: {}", bundles.len(), round);
                         // TODO: ACS state machine
+                        continue;
                     },
                     Some(Command::Decrypt(incl)) => {
                         let round = incl.round();
-
                         trace!(%node, %round, "decrypt request");
                         match self.on_decrypt_request(incl).await {
                             Ok(()) => {}
@@ -354,10 +345,10 @@ impl Worker {
                         continue;
                     },
                     Some(Command::NextCommittee(c)) =>
-                        if let Err(err) = self.on_next_committee(c).await {
-                            let _: NetworkDown = err;
-                            debug!(node = %self.label, "network down");
-                            return EndOfPlay::NetworkDown
+                        match self.on_next_committee(c).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %err, "error on next committee")
                         }
                     Some(Command::UseCommittee(r)) =>
                         match self.on_use_committee(r).await {
@@ -403,8 +394,17 @@ impl Worker {
             return Ok(());
         }
         let dec_shares = deserialize::<DecShareBatch>(&data)?;
+        let round = dec_shares.round.num();
+        let committee_id = dec_shares.round.committee();
 
-        let round = dec_shares.round;
+        let Some(committee) = self.committees.get(committee_id).cloned() else {
+            return Err(DecrypterError::NoCommittee(committee_id));
+        };
+        if committee.get_index(&src).is_none() {
+            warn!(node = %self.label, %src, "source not in committee");
+            return Ok(());
+        }
+
         // if already sent for this round, `src` will be re-inserted, thus returns false
         // in which case we skip processing this message since this peer has already sent once
         if !self.acks.entry(round).or_default().insert(src) {
@@ -506,7 +506,7 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     fn decrypt(&mut self, incl: &InclusionList) -> DecShareBatch {
-        let round = incl.round();
+        let round = Round::new(incl.round(), self.current);
         let dec_shares = Self::extract_ciphertexts(incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
@@ -535,40 +535,31 @@ impl Worker {
             return Err(DecrypterError::EmptyDecShares);
         }
         let round = batch.round;
-        // Validate evidence:
-        {
-            let pred: RoundNumber = round.saturating_sub(1).into();
 
-            let Some(committee) = self.round_committee(pred) else {
-                warn!(node = %self.label, %round, "no committee for evidence round");
-                return Err(DecrypterError::NoCommitteeForRound(pred));
-            };
-
-            let is_valid_evidence = match &batch.evidence {
-                Evidence::Genesis => pred.is_genesis(),
-                e @ Evidence::Regular(x) => e.round() == pred && x.is_valid_par(committee),
-                e @ Evidence::Timeout(x) => e.round() == pred && x.is_valid_par(committee),
-                e @ Evidence::Handover(x) => e.round() == pred && x.is_valid_par(committee),
-            };
-
-            if !is_valid_evidence {
-                warn!(
-                    node     = %self.label,
-                    round    = %round,
-                    evidence = %batch.evidence.round(),
-                    "invalid evidence"
-                );
-                return Err(DecrypterError::MissingRoundEvidence(round));
-            }
+        if !batch.evidence.is_valid(round.num(), &self.committees) {
+            warn!(
+                node     = %self.label,
+                round    = %round,
+                evidence = %batch.evidence.round(),
+                "invalid evidence"
+            );
+            return Err(DecrypterError::NoCommittee(round.committee()));
         }
+
         // This operation is doing the following: assumme local cache for this round is:
         // [[s1a, s1b], [s2a, s2b], [s3a, s3b]]
         // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so
         // far. with node c's batch [s1c, s2c, s3c], the new local cache is:
         // [[s1a, s1b, s1c], [s2a, s2b, s2c], [s3a, s3b, s3c]]
-        self.dec_shares
+        let round_num = round.num();
+        let round_map = self
+            .dec_shares
+            .entry(round_num)
+            .or_insert_with(HashMap::new);
+        let entry = round_map
             .entry(round)
-            .or_insert(vec![vec![]; batch.len()])
+            .or_insert_with(|| vec![vec![]; batch.len()]);
+        entry
             .iter_mut()
             .zip(batch.dec_shares)
             .for_each(|(shares, new)| shares.push(new));
@@ -581,27 +572,28 @@ impl Worker {
     /// decrypted shares is possible due to out-of-order delivery).
     /// Local cache are garbage collected for hatched rounds.
     fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
-        // first check if hatchable, if not, return Ok(None)
-        let Some(per_ct_opt_dec_shares) = self.dec_shares.get(&round) else {
+        // first check if a round number is hatchable, if not, return Ok(None)
+        let Some(dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
         };
-        let Some(committee) = self.round_committee(round).cloned() else {
-            warn!(node = %self.label, %round, "no committee for hatching round");
-            return Err(DecrypterError::NoCommitteeForRound(round));
-        };
-        if per_ct_opt_dec_shares.is_empty()
-            || per_ct_opt_dec_shares.iter().any(|opt_dec_shares| {
-                let num_valid_shares = opt_dec_shares.iter().filter(|s| s.is_some()).count();
-                let num_invalid_shares = opt_dec_shares.len() - num_valid_shares;
-
-                // for valid decryption shares, as long as reaching f+1, we may try to hatch
-                // for invalid ones, we need 2f+1 to ensure consensus (to ignore invalid ciphertext)
-                num_valid_shares < committee.one_honest_threshold().get()
-                    && num_invalid_shares < committee.quorum_size().get()
-            })
-        {
+        // find the first round (num, committee) with enough valid shares to hatch
+        let Some((r, committee)) = dec_shares.iter().find_map(|(r, shares)| {
+            let committee = self.committees.get(r.committee())?;
+            if shares.is_empty()
+                || shares.iter().any(|opt_dec_shares| {
+                    let valid = opt_dec_shares.iter().filter(|s| s.is_some()).count();
+                    let invalid = opt_dec_shares.len() - valid;
+                    valid < committee.one_honest_threshold().get()
+                        && invalid < committee.quorum_size().get()
+                })
+            {
+                None
+            } else {
+                Some((r.clone(), committee.clone()))
+            }
+        }) else {
             return Ok(None);
-        }
+        };
 
         // retreive ciphertext again from the original encrypted inclusion list
         let Some(incl) = self.incls.get(&round) else {
@@ -621,8 +613,11 @@ impl Worker {
         // during execution"
 
         let mut decrypted: Vec<Option<Plaintext>> = vec![];
-        // a mutable ref
-        let Some(per_ct_opt_dec_shares) = self.dec_shares.get_mut(&round) else {
+
+        // Now, after immutable borrow is dropped, get mutable access
+        let Some(per_ct_opt_dec_shares) =
+            self.dec_shares.get_mut(&round).and_then(|m| m.get_mut(&r))
+        else {
             return Ok(None);
         };
 
@@ -705,64 +700,48 @@ impl Worker {
         Ok(Some(incl))
     }
 
-    fn round_committee(&self, r: RoundNumber) -> Option<&Committee> {
-        self.committees
-            .iter()
-            .find_map(|(n, c)| (r >= *n).then_some(c))
-    }
-
-    /// Add the next committee.
-    ///
-    /// This adds any new parties to the network and stores the committee as
-    /// the next one to use.
-    async fn on_next_committee(&mut self, c: AddressableCommittee) -> StdResult<(), NetworkDown> {
+    async fn on_next_committee(&mut self, c: AddressableCommittee) -> Result<()> {
         info!(node = %self.label, committee = %c.committee().id(), "add next committee");
-        if !self.next_committee.is_none() {
-            error!(node = %self.label, id = %c.committee().id(), "next committee already pending");
+        if self.committees.contains(c.committee().id()) {
+            warn!(node = %self.label, committee = %c.committee().id(), "committee already added");
             return Ok(());
         }
-        if let Some(current) = self.round_committee(self.clock) {
-            let mut additional = Vec::new();
-            for (k, x, a) in c.entries().filter(|(k, ..)| !current.contains_key(k)) {
-                additional.push((k, x, a))
-            }
-            self.net.add(additional).await?;
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(DecrypterError::NoCommittee(self.current));
+        };
+        let mut additional = Vec::new();
+        for (k, x, a) in c.entries().filter(|(k, ..)| !committee.contains_key(k)) {
+            additional.push((k, x, a))
         }
-        self.next_committee = NextCommittee::Next(c.committee().clone());
+        self.net
+            .add(additional)
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
+        self.committees.add(c.committee().clone());
         Ok(())
     }
 
-    /// Use a committee starting at the given round.
-    ///
-    /// Assuming the committee ID corresponds to the next committee we move it
-    /// into our committee collection with the round number as its epoch start.
     async fn on_use_committee(&mut self, round: Round) -> Result<()> {
         info!(node = %self.label, %round, "use committee");
-        let NextCommittee::Next(committee) = &self.next_committee else {
-            error!(node = %self.label, %round, "committee to use does not exist");
+        if self.committees.get(round.committee()).is_none() {
+            error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");
             return Err(DecrypterError::NoCommittee(round.committee()));
         };
-        if committee.id() != round.committee() {
-            error!(node = %self.label, next = %committee.id(), %round, "unexpected committee to use");
-            return Err(DecrypterError::NoCommittee(round.committee()));
-        }
-        self.committees.truncate(MAX_COMMITTEES - 1);
-        self.committees.insert(0, (round.num(), committee.clone()));
-        self.next_committee = NextCommittee::ActivateIn(round.num());
+        self.next_committee = Some(round);
         Ok(())
     }
 
-    /// Activate a committee at the correct round number.
     async fn maybe_switch_committee(&mut self) -> Result<()> {
-        let NextCommittee::ActivateIn(start) = self.next_committee else {
+        let Some(start) = self.next_committee else {
             return Ok(());
         };
-        if self.clock < start {
+        if self.clock < start.num() {
             return Ok(());
         }
-        let Some(committee) = self.round_committee(start).cloned() else {
-            error!(node = %self.label, "committee to activate does not exist");
-            return Err(DecrypterError::NoCommitteeForRound(start));
+        let Some(committee) = self.committees.get(self.current) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(DecrypterError::NoCommittee(self.current));
         };
         let old = self
             .net
@@ -778,7 +757,7 @@ impl Worker {
             .assign(Role::Active, committee.parties().copied().collect())
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        self.next_committee = NextCommittee::None;
+        self.current = start.committee();
         Ok(())
     }
 }
@@ -786,7 +765,7 @@ impl Worker {
 /// A batch of decryption shares. Each batch is uniquely identified via round_number.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
-    round: RoundNumber,
+    round: Round,
     // note: each decrpytion share is for a different ciphertext;
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
@@ -859,17 +838,11 @@ pub enum DecrypterError {
     #[error("empty set of valid decryption shares")]
     EmptyDecShares,
 
-    #[error("missing evidence for round: {0}")]
-    MissingRoundEvidence(RoundNumber),
-
     #[error("received inclusion list is outdated (already received or hatched)")]
     OutdatedRound,
 
     #[error("unknown committee: {0}")]
     NoCommittee(CommitteeId),
-
-    #[error("no committee for round: {0}")]
-    NoCommitteeForRound(RoundNumber),
 }
 
 /// Fatal errors.
