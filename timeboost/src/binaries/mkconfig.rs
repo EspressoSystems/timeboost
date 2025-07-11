@@ -6,11 +6,9 @@ use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
-use multisig::{Committee, KeyId, x25519};
+use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::DecryptionScheme;
-use timeboost_types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
+use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys};
 use timeboost_utils::types::logging;
 
 #[derive(Clone, Debug, Parser)]
@@ -86,30 +84,13 @@ impl Args {
             iter::repeat_with(move || timeboost_crypto::prelude::DecryptionKey::rand(&mut p_rng))
                 .take(num_nodes as usize)
                 .collect();
-        // Generate committee from signature keys
-        let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
-            signing_keys
-                .iter()
-                .enumerate()
-                .map(|(i, kp)| (KeyId::from(i as u8), kp.public_key())),
-        );
-        // Generate threshold decryption trusted setup (incl. decryption key shares).
-        let decryption_keys = match seed {
-            Some(seed) => {
-                let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
-                DecryptionScheme::trusted_keygen_with_rng(committee, &mut rng)
-            }
-            None => DecryptionScheme::trusted_keygen(committee),
-        };
 
         let configs: Vec<_> = signing_keys
             .into_iter()
             .enumerate()
             .zip(auth_keys)
             .zip(encryption_keys)
-            .zip(decryption_keys.2)
-            .map(|((((i, kp), xp), hpke), share)| NodeInfo {
+            .map(|(((i, kp), xp), hpke)| NodeInfo {
                 sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
                 decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
                 producer_address: self.adjust_addr(i as u8, &self.producer_base_addr).unwrap(),
@@ -120,19 +101,12 @@ impl Args {
                 private: Some(PrivateKeys {
                     signing_key: kp.secret_key(),
                     dh_key: xp.secret_key(),
-                    dec_share: share.clone(),
                     dec_key: hpke,
                 }),
                 nitro_addr: self.nitro_addr.clone(),
             })
             .collect();
-        Ok(KeysetConfig {
-            keyset: configs,
-            dec_keyset: PublicDecInfo {
-                pubkey: decryption_keys.0.clone(),
-                combkey: decryption_keys.1.clone(),
-            },
-        })
+        Ok(KeysetConfig { keyset: configs })
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {

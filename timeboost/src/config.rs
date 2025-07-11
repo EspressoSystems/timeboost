@@ -26,7 +26,7 @@ pub struct TimeboostConfig {
     pub(crate) dh_keypair: x25519::Keypair,
 
     /// The decryption key material for the node.
-    pub(crate) decryption_key: DecryptionKey,
+    pub(crate) decryption_key: Option<DecryptionKey>,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -57,7 +57,7 @@ impl TimeboostConfig {
         SequencerConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .decryption_key(self.decryption_key.clone())
+            .maybe_decryption_key(self.decryption_key.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())

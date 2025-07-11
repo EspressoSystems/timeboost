@@ -253,6 +253,8 @@ impl Task {
             candidates = self.execute(actions).await?;
         }
 
+        // TODO: DKG dealing generation
+
         loop {
             if pending.is_none() {
                 while let Some(ilist) = self.next_inclusion(&mut candidates) {
@@ -299,6 +301,7 @@ impl Task {
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
                     Some(Command::NextCommittee(t, a, b)) => {
+                        // TODO(alex): reshare dealing generation here
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);

@@ -15,7 +15,9 @@ pub struct SequencerConfig {
     pub(crate) dh_keypair: x25519::Keypair,
 
     /// The key material for the decryption phase.
-    pub(crate) decryption_key: DecryptionKey,
+    /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
+    /// during which time the threshold key is None
+    pub(crate) decryption_key: Option<DecryptionKey>,
 
     /// The address the Sailfish TCP listener binds to.
     pub(crate) sailfish_addr: net::Address,
@@ -98,7 +100,7 @@ impl SequencerConfig {
             .label(self.sign_keypair.public_key())
             .address(self.decrypt_addr.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .decryption_key(self.decryption_key.clone())
+            .maybe_decryption_key(self.decryption_key.clone())
             .committee(self.decrypt_committee.clone())
             .retain(self.leash_len)
             .build()
@@ -110,7 +112,7 @@ pub struct DecrypterConfig {
     pub(crate) label: PublicKey,
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
-    pub(crate) decryption_key: DecryptionKey,
+    pub(crate) decryption_key: Option<DecryptionKey>,
     pub(crate) committee: AddressableCommittee,
     pub(crate) retain: usize,
 }

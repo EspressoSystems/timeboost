@@ -67,6 +67,8 @@ pub struct Decrypter {
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
+    /// Status of the distributed key gen/resharing: true means Worker has the decryption key share
+    is_ready: bool,
 }
 
 impl Decrypter {
@@ -89,6 +91,7 @@ impl Decrypter {
         .await
         .map_err(DecrypterError::Net)?;
 
+        let is_ready = cfg.decryption_key.is_some();
         let worker = Worker::builder()
             .label(cfg.label)
             .committees({
@@ -99,7 +102,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .dec_sk(cfg.decryption_key)
+            .maybe_dec_sk(cfg.decryption_key)
             .last_hatched_round(RoundNumber::genesis())
             .retain(cfg.retain)
             .build();
@@ -110,12 +113,19 @@ impl Decrypter {
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
             worker: spawn(worker.go()),
+            is_ready,
         })
     }
 
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
         self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
+    }
+
+    /// Check if decrypter is ready to threshold decrypt encrypted bundles.
+    /// Only true after DKG/resharing is done which equip Worker with dec key share.
+    pub fn is_ready(&self) -> bool {
+        self.is_ready
     }
 
     /// Garbage collect cached state of `r` (and prior) rounds
@@ -135,6 +145,7 @@ impl Decrypter {
 
         if incl.is_encrypted() {
             self.worker_tx
+                // TODO:(alex) don't send this command if not ready
                 .send(Command::Decrypt(incl))
                 .await
                 .map_err(|_| DecrypterDown(()))?;
@@ -221,7 +232,9 @@ struct Worker {
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
     /// decryption key used to decrypt and combine
-    dec_sk: DecryptionKey,
+    /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
+    /// during which time the threshold key is None
+    dec_sk: Option<DecryptionKey>,
     /// Number of rounds to retain.
     retain: usize,
 
@@ -360,7 +373,7 @@ impl Worker {
 
     /// logic to process a `WorkerRequest::Decrypt` request from the decrypter
     async fn on_decrypt_request(&mut self, round: RoundNumber, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(round, &incl);
+        let dec_shares = self.decrypt(round, &incl)?;
         if dec_shares.is_empty() {
             return Err(DecrypterError::EmptyDecShares);
         }
@@ -426,13 +439,16 @@ impl Worker {
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
-    fn decrypt(&mut self, round: RoundNumber, incl: &InclusionList) -> DecShareBatch {
+    fn decrypt(&mut self, round: RoundNumber, incl: &InclusionList) -> Result<DecShareBatch> {
+        let Some(dec_sk) = &self.dec_sk else {
+            return Err(DecrypterError::DecKeyShareNotReady);
+        };
         let dec_shares = Self::extract_ciphertexts(incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
                     // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        self.dec_sk.privkey(),
+                        dec_sk.privkey(),
                         &ct,
                         &vec![],
                     )
@@ -441,11 +457,11 @@ impl Worker {
             })
             .collect::<Vec<_>>();
 
-        DecShareBatch {
+        Ok(DecShareBatch {
             round,
             dec_shares,
             evidence: incl.evidence().clone(),
-        }
+        })
     }
 
     /// update local cache of decrypted shares
@@ -562,7 +578,7 @@ impl Worker {
                 let aad = vec![];
                 match DecryptionScheme::combine(
                     &committee.1,
-                    self.dec_sk.combkey(),
+                    self.dec_sk.as_ref().unwrap().combkey(), // TODO: (alex) deal with unready sk
                     dec_shares,
                     &ct,
                     &aad,
@@ -716,6 +732,9 @@ pub enum DecrypterError {
 
     #[error("no committee for round: {0}")]
     NoCommitteeForRound(RoundNumber),
+
+    #[error("decryption key share not ready, DKG/resharing yet finished")]
+    DecKeyShareNotReady,
 }
 
 /// Fatal errors.

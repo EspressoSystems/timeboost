@@ -4,21 +4,11 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::{
-    DecryptionScheme,
-    prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey},
-    traits::threshold_enc::ThresholdEncScheme,
-};
-use timeboost_types::DecryptionKey;
-
-type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
-type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
-type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+use timeboost_crypto::prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {
     pub keyset: Vec<NodeInfo>,
-    pub dec_keyset: PublicDecInfo,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,19 +35,9 @@ pub struct NodeInfo {
 pub struct PrivateKeys {
     pub signing_key: multisig::SecretKey,
     pub dh_key: x25519::SecretKey,
-    #[serde(with = "keyshare")]
-    pub dec_share: KeyShare,
     /// secret key in hybrid public key encryption (HPKE) for secure communication
     #[serde(with = "hpkedeckey")]
     pub dec_key: HpkeDecKey,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublicDecInfo {
-    #[serde(with = "pubkey")]
-    pub pubkey: PublicKey,
-    #[serde(with = "combkey")]
-    pub combkey: CombKey,
 }
 
 impl KeysetConfig {
@@ -70,14 +50,6 @@ impl KeysetConfig {
     pub fn read_string(s: &str) -> Result<Self> {
         let conf = serde_json::from_str(s)?;
         Ok(conf)
-    }
-
-    pub fn decryption_key(&self, share: KeyShare) -> DecryptionKey {
-        DecryptionKey::new(
-            self.dec_keyset.pubkey.clone(),
-            self.dec_keyset.combkey.clone(),
-            share,
-        )
     }
 }
 
@@ -115,9 +87,6 @@ macro_rules! mk_serde_mod {
     };
 }
 
-mk_serde_mod!(keyshare, KeyShare);
-mk_serde_mod!(pubkey, PublicKey);
-mk_serde_mod!(combkey, CombKey);
 mk_serde_mod!(hpkeenckey, HpkeEncKey);
 mk_serde_mod!(hpkedeckey, HpkeDecKey);
 

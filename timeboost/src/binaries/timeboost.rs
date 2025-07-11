@@ -104,7 +104,6 @@ async fn main() -> Result<()> {
 
     let sign_keypair = Keypair::from(private.signing_key);
     let dh_keypair = x25519::Keypair::from(private.dh_key);
-    let dec_sk = keyset.decryption_key(private.dec_share);
 
     let (tb_app_tx, tb_app_rx) = channel(100);
 
@@ -210,7 +209,6 @@ async fn main() -> Result<()> {
         .producer_committee(producer_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .decryption_key(dec_sk)
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .producer_addr(my_keyset.producer_address.clone())
