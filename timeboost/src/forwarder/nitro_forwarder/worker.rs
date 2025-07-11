@@ -71,7 +71,7 @@ mod tests {
             forward_api_client::ForwardApiClient,
             forward_api_server::{ForwardApi, ForwardApiServer},
         },
-        inclusion::InclusionList,
+        inclusion::{InclusionList, Transaction},
     };
     use timeboost_utils::types::logging::init_logging;
     use tokio::{
@@ -83,21 +83,20 @@ mod tests {
         transport::{Channel, Server},
     };
 
-    use crate::proto::inclusion as proto;
     use crate::types::Timestamp;
 
     use super::Worker;
 
     #[test]
     fn simple_encode_and_decode() {
-        let old = proto::Transaction {
+        let old = Transaction {
             encoded_txn: Vec::new(),
             address: "0x00".as_bytes().to_vec(),
             timestamp: *Timestamp::now(),
         };
         let bytes = old.encode_to_vec();
 
-        let new = proto::Transaction::decode(bytes.as_slice()).unwrap();
+        let new = Transaction::decode(bytes.as_slice()).unwrap();
 
         assert_eq!(new, old);
     }
@@ -115,7 +114,7 @@ mod tests {
     impl ForwardApi for ForwarderApiService {
         async fn submit_inclusion_list(
             &self,
-            req: Request<proto::InclusionList>,
+            req: Request<InclusionList>,
         ) -> Result<Response<()>, Status> {
             let incl = req.into_inner();
             let current = self.counter.load(Ordering::Relaxed);

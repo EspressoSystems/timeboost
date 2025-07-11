@@ -110,11 +110,11 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            let incl = timeboost_proto::inclusion::InclusionList {
+                            let incl = proto::inclusion::InclusionList {
                                 round: *round,
                                 encoded_txns: transactions
                                     .into_iter()
-                                    .map(|tx| timeboost_proto::inclusion::Transaction {
+                                    .map(|tx| proto::inclusion::Transaction {
                                         encoded_txn: tx.encoded_2718(),
                                         address: tx.address().as_slice().to_vec(),
                                         timestamp: **tx.time(),
