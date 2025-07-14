@@ -1,4 +1,4 @@
-# Committee Change Logic and Flow - TimeBoost
+# Timeboost Committee Change Logic and Flow
 
 ## Overview
 
@@ -11,9 +11,14 @@ This document provides a detailed breakdown of the committee change logic and fl
 ### Core Components
 
 **Committee Management:**
-- **Current Committee**: The active committee handling consensus
-- **Next Committee**: The committee that will take over after transition
+- **Current Committee (C1)**: The active committee handling consensus, also referred to as "previous committee" during handover from C2's perspective
+- **Next Committee (C2)**: The committee that will take over after transition, receives handover messages from C1
 - **Previous Committee**: The committee that was previously active (used for handover)
+
+**Committee Perspectives:**
+- From C1's perspective: C1 is "current", C2 is "next"
+- From C2's perspective: C1 is "previous", C2 is becoming "current"
+- Only two committees are involved at any time during handover
 
 **Key Data Structures:**
 - `CommitteeId` - Unique identifier for each committee
@@ -262,33 +267,54 @@ if committee_id != self.config.committee_id {
 
 ## 5. Handover Process
 
-### 5.1 Handover Initiation
+### 5.1 Handover Initiation and Setup
 
-The consensus layer initiates handover when committee change is detected:
+The consensus layer initiates and sets up the handover when a committee change is detected:
 
 ```rust
-// From sailfish-consensus/src/lib.rs:139-141
+// From sailfish-consensus/src/lib.rs:139-145
 pub fn set_next_committee(&mut self, start: ConsensusTime, c: CommitteeId) {
     self.next_committee = Some(NextCommittee { start, id: c })
 }
-```
 
-
-### 5.2 Handover Committee Setup
-
-The consensus sets up the handover committee:
-
-```rust
-// From sailfish-consensus/src/lib.rs:143-145
 pub fn set_handover_committee(&mut self, c: Committee) {
     self.handovers = Some(VoteAccumulator::new(c))
 }
 ```
 
+### 5.2 State Reconstruction: Why No Snapshot Transfer
+
+**Key Insight**: C2 does not receive a state snapshot from C1. Instead, C2 reconstructs the necessary state because it has been running alongside C1 and receiving the same DAG vertices since it was started.
+
+**Why This Works:**
+- C2 starts running before the handover timestamp and begins receiving all consensus vertices via RBC
+- C2 maintains its own DAG and can reconstruct the same consensus state as C1
+- The DAG provides cryptographic evidence of all committed rounds and vertices
+- C2 uses the handover certificate as evidence to bootstrap its first vertex after taking over
+
+**State Reconstruction Process:**
+- C2 processes buffered vertices that couldn't be added to DAG due to missing dependencies
+- Uses `advance_from_round()` with cryptographic evidence from the handover certificate
+- Validates vertex chains and builds the same consensus history as C1
+
 
 ### 5.3 Handover Message Processing
 
-The consensus handles handover messages from the previous committee:
+The consensus handles `HandoverMessage` from the previous committee, ensuring that signatures and evidence are verified:
+
+```rust
+// From sailfish-types/src/message.rs:649-673
+pub struct HandoverMessage {
+    handover: Signed<Handover>,
+    evidence: Evidence,
+}
+pub struct Handover {
+    round: Round,
+    next: CommitteeId,
+}
+```
+
+The process ensures smooth transition by adequately handling the incoming data:
 
 ```rust
 // From sailfish-consensus/src/lib.rs:570-603
@@ -329,6 +355,106 @@ pub fn handle_handover(&mut self, e: Envelope<HandoverMessage, Validated>) -> Ve
 }
 ```
 
+
+### 5.4 Committee Change Announcement
+
+**External Signal Source**: The committee change is announced through an external signal (not originating from the consensus layer itself):
+
+```rust
+// From tests/src/tests/timeboost/handover.rs:251-253
+// Inform about upcoming committee change:
+let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
+bcast.send(Cmd::NextCommittee(t, a2)).unwrap();
+```
+
+**Announcement Flow:**
+1. **External Module**: A higher-level coordinator or admin module triggers the committee change
+2. **Timestamp Publishing**: The change timestamp is made publicly available to all nodes
+3. **Committee Setup**: Both C1 and C2 nodes receive the announcement and prepare for transition
+4. **Delayed Execution**: The actual handover waits until the announced timestamp
+
+### 5.5 Committee Overlap Constraints
+
+**Critical Timing Requirements:**
+
+**C2 Start Timing:**
+- C2 must start **before** the announced handover timestamp
+- C2 needs time to connect to the network and sync DAG state
+- Early start ensures C2 is ready to receive handover messages
+
+**C1 Shutdown Timing:**
+- C1 enters `State::Shutdown` when handover begins but continues operating
+- C1 must remain active **until** handover completion (quorum of handover messages)
+- C1 ignores messages with rounds > shutdown round to prevent interference
+
+```rust
+// From sailfish-consensus/src/lib.rs:1121-1129
+fn handover(&mut self) -> Option<Handover> {
+    let next = self.next_committee.as_mut()?;
+    if self.state.is_shutdown() || next.start > self.clock {
+        return None;  // Wait for announced time
+    }
+    // Start handover process
+    self.state = State::Shutdown(self.committed_round);
+    Some(Handover::new(r, next.id))
+}
+```
+
+**Overlap Period:**
+- Both committees run simultaneously during handover
+- C1 sends handover messages while still processing its own consensus
+- C2 waits in `AwaitHandover` state until receiving sufficient handover votes
+
+### 5.6 Message Routing During Transition
+
+**Message Types and Routing:**
+
+**Broadcast to All (Same Committee):**
+- ✓ `Vertex` proposals (within committee)
+- ✓ `Timeout` messages (within committee) 
+- ✓ `TimeoutCert` certificates (within committee)
+
+**Multicast to Specific Committee:**
+- ✓ `Handover` messages (C1 → C2 committee members)
+- ✓ `HandoverCert` certificates (C1 → C2 committee members)
+
+```rust
+// From sailfish-rbc/src/abraham/worker.rs:411-424
+// Messages not directed to the current committee will be multicasted
+if committee_id != self.config.committee_id {
+    let dest = committee.parties().copied().collect();
+    self.comm.multicast(dest, *msg.round().num(), data).await?;
+} else {
+    self.comm.broadcast(*msg.round().num(), data).await?;
+}
+```
+
+**Point-to-Point (Unicast):**
+- ✓ `NoVote` messages (to specific round leader)
+
+**Messages Ignored by Whom:**
+
+**C1 (Current Committee) Ignores:**
+- ✗ Messages with rounds > shutdown round (after handover starts)
+- ✗ Handover messages directed to C2
+- ✗ Messages from unknown/future committees
+
+**C2 (Next Committee) Ignores:**
+- ✗ Normal consensus messages until handover completes
+- ✗ Messages from old committees (previous to C1)
+- ✗ Duplicate handover messages from same signer
+
+**Coordinator-Level Buffering:**
+```rust
+// From sailfish/src/coordinator.rs:259-267
+if !(m.is_handover() || m.is_handover_cert()) {
+    return Ok(Vec::new())  // Ignore non-handover messages for unknown committees
+}
+if self.previous_committees.contains(&c) {
+    return Ok(Vec::new())  // Ignore messages from old committees
+}
+self.buffer.insert(m.signing_key().copied(), m);  // Buffer handover messages
+```
 
 ---
 
@@ -399,20 +525,20 @@ Time →
 │  3. Add Committee to RBC             │                                  │
 │     └─> add_committee(C2)            │                                  │
 │                                      │                                  │
-│  4. Initiate Handover               │                                  │
+│  4. Initiate Handover                │                                  │
 │     └─> SendHandover(evidence)       │                                  │
 │                                      │                                  │
-│  5. Handover Messages               │  ← Receive Handover              │
-│     └─> Multicast to C2             │                                  │
+│  5. Handover Messages                │  ← Receive Handover              │
+│     └─> Multicast to C2              │                                  │
 │                                      │                                  │
-│  6. Handover Certificate            │  ← Process Handover Votes        │
-│     └─> Certificate formed          │                                  │
+│  6. Handover Certificate             │  ← Process Handover Votes        │
+│     └─> Certificate formed           │                                  │
 │                                      │                                  │
-│  7. Committee Switch                │  ← Use Committee                 │
-│     └─> use_committee(C2)           │     └─> State: Running           │
+│  7. Committee Switch                 │  ← Use Committee                 │
+│     └─> use_committee(C2)            │     └─> State: Running           │
 │                                      │                                  │
-│  8. Cleanup Old Committee          │  ← Active Committee              │
-│     └─> Remove old peers            │                                  │
+│  8. Cleanup Old Committee            │  ← Active Committee              │
+│     └─> Remove old peers             │                                  │
 │                                      │                                  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
