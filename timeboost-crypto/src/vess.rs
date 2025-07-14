@@ -4,16 +4,13 @@ use std::num::NonZeroU32;
 
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, serialize_to_vec};
-use ark_std::{
-    marker::PhantomData,
-    rand::{CryptoRng, Rng},
-};
+use ark_std::marker::PhantomData;
 use sha2::Digest;
 use thiserror::Error;
 
 use crate::{
     feldman::{FeldmanVss, FeldmanVssPublicParam},
-    mre::{self, MultiRecvCiphertext},
+    mre::{self, LabeledDecryptionKey, MultiRecvCiphertext},
     traits::dkg::VerifiableSecretSharing,
 };
 
@@ -78,22 +75,21 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// - `aad`: associated data (e.g. domain separator for this encryption, round number & context)
     ///
     /// TODO(alex): currently non-verifiable, add cut-and-choose logic later
-    pub fn encrypted_shares<R>(
+    pub fn encrypted_shares(
         &self,
-        recipients: &[C::Affine],
+        recipients: &[mre::EncryptionKey<C>],
         secret: C::ScalarField,
         aad: &[u8],
-        rng: &mut R,
     ) -> Result<
         (
             VessCiphertext<C>,
             <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
         ),
         VessError,
-    >
-    where
-        R: Rng + CryptoRng,
-    {
+    > {
+        // TODO(alex): a temp hack to cherry-pick the same API as actual VESS impl,
+        // when merging with PR#392, we will use spongefish's FS-bound rng instead.
+        let rng = &mut ark_std::rand::thread_rng();
         let n = self.vss_pp.n.get() as usize;
         if recipients.len() != n {
             return Err(VessError::WrongRecipientsLength(n, recipients.len()));
@@ -108,11 +104,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             .map(|s| serialize_to_vec![s])
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
 
-        let enc_keys: Vec<mre::EncryptionKey<C>> = recipients
-            .iter()
-            .map(|u| mre::EncryptionKey { u: *u })
-            .collect();
-        let mre_ct = mre::encrypt::<C, sha2::Sha256, R>(&enc_keys, &shares_bytes, aad, rng)?;
+        let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(&recipients, &shares_bytes, aad, rng)?;
 
         let ct = VessCiphertext { mre_ct };
         Ok((ct, comm))
@@ -128,23 +120,21 @@ impl<C: CurveGroup> ShoupVess<C> {
         todo!("to be implemented in phase 2")
     }
 
-    /// Decrypt as the `node_idx`-th receiver with decryption key `recv_sk`
+    /// Decrypt with a decryption key `recv_sk` (labeled with node_idx, see `LabeledDecryptionKey`)
     pub fn decrypt_share(
         &self,
-        node_idx: usize,
-        recv_sk: &C::ScalarField,
+        recv_sk: &LabeledDecryptionKey<C>,
         ct: &VessCiphertext<C>,
         aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
         let n = self.vss_pp.n.get() as usize;
+        let node_idx = recv_sk.node_idx;
         let recv_ct = ct
             .mre_ct
             .get_recipient_ct(node_idx)
             .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
 
-        let dec_key = mre::DecryptionKey { alpha: *recv_sk };
-        let labeled_key = dec_key.label(node_idx);
-        let pt = labeled_key.decrypt::<sha2::Sha256>(&recv_ct, aad)?;
+        let pt = recv_sk.decrypt(&recv_ct, aad)?;
         let share: C::ScalarField = CanonicalDeserialize::deserialize_compressed(&*pt)?;
 
         Ok(share)
@@ -173,8 +163,7 @@ impl From<ark_serialize::SerializationError> for VessError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bls12_381::{Fr, G1Affine, G1Projective};
-    use ark_ec::PrimeGroup;
+    use ark_bls12_381::{Fr, G1Projective};
     use ark_std::{
         UniformRand,
         rand::{SeedableRng, rngs::StdRng},
@@ -189,18 +178,24 @@ mod tests {
         let secret = Fr::rand(rng);
         let n = vess.vss_pp.n.get() as usize;
 
-        let recv_sks: Vec<Fr> = repeat_with(|| Fr::rand(rng)).take(n).collect();
-        let recv_pks: Vec<G1Affine> = recv_sks
-            .iter()
-            .map(|sk| (G1Projective::generator() * sk).into_affine())
+        let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
+            repeat_with(|| mre::DecryptionKey::rand(rng))
+                .take(n)
+                .collect();
+        let recv_pks: Vec<mre::EncryptionKey<G1Projective>> =
+            recv_sks.iter().map(mre::EncryptionKey::from).collect();
+        let labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = recv_sks
+            .into_iter()
+            .enumerate()
+            .map(|(i, sk)| sk.label(i))
             .collect();
 
         let aad = b"Associated data";
-        let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad, rng).unwrap();
+        let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad).unwrap();
 
-        for (node_idx, recv_sk) in recv_sks.iter().enumerate() {
-            let share = vess.decrypt_share(node_idx, recv_sk, &ct, aad).unwrap();
-            assert!(Vss::verify(&vess.vss_pp, node_idx, &share, &comm).unwrap());
+        for labeled_recv_sk in labeled_sks {
+            let share = vess.decrypt_share(&labeled_recv_sk, &ct, aad).unwrap();
+            assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).unwrap());
         }
     }
 
