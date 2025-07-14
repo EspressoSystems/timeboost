@@ -308,6 +308,9 @@ impl Task {
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts).await?
                         }
+                        if let Err(err) = self.decrypter.next_committee(a).await {
+                            error!(node = %self.label, %err, "decrypt next committee error");
+                        }
                     }
                     None => {
                         return Err(TimeboostError::ChannelClosed)
@@ -358,7 +361,7 @@ impl Task {
                 match self.sailfish.execute(action).await {
                     Ok(Some(Event::Gc(r))) => {
                         if let Err(err) = self.decrypter.gc(r.num()).await {
-                            error!(node = %self.label, %err, "decrypt gc error");
+                            warn!(node = %self.label, %err, "decrypt gc error");
                         }
                     }
                     Ok(Some(Event::Catchup(_))) => {
@@ -368,6 +371,9 @@ impl Task {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c);
+                            if let Err(err) = self.decrypter.use_committee(r).await {
+                                error!(node = %self.label, %err, "decrypt use committee error");
+                            }
                             self.output
                                 .send(Output::UseCommittee(r))
                                 .await

@@ -12,7 +12,7 @@ use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost::types::DecryptionKey;
-use timeboost_builder::BlockProducerConfig;
+use timeboost_builder::CertifierConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::SequencerConfig;
@@ -26,7 +26,7 @@ fn make_configs<R>(
     recover_index: R,
 ) -> (
     <DecryptionScheme as ThresholdEncScheme>::PublicKey,
-    Vec<(SequencerConfig, BlockProducerConfig)>,
+    Vec<(SequencerConfig, CertifierConfig)>,
 )
 where
     R: Into<Option<usize>>,
@@ -95,12 +95,11 @@ where
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .build();
-        let pcf = BlockProducerConfig::builder()
+        let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)
             .dh_keypair(xpair)
             .address(pa)
             .committee(produce_committee.clone())
-            .retain(100)
             .build();
         cfgs.push((conf, pcf));
     }

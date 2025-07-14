@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
-    let mut producer_peer_hosts_and_keys = Vec::new();
+    let mut certifier_peer_hosts_and_keys = Vec::new();
 
     for peer_host in peer_host_iter {
         wait_for_live_peer(peer_host.sailfish_address.clone()).await?;
@@ -137,10 +137,10 @@ async fn main() -> Result<()> {
             peer_host.dh_key,
             peer_host.decrypt_address.clone(),
         ));
-        producer_peer_hosts_and_keys.push((
+        certifier_peer_hosts_and_keys.push((
             peer_host.signing_key,
             peer_host.dh_key,
-            peer_host.producer_address.clone(),
+            peer_host.certifier_address.clone(),
         ));
     }
 
@@ -166,15 +166,15 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, decrypt_peer_hosts_and_keys.iter().cloned())
     };
 
-    let producer_committee = {
+    let certifier_committee = {
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
-            producer_peer_hosts_and_keys
+            certifier_peer_hosts_and_keys
                 .iter()
                 .enumerate()
                 .map(|(i, (k, ..))| (i as u8, *k)),
         );
-        AddressableCommittee::new(c, producer_peer_hosts_and_keys.iter().cloned())
+        AddressableCommittee::new(c, certifier_peer_hosts_and_keys.iter().cloned())
     };
 
     #[cfg(feature = "until")]
@@ -206,12 +206,12 @@ async fn main() -> Result<()> {
         .metrics_port(cli.metrics_port)
         .sailfish_committee(sailfish_committee)
         .decrypt_committee(decrypt_committee)
-        .producer_committee(producer_committee)
+        .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
-        .producer_addr(my_keyset.producer_address.clone())
+        .certifier_addr(my_keyset.certifier_address.clone())
         .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)

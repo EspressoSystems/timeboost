@@ -1,5 +1,5 @@
+mod certifier;
 mod config;
-mod produce;
 
-pub use config::{BlockProducerConfig, BlockProducerConfigBuilder};
-pub use produce::{BlockProducer, Handle, ProducerDown, ProducerError};
+pub use certifier::{Certifier, CertifierDown, CertifierError, Handle};
+pub use config::{CertifierConfig, CertifierConfigBuilder};

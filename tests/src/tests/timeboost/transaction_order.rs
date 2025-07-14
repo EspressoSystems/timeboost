@@ -1,6 +1,5 @@
 use std::iter::once;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::time::Duration;
 
 use metrics::NoMetrics;
@@ -8,10 +7,11 @@ use timeboost_sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{Barrier, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use super::{gen_bundles, make_configs};
 
@@ -33,7 +33,7 @@ async fn transaction_order() {
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
-    let finish = Arc::new(Barrier::new(5));
+    let finish = CancellationToken::new();
 
     // We spawn each sequencer into a task and broadcast new transactions to
     // all of them. Each sequencer pushes the transaction it produced into an
@@ -48,8 +48,7 @@ async fn transaction_order() {
                 sleep(Duration::from_secs(5)).await
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
-            let mut i = 0;
-            while i < NUM_OF_TRANSACTIONS {
+            loop {
                 select! {
                     trx = brx.recv() => match trx {
                         Ok(trx) => s.add_bundles(once(trx)),
@@ -57,19 +56,19 @@ async fn transaction_order() {
                         Err(err) => panic!("{err}")
                     },
                     out = s.next() => {
-                        debug!(node = %s.public_key(), transactions = %i);
                         let Output::Transactions { transactions, .. } = out.unwrap() else {
                             continue
                         };
-                        i += transactions.len();
                         for t in transactions {
                             tx.send(t).unwrap()
                         }
                     }
+                    _ = finish.cancelled() => {
+                        info!(node = %s.public_key(), "done");
+                        return
+                    }
                 }
             }
-            finish.wait().await;
-            info!(node = %s.public_key(), "done")
         });
         rxs.push(rx)
     }
@@ -83,6 +82,8 @@ async fn transaction_order() {
             assert_eq!(first.hash(), t.hash())
         }
     }
+
+    finish.cancel();
 
     while let Some(result) = tasks.join_next().await {
         if let Err(err) = result {

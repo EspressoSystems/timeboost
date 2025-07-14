@@ -3,7 +3,7 @@
     {
       "sailfish_address": "127.0.0.1:8000",
       "decrypt_address": "127.0.0.1:10000",
-      "producer_address": "127.0.0.1:11000",
+      "certifier_address": "127.0.0.1:11000",
       "internal_address": "127.0.0.1:5000",
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
@@ -17,7 +17,7 @@
     {
       "sailfish_address": "127.0.0.1:8001",
       "decrypt_address": "127.0.0.1:10001",
-      "producer_address": "127.0.0.1:11001",
+      "certifier_address": "127.0.0.1:11001",
       "internal_address": "127.0.0.1:5001",
       "signing_key": "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR",
       "dh_key": "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb",
@@ -31,7 +31,7 @@
     {
       "sailfish_address": "127.0.0.1:8002",
       "decrypt_address": "127.0.0.1:10002",
-      "producer_address": "127.0.0.1:11002",
+      "certifier_address": "127.0.0.1:11002",
       "internal_address": "127.0.0.1:5002",
       "signing_key": "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE",
       "dh_key": "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj",
@@ -45,7 +45,7 @@
     {
       "sailfish_address": "127.0.0.1:8003",
       "decrypt_address": "127.0.0.1:10003",
-      "producer_address": "127.0.0.1:11003",
+      "certifier_address": "127.0.0.1:11003",
       "internal_address": "127.0.0.1:5003",
       "signing_key": "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA",
       "dh_key": "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh",
@@ -59,7 +59,7 @@
     {
       "sailfish_address": "127.0.0.1:8004",
       "decrypt_address": "127.0.0.1:10004",
-      "producer_address": "127.0.0.1:11004",
+      "certifier_address": "127.0.0.1:11004",
       "internal_address": "127.0.0.1:5004",
       "signing_key": "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J",
       "dh_key": "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL",
@@ -73,7 +73,7 @@
     {
       "sailfish_address": "127.0.0.1:8005",
       "decrypt_address": "127.0.0.1:10005",
-      "producer_address": "127.0.0.1:11005",
+      "certifier_address": "127.0.0.1:11005",
       "internal_address": "127.0.0.1:5005",
       "signing_key": "hcUWjmK8pTz5AY39CDh1gVnVbaF4nNuEf2dQ5SWXZQyh",
       "dh_key": "95KhKesfhSgMubqtjv8f13d6XosWFME4Ya33LH9jkX23",
@@ -87,7 +87,7 @@
     {
       "sailfish_address": "127.0.0.1:8006",
       "decrypt_address": "127.0.0.1:10006",
-      "producer_address": "127.0.0.1:11006",
+      "certifier_address": "127.0.0.1:11006",
       "internal_address": "127.0.0.1:5006",
       "signing_key": "ufyeJDrHnH7BuuBvwaonu86YYZKYW47VedCdZ2yqAanm",
       "dh_key": "ER5CSn1QjRZ6rJ2d3m6HSyyDoLDr4ab29GkfVhNf3Eoo",
@@ -101,7 +101,7 @@
     {
       "sailfish_address": "127.0.0.1:8007",
       "decrypt_address": "127.0.0.1:10007",
-      "producer_address": "127.0.0.1:11007",
+      "certifier_address": "127.0.0.1:11007",
       "internal_address": "127.0.0.1:5007",
       "signing_key": "24hzR236zciuEFgtq7n2uHhoJBYkHDtd2s8LCCURLRfvU",
       "dh_key": "4FmHYY46oj2kwzm5Ddyvd4hQHHWMgwPmLMbzgBNHcfiD",
@@ -115,7 +115,7 @@
     {
       "sailfish_address": "127.0.0.1:8008",
       "decrypt_address": "127.0.0.1:10008",
-      "producer_address": "127.0.0.1:11008",
+      "certifier_address": "127.0.0.1:11008",
       "internal_address": "127.0.0.1:5008",
       "signing_key": "fkTFXcMaEEzutGCreYpDb1B2h8hNMf6UMNRbt8dnhi2v",
       "dh_key": "vzvao6vfQtWpBJvPsVCk9FL7RsJBNE4W8SvNWtofxqB",
@@ -129,7 +129,7 @@
     {
       "sailfish_address": "127.0.0.1:8009",
       "decrypt_address": "127.0.0.1:10009",
-      "producer_address": "127.0.0.1:11009",
+      "certifier_address": "127.0.0.1:11009",
       "internal_address": "127.0.0.1:5009",
       "signing_key": "28NkSnRnefwgwoP5Xj1Xo21bAHpVQcYEYouTNyjyjH5V3",
       "dh_key": "69BWDWEuKYvsF9EfCjDYJpxrNpSymvX23o3JHxQxhVfQ",
@@ -143,7 +143,7 @@
     {
       "sailfish_address": "127.0.0.1:8010",
       "decrypt_address": "127.0.0.1:10010",
-      "producer_address": "127.0.0.1:11010",
+      "certifier_address": "127.0.0.1:11010",
       "internal_address": "127.0.0.1:5010",
       "signing_key": "pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es",
       "dh_key": "EBPENaYdA28xAV7cHh6q1ESJcsf7P2LpZUWv5dEmo2Sv",
@@ -157,7 +157,7 @@
     {
       "sailfish_address": "127.0.0.1:8011",
       "decrypt_address": "127.0.0.1:10011",
-      "producer_address": "127.0.0.1:11011",
+      "certifier_address": "127.0.0.1:11011",
       "internal_address": "127.0.0.1:5011",
       "signing_key": "iNJBiPwwdA53Gds2rnJnSm1sjvnR8Ep72LZKf8fxVo2e",
       "dh_key": "D2dCHzbNYVo18z9yH4KnuiRbGMj3qxxRLAGwFEUrBUM3",
@@ -171,7 +171,7 @@
     {
       "sailfish_address": "127.0.0.1:8012",
       "decrypt_address": "127.0.0.1:10012",
-      "producer_address": "127.0.0.1:11012",
+      "certifier_address": "127.0.0.1:11012",
       "internal_address": "127.0.0.1:5012",
       "signing_key": "op7c28pHtcAH3qtKVAPz8amCfs7mcctxeM5ztJKURmzJ",
       "dh_key": "HBen32g4EtpoyA4hUWeqmHybw52xPWrkJapvHDo45AQi",

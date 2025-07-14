@@ -25,9 +25,9 @@ struct Args {
     #[clap(long, short)]
     decrypt_base_addr: Address,
 
-    /// The first producer address.
+    /// The first certifier address.
     #[clap(long, short)]
-    producer_base_addr: Address,
+    certifier_base_addr: Address,
 
     /// The internal API address.
     #[clap(long, short)]
@@ -93,7 +93,9 @@ impl Args {
             .map(|(((i, kp), xp), hpke)| NodeInfo {
                 sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
                 decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
-                producer_address: self.adjust_addr(i as u8, &self.producer_base_addr).unwrap(),
+                certifier_address: self
+                    .adjust_addr(i as u8, &self.certifier_base_addr)
+                    .unwrap(),
                 internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
                 signing_key: kp.public_key(),
                 dh_key: xp.public_key(),
