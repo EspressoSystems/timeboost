@@ -26,7 +26,7 @@ pub enum Message<T: Committable, Status = Validated> {
     Handover(Envelope<HandoverMessage, Status>),
 
     /// A handover certificate from a node.
-    HandoverCert(Certificate<Handover>),
+    HandoverCert(Certificate<Handover>, HandoverState),
 }
 
 impl<T: Committable, S> Message<T, S> {
@@ -37,7 +37,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::NoVote(nv) => nv.data().no_vote().data().round(),
             Self::Handover(h) => h.data().handover().data().round(),
             Self::TimeoutCert(c) => c.data().round(),
-            Self::HandoverCert(c) => c.data().round(),
+            Self::HandoverCert(c, _) => c.data().round(),
         }
     }
 
@@ -48,7 +48,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::NoVote(nv) => nv.data().no_vote().data().round().committee(),
             Self::Handover(h) => h.data().handover().data().next(),
             Self::TimeoutCert(c) => c.data().round().committee(),
-            Self::HandoverCert(c) => c.data().next(),
+            Self::HandoverCert(c, _) => c.data().next(),
         }
     }
 
@@ -58,7 +58,7 @@ impl<T: Committable, S> Message<T, S> {
             Self::Timeout(e) => Some(e.signing_key()),
             Self::NoVote(e) => Some(e.signing_key()),
             Self::Handover(e) => Some(e.signing_key()),
-            Self::TimeoutCert(_) | Self::HandoverCert(_) => None,
+            Self::TimeoutCert(_) | Self::HandoverCert(_, _) => None,
         }
     }
 
@@ -83,7 +83,7 @@ impl<T: Committable, S> Message<T, S> {
     }
 
     pub fn is_handover_cert(&self) -> bool {
-        matches!(self, Self::HandoverCert(_))
+        matches!(self, Self::HandoverCert(_, _))
     }
 }
 
@@ -305,7 +305,7 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 Some(Message::TimeoutCert(crt))
             }
-            Self::HandoverCert(crt) => {
+            Self::HandoverCert(crt, state) => {
                 let round = crt.data().round();
 
                 // Get the committee of the certificate round.
@@ -320,7 +320,7 @@ impl<T: Committable> Message<T, Unchecked> {
                     return None;
                 }
 
-                Some(Message::HandoverCert(crt))
+                Some(Message::HandoverCert(crt, state))
             }
         }
     }
@@ -397,7 +397,7 @@ pub enum Action<T: Committable> {
     SendTimeoutCert(Certificate<Timeout>),
 
     /// Send a handover certificate to all nodes of the next committee.
-    SendHandoverCert(Certificate<Handover>),
+    SendHandoverCert(Certificate<Handover>, HandoverState),
 
     /// Are we in catchup?
     Catchup(Round),
@@ -406,7 +406,7 @@ pub enum Action<T: Committable> {
     Gc(Round),
 
     /// Use a committee starting at the given round.
-    UseCommittee(Round),
+    UseCommittee(Round, HandoverState),
 }
 
 impl<T: Committable> Action<T> {
@@ -447,7 +447,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::SendTimeoutCert(certificate) => {
                 write!(f, "SendTimeoutCert({})", certificate.data().round())
             }
-            Action::SendHandoverCert(certificate) => {
+            Action::SendHandoverCert(certificate, _state) => {
                 write!(f, "SendHandoverCert({})", certificate.data().round())
             }
             Action::Gc(r) => {
@@ -456,7 +456,7 @@ impl<T: Committable> fmt::Display for Action<T> {
             Action::Catchup(r) => {
                 write!(f, "Catchup({r})")
             }
-            Action::UseCommittee(r) => {
+            Action::UseCommittee(r, _) => {
                 write!(f, "UseCommittee({r})")
             }
         }
@@ -477,6 +477,24 @@ pub struct NoVote {
 pub struct Handover {
     round: Round,
     next: CommitteeId,
+    state: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
+pub struct HandoverState(Vec<Vec<u8>>);
+
+impl HandoverState {
+    pub fn new(data: Vec<Vec<u8>>) -> Self {
+        Self(data)
+    }
+
+    pub fn data(&self) -> &Vec<Vec<u8>> {
+        &self.0
+    }
+
+    pub fn data_mut(&mut self) -> &mut Vec<Vec<u8>> {
+        &mut self.0
+    }
 }
 
 impl Timeout {
@@ -500,8 +518,12 @@ impl NoVote {
 }
 
 impl Handover {
-    pub fn new(r: Round, c: CommitteeId) -> Self {
-        Self { round: r, next: c }
+    pub fn new(r: Round, c: CommitteeId, s: Vec<u8>) -> Self {
+        Self {
+            round: r,
+            next: c,
+            state: s,
+        }
     }
 
     pub fn round(&self) -> Round {
@@ -510,6 +532,10 @@ impl Handover {
 
     pub fn next(&self) -> CommitteeId {
         self.next
+    }
+
+    pub fn state(&self) -> &[u8] {
+        &self.state
     }
 }
 
@@ -697,7 +723,7 @@ impl<T: Committable, S> fmt::Display for Message<T, S> {
             Self::Handover(h) => {
                 write!(f, "Handover({})", h.data().handover().data())
             }
-            Self::HandoverCert(c) => {
+            Self::HandoverCert(c, _) => {
                 write!(f, "HandoverCert({})", c.data().round())
             }
         }
@@ -794,7 +820,7 @@ impl<T: Committable, S> Committable for Message<T, S> {
             Self::NoVote(e) => builder.field("novote", e.commit()).finalize(),
             Self::TimeoutCert(c) => builder.field("timeout-cert", c.commit()).finalize(),
             Self::Handover(h) => builder.field("handover", h.commit()).finalize(),
-            Self::HandoverCert(c) => builder.field("handover-cert", c.commit()).finalize(),
+            Self::HandoverCert(c, _) => builder.field("handover-cert", c.commit()).finalize(),
         }
     }
 }

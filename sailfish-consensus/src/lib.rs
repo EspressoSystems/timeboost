@@ -8,10 +8,10 @@ use std::time::Instant;
 use committable::Committable;
 use multisig::CommitteeId;
 use multisig::{Certificate, Committee, Envelope, Keypair, PublicKey, Validated, VoteAccumulator};
-use sailfish_types::math;
 use sailfish_types::{Action, Evidence, Message, NoVote, NoVoteMessage, Timeout, TimeoutMessage};
 use sailfish_types::{ConsensusTime, Handover, HandoverMessage, NodeInfo};
 use sailfish_types::{DataSource, HasTime, Payload, Round, RoundNumber, Vertex};
+use sailfish_types::{HandoverState, math};
 use tracing::{Level, debug, enabled, error, info, trace, warn};
 
 pub use dag::Dag;
@@ -24,6 +24,18 @@ struct NewVertex<T>(Vertex<T>);
 struct NextCommittee {
     id: CommitteeId,
     start: ConsensusTime,
+}
+
+#[derive(Clone, Debug)]
+pub struct HandoverAccumulator {
+    pub acc: VoteAccumulator<Handover>,
+    pub state: HandoverState,
+}
+
+impl HandoverAccumulator {
+    pub fn new(acc: VoteAccumulator<Handover>, state: HandoverState) -> Self {
+        Self { acc, state }
+    }
 }
 
 /// Consensus instance state.
@@ -75,7 +87,7 @@ pub struct Consensus<T> {
     next_committee: Option<NextCommittee>,
 
     /// Handover votes from the previous committee.
-    handovers: Option<VoteAccumulator<Handover>>,
+    handovers: Option<HandoverAccumulator>,
 
     /// The current round number.
     round: RoundNumber,
@@ -141,7 +153,9 @@ impl<T> Consensus<T> {
     }
 
     pub fn set_handover_committee(&mut self, c: Committee) {
-        self.handovers = Some(VoteAccumulator::new(c))
+        let handover =
+            HandoverAccumulator::new(VoteAccumulator::new(c), HandoverState::new(vec![]));
+        self.handovers = Some(handover);
     }
 }
 
@@ -270,7 +284,7 @@ where
             Message::Timeout(e) => self.handle_timeout(e),
             Message::Handover(e) => self.handle_handover(e),
             Message::TimeoutCert(c) => self.handle_timeout_cert(c),
-            Message::HandoverCert(c) => self.handle_handover_cert(c),
+            Message::HandoverCert(c, s) => self.handle_handover_cert(c, s),
         };
 
         trace!(
@@ -582,14 +596,21 @@ where
             );
             return actions;
         };
-
-        match handovers.add(handover) {
+        let new_state = handover.data().state().to_vec();
+        match handovers.acc.add(handover) {
             Ok(Some(cert)) => {
                 let cert = cert.clone();
-                actions.push(Action::SendHandoverCert(cert.clone()));
-                actions.extend(self.start_committee(cert))
+                handovers.state.data_mut().push(new_state);
+                actions.push(Action::SendHandoverCert(
+                    cert.clone(),
+                    handovers.state.clone(),
+                ));
+                let s = handovers.state.clone();
+                actions.extend(self.start_committee(cert, s))
             }
-            Ok(None) => {}
+            Ok(None) => {
+                handovers.state.data_mut().push(new_state);
+            }
             Err(err) => {
                 warn!(
                     node = %self.keypair.public_key(),
@@ -603,7 +624,11 @@ where
     }
 
     /// Members of the next committee receive handover certificates.
-    pub fn handle_handover_cert(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
+    pub fn handle_handover_cert(
+        &mut self,
+        cert: Certificate<Handover>,
+        state: HandoverState,
+    ) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), round = %cert.data().round(), "handover certificate");
         let Some(handovers) = &mut self.handovers else {
             warn!(
@@ -613,8 +638,8 @@ where
             );
             return Vec::new();
         };
-        handovers.set_certificate(cert.clone());
-        self.start_committee(cert)
+        handovers.acc.set_certificate(cert.clone());
+        self.start_committee(cert, state)
     }
 
     /// Try to advance from the given round `r` to `r + 1`.
@@ -1083,7 +1108,7 @@ where
         if let Some(cert) = self.timeouts.get(&r).and_then(|a| a.certificate()) {
             return Some(Evidence::Timeout(cert.clone()));
         }
-        if let Some(cert) = self.handovers.as_ref().and_then(|a| a.certificate()) {
+        if let Some(cert) = self.handovers.as_ref().and_then(|a| a.acc.certificate()) {
             if cert.data().round().num() == r {
                 return Some(Evidence::Handover(cert.clone()));
             }
@@ -1124,13 +1149,18 @@ where
             return None;
         }
         info!(node = %self.keypair.public_key(), round = %self.committed_round, "starting handover");
+        let handover_state = vec![];
         let r = Round::new(self.committed_round, self.committee.id());
         self.state = State::Shutdown(self.committed_round);
-        Some(Handover::new(r, next.id))
+        Some(Handover::new(r, next.id, handover_state))
     }
 
     /// A new committee starts here, once the handover is complete.
-    fn start_committee(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
+    fn start_committee(
+        &mut self,
+        cert: Certificate<Handover>,
+        state: HandoverState,
+    ) -> Vec<Action<T>> {
         trace!(node = %self.public_key(), handover = %cert.data(), "start committee");
 
         let mut actions = Vec::new();
@@ -1156,7 +1186,7 @@ where
         let env = Envelope::signed(vertex, &self.keypair);
 
         actions.extend([
-            Action::UseCommittee(round),
+            Action::UseCommittee(round, state),
             Action::SendProposal(env),
             Action::ResetTimer(Round::new(self.round, self.committee.id())),
         ]);

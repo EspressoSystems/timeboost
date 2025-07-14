@@ -364,11 +364,11 @@ impl Task {
                     Ok(Some(Event::Catchup(_))) => {
                         self.includer.clear_cache();
                     }
-                    Ok(Some(Event::UseCommittee(r))) => {
+                    Ok(Some(Event::UseCommittee(r, s))) => {
                         if let Some(cons) = self.sailfish.consensus(r.committee()) {
                             let c = cons.committee().clone();
                             self.includer.set_next_committee(r.num(), c);
-                            if let Err(err) = self.decrypter.use_committee(r).await {
+                            if let Err(err) = self.decrypter.use_committee(r, s).await {
                                 error!(node = %self.label, %err, "decrypt use committee error");
                             }
                             self.output

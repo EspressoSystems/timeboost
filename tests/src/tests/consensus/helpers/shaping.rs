@@ -513,17 +513,17 @@ impl Simulator {
                         }
                     }
                 }
-                Action::SendHandoverCert(c) => {
+                Action::SendHandoverCert(c, s) => {
                     if let Some(rule) = rule {
                         for (name, delay) in rule.edges.get(party).into_iter().flatten() {
                             if let Some(p) = self.parties.get_mut(name) {
-                                let m = Message::HandoverCert(c.clone());
+                                let m = Message::HandoverCert(c.clone(), s.clone());
                                 p.add_message(self.time + delay(&m), m)
                             }
                         }
                     } else {
                         for p in self.parties.values_mut() {
-                            p.add_message(self.time, Message::HandoverCert(c.clone()))
+                            p.add_message(self.time, Message::HandoverCert(c.clone(), s.clone()))
                         }
                     }
                 }
@@ -538,7 +538,7 @@ impl Simulator {
                     self.events
                         .push(Event::Deliver(self.time, party, data.round().num(), k))
                 }
-                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(_) => {}
+                Action::Gc(_) | Action::Catchup(_) | Action::UseCommittee(..) => {}
             }
         }
     }

@@ -131,12 +131,12 @@ fn action_to_msg<T: Committable>(action: Action<T>) -> Option<Message<T>> {
         Action::SendTimeout(e) => Some(Message::Timeout(e)),
         Action::SendTimeoutCert(c) => Some(Message::TimeoutCert(c)),
         Action::SendHandover(e) => Some(Message::Handover(e)),
-        Action::SendHandoverCert(c) => Some(Message::HandoverCert(c)),
+        Action::SendHandoverCert(c, s) => Some(Message::HandoverCert(c, s)),
         Action::ResetTimer(_) => None,
         Action::Deliver(..) => None,
         Action::Gc(_) => None,
         Action::Catchup(_) => None,
-        Action::UseCommittee(_) => None,
+        Action::UseCommittee(_, _) => None,
     }
 }
 

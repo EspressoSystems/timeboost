@@ -121,7 +121,7 @@ impl FakeNetwork {
             | Action::Deliver(_)
             | Action::Gc(_)
             | Action::Catchup(_)
-            | Action::UseCommittee(_) => {
+            | Action::UseCommittee(..) => {
                 return;
             }
             Action::SendNoVote(to, e) => (Some(to), Message::NoVote(e)),
@@ -129,7 +129,7 @@ impl FakeNetwork {
             Action::SendTimeout(e) => (None, Message::Timeout(e)),
             Action::SendTimeoutCert(c) => (None, Message::TimeoutCert(c)),
             Action::SendHandover(e) => (None, Message::Handover(e)),
-            Action::SendHandoverCert(c) => (None, Message::HandoverCert(c)),
+            Action::SendHandoverCert(c, s) => (None, Message::HandoverCert(c, s)),
         };
         msgs.push(msg)
     }

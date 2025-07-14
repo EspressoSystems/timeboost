@@ -242,7 +242,9 @@ fn basic_liveness() {
                         Action::SendTimeout(e) => n.handle_timeout(e.clone()),
                         Action::SendTimeoutCert(x) => n.handle_timeout_cert(x.clone()),
                         Action::SendHandover(e) => n.handle_handover(e.clone()),
-                        Action::SendHandoverCert(x) => n.handle_handover_cert(x.clone()),
+                        Action::SendHandoverCert(x, s) => {
+                            n.handle_handover_cert(x.clone(), s.clone())
+                        }
                         Action::SendNoVote(to, e) if n.public_key() == *to => {
                             n.handle_no_vote(e.clone())
                         }
@@ -250,7 +252,7 @@ fn basic_liveness() {
                         | Action::ResetTimer(..)
                         | Action::Gc(_)
                         | Action::Catchup(_)
-                        | Action::UseCommittee(_) => continue,
+                        | Action::UseCommittee(..) => continue,
                     };
                     if !na.is_empty() {
                         next.push((n.public_key(), na))

@@ -5,7 +5,7 @@ use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
 use multisig::{CommitteeId, PublicKey};
-use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
+use sailfish::types::{CommitteeVec, Evidence, HandoverState, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
@@ -33,7 +33,7 @@ enum Command {
     /// Prepare for the next committee.
     NextCommittee(AddressableCommittee),
     /// Use a committee starting at the given round.
-    UseCommittee(Round),
+    UseCommittee(Round, HandoverState),
     // request to garbage collect all states related to a round (and previous rounds)
     Gc(RoundNumber),
 }
@@ -215,10 +215,14 @@ impl Decrypter {
     }
 
     /// Use a committee starting at the given round.
-    pub async fn use_committee(&mut self, r: Round) -> StdResult<(), DecrypterDown> {
+    pub async fn use_committee(
+        &mut self,
+        r: Round,
+        s: HandoverState,
+    ) -> StdResult<(), DecrypterDown> {
         debug!(node = %self.label, round = %r, "use committee");
         self.worker_tx
-            .send(Command::UseCommittee(r))
+            .send(Command::UseCommittee(r, s))
             .await
             .map_err(|_| DecrypterDown(()))?;
         Ok(())
@@ -351,8 +355,8 @@ impl Worker {
                             Err(DecrypterError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on next committee")
                         }
-                    Some(Command::UseCommittee(r)) =>
-                        match self.on_use_committee(r).await {
+                    Some(Command::UseCommittee(r, s)) =>
+                        match self.on_use_committee(r, s).await {
                             Ok(()) => {}
                             Err(DecrypterError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on use committee")
@@ -720,7 +724,7 @@ impl Worker {
         Ok(())
     }
 
-    async fn on_use_committee(&mut self, round: Round) -> Result<()> {
+    async fn on_use_committee(&mut self, round: Round, _state: HandoverState) -> Result<()> {
         info!(node = %self.label, %round, "use committee");
         if self.committees.get(round.committee()).is_none() {
             error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");

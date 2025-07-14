@@ -5,7 +5,7 @@ use committable::Committable;
 use futures::{FutureExt, future::BoxFuture};
 use multisig::{Committee, CommitteeId, PublicKey, Validated};
 use sailfish_consensus::{Consensus, Dag};
-use sailfish_types::{Action, Comm, Evidence, HasTime, Message, Round};
+use sailfish_types::{Action, Comm, Evidence, HandoverState, HasTime, Message, Round};
 use sailfish_types::{ConsensusTime, Payload};
 use tokio::select;
 use tokio::time::sleep;
@@ -78,7 +78,7 @@ enum State {
 #[derive(Debug, Clone)]
 pub enum Event<T: Committable> {
     /// A new committee is in use.
-    UseCommittee(Round),
+    UseCommittee(Round, HandoverState),
     /// Gargabe collection has been performed.
     Gc(Round),
     /// Consensus was catching up.
@@ -279,7 +279,7 @@ where
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
                     self.comm.use_committee(r).await?;
-                    return Ok(Some(Event::UseCommittee(r)));
+                    return Ok(Some(Event::UseCommittee(r, HandoverState::new(vec![]))));
                 }
             }
             Action::SendProposal(e) => {
@@ -301,14 +301,14 @@ where
             Action::SendHandover(e) => {
                 self.comm.broadcast(Message::Handover(e)).await?;
             }
-            Action::SendHandoverCert(c) => {
-                self.comm.broadcast(Message::HandoverCert(c)).await?;
+            Action::SendHandoverCert(c, s) => {
+                self.comm.broadcast(Message::HandoverCert(c, s)).await?;
             }
-            Action::UseCommittee(r) => {
+            Action::UseCommittee(r, s) => {
                 if self.update_consensus(r) || self.state == State::AwaitHandover {
                     self.state = State::Running;
                     self.comm.use_committee(r).await?;
-                    return Ok(Some(Event::UseCommittee(r)));
+                    return Ok(Some(Event::UseCommittee(r, s)));
                 }
             }
             Action::Catchup(r) => return Ok(Some(Event::Catchup(r))),
