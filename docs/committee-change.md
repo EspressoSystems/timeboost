@@ -110,13 +110,12 @@ enum Mode {
     /// The sequencer will produce transactions.
     Active,
 }
-
-impl Mode {
-    fn is_passive(self) -> bool {
-        matches!(self, Self::Passive)
-    }
-}
 ```
+
+**Key Role Behaviors:**
+- **Active peers**: Receive all broadcast messages (consensus vertices, timeouts, etc.)
+- **Passive peers**: Excluded from broadcasts but can receive direct unicast/multicast messages
+- **Committee transition strategy**: C2 members start as passive, then become active after handover
 
 
 ### 3.2 Coordinator State Management
@@ -206,10 +205,17 @@ async fn add_committee(&mut self, c: AddressableCommittee) -> RbcResult<()> {
 }
 ```
 
+**Passive Node Addition Process:**
+When a new committee (C2) is added, its members that don't exist in the current committee (C1) are added to the network as **passive peers**. This allows C2 to:
+- Connect to the network early
+- Receive targeted messages via multicast/unicast
+- Build network connections before becoming active
+- Prepare for consensus participation without interfering with C1's broadcasts
 
-### 4.2 Committee Switchover
 
-The RBC layer switches to use a new committee:
+### 4.2 Committee Switchover with Role Management
+
+The RBC layer switches to use a new committee and promotes passive peers to active:
 
 ```rust
 // From sailfish-rbc/src/abraham/worker.rs:365-388
@@ -239,10 +245,18 @@ async fn use_committee(&mut self, round: Round) -> RbcResult<()> {
 }
 ```
 
+**Role Transition Process:**
+1. **Remove old peers**: Nodes not in the new committee are removed from the network
+2. **Promote to active**: All C2 committee members are assigned `Role::Active`
+3. **Update committee ID**: The worker now considers C2 as the current committee
+4. **Clean buffers**: Remove messages from the old committee to prevent interference
 
-### 4.3 Cross-Committee Message Handling
+**Critical Insight**: This role promotion is what enables C2 to start receiving broadcast messages (consensus vertices) that were previously only sent to C1 as active peers.
 
-The RBC layer handles messages crossing committee boundaries:
+
+### 4.3 Cross-Committee Message Routing with Role-Based Delivery
+
+The RBC layer handles messages crossing committee boundaries with intelligent routing:
 
 ```rust
 // From sailfish-rbc/src/abraham/worker.rs:411-427
@@ -261,6 +275,20 @@ if committee_id != self.config.committee_id {
     debug!(node = %self.key, %digest, "message broadcasted");
 }
 ```
+
+**Why C2 Does NOT Receive Consensus Vertices During Transition:**
+
+1. **Early Passive Addition**: C2 nodes are added as passive peers when the committee is first announced
+2. **Broadcast Exclusion**: Passive peers are excluded from broadcasts, so C2 does NOT receive consensus vertices during transition
+3. **Handover Messages Only**: C1 sends only handover messages to C2 via multicast (handover messages contain round info, not vertices)
+4. **Role Promotion**: Once handover completes, C2 members are promoted to active role
+5. **Broadcast Reception**: Only AFTER promotion does C2 start receiving broadcast consensus vertices as the new active committee
+
+**Message Delivery Strategy by Type:**
+- **Consensus vertices (same committee)**: Broadcast to active peers only - C2 excluded until promotion
+- **Handover messages (cross-committee)**: Multicast to specific committee members (bypasses role filtering)
+- **Timeout/NoVote messages**: Broadcast to active peers or unicast to specific leaders
+- **Certificates**: Broadcast to active peers or multicast to target committee
 
 
 ---
@@ -282,23 +310,124 @@ pub fn set_handover_committee(&mut self, c: Committee) {
 }
 ```
 
-### 5.2 State Reconstruction: Why No Snapshot Transfer
+### 5.2 State Reconstruction: The Reality of Committee Handover
 
-**Key Insight**: C2 does not receive a state snapshot from C1. Instead, C2 reconstructs the necessary state because it has been running alongside C1 and receiving the same DAG vertices since it was started.
+**Key Insight**: C2 does not receive a state snapshot from C1, but this is **NOT** because C2 was receiving consensus vertices during the transition. The actual mechanism is more nuanced.
 
-**Why This Works:**
-- C2 starts running before the handover timestamp and begins receiving all consensus vertices via RBC
-- C2 maintains its own DAG and can reconstruct the same consensus state as C1
-- The DAG provides cryptographic evidence of all committed rounds and vertices
-- C2 uses the handover certificate as evidence to bootstrap its first vertex after taking over
+**What Actually Happens:**
 
-**State Reconstruction Process:**
-- C2 processes buffered vertices that couldn't be added to DAG due to missing dependencies
-- Uses `advance_from_round()` with cryptographic evidence from the handover certificate
-- Validates vertex chains and builds the same consensus history as C1
+1. **Passive Peer Phase**: When C2 is first added to the network:
+   - C2 members are added as **passive peers** to the network
+   - Passive peers are excluded from broadcasts (including consensus vertex broadcasts)
+   - C2 can establish network connections but does **NOT** receive regular consensus vertices
+   - C2 waits in `AwaitHandover` state until receiving handover messages
+
+2. **Handover Messages Only**: During the handover period:
+   - C1 sends **handover messages** specifically to C2 via multicast
+   - **Handover messages contain only round number and committee ID** - no vertices!
+   ```rust
+   pub struct Handover {
+       round: Round,        // Last committed round by C1
+       next: CommitteeId,   // C2's committee ID
+   }
+   ```
+   - These handover messages do NOT contain consensus vertices or state data
+
+3. **Role Promotion Triggers State Sync**: After handover certificate formation:
+   - C2 members are promoted to **active peer** role via `use_committee()`
+   - **Only AFTER promotion** does C2 start receiving broadcast consensus vertices
+   - C2 must reconstruct state from its **own consensus operation**, not from received vertices
+
+**State Reconstruction Reality:**
+
+```rust
+// From sailfish-consensus/src/lib.rs:1133-1165
+fn start_committee(&mut self, cert: Certificate<Handover>) -> Vec<Action<T>> {
+    let r = cert.data().round().num();
+    self.state = State::Running;
+    self.committed_round = r;  // Set from handover certificate
+    self.round = r + 1;       // Start from next round
+    
+    // Create first vertex with handover evidence
+    let vertex = Vertex::new(
+        Round::new(self.round, self.committee.id()),
+        Evidence::Handover(cert),  // Use handover cert as evidence
+        self.datasource.next(self.round),
+        &self.keypair,
+    );
+}
+```
+
+**Why No State Snapshot is Needed:**
+- C2 doesn't reconstruct C1's state - it **starts fresh** from the handover round
+- The handover certificate provides cryptographic proof of C1's last committed round
+- C2 uses this as **evidence** for its first vertex, bootstrapping a new consensus history
+- C2 builds its own DAG starting from the handover point, not from reconstructing C1's DAG
+- The consensus protocol is designed so committees can hand off at round boundaries without full state transfer
+
+### 5.3 DAG State Persistence and SMR Guarantees
+
+**Critical Understanding**: The confusion about DAG state persistence arises from conflating consensus-layer state with application-layer state. Sailfish provides SMR (State Machine Replication) guarantees, but the committee change mechanism operates at different layers:
+
+**Layer Separation:**
+
+1. **Consensus Layer (DAG vertices)**: Committee-specific
+   - Each committee maintains its own DAG structure
+   - DAG vertices are not transferred between committees
+   - Handover only provides cryptographic proof of the last committed round
+
+2. **Application Layer (SMR state)**: Committee-independent
+   - The application state machine (e.g., transaction ordering, balance updates) persists across committees
+   - Historical data accessibility is maintained at the application layer, not consensus layer
+   - SMR guarantees are preserved through proper application state management
+
+**How Timeboost Sequencer State Persists Across Committees:**
+
+The actual mechanism is through the `BundleQueue` which contains the sequencer's application state:
+
+```rust
+// From timeboost-sequencer/src/lib.rs:224 and timeboost-sequencer/src/queue.rs
+// The BundleQueue is cloned and passed to the new committee
+self.commands
+    .send(Command::NextCommittee(t, a, self.bundles.clone()))
+    .await
+
+// BundleQueue contains the persistent sequencer state
+struct Inner {
+    priority_addr: Address,
+    time: Timestamp,
+    index: DelayedInboxIndex,
+    priority: BTreeMap<Epoch, BTreeMap<SeqNo, SignedPriorityBundle>>,  // Persists across committees
+    regular: VecDeque<(Instant, Bundle)>,                              // Persists across committees  
+    dkg: Option<DkgBundle>,                                            // Persists across committees
+    // ... other fields
+}
+
+// When new committee is created, it receives the same BundleQueue
+let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);  // 'b' is the cloned BundleQueue
+```
+
+**SMR Guarantee Preservation:**
+- **Safety**: All committees agree on the same sequence of committed operations up to the handover point
+- **Liveness**: New committee can continue processing after handover
+- **Persistence**: Application state is maintained independently of consensus DAG structure
+- **Accessibility**: Historical data remains available through application layer storage/indexing
+
+**Why This Design Works:**
+- The consensus layer provides **ordering** guarantees, not storage guarantees
+- The application layer is responsible for **persistent state** and **historical data**
+- Committee handover transfers the **authority to continue ordering**, not the entire state
+- SMR properties are maintained because both committees agree on the committed sequence up to handover
+
+**Practical Implications:**
+- **Bundle continuity**: Pending priority and regular bundles are preserved across committee changes via BundleQueue cloning
+- **Sequencer state persistence**: The new committee inherits the exact same transaction pool state (priority bundles, regular bundles, DKG state)
+- **No transaction loss**: Bundles submitted before committee change remain available for inclusion by the new committee
+- **Seamless transition**: Users don't need to resubmit transactions during committee changes
+- **DAG vs Application State**: The consensus DAG is committee-specific, but the transaction sequencing state (BundleQueue) persists across committees
 
 
-### 5.3 Handover Message Processing
+### 5.4 Handover Message Processing
 
 The consensus handles `HandoverMessage` from the previous committee, ensuring that signatures and evidence are verified:
 
@@ -356,7 +485,7 @@ pub fn handle_handover(&mut self, e: Envelope<HandoverMessage, Validated>) -> Ve
 ```
 
 
-### 5.4 Committee Change Announcement
+### 5.5 Committee Change Announcement
 
 **External Signal Source**: The committee change is announced through an external signal (not originating from the consensus layer itself):
 
@@ -373,7 +502,7 @@ bcast.send(Cmd::NextCommittee(t, a2)).unwrap();
 3. **Committee Setup**: Both C1 and C2 nodes receive the announcement and prepare for transition
 4. **Delayed Execution**: The actual handover waits until the announced timestamp
 
-### 5.5 Committee Overlap Constraints
+### 5.6 Committee Overlap Constraints
 
 **Critical Timing Requirements:**
 
@@ -405,7 +534,7 @@ fn handover(&mut self) -> Option<Handover> {
 - C1 sends handover messages while still processing its own consensus
 - C2 waits in `AwaitHandover` state until receiving sufficient handover votes
 
-### 5.6 Message Routing During Transition
+### 5.7 Message Routing During Transition
 
 **Message Types and Routing:**
 
@@ -439,10 +568,12 @@ if committee_id != self.config.committee_id {
 - ✗ Handover messages directed to C2
 - ✗ Messages from unknown/future committees
 
-**C2 (Next Committee) Ignores:**
-- ✗ Normal consensus messages until handover completes
-- ✗ Messages from old committees (previous to C1)
-- ✗ Duplicate handover messages from same signer
+**C2 (Next Committee) Behavior:**
+- ✗ Does NOT receive normal consensus vertex broadcasts (passive peer role excludes from broadcasts)
+- ✓ Receives handover messages via multicast from C1
+- ✗ Ignores messages from old committees (previous to C1)
+- ✗ Ignores duplicate handover messages from same signer
+- ✓ Starts receiving broadcasts only AFTER promotion to active role
 
 **Coordinator-Level Buffering:**
 ```rust
