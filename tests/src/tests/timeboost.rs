@@ -11,11 +11,12 @@ use multisig::Keypair;
 use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
-use timeboost::types::DecryptionKey;
+use timeboost::types::DecryptionKey as ThresholdDecryptionKey;
 use timeboost_builder::CertifierConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::SequencerConfig;
+use timeboost_utils::keyset::build_placeholder_dec_key;
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -83,11 +84,12 @@ where
     let recover_index = recover_index.into();
 
     for (i, ((kpair, xpair, sa, da, pa), share)) in parts.into_iter().zip(shares).enumerate() {
-        let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
+        let dkey = ThresholdDecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
-            .decryption_key(dkey)
+            .threshold_decryption_key(dkey)
+            .pke_decryption_key(build_placeholder_dec_key())
             .sailfish_addr(sa)
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())

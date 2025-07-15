@@ -1,15 +1,17 @@
 use std::{fmt, fs, path::Path, time::Duration};
 
 use anyhow::Result;
+use ark_std::rand::rngs::OsRng;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::{
     DecryptionScheme,
-    prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey},
+    mre::DecryptionKey,
+    prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey, LabeledDecryptionKey},
     traits::threshold_enc::ThresholdEncScheme,
 };
-use timeboost_types::DecryptionKey;
+use timeboost_types::DecryptionKey as ThresholdDecryptionKey;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -52,6 +54,13 @@ pub struct PrivateKeys {
     pub dec_key: HpkeDecKey,
 }
 
+// placeholder until LabeledDecryptionKey can be derived through Timeboost configs.
+pub fn build_placeholder_dec_key() -> LabeledDecryptionKey {
+    let mut rng = OsRng;
+    let sk = DecryptionKey::rand(&mut rng);
+    sk.label(0)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicDecInfo {
     #[serde(with = "pubkey")]
@@ -72,8 +81,8 @@ impl KeysetConfig {
         Ok(conf)
     }
 
-    pub fn decryption_key(&self, share: KeyShare) -> DecryptionKey {
-        DecryptionKey::new(
+    pub fn decryption_key(&self, share: KeyShare) -> ThresholdDecryptionKey {
+        ThresholdDecryptionKey::new(
             self.dec_keyset.pubkey.clone(),
             self.dec_keyset.combkey.clone(),
             share,

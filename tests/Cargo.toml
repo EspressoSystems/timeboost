@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ark-std = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }

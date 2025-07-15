@@ -3,7 +3,8 @@ use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::CertifierConfig;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DecryptionKey;
+use timeboost_types::DecryptionKey as ThresholdDecryptionKey;
+use timeboost_utils::keyset::build_placeholder_dec_key;
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -26,7 +27,7 @@ pub struct TimeboostConfig {
     pub(crate) dh_keypair: x25519::Keypair,
 
     /// The decryption key material for the node.
-    pub(crate) decryption_key: DecryptionKey,
+    pub(crate) decryption_key: ThresholdDecryptionKey,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -57,7 +58,8 @@ impl TimeboostConfig {
         SequencerConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .decryption_key(self.decryption_key.clone())
+            .pke_decryption_key(build_placeholder_dec_key())
+            .threshold_decryption_key(self.decryption_key.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())

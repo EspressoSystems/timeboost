@@ -15,7 +15,8 @@ use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
 use timeboost::crypto::DecryptionScheme;
 use timeboost::sequencer::SequencerConfig;
-use timeboost::types::DecryptionKey;
+use timeboost::types::DecryptionKey as ThresholdDecryptionKey;
+use timeboost_utils::keyset::build_placeholder_dec_key;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -122,11 +123,12 @@ where
         .zip(de_addrs)
         .zip(shares)
         .map(move |((((k, x), sa), da), share)| {
-            let key = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
+            let key = ThresholdDecryptionKey::new(pubkey.clone(), combkey.clone(), share);
             SequencerConfig::builder()
                 .sign_keypair(k)
                 .dh_keypair(x)
-                .decryption_key(key)
+                .threshold_decryption_key(key)
+                .pke_decryption_key(build_placeholder_dec_key())
                 .sailfish_addr(sa)
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())

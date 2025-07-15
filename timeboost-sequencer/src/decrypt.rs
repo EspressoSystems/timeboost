@@ -9,9 +9,10 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
+use timeboost_crypto::prelude::LabeledDecryptionKey;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
-use timeboost_types::{DecryptionKey, InclusionList};
+use timeboost_types::{DecryptionKey as ThresholdDecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -20,9 +21,10 @@ use tracing::{debug, error, info, trace, warn};
 use crate::config::DecrypterConfig;
 
 type Result<T> = StdResult<T, DecrypterError>;
-type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
-type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
-type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecShare>>>>>;
+type ThresholdDecryptionShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
+type ThresholdCiphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
+type ShareCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<ThresholdDecryptionShare>>>>>;
+type DkgBundleTracker = BTreeMap<CommitteeId, Vec<Vec<u8>>>; // todo: replace with tracker of vess ciphertext (and commitment).
 
 /// Command sent to Decrypter's background worker
 enum Command {
@@ -101,7 +103,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .dec_sk(cfg.decryption_key)
+            .pke_dec_sk(cfg.hpke_key)
             .retain(cfg.retain)
             .build();
 
@@ -262,11 +264,22 @@ struct Worker {
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
 
-    /// decryption key used to decrypt and combine
-    dec_sk: DecryptionKey,
+    /// threshold decryption key used to decrypt and combine shares.
+    thres_dec_sk: Option<ThresholdDecryptionKey>,
+
+    /// pke decryption key for encrypted Dkg dealings.
+    _pke_dec_sk: LabeledDecryptionKey,
 
     /// Number of rounds to retain.
     retain: usize,
+
+    /// Tracker for received DkgBundles and generating the (t+1)-subset.
+    #[builder(default)]
+    tracker: DkgBundleTracker,
+
+    /// Pending inclusion lists to be consumed when Dkg has completed.
+    #[builder(default)]
+    pending: Vec<InclusionList>,
 
     /// cache of decrypted shares (keyed by round), each entry value is a nested vector: an
     /// ordered list of per-ciphertext decryption shares. the order is derived from the
@@ -274,7 +287,7 @@ struct Worker {
     ///
     /// note: Option<DecShare> uses None to indicate a failed to decrypt ciphertext
     #[builder(default)]
-    dec_shares: DecSharesCache,
+    dec_shares: ShareCache,
 
     /// Acknowledgement of the set of peers whose decryption share for a round has been received
     /// Useful to prevent DOS or DecShareBatch flooding by malicious peers
@@ -323,10 +336,13 @@ impl Worker {
                 cmd = self.rx.recv() => match cmd {
                     Some(Command::Dkg(incl)) => {
                         let round = incl.round();
-                        let bundles = incl.dkg_bundles();
-                        info!("received: {} dkg bundles in round: {}", bundles.len(), round);
-                        // TODO: ACS state machine
-                        continue;
+                        trace!(%node, %round, "dkg request");
+                        match self.on_dkg_request(incl).await {
+                            Ok(()) => {}
+                            Err(DecrypterError::End(end)) => return end,
+                            Err(err) => warn!(node = %self.label, %round, %err, "error on dkg request")
+                        }
+                        continue
                     },
                     Some(Command::Decrypt(incl)) => {
                         let round = incl.round();
@@ -435,8 +451,56 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
+    async fn on_dkg_request(&mut self, incl: InclusionList) -> Result<()> {
+        let dkg_bundles = incl.dkg_bundles();
+
+        for b in dkg_bundles {
+            // todo: ciphertext validation
+            let entry = self
+                .tracker
+                .entry(*b.committee_id())
+                .or_insert_with(Vec::new);
+            entry.push(b.transcript().clone());
+        }
+
+        for (committee_id, vess_ciphertexts) in self.tracker.iter() {
+            if let Some(committee) = self.committees.get(*committee_id) {
+                if vess_ciphertexts.len() >= committee.one_honest_threshold().get() {
+                    debug!(
+                        node = %self.label,
+                        committee_id = %committee_id,
+                        count = vess_ciphertexts.len(),
+                        "dkg tracker receives t+1 valid vess ciphertexts"
+                    );
+
+                    if committee.id() == self.current {
+                        // todo: decrypt and combine
+                        // self.thres_dec_sk = Some(dec_sk)
+                        // self.consume_pending_incl()
+                    } else {
+                        // todo: these ciphertexts are for next committee (resharing)
+                        // send the resulting subset to (passive) nodes in the new committee
+                    }
+                }
+            } else {
+                // todo: dkg bundle might arrive before local next_committee event
+                debug!(
+                    node = %self.label,
+                    committee_id = %committee_id,
+                    count = vess_ciphertexts.len(),
+                    "received dkg request bundle for unknown committee id"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// logic to process a decryption request
     async fn on_decrypt_request(&mut self, incl: InclusionList) -> Result<()> {
+        if self.thres_dec_sk.is_none() {
+            self.pending.push(incl);
+            return Ok(());
+        }
         let dec_shares = self.decrypt(&incl);
         if dec_shares.is_empty() {
             return Err(DecrypterError::EmptyDecShares);
@@ -488,7 +552,9 @@ impl Worker {
     /// bundle/tx while preserving the order.
     ///
     /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
+    fn extract_ciphertexts(
+        incl: &InclusionList,
+    ) -> impl Iterator<Item = Option<ThresholdCiphertext>> {
         incl.priority_bundles()
             .iter()
             .filter(move |pb| pb.bundle().is_encrypted())
@@ -499,7 +565,7 @@ impl Worker {
                     .filter(move |b| b.is_encrypted())
                     .map(|b| b.data()),
             )
-            .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
+            .map(|bytes| deserialize::<ThresholdCiphertext>(bytes).ok())
     }
 
     /// Produce decryption shares for each encrypted bundles inside the inclusion list,
@@ -513,7 +579,7 @@ impl Worker {
                 optional_ct.and_then(|ct| {
                     // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        self.dec_sk.privkey(),
+                        self.thres_dec_sk.clone()?.privkey(),
                         &ct,
                         &vec![],
                     )
@@ -635,7 +701,7 @@ impl Worker {
                 let aad = vec![];
                 match DecryptionScheme::combine(
                     &committee,
-                    self.dec_sk.combkey(),
+                    self.thres_dec_sk.clone().expect("key is present").combkey(),
                     dec_shares,
                     &ct,
                     &aad,
@@ -768,7 +834,7 @@ struct DecShareBatch {
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
     // ones
-    dec_shares: Vec<Option<DecShare>>,
+    dec_shares: Vec<Option<ThresholdDecryptionShare>>,
     /// round evidence to justify `round`, avoiding unbounded worker buffer w/ future rounds data
     evidence: Evidence,
 }
@@ -875,11 +941,12 @@ mod tests {
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, prelude::DecryptionKey,
+        traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
-        Signer, Timestamp,
+        Address, Bundle, ChainId, DecryptionKey as ThresholdDecryptionKey, Epoch, InclusionList,
+        PriorityBundle, SeqNo, Signer, Timestamp,
     };
     use tracing::warn;
 
@@ -991,12 +1058,19 @@ mod tests {
             "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
             "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
-        let decryption_private_keys = [
+        let thres_dec_private_keys = [
             "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV",
             "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S",
             "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z",
             "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2",
             "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX",
+        ];
+        let dec_private_keys = [
+            "AYfiNqLSeVgvadjhfeqGSQhVYgbiW5BYqmaBwBNSPXQuQ",
+            "AYAZyCqddyB1zrtJVkkepDgcFqsCY1fMgj3SVVtNt2rqx",
+            "AjbUxitqpbrKLSazegdRJgfZQLqzZDfCvSob3w4Q928jb",
+            "AjbCfqk49STyaHEwwesBCaScnMZdabvGuceZgxhHTESe9",
+            "AdWqv2U6amCuhVzzPzWTGkJUySWh2tCGu6KGcd83qnQ67",
         ];
 
         let encryption_key = "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu";
@@ -1014,10 +1088,22 @@ mod tests {
 
         let enc_key: <DecryptionScheme as ThresholdEncScheme>::PublicKey =
             decode_bincode(encryption_key);
-        let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
+        let threshold_keys: Vec<ThresholdDecryptionKey> = thres_dec_private_keys
             .iter()
             .map(|k| {
-                DecryptionKey::new(enc_key.clone(), decode_bincode(comb_key), decode_bincode(k))
+                ThresholdDecryptionKey::new(
+                    enc_key.clone(),
+                    decode_bincode(comb_key),
+                    decode_bincode(k),
+                )
+            })
+            .collect();
+        let pke_keys: Vec<_> = dec_private_keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let dec_key = DecryptionKey::try_from_str::<32>(k).unwrap();
+                dec_key.label(i)
             })
             .collect();
         let c = Committee::new(
@@ -1053,7 +1139,8 @@ mod tests {
                 .address(addr.into())
                 .dh_keypair(dh_key.into())
                 .committee(ac.clone())
-                .decryption_key(decryption_keys[i].clone())
+                .decryption_key(threshold_keys[i].clone())
+                .hpke_key(pke_keys[i].clone())
                 .retain(100)
                 .build();
 
