@@ -40,10 +40,15 @@ impl Client {
         }
     }
 
+    pub async fn height(&mut self) -> Result<Height, Error> {
+        let u = self.config.base_url.join("status/block-height")?;
+        self.get_with_retry(u).await
+    }
+
     pub async fn submit(&mut self, cb: &CertifiedBlock) -> Result<(), Error> {
         let nid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
         let trx = Transaction::new(nid, serialize(cb)?);
-        let url = self.config.base_url.join("/submit/submit")?;
+        let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
         Ok(())
@@ -86,7 +91,7 @@ impl Client {
         let u = self
             .config
             .base_url
-            .join(&format!("/availability/block/{h}/namespace/{n}"))?;
+            .join(&format!("availability/block/{h}/namespace/{n}"))?;
         self.get_with_retry(u).await
     }
 
@@ -98,7 +103,7 @@ impl Client {
         let u = self
             .config
             .base_url
-            .join(&format!("/availability/vid/common/{h}"))?;
+            .join(&format!("availability/vid/common/{h}"))?;
         self.get_with_retry(u).await
     }
 
@@ -226,4 +231,28 @@ fn deserialize<T: DeserializeOwned>(d: &[u8]) -> Result<T, Error> {
     bincode::serde::decode_from_slice(d, bincode::config::standard())
         .map(|(msg, _)| msg)
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Client, Config};
+
+    #[tokio::test]
+    async fn decaf_smoke() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("robusta=debug")
+            .try_init();
+
+        let cfg = Config::builder()
+            .base_url("https://query.decaf.testnet.espresso.network/v1/")
+            .unwrap()
+            .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
+            .unwrap()
+            .build();
+
+        let mut clt = Client::new(cfg.clone());
+        let height = clt.height().await.unwrap();
+        let header = super::watch(&cfg, height, None).await.unwrap();
+        assert_eq!(u64::from(height), header.height());
+    }
 }

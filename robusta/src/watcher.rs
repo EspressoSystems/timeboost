@@ -66,7 +66,7 @@ where
 async fn connect(cfg: &Config, h: Height) -> Result<Ws, WatchError> {
     let mut url = cfg
         .wss_base_url
-        .join(&format!("/availability/stream/headers/{h}"))?;
+        .join(&format!("availability/stream/headers/{h}"))?;
 
     let mut delay = cfg.delay_iter();
     let mut redirect = 0;
