@@ -10,6 +10,7 @@ bincode = { workspace = true }
 bon = { workspace = true }
 data-encoding = { workspace = true }
 espresso-types = { workspace = true }
+futures = { workspace = true }
 hotshot-query-service = { workspace = true }
 hotshot-types = { workspace = true }
 reqwest = { workspace = true }
@@ -18,5 +19,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }

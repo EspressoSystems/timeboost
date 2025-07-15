@@ -1,19 +1,23 @@
 mod config;
 mod types;
+mod watcher;
 
 use std::time::Duration;
 
 use espresso_types::{Header, NamespaceId, Transaction};
-use reqwest::{StatusCode, Url};
+use reqwest::{StatusCode, Url, redirect::Policy};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
 use timeboost_types::CertifiedBlock;
 use tokio::time::sleep;
 use tracing::warn;
 
-use crate::types::{Height, TX, TaggedBase64, TransactionsWithProof, VidCommonResponse};
+use crate::types::{TX, TaggedBase64, TransactionsWithProof, VidCommonResponse};
 
+pub use crate::types::Height;
+pub use crate::watcher::{WatchError, watch};
 pub use config::{Config, ConfigBuilder};
+pub use espresso_types;
 
 /// A client for the Espresso network.
 #[derive(Debug)]
@@ -27,6 +31,7 @@ impl Client {
         let r = reqwest::Client::builder()
             .https_only(true)
             .timeout(Duration::from_secs(30))
+            .redirect(Policy::limited(c.max_redirects))
             .build()
             .expect("TLS and DNS resolver work");
         Self {
@@ -44,7 +49,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn validate<N>(&mut self, h: &Header, cb: &CertifiedBlock) -> Result<(), Error> {
+    pub async fn validate(&mut self, h: &Header, cb: &CertifiedBlock) -> Result<(), Error> {
         let nsid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
 
         let trxs = self.transactions(h.height(), nsid).await?;
@@ -162,7 +167,7 @@ fn matches(a: &[u8], b: &CertifiedBlock) -> bool {
     let Ok(a) = deserialize::<CertifiedBlock>(a) else {
         return false;
     };
-    a.data().hash() == b.data().hash()
+    a.data().hash() == b.data().hash() && a.data().hash() == b.cert().data().hash()
 }
 
 /// Errors `Client` can not recover from.

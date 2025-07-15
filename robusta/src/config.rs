@@ -1,8 +1,7 @@
 use std::{iter::repeat, time::Duration};
 
 use bon::Builder;
-use reqwest::Url;
-use url::ParseError;
+use url::{ParseError, Url};
 
 const NUM_DELAYS: usize = 5;
 
@@ -11,6 +10,13 @@ pub struct Config {
     /// Espresso network base URL.
     #[builder(with = |s: &str| -> Result<_, ParseError> { Url::parse(s) })]
     pub(crate) base_url: Url,
+
+    /// Espresso network websocket base URL.
+    #[builder(with = |s: &str| -> Result<_, ParseError> { Url::parse(s) })]
+    pub(crate) wss_base_url: Url,
+
+    #[builder(default = 3)]
+    pub(crate) max_redirects: usize,
 
     /// The sequence of delays between successive requests.
     ///
