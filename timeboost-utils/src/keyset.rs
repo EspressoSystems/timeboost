@@ -4,7 +4,7 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey};
+use timeboost_crypto::prelude::{HpkeDecKey, HpkeEncKey};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {

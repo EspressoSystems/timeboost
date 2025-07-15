@@ -18,14 +18,22 @@ pub struct FeldmanVss<C: CurveGroup>(PhantomData<C>);
 #[derive(Debug, Clone, Copy)]
 pub struct FeldmanVssPublicParam {
     // reconstruction threshold t
-    pub(crate) t: NonZeroU32,
+    pub t: NonZeroU32,
     // total number of nodes
-    pub(crate) n: NonZeroU32,
+    pub n: NonZeroU32,
 }
 
 impl FeldmanVssPublicParam {
     pub fn new(t: NonZeroU32, n: NonZeroU32) -> Self {
         Self { t, n }
+    }
+
+    pub fn threshold(&self) -> usize {
+        self.t.get() as usize
+    }
+
+    pub fn num_nodes(&self) -> usize {
+        self.n.get() as usize
     }
 }
 

@@ -9,6 +9,7 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
+use timeboost_crypto::prelude::LabeledHpkeDecKey;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
@@ -96,15 +97,23 @@ impl Decrypter {
         .await
         .map_err(DecrypterError::Net)?;
 
-        let is_ready = cfg.decryption_key.is_some();
+        let labeled_sk = cfg.hpke_key.label(
+            cfg.committee
+                .committee()
+                .get_index(&cfg.label)
+                .ok_or_else(|| {
+                    DecrypterError::Internal(format!("missing key id for {}", cfg.label))
+                })?
+                .into(),
+        );
         let worker = Worker::builder()
             .label(cfg.label)
+            .hpke_sk(labeled_sk)
             .committees(CommitteeVec::new(cfg.committee.committee().clone()))
             .current(cfg.committee.committee().id())
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .maybe_dec_sk(cfg.decryption_key)
             .retain(cfg.retain)
             .build();
 
@@ -114,7 +123,7 @@ impl Decrypter {
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
             worker: spawn(worker.go()),
-            is_ready,
+            is_ready: false,
         })
     }
 
@@ -272,6 +281,9 @@ struct Worker {
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
+
+    /// decryption key used in hybrid public key encryption for secure communication between nodes
+    hpke_sk: LabeledHpkeDecKey,
 
     /// decryption key used to decrypt and combine
     /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
