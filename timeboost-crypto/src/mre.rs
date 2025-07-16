@@ -122,9 +122,12 @@ impl<C: CurveGroup> LabeledDecryptionKey<C> {
 }
 
 /// Ciphertext for multiple recipients in MRE scheme
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound = "H: Digest")]
 pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     // the shared ephemeral public key (v:=g^beta in the paper)
+    #[serde_as(as = "crate::SerdeAs")]
     epk: C::Affine,
     // individual ciphertexts (e_i in the paper)
     cts: Vec<Output<H>>,

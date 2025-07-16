@@ -33,7 +33,11 @@
 use ark_bls12_381::G1Projective;
 
 pub use crate::mre;
-use crate::{feldman::FeldmanVss, vess::ShoupVess};
+use crate::{
+    feldman::FeldmanVss,
+    traits::dkg::VerifiableSecretSharing,
+    vess::{self, ShoupVess},
+};
 
 /// Encryption key in hybrid public key encryption (HPKE) for secure communication
 pub type HpkeEncKey = mre::EncryptionKey<G1Projective>;
@@ -52,6 +56,10 @@ pub type HpkeCiphertext = mre::Ciphertext<G1Projective>;
 
 /// Verifiable Encrypted Secret Sharing (VESS) scheme used in DKG/resharing
 pub type Vess = ShoupVess<G1Projective>;
+
+// TODO: (alex) simply re-export after VESS impl merged
+/// Ciphertext of all secret shares in a single dealing
+pub type VessCiphertext = vess::VessCiphertext<G1Projective>;
 
 /// Verifiable secret sharing scheme used in DKG/resharing
 pub type Vss = FeldmanVss<G1Projective>;

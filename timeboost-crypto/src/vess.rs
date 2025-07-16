@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 use ark_ec::CurveGroup;
 use ark_serialize::{CanonicalDeserialize, serialize_to_vec};
 use ark_std::marker::PhantomData;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use thiserror::Error;
 
@@ -36,10 +37,18 @@ where
 }
 
 /// Ciphertext of [`ShoupVess`] scheme, verifiable by itself as its constructed as a sigma proof
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound = "C: CurveGroup")]
 pub struct VessCiphertext<C: CurveGroup> {
     // TODO(alex): update this struct in phase 2
     pub(crate) mre_ct: MultiRecvCiphertext<C>,
+}
+
+impl<C: CurveGroup> VessCiphertext<C> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing vess ciphertext")
+    }
 }
 
 impl<C: CurveGroup> ShoupVess<C> {
