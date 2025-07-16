@@ -239,11 +239,17 @@ impl Committable for BlockInfo {
 pub struct CertifiedBlock {
     data: Block,
     cert: Certificate<BlockInfo>,
+    #[serde(skip)]
+    leader: bool,
 }
 
 impl CertifiedBlock {
-    pub fn new(cert: Certificate<BlockInfo>, data: Block) -> Self {
-        Self { cert, data }
+    pub fn new(cert: Certificate<BlockInfo>, data: Block, leader: bool) -> Self {
+        Self { cert, data, leader }
+    }
+
+    pub fn is_leader(&self) -> bool {
+        self.leader
     }
 
     pub fn cert(&self) -> &Certificate<BlockInfo> {
