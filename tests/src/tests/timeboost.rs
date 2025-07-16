@@ -11,23 +11,16 @@ use multisig::Keypair;
 use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
-use timeboost::types::DecryptionKey;
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::DecryptionScheme;
-use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
+use timeboost_crypto::prelude::HpkeDecKey;
 use timeboost_sequencer::SequencerConfig;
+use timeboost_types::HpkeKeyStore;
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
 
-fn make_configs<R>(
-    size: NonZeroUsize,
-    recover_index: R,
-) -> (
-    <DecryptionScheme as ThresholdEncScheme>::PublicKey,
-    Vec<(SequencerConfig, CertifierConfig)>,
-)
+fn make_configs<R>(size: NonZeroUsize, recover_index: R) -> Vec<(SequencerConfig, CertifierConfig)>
 where
     R: Into<Option<usize>>,
 {
@@ -42,6 +35,7 @@ where
             (
                 Keypair::generate(),
                 x25519::Keypair::generate().unwrap(),
+                HpkeDecKey::generate(),
                 a1,
                 a2,
                 a3,
@@ -56,38 +50,45 @@ where
             .enumerate()
             .map(|(i, (kp, ..))| (i as u8, kp.public_key())),
     );
-    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee.clone());
 
     let sailfish_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
-            .map(|(kp, xp, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone())),
+            .map(|(kp, xp, _, sa, ..)| (kp.public_key(), xp.public_key(), sa.clone())),
     );
 
     let decrypt_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
-            .map(|(kp, xp, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone())),
+            .map(|(kp, xp, _, _, da, ..)| (kp.public_key(), xp.public_key(), da.clone())),
     );
 
     let produce_committee = AddressableCommittee::new(
         committee.clone(),
         parts
             .iter()
-            .map(|(kp, xp, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone())),
+            .map(|(kp, xp, _, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone())),
+    );
+
+    let hpke_keystore = HpkeKeyStore::new(
+        committee.clone(),
+        parts
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, sk, ..))| (i as u8, sk.into())),
     );
 
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    for (i, ((kpair, xpair, sa, da, pa), share)) in parts.into_iter().zip(shares).enumerate() {
-        let dkey = DecryptionKey::new(pubkey.clone(), combkey.clone(), share.clone());
+    for (i, (kpair, xpair, hpke_sk, sa, da, pa)) in parts.into_iter().enumerate() {
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
-            .decryption_key(dkey)
+            .hpke_key(hpke_sk)
+            .hpke_keystore(hpke_keystore.clone())
             .sailfish_addr(sa)
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())
@@ -104,16 +105,13 @@ where
         cfgs.push((conf, pcf));
     }
 
-    (pubkey, cfgs)
+    cfgs
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(
-    pubkey: <DecryptionScheme as ThresholdEncScheme>::PublicKey,
-    tx: broadcast::Sender<BundleVariant>,
-) {
+async fn gen_bundles(tx: broadcast::Sender<BundleVariant>) {
     loop {
-        let Ok(b) = make_bundle(&pubkey) else {
+        let Ok(b) = make_bundle() else {
             warn!("Failed to generate bundle");
             continue;
         };

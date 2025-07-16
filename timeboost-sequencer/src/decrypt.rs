@@ -920,11 +920,10 @@ mod tests {
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, prelude::HpkeDecKey, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
-        Signer, Timestamp,
+        Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
     };
     use tracing::warn;
 
@@ -1036,16 +1035,13 @@ mod tests {
             "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
             "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
-        let decryption_private_keys = [
-            "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV",
-            "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S",
-            "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z",
-            "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2",
-            "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX",
+        let hpke_private_keys = [
+            "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
+            "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
+            "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
+            "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
+            "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
         ];
-
-        let encryption_key = "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu";
-        let comb_key = "y7D4UxEgJtRshdYfZu1NY4RyJxAzjjf3AGhf4AihP4epZffaoYRjFeCEaD9uCjNJVCDPZmjwnfB6v1gyZmrQsiCT5PDcHNzS7qfxP8GatiFes3nUs3xTxQLThqvrfdEv3S48jArK75FJoPRk5cKEBodTv1BVKu3GNgYHmcK731MKTJoMS16ukYxrSKg7KxzeQCZwBcamW1YQpVkHqbkvVif8wekSxfpz3CGrw2WKadzVbK1x1pUDFTrtSZU2eyTKVvrW4YJ2zKPm5FYXTaYMJqRXkyBFnvfR9NxgLHq6i5AuArTxrD772Rs1YX8bXu9fR4nLHt14SUJAGqf";
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()
@@ -1056,15 +1052,11 @@ mod tests {
             .iter()
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
-
-        let enc_key: <DecryptionScheme as ThresholdEncScheme>::PublicKey =
-            decode_bincode(encryption_key);
-        let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
+        let hpke_keys: Vec<_> = hpke_private_keys
             .iter()
-            .map(|k| {
-                DecryptionKey::new(enc_key.clone(), decode_bincode(comb_key), decode_bincode(k))
-            })
+            .map(|s| HpkeDecKey::try_from_str::<32>(*s).expect("into secret key"))
             .collect();
+
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             signature_keys
@@ -1097,8 +1089,8 @@ mod tests {
                 .label(sig_key.public_key())
                 .address(addr.into())
                 .dh_keypair(dh_key.into())
+                .hpke_key(hpke_keys[i].clone())
                 .committee(ac.clone())
-                .decryption_key(decryption_keys[i].clone())
                 .retain(100)
                 .build();
 
@@ -1107,9 +1099,14 @@ mod tests {
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // TODO: (alex) get the Threshold Public Encryption key after DKG is done
+        let enc_key = <DecryptionScheme as ThresholdEncScheme>::PublicKey::try_from_str::<64>("")
+            .expect("into threshold pubkey");
         (enc_key, c, decrypters, signature_keys)
     }
 
+    #[allow(dead_code)]
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
         let conf = bincode::config::standard().with_limit::<{ 1024 * 1024 }>();
         bincode::serde::decode_from_slice(&bs58::decode(encoded).into_vec().unwrap(), conf)

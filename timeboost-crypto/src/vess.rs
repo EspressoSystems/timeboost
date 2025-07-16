@@ -113,7 +113,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             .map(|s| serialize_to_vec![s])
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
 
-        let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(&recipients, &shares_bytes, aad, rng)?;
+        let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(recipients, &shares_bytes, aad, rng)?;
 
         let ct = VessCiphertext { mre_ct };
         Ok((ct, comm))
