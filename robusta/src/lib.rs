@@ -54,7 +54,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn validate(&mut self, h: &Header, cb: &CertifiedBlock) -> Result<(), Error> {
+    pub async fn verify(&mut self, h: &Header, cb: &CertifiedBlock) -> Result<(), Error> {
         let nsid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
 
         let trxs = self.transactions(h.height(), nsid).await?;

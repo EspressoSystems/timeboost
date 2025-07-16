@@ -13,6 +13,7 @@ bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
+robusta = { path = "../robusta" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-proto = { path = "../timeboost-proto" }
