@@ -10,8 +10,8 @@
 //! use ark_std::rand;
 //!
 //! let rng = &mut rand::thread_rng();
-//! let sk = HpkeDecKey::rand(rng);
-//! let pk = HpkeEncKey::from(&sk);
+//! let sk = DkgDecKey::rand(rng);
+//! let pk = DkgEncKey::from(&sk);
 //! let node_idx = 0;
 //! let labeled_sk = sk.label(node_idx);
 //!
@@ -39,20 +39,20 @@ use crate::{
     vess::{self, ShoupVess},
 };
 
-/// Encryption key in hybrid public key encryption (HPKE) for secure communication
-pub type HpkeEncKey = mre::EncryptionKey<G1Projective>;
+/// Encryption key used in the DKG and key resharing for secure communication
+pub type DkgEncKey = mre::EncryptionKey<G1Projective>;
 
-/// Decryption key in hybrid public key encryption (HPKE) for secure communication
-pub type HpkeDecKey = mre::DecryptionKey<G1Projective>;
+/// Decryption key used in the DKG and key resharing for secure communication
+pub type DkgDecKey = mre::DecryptionKey<G1Projective>;
 
-/// [`HpkeDecryptionKey`] labeled with key/node ID
-pub type LabeledHpkeDecKey = mre::LabeledDecryptionKey<G1Projective>;
+/// [`DkgDecryptionKey`] labeled with key/node ID
+pub type LabeledDkgDecKey = mre::LabeledDecryptionKey<G1Projective>;
 
 /// Multi-recipient ciphertext using BLS12-381 G1 curve and SHA-256
 pub type MultiRecvCiphertext = mre::MultiRecvCiphertext<G1Projective>;
 
-/// Individual recipient ciphertext in hybrid public key encryption (HPKE)
-pub type HpkeCiphertext = mre::Ciphertext<G1Projective>;
+/// Individual recipient ciphertext for encryption/decryption key used in DKG or key resharing
+pub type DkgCiphertext = mre::Ciphertext<G1Projective>;
 
 /// Verifiable Encrypted Secret Sharing (VESS) scheme used in DKG/resharing
 pub type Vess = ShoupVess<G1Projective>;

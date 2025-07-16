@@ -5,7 +5,7 @@ use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
-use timeboost_types::HpkeKeyStore;
+use timeboost_types::DkgKeyStore;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut certifier_peer_hosts_and_keys = Vec::new();
-    let mut hpke_enc_keys = Vec::new();
+    let mut dkg_enc_keys = Vec::new();
 
     for peer_host in peer_host_iter {
         wait_for_live_peer(peer_host.sailfish_address.clone()).await?;
@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
             peer_host.dh_key,
             peer_host.certifier_address.clone(),
         ));
-        hpke_enc_keys.push(peer_host.enc_key.clone());
+        dkg_enc_keys.push(peer_host.enc_key.clone());
     }
 
     let sailfish_committee = {
@@ -180,9 +180,9 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, certifier_peer_hosts_and_keys.iter().cloned())
     };
 
-    let hpke_keystore = HpkeKeyStore::new(
+    let dkg_keystore = DkgKeyStore::new(
         sailfish_committee.committee().clone(),
-        hpke_enc_keys
+        dkg_enc_keys
             .into_iter()
             .enumerate()
             .map(|(i, k)| (i as u8, k)),
@@ -220,8 +220,8 @@ async fn main() -> Result<()> {
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .hpke_key(private.dec_key.clone())
-        .hpke_keystore(hpke_keystore)
+        .dkg_key(private.dec_key.clone())
+        .dkg_keystore(dkg_keystore)
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .certifier_addr(my_keyset.certifier_address.clone())

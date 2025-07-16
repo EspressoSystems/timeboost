@@ -4,7 +4,7 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
-use timeboost_crypto::prelude::{HpkeDecKey, HpkeEncKey};
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {
@@ -20,9 +20,9 @@ pub struct NodeInfo {
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
 
-    /// public key in hybrid public key encryption (HPKE) for secure communication
-    #[serde(with = "hpkeenckey")]
-    pub enc_key: HpkeEncKey,
+    /// public key for encryption/decryption used in DKG or key resharing for secure communication
+    #[serde(with = "dkgenckey")]
+    pub enc_key: DkgEncKey,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro_addr: Option<Address>,
@@ -35,9 +35,9 @@ pub struct NodeInfo {
 pub struct PrivateKeys {
     pub signing_key: multisig::SecretKey,
     pub dh_key: x25519::SecretKey,
-    /// secret key in hybrid public key encryption (HPKE) for secure communication
-    #[serde(with = "hpkedeckey")]
-    pub dec_key: HpkeDecKey,
+    /// secret key for encryption/decryption used in DKG or key resharing for secure communication
+    #[serde(with = "dkgdeckey")]
+    pub dec_key: DkgDecKey,
 }
 
 impl KeysetConfig {
@@ -87,8 +87,8 @@ macro_rules! mk_serde_mod {
     };
 }
 
-mk_serde_mod!(hpkeenckey, HpkeEncKey);
-mk_serde_mod!(hpkedeckey, HpkeDecKey);
+mk_serde_mod!(dkgenckey, DkgEncKey);
+mk_serde_mod!(dkgdeckey, DkgDecKey);
 
 /// NON PRODUCTION
 /// This function takes the provided host and hits the healthz endpoint. This to ensure that when

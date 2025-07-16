@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use multisig::{Committee, KeyId};
 use timeboost_crypto::{
-    DecryptionScheme, prelude::HpkeEncKey, traits::threshold_enc::ThresholdEncScheme,
+    DecryptionScheme, prelude::DkgEncKey, traits::threshold_enc::ThresholdEncScheme,
 };
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
@@ -41,17 +41,17 @@ impl DecryptionKey {
     }
 }
 
-/// A `Committee` with everyone's public key (used in Hybrid PKE) for secure communication
+/// A `Committee` with everyone's public key used in the DKG or key resharing for secure communication
 #[derive(Debug, Clone)]
-pub struct HpkeKeyStore {
+pub struct DkgKeyStore {
     committee: Committee,
-    keys: BTreeMap<KeyId, HpkeEncKey>,
+    keys: BTreeMap<KeyId, DkgEncKey>,
 }
 
-impl HpkeKeyStore {
+impl DkgKeyStore {
     pub fn new<I, T>(c: Committee, keys: I) -> Self
     where
-        I: IntoIterator<Item = (T, HpkeEncKey)>,
+        I: IntoIterator<Item = (T, DkgEncKey)>,
         T: Into<KeyId>,
     {
         let this = Self {
@@ -70,7 +70,7 @@ impl HpkeKeyStore {
                 key_id,
                 "{p}'s key ID is not {node_idx}"
             );
-            assert!(this.keys.contains_key(&key_id), "{p} has no HpkeEncKey");
+            assert!(this.keys.contains_key(&key_id), "{p} has no DkgEncKey");
         }
         for id in this.keys.keys() {
             assert!(
@@ -82,7 +82,7 @@ impl HpkeKeyStore {
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
-    pub fn sorted_keys(&self) -> impl Iterator<Item = &HpkeEncKey> {
+    pub fn sorted_keys(&self) -> impl Iterator<Item = &DkgEncKey> {
         self.keys.values()
     }
 }

@@ -2,9 +2,9 @@ use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::HpkeDecKey;
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::HpkeKeyStore;
+use timeboost_types::DkgKeyStore;
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -26,11 +26,11 @@ pub struct TimeboostConfig {
     /// The keypair for Diffie-Hellman key exchange.
     pub(crate) dh_keypair: x25519::Keypair,
 
-    /// The hybrid PKE decryption key for secure communication.
-    pub(crate) hpke_key: HpkeDecKey,
+    /// The encryption/decryption key used in the DKG or key resharing for secure communication.
+    pub(crate) dkg_key: DkgDecKey,
 
-    /// Key store containing HPKE public keys of all nodes.
-    pub(crate) hpke_keystore: HpkeKeyStore,
+    /// Key store containing DKG public keys of all nodes.
+    pub(crate) dkg_keystore: DkgKeyStore,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -61,8 +61,8 @@ impl TimeboostConfig {
         SequencerConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .hpke_key(self.hpke_key.clone())
-            .hpke_keystore(self.hpke_keystore.clone())
+            .dkg_key(self.dkg_key.clone())
+            .dkg_keystore(self.dkg_keystore.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())

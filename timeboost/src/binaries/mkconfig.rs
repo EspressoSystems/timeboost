@@ -79,9 +79,9 @@ impl Args {
             iter::repeat_with(move || x25519::Keypair::generate_with_rng(&mut d_rng).unwrap())
                 .take(num_nodes as usize)
                 .collect();
-        // Generate HPKE keypair for this node using p_rng
+        // Generate DKG keypair for this node using p_rng
         let encryption_keys: Vec<_> =
-            iter::repeat_with(move || timeboost_crypto::prelude::HpkeDecKey::rand(&mut p_rng))
+            iter::repeat_with(move || timeboost_crypto::prelude::DkgDecKey::rand(&mut p_rng))
                 .take(num_nodes as usize)
                 .collect();
 
@@ -90,7 +90,7 @@ impl Args {
             .enumerate()
             .zip(auth_keys)
             .zip(encryption_keys)
-            .map(|(((i, kp), xp), hpke)| NodeInfo {
+            .map(|(((i, kp), xp), dkg_sk)| NodeInfo {
                 sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
                 decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
                 certifier_address: self
@@ -99,11 +99,11 @@ impl Args {
                 internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
                 signing_key: kp.public_key(),
                 dh_key: xp.public_key(),
-                enc_key: timeboost_crypto::prelude::HpkeEncKey::from(&hpke),
+                enc_key: timeboost_crypto::prelude::DkgEncKey::from(&dkg_sk),
                 private: Some(PrivateKeys {
                     signing_key: kp.secret_key(),
                     dh_key: xp.secret_key(),
-                    dec_key: hpke,
+                    dec_key: dkg_sk,
                 }),
                 nitro_addr: self.nitro_addr.clone(),
             })

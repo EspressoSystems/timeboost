@@ -9,7 +9,7 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::LabeledHpkeDecKey;
+use timeboost_crypto::prelude::LabeledDkgDecKey;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
@@ -101,7 +101,7 @@ impl Decrypter {
         .await
         .map_err(DecrypterError::Net)?;
 
-        let labeled_sk = cfg.hpke_key.label(
+        let labeled_sk = cfg.dkg_key.label(
             cfg.committee
                 .committee()
                 .get_index(&cfg.label)
@@ -114,7 +114,7 @@ impl Decrypter {
         let committee = cfg.committee.committee();
         let worker = Worker::builder()
             .label(cfg.label)
-            .hpke_sk(labeled_sk)
+            .dkg_sk(labeled_sk)
             .committees(CommitteeVec::new(committee.clone()))
             .current(committee.id())
             .net(Overlay::new(net))
@@ -297,8 +297,8 @@ struct Worker {
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
 
-    /// decryption key used in hybrid public key encryption for secure communication between nodes
-    hpke_sk: LabeledHpkeDecKey,
+    /// decryption key used in the DKG or key resharing for secure communication between nodes
+    dkg_sk: LabeledDkgDecKey,
 
     /// decryption key used to decrypt and combine
     /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
@@ -920,7 +920,7 @@ mod tests {
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, prelude::HpkeDecKey, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, prelude::DkgDecKey, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
         Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
@@ -1052,9 +1052,9 @@ mod tests {
             .iter()
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
-        let hpke_keys: Vec<_> = hpke_private_keys
+        let dkg_keys: Vec<_> = hpke_private_keys
             .iter()
-            .map(|s| HpkeDecKey::try_from_str::<32>(*s).expect("into secret key"))
+            .map(|s| DkgDecKey::try_from_str::<32>(*s).expect("into secret key"))
             .collect();
 
         let c = Committee::new(
@@ -1089,7 +1089,7 @@ mod tests {
                 .label(sig_key.public_key())
                 .address(addr.into())
                 .dh_keypair(dh_key.into())
-                .hpke_key(hpke_keys[i].clone())
+                .dkg_key(dkg_keys[i].clone())
                 .committee(ac.clone())
                 .retain(100)
                 .build();

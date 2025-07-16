@@ -4,8 +4,8 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_crypto::prelude::HpkeDecKey;
-use timeboost_types::{Address, DelayedInboxIndex, HpkeKeyStore};
+use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_types::{Address, DelayedInboxIndex, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -15,11 +15,11 @@ pub struct SequencerConfig {
     /// The keypair for Diffie-Hellman key exchanges.
     pub(crate) dh_keypair: x25519::Keypair,
 
-    /// The hybrid PKE decryption key for secure communication.
-    pub(crate) hpke_key: HpkeDecKey,
+    /// The encryption/decryption key used in the DKG or key resharing for secure communication.
+    pub(crate) dkg_key: DkgDecKey,
 
-    /// Key store containing HPKE public keys of all nodes.
-    pub(crate) hpke_keystore: HpkeKeyStore,
+    /// Key store containing DKG public keys of all nodes.
+    pub(crate) dkg_keystore: DkgKeyStore,
 
     /// The address the Sailfish TCP listener binds to.
     pub(crate) sailfish_addr: net::Address,
@@ -102,7 +102,7 @@ impl SequencerConfig {
             .label(self.sign_keypair.public_key())
             .address(self.decrypt_addr.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .hpke_key(self.hpke_key.clone())
+            .dkg_key(self.dkg_key.clone())
             .committee(self.decrypt_committee.clone())
             .retain(self.leash_len)
             .build()
@@ -114,7 +114,7 @@ pub struct DecrypterConfig {
     pub(crate) label: PublicKey,
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
-    pub(crate) hpke_key: HpkeDecKey,
+    pub(crate) dkg_key: DkgDecKey,
     pub(crate) committee: AddressableCommittee,
     pub(crate) retain: usize,
 }
