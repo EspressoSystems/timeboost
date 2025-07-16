@@ -591,13 +591,13 @@ impl Worker {
         Ok(())
     }
 
-    /// Check if this node is leader of the given block info round.
+    /// Check if this node is leader of the given block.
     fn is_leader(&self, i: &BlockInfo) -> bool {
         let Some(c) = self.committees.get(i.round().committee()) else {
             error!(node = %self.label, round = %i.round(), "can not determine leader");
             return false;
         };
-        self.label == c.leader(*i.round().num() as usize)
+        self.label == c.leader(*i.num() as usize)
     }
 }
 
