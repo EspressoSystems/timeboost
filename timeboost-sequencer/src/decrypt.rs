@@ -4,7 +4,7 @@ use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
-use multisig::{CommitteeId, PublicKey};
+use multisig::{Committee, CommitteeId, PublicKey};
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -75,6 +75,10 @@ pub struct Decrypter {
     worker: JoinHandle<EndOfPlay>,
     /// Status of the distributed key gen/resharing: true means Worker has the decryption key share
     is_ready: bool,
+    /// decryption committees
+    committees: CommitteeVec<2>,
+    /// Current committee.
+    current: CommitteeId,
 }
 
 impl Decrypter {
@@ -106,11 +110,13 @@ impl Decrypter {
                 })?
                 .into(),
         );
+
+        let committee = cfg.committee.committee();
         let worker = Worker::builder()
             .label(cfg.label)
             .hpke_sk(labeled_sk)
-            .committees(CommitteeVec::new(cfg.committee.committee().clone()))
-            .current(cfg.committee.committee().id())
+            .committees(CommitteeVec::new(committee.clone()))
+            .current(committee.id())
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
@@ -124,12 +130,21 @@ impl Decrypter {
             worker_rx: dec_rx,
             worker: spawn(worker.go()),
             is_ready: false,
+            committees: CommitteeVec::new(committee.clone()),
+            current: committee.id(),
         })
     }
 
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
         self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
+    }
+
+    /// Returns the currently active decryption committee
+    pub fn current_committee(&self) -> &Committee {
+        self.committees
+            .get(self.current)
+            .expect("current decryption committee missing")
     }
 
     /// Check if decrypter is ready to threshold decrypt encrypted bundles.

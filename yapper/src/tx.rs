@@ -2,7 +2,7 @@ use futures::future::join_all;
 use reqwest::{Client, Url};
 use std::time::Duration;
 use timeboost::types::BundleVariant;
-use timeboost_utils::load_generation::{EncKey, make_bundle, tps_to_millis};
+use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use tokio::time::interval;
 
 use anyhow::{Context, Result};

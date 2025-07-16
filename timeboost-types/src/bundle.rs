@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
+use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
 use crate::{Bytes, Epoch, SeqNo, Timestamp};
 
@@ -297,26 +298,28 @@ impl Committable for SignedPriorityBundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
     committee_id: CommitteeId,
-    transcript: Vec<u8>, // TODO: replace with VESS transcript (dealing)
+    // TODO: (alex) switch to VessCiphertext directly after 392 is merged
+    /// encrypted secret shares in a dealing
+    vess_ct: Vec<u8>,
+    // vess: VessCiphertext,
+    /// Feldman commitment to the secret sharing dealing
+    comm: VssCommitment,
 }
 
 impl DkgBundle {
-    pub fn new(committee_id: CommitteeId, transcript: Vec<u8>) -> Self {
+    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
         Self {
             committee_id,
-            transcript,
+            vess_ct: vess_ct.to_bytes(),
+            comm,
         }
     }
 
     pub fn committee_id(&self) -> &CommitteeId {
         &self.committee_id
-    }
-
-    pub fn transcript(&self) -> &Vec<u8> {
-        &self.transcript
     }
 }
 
@@ -324,7 +327,8 @@ impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
             .field("committee", self.committee_id.commit())
-            .var_size_bytes(&self.transcript)
+            .var_size_field("ciphertexts", &self.vess_ct)
+            .var_size_field("commitment", &self.comm.to_bytes())
             .finalize()
     }
 }

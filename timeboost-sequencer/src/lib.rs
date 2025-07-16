@@ -6,6 +6,7 @@ mod queue;
 mod sort;
 
 use std::collections::VecDeque;
+use std::iter::once;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -18,11 +19,10 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::feldman::FeldmanVssPublicParam;
 use timeboost_crypto::prelude::{Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, HpkeKeyStore, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, DkgBundle, HpkeKeyStore, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -68,8 +68,6 @@ struct Task {
     label: PublicKey,
     // public keys used in DKG/resharing for secure communication
     hpke_keystore: HpkeKeyStore,
-    // verifiable secret sharing parameters used in DKG/resharing
-    vss_pp: FeldmanVssPublicParam,
     bundles: BundleQueue,
     sailfish: Coordinator<CandidateListBytes, Rbc<CandidateListBytes>>,
     includer: Includer,
@@ -166,17 +164,6 @@ impl Sequencer {
 
         let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
 
-        let committee_size = cfg.decrypt_committee.committee().size().get();
-        let threshold = cfg
-            .decrypt_committee
-            .committee()
-            .one_honest_threshold()
-            .get();
-        let vss_pp = FeldmanVssPublicParam::new(
-            NonZeroU32::new(threshold as u32).expect("threshold must >0"),
-            NonZeroU32::new(committee_size as u32).expect("committee size must >0"),
-        );
-
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
 
@@ -184,7 +171,6 @@ impl Sequencer {
             kpair: cfg.sign_keypair,
             label: public_key,
             hpke_keystore: cfg.hpke_keystore,
-            vss_pp,
             bundles: queue.clone(),
             sailfish,
             includer: Includer::new(
@@ -271,8 +257,14 @@ impl Task {
         let mut pending = None;
         let mut candidates = Candidates::new();
 
-        let mut rng = thread_rng();
-        let vess = Vess::new_fast(self.vss_pp.t, self.vss_pp.n);
+        let committee = self.decrypter.current_committee();
+        let committee_id = committee.id();
+        let committee_size = committee.size().get();
+        let threshold = committee.one_honest_threshold().get();
+        let vess = Vess::new_fast(
+            NonZeroU32::new(threshold as u32).expect("threshold must >0"),
+            NonZeroU32::new(committee_size as u32).expect("committee size must >0"),
+        );
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
@@ -283,8 +275,9 @@ impl Task {
                 // only the first ever committee init DKG, subsequent ones receive resharings from
                 // the previous committee.
 
+                let mut rng = thread_rng();
                 let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-                let (_ct, _cm) = vess.encrypted_shares(
+                let (ct, cm) = vess.encrypted_shares(
                     &self
                         .hpke_keystore
                         .sorted_keys()
@@ -293,7 +286,8 @@ impl Task {
                     secret,
                     b"dkg",
                 )?;
-                todo!("add ct and cm to DkgBundle")
+                let bundle = DkgBundle::new(committee_id, ct, cm);
+                self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }
         }
 

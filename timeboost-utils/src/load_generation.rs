@@ -45,6 +45,8 @@ pub fn tps_to_millis<N: Into<u64>>(tps: N) -> u64 {
     1000 / tps.into()
 }
 
+// TODO(alex): remove this
+#[allow(dead_code)]
 fn serialize<T: Serialize>(d: &T) -> Result<Bytes, EncodeError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
