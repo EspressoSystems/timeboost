@@ -55,3 +55,6 @@ pub type Vess = ShoupVess<G1Projective>;
 
 /// Verifiable secret sharing scheme used in DKG/resharing
 pub type Vss = FeldmanVss<G1Projective>;
+
+/// Commitment to a Shamir secret dealing
+pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::Commitment;

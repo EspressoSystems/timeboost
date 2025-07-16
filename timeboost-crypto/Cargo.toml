@@ -20,6 +20,7 @@ bs58 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 digest = { workspace = true }
+derive_more = { workspace = true }
 generic-array = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
