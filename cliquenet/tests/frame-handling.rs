@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
 use multisig::{Keypair, PublicKey, x25519};
 use portpicker::pick_unused_port;
-use rand::{Rng, RngCore};
+use rand::{Rng, RngCore, thread_rng};
 use tokio::time::{Duration, timeout};
 
 /// Send and receive messages of various sizes between 1 byte and 5 MiB.
@@ -63,8 +63,8 @@ async fn multiple_frames() {
 
 /// Generate a vector with random data and random length (within bounds).
 fn gen_message() -> Data {
-    let mut g = rand::rng();
-    let mut v = vec![0; g.random_range(1..5 * 1024 * 1024)];
+    let mut g = thread_rng();
+    let mut v = vec![0; g.gen_range(1..5 * 1024 * 1024)];
     g.fill_bytes(&mut v);
     Data::try_from(BytesMut::from(&v[..])).unwrap()
 }
