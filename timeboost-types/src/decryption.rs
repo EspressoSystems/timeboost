@@ -41,7 +41,8 @@ impl DecryptionKey {
     }
 }
 
-/// A `Committee` with everyone's public key used in the DKG or key resharing for secure communication
+/// A `Committee` with everyone's public key used in the DKG or key resharing for secure
+/// communication
 #[derive(Debug, Clone)]
 pub struct DkgKeyStore {
     committee: Committee,

@@ -18,6 +18,8 @@ blake3 = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
+committable = { workspace = true, optional = true }
+crossbeam-queue = { workspace = true, optional = true }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
@@ -26,6 +28,7 @@ parking_lot = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
+sailfish-types = { path = "../sailfish-types", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tide-disco = { workspace = true }
@@ -34,7 +37,3 @@ timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-# optional:
-committable = { workspace = true, optional = true }
-crossbeam-queue = { workspace = true, optional = true }
-sailfish-types = { path = "../sailfish-types", optional = true }

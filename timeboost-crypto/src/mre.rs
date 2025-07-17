@@ -126,16 +126,18 @@ impl<C: CurveGroup> LabeledDecryptionKey<C> {
     }
 }
 
+use crate::try_from_bytes;
+
 /// Ciphertext for multiple recipients in MRE scheme
 #[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "H: Digest")]
 pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     // the shared ephemeral public key (v:=g^beta in the paper)
     #[serde_as(as = "crate::SerdeAs")]
-    epk: C::Affine,
+    pub(crate) epk: C::Affine,
     // individual ciphertexts (e_i in the paper)
-    cts: Vec<Output<H>>,
+    pub(crate) cts: Vec<Output<H>>,
 }
 
 impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
@@ -145,6 +147,15 @@ impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
             epk: self.epk,
             ct: ct.clone(),
         })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing mre ciphertext")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        try_from_bytes::<Self, N>(value)
     }
 }
 

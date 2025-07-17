@@ -10,11 +10,11 @@ members = [
     "tests",
     "timeboost",
     "timeboost-builder",
-    "timeboost-sequencer",
     "timeboost-crypto",
+    "timeboost-proto",
+    "timeboost-sequencer",
     "timeboost-types",
     "timeboost-utils",
-    "timeboost-proto",
     "yapper",
 ]
 resolver = "2"
@@ -23,11 +23,6 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
-
-[profile.test]
-codegen-units = 16
-incremental = false
-opt-level = 3
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
@@ -41,12 +36,12 @@ alloy-signer-local = "1.0.5"
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 arbtest = "0.3.2"
+ark-bls12-381 = "0.5"
 ark-bn254 = "0.5"
 ark-ec = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
 ark-secp256k1 = "0.5"
-ark-bls12-381 = "0.5"
 ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
@@ -82,21 +77,21 @@ prost = "0.13.5"
 quickcheck = "1.0.3"
 rand = "0.9"
 rayon = "1.10"
-secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
 reqwest = { version = "0.12" }
+secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
 serde_with = "3.12.0"
 sha2 = { version = "0.10", default-features = false }
 sha3 = "0.10.8"
+smallvec = "1.15.1"
 snow = "0.9.6"
 spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f7031", features = [
     "arkworks-algebra",
 ] }
 thiserror = "2.0"
 tide-disco = "0.9.3"
-smallvec = "1.15.1"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.15"
@@ -108,3 +103,8 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
 vbs = "0.1"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
+
+[profile.test]
+codegen-units = 16
+incremental = false
+opt-level = 3

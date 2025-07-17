@@ -1,0 +1,3 @@
+[submodule "timeboost-proto/protos"]
+	path = timeboost-proto/protos
+	url = https://github.com/EspressoSystems/timeboost-proto.git

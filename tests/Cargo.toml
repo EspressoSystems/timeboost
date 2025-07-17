@@ -28,5 +28,5 @@ timeboost-utils = { path = "../timeboost-utils", features = ["test"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-turmoil = { workspace = true }
 tracing = { workspace = true }
+turmoil = { workspace = true }

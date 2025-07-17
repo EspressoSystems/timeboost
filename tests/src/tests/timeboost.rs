@@ -12,9 +12,9 @@ use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::HpkeDecKey;
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::HpkeKeyStore;
+use timeboost_types::DkgKeyStore;
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -35,7 +35,7 @@ where
             (
                 Keypair::generate(),
                 x25519::Keypair::generate().unwrap(),
-                HpkeDecKey::generate(),
+                DkgDecKey::generate(),
                 a1,
                 a2,
                 a3,
@@ -72,7 +72,7 @@ where
             .map(|(kp, xp, _, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone())),
     );
 
-    let hpke_keystore = HpkeKeyStore::new(
+    let dkg_keystore = DkgKeyStore::new(
         committee.clone(),
         parts
             .iter()
@@ -83,12 +83,12 @@ where
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    for (i, (kpair, xpair, hpke_sk, sa, da, pa)) in parts.into_iter().enumerate() {
+    for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
-            .hpke_key(hpke_sk)
-            .hpke_keystore(hpke_keystore.clone())
+            .dkg_key(dkg_sk)
+            .dkg_keystore(dkg_keystore.clone())
             .sailfish_addr(sa)
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())

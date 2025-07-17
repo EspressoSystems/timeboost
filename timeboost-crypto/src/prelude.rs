@@ -38,6 +38,7 @@ use crate::{
     traits::dkg::VerifiableSecretSharing,
     vess::{self, ShoupVess},
 };
+pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
 pub type DkgEncKey = mre::EncryptionKey<G1Projective>;
@@ -56,10 +57,6 @@ pub type DkgCiphertext = mre::Ciphertext<G1Projective>;
 
 /// Verifiable Encrypted Secret Sharing (VESS) scheme used in DKG/resharing
 pub type Vess = ShoupVess<G1Projective>;
-
-// TODO: (alex) simply re-export after VESS impl merged
-/// Ciphertext of all secret shares in a single dealing
-pub type VessCiphertext = vess::VessCiphertext<G1Projective>;
 
 /// Verifiable secret sharing scheme used in DKG/resharing
 pub type Vss = FeldmanVss<G1Projective>;

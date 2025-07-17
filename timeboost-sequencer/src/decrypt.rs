@@ -298,6 +298,7 @@ struct Worker {
     first_requested_round: Option<RoundNumber>,
 
     /// decryption key used in the DKG or key resharing for secure communication between nodes
+    #[allow(dead_code)] // TODO(alex): remove this
     dkg_sk: LabeledDkgDecKey,
 
     /// decryption key used to decrypt and combine
@@ -1054,7 +1055,7 @@ mod tests {
             .collect();
         let dkg_keys: Vec<_> = hpke_private_keys
             .iter()
-            .map(|s| DkgDecKey::try_from_str::<32>(*s).expect("into secret key"))
+            .map(|s| DkgDecKey::try_from_str::<32>(s).expect("into secret key"))
             .collect();
 
         let c = Committee::new(
