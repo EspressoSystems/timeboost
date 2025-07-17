@@ -48,7 +48,7 @@ impl<H> Submitter<H> {
 }
 
 impl Submitter<Height> {
-    pub async fn submit(&mut self, cb: CertifiedBlock) {
+    pub async fn submit(&mut self, cb: &CertifiedBlock) {
         enum State {
             Submit(bool),
             Verify,
@@ -59,7 +59,7 @@ impl Submitter<Height> {
 
         loop {
             match state {
-                State::Submit(force) => match timeout(delay, self.submit_block(&cb, force)).await {
+                State::Submit(force) => match timeout(delay, self.submit_block(cb, force)).await {
                     Ok(()) => state = State::Verify,
                     Err(e) => {
                         debug!(
@@ -71,7 +71,7 @@ impl Submitter<Height> {
                         state = State::Submit(true)
                     }
                 },
-                State::Verify => match timeout(delay, self.verify_inclusion(&cb)).await {
+                State::Verify => match timeout(delay, self.verify_inclusion(cb)).await {
                     Ok(Ok(())) => {
                         debug!(
                             node = %self.public_key(),
@@ -248,7 +248,7 @@ mod tests {
 
             tasks.spawn(async move {
                 for _ in 0..3 {
-                    s.submit(g.next()).await;
+                    s.submit(&g.next()).await;
                     sleep(Duration::from_secs(rand::random_range(0..5))).await
                 }
             });
