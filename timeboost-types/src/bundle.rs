@@ -301,9 +301,8 @@ impl Committable for SignedPriorityBundle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
     committee_id: CommitteeId,
-    // TODO: (alex) switch to VessCiphertext directly after 392 is merged
     /// encrypted secret shares in a dealing
-    vess_ct: Vec<u8>,
+    vess_ct: VessCiphertext,
     // vess: VessCiphertext,
     /// Feldman commitment to the secret sharing dealing
     comm: VssCommitment,
@@ -313,7 +312,7 @@ impl DkgBundle {
     pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
         Self {
             committee_id,
-            vess_ct: vess_ct.to_bytes(),
+            vess_ct,
             comm,
         }
     }
@@ -327,7 +326,7 @@ impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
             .field("committee", self.committee_id.commit())
-            .var_size_field("ciphertexts", &self.vess_ct)
+            .var_size_field("ciphertexts", self.vess_ct.as_bytes())
             .var_size_field("commitment", &self.comm.to_bytes())
             .finalize()
     }
