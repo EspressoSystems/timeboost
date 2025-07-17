@@ -89,7 +89,7 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         node_idx: usize,
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
-    ) -> Result<bool, VssError> {
+    ) -> Result<(), VssError> {
         let n = pp.n.get() as usize;
         let t = pp.t.get() as usize;
 
@@ -113,7 +113,11 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
             VssError::InternalError("commitments and powers mismatched length".to_string())
         })?;
 
-        Ok(C::generator().mul(share) == eval_in_exp)
+        if C::generator().mul(share) == eval_in_exp {
+            Ok(())
+        } else {
+            Err(VssError::FailedVerification)
+        }
     }
 
     fn reconstruct(
@@ -167,29 +171,27 @@ mod tests {
             let (shares, commitment) = FeldmanVss::<C>::share(&pp, rng, secret);
             for (node_idx, s) in shares.iter().enumerate() {
                 // happy path
-                assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &commitment).unwrap());
+                assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &commitment).is_ok());
 
                 // sad path
                 // wrong node_idx should fail
-                assert!(
-                    !FeldmanVss::<C>::verify(&pp, node_idx + 1, s, &commitment).unwrap_or(false)
-                );
+                assert!(FeldmanVss::<C>::verify(&pp, node_idx + 1, s, &commitment).is_err());
 
                 // wrong secret share should fail
                 assert!(
-                    !FeldmanVss::<C>::verify(
+                    FeldmanVss::<C>::verify(
                         &pp,
                         node_idx,
                         &C::ScalarField::rand(rng),
                         &commitment,
                     )
-                    .unwrap()
+                    .is_err()
                 );
 
                 // wrong commitment should fail
                 let mut bad_comm = commitment.clone();
                 bad_comm[1] = C::Affine::default();
-                assert!(!FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).unwrap());
+                assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
 
                 // incomplete/dropped commitment should fail
                 bad_comm.pop();

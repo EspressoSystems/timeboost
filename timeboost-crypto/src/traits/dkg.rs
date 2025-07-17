@@ -36,13 +36,13 @@ pub trait VerifiableSecretSharing {
     /// - `share`: the secret share to verify
     /// - `commitment`: the global commitment (if any)
     ///
-    /// Returns Ok(true) if valid, Ok(false) if invalid, or an appropriate `VssError` otherwise.
+    /// Returns Ok(()) if valid, or an appropriate `VssError` otherwise.
     fn verify(
         pp: &Self::PublicParam,
         node_idx: usize,
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
-    ) -> Result<bool, VssError>;
+    ) -> Result<(), VssError>;
 
     /// Reconstructs the original secret from a set of (index, share) pairs.
     ///
@@ -66,6 +66,8 @@ pub enum VssError {
     InvalidShare(usize, String),
     #[error("invalid VSS commitment")]
     InvalidCommitment,
+    #[error("failed verification: share does not match commitment")]
+    FailedVerification,
     #[error("failed to reconstruct: {0}")]
     FailedReconstruction(String),
     #[error("internal err: {0}")]

@@ -372,7 +372,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         ct: &VessCiphertext,
         comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
         aad: &[u8],
-    ) -> Result<bool, VessError> {
+    ) -> Result<(), VessError> {
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
         // verifier logic until Step 4b
@@ -407,10 +407,14 @@ impl<C: CurveGroup> ShoupVess<C> {
                             .expect("subset_size > 0, so is shifted_polys.len()")
                             .as_ref(),
                     );
+
+                    let mut unshifted_comm = vec![];
                     for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
                         // g^omega'' / C in paper
-                        hasher.update(serialize_to_vec![shifted - delta]?)
+                        unshifted_comm.push(shifted - delta);
                     }
+                    let unshifted_comm = C::normalize_batch(&unshifted_comm);
+                    hasher.update(serialize_to_vec![unshifted_comm]?);
 
                     let mre_ct = mre_cts
                         .pop_front()
@@ -435,7 +439,11 @@ impl<C: CurveGroup> ShoupVess<C> {
         debug_assert!(mre_cts.is_empty());
         debug_assert!(seeds.is_empty());
 
-        Ok(h != hasher.finalize().as_slice())
+        if h == hasher.finalize().as_slice() {
+            Ok(())
+        } else {
+            Err(VessError::FailedVerification)
+        }
     }
 
     /// Decrypt with a decryption key `recv_sk` (labeled with node_idx, see `LabeledDecryptionKey`)
@@ -473,7 +481,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             let share = shifted_eval - unshifted_eval;
 
             // check correctness
-            if FeldmanVss::<C>::verify(&self.vss_pp, node_idx, &share, &comm)? {
+            if FeldmanVss::<C>::verify(&self.vss_pp, node_idx, &share, &comm).is_ok() {
                 return Ok(share);
             }
         }
@@ -643,6 +651,8 @@ pub enum VessError {
     IndexOutOfBound(usize, usize),
     #[error("wrong vss commitment supplied")]
     WrongCommitment,
+    #[error("failed verification: proof verification failed")]
+    FailedVerification,
     #[error("decryption fail")]
     DecryptionFailed,
 }
@@ -692,10 +702,10 @@ mod tests {
         let aad = b"Associated data";
         let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad).unwrap();
 
-        assert!(vess.verify(&recv_pks, &ct, &comm, aad).unwrap());
+        assert!(vess.verify(&recv_pks, &ct, &comm, aad).is_ok());
         for labeled_recv_sk in labeled_sks {
             let share = vess.decrypt_share(&labeled_recv_sk, &ct, aad).unwrap();
-            assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).unwrap());
+            assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).is_ok());
         }
     }
 
