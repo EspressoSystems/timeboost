@@ -466,7 +466,7 @@ impl Worker {
             // Now we look for the first block number which has a certificate
             // available and continue from there.
             for (i, t) in self.tracking.values().flat_map(|t| t.trackers.iter()) {
-                if t.deliver(&self.tx).await? {
+                if t.deliver(self.is_leader(i), &self.tx).await? {
                     self.next_block = Some(i.num() + 1);
                     break;
                 }
@@ -477,13 +477,13 @@ impl Worker {
 
         'main: loop {
             if let Some(next) = self.next_block {
-                for t in self
+                for (i, t) in self
                     .tracking
                     .get(&next)
                     .into_iter()
-                    .flat_map(|t| t.trackers.values())
+                    .flat_map(|t| &t.trackers)
                 {
-                    if t.deliver(&self.tx).await? {
+                    if t.deliver(self.is_leader(i), &self.tx).await? {
                         self.next_block = Some(next + 1);
                         continue 'main;
                     }
@@ -493,7 +493,7 @@ impl Worker {
                 // If next_block is not available yet we look for the first block
                 // we can deliver and start from there.
                 for (i, t) in self.tracking.values().flat_map(|t| t.trackers.iter()) {
-                    if t.deliver(&self.tx).await? {
+                    if t.deliver(self.is_leader(i), &self.tx).await? {
                         self.next_block = Some(i.num() + 1);
                         continue 'main;
                     }
@@ -590,13 +590,22 @@ impl Worker {
         self.history = committee.quorum_size().get() as u64;
         Ok(())
     }
+
+    /// Check if this node is leader of the given block.
+    fn is_leader(&self, i: &BlockInfo) -> bool {
+        let Some(c) = self.committees.get(i.round().committee()) else {
+            error!(node = %self.label, round = %i.round(), "can not determine leader");
+            return false;
+        };
+        self.label == c.leader(*i.num() as usize)
+    }
 }
 
 impl Tracker {
-    async fn deliver(&self, tx: &Sender<CertifiedBlock>) -> Result<bool> {
+    async fn deliver(&self, is_leader: bool, tx: &Sender<CertifiedBlock>) -> Result<bool> {
         if let Some(cert) = self.votes.certificate() {
             if let Some(block) = &self.block {
-                let cb = CertifiedBlock::new(cert.clone(), block.clone());
+                let cb = CertifiedBlock::new(cert.clone(), block.clone(), is_leader);
                 tx.send(cb).await.map_err(|_| EndOfPlay::CertifierDown)?;
                 return Ok(true);
             }

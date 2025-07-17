@@ -116,7 +116,8 @@ impl Committable for BlockHash {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct NamespaceId(u32);
 
 impl From<u32> for NamespaceId {
@@ -131,7 +132,7 @@ impl From<NamespaceId> for u32 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     namespace: NamespaceId,
     round: RoundNumber,
@@ -234,14 +235,21 @@ impl Committable for BlockInfo {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CertifiedBlock {
     data: Block,
     cert: Certificate<BlockInfo>,
+    #[serde(skip)]
+    leader: bool,
 }
 
 impl CertifiedBlock {
-    pub fn new(cert: Certificate<BlockInfo>, data: Block) -> Self {
-        Self { cert, data }
+    pub fn new(cert: Certificate<BlockInfo>, data: Block, leader: bool) -> Self {
+        Self { cert, data, leader }
+    }
+
+    pub fn is_leader(&self) -> bool {
+        self.leader
     }
 
     pub fn cert(&self) -> &Certificate<BlockInfo> {
