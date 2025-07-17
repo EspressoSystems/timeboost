@@ -88,16 +88,14 @@ struct Messages<T: Committable> {
 }
 
 impl<T: Committable> Messages<T> {
-    /// Get a message digest of this source, if any.
-    fn digest(&self, s: &PublicKey) -> Option<Digest> {
-        for (d, t) in &self.map {
-            if let Some(vertex) = &t.message.item {
-                if vertex.data().source() == s {
-                    return Some(*d);
-                }
-            }
-        }
-        None
+    /// Get message digests of this source.
+    fn digests(&self, s: &PublicKey) -> impl Iterator<Item = &Digest> {
+        self.map.iter().filter_map(move |(d, t)| {
+            let Some(vertex) = &t.message.item else {
+                return None
+            };
+            (vertex.data().source() == s).then_some(d)
+        })
     }
 }
 
@@ -637,15 +635,15 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
             return Err(RbcError::InvalidMessage);
         }
 
-        let our_committee_pos =
+        let current_committee_pos =
             self.config.committees.position(self.config.committee_id)
                 .expect("current committee is member of committee vec");
 
-        let their_committee_pos =
+        let proposal_committee_pos =
             self.config.committees.position(round.committee())
                 .expect("validated vertex committee is member of committee vec");
 
-        if their_committee_pos > our_committee_pos {
+        if proposal_committee_pos > current_committee_pos {
             debug!(
                 node   = %self.key,
                 src    = %src,
@@ -658,11 +656,28 @@ impl<T: Clone + Committable + Serialize + DeserializeOwned> Worker<T> {
         let digest = Digest::of_vertex(&vertex);
 
         if let Some(messages) = self.buffer.get(&digest.round().num()) {
-            if let Some(d) = messages.digest(&src) {
-                if d != digest {
-                    warn!(node = %self.key, %src, fst = %d, snd = %digest, "multiple proposals received");
+            for d in messages.digests(&src).filter(|d| **d != digest) {
+                let digest_committee_pos = self.config.committees.position(d.round().committee());
+                if Some(proposal_committee_pos) >= digest_committee_pos {
+                    warn!(node = %self.key, %src, old = %d, new = %digest, "multiple proposals received");
                     return Err(RbcError::InvalidMessage);
                 }
+                // The round number `r` to switch committees is based on the
+                // *committed* rounds of parties. Therefore it may happen
+                // that a node has already broadcasted their proposal for
+                // `r` as a member of the old committee before broadcasting
+                // again for `r` as a member of the new committee. Naturally,
+                // the digests differ, so a receiving node who hasn't switched
+                // to the next committee yet, would reject the second proposal,
+                // but as a special case, we chose to accept it here if we have
+                // proof that the proposal's committee is newer.
+                warn!(
+                    node = %self.key,
+                    src  = %src,
+                    old  = %d,
+                    new  = %digest,
+                    "accepting additional proposal from newer committee"
+                );
             }
         }
 

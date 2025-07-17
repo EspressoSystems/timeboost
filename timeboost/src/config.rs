@@ -1,7 +1,7 @@
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
-use timeboost_builder::BlockProducerConfig;
+use timeboost_builder::CertifierConfig;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::DecryptionKey;
 
@@ -16,8 +16,8 @@ pub struct TimeboostConfig {
     /// The decrypt peers that this node will connect to.
     pub(crate) decrypt_committee: AddressableCommittee,
 
-    /// The block producer peers that this node will connect to.
-    pub(crate) producer_committee: AddressableCommittee,
+    /// The block certifier peers that this node will connect to.
+    pub(crate) certifier_committee: AddressableCommittee,
 
     /// The keypair for the node to sign messages.
     pub(crate) sign_keypair: Keypair,
@@ -34,8 +34,8 @@ pub struct TimeboostConfig {
     /// The bind address for the decrypter node.
     pub(crate) decrypt_addr: Address,
 
-    /// The bind address for the block producer node.
-    pub(crate) producer_addr: Address,
+    /// The bind address for the block certifier node.
+    pub(crate) certifier_addr: Address,
 
     /// The bind address of the internal API.
     pub(crate) internal_api: Address,
@@ -67,13 +67,12 @@ impl TimeboostConfig {
             .build()
     }
 
-    pub fn producer_config(&self) -> BlockProducerConfig {
-        BlockProducerConfig::builder()
+    pub fn certifier_config(&self) -> CertifierConfig {
+        CertifierConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .address(self.producer_addr.clone())
-            .committee(self.producer_committee.clone())
-            .retain(self.leash_len)
+            .address(self.certifier_addr.clone())
+            .committee(self.certifier_committee.clone())
             .recover(self.recover)
             .build()
     }

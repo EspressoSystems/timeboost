@@ -4,8 +4,8 @@ use std::ops::{Add, Deref, Sub};
 use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, CommitteeId};
-use sailfish_types::RoundNumber;
+use multisig::Certificate;
+use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use timeboost_proto::block as proto;
 
@@ -31,6 +31,12 @@ impl BlockNumber {
 
     pub fn is_genesis(self) -> bool {
         self == GENESIS_BLOCK
+    }
+}
+
+impl Default for BlockNumber {
+    fn default() -> Self {
+        GENESIS_BLOCK
     }
 }
 
@@ -189,20 +195,19 @@ impl TryFrom<proto::Block> for Block {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct BlockInfo {
     num: BlockNumber,
+    round: Round,
     hash: BlockHash,
-    committee: CommitteeId,
 }
 
 impl BlockInfo {
-    pub fn new<B, C>(num: B, hash: BlockHash, committee: C) -> Self
+    pub fn new<B>(num: B, r: Round, hash: BlockHash) -> Self
     where
         B: Into<BlockNumber>,
-        C: Into<CommitteeId>,
     {
         Self {
             num: num.into(),
+            round: r,
             hash,
-            committee: committee.into(),
         }
     }
 
@@ -210,12 +215,12 @@ impl BlockInfo {
         self.num
     }
 
-    pub fn hash(&self) -> &BlockHash {
-        &self.hash
+    pub fn round(&self) -> &Round {
+        &self.round
     }
 
-    pub fn committee(&self) -> CommitteeId {
-        self.committee
+    pub fn hash(&self) -> &BlockHash {
+        &self.hash
     }
 }
 
@@ -223,8 +228,8 @@ impl Committable for BlockInfo {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("BlockInfo")
             .field("num", self.num.commit())
+            .field("round", self.round.commit())
             .field("hash", self.hash.commit())
-            .field("committee", self.committee.commit())
             .finalize()
     }
 }
@@ -245,5 +250,17 @@ impl CertifiedBlock {
 
     pub fn data(&self) -> &Block {
         &self.data
+    }
+}
+
+impl From<CertifiedBlock> for Certificate<BlockInfo> {
+    fn from(block: CertifiedBlock) -> Self {
+        block.cert
+    }
+}
+
+impl From<CertifiedBlock> for Block {
+    fn from(block: CertifiedBlock) -> Self {
+        block.data
     }
 }

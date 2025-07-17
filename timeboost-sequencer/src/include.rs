@@ -109,8 +109,12 @@ impl Includer {
         let mut regular: BTreeMap<Bundle, usize> = BTreeMap::new();
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
+        let mut dkg = Vec::new();
 
-        for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
+        for (pbs, rbs, dbs) in lists.into_iter().map(CandidateList::into_bundles) {
+            if let Some(d) = dbs {
+                dkg.push(d)
+            }
             for rb in rbs {
                 *regular.entry(rb).or_default() += 1
             }
@@ -147,9 +151,9 @@ impl Includer {
             priority.clear()
         }
 
-        let bundles = priority.into_values().collect();
+        let ipriority = priority.into_values().collect();
 
-        let mut include = Vec::new();
+        let mut iregular = Vec::new();
 
         for (rb, n) in regular {
             if n > self.committee.one_honest_threshold().get() {
@@ -158,7 +162,7 @@ impl Includer {
                         .entry(self.round)
                         .or_default()
                         .insert(*rb.digest());
-                    include.push(rb)
+                    iregular.push(rb)
                 }
             } else if self.is_unknown(&rb) {
                 retry.add_regular(rb);
@@ -167,8 +171,9 @@ impl Includer {
 
         let mut ilist = InclusionList::new(self.round, self.time, self.index, evidence);
         ilist
-            .set_priority_bundles(bundles)
-            .set_regular_bundles(include);
+            .set_dkg_bundles(dkg)
+            .set_priority_bundles(ipriority)
+            .set_regular_bundles(iregular);
 
         Outcome {
             ilist,

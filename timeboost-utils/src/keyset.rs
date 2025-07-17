@@ -25,7 +25,7 @@ pub struct KeysetConfig {
 pub struct NodeInfo {
     pub sailfish_address: Address,
     pub decrypt_address: Address,
-    pub producer_address: Address,
+    pub certifier_address: Address,
     pub internal_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
@@ -167,7 +167,7 @@ mod tests {
     {
       "sailfish_address": "127.0.0.1:8000",
       "decrypt_address": "127.0.0.1:10000",
-      "producer_address": "127.0.0.1:11000",
+      "certifier_address": "127.0.0.1:11000",
       "internal_address": "127.0.0.1:5000",
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",

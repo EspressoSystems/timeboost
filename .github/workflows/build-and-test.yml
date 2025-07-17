@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
     - uses: actions/cache@v4
       with:
         path: |
@@ -29,7 +32,9 @@ jobs:
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
     - name: Install protobuf compiler
-      run: sudo apt-get install -y protobuf-compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
     - name: Build
       run: just build_release
     - name: Upload binaries
@@ -42,9 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
     - uses: taiki-e/install-action@nextest
     - name: Install protobuf compiler
-      run: sudo apt-get install -y protobuf-compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
     - name: Install Just
       run: |
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
@@ -57,8 +67,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
     - name: Install protobuf compiler
-      run: sudo apt-get install -y protobuf-compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
     - name: Install Just
       run: |
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
@@ -75,6 +90,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
     - uses: docker/setup-buildx-action@v3
     - name: Install Just
       run: |
@@ -88,8 +106,13 @@ jobs:
     timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
     - name: Install protobuf compiler
-      run: sudo apt-get install -y protobuf-compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
     - name: Install Just
       run: |
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
