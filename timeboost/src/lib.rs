@@ -95,7 +95,7 @@ impl Timeboost {
             internal_api: spawn(internal_api),
             submitter_task: spawn(async move {
                 while let Some(cb) = submit_rx.recv().await {
-                    timeboost_builder::submit(&mut submitter, cb).await
+                    submitter.submit(cb).await
                 }
             }),
             submit_queue: submit_tx,
