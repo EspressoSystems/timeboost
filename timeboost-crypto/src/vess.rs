@@ -171,10 +171,21 @@ impl<C: CurveGroup> ShoupVess<C> {
         subset
     }
 
-    // deterministically generate a dealing from a random seed
+    /// append `aad` with index value `ith`, returns aad' = aad | ith
+    fn indexed_aad(&self, aad: &[u8], ith: usize) -> Vec<u8> {
+        let sample_idx = if self.num_repetition < u8::MAX as usize {
+            (ith as u8).to_be_bytes().to_vec()
+        } else {
+            ith.to_be_bytes().to_vec()
+        };
+        [aad, sample_idx.as_ref()].concat()
+    }
+
+    // deterministically generate the `i`-th dealing from a random seed
     // each dealing contains (Shamir poly + Feldman commitment + MRE ciphertext)
     fn new_dealing(
         &self,
+        ith: usize,
         seed: &[u8; 32],
         recipients: &[mre::EncryptionKey<C>],
         aad: &[u8],
@@ -194,9 +205,12 @@ impl<C: CurveGroup> ShoupVess<C> {
         let serialized_shares: Vec<Vec<u8>> =
             FeldmanVss::<C>::compute_serialized_shares(&self.vss_pp, &poly).collect();
 
-        // TODO: use aad'= aad | k instead?
-        let mre_ct =
-            mre::encrypt::<C, sha2::Sha256, _>(recipients, &serialized_shares, aad, &mut rng)?;
+        let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(
+            recipients,
+            &serialized_shares,
+            &self.indexed_aad(aad, ith),
+            &mut rng,
+        )?;
         Ok((poly, comm, mre_ct))
     }
 
@@ -252,7 +266,8 @@ impl<C: CurveGroup> ShoupVess<C> {
             MultiRecvCiphertext<C, sha2::Sha256>,
         )> = seeds
             .par_iter()
-            .map(|r| self.new_dealing(r, recipients, aad))
+            .enumerate()
+            .map(|(i, r)| self.new_dealing(i, r, recipients, aad))
             .collect::<Result<_, VessError>>()?;
 
         // compute h:= H_compress(aad, dealings)
@@ -409,7 +424,7 @@ impl<C: CurveGroup> ShoupVess<C> {
                     let seed = seeds
                         .pop_front()
                         .expect("subset_size < num_repetitions, so seeds.len() > 0");
-                    let (_poly, cm, mre_ct) = self.new_dealing(&seed, recipients, aad)?;
+                    let (_poly, cm, mre_ct) = self.new_dealing(i, &seed, recipients, aad)?;
 
                     hasher.update(serialize_to_vec![cm]?);
                     hasher.update(mre_ct.to_bytes());
@@ -435,14 +450,18 @@ impl<C: CurveGroup> ShoupVess<C> {
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
         // verifier logic until Step 4b
-        let (comm, _h, _subset_seed, shifted_polys, mre_cts) =
+        let (comm, _h, subset_seed, shifted_polys, mre_cts) =
             self.verify_internal(&mut verifier_state)?;
+        let subset_indices = self.map_subset_seed(subset_seed);
+        debug_assert_eq!(subset_indices.len(), shifted_polys.len());
 
-        for (shifted_coeffs, mre_ct) in shifted_polys.iter().zip(mre_cts.iter()) {
+        for ((shifted_coeffs, mre_ct), ith) in
+            shifted_polys.iter().zip(mre_cts.iter()).zip(subset_indices)
+        {
             let recv_ct = mre_ct
                 .get_recipient_ct(node_idx)
                 .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
-            let pt = recv_sk.decrypt(&recv_ct, aad)?;
+            let pt = recv_sk.decrypt(&recv_ct, &self.indexed_aad(aad, ith))?;
             // mu'_kj in paper
             let unshifted_eval: C::ScalarField =
                 CanonicalDeserialize::deserialize_compressed(&*pt)?;
