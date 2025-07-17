@@ -4,11 +4,12 @@ use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
-use multisig::{CommitteeId, PublicKey};
+use multisig::{Committee, CommitteeId, PublicKey};
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
+use timeboost_crypto::prelude::LabeledDkgDecKey;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
@@ -72,6 +73,12 @@ pub struct Decrypter {
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
+    /// Status of the distributed key gen/resharing: true means Worker has the decryption key share
+    is_ready: bool,
+    /// decryption committees
+    committees: CommitteeVec<2>,
+    /// Current committee.
+    current: CommitteeId,
 }
 
 impl Decrypter {
@@ -94,14 +101,25 @@ impl Decrypter {
         .await
         .map_err(DecrypterError::Net)?;
 
+        let labeled_sk = cfg.dkg_key.label(
+            cfg.committee
+                .committee()
+                .get_index(&cfg.label)
+                .ok_or_else(|| {
+                    DecrypterError::Internal(format!("missing key id for {}", cfg.label))
+                })?
+                .into(),
+        );
+
+        let committee = cfg.committee.committee();
         let worker = Worker::builder()
             .label(cfg.label)
-            .committees(CommitteeVec::new(cfg.committee.committee().clone()))
-            .current(cfg.committee.committee().id())
+            .dkg_sk(labeled_sk)
+            .committees(CommitteeVec::new(committee.clone()))
+            .current(committee.id())
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .dec_sk(cfg.decryption_key)
             .retain(cfg.retain)
             .build();
 
@@ -111,12 +129,28 @@ impl Decrypter {
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
             worker: spawn(worker.go()),
+            is_ready: false,
+            committees: CommitteeVec::new(committee.clone()),
+            current: committee.id(),
         })
     }
 
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
         self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
+    }
+
+    /// Returns the currently active decryption committee
+    pub fn current_committee(&self) -> &Committee {
+        self.committees
+            .get(self.current)
+            .expect("current decryption committee missing")
+    }
+
+    /// Check if decrypter is ready to threshold decrypt encrypted bundles.
+    /// Only true after DKG/resharing is done which equip Worker with dec key share.
+    pub fn is_ready(&self) -> bool {
+        self.is_ready
     }
 
     /// Garbage collect cached state of `r` (and prior) rounds
@@ -145,6 +179,7 @@ impl Decrypter {
 
         if incl.is_encrypted() {
             self.worker_tx
+                // TODO:(alex) don't send this command if not ready
                 .send(Command::Decrypt(incl))
                 .await
                 .map_err(|_| DecrypterDown(()))?;
@@ -262,9 +297,14 @@ struct Worker {
     /// eariler rounds
     first_requested_round: Option<RoundNumber>,
 
-    /// decryption key used to decrypt and combine
-    dec_sk: DecryptionKey,
+    /// decryption key used in the DKG or key resharing for secure communication between nodes
+    #[allow(dead_code)] // TODO(alex): remove this
+    dkg_sk: LabeledDkgDecKey,
 
+    /// decryption key used to decrypt and combine
+    /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
+    /// during which time the threshold key is None
+    dec_sk: Option<DecryptionKey>,
     /// Number of rounds to retain.
     retain: usize,
 
@@ -437,7 +477,7 @@ impl Worker {
 
     /// logic to process a decryption request
     async fn on_decrypt_request(&mut self, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(&incl);
+        let dec_shares = self.decrypt(&incl)?;
         if dec_shares.is_empty() {
             return Err(DecrypterError::EmptyDecShares);
         }
@@ -506,14 +546,17 @@ impl Worker {
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
-    fn decrypt(&mut self, incl: &InclusionList) -> DecShareBatch {
+    fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
+        let Some(dec_sk) = &self.dec_sk else {
+            return Err(DecrypterError::DecKeyShareNotReady);
+        };
         let round = Round::new(incl.round(), self.current);
         let dec_shares = Self::extract_ciphertexts(incl)
             .map(|optional_ct| {
                 optional_ct.and_then(|ct| {
                     // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        self.dec_sk.privkey(),
+                        dec_sk.privkey(),
                         &ct,
                         &vec![],
                     )
@@ -522,11 +565,11 @@ impl Worker {
             })
             .collect::<Vec<_>>();
 
-        DecShareBatch {
+        Ok(DecShareBatch {
             round,
             dec_shares,
             evidence: incl.evidence().clone(),
-        }
+        })
     }
 
     /// update local cache of decrypted shares
@@ -635,7 +678,7 @@ impl Worker {
                 let aad = vec![];
                 match DecryptionScheme::combine(
                     &committee,
-                    self.dec_sk.combkey(),
+                    self.dec_sk.as_ref().unwrap().combkey(), // TODO: (alex) deal with unready sk
                     dec_shares,
                     &ct,
                     &aad,
@@ -844,6 +887,9 @@ pub enum DecrypterError {
 
     #[error("unknown committee: {0}")]
     NoCommittee(CommitteeId),
+
+    #[error("decryption key share not ready, DKG/resharing yet finished")]
+    DecKeyShareNotReady,
 }
 
 /// Fatal errors.
@@ -875,11 +921,10 @@ mod tests {
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext, prelude::DkgDecKey, traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, DecryptionKey, Epoch, InclusionList, PriorityBundle, SeqNo,
-        Signer, Timestamp,
+        Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
     };
     use tracing::warn;
 
@@ -991,16 +1036,13 @@ mod tests {
             "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
             "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
-        let decryption_private_keys = [
-            "jYLeZYQfgrLR34UL64j9nT4ZocR5YVxRJMjrR7uzJQGfTV",
-            "j4xTAWUDJSN82nvGxdT7MC3pFAAPRRraWr9NvrztCBni7S",
-            "jSMBhEpzSHiyzJSVca4fehTWuPCbHHd9oaEvp5NdQ3F56Z",
-            "jH4QtGCEWjQzKYXpiVmsv8dFSj2qi7pkWY9bpiNjzkNLk2",
-            "jeG3jCVLoireFivujES1Ws4pr7s577yhYaEwveXpQh2aaX",
+        let hpke_private_keys = [
+            "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
+            "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
+            "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
+            "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
+            "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
         ];
-
-        let encryption_key = "8sz9Bu5ECvR42x69tBm2W8GaaMrm1LQnm9rmT3EL5EdbPP3TqrLUyoUkxBzpCzPy4Vu";
-        let comb_key = "y7D4UxEgJtRshdYfZu1NY4RyJxAzjjf3AGhf4AihP4epZffaoYRjFeCEaD9uCjNJVCDPZmjwnfB6v1gyZmrQsiCT5PDcHNzS7qfxP8GatiFes3nUs3xTxQLThqvrfdEv3S48jArK75FJoPRk5cKEBodTv1BVKu3GNgYHmcK731MKTJoMS16ukYxrSKg7KxzeQCZwBcamW1YQpVkHqbkvVif8wekSxfpz3CGrw2WKadzVbK1x1pUDFTrtSZU2eyTKVvrW4YJ2zKPm5FYXTaYMJqRXkyBFnvfR9NxgLHq6i5AuArTxrD772Rs1YX8bXu9fR4nLHt14SUJAGqf";
 
         let signature_keys: Vec<_> = signature_private_keys
             .iter()
@@ -1011,15 +1053,11 @@ mod tests {
             .iter()
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
-
-        let enc_key: <DecryptionScheme as ThresholdEncScheme>::PublicKey =
-            decode_bincode(encryption_key);
-        let decryption_keys: Vec<DecryptionKey> = decryption_private_keys
+        let dkg_keys: Vec<_> = hpke_private_keys
             .iter()
-            .map(|k| {
-                DecryptionKey::new(enc_key.clone(), decode_bincode(comb_key), decode_bincode(k))
-            })
+            .map(|s| DkgDecKey::try_from_str::<32>(s).expect("into secret key"))
             .collect();
+
         let c = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             signature_keys
@@ -1052,8 +1090,8 @@ mod tests {
                 .label(sig_key.public_key())
                 .address(addr.into())
                 .dh_keypair(dh_key.into())
+                .dkg_key(dkg_keys[i].clone())
                 .committee(ac.clone())
-                .decryption_key(decryption_keys[i].clone())
                 .retain(100)
                 .build();
 
@@ -1062,9 +1100,14 @@ mod tests {
         }
         // wait for network
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // TODO: (alex) get the Threshold Public Encryption key after DKG is done
+        let enc_key = <DecryptionScheme as ThresholdEncScheme>::PublicKey::try_from_str::<64>("")
+            .expect("into threshold pubkey");
         (enc_key, c, decrypters, signature_keys)
     }
 
+    #[allow(dead_code)]
     fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
         let conf = bincode::config::standard().with_limit::<{ 1024 * 1024 }>();
         bincode::serde::decode_from_slice(&bs58::decode(encoded).into_vec().unwrap(), conf)

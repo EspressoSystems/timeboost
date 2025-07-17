@@ -2,7 +2,7 @@ use futures::future::join_all;
 use reqwest::{Client, Url};
 use std::time::Duration;
 use timeboost::types::BundleVariant;
-use timeboost_utils::load_generation::{EncKey, make_bundle, tps_to_millis};
+use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use tokio::time::interval;
 
 use anyhow::{Context, Result};
@@ -59,7 +59,7 @@ async fn send_bundle_to_node(
     }
 }
 
-pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) -> Result<()> {
+pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
     let c = Client::builder().timeout(Duration::from_secs(1)).build()?;
     let urls = setup_urls(addresses)?;
 
@@ -68,7 +68,7 @@ pub async fn yap(addresses: &[Address], pub_key: &EncKey, tps: u32) -> Result<()
 
     loop {
         // create a bundle for next `interval.tick()`, then send this bundle to each node
-        let Ok(b) = make_bundle(pub_key) else {
+        let Ok(b) = make_bundle() else {
             warn!("failed to generate bundle");
             continue;
         };

@@ -11,6 +11,7 @@ use ark_std::{
 use num_integer::{binomial, gcd};
 use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use spongefish::{
     ByteReader, ByteWriter, DefaultHash, UnitToBytes, VerifierState,
@@ -23,7 +24,7 @@ use std::{collections::VecDeque, num::NonZeroU32};
 use thiserror::Error;
 
 use crate::{
-    feldman::{FeldmanVss, FeldmanVssPublicParam},
+    feldman::{FeldmanCommitment, FeldmanVss, FeldmanVssPublicParam},
     mre::{self, LabeledDecryptionKey, MultiRecvCiphertext},
     traits::dkg::{VerifiableSecretSharing, VssError},
 };
@@ -54,10 +55,20 @@ where
 }
 
 /// Ciphertext of [`ShoupVess`] scheme, verifiable by itself as its constructed as a sigma proof
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VessCiphertext {
     /// Sigma proof transcript (which contains encrypted MRE ciphertexts to be decrypted)
     transcript: Vec<u8>,
+}
+
+impl VessCiphertext {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.transcript
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.transcript.clone()
+    }
 }
 
 impl<C: CurveGroup> ShoupVess<C> {
@@ -361,7 +372,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             }
             mre_cts.push_back(MultiRecvCiphertext { epk, cts });
         }
-        Ok((comm, h, subset_seed, shifted_polys, mre_cts))
+        Ok((comm.into(), h, subset_seed, shifted_polys, mre_cts))
     }
 
     /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
@@ -495,7 +506,7 @@ impl<C: CurveGroup> ShoupVess<C> {
 /// shifted_poly is omega''_k in paper
 #[allow(type_alias_bounds)]
 type ProverMessageUntilStep4b<C: CurveGroup> = (
-    Vec<C::Affine>,
+    FeldmanCommitment<C>,
     [u8; 32],
     [u8; 16],
     VecDeque<Vec<C::ScalarField>>,

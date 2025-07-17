@@ -67,6 +67,11 @@ impl Committee {
         self.parties.contains_right(k)
     }
 
+    /// Checks if a key ID is part of the committee.
+    pub fn contains_index(&self, idx: &KeyId) -> bool {
+        self.parties.contains_left(idx)
+    }
+
     /// Returns an iterator over all entries in the committee.
     pub fn entries(&self) -> impl Iterator<Item = (KeyId, &PublicKey)> {
         self.parties.iter().map(|e| (*e.0, e.1))

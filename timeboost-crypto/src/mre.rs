@@ -63,6 +63,11 @@ pub struct DecryptionKey<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> DecryptionKey<C> {
+    /// Similar to [`Self::rand()`] with thread_rng internally
+    pub fn generate() -> Self {
+        Self::rand(&mut ark_std::rand::thread_rng())
+    }
+
     pub fn rand<R: Rng>(rng: &mut R) -> Self {
         let alpha = C::ScalarField::rand(rng);
         Self { alpha }
