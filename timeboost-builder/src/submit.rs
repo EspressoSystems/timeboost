@@ -1,9 +1,10 @@
 use std::{iter::repeat, time::Duration};
 
+use multisig::PublicKey;
 use robusta::{Error, Height, espresso_types::NamespaceId};
 use timeboost_types::CertifiedBlock;
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::config::SubmitterConfig;
 
@@ -24,6 +25,10 @@ impl Submitter<()> {
 }
 
 impl<H> Submitter<H> {
+    pub fn public_key(&self) -> &PublicKey {
+        &self.config.pubkey
+    }
+
     pub async fn init(mut self) -> Submitter<Height> {
         let mut delays = delay_iter();
         loop {
@@ -32,6 +37,7 @@ impl<H> Submitter<H> {
                 sleep(d).await;
                 continue;
             };
+            debug!(node = %self.public_key(), height = %h, "initialized");
             return Submitter {
                 client: self.client,
                 config: self.config,
@@ -43,17 +49,32 @@ impl<H> Submitter<H> {
 
 impl Submitter<Height> {
     pub async fn submit(&mut self, cb: &CertifiedBlock, force: bool) {
+        if !(cb.is_leader() || force) {
+            return;
+        }
         let mut delays = delay_iter();
-        if cb.is_leader() || force {
-            while let Err(err) = self.client.submit(cb).await {
-                warn!(node = %self.config.pubkey, %err, "error submitting block");
-                let d = delays.next().expect("delay iterator repeats");
-                sleep(d).await
-            }
+        debug!(
+            node      = %self.public_key(),
+            is_leader = cb.is_leader(),
+            force     = %force,
+            num       = %cb.cert().data().num(),
+            round     = %cb.cert().data().round(),
+            "submitting block"
+        );
+        while let Err(err) = self.client.submit(cb).await {
+            warn!(node = %self.public_key(), %err, "error submitting block");
+            let d = delays.next().expect("delay iterator repeats");
+            sleep(d).await
         }
     }
 
     pub async fn verify(&mut self, cb: &CertifiedBlock) -> Result<(), ()> {
+        debug!(
+            node  = %self.public_key(),
+            num   = %cb.cert().data().num(),
+            round = %cb.cert().data().round(),
+            "verifying block submission"
+        );
         let nsid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
         let mut delays = delay_iter();
         loop {

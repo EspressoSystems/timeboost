@@ -21,3 +21,7 @@ timeboost-types = { path = "../timeboost-types" }
 smallvec = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+tracing-subscriber = { workspace = true }

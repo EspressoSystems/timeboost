@@ -81,8 +81,8 @@ impl Timeboost {
                 .serve(addr)
         };
 
-        let submitter = Submitter::new(cfg.submitter_config()).init().await;
-        let (submit_tx, submit_rx) = mpsc::unbounded_channel();
+        let mut submitter = Submitter::new(cfg.submitter_config()).init().await;
+        let (submit_tx, mut submit_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
             metrics_task: spawn(metrics_api(pro.clone(), cfg.metrics_port)),
@@ -93,7 +93,11 @@ impl Timeboost {
             _metrics: met,
             nitro_forwarder,
             internal_api: spawn(internal_api),
-            submitter_task: spawn(timeboost_builder::submit(submitter, submit_rx)),
+            submitter_task: spawn(async move {
+                while let Some(cb) = submit_rx.recv().await {
+                    timeboost_builder::submit(&mut submitter, cb).await
+                }
+            }),
             submit_queue: submit_tx,
         })
     }
