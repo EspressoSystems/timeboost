@@ -386,21 +386,29 @@ impl<C: CurveGroup> ShoupVess<C> {
             match next_subset_idx {
                 Some(j) if i == *j => {
                     // k in S, shift the commitment
-                    let shifted_comm = C::generator()
-                        .batch_mul(shifted_polys.pop_front().expect("infalliable").as_ref());
+                    let shifted_comm = C::generator().batch_mul(
+                        shifted_polys
+                            .pop_front()
+                            .expect("subset_size > 0, so is shifted_polys.len()")
+                            .as_ref(),
+                    );
                     for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
                         // g^omega'' / C in paper
                         hasher.update(serialize_to_vec![shifted - delta]?)
                     }
 
-                    let mre_ct = mre_cts.pop_front().expect("infalliable");
+                    let mre_ct = mre_cts
+                        .pop_front()
+                        .expect("subset_size > 0, so is mre_cts.len()");
                     hasher.update(mre_ct.to_bytes());
 
                     next_subset_idx = subset_iter.next();
                 }
                 _ => {
                     // k notin S, reproduce the dealing deterministically from seed
-                    let seed = seeds.pop_front().expect("infalliable");
+                    let seed = seeds
+                        .pop_front()
+                        .expect("subset_size < num_repetitions, so seeds.len() > 0");
                     let (_poly, cm, mre_ct) = self.new_dealing(&seed, recipients, aad)?;
 
                     hasher.update(serialize_to_vec![cm]?);
@@ -496,7 +504,7 @@ fn overflow_safe_mul_then_div(x: u128, a: u128, b: u128) -> u128 {
     }
 }
 
-/// Returns the `idx`-th combinations in all "n chooses k" lexicologically ordered subsets.
+/// Returns the `idx`-th combination in all "n choose k" lexicographically ordered subsets.
 /// The returned subsets are k indices in the set {0,.., n-1}.
 /// See doc of [`ShoupVess::map_subset_seed()`] for pseudocode for this algorithm.
 fn unrank_combinations(mut n: u128, mut k: u128, mut idx: u128) -> Vec<usize> {
