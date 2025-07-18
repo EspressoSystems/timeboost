@@ -13,6 +13,12 @@ PATH = ["/submit-regular"]
 METHOD = "POST"
 DOC = "Submit regular bundle to Timeboost"
 
+# Returns Some(None) if not ready, Some(key) when ready
+[route.enckey]
+PATH = ["/enckey"]
+METHOD = "POST"
+DOC = "Encryption key for threshold decryptable bundle"
+
 [route.healthz]
 PATH = ["/healthz"]
 METHOD = "GET"

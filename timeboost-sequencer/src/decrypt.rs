@@ -9,12 +9,13 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::LabeledDkgDecKey;
+use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKey};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
@@ -82,7 +83,11 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub async fn new<M>(cfg: DecrypterConfig, metrics: &M) -> Result<Self>
+    pub async fn new<M>(
+        cfg: DecrypterConfig,
+        metrics: &M,
+        enc_key_tx: oneshot::Sender<ThresholdEncKey>,
+    ) -> Result<Self>
     where
         M: metrics::Metrics,
     {
@@ -120,6 +125,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
+            .enc_key_tx(enc_key_tx)
             .retain(cfg.retain)
             .build();
 
@@ -128,8 +134,8 @@ impl Decrypter {
             incls: BTreeMap::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
-            worker: spawn(worker.go()),
             is_ready: false,
+            worker: spawn(worker.go()),
             committees: CommitteeVec::new(committee.clone()),
             current: committee.id(),
         })
@@ -292,6 +298,10 @@ struct Worker {
 
     /// channel for receiving commands from the parent
     rx: Receiver<Command>,
+
+    /// channel for sending the encryption key after DKG/resharing is done
+    // TODO(alex): after ACS, remember to update self.dec_sk and send enc_key over this channel
+    enc_key_tx: oneshot::Sender<ThresholdEncKey>,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
@@ -915,6 +925,7 @@ mod tests {
         time::Duration,
     };
     use timeboost_utils::types::logging;
+    use tokio::sync::oneshot;
 
     use ark_std::test_rng;
     use cliquenet::AddressableCommittee;
@@ -1094,8 +1105,9 @@ mod tests {
                 .committee(ac.clone())
                 .retain(100)
                 .build();
+            let (enc_key_tx, _enc_key_rx) = oneshot::channel();
 
-            let decrypter = Decrypter::new(conf, &NoMetrics).await.unwrap();
+            let decrypter = Decrypter::new(conf, &NoMetrics, enc_key_tx).await.unwrap();
             decrypters.push(decrypter);
         }
         // wait for network
