@@ -158,7 +158,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::Gc(r))
             .await
-            .map_err(|_| DecrypterDown(()))
+            .map_err(|_| DecrypterDown)
     }
 
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
@@ -174,7 +174,7 @@ impl Decrypter {
             self.worker_tx
                 .send(Command::Dkg(incl.clone()))
                 .await
-                .map_err(|_| DecrypterDown(()))?;
+                .map_err(|_| DecrypterDown)?;
         }
 
         if incl.is_encrypted() {
@@ -182,7 +182,7 @@ impl Decrypter {
                 // TODO:(alex) don't send this command if not ready
                 .send(Command::Decrypt(incl))
                 .await
-                .map_err(|_| DecrypterDown(()))?;
+                .map_err(|_| DecrypterDown)?;
             self.incls.insert(round, Status::Encrypted);
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
@@ -233,7 +233,7 @@ impl Decrypter {
                 }
             }
         }
-        Err(DecrypterDown(()))
+        Err(DecrypterDown)
     }
 
     /// Prepare for the next committee.
@@ -245,7 +245,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
-            .map_err(|_| DecrypterDown(()))?;
+            .map_err(|_| DecrypterDown)?;
         Ok(())
     }
 
@@ -255,7 +255,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::UseCommittee(r))
             .await
-            .map_err(|_| DecrypterDown(()))?;
+            .map_err(|_| DecrypterDown)?;
         Ok(())
     }
 }
@@ -548,7 +548,7 @@ impl Worker {
     /// but will later be marked as decrypted during `hatch()`
     fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
         let Some(dec_sk) = &self.dec_sk else {
-            return Err(DecrypterError::DecKeyShareNotReady);
+            return Err(DecrypterError::DkgPending);
         };
         let round = Round::new(incl.round(), self.current);
         let dec_shares = Self::extract_ciphertexts(incl)
@@ -850,7 +850,7 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 
 #[derive(Debug, thiserror::Error)]
 #[error("decrypter down")]
-pub struct DecrypterDown(());
+pub struct DecrypterDown;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -888,8 +888,8 @@ pub enum DecrypterError {
     #[error("unknown committee: {0}")]
     NoCommittee(CommitteeId),
 
-    #[error("decryption key share not ready, DKG/resharing yet finished")]
-    DecKeyShareNotReady,
+    #[error("DKG/resharing yet finished")]
+    DkgPending,
 }
 
 /// Fatal errors.
