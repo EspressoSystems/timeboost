@@ -61,6 +61,10 @@ impl SequencerConfig {
         &self.dh_keypair
     }
 
+    pub fn dkg_key(&self) -> &DkgDecKey {
+        &self.dkg_key
+    }
+
     pub fn sailfish_address(&self) -> &net::Address {
         &self.sailfish_addr
     }
@@ -103,6 +107,7 @@ impl SequencerConfig {
             .address(self.decrypt_addr.clone())
             .dh_keypair(self.dh_keypair.clone())
             .dkg_key(self.dkg_key.clone())
+            .dkg_store(self.dkg_keystore.clone())
             .committee(self.decrypt_committee.clone())
             .retain(self.leash_len)
             .build()
@@ -115,6 +120,7 @@ pub struct DecrypterConfig {
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) dkg_key: DkgDecKey,
+    pub(crate) dkg_store: DkgKeyStore,
     pub(crate) committee: AddressableCommittee,
     pub(crate) retain: usize,
 }
