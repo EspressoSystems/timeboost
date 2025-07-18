@@ -12,11 +12,11 @@ use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKey};
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::DkgKeyStore;
 use timeboost_utils::load_generation::make_bundle;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::warn;
 
@@ -109,9 +109,17 @@ where
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(tx: broadcast::Sender<BundleVariant>) {
+async fn gen_bundles(
+    tx: broadcast::Sender<BundleVariant>,
+    mut enc_key_rx: oneshot::Receiver<ThresholdEncKey>,
+) {
+    let mut enc_key = None;
     loop {
-        let Ok(b) = make_bundle() else {
+        match enc_key_rx.try_recv() {
+            Ok(k) => enc_key = Some(k),
+            _ => {}
+        };
+        let Ok(b) = make_bundle(enc_key.as_ref()) else {
             warn!("Failed to generate bundle");
             continue;
         };

@@ -13,9 +13,9 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost::crypto::DecryptionScheme;
-use timeboost::sequencer::SequencerConfig;
-use timeboost::types::DecryptionKey;
+use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_sequencer::SequencerConfig;
+use timeboost_types::DkgKeyStore;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -113,20 +113,24 @@ where
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
 
-    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee);
+    let dkg_keys = (0..sign_keys.len()).map(|_| DkgDecKey::generate()).collect::<Vec<_>>();
+    let dkg_keystore = DkgKeyStore::new(
+        committee.clone(),
+        dkg_keys.iter().enumerate().map(|(i, sk)| (i as u8, sk.into())),
+    );
 
     sign_keys
         .into_iter()
         .zip(dh_keys)
         .zip(sf_addrs)
         .zip(de_addrs)
-        .zip(shares)
-        .map(move |((((k, x), sa), da), share)| {
-            let key = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
+        .zip(dkg_keys)
+        .map(move |((((k, x), sa), da), dkg_key)| {
             SequencerConfig::builder()
                 .sign_keypair(k)
                 .dh_keypair(x)
-                .decryption_key(key)
+                .dkg_key(dkg_key)
+                .dkg_keystore(dkg_keystore.clone())
                 .sailfish_addr(sa)
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())

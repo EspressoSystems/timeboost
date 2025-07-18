@@ -11,7 +11,7 @@ use timeboost_types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -27,15 +27,24 @@ async fn block_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
-    let (enc_key, cfg) = make_configs(num, RECOVER_INDEX);
+    let cfg = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
+    
+    let mut chosen_enc_key_rx = None;
 
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
+        let (enc_key_tx, enc_key_rx) = oneshot::channel();
+        
+        // Use the first receiver for gen_bundles
+        if chosen_enc_key_rx.is_none() {
+            chosen_enc_key_rx = Some(enc_key_rx);
+        }
+        
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
         tasks.spawn(async move {
@@ -43,7 +52,7 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
+            let mut s = Sequencer::new(c, &NoMetrics, enc_key_tx).await.unwrap();
             let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             loop {
                 select! {
@@ -74,7 +83,7 @@ async fn block_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(enc_key, bcast.clone()));
+    tasks.spawn(gen_bundles(bcast.clone(), chosen_enc_key_rx.unwrap()));
 
     // Collect all outputs:
     let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];
