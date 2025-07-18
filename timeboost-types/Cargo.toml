@@ -18,11 +18,13 @@ alloy-signer-local = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true, optional = true }
 ark-std = { workspace = true }
+arrayvec = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
+either = { workspace = true }
 ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
