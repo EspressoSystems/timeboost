@@ -1,103 +1,162 @@
-use std::{iter::repeat, time::Duration};
+use std::{cmp::min, collections::BTreeSet, sync::Arc, time::Duration};
 
+use futures::stream::StreamExt;
 use multisig::PublicKey;
-use robusta::{Error, Height, espresso_types::NamespaceId};
-use timeboost_types::CertifiedBlock;
-use tokio::time::{error::Elapsed, sleep, timeout};
+use parking_lot::RwLock;
+use robusta::{Height, espresso_types::NamespaceId};
+use timeboost_types::{BlockNumber, CertifiedBlock, sailfish::Empty};
+use tokio::{
+    spawn,
+    task::{JoinHandle, JoinSet},
+    time::{Instant, error::Elapsed, sleep, timeout},
+};
 use tracing::{debug, warn};
 
 use crate::config::SubmitterConfig;
 
-pub struct Submitter<H> {
+const CACHE_SIZE: usize = 50_000;
+
+pub struct Submitter {
     config: SubmitterConfig,
-    client: robusta::Client,
-    height: H,
+    verify_task: JoinHandle<Empty>,
+    submitters: JoinSet<()>,
+    handler: Handler,
 }
 
-impl Submitter<()> {
-    pub fn new(cfg: SubmitterConfig) -> Self {
-        Self {
-            client: robusta::Client::new(cfg.robusta.clone()),
-            config: cfg,
-            height: (),
-        }
+impl Drop for Submitter {
+    fn drop(&mut self) {
+        self.verify_task.abort();
     }
 }
 
-impl<H> Submitter<H> {
-    pub fn public_key(&self) -> &PublicKey {
-        &self.config.pubkey
-    }
-
-    pub async fn init(mut self) -> Submitter<Height> {
-        let mut delays = delay_iter();
+impl Submitter {
+    pub async fn create(cfg: SubmitterConfig) -> Self {
+        let client = robusta::Client::new(cfg.robusta.clone());
+        let verified = Arc::new(RwLock::new(BTreeSet::new()));
+        let handler = Handler {
+            label: cfg.pubkey,
+            client: client.clone(),
+            verified: verified.clone(),
+        };
+        let verifier = Verifier {
+            label: cfg.pubkey,
+            nsid: cfg.namespace,
+            client: client.clone(),
+            verified,
+        };
+        let mut delays = cfg.robusta.delay_iter();
         loop {
-            let Ok(h) = self.client.height().await else {
+            let Ok(height) = client.height().await else {
                 let d = delays.next().expect("delay iterator repeats");
                 sleep(d).await;
                 continue;
             };
-            debug!(node = %self.public_key(), height = %h, "initialized");
             return Submitter {
-                client: self.client,
-                config: self.config,
-                height: h,
+                handler,
+                config: cfg,
+                verify_task: spawn(verifier.verify(height)),
+                submitters: JoinSet::new(),
             };
+        }
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.config.pubkey
+    }
+
+    pub fn submit(&mut self, cb: CertifiedBlock) {
+        debug!(node = %self.public_key(), num = %cb.cert().data().num(), "creating block handler");
+        self.submitters.spawn(self.handler.clone().handle(cb));
+    }
+
+    pub async fn join(mut self) {
+        while self.submitters.join_next().await.is_some() {}
+    }
+}
+
+struct Verifier {
+    label: PublicKey,
+    nsid: NamespaceId,
+    client: robusta::Client,
+    verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
+}
+
+impl Verifier {
+    async fn verify(self, mut height: Height) -> Empty {
+        loop {
+            let mut headers;
+            loop {
+                if let Ok(it) = robusta::watch(self.client.config(), height, self.nsid).await {
+                    headers = it.boxed();
+                    break;
+                }
+            }
+            while let Some(h) = headers.next().await {
+                let numbers = self.client.verified_blocks(self.nsid, &h).await;
+                let mut set = self.verified.write();
+                for n in numbers {
+                    debug!(node = %self.label, num = %n, "verified");
+                    if set.len() == CACHE_SIZE {
+                        set.pop_first();
+                    }
+                    set.insert(n);
+                }
+                height = h.height().into();
+            }
         }
     }
 }
 
-impl Submitter<Height> {
-    pub async fn submit(&mut self, cb: &CertifiedBlock) {
+#[derive(Clone)]
+struct Handler {
+    label: PublicKey,
+    client: robusta::Client,
+    verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
+}
+
+impl Handler {
+    async fn handle(mut self, cb: CertifiedBlock) {
         enum State {
             Submit(bool),
-            Verify,
+            Wait(Duration),
+            Verify(Duration),
         }
 
-        let delay = Duration::from_secs(30);
+        let num = cb.cert().data().num();
+        let max_delay = Duration::from_secs(30);
         let mut state = State::Submit(false);
 
         loop {
             match state {
-                State::Submit(force) => match timeout(delay, self.submit_block(cb, force)).await {
-                    Ok(()) => state = State::Verify,
-                    Err(e) => {
-                        debug!(
-                            node = %self.public_key(),
-                            num  = %cb.cert().data().num(),
-                            "block submission timeout"
-                        );
-                        let _: Elapsed = e;
-                        state = State::Submit(true)
+                State::Submit(force) => {
+                    let now = Instant::now();
+                    match timeout(max_delay, self.submit_block(&cb, force)).await {
+                        Ok(()) => state = State::Wait(max_delay.saturating_sub(now.elapsed())),
+                        Err(e) => {
+                            debug!(node = %self.label, %num, "block submission timeout");
+                            let _: Elapsed = e;
+                            state = State::Submit(true)
+                        }
                     }
-                },
-                State::Verify => match timeout(delay, self.verify_inclusion(cb)).await {
-                    Ok(Ok(())) => {
-                        debug!(
-                            node = %self.public_key(),
-                            num  = %cb.cert().data().num(),
-                            "block submission verified"
-                        );
+                }
+                State::Wait(delay) => {
+                    let d = min(Duration::from_secs(3), delay);
+                    sleep(d).await;
+                    state = State::Verify(delay.saturating_sub(d))
+                }
+                State::Verify(delay) => {
+                    if self.verified.read().contains(&cb.cert().data().num()) {
+                        debug!(node = %self.label, %num, "block submission verified");
                         return;
+                    } else {
+                        state = if delay.is_zero() {
+                            debug!(node = %self.label, %num, "block submission verification timeout");
+                            State::Submit(true)
+                        } else {
+                            State::Wait(delay)
+                        }
                     }
-                    Ok(Err(())) => {
-                        debug!(
-                            node = %self.public_key(),
-                            num  = %cb.cert().data().num(),
-                            "block submission verification failed"
-                        );
-                        state = State::Submit(true)
-                    }
-                    Err(e) => {
-                        debug!(
-                            node = %self.public_key(),
-                            num  = %cb.cert().data().num(),
-                            "block submission verification timeout"
-                        );
-                        let _: Elapsed = e;
-                        state = State::Submit(true)
-                    }
-                },
+                }
             }
         }
     }
@@ -106,9 +165,9 @@ impl Submitter<Height> {
         if !(cb.is_leader() || force) {
             return;
         }
-        let mut delays = delay_iter();
+        let mut delays = self.client.config().delay_iter();
         debug!(
-            node      = %self.public_key(),
+            node      = %self.label,
             is_leader = cb.is_leader(),
             force     = %force,
             num       = %cb.cert().data().num(),
@@ -116,56 +175,11 @@ impl Submitter<Height> {
             "submitting block"
         );
         while let Err(err) = self.client.submit(cb).await {
-            warn!(node = %self.public_key(), %err, "error submitting block");
+            warn!(node = %self.label, %err, "error submitting block");
             let d = delays.next().expect("delay iterator repeats");
             sleep(d).await
         }
     }
-
-    pub async fn verify_inclusion(&mut self, cb: &CertifiedBlock) -> Result<(), ()> {
-        debug!(
-            node  = %self.public_key(),
-            num   = %cb.cert().data().num(),
-            round = %cb.cert().data().round(),
-            "verifying block inclusion"
-        );
-        let nsid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
-        let mut delays = delay_iter();
-        loop {
-            let Ok(header) = robusta::watch(&self.config.robusta, self.height, nsid).await else {
-                let d = delays.next().expect("delay iterator repeats");
-                sleep(d).await;
-                continue;
-            };
-            delays = delay_iter();
-            match self.client.verify(&header, cb).await {
-                Ok(()) => {
-                    self.height = Height::from(header.height() + 1);
-                    return Ok(());
-                }
-                Err(Error::TransactionNotFound) => {
-                    self.height = Height::from(header.height() + 1);
-                }
-                Err(Error::Proof(err)) => {
-                    warn!(node = %self.config.pubkey, %err, "proof validation failed");
-                    self.height = Height::from(header.height() + 1);
-                    return Err(());
-                }
-                Err(err) => {
-                    warn!(node = %self.config.pubkey, %err, "error during verification");
-                    let d = delays.next().expect("delay iterator repeats");
-                    sleep(d).await
-                }
-            }
-        }
-    }
-}
-
-fn delay_iter() -> impl Iterator<Item = Duration> {
-    [1, 1, 1, 3]
-        .into_iter()
-        .chain(repeat(5))
-        .map(Duration::from_secs)
 }
 
 #[cfg(test)]
@@ -173,7 +187,7 @@ mod tests {
     use bytes::Bytes;
     use multisig::{Committee, Keypair, PublicKey, Signed, VoteAccumulator};
     use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, NamespaceId, sailfish::Round};
-    use tokio::{task::JoinSet, time::sleep};
+    use tokio::task::JoinSet;
 
     use super::*;
 
@@ -220,13 +234,6 @@ mod tests {
                 .map(|(i, k)| (i as u8, k.public_key())),
         );
 
-        let rcfg = robusta::Config::builder()
-            .base_url("https://query.decaf.testnet.espresso.network/v1/")
-            .unwrap()
-            .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
-            .unwrap()
-            .build();
-
         let mut tasks = JoinSet::new();
 
         for k in &keys {
@@ -239,18 +246,27 @@ mod tests {
                 c: committee.clone(),
             };
 
+            let rcfg = robusta::Config::builder()
+                .base_url("https://query.decaf.testnet.espresso.network/v1/")
+                .unwrap()
+                .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
+                .unwrap()
+                .label(k.public_key().to_string())
+                .build();
+
             let scfg = SubmitterConfig::builder()
                 .pubkey(k.public_key())
                 .robusta(rcfg.clone())
+                .namespace(10_101u64)
                 .build();
 
-            let mut s = Submitter::new(scfg).init().await;
+            let mut s = Submitter::create(scfg).await;
 
             tasks.spawn(async move {
-                for _ in 0..3 {
-                    s.submit(&g.next()).await;
-                    sleep(Duration::from_secs(rand::random_range(0..5))).await
+                for _ in 0..NODES {
+                    s.submit(g.next());
                 }
+                s.join().await
             });
         }
 

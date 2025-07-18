@@ -11,8 +11,10 @@ bon = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
+parking_lot = { workspace = true }
 robusta = { path = "../robusta" }
 serde = { workspace = true }
 smallvec = { workspace = true }

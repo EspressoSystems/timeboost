@@ -84,6 +84,7 @@ impl TimeboostConfig {
         SubmitterConfig::builder()
             .pubkey(self.sign_keypair.public_key())
             .robusta(self.robusta.clone())
+            .namespace(10_101u64) // TODO
             .build()
     }
 }

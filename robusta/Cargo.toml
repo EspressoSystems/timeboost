@@ -9,6 +9,7 @@ rust-version.workspace = true
 bincode = { workspace = true }
 bon = { workspace = true }
 data-encoding = { workspace = true }
+either = { workspace = true }
 espresso-types = { workspace = true }
 futures = { workspace = true }
 hotshot-query-service = { workspace = true }
