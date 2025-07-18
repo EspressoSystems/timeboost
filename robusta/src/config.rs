@@ -7,6 +7,9 @@ const NUM_DELAYS: usize = 5;
 
 #[derive(Debug, Clone, Builder)]
 pub struct Config {
+    /// Log label.
+    pub(crate) label: String,
+
     /// Espresso network base URL.
     #[builder(with = |s: &str| -> Result<_, ParseError> { Url::parse(s) })]
     pub(crate) base_url: Url,
@@ -14,9 +17,6 @@ pub struct Config {
     /// Espresso network websocket base URL.
     #[builder(with = |s: &str| -> Result<_, ParseError> { Url::parse(s) })]
     pub(crate) wss_base_url: Url,
-
-    #[builder(default = 3)]
-    pub(crate) max_redirects: usize,
 
     /// The sequence of delays between successive requests.
     ///
