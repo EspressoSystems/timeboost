@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashSet};
 
-use multisig::Committee;
+use multisig::{Committee, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_types::{
     Bundle, CandidateList, DelayedInboxIndex, Epoch, InclusionList, SeqNo, SignedPriorityBundle,
@@ -56,7 +56,7 @@ impl Includer {
         &mut self,
         round: RoundNumber,
         evidence: Evidence,
-        lists: Vec<CandidateList>,
+        lists: Vec<(PublicKey, CandidateList)>,
     ) -> Outcome {
         if let Some((_, c)) = self.next_committee.take_if(|(r, _)| *r <= round) {
             self.committee = c;
@@ -77,7 +77,7 @@ impl Includer {
         self.time = {
             let mut times = lists
                 .iter()
-                .map(|cl| u64::from(cl.timestamp()))
+                .map(|(_, cl)| u64::from(cl.timestamp()))
                 .collect::<Vec<_>>();
             max(
                 self.time.into(),
@@ -89,7 +89,7 @@ impl Includer {
         self.index = {
             let mut indices = lists
                 .iter()
-                .map(|cl| u64::from(cl.delayed_inbox_index()))
+                .map(|(_, cl)| u64::from(cl.delayed_inbox_index()))
                 .collect::<Vec<_>>();
             max(
                 self.index.into(),
@@ -111,9 +111,12 @@ impl Includer {
         let mut retry = RetryList::new();
         let mut dkg = Vec::new();
 
-        for (pbs, rbs, dbs) in lists.into_iter().map(CandidateList::into_bundles) {
+        for (src, cl) in lists.into_iter() {
+            let (pbs, rbs, dbs) = CandidateList::into_bundles(cl);
             if let Some(d) = dbs {
-                dkg.push(d)
+                if *d.origin() == src {
+                    dkg.push(d)
+                }
             }
             for rb in rbs {
                 *regular.entry(rb).or_default() += 1

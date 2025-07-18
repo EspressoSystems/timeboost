@@ -37,7 +37,7 @@ use sort::Sorter;
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
 type Result<T> = std::result::Result<T, TimeboostError>;
-type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
+type Candidates = VecDeque<(RoundNumber, Evidence, Vec<(PublicKey, CandidateList)>)>;
 
 #[derive(Debug)]
 pub enum Output {
@@ -271,7 +271,7 @@ impl Task {
             candidates = self.execute(actions).await?;
 
             // DKG dealing generation
-            if !self.decrypter.is_ready() {
+            if self.decrypter.threshold_enc_key().is_none() {
                 // only the first ever committee init DKG, subsequent ones receive resharings from
                 // the previous committee.
 
@@ -282,7 +282,7 @@ impl Task {
                     secret,
                     b"dkg",
                 )?;
-                let bundle = DkgBundle::new(committee_id, ct, cm);
+                let bundle = DkgBundle::new(self.label, committee_id, ct, cm);
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }
         }
@@ -362,11 +362,12 @@ impl Task {
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
                 if let Action::Deliver(payload) = action {
+                    let src = payload.source();
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
                             round = payload.round().num();
                             evidence = payload.into_evidence();
-                            lists.push(data)
+                            lists.push((src, data))
                         }
                         Err(err) => {
                             warn!(
