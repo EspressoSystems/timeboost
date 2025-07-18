@@ -113,10 +113,15 @@ where
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
 
-    let dkg_keys = (0..sign_keys.len()).map(|_| DkgDecKey::generate()).collect::<Vec<_>>();
+    let dkg_keys = (0..sign_keys.len())
+        .map(|_| DkgDecKey::generate())
+        .collect::<Vec<_>>();
     let dkg_keystore = DkgKeyStore::new(
         committee.clone(),
-        dkg_keys.iter().enumerate().map(|(i, sk)| (i as u8, sk.into())),
+        dkg_keys
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i as u8, sk.into())),
     );
 
     sign_keys

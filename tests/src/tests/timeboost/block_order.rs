@@ -33,18 +33,18 @@ async fn block_order() {
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
-    
+
     let mut chosen_enc_key_rx = None;
 
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
         let (enc_key_tx, enc_key_rx) = oneshot::channel();
-        
+
         // Use the first receiver for gen_bundles
         if chosen_enc_key_rx.is_none() {
             chosen_enc_key_rx = Some(enc_key_rx);
         }
-        
+
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
         tasks.spawn(async move {

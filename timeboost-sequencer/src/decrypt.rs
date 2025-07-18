@@ -301,6 +301,7 @@ struct Worker {
 
     /// channel for sending the encryption key after DKG/resharing is done
     // TODO(alex): after ACS, remember to update self.dec_sk and send enc_key over this channel
+    #[allow(dead_code)]
     enc_key_tx: oneshot::Sender<ThresholdEncKey>,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for

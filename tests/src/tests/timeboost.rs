@@ -115,10 +115,10 @@ async fn gen_bundles(
 ) {
     let mut enc_key = None;
     loop {
-        match enc_key_rx.try_recv() {
-            Ok(k) => enc_key = Some(k),
-            _ => {}
-        };
+        if let Ok(k) = enc_key_rx.try_recv() {
+            enc_key = Some(k);
+        }
+
         let Ok(b) = make_bundle(enc_key.as_ref()) else {
             warn!("Failed to generate bundle");
             continue;
