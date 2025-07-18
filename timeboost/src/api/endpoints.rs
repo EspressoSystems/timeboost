@@ -4,13 +4,16 @@ use anyhow::Result;
 use async_lock::RwLock;
 use async_trait::async_trait;
 use futures::FutureExt;
-use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
+use tide_disco::{Api, App, Error, StatusCode, Url, error::ServerError};
+use timeboost_crypto::prelude::ThresholdEncKey;
 use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, oneshot};
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
     app_tx: Sender<BundleVariant>,
+    enc_key_rx: oneshot::Receiver<ThresholdEncKey>,
+    enc_key: Option<ThresholdEncKey>,
 }
 
 #[async_trait]
@@ -20,8 +23,15 @@ pub trait TimeboostApi {
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<BundleVariant>) -> Self {
-        Self { app_tx }
+    pub fn new(
+        app_tx: Sender<BundleVariant>,
+        enc_key_rx: oneshot::Receiver<ThresholdEncKey>,
+    ) -> Self {
+        Self {
+            app_tx,
+            enc_key_rx,
+            enc_key: None,
+        }
     }
 
     /// Run the timeboost API.
@@ -88,6 +98,23 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
             state.submit_regular(regular_bundle).await?;
 
             Ok(())
+        }
+        .boxed()
+    })?;
+
+    api.post("enckey", |_, state| {
+        async move {
+            if state.enc_key.is_some() {
+                return Ok(state.enc_key.clone());
+            }
+            match state.enc_key_rx.try_recv() {
+                Ok(k) => Ok(Some(k)),
+                Err(oneshot::error::TryRecvError::Empty) => Ok(None),
+                _ => Err(ServerError::catch_all(
+                    StatusCode::GONE,
+                    "enc_key not received before channel closed".to_string(),
+                )),
+            }
         }
         .boxed()
     })?;

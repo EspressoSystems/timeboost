@@ -34,8 +34,9 @@ use ark_bls12_381::G1Projective;
 
 pub use crate::mre;
 use crate::{
+    DecryptionScheme,
     feldman::FeldmanVss,
-    traits::dkg::VerifiableSecretSharing,
+    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     vess::{self, ShoupVess},
 };
 pub use vess::VessCiphertext;
@@ -63,3 +64,10 @@ pub type Vss = FeldmanVss<G1Projective>;
 
 /// Commitment to a Shamir secret dealing
 pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::Commitment;
+
+/// Public encryption key in the threshold decryption scheme
+pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+/// Combiner key in the threshold decryption scheme
+pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+/// Decryption key share in the threshold decryption scheme
+pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;

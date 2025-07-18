@@ -8,6 +8,7 @@ use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 use timeboost_types::DkgKeyStore;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
+use tokio::sync::oneshot;
 use tokio::task::spawn;
 
 #[cfg(feature = "until")]
@@ -107,10 +108,12 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(private.dh_key);
 
     let (tb_app_tx, tb_app_rx) = channel(100);
+    // this is a direct channel between TimeboostApi server and Decrypter's worker thread
+    let (enc_key_tx, enc_key_rx) = oneshot::channel();
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
-    let api_handle = spawn(rpc_api(tb_app_tx.clone(), cli.rpc_port));
+    let api_handle = spawn(rpc_api(tb_app_tx.clone(), enc_key_rx, cli.rpc_port));
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -230,7 +233,7 @@ async fn main() -> Result<()> {
         .recover(is_recover)
         .build();
 
-    let timeboost = Timeboost::new(config, tb_app_rx).await?;
+    let timeboost = Timeboost::new(config, tb_app_rx, enc_key_tx).await?;
 
     #[cfg(feature = "until")]
     tokio::select! {

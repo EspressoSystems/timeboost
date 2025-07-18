@@ -3,29 +3,32 @@ use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
-use timeboost_crypto::{DecryptionScheme, traits::threshold_enc::ThresholdEncScheme};
+use timeboost_crypto::{
+    DecryptionScheme, Plaintext, prelude::ThresholdEncKey,
+    traits::threshold_enc::ThresholdEncScheme,
+};
 use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
 
 pub type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
-pub fn make_bundle() -> anyhow::Result<BundleVariant> {
+pub fn make_bundle(pubkey: Option<&ThresholdEncKey>) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
     rng.fill(&mut v);
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let bundle = Bundle::arbitrary(&mut u)?;
+    let mut bundle = Bundle::arbitrary(&mut u)?;
 
-    // FIXME(alex): fix this
-    // if rng.gen_bool(0.5) {
-    //     // encrypt bundle
-    //     let data = bundle.data();
-    //     let plaintext = Plaintext::new(data.to_vec());
-    //     let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
-    //     let encoded = serialize(&ciphertext)?;
-    //     bundle.set_encrypted_data(encoded.into());
-    // }
+    if pubkey.is_some() && rng.gen_bool(0.5) {
+        // encrypt bundle
+        let data = bundle.data();
+        let plaintext = Plaintext::new(data.to_vec());
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey.unwrap(), &plaintext, &vec![])?;
+        let encoded = serialize(&ciphertext)?;
+        bundle.set_encrypted_data(encoded.into());
+    }
+
     if rng.gen_bool(0.5) {
         // priority
         let auction = Address::default();
@@ -45,8 +48,6 @@ pub fn tps_to_millis<N: Into<u64>>(tps: N) -> u64 {
     1000 / tps.into()
 }
 
-// TODO(alex): remove this
-#[allow(dead_code)]
 fn serialize<T: Serialize>(d: &T) -> Result<Bytes, EncodeError> {
     let mut b = BytesMut::new().writer();
     bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
