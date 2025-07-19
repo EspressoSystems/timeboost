@@ -77,6 +77,39 @@ impl<C: CurveGroup> FeldmanVss<C> {
         Self::compute_shares(pp, poly)
             .map(|s| serialize_to_vec![s].expect("ark_serialize valid shares never panic"))
     }
+
+    /// given the Feldman commitment (\vec{u} in paper), compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    pub(crate) fn derive_public_share(
+        pp: &FeldmanVssPublicParam,
+        node_idx: usize,
+        commitment: &[C::Affine],
+    ) -> Result<C, VssError> {
+        let n = pp.n.get() as usize;
+        let t = pp.t.get() as usize;
+
+        // input validation
+        if node_idx >= n {
+            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
+        }
+        if commitment.len() != t {
+            return Err(VssError::InvalidCommitment);
+        }
+
+        // i-th node computes g^f(i+1), namely poly eval in the exponent
+        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
+        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
+        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
+            Some(*prev * eval_point)
+        })
+        .take(t)
+        .collect::<Vec<_>>();
+        let eval_in_exp = C::msm(commitment, &powers).map_err(|_| {
+            VssError::InternalError("commitments and powers mismatched length".to_string())
+        })?;
+
+        Ok(eval_in_exp)
+    }
 }
 
 impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
@@ -101,30 +134,8 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
     ) -> Result<(), VssError> {
-        let n = pp.n.get() as usize;
-        let t = pp.t.get() as usize;
-
-        // input validation
-        if node_idx >= n {
-            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
-        }
-        if commitment.len() != t {
-            return Err(VssError::InvalidCommitment);
-        }
-
-        // i-th node computes g^f(i+1), namely poly eval in the exponent
-        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
-        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
-        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
-            Some(*prev * eval_point)
-        })
-        .take(t)
-        .collect::<Vec<_>>();
-        let eval_in_exp = C::msm(commitment, &powers).map_err(|_| {
-            VssError::InternalError("commitments and powers mismatched length".to_string())
-        })?;
-
-        if C::generator().mul(share) == eval_in_exp {
+        let public_share = Self::derive_public_share(pp, node_idx, commitment)?;
+        if C::generator().mul(share) == public_share {
             Ok(())
         } else {
             Err(VssError::FailedVerification)
