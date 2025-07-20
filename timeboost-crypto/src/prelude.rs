@@ -30,8 +30,6 @@
 //! assert_eq!(plaintext, messages[node_idx]);
 //! ```
 
-use ark_bls12_381::G1Projective;
-
 pub use crate::mre;
 use crate::{
     DecryptionScheme,
@@ -39,6 +37,10 @@ use crate::{
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     vess::{self, ShoupVess},
 };
+use anyhow::anyhow;
+use ark_bls12_381::G1Projective;
+use derive_more::From;
+use std::sync::{Arc, RwLock};
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -67,6 +69,27 @@ pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::
 
 /// Public encryption key in the threshold decryption scheme
 pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+
+/// A future available encryption key in the threshold decryption scheme,
+/// updatable by a different thread/holder.
+#[derive(Debug, Clone, From, Default)]
+pub struct PendingThresholdEncKey(Arc<RwLock<Option<ThresholdEncKey>>>);
+
+impl PendingThresholdEncKey {
+    /// set the inner value, will block current thread until RwLock can be acquired
+    pub fn set_key(&mut self, key: ThresholdEncKey) -> anyhow::Result<()> {
+        let mut k = self.0.write().map_err(|e| anyhow!("{e:?}"))?;
+        *k = Some(key);
+        Ok(())
+    }
+
+    /// try to extract inner value if ready, incur cloning.
+    /// Failure to acquire read lock, or posioned lock, or unready inner value will return None
+    pub fn try_get(&self) -> Option<ThresholdEncKey> {
+        self.0.try_read().ok()?.as_ref().cloned()
+    }
+}
+
 /// Combiner key in the threshold decryption scheme
 pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 /// Decryption key share in the threshold decryption scheme

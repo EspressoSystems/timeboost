@@ -6,12 +6,13 @@ use bytes::Bytes;
 use metrics::NoMetrics;
 use multisig::Certificate;
 use timeboost_builder::Certifier;
+use timeboost_crypto::prelude::PendingThresholdEncKey;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -34,16 +35,11 @@ async fn block_order() {
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
 
-    let mut chosen_enc_key_rx = None;
+    let pending_enc_key = PendingThresholdEncKey::default();
 
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
-        let (enc_key_tx, enc_key_rx) = oneshot::channel();
-
-        // Use the first receiver for gen_bundles
-        if chosen_enc_key_rx.is_none() {
-            chosen_enc_key_rx = Some(enc_key_rx);
-        }
+        let pending_enc_key_clone = pending_enc_key.clone();
 
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
@@ -52,7 +48,9 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics, enc_key_tx).await.unwrap();
+            let mut s = Sequencer::new(c, &NoMetrics, pending_enc_key_clone)
+                .await
+                .unwrap();
             let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             loop {
                 select! {
@@ -83,7 +81,7 @@ async fn block_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(bcast.clone(), chosen_enc_key_rx.unwrap()));
+    tasks.spawn(gen_bundles(bcast.clone(), pending_enc_key));
 
     // Collect all outputs:
     let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];

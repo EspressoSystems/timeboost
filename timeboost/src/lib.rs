@@ -10,7 +10,7 @@ use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
 use timeboost_builder::{Certifier, CertifierDown};
-use timeboost_crypto::prelude::ThresholdEncKey;
+use timeboost_crypto::prelude::PendingThresholdEncKey;
 use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
@@ -18,7 +18,6 @@ use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::net::lookup_host;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tracing::{error, info, instrument, warn};
@@ -60,11 +59,11 @@ impl Timeboost {
     pub async fn new(
         cfg: TimeboostConfig,
         rx: Receiver<BundleVariant>,
-        enc_key_tx: oneshot::Sender<ThresholdEncKey>,
+        pending_enc_key: PendingThresholdEncKey,
     ) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
         let met = Arc::new(TimeboostMetrics::new(&*pro));
-        let seq = Sequencer::new(cfg.sequencer_config(), &*pro, enc_key_tx).await?;
+        let seq = Sequencer::new(cfg.sequencer_config(), &*pro, pending_enc_key).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
 
         // TODO: Once we have e2e listener this check wont be needed
@@ -170,10 +169,10 @@ pub async fn metrics_api(metrics: Arc<PrometheusMetrics>, metrics_port: u16) {
 
 pub async fn rpc_api(
     sender: Sender<BundleVariant>,
-    enc_key_rx: oneshot::Receiver<ThresholdEncKey>,
+    pending_enc_key: PendingThresholdEncKey,
     rpc_port: u16,
 ) {
-    if let Err(e) = api::endpoints::TimeboostApiState::new(sender, enc_key_rx)
+    if let Err(e) = api::endpoints::TimeboostApiState::new(sender, pending_enc_key)
         .run(Url::parse(&format!("http://0.0.0.0:{rpc_port}")).unwrap())
         .await
     {

@@ -19,14 +19,13 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::{ThresholdEncKey, Vess, Vss};
+use timeboost_crypto::prelude::{PendingThresholdEncKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::vess::VessError;
 use timeboost_types::{BundleVariant, DkgBundle, DkgKeyStore, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::oneshot;
 use tokio::task::{JoinHandle, spawn};
 use tracing::{error, info, warn};
 
@@ -102,7 +101,7 @@ impl Sequencer {
     pub async fn new<M>(
         cfg: SequencerConfig,
         metrics: &M,
-        enc_key_tx: oneshot::Sender<ThresholdEncKey>,
+        pending_enc_key: PendingThresholdEncKey,
     ) -> Result<Self>
     where
         M: ::metrics::Metrics,
@@ -167,7 +166,7 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics, enc_key_tx).await?;
+        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics, pending_enc_key).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);

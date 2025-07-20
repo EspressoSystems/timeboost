@@ -9,13 +9,12 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKey};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, PendingThresholdEncKey};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
@@ -86,7 +85,7 @@ impl Decrypter {
     pub async fn new<M>(
         cfg: DecrypterConfig,
         metrics: &M,
-        enc_key_tx: oneshot::Sender<ThresholdEncKey>,
+        pending_enc_key: PendingThresholdEncKey,
     ) -> Result<Self>
     where
         M: metrics::Metrics,
@@ -125,7 +124,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .enc_key_tx(enc_key_tx)
+            .pending_enc_key(pending_enc_key)
             .retain(cfg.retain)
             .build();
 
@@ -299,10 +298,11 @@ struct Worker {
     /// channel for receiving commands from the parent
     rx: Receiver<Command>,
 
-    /// channel for sending the encryption key after DKG/resharing is done
-    // TODO(alex): after ACS, remember to update self.dec_sk and send enc_key over this channel
+    /// pending encryption key that will be updated after DKG/resharing is done
+    // TODO(alex): after ACS, remember to update self.dec_sk and set the key in this
+    // PendingThresholdEncKey
     #[allow(dead_code)]
-    enc_key_tx: oneshot::Sender<ThresholdEncKey>,
+    pending_enc_key: PendingThresholdEncKey,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
@@ -926,14 +926,15 @@ mod tests {
         time::Duration,
     };
     use timeboost_utils::types::logging;
-    use tokio::sync::oneshot;
 
     use ark_std::test_rng;
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, prelude::DkgDecKey, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext,
+        prelude::{DkgDecKey, PendingThresholdEncKey},
+        traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
         Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
@@ -1106,9 +1107,11 @@ mod tests {
                 .committee(ac.clone())
                 .retain(100)
                 .build();
-            let (enc_key_tx, _enc_key_rx) = oneshot::channel();
+            let pending_enc_key = PendingThresholdEncKey::default();
 
-            let decrypter = Decrypter::new(conf, &NoMetrics, enc_key_tx).await.unwrap();
+            let decrypter = Decrypter::new(conf, &NoMetrics, pending_enc_key)
+                .await
+                .unwrap();
             decrypters.push(decrypter);
         }
         // wait for network

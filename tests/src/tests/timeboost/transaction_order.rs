@@ -3,11 +3,12 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use metrics::NoMetrics;
+use timeboost_crypto::prelude::PendingThresholdEncKey;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -35,19 +36,14 @@ async fn transaction_order() {
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
 
-    let mut chosen_enc_key_rx = None;
+    let pending_enc_key = PendingThresholdEncKey::default();
 
     // We spawn each sequencer into a task and broadcast new transactions to
     // all of them. Each sequencer pushes the transaction it produced into an
     // unbounded channel which we later compare with each other.
     for c in cfg.into_iter().map(|(c, _)| c) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let (enc_key_tx, enc_key_rx) = oneshot::channel();
-
-        // Use the first receiver for gen_bundles, store the rest
-        if chosen_enc_key_rx.is_none() {
-            chosen_enc_key_rx = Some(enc_key_rx);
-        }
+        let pending_enc_key_clone = pending_enc_key.clone();
 
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
@@ -56,7 +52,9 @@ async fn transaction_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics, enc_key_tx).await.unwrap();
+            let mut s = Sequencer::new(c, &NoMetrics, pending_enc_key_clone)
+                .await
+                .unwrap();
             loop {
                 select! {
                     trx = brx.recv() => match trx {
@@ -82,7 +80,7 @@ async fn transaction_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(bcast.clone(), chosen_enc_key_rx.unwrap()));
+    tasks.spawn(gen_bundles(bcast.clone(), pending_enc_key));
 
     for _ in 0..NUM_OF_TRANSACTIONS {
         let first = rxs[0].recv().await.unwrap();
