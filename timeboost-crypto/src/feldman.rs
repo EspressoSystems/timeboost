@@ -96,6 +96,16 @@ impl<C: CurveGroup> FeldmanVss<C> {
             return Err(VssError::InvalidCommitment);
         }
 
+        let eval_in_exp = Self::derive_public_share_unchecked(node_idx, commitment);
+        Ok(eval_in_exp)
+    }
+
+    /// Given the Feldman commitment, compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    /// We assume `commitment` has the right length (namely `=threshold`) without checks
+    pub fn derive_public_share_unchecked(node_idx: usize, commitment: &[C::Affine]) -> C {
+        let t = commitment.len();
+
         // i-th node computes g^f(i+1), namely poly eval in the exponent
         // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
         let eval_point = C::ScalarField::from(node_idx as u64 + 1);
@@ -104,11 +114,8 @@ impl<C: CurveGroup> FeldmanVss<C> {
         })
         .take(t)
         .collect::<Vec<_>>();
-        let eval_in_exp = C::msm(commitment, &powers).map_err(|_| {
-            VssError::InternalError("commitments and powers mismatched length".to_string())
-        })?;
 
-        Ok(eval_in_exp)
+        C::msm(commitment, &powers).expect("infallible: commitment and powers has diff lengths")
     }
 }
 

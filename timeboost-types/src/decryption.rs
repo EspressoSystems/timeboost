@@ -1,8 +1,13 @@
 use std::collections::BTreeMap;
 
+use anyhow::anyhow;
+use ark_ec::AffineRepr;
 use multisig::{Committee, KeyId};
+use rayon::prelude::*;
 use timeboost_crypto::{
-    DecryptionScheme, prelude::DkgEncKey, traits::threshold_enc::ThresholdEncScheme,
+    DecryptionScheme,
+    prelude::{DkgEncKey, Vss},
+    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
 };
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
@@ -26,6 +31,38 @@ impl DecryptionKey {
             combkey,
             privkey,
         }
+    }
+
+    /// Construct all key material for threshold decryption from DKG/resharing outputs.
+    ///
+    /// # Parameters
+    /// - `committee_size`: size of the threshold committee
+    /// - `node_idx`: in 0..committee_size, currently same as KeyId
+    /// - `commitment`: the Feldman Commitment (see output of `ShoupVess::encrypted_shares()` and
+    ///   `FeldmanVss::share()`)
+    /// - `key_share`: the decrypted secret share from `ShoupVess::decrypt_share()`
+    pub fn from_dkg(
+        committee_size: usize,
+        node_idx: usize,
+        commitment: &<Vss as VerifiableSecretSharing>::Commitment,
+        key_share: <Vss as VerifiableSecretSharing>::SecretShare,
+    ) -> anyhow::Result<Self> {
+        // note: all .into() are made available via derive_more::From on those structs
+        let pk: PublicKey = commitment
+            .first()
+            .ok_or_else(|| anyhow!("feldman commitment can't be empty"))?
+            .into_group()
+            .into();
+
+        let combkey: CombKey = (0..committee_size)
+            .into_par_iter()
+            .map(|idx| Vss::derive_public_share_unchecked(idx, commitment))
+            .collect::<Vec<_>>()
+            .into();
+
+        let prikey: KeyShare = (key_share, node_idx as u32).into();
+
+        Ok(Self::new(pk, combkey, prikey))
     }
 
     pub fn pubkey(&self) -> &PublicKey {
