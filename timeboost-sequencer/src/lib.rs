@@ -7,10 +7,8 @@ mod sort;
 
 use std::collections::VecDeque;
 use std::iter::once;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use ark_std::{UniformRand, rand::thread_rng};
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -257,32 +255,14 @@ impl Task {
         let mut pending = None;
         let mut candidates = Candidates::new();
 
-        let committee = self.decrypter.current_committee();
-        let committee_id = committee.id();
-        let committee_size = committee.size().get();
-        let threshold = committee.one_honest_threshold().get();
-        let vess = Vess::new_fast(
-            NonZeroU32::new(threshold as u32).expect("threshold must >0"),
-            NonZeroU32::new(committee_size as u32).expect("committee size must >0"),
-        );
-
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
             candidates = self.execute(actions).await?;
 
             // DKG dealing generation
-            if !self.decrypter.is_ready() {
-                // only the first ever committee init DKG, subsequent ones receive resharings from
-                // the previous committee.
-
-                let mut rng = thread_rng();
-                let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-                let (ct, cm) = vess.encrypted_shares(
-                    &self.dkg_keystore.sorted_keys().cloned().collect::<Vec<_>>(),
-                    secret,
-                    b"dkg",
-                )?;
-                let bundle = DkgBundle::new(committee_id, ct, cm);
+            // only the first ever committee init DKG, subsequent ones receive resharings from
+            // the previous committee.
+            if let Some(bundle) = self.decrypter.next_dkg() {
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }
         }

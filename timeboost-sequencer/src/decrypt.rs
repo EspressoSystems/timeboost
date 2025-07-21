@@ -1,3 +1,5 @@
+use ark_std::{UniformRand, rand::thread_rng};
+use arrayvec::ArrayVec;
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
@@ -5,14 +7,18 @@ use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
 use multisig::{Committee, CommitteeId, PublicKey};
+use parking_lot::RwLock;
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell};
+use std::sync::Arc;
+use timeboost_crypto::prelude::{DkgEncKey, LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
+use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
-use timeboost_types::{DecryptionKey, InclusionList};
+use timeboost_types::{DecryptionKey, DkgBundle, DkgKeyStore, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -77,6 +83,8 @@ pub struct Decrypter {
     is_ready: bool,
     /// decryption committees
     committees: CommitteeVec<2>,
+    /// dkg stores (shared with Worker)
+    dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
     /// Current committee.
     current: CommitteeId,
 }
@@ -111,11 +119,17 @@ impl Decrypter {
                 .into(),
         );
 
+        let dkg_stores = Arc::new(RwLock::new({
+            let mut arr = ArrayVec::new();
+            arr.push(cfg.dkg_store);
+            arr
+        }));
         let committee = cfg.committee.committee();
         let worker = Worker::builder()
             .label(cfg.label)
             .dkg_sk(labeled_sk)
             .committees(CommitteeVec::new(committee.clone()))
+            .dkg_stores(dkg_stores.clone())
             .current(committee.id())
             .net(Overlay::new(net))
             .tx(dec_tx)
@@ -132,6 +146,7 @@ impl Decrypter {
             is_ready: false,
             worker: spawn(worker.go()),
             committees: CommitteeVec::new(committee.clone()),
+            dkg_stores: dkg_stores.clone(),
             current: committee.id(),
         })
     }
@@ -139,6 +154,21 @@ impl Decrypter {
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
         self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
+    }
+
+    /// Returns the currently active DKG encryption keys
+    pub fn current_enc_keys(&self) -> Vec<DkgEncKey> {
+        let pos = self
+            .committees
+            .position(self.current)
+            .expect("current decryption committee missing");
+        self.dkg_stores
+            .read()
+            .get(pos)
+            .expect("dkg store missing")
+            .sorted_keys()
+            .cloned()
+            .collect()
     }
 
     /// Returns the currently active decryption committee
@@ -192,6 +222,24 @@ impl Decrypter {
         debug!(node = %self.label, %round, "enqueued inclusion list");
 
         Ok(())
+    }
+
+    pub fn next_dkg(&mut self) -> Option<DkgBundle> {
+        let committee = self.current_committee();
+        let committee_id = committee.id();
+        let committee_size = committee.size().get();
+        let threshold = committee.one_honest_threshold().get();
+        let vess = Vess::new_fast(
+            NonZeroU32::new(threshold as u32).expect("threshold must >0"),
+            NonZeroU32::new(committee_size as u32).expect("committee size must >0"),
+        );
+
+        let mut rng = thread_rng();
+        let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+        let (ct, cm) = vess
+            .encrypted_shares(&self.current_enc_keys(), secret, b"dkg")
+            .ok()?;
+        Some(DkgBundle::new(committee_id, ct, cm))
     }
 
     /// Produces decrypted inclusion lists ordered by round number
@@ -308,10 +356,14 @@ struct Worker {
     #[allow(dead_code)] // TODO(alex): remove this
     dkg_sk: LabeledDkgDecKey,
 
+    /// public key material encrypted DKG bundles (shared with Decrypter)
+    dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
+
     /// decryption key used to decrypt and combine
     /// At system start-up (or new committee handover), DKG/resharing needs a few rounds to finish
     /// during which time the threshold key is None
     dec_sk: Option<DecryptionKey>,
+
     /// Number of rounds to retain.
     retain: usize,
 

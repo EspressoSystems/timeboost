@@ -127,7 +127,7 @@ pub struct DecrypterConfig {
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) dkg_key: DkgDecKey,
-    pub(crate) _dkg_store: DkgKeyStore,
+    pub(crate) dkg_store: DkgKeyStore,
     pub(crate) committee: AddressableCommittee,
     pub(crate) threshold_enc_key: ThresholdEncKeyCell,
     pub(crate) retain: usize,
