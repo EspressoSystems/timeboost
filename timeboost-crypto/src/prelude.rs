@@ -39,8 +39,10 @@ use crate::{
 };
 use anyhow::anyhow;
 use ark_bls12_381::G1Projective;
-use derive_more::From;
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
+};
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -72,21 +74,52 @@ pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
 /// A future available encryption key in the threshold decryption scheme,
 /// updatable by a different thread/holder.
-#[derive(Debug, Clone, From, Default)]
-pub struct PendingThresholdEncKey(Arc<RwLock<Option<ThresholdEncKey>>>);
+#[derive(Debug, Clone, Default)]
+pub struct PendingThresholdEncKey {
+    key: Arc<RwLock<Option<ThresholdEncKey>>>,
+    done: Arc<AtomicBool>,
+}
 
 impl PendingThresholdEncKey {
-    /// set the inner value, will block current thread until RwLock can be acquired
-    pub fn set_key(&mut self, key: ThresholdEncKey) -> anyhow::Result<()> {
-        let mut k = self.0.write().map_err(|e| anyhow!("{e:?}"))?;
+    /// Set the inner value. If the key has already been set by another thread,
+    /// this will return early without acquiring the lock or setting the key again.
+    /// Only the first successful call will actually set the key.
+    pub fn set_key(&self, key: ThresholdEncKey) -> anyhow::Result<()> {
+        // Fast path: check if already set without acquiring any locks
+        if self.is_ready() {
+            return Ok(());
+        }
+
+        // Slow path: try to set the key
+        let mut k = self.key.write().map_err(|e| anyhow!("{e:?}"))?;
+
+        // Double-check after acquiring the lock (in case another thread set it)
+        if self.done.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
         *k = Some(key);
+        self.done.store(true, Ordering::Release);
         Ok(())
     }
 
-    /// try to extract inner value if ready, incur cloning.
-    /// Failure to acquire read lock, or posioned lock, or unready inner value will return None
+    /// Try to extract inner value if ready, incurring cloning.
+    /// Fast path: if not set, return None immediately without acquiring any locks.
+    /// Failure to acquire read lock, or poisoned lock, or unready inner value will return None
     pub fn try_get(&self) -> Option<ThresholdEncKey> {
-        self.0.try_read().ok()?.as_ref().cloned()
+        // Fast path: check if set without acquiring any locks
+        if !self.is_ready() {
+            return None;
+        }
+
+        // Slow path: try to read the key
+        self.key.try_read().ok()?.as_ref().cloned()
+    }
+
+    /// Check if the key has been set without trying to read it.
+    /// This is a very fast, lock-free operation.
+    pub fn is_ready(&self) -> bool {
+        self.done.load(Ordering::Acquire)
     }
 }
 
