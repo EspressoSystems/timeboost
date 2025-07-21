@@ -163,7 +163,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::Gc(r))
             .await
-            .map_err(|_| DecrypterDown)
+            .map_err(|_| DecrypterDown(()))
     }
 
     /// Send the inclusion list to worker to decrypt if it contains encrypted bundles,
@@ -179,7 +179,7 @@ impl Decrypter {
             self.worker_tx
                 .send(Command::Dkg(incl.clone()))
                 .await
-                .map_err(|_| DecrypterDown)?;
+                .map_err(|_| DecrypterDown(()))?;
         }
 
         if incl.is_encrypted() {
@@ -187,7 +187,7 @@ impl Decrypter {
                 // TODO:(alex) don't send this command if not ready
                 .send(Command::Decrypt(incl))
                 .await
-                .map_err(|_| DecrypterDown)?;
+                .map_err(|_| DecrypterDown(()))?;
             self.incls.insert(round, Status::Encrypted);
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
@@ -238,7 +238,7 @@ impl Decrypter {
                 }
             }
         }
-        Err(DecrypterDown)
+        Err(DecrypterDown(()))
     }
 
     /// Prepare for the next committee.
@@ -250,7 +250,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
-            .map_err(|_| DecrypterDown)?;
+            .map_err(|_| DecrypterDown(()))?;
         Ok(())
     }
 
@@ -260,7 +260,7 @@ impl Decrypter {
         self.worker_tx
             .send(Command::UseCommittee(r))
             .await
-            .map_err(|_| DecrypterDown)?;
+            .map_err(|_| DecrypterDown(()))?;
         Ok(())
     }
 }
@@ -861,7 +861,7 @@ fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<
 
 #[derive(Debug, thiserror::Error)]
 #[error("decrypter down")]
-pub struct DecrypterDown;
+pub struct DecrypterDown(());
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

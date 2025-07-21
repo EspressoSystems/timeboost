@@ -20,11 +20,13 @@ pub fn make_bundle(pubkey: Option<&ThresholdEncKey>) -> anyhow::Result<BundleVar
     let max_seqno = 10;
     let mut bundle = Bundle::arbitrary(&mut u)?;
 
-    if pubkey.is_some() && rng.gen_bool(0.5) {
+    if let Some(pubkey) = pubkey
+        && rng.gen_bool(0.5)
+    {
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey.unwrap(), &plaintext, &vec![])?;
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
         let encoded = serialize(&ciphertext)?;
         bundle.set_encrypted_data(encoded.into());
     }

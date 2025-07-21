@@ -92,13 +92,12 @@ pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let mut enc_key = None;
+    let enckey_url = &urls.first().expect("urls shouldn't be empty").2;
     loop {
-        // Try to fetch encryption key from the first node
-        let enc_key = if let Some((_, _, enckey_url)) = urls.first() {
-            fetch_encryption_key(&c, enckey_url).await
-        } else {
-            None
-        };
+        if enc_key.is_none() {
+            enc_key = fetch_encryption_key(&c, enckey_url).await;
+        }
 
         // create a bundle for next `interval.tick()`, then send this bundle to each node
         let Ok(b) = make_bundle(enc_key.as_ref()) else {
