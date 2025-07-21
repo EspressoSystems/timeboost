@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

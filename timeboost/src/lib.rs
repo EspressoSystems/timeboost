@@ -73,7 +73,7 @@ impl Timeboost {
             let Some(addr) = lookup_host(cfg.internal_api.to_string()).await?.next() else {
                 bail!("{} does not resolve to a socket address", cfg.internal_api)
             };
-            let svc = InternalApiService::new(cfg.sign_keypair.public_key(), blk.handle());
+            let svc = InternalApiService::new(blk.handle());
             tonic::transport::Server::builder()
                 .add_service(InternalApiServer::new(svc))
                 .serve(addr)

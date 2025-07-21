@@ -7,9 +7,11 @@ use std::time::Duration;
 
 use either::Either;
 use espresso_types::{Header, NamespaceId, Transaction};
+use multisig::{Unchecked, Validated};
 use reqwest::{StatusCode, Url};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
+use timeboost_types::sailfish::CommitteeVec;
 use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
 use tracing::{debug, warn};
@@ -50,50 +52,78 @@ impl Client {
         self.get_with_retry(u).await
     }
 
-    pub async fn submit(&self, cb: &CertifiedBlock) -> Result<(), Error> {
-        let nid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
-        let trx = Transaction::new(nid, serialize(cb)?);
+    pub async fn submit<N>(&self, nsid: N, cb: &CertifiedBlock<Validated>) -> Result<(), Error>
+    where
+        N: Into<NamespaceId>,
+    {
+        let trx = Transaction::new(nsid.into(), serialize(cb)?);
         let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
         Ok(())
     }
 
-    pub async fn verified_blocks<N>(&self, nsid: N, h: &Header) -> impl Iterator<Item = BlockNumber>
+    pub async fn verified<N, const C: usize>(
+        &self,
+        nsid: N,
+        hdr: &Header,
+        cvec: &CommitteeVec<C>,
+    ) -> impl Iterator<Item = BlockNumber>
     where
         N: Into<NamespaceId>,
     {
         let nsid = nsid.into();
-        debug!(node = %self.config.label, %nsid, height = %h.height(), "verifying blocks");
-        let Ok(trxs) = self.transactions(h.height(), nsid).await else {
-            debug!(node = %self.config.label, %nsid, height = %h.height(), "no transactions");
+        debug!(node = %self.config.label, %nsid, height = %hdr.height(), "verifying blocks");
+        let Ok(trxs) = self.transactions(hdr.height(), nsid).await else {
+            debug!(node = %self.config.label, %nsid, height = %hdr.height(), "no transactions");
             return Either::Left(empty());
         };
         let Some(proof) = trxs.proof else {
-            debug!(node = %self.config.label, %nsid, height = %h.height(), "no proof");
+            debug!(node = %self.config.label, %nsid, height = %hdr.height(), "no proof");
             return Either::Left(empty());
         };
-        let Ok(vidc) = self.vid_common(h.height()).await else {
-            debug!(node = %self.config.label, height = %h.height(), "no vid common");
+        let Ok(vidc) = self.vid_common(hdr.height()).await else {
+            debug!(node = %self.config.label, height = %hdr.height(), "no vid common");
             return Either::Left(empty());
         };
-        let Some((trxs, ns)) = proof.verify(h.ns_table(), &h.payload_commitment(), &vidc.common)
+        let Some((trxs, ns)) =
+            proof.verify(hdr.ns_table(), &hdr.payload_commitment(), &vidc.common)
         else {
-            warn!(node = %self.config.label, %nsid, height = %h.height(), "proof verification failed");
+            warn!(node = %self.config.label, %nsid, height = %hdr.height(), "proof verification failed");
             return Either::Left(empty());
         };
         if ns != nsid {
-            warn!(node = %self.config.label, a = %nsid, b = %ns, height = %h.height(), "namespace mismatch");
+            warn!(node = %self.config.label, a = %nsid, b = %ns, height = %hdr.height(), "namespace mismatch");
             return Either::Left(empty());
         }
         Either::Right(trxs.into_iter().filter_map(move |t| {
-            match deserialize::<CertifiedBlock>(t.payload()) {
+            match deserialize::<CertifiedBlock<Unchecked>>(t.payload()) {
                 Ok(b) => {
-                    // TODO: verify certificate
-                    Some(b.cert().data().num())
+                    let id = b.cert().data().round().committee();
+                    let Some(c) = cvec.get(id) else {
+                        warn!(
+                            node      = %self.config.label,
+                            height    = %hdr.height(),
+                            committee = %id,
+                            "unknown committee"
+                        );
+                        return None;
+                    };
+                    if let Some(b) = b.validated(c) {
+                        Some(b.cert().data().num())
+                    } else {
+                        warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
+                        None
+                    }
                 }
                 Err(err) => {
-                    warn!(node = %self.config.label, %nsid, height = %h.height(), %err, "could not deserialize block");
+                    warn!(
+                        node   = %self.config.label,
+                        nsid   = %nsid,
+                        height = %hdr.height(),
+                        err    = %err,
+                        "could not deserialize block"
+                    );
                     None
                 }
             }

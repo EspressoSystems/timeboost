@@ -1,26 +1,32 @@
 use std::{cmp::min, collections::BTreeSet, sync::Arc, time::Duration};
 
 use futures::stream::StreamExt;
-use multisig::PublicKey;
+use multisig::{Committee, PublicKey, Validated};
 use parking_lot::RwLock;
 use robusta::{Height, espresso_types::NamespaceId};
-use timeboost_types::{BlockNumber, CertifiedBlock, sailfish::Empty};
+use timeboost_types::{
+    BlockNumber, CertifiedBlock,
+    sailfish::{CommitteeVec, Empty},
+};
 use tokio::{
     spawn,
-    task::{JoinHandle, JoinSet},
+    sync::Mutex,
+    task::JoinHandle,
     time::{Instant, error::Elapsed, sleep, timeout},
 };
+use tokio_util::task::TaskTracker;
 use tracing::{debug, warn};
 
 use crate::config::SubmitterConfig;
 
-const CACHE_SIZE: usize = 50_000;
+const CACHE_SIZE: usize = 10_000;
 
 pub struct Submitter {
     config: SubmitterConfig,
     verify_task: JoinHandle<Empty>,
-    submitters: JoinSet<()>,
+    submitters: TaskTracker,
     handler: Handler,
+    committees: Arc<Mutex<CommitteeVec<2>>>,
 }
 
 impl Drop for Submitter {
@@ -33,14 +39,17 @@ impl Submitter {
     pub async fn create(cfg: SubmitterConfig) -> Self {
         let client = robusta::Client::new(cfg.robusta.clone());
         let verified = Arc::new(RwLock::new(BTreeSet::new()));
+        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
         let handler = Handler {
             label: cfg.pubkey,
+            nsid: cfg.namespace,
             client: client.clone(),
             verified: verified.clone(),
         };
         let verifier = Verifier {
             label: cfg.pubkey,
             nsid: cfg.namespace,
+            committees: committees.clone(),
             client: client.clone(),
             verified,
         };
@@ -55,7 +64,8 @@ impl Submitter {
                 handler,
                 config: cfg,
                 verify_task: spawn(verifier.verify(height)),
-                submitters: JoinSet::new(),
+                submitters: TaskTracker::new(),
+                committees,
             };
         }
     }
@@ -64,13 +74,18 @@ impl Submitter {
         &self.config.pubkey
     }
 
-    pub fn submit(&mut self, cb: CertifiedBlock) {
+    pub async fn add_committe(&mut self, c: Committee) {
+        self.committees.lock().await.add(c);
+    }
+
+    pub fn submit(&mut self, cb: CertifiedBlock<Validated>) {
         debug!(node = %self.public_key(), num = %cb.cert().data().num(), "creating block handler");
         self.submitters.spawn(self.handler.clone().handle(cb));
     }
 
-    pub async fn join(mut self) {
-        while self.submitters.join_next().await.is_some() {}
+    pub async fn join(self) {
+        self.submitters.close();
+        self.submitters.wait().await
     }
 }
 
@@ -78,6 +93,7 @@ struct Verifier {
     label: PublicKey,
     nsid: NamespaceId,
     client: robusta::Client,
+    committees: Arc<Mutex<CommitteeVec<2>>>,
     verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
 }
 
@@ -92,7 +108,8 @@ impl Verifier {
                 }
             }
             while let Some(h) = headers.next().await {
-                let numbers = self.client.verified_blocks(self.nsid, &h).await;
+                let committees = self.committees.lock().await;
+                let numbers = self.client.verified(self.nsid, &h, &committees).await;
                 let mut set = self.verified.write();
                 for n in numbers {
                     debug!(node = %self.label, num = %n, "verified");
@@ -110,12 +127,13 @@ impl Verifier {
 #[derive(Clone)]
 struct Handler {
     label: PublicKey,
+    nsid: NamespaceId,
     client: robusta::Client,
     verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
 }
 
 impl Handler {
-    async fn handle(mut self, cb: CertifiedBlock) {
+    async fn handle(mut self, cb: CertifiedBlock<Validated>) {
         enum State {
             Submit(bool),
             Wait(Duration),
@@ -161,7 +179,7 @@ impl Handler {
         }
     }
 
-    pub async fn submit_block(&mut self, cb: &CertifiedBlock, force: bool) {
+    pub async fn submit_block(&mut self, cb: &CertifiedBlock<Validated>, force: bool) {
         if !(cb.is_leader() || force) {
             return;
         }
@@ -174,7 +192,7 @@ impl Handler {
             round     = %cb.cert().data().round(),
             "submitting block"
         );
-        while let Err(err) = self.client.submit(cb).await {
+        while let Err(err) = self.client.submit(self.nsid, cb).await {
             warn!(node = %self.label, %err, "error submitting block");
             let d = delays.next().expect("delay iterator repeats");
             sleep(d).await
@@ -186,14 +204,13 @@ impl Handler {
 mod tests {
     use bytes::Bytes;
     use multisig::{Committee, Keypair, PublicKey, Signed, VoteAccumulator};
-    use timeboost_types::{Block, BlockHash, BlockInfo, BlockNumber, NamespaceId, sailfish::Round};
+    use timeboost_types::{Block, BlockInfo, BlockNumber, sailfish::Round};
     use tokio::task::JoinSet;
 
     use super::*;
 
     struct BlockGen {
         p: PublicKey,
-        n: NamespaceId,
         r: Round,
         i: BlockNumber,
         k: Vec<Keypair>,
@@ -201,8 +218,9 @@ mod tests {
     }
 
     impl BlockGen {
-        fn next(&mut self) -> CertifiedBlock {
-            let i = BlockInfo::new(self.i, self.r, BlockHash::default());
+        fn next(&mut self) -> CertifiedBlock<Validated> {
+            let b = Block::new(self.r.num(), Bytes::new());
+            let i = BlockInfo::new(self.i, self.r, b.hash());
             self.i = self.i + 1;
             self.r.set_num(self.r.num() + 1);
             let mut a = VoteAccumulator::new(self.c.clone());
@@ -211,7 +229,6 @@ mod tests {
                     break;
                 }
             }
-            let b = Block::new(self.n, i.round().num(), *i.hash(), Bytes::new());
             let l = self.c.leader(*i.round().num() as usize) == self.p;
             CertifiedBlock::new(a.certificate().cloned().unwrap(), b, l)
         }
@@ -239,7 +256,6 @@ mod tests {
         for k in &keys {
             let mut g = BlockGen {
                 p: k.public_key(),
-                n: NamespaceId::from(10_101),
                 r: Round::new(1, 0),
                 i: BlockNumber::from(1),
                 k: keys.clone(),
@@ -258,6 +274,7 @@ mod tests {
                 .pubkey(k.public_key())
                 .robusta(rcfg.clone())
                 .namespace(10_101u64)
+                .committee(committee.clone())
                 .build();
 
             let mut s = Submitter::create(scfg).await;

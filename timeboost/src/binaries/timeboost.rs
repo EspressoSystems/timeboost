@@ -90,6 +90,9 @@ struct Cli {
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: String,
+
+    #[clap(long)]
+    namespace: u64,
 }
 
 #[tokio::main]
@@ -237,6 +240,7 @@ async fn main() -> Result<()> {
                 .label(pubkey.to_string())
                 .build(),
         )
+        .namespace(cli.namespace)
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;
