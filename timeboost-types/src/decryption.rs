@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::anyhow;
-use ark_ec::AffineRepr;
+use ark_ec::{AffineRepr, CurveGroup};
 use multisig::{Committee, KeyId};
 use rayon::prelude::*;
 use timeboost_crypto::{
@@ -33,15 +33,49 @@ impl DecryptionKey {
         }
     }
 
-    /// Construct all key material for threshold decryption from DKG/resharing outputs.
+    /// Construct all key material for threshold decryption from DKG outputs.
+    /// The ACS subprotocol in DKG outputs a subset of commitments and key shares.
     ///
     /// # Parameters
     /// - `committee_size`: size of the threshold committee
     /// - `node_idx`: in 0..committee_size, currently same as KeyId
-    /// - `commitment`: the Feldman Commitment (see output of `ShoupVess::encrypted_shares()` and
-    ///   `FeldmanVss::share()`)
-    /// - `key_share`: the decrypted secret share from `ShoupVess::decrypt_share()`
+    /// - `commitments`: the Feldman Commitments: multiple output of `ShoupVess::encrypted_shares()`
+    /// - `key_shares`: multiple decrypted secret shares from `ShoupVess::decrypt_share()`
     pub fn from_dkg(
+        committee_size: usize,
+        node_idx: usize,
+        commitments: &[<Vss as VerifiableSecretSharing>::Commitment],
+        key_shares: &[<Vss as VerifiableSecretSharing>::SecretShare],
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            commitments.len() == key_shares.len(),
+            "mismatched input length"
+        );
+
+        // aggregate selected dealings/contributions
+        let agg_comm = commitments
+            .par_iter()
+            .cloned()
+            .reduce_with(|a, b| {
+                let combined: Vec<_> = a
+                    .into_iter()
+                    .zip(b.into_iter())
+                    // NOTE: ideally we can use C::normalize_batch(), but C is not exposed,
+                    // minor optimization, so ignore for now.
+                    .map(|(x, y)| (x + y).into_affine())
+                    .collect();
+                combined.into()
+            })
+            .ok_or_else(|| anyhow!("no commitments provided"))?;
+        let agg_key_share = key_shares.iter().sum();
+
+        // derive key material
+        Self::from_single_dkg(committee_size, node_idx, &agg_comm, agg_key_share)
+    }
+
+    /// inner routine to construct from a single (aggregated or interpolated) DKG output,
+    /// shared in both DKG and resharing logic.
+    fn from_single_dkg(
         committee_size: usize,
         node_idx: usize,
         commitment: &<Vss as VerifiableSecretSharing>::Commitment,
@@ -63,6 +97,10 @@ impl DecryptionKey {
         let prikey: KeyShare = (key_share, node_idx as u32).into();
 
         Ok(Self::new(pk, combkey, prikey))
+    }
+
+    pub fn from_resharing() -> anyhow::Result<Self> {
+        todo!("after #406 merged, invoked FeldmanVss.combine(), then from_single_dkg()")
     }
 
     pub fn pubkey(&self) -> &PublicKey {

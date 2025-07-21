@@ -5,7 +5,7 @@ use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
 use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
-use derive_more::{Deref, From};
+use derive_more::{Deref, From, IntoIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{iter::successors, num::NonZeroU32};
@@ -179,7 +179,18 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
 
 /// Commitment of a dealing in Feldman VSS
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, From, Deref, Serialize, Deserialize, CanonicalSerialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    From,
+    Deref,
+    Serialize,
+    Deserialize,
+    CanonicalSerialize,
+    IntoIterator,
+)]
 pub struct FeldmanCommitment<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     comm: Vec<C::Affine>,
