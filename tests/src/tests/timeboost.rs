@@ -12,7 +12,7 @@ use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::DkgKeyStore;
 use timeboost_utils::load_generation::make_bundle;
@@ -20,7 +20,10 @@ use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
 
-fn make_configs<R>(size: NonZeroUsize, recover_index: R) -> Vec<(SequencerConfig, CertifierConfig)>
+fn make_configs<R>(
+    size: NonZeroUsize,
+    recover_index: R,
+) -> (ThresholdEncKeyCell, Vec<(SequencerConfig, CertifierConfig)>)
 where
     R: Into<Option<usize>>,
 {
@@ -83,6 +86,8 @@ where
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
+    let enc_key = ThresholdEncKeyCell::new();
+
     for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
@@ -95,6 +100,7 @@ where
             .decrypt_committee(decrypt_committee.clone())
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
+            .threshold_enc_key(enc_key.clone())
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)
@@ -105,13 +111,13 @@ where
         cfgs.push((conf, pcf));
     }
 
-    cfgs
+    (enc_key, cfgs)
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(tx: broadcast::Sender<BundleVariant>) {
+async fn gen_bundles(enc_key: ThresholdEncKeyCell, tx: broadcast::Sender<BundleVariant>) {
     loop {
-        let Ok(b) = make_bundle() else {
+        let Ok(b) = make_bundle(&enc_key) else {
             warn!("Failed to generate bundle");
             continue;
         };

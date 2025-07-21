@@ -30,14 +30,16 @@
 //! assert_eq!(plaintext, messages[node_idx]);
 //! ```
 
-use ark_bls12_381::G1Projective;
-
 pub use crate::mre;
 use crate::{
+    DecryptionScheme,
     feldman::FeldmanVss,
-    traits::dkg::VerifiableSecretSharing,
+    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     vess::{self, ShoupVess},
 };
+use ark_bls12_381::G1Projective;
+use parking_lot::RwLock;
+use std::{ops::Deref, sync::Arc};
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -63,3 +65,33 @@ pub type Vss = FeldmanVss<G1Projective>;
 
 /// Commitment to a Shamir secret dealing
 pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::Commitment;
+
+/// Public encryption key in the threshold decryption scheme
+pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+
+/// Combiner key in the threshold decryption scheme
+pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+
+/// Decryption key share in the threshold decryption scheme
+pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
+
+#[derive(Debug, Clone, Default)]
+pub struct ThresholdEncKeyCell(Arc<RwLock<Option<ThresholdEncKey>>>);
+
+impl ThresholdEncKeyCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, key: ThresholdEncKey) {
+        *self.0.write() = Some(key)
+    }
+
+    pub fn get(&self) -> Option<ThresholdEncKey> {
+        (*self.0.read()).clone()
+    }
+
+    pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdEncKey>> {
+        self.0.read()
+    }
+}

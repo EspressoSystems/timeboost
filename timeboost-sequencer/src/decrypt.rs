@@ -9,7 +9,7 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::LabeledDkgDecKey;
+use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
@@ -120,6 +120,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
+            .enc_key(cfg.threshold_enc_key.clone())
             .retain(cfg.retain)
             .build();
 
@@ -128,8 +129,8 @@ impl Decrypter {
             incls: BTreeMap::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
-            worker: spawn(worker.go()),
             is_ready: false,
+            worker: spawn(worker.go()),
             committees: CommitteeVec::new(committee.clone()),
             current: committee.id(),
         })
@@ -292,6 +293,12 @@ struct Worker {
 
     /// channel for receiving commands from the parent
     rx: Receiver<Command>,
+
+    /// pending encryption key that will be updated after DKG/resharing is done
+    // TODO(alex): after ACS, remember to update self.dec_sk and set the key in this
+    // PendingThresholdEncKey
+    #[allow(dead_code)]
+    enc_key: ThresholdEncKeyCell,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
@@ -548,7 +555,7 @@ impl Worker {
     /// but will later be marked as decrypted during `hatch()`
     fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
         let Some(dec_sk) = &self.dec_sk else {
-            return Err(DecrypterError::DecKeyShareNotReady);
+            return Err(DecrypterError::DkgPending);
         };
         let round = Round::new(incl.round(), self.current);
         let dec_shares = Self::extract_ciphertexts(incl)
@@ -888,8 +895,8 @@ pub enum DecrypterError {
     #[error("unknown committee: {0}")]
     NoCommittee(CommitteeId),
 
-    #[error("decryption key share not ready, DKG/resharing yet finished")]
-    DecKeyShareNotReady,
+    #[error("DKG/resharing yet finished")]
+    DkgPending,
 }
 
 /// Fatal errors.
@@ -921,7 +928,9 @@ mod tests {
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
-        DecryptionScheme, Plaintext, prelude::DkgDecKey, traits::threshold_enc::ThresholdEncScheme,
+        DecryptionScheme, Plaintext,
+        prelude::{DkgDecKey, ThresholdEncKeyCell},
+        traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
         Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
@@ -1093,6 +1102,7 @@ mod tests {
                 .dkg_key(dkg_keys[i].clone())
                 .committee(ac.clone())
                 .retain(100)
+                .threshold_enc_key(ThresholdEncKeyCell::new())
                 .build();
 
             let decrypter = Decrypter::new(conf, &NoMetrics).await.unwrap();

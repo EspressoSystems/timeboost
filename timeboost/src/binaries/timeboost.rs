@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
-
+use timeboost_crypto::prelude::ThresholdEncKeyCell;
 use timeboost_types::DkgKeyStore;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
@@ -107,10 +107,13 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(private.dh_key);
 
     let (tb_app_tx, tb_app_rx) = channel(100);
+    // this is a shared PendingThresholdEncKey between TimeboostApi server and Decrypter's worker
+    // thread
+    let enc_key = ThresholdEncKeyCell::new();
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
-    let api_handle = spawn(rpc_api(tb_app_tx.clone(), cli.rpc_port));
+    let api_handle = spawn(rpc_api(tb_app_tx.clone(), enc_key.clone(), cli.rpc_port));
 
     #[cfg(feature = "until")]
     let peer_urls: Vec<reqwest::Url> = keyset
@@ -228,6 +231,7 @@ async fn main() -> Result<()> {
         .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
+        .threshold_enc_key(enc_key.clone())
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;

@@ -2,7 +2,7 @@ use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::DkgKeyStore;
 
@@ -54,6 +54,8 @@ pub struct TimeboostConfig {
     /// Length of the leash between Sailfish an other phases.
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
+
+    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
 }
 
 impl TimeboostConfig {
@@ -69,6 +71,7 @@ impl TimeboostConfig {
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
             .leash_len(self.leash_len)
+            .threshold_enc_key(self.threshold_enc_key.clone())
             .build()
     }
 
