@@ -19,7 +19,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::{PendingThresholdEncKey, Vess, Vss};
+use timeboost_crypto::prelude::{Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::vess::VessError;
 use timeboost_types::{BundleVariant, DkgBundle, DkgKeyStore, Timestamp, Transaction};
@@ -98,11 +98,7 @@ impl Mode {
 }
 
 impl Sequencer {
-    pub async fn new<M>(
-        cfg: SequencerConfig,
-        metrics: &M,
-        pending_enc_key: PendingThresholdEncKey,
-    ) -> Result<Self>
+    pub async fn new<M>(cfg: SequencerConfig, metrics: &M) -> Result<Self>
     where
         M: ::metrics::Metrics,
     {
@@ -166,7 +162,7 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics, pending_enc_key).await?;
+        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);

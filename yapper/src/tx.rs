@@ -2,7 +2,7 @@ use futures::future::join_all;
 use reqwest::{Client, Url};
 use std::time::Duration;
 use timeboost::types::BundleVariant;
-use timeboost_crypto::prelude::ThresholdEncKey;
+use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
 use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use tokio::time::interval;
 
@@ -92,15 +92,17 @@ pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut enc_key = None;
+    let enc_key = ThresholdEncKeyCell::new();
     let enckey_url = &urls.first().expect("urls shouldn't be empty").2;
     loop {
-        if enc_key.is_none() {
-            enc_key = fetch_encryption_key(&c, enckey_url).await;
+        if enc_key.get_ref().is_none() {
+            if let Some(k) = fetch_encryption_key(&c, enckey_url).await {
+                enc_key.set(k)
+            }
         }
 
         // create a bundle for next `interval.tick()`, then send this bundle to each node
-        let Ok(b) = make_bundle(enc_key.as_ref()) else {
+        let Ok(b) = make_bundle(&enc_key) else {
             warn!("failed to generate bundle");
             continue;
         };

@@ -9,7 +9,7 @@ use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, PendingThresholdEncKey};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell};
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, InclusionList};
@@ -82,11 +82,7 @@ pub struct Decrypter {
 }
 
 impl Decrypter {
-    pub async fn new<M>(
-        cfg: DecrypterConfig,
-        metrics: &M,
-        pending_enc_key: PendingThresholdEncKey,
-    ) -> Result<Self>
+    pub async fn new<M>(cfg: DecrypterConfig, metrics: &M) -> Result<Self>
     where
         M: metrics::Metrics,
     {
@@ -124,7 +120,7 @@ impl Decrypter {
             .net(Overlay::new(net))
             .tx(dec_tx)
             .rx(cmd_rx)
-            .pending_enc_key(pending_enc_key)
+            .enc_key(cfg.threshold_enc_key.clone())
             .retain(cfg.retain)
             .build();
 
@@ -302,7 +298,7 @@ struct Worker {
     // TODO(alex): after ACS, remember to update self.dec_sk and set the key in this
     // PendingThresholdEncKey
     #[allow(dead_code)]
-    pending_enc_key: PendingThresholdEncKey,
+    enc_key: ThresholdEncKeyCell,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
@@ -933,7 +929,7 @@ mod tests {
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, PendingThresholdEncKey},
+        prelude::{DkgDecKey, ThresholdEncKeyCell},
         traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
@@ -1106,12 +1102,10 @@ mod tests {
                 .dkg_key(dkg_keys[i].clone())
                 .committee(ac.clone())
                 .retain(100)
+                .threshold_enc_key(ThresholdEncKeyCell::new())
                 .build();
-            let pending_enc_key = PendingThresholdEncKey::default();
 
-            let decrypter = Decrypter::new(conf, &NoMetrics, pending_enc_key)
-                .await
-                .unwrap();
+            let decrypter = Decrypter::new(conf, &NoMetrics).await.unwrap();
             decrypters.push(decrypter);
         }
         // wait for network

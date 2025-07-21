@@ -13,7 +13,7 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::DkgKeyStore;
 use timeboost_utils::types::logging::init_logging;
@@ -116,6 +116,7 @@ where
     let dkg_keys = (0..sign_keys.len())
         .map(|_| DkgDecKey::generate())
         .collect::<Vec<_>>();
+
     let dkg_keystore = DkgKeyStore::new(
         committee.clone(),
         dkg_keys
@@ -123,6 +124,8 @@ where
             .enumerate()
             .map(|(i, sk)| (i as u8, sk.into())),
     );
+
+    let enc_key = ThresholdEncKeyCell::new();
 
     sign_keys
         .into_iter()
@@ -145,6 +148,7 @@ where
                 )
                 .recover(false)
                 .leash_len(100)
+                .threshold_enc_key(enc_key.clone())
                 .build()
         })
 }

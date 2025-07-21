@@ -4,14 +4,12 @@ use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
 use timeboost_crypto::{
-    DecryptionScheme, Plaintext, prelude::ThresholdEncKey,
+    DecryptionScheme, Plaintext, prelude::ThresholdEncKeyCell,
     traits::threshold_enc::ThresholdEncScheme,
 };
 use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
 
-pub type EncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
-
-pub fn make_bundle(pubkey: Option<&ThresholdEncKey>) -> anyhow::Result<BundleVariant> {
+pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
     rng.fill(&mut v);
@@ -20,7 +18,7 @@ pub fn make_bundle(pubkey: Option<&ThresholdEncKey>) -> anyhow::Result<BundleVar
     let max_seqno = 10;
     let mut bundle = Bundle::arbitrary(&mut u)?;
 
-    if let Some(pubkey) = pubkey
+    if let Some(pubkey) = &*pubkey.get_ref()
         && rng.gen_bool(0.5)
     {
         // encrypt bundle

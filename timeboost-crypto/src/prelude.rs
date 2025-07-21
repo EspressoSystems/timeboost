@@ -37,12 +37,9 @@ use crate::{
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     vess::{self, ShoupVess},
 };
-use anyhow::anyhow;
 use ark_bls12_381::G1Projective;
-use std::sync::{
-    Arc, RwLock,
-    atomic::{AtomicBool, Ordering},
-};
+use parking_lot::RwLock;
+use std::{ops::Deref, sync::Arc};
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -72,58 +69,29 @@ pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::
 /// Public encryption key in the threshold decryption scheme
 pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
 
-/// A future available encryption key in the threshold decryption scheme,
-/// updatable by a different thread/holder.
-#[derive(Debug, Clone, Default)]
-pub struct PendingThresholdEncKey {
-    key: Arc<RwLock<Option<ThresholdEncKey>>>,
-    done: Arc<AtomicBool>,
-}
-
-impl PendingThresholdEncKey {
-    /// Set the inner value. If the key has already been set by another thread,
-    /// this will return early without acquiring the lock or setting the key again.
-    /// Only the first successful call will actually set the key.
-    pub fn set_key(&self, key: ThresholdEncKey) -> anyhow::Result<()> {
-        // Fast path: check if already set without acquiring any locks
-        if self.is_ready() {
-            return Ok(());
-        }
-
-        // Slow path: try to set the key
-        let mut k = self.key.write().map_err(|e| anyhow!("{e:?}"))?;
-
-        // Double-check after acquiring the lock (in case another thread set it)
-        if self.done.load(Ordering::Acquire) {
-            return Ok(());
-        }
-
-        *k = Some(key);
-        self.done.store(true, Ordering::Release);
-        Ok(())
-    }
-
-    /// Try to extract inner value if ready, incurring cloning.
-    /// Fast path: if not set, return None immediately without acquiring any locks.
-    /// Failure to acquire read lock, or poisoned lock, or unready inner value will return None
-    pub fn try_get(&self) -> Option<ThresholdEncKey> {
-        // Fast path: check if set without acquiring any locks
-        if !self.is_ready() {
-            return None;
-        }
-
-        // Slow path: try to read the key
-        self.key.try_read().ok()?.as_ref().cloned()
-    }
-
-    /// Check if the key has been set without trying to read it.
-    /// This is a very fast, lock-free operation.
-    pub fn is_ready(&self) -> bool {
-        self.done.load(Ordering::Acquire)
-    }
-}
-
 /// Combiner key in the threshold decryption scheme
 pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+
 /// Decryption key share in the threshold decryption scheme
 pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
+
+#[derive(Debug, Clone, Default)]
+pub struct ThresholdEncKeyCell(Arc<RwLock<Option<ThresholdEncKey>>>);
+
+impl ThresholdEncKeyCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, key: ThresholdEncKey) {
+        *self.0.write() = Some(key)
+    }
+
+    pub fn get(&self) -> Option<ThresholdEncKey> {
+        (*self.0.read()).clone()
+    }
+
+    pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdEncKey>> {
+        self.0.read()
+    }
+}

@@ -6,7 +6,6 @@ use bytes::Bytes;
 use metrics::NoMetrics;
 use multisig::Certificate;
 use timeboost_builder::Certifier;
-use timeboost_crypto::prelude::PendingThresholdEncKey;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
@@ -28,19 +27,15 @@ async fn block_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
-    let cfg = make_configs(num, RECOVER_INDEX);
+    let (enc_key, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
 
-    let pending_enc_key = PendingThresholdEncKey::default();
-
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
-        let pending_enc_key_clone = pending_enc_key.clone();
-
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
         tasks.spawn(async move {
@@ -48,9 +43,7 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics, pending_enc_key_clone)
-                .await
-                .unwrap();
+            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             loop {
                 select! {
@@ -81,7 +74,7 @@ async fn block_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(bcast.clone(), pending_enc_key));
+    tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
     // Collect all outputs:
     let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];
