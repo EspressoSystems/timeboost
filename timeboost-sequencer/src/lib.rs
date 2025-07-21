@@ -260,8 +260,7 @@ impl Task {
             candidates = self.execute(actions).await?;
 
             // DKG dealing generation
-            // only the first ever committee init DKG, subsequent ones receive resharings from
-            // the previous committee.
+            // TODO: move/copy to main loop when resharing
             if let Some(bundle) = self.decrypter.next_dkg() {
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }

@@ -79,8 +79,8 @@ pub struct Decrypter {
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
-    /// Status of the distributed key gen/resharing: true means Worker has the decryption key share
-    is_ready: bool,
+    /// Set of committees for which DKG bundle has already been submitted.
+    submitted: HashSet<CommitteeId>,
     /// decryption committees
     committees: CommitteeVec<2>,
     /// dkg stores (shared with Worker)
@@ -143,7 +143,7 @@ impl Decrypter {
             incls: BTreeMap::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
-            is_ready: false,
+            submitted: HashSet::default(),
             worker: spawn(worker.go()),
             committees: CommitteeVec::new(committee.clone()),
             dkg_stores: dkg_stores.clone(),
@@ -176,12 +176,6 @@ impl Decrypter {
         self.committees
             .get(self.current)
             .expect("current decryption committee missing")
-    }
-
-    /// Check if decrypter is ready to threshold decrypt encrypted bundles.
-    /// Only true after DKG/resharing is done which equip Worker with dec key share.
-    pub fn is_ready(&self) -> bool {
-        self.is_ready
     }
 
     /// Garbage collect cached state of `r` (and prior) rounds
@@ -227,6 +221,10 @@ impl Decrypter {
     pub fn next_dkg(&mut self) -> Option<DkgBundle> {
         let committee = self.current_committee();
         let committee_id = committee.id();
+        if self.submitted.contains(&committee_id) {
+            trace!(node = %self.label, committee = %committee_id, "dkg bundle already submitted");
+            return None;
+        }
         let committee_size = committee.size().get();
         let threshold = committee.one_honest_threshold().get();
         let vess = Vess::new_fast(
