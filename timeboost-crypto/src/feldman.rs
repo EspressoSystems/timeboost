@@ -5,7 +5,7 @@ use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
 use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
-use derive_more::{Deref, From};
+use derive_more::{Deref, From, IntoIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{iter::successors, num::NonZeroU32};
@@ -77,6 +77,46 @@ impl<C: CurveGroup> FeldmanVss<C> {
         Self::compute_shares(pp, poly)
             .map(|s| serialize_to_vec![s].expect("ark_serialize valid shares never panic"))
     }
+
+    /// given the Feldman commitment (\vec{u} in paper), compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    pub(crate) fn derive_public_share(
+        pp: &FeldmanVssPublicParam,
+        node_idx: usize,
+        commitment: &[C::Affine],
+    ) -> Result<C, VssError> {
+        let n = pp.n.get() as usize;
+        let t = pp.t.get() as usize;
+
+        // input validation
+        if node_idx >= n {
+            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
+        }
+        if commitment.len() != t {
+            return Err(VssError::InvalidCommitment);
+        }
+
+        let eval_in_exp = Self::derive_public_share_unchecked(node_idx, commitment);
+        Ok(eval_in_exp)
+    }
+
+    /// Given the Feldman commitment, compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    /// We assume `commitment` has the right length (namely `=threshold`) without checks
+    pub fn derive_public_share_unchecked(node_idx: usize, commitment: &[C::Affine]) -> C {
+        let t = commitment.len();
+
+        // i-th node computes g^f(i+1), namely poly eval in the exponent
+        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
+        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
+        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
+            Some(*prev * eval_point)
+        })
+        .take(t)
+        .collect::<Vec<_>>();
+
+        C::msm(commitment, &powers).expect("infallible: commitment and powers has diff lengths")
+    }
 }
 
 impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
@@ -101,30 +141,8 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
     ) -> Result<(), VssError> {
-        let n = pp.n.get() as usize;
-        let t = pp.t.get() as usize;
-
-        // input validation
-        if node_idx >= n {
-            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
-        }
-        if commitment.len() != t {
-            return Err(VssError::InvalidCommitment);
-        }
-
-        // i-th node computes g^f(i+1), namely poly eval in the exponent
-        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
-        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
-        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
-            Some(*prev * eval_point)
-        })
-        .take(t)
-        .collect::<Vec<_>>();
-        let eval_in_exp = C::msm(commitment, &powers).map_err(|_| {
-            VssError::InternalError("commitments and powers mismatched length".to_string())
-        })?;
-
-        if C::generator().mul(share) == eval_in_exp {
+        let public_share = Self::derive_public_share(pp, node_idx, commitment)?;
+        if C::generator().mul(share) == public_share {
             Ok(())
         } else {
             Err(VssError::FailedVerification)
@@ -161,7 +179,18 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
 
 /// Commitment of a dealing in Feldman VSS
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, From, Deref, Serialize, Deserialize, CanonicalSerialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    From,
+    Deref,
+    Serialize,
+    Deserialize,
+    CanonicalSerialize,
+    IntoIterator,
+)]
 pub struct FeldmanCommitment<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     comm: Vec<C::Affine>,

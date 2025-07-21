@@ -19,8 +19,8 @@ bincode = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
-digest = { workspace = true }
 derive_more = { workspace = true }
+digest = { workspace = true }
 generic-array = { workspace = true }
 multisig = { path = "../multisig" }
 num-integer = "0.1"
