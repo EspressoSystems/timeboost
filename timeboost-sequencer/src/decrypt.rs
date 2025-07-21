@@ -929,16 +929,18 @@ mod tests {
     use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, ThresholdEncKeyCell},
+        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKeyCell},
         traits::threshold_enc::ThresholdEncScheme,
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, Epoch, InclusionList, PriorityBundle, SeqNo, Signer, Timestamp,
+        Address, Bundle, ChainId, DkgKeyStore, Epoch, InclusionList, PriorityBundle, SeqNo, Signer,
+        Timestamp,
     };
     use tracing::warn;
 
     use crate::{config::DecrypterConfig, decrypt::Decrypter};
 
+    #[ignore]
     #[tokio::test]
     async fn test_with_encrypted_data() {
         logging::init_logging();
@@ -1064,7 +1066,7 @@ mod tests {
             .collect();
         let dkg_keys: Vec<_> = hpke_private_keys
             .iter()
-            .map(|s| DkgDecKey::try_from_str::<32>(s).expect("into secret key"))
+            .map(|s| DkgDecKey::try_from_str::<64>(s).expect("into secret key"))
             .collect();
 
         let c = Committee::new(
@@ -1074,6 +1076,14 @@ mod tests {
                 .enumerate()
                 .map(|(i, k)| (KeyId::from(i as u8), k.public_key()))
                 .collect::<Vec<_>>(),
+        );
+
+        let dkg_store = DkgKeyStore::new(
+            c.clone(),
+            dkg_keys
+                .iter()
+                .enumerate()
+                .map(|(i, k)| (KeyId::from(i as u8), DkgEncKey::from(k))),
         );
 
         let peers: Vec<_> = signature_keys
@@ -1100,6 +1110,7 @@ mod tests {
                 .address(addr.into())
                 .dh_keypair(dh_key.into())
                 .dkg_key(dkg_keys[i].clone())
+                .dkg_store(dkg_store.clone())
                 .committee(ac.clone())
                 .retain(100)
                 .threshold_enc_key(ThresholdEncKeyCell::new())

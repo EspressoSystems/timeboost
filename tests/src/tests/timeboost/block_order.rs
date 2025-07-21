@@ -27,7 +27,7 @@ async fn block_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
-    let cfg = make_configs(num, RECOVER_INDEX);
+    let (enc_key, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -74,7 +74,7 @@ async fn block_order() {
         rxs.push(rx)
     }
 
-    tasks.spawn(gen_bundles(bcast.clone()));
+    tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
     // Collect all outputs:
     let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];
