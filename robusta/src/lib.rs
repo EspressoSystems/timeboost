@@ -99,12 +99,11 @@ impl Client {
         Either::Right(trxs.into_iter().filter_map(move |t| {
             match deserialize::<CertifiedBlock<Unchecked>>(t.payload()) {
                 Ok(b) => {
-                    let id = b.cert().data().round().committee();
-                    let Some(c) = cvec.get(id) else {
+                    let Some(c) = cvec.get(b.committee()) else {
                         warn!(
                             node      = %self.config.label,
                             height    = %hdr.height(),
-                            committee = %id,
+                            committee = %b.committee(),
                             "unknown committee"
                         );
                         return None;

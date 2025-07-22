@@ -7,7 +7,7 @@ use std::{
 use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Certificate, Committee, Unchecked, Validated};
+use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
 use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 
@@ -214,6 +214,12 @@ impl<S> CertifiedBlock<S> {
         }
     }
 
+    pub fn committee(&self) -> CommitteeId {
+        self.cert.data().round().committee()
+    }
+}
+
+impl CertifiedBlock<Validated> {
     pub fn is_leader(&self) -> bool {
         self.leader
     }
