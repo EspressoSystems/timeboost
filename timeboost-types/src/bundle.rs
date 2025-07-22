@@ -10,7 +10,7 @@ use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{CommitteeId, PublicKey};
+use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
@@ -300,8 +300,6 @@ impl Committable for SignedPriorityBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
-    /// source of the bundle
-    origin: PublicKey,
     /// the committee which dkg bundle is being created for
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
@@ -312,22 +310,12 @@ pub struct DkgBundle {
 }
 
 impl DkgBundle {
-    pub fn new(
-        origin: PublicKey,
-        committee_id: CommitteeId,
-        vess_ct: VessCiphertext,
-        comm: VssCommitment,
-    ) -> Self {
+    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
         Self {
-            origin,
             committee_id,
             vess_ct,
             comm,
         }
-    }
-
-    pub fn origin(&self) -> &PublicKey {
-        &self.origin
     }
 
     pub fn committee_id(&self) -> &CommitteeId {
@@ -343,10 +331,15 @@ impl DkgBundle {
     }
 }
 
+impl std::hash::Hash for DkgBundle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.commit().hash(state);
+    }
+}
+
 impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
-            .fixed_size_bytes(&self.origin.to_bytes())
             .field("committee", self.committee_id.commit())
             .var_size_field("ciphertexts", self.vess_ct.as_bytes())
             .var_size_field("commitment", &self.comm.to_bytes())

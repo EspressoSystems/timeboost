@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
@@ -174,7 +174,7 @@ impl DkgKeyStore {
 pub struct DkgAccumulator {
     store: DkgKeyStore,
     threshold: usize,
-    bundles: BTreeMap<KeyId, DkgBundle>,
+    bundles: HashSet<DkgBundle>,
 }
 
 impl DkgAccumulator {
@@ -182,7 +182,7 @@ impl DkgAccumulator {
         Self {
             threshold: committee.committee().one_honest_threshold().get(),
             store: committee,
-            bundles: BTreeMap::new(),
+            bundles: HashSet::new(),
         }
     }
 
@@ -195,10 +195,7 @@ impl DkgAccumulator {
     }
 
     pub fn add(&mut self, bundle: DkgBundle) -> Result<(), UnknownDkgSubmitter> {
-        let Some(ix) = self.store.committee.get_index(bundle.origin()) else {
-            return Err(UnknownDkgSubmitter(()));
-        };
-        self.bundles.insert(ix, bundle);
+        self.bundles.insert(bundle);
         Ok(())
     }
 
@@ -216,7 +213,7 @@ impl DkgAccumulator {
 #[derive(Debug, Clone)]
 pub struct Subset {
     committe_id: CommitteeId,
-    bundles: BTreeMap<KeyId, DkgBundle>,
+    bundles: HashSet<DkgBundle>,
 }
 
 impl Subset {
@@ -224,7 +221,7 @@ impl Subset {
         &self.committe_id
     }
 
-    pub fn bundles(&self) -> &BTreeMap<KeyId, DkgBundle> {
+    pub fn bundles(&self) -> &HashSet<DkgBundle> {
         &self.bundles
     }
 }

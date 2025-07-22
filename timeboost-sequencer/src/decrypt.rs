@@ -240,7 +240,7 @@ impl Decrypter {
         let (ct, cm) = vess
             .encrypted_shares(&self.current_enc_keys(), secret, b"dkg")
             .ok()?;
-        Some(DkgBundle::new(self.label, committee_id, ct, cm))
+        Some(DkgBundle::new(committee_id, ct, cm))
     }
 
     /// Produces decrypted inclusion lists ordered by round number
@@ -598,7 +598,7 @@ impl Worker {
                 if *subset.committe_id() == self.current {
                     let (shares, commitments) = subset
                         .bundles()
-                        .values()
+                        .into_iter()
                         .map(|b| {
                             vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
                                 .map(|s| (s, b.comm().clone()))
