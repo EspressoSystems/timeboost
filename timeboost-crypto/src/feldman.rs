@@ -2,9 +2,12 @@
 
 use ark_ec::CurveGroup;
 use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
-use ark_serialize::serialize_to_vec;
+use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
+use derive_more::{Deref, From, IntoIterator};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use std::{iter::successors, num::NonZeroU32};
 
 use crate::{
@@ -19,14 +22,22 @@ pub struct FeldmanVss<C: CurveGroup>(PhantomData<C>);
 #[derive(Debug, Clone, Copy)]
 pub struct FeldmanVssPublicParam {
     // reconstruction threshold t
-    pub(crate) t: NonZeroU32,
+    pub t: NonZeroU32,
     // total number of nodes
-    pub(crate) n: NonZeroU32,
+    pub n: NonZeroU32,
 }
 
 impl FeldmanVssPublicParam {
     pub fn new(t: NonZeroU32, n: NonZeroU32) -> Self {
         Self { t, n }
+    }
+
+    pub fn threshold(&self) -> usize {
+        self.t.get() as usize
+    }
+
+    pub fn num_nodes(&self) -> usize {
+        self.n.get() as usize
     }
 }
 
@@ -36,7 +47,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
         pp: &FeldmanVssPublicParam,
         secret: C::ScalarField,
         rng: &mut R,
-    ) -> (DensePolynomial<C::ScalarField>, Vec<C::Affine>) {
+    ) -> (DensePolynomial<C::ScalarField>, FeldmanCommitment<C>) {
         // sample random polynomial of degree t-1 (s.t. any t evaluations can interpolate this poly)
         // f(X) = Sum a_i * X^i
         let mut poly = DensePolynomial::<C::ScalarField>::rand(pp.t.get() as usize - 1, rng);
@@ -46,7 +57,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
         // prepare commitment, u = (g^a_0, g^a_1, ..., g^a_t-1)
         let commitment = C::generator().batch_mul(&poly.coeffs);
 
-        (poly, commitment)
+        (poly, commitment.into())
     }
 
     /// given a secret-embedded polynomial, compute the Shamir secret shares
@@ -66,13 +77,53 @@ impl<C: CurveGroup> FeldmanVss<C> {
         Self::compute_shares(pp, poly)
             .map(|s| serialize_to_vec![s].expect("ark_serialize valid shares never panic"))
     }
+
+    /// given the Feldman commitment (\vec{u} in paper), compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    pub(crate) fn derive_public_share(
+        pp: &FeldmanVssPublicParam,
+        node_idx: usize,
+        commitment: &[C::Affine],
+    ) -> Result<C, VssError> {
+        let n = pp.n.get() as usize;
+        let t = pp.t.get() as usize;
+
+        // input validation
+        if node_idx >= n {
+            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
+        }
+        if commitment.len() != t {
+            return Err(VssError::InvalidCommitment);
+        }
+
+        let eval_in_exp = Self::derive_public_share_unchecked(node_idx, commitment);
+        Ok(eval_in_exp)
+    }
+
+    /// Given the Feldman commitment, compute the `i`-th node's public share,
+    /// which is g^alpha_i where alpha_i is `i`-th secret share.
+    /// We assume `commitment` has the right length (namely `=threshold`) without checks
+    pub fn derive_public_share_unchecked(node_idx: usize, commitment: &[C::Affine]) -> C {
+        let t = commitment.len();
+
+        // i-th node computes g^f(i+1), namely poly eval in the exponent
+        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
+        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
+        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
+            Some(*prev * eval_point)
+        })
+        .take(t)
+        .collect::<Vec<_>>();
+
+        C::msm(commitment, &powers).expect("infallible: commitment and powers has diff lengths")
+    }
 }
 
 impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
     type PublicParam = FeldmanVssPublicParam;
     type Secret = C::ScalarField;
     type SecretShare = C::ScalarField;
-    type Commitment = Vec<C::Affine>;
+    type Commitment = FeldmanCommitment<C>;
 
     fn share<R: Rng>(
         pp: &Self::PublicParam,
@@ -90,30 +141,8 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         share: &Self::SecretShare,
         commitment: &Self::Commitment,
     ) -> Result<(), VssError> {
-        let n = pp.n.get() as usize;
-        let t = pp.t.get() as usize;
-
-        // input validation
-        if node_idx >= n {
-            return Err(VssError::IndexOutOfBound(n - 1, node_idx));
-        }
-        if commitment.len() != t {
-            return Err(VssError::InvalidCommitment);
-        }
-
-        // i-th node computes g^f(i+1), namely poly eval in the exponent
-        // g^f(x) = Prod_{j \in [0, t-1]} u_j ^ {x^j}
-        let eval_point = C::ScalarField::from(node_idx as u64 + 1);
-        let powers = successors(Some(C::ScalarField::from(1u64)), |prev| {
-            Some(*prev * eval_point)
-        })
-        .take(t)
-        .collect::<Vec<_>>();
-        let eval_in_exp = C::msm(commitment, &powers).map_err(|_| {
-            VssError::InternalError("commitments and powers mismatched length".to_string())
-        })?;
-
-        if C::generator().mul(share) == eval_in_exp {
+        let public_share = Self::derive_public_share(pp, node_idx, commitment)?;
+        if C::generator().mul(share) == public_share {
             Ok(())
         } else {
             Err(VssError::FailedVerification)
@@ -145,6 +174,40 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         let evals: Vec<_> = shares.iter().map(|&(_, share)| share).collect();
         interpolate::<C>(&eval_points, &evals)
             .map_err(|e| VssError::FailedReconstruction(e.to_string()))
+    }
+}
+
+/// Commitment of a dealing in Feldman VSS
+#[serde_as]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    From,
+    Deref,
+    Serialize,
+    Deserialize,
+    CanonicalSerialize,
+    IntoIterator,
+)]
+pub struct FeldmanCommitment<C: CurveGroup> {
+    #[serde_as(as = "crate::SerdeAs")]
+    comm: Vec<C::Affine>,
+}
+
+impl<C: CurveGroup> FeldmanCommitment<C> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("serializing feldman commitment")
+    }
+
+    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
+        crate::try_from_bytes::<Self, N>(value)
+    }
+
+    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
+        crate::try_from_str::<Self, N>(value)
     }
 }
 
@@ -190,11 +253,11 @@ mod tests {
 
                 // wrong commitment should fail
                 let mut bad_comm = commitment.clone();
-                bad_comm[1] = C::Affine::default();
+                bad_comm.comm[1] = C::Affine::default();
                 assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
 
                 // incomplete/dropped commitment should fail
-                bad_comm.pop();
+                bad_comm.comm.pop();
                 assert!(FeldmanVss::<C>::verify(&pp, node_idx, s, &bad_comm).is_err());
             }
 

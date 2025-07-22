@@ -83,7 +83,7 @@ impl Args {
                 .collect();
         // Generate HPKE keypair for this node using p_rng
         let encryption_keys: Vec<_> =
-            iter::repeat_with(move || timeboost_crypto::prelude::DecryptionKey::rand(&mut p_rng))
+            iter::repeat_with(move || timeboost_crypto::prelude::DkgDecKey::rand(&mut p_rng))
                 .take(num_nodes as usize)
                 .collect();
         // Generate committee from signature keys
@@ -118,7 +118,7 @@ impl Args {
                 internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
                 signing_key: kp.public_key(),
                 dh_key: xp.public_key(),
-                enc_key: timeboost_crypto::prelude::EncryptionKey::from(&hpke),
+                enc_key: timeboost_crypto::prelude::DkgEncKey::from(&hpke),
                 private: Some(PrivateKeys {
                     signing_key: kp.secret_key(),
                     dh_key: xp.secret_key(),
