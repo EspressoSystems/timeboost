@@ -61,7 +61,7 @@ criterion = "0.6"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
 derive_builder = "0.20"
-derive_more = "1.0.0"
+derive_more = { version = "1.0.0", features = ["full"] }
 digest = "0.10"
 dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
