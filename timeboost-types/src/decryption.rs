@@ -170,6 +170,11 @@ impl DkgKeyStore {
     }
 }
 
+/// Accumulates DKG bundles for a given committee and finalizes when enough have been collected.
+///
+/// DkgAccumulator tracks received bundles and determines when the threshold for finalizing
+/// the DKG process is met. Once enough valid bundles are collected, it can produce a finalized
+/// Subset containing the aggregated contributions.
 #[derive(Debug, Clone)]
 pub struct DkgAccumulator {
     store: DkgKeyStore,
@@ -210,6 +215,8 @@ impl DkgAccumulator {
         }
     }
 }
+
+/// Represents a finalized subset of DKG bundles sufficient to combine.
 #[derive(Debug, Clone)]
 pub struct Subset<'a> {
     committe_id: CommitteeId,

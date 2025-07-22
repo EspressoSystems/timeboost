@@ -300,7 +300,7 @@ impl Committable for SignedPriorityBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
-    /// the committee which dkg bundle is being created for
+    /// target committee for the dkg bundle
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
     vess_ct: VessCiphertext,
