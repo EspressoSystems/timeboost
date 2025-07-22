@@ -160,18 +160,16 @@ impl Decrypter {
     }
 
     /// Returns the currently active DKG encryption keys
-    pub fn current_enc_keys(&self) -> Vec<DkgEncKey> {
-        let pos = self
-            .committees
-            .position(self.current)
-            .expect("current decryption committee missing");
-        self.dkg_stores
+    pub fn current_enc_keys(&self) -> Option<Vec<DkgEncKey>> {
+        let entries = self
+            .dkg_stores
             .read()
-            .get(pos)
-            .expect("dkg store missing")
+            .iter()
+            .find(|s| s.committee().id() == self.current)?
             .sorted_keys()
             .cloned()
-            .collect()
+            .collect();
+        Some(entries)
     }
 
     /// Returns the currently active decryption committee
@@ -228,6 +226,10 @@ impl Decrypter {
             trace!(node = %self.label, committee = %committee_id, "dkg bundle already submitted");
             return None;
         }
+        let Some(enc_keys) = self.current_enc_keys() else {
+            warn!(node = %self.label, committee = %committee_id, "missing dkg store");
+            return None;
+        };
         let committee_size = committee.size().get();
         let threshold = committee.one_honest_threshold().get();
         let vess = Vess::new_fast(
@@ -237,9 +239,7 @@ impl Decrypter {
 
         let mut rng = thread_rng();
         let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-        let (ct, cm) = vess
-            .encrypted_shares(&self.current_enc_keys(), secret, b"dkg")
-            .ok()?;
+        let (ct, cm) = vess.encrypted_shares(&enc_keys, secret, b"dkg").ok()?;
         Some(DkgBundle::new(committee_id, ct, cm))
     }
 
@@ -555,18 +555,11 @@ impl Worker {
                 );
                 continue;
             }
-            let Some(pos) = self.committees.position(*committee_id) else {
-                debug!(
-                    node = %self.label,
-                    %committee_id,
-                    "received dkg bundle for unknown committee id"
-                );
-                continue;
-            };
             let stores = self.dkg_stores.read();
-            let Some(dkg_store) = stores.get(pos) else {
+            let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == *committee_id)
+            else {
                 return Err(DecrypterError::Dkg(format!(
-                    "mismatching entries in dkg_stores/committees: committee_id={committee_id}, pos={pos}",
+                    "dkg_store missing for committee_id={committee_id}",
                 )));
             };
             let committee = dkg_store.committee();

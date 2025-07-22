@@ -203,7 +203,7 @@ impl DkgAccumulator {
         if self.bundles.len() >= self.threshold {
             Some(Subset {
                 committe_id: self.committee().id(),
-                bundles: self.bundles.clone(),
+                bundles: &self.bundles,
             })
         } else {
             None
@@ -211,12 +211,12 @@ impl DkgAccumulator {
     }
 }
 #[derive(Debug, Clone)]
-pub struct Subset {
+pub struct Subset<'a> {
     committe_id: CommitteeId,
-    bundles: HashSet<DkgBundle>,
+    bundles: &'a HashSet<DkgBundle>,
 }
 
-impl Subset {
+impl<'a> Subset<'a> {
     pub fn committe_id(&self) -> &CommitteeId {
         &self.committe_id
     }
