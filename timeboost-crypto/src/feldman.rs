@@ -230,11 +230,17 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
         old_commitment: &FeldmanCommitment<C>,
         row_commitment: &FeldmanCommitment<C>,
         reshare: &C::ScalarField,
-    ) -> Result<bool, VssError> {
+    ) -> Result<(), VssError> {
         let old_public_share = Self::derive_public_share(old_pp, send_node_idx, old_commitment)?;
         let new_public_share = Self::derive_public_share(new_pp, recv_node_idx, row_commitment)?;
-        Ok(C::generator().mul(reshare) == new_public_share
-            && row_commitment[0] == old_public_share.into_affine())
+
+        if C::generator().mul(reshare) == new_public_share
+            && row_commitment[0] == old_public_share.into_affine()
+        {
+            Ok(())
+        } else {
+            Err(VssError::FailedVerification)
+        }
     }
 
     fn combine(
@@ -416,17 +422,18 @@ mod tests {
         // Verify reshares
         for i in 0..old_n as usize {
             for j in 0..new_n as usize {
-                let is_valid = FeldmanVss::<G1Projective>::verify_reshare(
-                    &old_pp,
-                    &new_pp,
-                    i,
-                    j,
-                    &old_commitment,
-                    &row_commitments[i],
-                    &reshare_matrix[i][j],
-                )
-                .unwrap();
-                assert!(is_valid);
+                assert!(
+                    FeldmanVss::<G1Projective>::verify_reshare(
+                        &old_pp,
+                        &new_pp,
+                        i,
+                        j,
+                        &old_commitment,
+                        &row_commitments[i],
+                        &reshare_matrix[i][j],
+                    )
+                    .is_ok()
+                );
             }
         }
 

@@ -88,7 +88,7 @@ pub trait KeyResharing<VSS: VerifiableSecretSharing> {
         old_commitment: &VSS::Commitment,
         row_commitment: &VSS::Commitment,
         reshare: &VSS::SecretShare,
-    ) -> Result<bool, VssError>;
+    ) -> Result<(), VssError>;
 
     /// Combine resharings to derive the new secret share
     fn combine(
