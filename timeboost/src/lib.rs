@@ -132,7 +132,7 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        self.submitter.submit(b)
+                        self.submitter.submit(b).await
                     }
                     Err(e) => {
                         let e: CertifierDown = e;

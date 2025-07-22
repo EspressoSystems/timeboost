@@ -10,7 +10,7 @@ use timeboost_types::{
 };
 use tokio::{
     spawn,
-    sync::Mutex,
+    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
     task::JoinHandle,
     time::{Instant, error::Elapsed, sleep, timeout},
 };
@@ -19,7 +19,8 @@ use tracing::{debug, warn};
 
 use crate::config::SubmitterConfig;
 
-const CACHE_SIZE: usize = 10_000;
+const CACHE_SIZE: usize = 15_000;
+const MAX_TASKS: usize = 1000;
 
 pub struct Submitter {
     config: SubmitterConfig,
@@ -27,6 +28,7 @@ pub struct Submitter {
     submitters: TaskTracker,
     handler: Handler,
     committees: Arc<Mutex<CommitteeVec<2>>>,
+    task_permits: Arc<Semaphore>,
 }
 
 impl Drop for Submitter {
@@ -66,6 +68,7 @@ impl Submitter {
                 verify_task: spawn(verifier.verify(height)),
                 submitters: TaskTracker::new(),
                 committees,
+                task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
             };
         }
     }
@@ -78,9 +81,18 @@ impl Submitter {
         self.committees.lock().await.add(c);
     }
 
-    pub fn submit(&mut self, cb: CertifiedBlock<Validated>) {
-        debug!(node = %self.public_key(), num = %cb.cert().data().num(), "creating block handler");
-        self.submitters.spawn(self.handler.clone().handle(cb));
+    pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
+        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
+            return;
+        };
+        debug!(
+            node  = %self.public_key(),
+            num   = %cb.cert().data().num(),
+            tasks = %self.submitters.len(),
+            "creating block handler"
+        );
+        self.submitters
+            .spawn(self.handler.clone().handle(permit, cb));
     }
 
     pub async fn join(self) {
@@ -133,7 +145,7 @@ struct Handler {
 }
 
 impl Handler {
-    async fn handle(mut self, cb: CertifiedBlock<Validated>) {
+    async fn handle(mut self, _: OwnedSemaphorePermit, cb: CertifiedBlock<Validated>) {
         enum State {
             Submit(bool),
             Wait(Duration),
@@ -281,7 +293,7 @@ mod tests {
 
             tasks.spawn(async move {
                 for _ in 0..NODES {
-                    s.submit(g.next());
+                    s.submit(g.next()).await;
                 }
                 s.join().await
             });
