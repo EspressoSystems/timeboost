@@ -6,7 +6,7 @@ use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::{
     DecryptionScheme,
-    prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey},
+    prelude::{DkgDecKey as HpkeDecKey, DkgEncKey as HpkeEncKey},
     traits::threshold_enc::ThresholdEncScheme,
 };
 use timeboost_types::DecryptionKey;
