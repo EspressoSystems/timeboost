@@ -17,10 +17,8 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::{Vess, Vss};
-use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, DkgBundle, DkgKeyStore, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -64,8 +62,6 @@ impl Drop for Sequencer {
 struct Task {
     kpair: Keypair,
     label: PublicKey,
-    // public keys used in DKG/resharing for secure communication
-    dkg_keystore: DkgKeyStore,
     bundles: BundleQueue,
     sailfish: Coordinator<CandidateListBytes, Rbc<CandidateListBytes>>,
     includer: Includer,
@@ -168,7 +164,6 @@ impl Sequencer {
         let task = Task {
             kpair: cfg.sign_keypair,
             label: public_key,
-            dkg_keystore: cfg.dkg_keystore,
             bundles: queue.clone(),
             sailfish,
             includer: Includer::new(

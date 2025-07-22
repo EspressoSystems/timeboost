@@ -10,7 +10,7 @@ use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
 use alloy_signer_local::PrivateKeySigner;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::CommitteeId;
+use multisig::{CommitteeId, PublicKey};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
@@ -300,6 +300,9 @@ impl Committable for SignedPriorityBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
+    /// source of the bundle
+    origin: PublicKey,
+    /// the committee which dkg bundle is being created for
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
     vess_ct: VessCiphertext,
@@ -309,22 +312,41 @@ pub struct DkgBundle {
 }
 
 impl DkgBundle {
-    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
+    pub fn new(
+        origin: PublicKey,
+        committee_id: CommitteeId,
+        vess_ct: VessCiphertext,
+        comm: VssCommitment,
+    ) -> Self {
         Self {
+            origin,
             committee_id,
             vess_ct,
             comm,
         }
     }
 
+    pub fn origin(&self) -> &PublicKey {
+        &self.origin
+    }
+
     pub fn committee_id(&self) -> &CommitteeId {
         &self.committee_id
+    }
+
+    pub fn vess_ct(&self) -> &VessCiphertext {
+        &self.vess_ct
+    }
+
+    pub fn comm(&self) -> &VssCommitment {
+        &self.comm
     }
 }
 
 impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
+            .fixed_size_bytes(&self.origin.to_bytes())
             .field("committee", self.committee_id.commit())
             .var_size_field("ciphertexts", self.vess_ct.as_bytes())
             .var_size_field("commitment", &self.comm.to_bytes())

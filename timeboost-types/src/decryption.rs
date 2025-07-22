@@ -2,13 +2,15 @@ use std::collections::BTreeMap;
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
-use multisig::{Committee, KeyId};
+use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use timeboost_crypto::{
     DecryptionScheme,
     prelude::{DkgEncKey, Vss},
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
 };
+
+use crate::DkgBundle;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -157,8 +159,76 @@ impl DkgKeyStore {
         this
     }
 
+    /// Returns a reference to the committee.
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     /// Returns an iterator over all public keys sorted by their node's KeyId
     pub fn sorted_keys(&self) -> impl Iterator<Item = &DkgEncKey> {
         self.keys.values()
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct DkgAccumulator {
+    store: DkgKeyStore,
+    threshold: usize,
+    bundles: BTreeMap<KeyId, DkgBundle>,
+}
+
+impl DkgAccumulator {
+    pub fn new(committee: DkgKeyStore) -> Self {
+        Self {
+            threshold: committee.committee().one_honest_threshold().get(),
+            store: committee,
+            bundles: BTreeMap::new(),
+        }
+    }
+
+    pub fn committee(&self) -> &Committee {
+        &self.store.committee
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bundles.is_empty()
+    }
+
+    pub fn add(&mut self, bundle: DkgBundle) -> Result<(), UnknownDkgSubmitter> {
+        let Some(ix) = self.store.committee.get_index(bundle.origin()) else {
+            return Err(UnknownDkgSubmitter(()));
+        };
+        self.bundles.insert(ix, bundle);
+        Ok(())
+    }
+
+    pub fn try_finalize(&self) -> Option<Subset> {
+        if self.bundles.len() >= self.threshold {
+            Some(Subset {
+                committe_id: self.committee().id(),
+                bundles: self.bundles.clone(),
+            })
+        } else {
+            None
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Subset {
+    committe_id: CommitteeId,
+    bundles: BTreeMap<KeyId, DkgBundle>,
+}
+
+impl Subset {
+    pub fn committe_id(&self) -> &CommitteeId {
+        &self.committe_id
+    }
+
+    pub fn bundles(&self) -> &BTreeMap<KeyId, DkgBundle> {
+        &self.bundles
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("unknown dkg bundle submitter")]
+pub struct UnknownDkgSubmitter(());
