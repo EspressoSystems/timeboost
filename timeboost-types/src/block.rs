@@ -194,7 +194,7 @@ impl Committable for BlockInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(bound(deserialize = "S: Deserialize<'de>, S: Deserialize<'de>"))]
+#[serde(bound(deserialize = "S: Deserialize<'de>"))]
 pub struct CertifiedBlock<S> {
     data: Block,
     cert: Certificate<BlockInfo>,
