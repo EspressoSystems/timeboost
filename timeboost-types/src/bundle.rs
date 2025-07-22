@@ -300,6 +300,7 @@ impl Committable for SignedPriorityBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
+    /// target committee for the dkg bundle
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
     vess_ct: VessCiphertext,
@@ -319,6 +320,20 @@ impl DkgBundle {
 
     pub fn committee_id(&self) -> &CommitteeId {
         &self.committee_id
+    }
+
+    pub fn vess_ct(&self) -> &VessCiphertext {
+        &self.vess_ct
+    }
+
+    pub fn comm(&self) -> &VssCommitment {
+        &self.comm
+    }
+}
+
+impl std::hash::Hash for DkgBundle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.commit().hash(state);
     }
 }
 

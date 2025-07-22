@@ -1,14 +1,20 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashSet},
+    num::NonZeroU32,
+};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
-use multisig::{Committee, KeyId};
+use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use timeboost_crypto::{
     DecryptionScheme,
     prelude::{DkgEncKey, Vss},
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
+    vess::{ShoupVess, VessError},
 };
+
+use crate::DkgBundle;
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -157,8 +163,85 @@ impl DkgKeyStore {
         this
     }
 
+    /// Returns a reference to the committee.
+    pub fn committee(&self) -> &Committee {
+        &self.committee
+    }
+
     /// Returns an iterator over all public keys sorted by their node's KeyId
     pub fn sorted_keys(&self) -> impl Iterator<Item = &DkgEncKey> {
         self.keys.values()
+    }
+}
+
+/// Accumulates DKG bundles for a given committee and finalizes when enough have been collected.
+///
+/// DkgAccumulator tracks received bundles and determines when the threshold for finalizing
+/// the DKG process is met. Once enough valid bundles are collected, it can produce a finalized
+/// Subset containing the aggregated contributions.
+#[derive(Debug, Clone)]
+pub struct DkgAccumulator {
+    store: DkgKeyStore,
+    threshold: usize,
+    bundles: HashSet<DkgBundle>,
+}
+
+impl DkgAccumulator {
+    pub fn new(store: DkgKeyStore) -> Self {
+        Self {
+            threshold: store.committee().one_honest_threshold().get(),
+            store,
+            bundles: HashSet::new(),
+        }
+    }
+
+    pub fn committee(&self) -> &Committee {
+        &self.store.committee
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bundles.is_empty()
+    }
+
+    pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+        let aad: &[u8; 3] = b"dkg";
+        let sorted_keys: Vec<_> = self.store.sorted_keys().cloned().collect();
+        let committee = self.store.committee();
+        let vess = ShoupVess::new_fast(
+            NonZeroU32::new(committee.one_honest_threshold().get() as u32)
+                .expect("committee size fits u32"),
+            NonZeroU32::new(committee.size().get() as u32).expect("committee size fits u32"),
+        );
+        vess.verify(&sorted_keys, bundle.vess_ct(), bundle.comm(), aad)?;
+        self.bundles.insert(bundle);
+        Ok(())
+    }
+
+    pub fn try_finalize(&self) -> Option<Subset> {
+        if self.bundles.len() >= self.threshold {
+            Some(Subset {
+                committe_id: self.committee().id(),
+                bundles: &self.bundles,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+/// Represents a finalized subset of DKG bundles sufficient to combine.
+#[derive(Debug, Clone)]
+pub struct Subset<'a> {
+    committe_id: CommitteeId,
+    bundles: &'a HashSet<DkgBundle>,
+}
+
+impl<'a> Subset<'a> {
+    pub fn committe_id(&self) -> &CommitteeId {
+        &self.committe_id
+    }
+
+    pub fn bundles(&self) -> &HashSet<DkgBundle> {
+        self.bundles
     }
 }
