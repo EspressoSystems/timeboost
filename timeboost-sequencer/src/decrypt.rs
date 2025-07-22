@@ -19,9 +19,7 @@ use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::vess::ShoupVess;
 use timeboost_crypto::{DecryptionScheme, Plaintext};
-use timeboost_types::{
-    DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList, UnknownDkgSubmitter,
-};
+use timeboost_types::{DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -83,7 +81,7 @@ pub struct Decrypter {
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
     /// Set of committees for which DKG bundle has already been submitted.
-    submitted: HashSet<CommitteeId>,
+    submitted: BTreeSet<CommitteeId>,
     /// decryption committees
     committees: CommitteeVec<2>,
     /// dkg stores (shared with Worker)
@@ -146,7 +144,7 @@ impl Decrypter {
             incls: BTreeMap::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
-            submitted: HashSet::default(),
+            submitted: BTreeSet::default(),
             worker: spawn(worker.go()),
             committees: CommitteeVec::new(committee.clone()),
             dkg_stores: dkg_stores.clone(),
@@ -219,6 +217,11 @@ impl Decrypter {
         Ok(())
     }
 
+    /// Generates and returns a new DKG bundle for the current committee, if not already submitted.
+    ///
+    /// # Returns
+    /// - `Some(DkgBundle)` if a new DKG dealing was successfully created for the current committee.
+    /// - `None` if already submitted or if encryption keys are missing.
     pub fn next_dkg(&mut self) -> Option<DkgBundle> {
         let committee = self.current_committee();
         let committee_id = committee.id();
@@ -240,6 +243,7 @@ impl Decrypter {
         let mut rng = thread_rng();
         let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
         let (ct, cm) = vess.encrypted_shares(&enc_keys, secret, b"dkg").ok()?;
+        self.submitted.insert(committee_id);
         Some(DkgBundle::new(committee_id, ct, cm))
     }
 
@@ -546,52 +550,46 @@ impl Worker {
         let dkg_bundles = incl.dkg_bundles();
 
         for b in dkg_bundles {
-            let (committee_id, commitment, ct) = (b.committee_id(), b.comm(), b.vess_ct());
-            if self.dkg_completed.contains(committee_id) {
+            if self.dkg_completed.contains(b.committee_id()) {
                 trace!(
                     node = %self.label,
-                    %committee_id,
+                    committee_id = %b.committee_id(),
                     "received bundle but dkg already completed"
                 );
                 continue;
             }
             let stores = self.dkg_stores.read();
-            let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == *committee_id)
+            let Some(dkg_store) = stores
+                .iter()
+                .find(|s| s.committee().id() == *b.committee_id())
             else {
                 return Err(DecrypterError::Dkg(format!(
-                    "dkg_store missing for committee_id={committee_id}",
+                    "dkg_store missing for committee_id={}",
+                    b.committee_id(),
                 )));
             };
-            let committee = dkg_store.committee();
-            let vess = ShoupVess::new_fast(
-                NonZeroU32::new(committee.one_honest_threshold().get() as u32)
-                    .expect("committee size fits u32"),
-                NonZeroU32::new(committee.size().get() as u32).expect("committee size fits u32"),
-            );
-            let aad = b"dkg";
-            let sorted_keys: Vec<DkgEncKey> = dkg_store.sorted_keys().cloned().collect();
-            if let Err(e) = vess.verify(&sorted_keys, ct, commitment, aad) {
-                warn!(
-                    node = %self.label,
-                    committee_id = %b.committee_id(),
-                    error = ?e,
-                    "vess verification failed"
-                );
-                continue;
-            }
+
             let acc = self
                 .dkg_tracker
                 .entry(*b.committee_id())
-                .or_insert_with(|| DkgAccumulator::new(dkg_store.clone()));
+                .or_insert_with(|| DkgAccumulator::new(dkg_store.to_owned()));
 
-            acc.add(b.to_owned())
-                .map_err(|e| DecrypterError::Dkg(format!("unknown submitter: {e}")))?;
+            acc.try_add(b.to_owned())
+                .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
             if let Some(subset) = acc.try_finalize() {
                 if *subset.committe_id() == self.current {
+                    let committee = dkg_store.committee();
+                    let aad: &[u8; 3] = b"dkg";
+                    let vess = ShoupVess::new_fast(
+                        NonZeroU32::new(committee.one_honest_threshold().get() as u32)
+                            .expect("committee size fits u32"),
+                        NonZeroU32::new(committee.size().get() as u32)
+                            .expect("committee size fits u32"),
+                    );
                     let (shares, commitments) = subset
                         .bundles()
-                        .into_iter()
+                        .iter()
                         .map(|b| {
                             vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
                                 .map(|s| (s, b.comm().clone()))
@@ -609,7 +607,7 @@ impl Worker {
 
                     self.dec_sk = Some(dec_sk.clone());
                     self.enc_key.set(dec_sk.pubkey().clone());
-                    self.dkg_completed.insert(*committee_id);
+                    self.dkg_completed.insert(committee.id());
                 } else {
                     // TODO(resharing): these ciphertexts are for next committee
                     // send the resulting subset to (passive) nodes in the new committee
@@ -1051,12 +1049,6 @@ pub enum EndOfPlay {
 impl From<NetworkDown> for EndOfPlay {
     fn from(_: NetworkDown) -> Self {
         Self::NetworkDown
-    }
-}
-
-impl From<UnknownDkgSubmitter> for DecrypterError {
-    fn from(e: UnknownDkgSubmitter) -> Self {
-        Self::Dkg(e.to_string())
     }
 }
 

@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    num::NonZeroU32,
+};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
@@ -8,6 +11,7 @@ use timeboost_crypto::{
     DecryptionScheme,
     prelude::{DkgEncKey, Vss},
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
+    vess::{ShoupVess, VessError},
 };
 
 use crate::DkgBundle;
@@ -183,10 +187,10 @@ pub struct DkgAccumulator {
 }
 
 impl DkgAccumulator {
-    pub fn new(committee: DkgKeyStore) -> Self {
+    pub fn new(store: DkgKeyStore) -> Self {
         Self {
-            threshold: committee.committee().one_honest_threshold().get(),
-            store: committee,
+            threshold: store.committee().one_honest_threshold().get(),
+            store,
             bundles: HashSet::new(),
         }
     }
@@ -199,7 +203,16 @@ impl DkgAccumulator {
         self.bundles.is_empty()
     }
 
-    pub fn add(&mut self, bundle: DkgBundle) -> Result<(), UnknownDkgSubmitter> {
+    pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+        let aad: &[u8; 3] = b"dkg";
+        let sorted_keys: Vec<_> = self.store.sorted_keys().cloned().collect();
+        let committee = self.store.committee();
+        let vess = ShoupVess::new_fast(
+            NonZeroU32::new(committee.one_honest_threshold().get() as u32)
+                .expect("committee size fits u32"),
+            NonZeroU32::new(committee.size().get() as u32).expect("committee size fits u32"),
+        );
+        vess.verify(&sorted_keys, bundle.vess_ct(), bundle.comm(), aad)?;
         self.bundles.insert(bundle);
         Ok(())
     }
@@ -229,10 +242,6 @@ impl<'a> Subset<'a> {
     }
 
     pub fn bundles(&self) -> &HashSet<DkgBundle> {
-        &self.bundles
+        self.bundles
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("unknown dkg bundle submitter")]
-pub struct UnknownDkgSubmitter(());
