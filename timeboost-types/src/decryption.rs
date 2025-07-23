@@ -268,41 +268,55 @@ fn test_dkg_e2e() {
 
     let dkg_keys: Vec<_> = dkg_priv_keys.iter().map(|k| DkgEncKey::from(k)).collect();
 
-    // Generate a random secret
-    let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-
     // Create Vess instance
     let vess = Vess::new_fast_from(&committee);
 
-    // Encrypt shares and get Feldman commitment
-    let (ciphertexts, commitments) = vess
-        .encrypted_shares(&dkg_keys, secret.clone(), aad)
-        .unwrap();
+    // Create multiple dealings (one per committee member) to simulate a proper DKG
+    // Each dealer contributes their own random secret
+    let dealings: Vec<_> = (0..committee_size)
+        .map(|_| {
+            let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+            vess.encrypted_shares(&dkg_keys, secret, aad).unwrap()
+        })
+        .collect();
 
-    // Choose a random subset of ciphertexts to decrypt
-    let mut indices: Vec<_> = (0..committee_size).collect();
-    indices.shuffle(&mut rng);
-    let chosen_indices = &indices[..committee.one_honest_threshold().get()];
+    // Choose a random subset of dealings to decrypt (simulating the ACS subprotocol output)
+    let mut dealing_indices: Vec<_> = (0..committee_size).collect();
+    dealing_indices.shuffle(&mut rng);
+    let chosen_dealing_indices = &dealing_indices[..committee.one_honest_threshold().get()];
 
-    // Decrypt the chosen shares
-    let mut shares = Vec::new();
-    let mut comms = Vec::new();
-    for &i in chosen_indices {
-        let labeled_key = dkg_priv_keys[i].clone().label(i);
+    // Decrypt shares for each node from the selected dealings
+    // Each node gets shares from multiple dealings, and each node gets different shares
+    let mut node_shares = vec![Vec::new(); committee_size];
+    let mut node_comms = Vec::new();
 
-        let share = vess
-            .decrypt_share(&labeled_key, &ciphertexts, aad)
-            .expect("decryption should succeed");
-        shares.push(share);
-        comms.push(commitments.clone()); // All commitments are the same in this context
+    // each node receive a column of the subset rows
+    for node_idx in 0..committee_size {
+        let labeled_sk = dkg_priv_keys[node_idx].clone().label(node_idx);
+        for &dealing_idx in chosen_dealing_indices {
+            let (ref ciphertext, _) = dealings[dealing_idx];
+            let share = vess
+                .decrypt_share(&labeled_sk, ciphertext, aad)
+                .expect("decryption should succeed");
+            node_shares[node_idx].push(share);
+        }
+    }
+    for &dealing_idx in chosen_dealing_indices {
+        let (_, ref commitment) = dealings[dealing_idx];
+        node_comms.push(commitment.clone());
     }
 
     // Use from_dkg to obtain the DecryptionKey for each node
+    // Each node uses the same commitments but different shares (their column from the share matrix)
     let mut thres_dec_keys = Vec::new();
     for node_idx in 0..committee_size {
-        let thres_dec_key =
-            super::DecryptionKey::from_dkg(committee_size, node_idx, &comms, &shares)
-                .expect("from_dkg should succeed");
+        let thres_dec_key = super::DecryptionKey::from_dkg(
+            committee_size,
+            node_idx,
+            &node_comms,
+            &node_shares[node_idx],
+        )
+        .expect("from_dkg should succeed");
         thres_dec_keys.push(thres_dec_key);
     }
     let first_pubkey = thres_dec_keys[0].pubkey();
