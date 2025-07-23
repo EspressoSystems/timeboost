@@ -17,7 +17,7 @@ use tokio::{
 use tokio_util::task::TaskTracker;
 use tracing::{debug, warn};
 
-use crate::config::SubmitterConfig;
+use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
 
 const CACHE_SIZE: usize = 15_000;
 const MAX_TASKS: usize = 1000;
@@ -29,6 +29,7 @@ pub struct Submitter {
     handler: Handler,
     committees: Arc<AsyncMutex<CommitteeVec<2>>>,
     task_permits: Arc<Semaphore>,
+    metrics: BuilderMetrics,
 }
 
 impl Drop for Submitter {
@@ -38,7 +39,10 @@ impl Drop for Submitter {
 }
 
 impl Submitter {
-    pub async fn create(cfg: SubmitterConfig) -> Self {
+    pub fn new<M>(cfg: SubmitterConfig, metrics: &M) -> Self
+    where
+        M: ::metrics::Metrics,
+    {
         let client = robusta::Client::new(cfg.robusta.clone());
         let verified = Arc::new(Mutex::new(BTreeSet::new()));
         let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
@@ -62,6 +66,7 @@ impl Submitter {
             submitters: TaskTracker::new(),
             committees,
             task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
+            metrics: BuilderMetrics::new(metrics),
         }
     }
 
@@ -77,14 +82,17 @@ impl Submitter {
         let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
             return;
         };
+        let num = cb.cert().data().num();
         debug!(
             node  = %self.public_key(),
-            num   = %cb.cert().data().num(),
+            num   = %num,
             tasks = %self.submitters.len(),
             "creating block handler"
         );
         self.submitters
             .spawn(self.handler.clone().handle(permit, cb));
+        self.metrics.block_submit.set(*num as usize);
+        self.metrics.submit_tasks.set(self.submitters.len());
     }
 
     pub async fn join(self) {
@@ -222,6 +230,7 @@ impl Handler {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use metrics::NoMetrics;
     use multisig::{Committee, Keypair, PublicKey, Signed, VoteAccumulator};
     use timeboost_types::{Block, BlockInfo, BlockNumber, sailfish::Round};
     use tokio::task::JoinSet;
@@ -296,7 +305,7 @@ mod tests {
                 .committee(committee.clone())
                 .build();
 
-            let mut s = Submitter::create(scfg).await;
+            let mut s = Submitter::new(scfg, &NoMetrics);
 
             tasks.spawn(async move {
                 for _ in 0..NODES {

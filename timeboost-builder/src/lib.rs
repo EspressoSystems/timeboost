@@ -1,5 +1,6 @@
 mod certifier;
 mod config;
+mod metrics;
 mod submit;
 
 pub use robusta;

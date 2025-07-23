@@ -61,6 +61,7 @@ impl Timeboost {
         let met = Arc::new(TimeboostMetrics::new(&*pro));
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
+        let sub = Submitter::new(cfg.submitter_config(), &*pro);
 
         // TODO: Once we have e2e listener this check wont be needed
         let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
@@ -79,8 +80,6 @@ impl Timeboost {
                 .serve(addr)
         };
 
-        let submitter = Submitter::create(cfg.submitter_config()).await;
-
         Ok(Self {
             metrics_task: spawn(metrics_api(pro.clone(), cfg.metrics_port)),
             label: cfg.sign_keypair.public_key(),
@@ -90,7 +89,7 @@ impl Timeboost {
             _metrics: met,
             nitro_forwarder,
             internal_api: spawn(internal_api),
-            submitter,
+            submitter: sub,
         })
     }
 
