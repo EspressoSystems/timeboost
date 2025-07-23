@@ -974,7 +974,7 @@ where
                 }
                 actions.push(Action::Catchup(Round::new(r, self.committee.id())));
             }
-        } else if self.committed_round >= self.nodes.quorum() {
+        } else if self.committed_round >= *self.nodes.quorum() {
             for v in self.buffer.drain_round(r) {
                 self.dag.add(v)
             }
@@ -1111,8 +1111,8 @@ where
     /// It is defined as the quorum of committed round numbers of the committee
     /// minus an extra margin to avoid overly aggressive cleanup.
     fn lower_round_bound(&self) -> RoundNumber {
-        self.nodes
-            .quorum()
+        (*self.nodes
+            .quorum())
             .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
     }
