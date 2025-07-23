@@ -9,15 +9,15 @@ use api::metrics::serve_metrics_api;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
-use timeboost_builder::{Certifier, CertifierDown};
+use timeboost_builder::{Certifier, CertifierDown, Submitter};
 use timeboost_crypto::prelude::ThresholdEncKeyCell;
 use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
-use timeboost_types::BundleVariant;
+use timeboost_types::{BundleVariant, CertifiedBlock};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::net::lookup_host;
 use tokio::select;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::task::spawn;
 use tracing::{error, info, instrument, warn};
@@ -46,12 +46,15 @@ pub struct Timeboost {
     nitro_forwarder: Option<NitroForwarder>,
     metrics_task: JoinHandle<()>,
     internal_api: JoinHandle<Result<(), tonic::transport::Error>>,
+    submitter_task: JoinHandle<()>,
+    submit_queue: mpsc::UnboundedSender<CertifiedBlock>,
 }
 
 impl Drop for Timeboost {
     fn drop(&mut self) {
         self.metrics_task.abort();
-        self.internal_api.abort()
+        self.internal_api.abort();
+        self.submitter_task.abort();
     }
 }
 
@@ -79,6 +82,9 @@ impl Timeboost {
                 .serve(addr)
         };
 
+        let mut submitter = Submitter::new(cfg.submitter_config()).init().await;
+        let (submit_tx, mut submit_rx) = mpsc::unbounded_channel();
+
         Ok(Self {
             metrics_task: spawn(metrics_api(pro.clone(), cfg.metrics_port)),
             label: cfg.sign_keypair.public_key(),
@@ -88,6 +94,12 @@ impl Timeboost {
             _metrics: met,
             nitro_forwarder,
             internal_api: spawn(internal_api),
+            submitter_task: spawn(async move {
+                while let Some(cb) = submit_rx.recv().await {
+                    submitter.submit(&cb).await
+                }
+            }),
+            submit_queue: submit_tx,
         })
     }
 
@@ -129,6 +141,10 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
+                        if self.submit_queue.send(b).is_err() {
+                            error!(node = %self.label, "submit task terminated");
+                            return Err(anyhow!("submit task terminated"))
+                        }
                     }
                     Err(e) => {
                         let e: CertifierDown = e;
