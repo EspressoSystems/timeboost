@@ -6,7 +6,7 @@ pub struct NodeInfo<T> {
     quorum: usize,
 }
 
-impl<T: Default + PartialOrd + Clone> NodeInfo<T> {
+impl<T: Default + PartialOrd> NodeInfo<T> {
     pub fn new(c: &Committee) -> Self {
         Self {
             nodes: c.parties().map(|k| (*k, T::default())).collect(),
@@ -36,7 +36,8 @@ impl<T: Default + PartialOrd + Clone> NodeInfo<T> {
 
         debug_assert!({
             let it = self.nodes.iter().map(|(_, r)| r);
-            it.clone().zip(it.skip(1)).all(|(a, b)| a >= b)
+            let it_clone = it.clone();
+            it_clone.zip(it.skip(1)).all(|(a, b)| a >= b)
         });
 
         true
