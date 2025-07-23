@@ -11,7 +11,6 @@ use parking_lot::RwLock;
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::num::NonZeroU32;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{DkgEncKey, LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
@@ -233,12 +232,7 @@ impl Decrypter {
             warn!(node = %self.label, committee = %committee_id, "missing dkg store");
             return None;
         };
-        let committee_size = committee.size().get();
-        let threshold = committee.one_honest_threshold().get();
-        let vess = Vess::new_fast(
-            NonZeroU32::new(threshold as u32).expect("threshold must >0"),
-            NonZeroU32::new(committee_size as u32).expect("committee size must >0"),
-        );
+        let vess = Vess::new_fast_from(committee);
 
         let mut rng = thread_rng();
         let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
@@ -581,12 +575,7 @@ impl Worker {
                 if *subset.committe_id() == self.current {
                     let committee = dkg_store.committee();
                     let aad: &[u8; 3] = b"dkg";
-                    let vess = ShoupVess::new_fast(
-                        NonZeroU32::new(committee.one_honest_threshold().get() as u32)
-                            .expect("committee size fits u32"),
-                        NonZeroU32::new(committee.size().get() as u32)
-                            .expect("committee size fits u32"),
-                    );
+                    let vess = ShoupVess::new_fast_from(committee);
                     let (shares, commitments) = subset
                         .bundles()
                         .iter()

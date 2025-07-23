@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    num::NonZeroU32,
-};
+use std::collections::{BTreeMap, HashSet};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
@@ -207,11 +204,7 @@ impl DkgAccumulator {
         let aad: &[u8; 3] = b"dkg";
         let sorted_keys: Vec<_> = self.store.sorted_keys().cloned().collect();
         let committee = self.store.committee();
-        let vess = ShoupVess::new_fast(
-            NonZeroU32::new(committee.one_honest_threshold().get() as u32)
-                .expect("committee size fits u32"),
-            NonZeroU32::new(committee.size().get() as u32).expect("committee size fits u32"),
-        );
+        let vess = ShoupVess::new_fast_from(committee);
         vess.verify(&sorted_keys, bundle.vess_ct(), bundle.comm(), aad)?;
         self.bundles.insert(bundle);
         Ok(())
