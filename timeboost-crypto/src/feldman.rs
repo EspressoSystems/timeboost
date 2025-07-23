@@ -252,7 +252,7 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
         recv_reshares: &[C::ScalarField],
     ) -> Result<(C::ScalarField, FeldmanCommitment<C>), VssError> {
         // input validation
-        let n = old_pp.n.get() as usize;
+        let n = old_pp.n.get();
         if send_node_indices.is_empty() || row_commitments.is_empty() || recv_reshares.is_empty() {
             return Err(VssError::EmptyReshare);
         }
@@ -262,8 +262,8 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
             }
         }
 
-        let new_n = new_pp.n.get() as usize;
-        let new_t = new_pp.t.get() as usize;
+        let new_n = new_pp.n.get();
+        let new_t = new_pp.t.get();
         if recv_node_idx >= new_n {
             return Err(VssError::IndexOutOfBound(new_n - 1, recv_node_idx));
         }
@@ -387,14 +387,20 @@ mod tests {
     }
 
     // Core key resharing workflow
-    fn run_reshare_scenario(old_t: u32, old_n: u32, new_t: u32, new_n: u32, rng: &mut impl Rng) {
+    fn run_reshare_scenario(
+        old_t: usize,
+        old_n: usize,
+        new_t: usize,
+        new_n: usize,
+        rng: &mut impl Rng,
+    ) {
         let old_pp = FeldmanVssPublicParam::new(
-            NonZeroU32::new(old_t).unwrap(),
-            NonZeroU32::new(old_n).unwrap(),
+            NonZeroUsize::new(old_t).unwrap(),
+            NonZeroUsize::new(old_n).unwrap(),
         );
         let new_pp = FeldmanVssPublicParam::new(
-            NonZeroU32::new(new_t).unwrap(),
-            NonZeroU32::new(new_n).unwrap(),
+            NonZeroUsize::new(new_t).unwrap(),
+            NonZeroUsize::new(new_n).unwrap(),
         );
 
         let secret = Fr::rand(rng);
@@ -420,8 +426,8 @@ mod tests {
         }
 
         // Verify reshares
-        for i in 0..old_n as usize {
-            for j in 0..new_n as usize {
+        for i in 0..old_n {
+            for j in 0..new_n {
                 assert!(
                     FeldmanVss::<G1Projective>::verify_reshare(
                         &old_pp,
@@ -440,20 +446,19 @@ mod tests {
         let mut new_shares = Vec::new();
         let mut new_commitments = Vec::new();
 
-        for j in 0..new_n as usize {
-            let recv_reshares: Vec<Fr> = (0..old_t as usize)
+        for j in 0..new_n {
+            let recv_reshares: Vec<Fr> = (0..old_t)
                 .collect::<Vec<_>>()
                 .iter()
                 .map(|&i| reshare_matrix[i][j])
                 .collect();
-            let selected_row_commitments: Vec<FeldmanCommitment<_>> = (0..old_t as usize)
-                .map(|i| row_commitments[i].clone())
-                .collect();
+            let selected_row_commitments: Vec<FeldmanCommitment<_>> =
+                (0..old_t).map(|i| row_commitments[i].clone()).collect();
 
             let (new_secret_share, new_commitment) = FeldmanVss::<G1Projective>::combine(
                 &old_pp,
                 &new_pp,
-                &(0..old_t as usize).collect::<Vec<_>>(),
+                &(0..old_t).collect::<Vec<_>>(),
                 &selected_row_commitments,
                 j,
                 &recv_reshares,
@@ -477,7 +482,7 @@ mod tests {
         // Reconstruct secret
         let reconstructed_secret = FeldmanVss::<G1Projective>::reconstruct(
             &new_pp,
-            (0..new_t as usize).map(|i| (i, new_shares[i])),
+            (0..new_t).map(|i| (i, new_shares[i])),
         )
         .unwrap();
 
