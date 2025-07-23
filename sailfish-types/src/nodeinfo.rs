@@ -36,8 +36,7 @@ impl<T: Default + PartialOrd> NodeInfo<T> {
 
         debug_assert!({
             let it = self.nodes.iter().map(|(_, r)| r);
-            let it_clone = it.clone();
-            it_clone.zip(it.skip(1)).all(|(a, b)| a >= b)
+            it.clone().zip(it.skip(1)).all(|(a, b)| a >= b)
         });
 
         true
