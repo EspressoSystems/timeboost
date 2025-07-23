@@ -9,7 +9,7 @@ use derive_more::{Deref, From, IntoIterator};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::{iter::successors, num::NonZeroU32};
+use std::{iter::successors, num::NonZeroUsize};
 
 use crate::{
     interpolation::{interpolate, interpolate_in_exponent},
@@ -23,22 +23,22 @@ pub struct FeldmanVss<C: CurveGroup>(PhantomData<C>);
 #[derive(Debug, Clone, Copy)]
 pub struct FeldmanVssPublicParam {
     // reconstruction threshold t
-    pub t: NonZeroU32,
+    pub t: NonZeroUsize,
     // total number of nodes
-    pub n: NonZeroU32,
+    pub n: NonZeroUsize,
 }
 
 impl FeldmanVssPublicParam {
-    pub fn new(t: NonZeroU32, n: NonZeroU32) -> Self {
+    pub fn new(t: NonZeroUsize, n: NonZeroUsize) -> Self {
         Self { t, n }
     }
 
     pub fn threshold(&self) -> usize {
-        self.t.get() as usize
+        self.t.get()
     }
 
     pub fn num_nodes(&self) -> usize {
-        self.n.get() as usize
+        self.n.get()
     }
 }
 
@@ -51,7 +51,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
     ) -> (DensePolynomial<C::ScalarField>, FeldmanCommitment<C>) {
         // sample random polynomial of degree t-1 (s.t. any t evaluations can interpolate this poly)
         // f(X) = Sum a_i * X^i
-        let mut poly = DensePolynomial::<C::ScalarField>::rand(pp.t.get() as usize - 1, rng);
+        let mut poly = DensePolynomial::<C::ScalarField>::rand(pp.t.get() - 1, rng);
         // f(0) = a_0 set to the secret, this index access will never panic since t>0
         poly.coeffs[0] = secret;
 
@@ -67,7 +67,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
         pp: &FeldmanVssPublicParam,
         poly: &DensePolynomial<C::ScalarField>,
     ) -> impl Iterator<Item = C::ScalarField> {
-        (0..pp.n.get()).map(|node_idx| poly.evaluate(&(node_idx + 1).into()))
+        (0..pp.n.get()).map(|node_idx| poly.evaluate(&((node_idx + 1) as u64).into()))
     }
 
     /// same as [`Self::compute_shares()`], but output an iterator of bytes
@@ -86,8 +86,8 @@ impl<C: CurveGroup> FeldmanVss<C> {
         node_idx: usize,
         commitment: &[C::Affine],
     ) -> Result<C, VssError> {
-        let n = pp.n.get() as usize;
-        let t = pp.t.get() as usize;
+        let n = pp.n.get();
+        let t = pp.t.get();
 
         // input validation
         if node_idx >= n {
@@ -155,8 +155,8 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
         shares: impl Iterator<Item = (usize, Self::SecretShare)>,
     ) -> Result<Self::Secret, VssError> {
         let shares = shares.collect::<Vec<_>>();
-        let n = pp.n.get() as usize;
-        let t = pp.t.get() as usize;
+        let n = pp.n.get();
+        let t = pp.t.get();
         // input validation
         if shares.len() != t {
             return Err(VssError::MismatchedSharesCount(t, shares.len()));
@@ -316,8 +316,8 @@ mod tests {
             let n_usize = n as usize;
             let t_usize = t as usize;
 
-            let n = NonZeroU32::new(n).unwrap();
-            let t = NonZeroU32::new(t).unwrap();
+            let n = NonZeroUsize::new(n as usize).unwrap();
+            let t = NonZeroUsize::new(t as usize).unwrap();
             let pp = FeldmanVssPublicParam::new(t, n);
 
             let (shares, commitment) = FeldmanVss::<C>::share(&pp, rng, secret);
