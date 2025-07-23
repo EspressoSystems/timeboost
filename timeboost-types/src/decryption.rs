@@ -6,9 +6,9 @@ use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use timeboost_crypto::{
     DecryptionScheme,
-    prelude::{DkgEncKey, Vss},
+    prelude::{DkgEncKey, Vess, Vss},
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
-    vess::{ShoupVess, VessError},
+    vess::VessError,
 };
 
 use crate::DkgBundle;
@@ -203,7 +203,7 @@ impl DkgAccumulator {
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
-        let vess = ShoupVess::new_fast_from(committee);
+        let vess = Vess::new_fast_from(committee);
         vess.verify(
             self.store.sorted_keys(),
             bundle.vess_ct(),
@@ -241,4 +241,123 @@ impl<'a> Subset<'a> {
     pub fn bundles(&self) -> &HashSet<DkgBundle> {
         self.bundles
     }
+}
+
+#[test]
+fn test_dkg_e2e() {
+    use ark_std::rand::seq::SliceRandom;
+    use ark_std::{UniformRand, rand::thread_rng};
+    use timeboost_crypto::Plaintext;
+    use timeboost_crypto::prelude::DkgDecKey;
+    use timeboost_crypto::prelude::{Vess, Vss};
+
+    // Parameters
+    let committee_size = 5;
+    let aad: &[u8; 3] = b"dkg";
+    let mut rng = thread_rng();
+
+    let committee_keys: Vec<_> = (0..committee_size)
+        .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
+        .collect();
+    let committee = Committee::new(committee_size as u64, committee_keys);
+
+    // Generate keypairs for the committee
+    let dkg_priv_keys: Vec<_> = (0..committee_size)
+        .map(|_| DkgDecKey::rand(&mut rng))
+        .collect();
+
+    let dkg_keys: Vec<_> = dkg_priv_keys.iter().map(|k| DkgEncKey::from(k)).collect();
+
+    // Generate a random secret
+    let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+
+    // Create Vess instance
+    let vess = Vess::new_fast_from(&committee);
+
+    // Encrypt shares and get Feldman commitment
+    let (ciphertexts, commitments) = vess
+        .encrypted_shares(&dkg_keys, secret.clone(), aad)
+        .unwrap();
+
+    // Choose a random subset of ciphertexts to decrypt
+    let mut indices: Vec<_> = (0..committee_size).collect();
+    indices.shuffle(&mut rng);
+    let chosen_indices = &indices[..committee.one_honest_threshold().get()];
+
+    // Decrypt the chosen shares
+    let mut shares = Vec::new();
+    let mut comms = Vec::new();
+    for &i in chosen_indices {
+        let labeled_key = dkg_priv_keys[i].clone().label(i);
+
+        let share = vess
+            .decrypt_share(&labeled_key, &ciphertexts, aad)
+            .expect("decryption should succeed");
+        shares.push(share);
+        comms.push(commitments.clone()); // All commitments are the same in this context
+    }
+
+    // Use from_dkg to obtain the DecryptionKey for each node
+    let mut thres_dec_keys = Vec::new();
+    for node_idx in 0..committee_size {
+        let thres_dec_key =
+            super::DecryptionKey::from_dkg(committee_size, node_idx, &comms, &shares)
+                .expect("from_dkg should succeed");
+        thres_dec_keys.push(thres_dec_key);
+    }
+    let first_pubkey = thres_dec_keys[0].pubkey();
+    let first_combkey = thres_dec_keys[0].combkey();
+    for node_idx in 1..committee_size {
+        assert_eq!(
+            thres_dec_keys[node_idx].pubkey(),
+            first_pubkey,
+            "pubkeys should be identical for all nodes: idx={}, pubkey={:?}, first_pubkey={:?}",
+            node_idx,
+            thres_dec_keys[node_idx].pubkey(),
+            first_pubkey
+        );
+        assert_eq!(
+            thres_dec_keys[node_idx].combkey(),
+            first_combkey,
+            "combkeys should be identical for all nodes: idx={}, combkey={:?}, first_combkey={:?}",
+            node_idx,
+            thres_dec_keys[node_idx].combkey(),
+            first_combkey
+        );
+    }
+
+    let ad = b"threshold";
+
+    // Create a plaintext and encrypt it with the derived threshold public key
+    let test_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
+    let pubkey = thres_dec_keys[0].pubkey();
+    let ciphertext = DecryptionScheme::encrypt(&mut rng, &pubkey, &test_plaintext, &ad.to_vec())
+        .expect("encryption should succeed");
+
+    // Each node computes its decryption share
+    let mut dec_shares = Vec::new();
+    for dec_key in thres_dec_keys.iter() {
+        let share = DecryptionScheme::decrypt(dec_key.privkey(), &ciphertext, &ad.to_vec())
+            .expect("decryption share should succeed");
+        dec_shares.push(share);
+    }
+
+    // Select threshold number of shares and combine to recover the plaintext
+    let selected_shares: Vec<_> = dec_shares
+        .iter()
+        .take(committee.one_honest_threshold().get())
+        .collect();
+
+    let recovered = DecryptionScheme::combine(
+        &committee,
+        thres_dec_keys[0].combkey(),
+        selected_shares,
+        &ciphertext,
+        &ad.to_vec(),
+    )
+    .expect("combine should succeed");
+    assert_eq!(
+        recovered, test_plaintext,
+        "decrypted plaintext matches original"
+    );
 }
