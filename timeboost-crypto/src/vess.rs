@@ -8,6 +8,7 @@ use ark_std::{
     marker::PhantomData,
     rand::{Rng, SeedableRng},
 };
+use multisig::Committee;
 use num_integer::{binomial, gcd};
 use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
@@ -20,7 +21,7 @@ use spongefish::{
         GroupDomainSeparator, GroupToUnit,
     },
 };
-use std::{collections::VecDeque, num::NonZeroU32};
+use std::{collections::VecDeque, num::NonZeroUsize};
 use thiserror::Error;
 
 use crate::{
@@ -76,7 +77,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_fast(vss_threshold: NonZeroU32, vss_num_shares: NonZeroU32) -> Self {
+    pub fn new_fast(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
         let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
         Self {
             num_repetition: 132,
@@ -91,7 +92,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_short(vss_threshold: NonZeroU32, vss_num_shares: NonZeroU32) -> Self {
+    pub fn new_short(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
         let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
         Self {
             num_repetition: 245,
@@ -102,12 +103,26 @@ impl<C: CurveGroup> ShoupVess<C> {
         }
     }
 
+    /// Handy constructor for a VSS committee, see [`Self::new_fast()`]
+    pub fn new_fast_from(committee: &Committee) -> Self {
+        let threshold = committee.one_honest_threshold();
+        let num_shares = committee.size();
+        Self::new_fast(threshold, num_shares)
+    }
+
+    /// Handy constructor for a VSS committee, see [`Self::new_short()`]
+    pub fn new_short_from(committee: &Committee) -> Self {
+        let threshold = committee.one_honest_threshold();
+        let num_shares = committee.size();
+        Self::new_short(threshold, num_shares)
+    }
+
     /// construct the transcript pattern in the interactive proof for Fiat-Shamir transformation.
     /// `aad`: associated data for context/session identifier
     /// IOPattern binds all public parameters including N, M, t, n, aad, to avoid weak FS attack.
     fn io_pattern(&self, aad: &[u8]) -> spongefish::DomainSeparator {
-        let t = self.vss_pp.t.get() as usize;
-        let n = self.vss_pp.n.get() as usize;
+        let t = self.vss_pp.t.get();
+        let n = self.vss_pp.n.get();
 
         let mut ds = spongefish::DomainSeparator::<DefaultHash>::new(&format!(
             "vess-ad-{}",
@@ -256,7 +271,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         VessError,
     > {
         // input validation
-        let n = self.vss_pp.n.get() as usize;
+        let n = self.vss_pp.n.get();
         if recipients.len() != n {
             return Err(VessError::WrongRecipientsLength(n, recipients.len()));
         }
@@ -341,8 +356,8 @@ impl<C: CurveGroup> ShoupVess<C> {
         &self,
         verifier_state: &mut VerifierState,
     ) -> Result<ProverMessageUntilStep4b<C>, VessError> {
-        let t = self.vss_pp.t.get() as usize;
-        let n = self.vss_pp.n.get() as usize;
+        let t = self.vss_pp.t.get();
+        let n = self.vss_pp.n.get();
 
         // read C and h from transcript
         let mut expected_comm = vec![C::default(); t];
@@ -464,7 +479,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         ct: &VessCiphertext,
         aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
-        let n = self.vss_pp.n.get() as usize;
+        let n = self.vss_pp.n.get();
         let node_idx = recv_sk.node_idx;
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
@@ -688,7 +703,7 @@ mod tests {
         UniformRand,
         rand::{SeedableRng, rngs::StdRng},
     };
-    use std::{collections::BTreeSet, iter::repeat_with};
+    use std::{collections::BTreeSet, iter::repeat_with, num::NonZeroUsize};
 
     type H = sha2::Sha256;
     type Vss = FeldmanVss<G1Projective>;
@@ -696,7 +711,7 @@ mod tests {
     fn test_vess_correctness_helper(vess: ShoupVess<G1Projective, H, Vss>) {
         let rng = &mut StdRng::seed_from_u64(0);
         let secret = Fr::rand(rng);
-        let n = vess.vss_pp.n.get() as usize;
+        let n = vess.vss_pp.n.get();
 
         let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
             repeat_with(|| mre::DecryptionKey::rand(rng))
@@ -723,12 +738,12 @@ mod tests {
     #[test]
     fn test_vess_correctness() {
         test_vess_correctness_helper(ShoupVess::new_fast(
-            NonZeroU32::new(5).unwrap(),
-            NonZeroU32::new(13).unwrap(),
+            NonZeroUsize::new(5).unwrap(),
+            NonZeroUsize::new(13).unwrap(),
         ));
         test_vess_correctness_helper(ShoupVess::new_short(
-            NonZeroU32::new(10).unwrap(),
-            NonZeroU32::new(20).unwrap(),
+            NonZeroUsize::new(10).unwrap(),
+            NonZeroUsize::new(20).unwrap(),
         ));
     }
 
