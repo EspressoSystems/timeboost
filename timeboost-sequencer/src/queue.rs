@@ -191,14 +191,17 @@ impl DataSource for BundleQueue {
 
         inner.set_time(time);
 
+        let dkg_present = inner.dkg.is_some();
+
         if r.is_genesis() || inner.mode.is_passive() {
-            return CandidateList::builder(Timestamp::now(), inner.index)
-                .finish()
-                .try_into()
-                .unwrap_or_else(|err| {
-                    error!(%err, "candidate list serialization error");
-                    CandidateListBytes::default()
-                });
+            let mut builder = CandidateList::builder(Timestamp::now(), inner.index);
+            if dkg_present {
+                builder = builder.with_dkg(inner.dkg.clone());
+            }
+            return builder.finish().try_into().unwrap_or_else(|err| {
+                error!(%err, "candidate list serialization error");
+                CandidateListBytes::default()
+            });
         }
 
         let mut size_budget = inner.max_len;
@@ -226,15 +229,19 @@ impl DataSource for BundleQueue {
             regular.push(b.clone())
         }
 
-        CandidateList::builder(inner.time, inner.index)
+        let mut builder = CandidateList::builder(inner.time, inner.index)
             .with_priority_bundles(priority)
-            .with_regular_bundles(regular)
-            .finish()
-            .try_into()
-            .unwrap_or_else(|err| {
-                error!(%err, "candidate list serialization error");
-                CandidateListBytes::default()
-            })
+            .with_regular_bundles(regular);
+        if dkg_present {
+            builder = builder.with_dkg(inner.dkg.clone());
+        }
+        let candidate_list = builder.finish().try_into().unwrap_or_else(|err| {
+            error!(%err, "candidate list serialization error");
+            CandidateListBytes::default()
+        });
+
+        inner.dkg = None;
+        candidate_list
     }
 }
 
