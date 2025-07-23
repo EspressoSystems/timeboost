@@ -9,6 +9,7 @@ use timeboost_builder::robusta;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
+use url::Url;
 
 #[cfg(feature = "until")]
 use anyhow::ensure;
@@ -85,11 +86,11 @@ struct Cli {
         long,
         default_value = "https://query.decaf.testnet.espresso.network/v1/"
     )]
-    espresso_base_url: String,
+    espresso_base_url: Url,
 
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
-    espresso_websocket_url: String,
+    espresso_websocket_url: Url,
 
     #[clap(long)]
     namespace: u64,
@@ -235,8 +236,8 @@ async fn main() -> Result<()> {
         .recover(is_recover)
         .robusta(
             robusta::Config::builder()
-                .base_url(&cli.espresso_base_url)?
-                .wss_base_url(&cli.espresso_websocket_url)?
+                .base_url(cli.espresso_base_url)
+                .wss_base_url(cli.espresso_websocket_url)
                 .label(pubkey.to_string())
                 .build(),
         )

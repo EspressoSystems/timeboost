@@ -1,4 +1,5 @@
 mod config;
+mod multiwatcher;
 mod types;
 mod watcher;
 
@@ -18,8 +19,9 @@ use tracing::{debug, warn};
 
 use crate::types::{TX, TaggedBase64, TransactionsWithProof, VidCommonResponse};
 
+pub use crate::multiwatcher::Multiwatcher;
 pub use crate::types::Height;
-pub use crate::watcher::{WatchError, watch};
+pub use crate::watcher::{WatchError, Watcher};
 pub use config::{Config, ConfigBuilder};
 pub use espresso_types;
 
@@ -276,10 +278,7 @@ fn deserialize<T: DeserializeOwned>(d: &[u8]) -> Result<T, Error> {
 
 #[cfg(test)]
 mod tests {
-    use futures::StreamExt;
-    use tokio::pin;
-
-    use super::{Client, Config};
+    use super::{Client, Config, Watcher};
 
     #[tokio::test]
     async fn decaf_smoke() {
@@ -288,17 +287,23 @@ mod tests {
             .try_init();
 
         let cfg = Config::builder()
-            .base_url("https://query.decaf.testnet.espresso.network/v1/")
-            .unwrap()
-            .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
-            .unwrap()
+            .base_url(
+                "https://query.decaf.testnet.espresso.network/v1/"
+                    .parse()
+                    .unwrap(),
+            )
+            .wss_base_url(
+                "wss://query.decaf.testnet.espresso.network/v1/"
+                    .parse()
+                    .unwrap(),
+            )
             .label("decaf_smoke")
             .build();
 
         let clt = Client::new(cfg.clone());
         let height = clt.height().await.unwrap();
-        let headers = super::watch(&cfg, height, None).await.unwrap();
-        pin!(headers);
-        assert_eq!(u64::from(height), headers.next().await.unwrap().height());
+        let mut watcher = Watcher::new(cfg, height, None);
+        let header = watcher.next().await;
+        assert_eq!(u64::from(height), header.height());
     }
 }

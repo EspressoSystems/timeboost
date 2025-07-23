@@ -1,8 +1,8 @@
-use std::future::ready;
 use std::str::from_utf8;
 
+use bytes::Bytes;
 use espresso_types::{Header, NamespaceId};
-use futures::{SinkExt, Stream, StreamExt, stream};
+use futures::{SinkExt, StreamExt};
 use reqwest::header::LOCATION;
 use tokio::{net::TcpStream, time::sleep};
 use tokio_tungstenite::tungstenite::{self, Message, client::IntoClientRequest};
@@ -13,104 +13,157 @@ use crate::{Config, types::Height};
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-pub async fn watch<H, N>(
-    cfg: &Config,
-    height: H,
-    nsid: N,
-) -> Result<impl Stream<Item = Header> + use<H, N>, WatchError>
-where
-    H: Into<Height>,
-    N: Into<Option<NamespaceId>>,
-{
-    let height = height.into();
-    let nsid = nsid.into();
-
-    let ws = connect(cfg, height).await?;
-    let ws = stream::unfold(ws, move |mut ws| async move {
-        match ws.next().await? {
-            Ok(Message::Binary(_)) => {
-                debug!("bytes received");
-                Some((None, ws))
-            }
-            Ok(Message::Text(text)) => match serde_json::from_str::<Header>(text.as_str()) {
-                Ok(hdr) => {
-                    if let Some(id) = nsid {
-                        if hdr.ns_table().find_ns_id(&id).is_some() {
-                            Some((Some(hdr), ws))
-                        } else {
-                            debug!(height = %hdr.height(), "namespace id not found");
-                            Some((None, ws))
-                        }
-                    } else {
-                        Some((Some(hdr), ws))
-                    }
-                }
-                Err(err) => {
-                    warn!(%err, "could not read text frame as header");
-                    None
-                }
-            },
-            Ok(Message::Ping(bytes)) => {
-                debug!("ping received");
-                if let Err(err) = ws.send(Message::Pong(bytes)).await {
-                    warn!(%err, "failed to answer ping")
-                }
-                Some((None, ws))
-            }
-            Ok(Message::Pong(_)) => {
-                debug!("unexpected pong");
-                Some((None, ws))
-            }
-            Ok(Message::Close(frame)) => {
-                if let Some(f) = frame {
-                    warn!(code = ?f.code, reason = %f.reason.as_str(), "connection closed");
-                }
-                None
-            }
-            Ok(Message::Frame(_)) => {
-                unreachable!("tungstenite does not produce this while reading")
-            }
-            Err(err) => {
-                warn!(%err, "websocket error");
-                None
-            }
-        }
-    });
-    Ok(ws.filter_map(ready))
+#[derive(Debug)]
+pub struct Watcher {
+    config: Config,
+    height: Height,
+    namespace: Option<NamespaceId>,
+    websocket: Option<Ws>,
+    ping: Option<Bytes>,
 }
 
-async fn connect(cfg: &Config, h: Height) -> Result<Ws, WatchError> {
-    let mut url = cfg
-        .wss_base_url
-        .join(&format!("availability/stream/headers/{h}"))?;
+impl Watcher {
+    pub fn new<H, N>(cfg: Config, height: H, nsid: N) -> Self
+    where
+        H: Into<Height>,
+        N: Into<Option<NamespaceId>>,
+    {
+        Self {
+            config: cfg,
+            height: height.into(),
+            namespace: nsid.into(),
+            websocket: None,
+            ping: None,
+        }
+    }
 
-    let mut delay = cfg.delay_iter();
+    pub async fn next(&mut self) -> Header {
+        'main: loop {
+            let ws = if let Some(w) = &mut self.websocket {
+                w
+            } else {
+                let mut d = self.config.delay_iter();
+                let w = loop {
+                    match self.connect().await {
+                        Ok(w) => break w,
+                        Err(err) => {
+                            warn!(%err, "failed to connect");
+                            sleep(d.next().expect("infinite delay sequence")).await
+                        }
+                    }
+                };
+                self.websocket = Some(w);
+                self.websocket.as_mut().expect("self.websocket.is_some()")
+            };
 
-    loop {
-        debug!(%url, "connecting");
-        let r = (&url).into_client_request()?;
-        match connect_async(r).await {
-            Ok((w, _)) => {
-                debug!(%url, "connection established");
-                return Ok(w);
-            }
-            Err(tungstenite::Error::Http(r)) => {
-                if r.status().is_redirection()
-                    && let Some(loc) = r.headers().get(LOCATION)
-                    && let Ok(path) = from_utf8(loc.as_bytes())
-                {
-                    url.set_path(path);
-                    debug!(%url, "following redirection");
-                    continue;
+            if let Some(bytes) = &self.ping {
+                if let Err(err) = ws.send(Message::Pong(bytes.clone())).await {
+                    warn!(%err, "failed to answer ping");
+                    self.ping = None;
+                    self.websocket = None;
+                    continue 'main;
+                } else {
+                    self.ping = None
                 }
-                warn!(%url, ?r, "failed to connect")
             }
-            Err(err) => {
-                warn!(%url, %err, "failed to connect")
+
+            loop {
+                match ws.next().await {
+                    Some(Ok(Message::Binary(_))) => {
+                        debug!("bytes received");
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        match serde_json::from_str::<Header>(text.as_str()) {
+                            Ok(hdr) => {
+                                if let Some(id) = &self.namespace {
+                                    if hdr.ns_table().find_ns_id(id).is_some() {
+                                        self.height = hdr.height().into();
+                                        return hdr;
+                                    } else {
+                                        debug!(height = %hdr.height(), "namespace id not found");
+                                    }
+                                } else {
+                                    self.height = hdr.height().into();
+                                    return hdr;
+                                }
+                            }
+                            Err(err) => {
+                                warn!(%err, "could not read text frame as header");
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(bytes))) => {
+                        debug!("ping received");
+                        self.ping = Some(bytes.clone());
+                        if let Err(err) = ws.send(Message::Pong(bytes)).await {
+                            warn!(%err, "failed to answer ping");
+                            self.ping = None;
+                            self.websocket = None;
+                            continue 'main;
+                        } else {
+                            self.ping = None
+                        }
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        debug!("unexpected pong");
+                    }
+                    Some(Ok(Message::Close(frame))) => {
+                        if let Some(f) = frame {
+                            warn!(code = ?f.code, reason = %f.reason.as_str(), "connection closed");
+                        }
+                        self.websocket = None;
+                        continue 'main;
+                    }
+                    Some(Ok(Message::Frame(_))) => {
+                        // Tungstenite does not produce `Message::Frame` while reading.
+                        debug!("unexpected frame");
+                    }
+                    Some(Err(err)) => {
+                        warn!(%err, "websocket error");
+                        self.websocket = None;
+                        continue 'main;
+                    }
+                    None => {
+                        warn!("websocket stream ended");
+                        self.websocket = None;
+                        continue 'main;
+                    }
+                }
             }
         }
-        let d = delay.next().expect("infinite delay sequence");
-        sleep(d).await
+    }
+
+    async fn connect(&self) -> Result<Ws, WatchError> {
+        let mut url = self
+            .config
+            .wss_base_url
+            .join(&format!("availability/stream/headers/{}", self.height))?;
+
+        loop {
+            debug!(%url, "connecting");
+            let r = (&url).into_client_request()?;
+            match connect_async(r).await {
+                Ok((w, _)) => {
+                    debug!(%url, "connection established");
+                    return Ok(w);
+                }
+                Err(tungstenite::Error::Http(r)) => {
+                    if r.status().is_redirection()
+                        && let Some(loc) = r.headers().get(LOCATION)
+                        && let Ok(path) = from_utf8(loc.as_bytes())
+                    {
+                        url.set_path(path);
+                        debug!(%url, "following redirection");
+                        continue;
+                    }
+                    warn!(%url, ?r, "failed to connect")
+                }
+                Err(err) => {
+                    warn!(%url, %err, "failed to connect");
+                    return Err(err.into());
+                }
+            }
+        }
     }
 }
 
