@@ -8,6 +8,7 @@ const NUM_DELAYS: usize = 5;
 #[derive(Debug, Clone, Builder)]
 pub struct Config {
     /// Log label.
+    #[builder(into)]
     pub(crate) label: String,
 
     /// Espresso network base URL.

@@ -292,7 +292,7 @@ mod tests {
             .unwrap()
             .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
             .unwrap()
-            .label(String::new())
+            .label("decaf_smoke")
             .build();
 
         let clt = Client::new(cfg.clone());

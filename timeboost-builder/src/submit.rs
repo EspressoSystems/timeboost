@@ -2,15 +2,15 @@ use std::{cmp::min, collections::BTreeSet, sync::Arc, time::Duration};
 
 use futures::stream::StreamExt;
 use multisig::{Committee, PublicKey, Validated};
-use parking_lot::RwLock;
-use robusta::{Height, espresso_types::NamespaceId};
+use parking_lot::Mutex;
+use robusta::espresso_types::NamespaceId;
 use timeboost_types::{
     BlockNumber, CertifiedBlock,
     sailfish::{CommitteeVec, Empty},
 };
 use tokio::{
     spawn,
-    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
+    sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore},
     task::JoinHandle,
     time::{Instant, error::Elapsed, sleep, timeout},
 };
@@ -27,7 +27,7 @@ pub struct Submitter {
     verify_task: JoinHandle<Empty>,
     submitters: TaskTracker,
     handler: Handler,
-    committees: Arc<Mutex<CommitteeVec<2>>>,
+    committees: Arc<AsyncMutex<CommitteeVec<2>>>,
     task_permits: Arc<Semaphore>,
 }
 
@@ -40,8 +40,8 @@ impl Drop for Submitter {
 impl Submitter {
     pub async fn create(cfg: SubmitterConfig) -> Self {
         let client = robusta::Client::new(cfg.robusta.clone());
-        let verified = Arc::new(RwLock::new(BTreeSet::new()));
-        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
+        let verified = Arc::new(Mutex::new(BTreeSet::new()));
+        let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
         let handler = Handler {
             label: cfg.pubkey,
             nsid: cfg.namespace,
@@ -55,21 +55,13 @@ impl Submitter {
             client: client.clone(),
             verified,
         };
-        let mut delays = cfg.robusta.delay_iter();
-        loop {
-            let Ok(height) = client.height().await else {
-                let d = delays.next().expect("delay iterator repeats");
-                sleep(d).await;
-                continue;
-            };
-            return Submitter {
-                handler,
-                config: cfg,
-                verify_task: spawn(verifier.verify(height)),
-                submitters: TaskTracker::new(),
-                committees,
-                task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
-            };
+        Submitter {
+            handler,
+            config: cfg,
+            verify_task: spawn(verifier.verify()),
+            submitters: TaskTracker::new(),
+            committees,
+            task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
         }
     }
 
@@ -105,12 +97,20 @@ struct Verifier {
     label: PublicKey,
     nsid: NamespaceId,
     client: robusta::Client,
-    committees: Arc<Mutex<CommitteeVec<2>>>,
-    verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
+    committees: Arc<AsyncMutex<CommitteeVec<2>>>,
+    verified: Arc<Mutex<BTreeSet<BlockNumber>>>,
 }
 
 impl Verifier {
-    async fn verify(self, mut height: Height) -> Empty {
+    async fn verify(self) -> Empty {
+        let mut delays = self.client.config().delay_iter();
+        let mut height = loop {
+            if let Ok(h) = self.client.height().await {
+                break h;
+            };
+            let d = delays.next().expect("delay iterator repeats");
+            sleep(d).await;
+        };
         loop {
             let mut headers;
             loop {
@@ -122,7 +122,7 @@ impl Verifier {
             while let Some(h) = headers.next().await {
                 let committees = self.committees.lock().await;
                 let numbers = self.client.verified(self.nsid, &h, &committees).await;
-                let mut set = self.verified.write();
+                let mut set = self.verified.lock();
                 for n in numbers {
                     debug!(node = %self.label, num = %n, "verified");
                     if set.len() == CACHE_SIZE {
@@ -141,7 +141,7 @@ struct Handler {
     label: PublicKey,
     nsid: NamespaceId,
     client: robusta::Client,
-    verified: Arc<RwLock<BTreeSet<BlockNumber>>>,
+    verified: Arc<Mutex<BTreeSet<BlockNumber>>>,
 }
 
 impl Handler {
@@ -153,6 +153,13 @@ impl Handler {
         }
 
         let num = cb.cert().data().num();
+
+        // Maybe the block has already been verified?
+        if self.verified.lock().remove(&num) {
+            debug!(node = %self.label, %num, "block submission verified");
+            return;
+        }
+
         let max_delay = Duration::from_secs(30);
         let mut state = State::Submit(false);
 
@@ -175,7 +182,7 @@ impl Handler {
                     state = State::Verify(delay.saturating_sub(d))
                 }
                 State::Verify(delay) => {
-                    if self.verified.read().contains(&cb.cert().data().num()) {
+                    if self.verified.lock().remove(&num) {
                         debug!(node = %self.label, %num, "block submission verified");
                         return;
                     } else {
