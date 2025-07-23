@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use timeboost_crypto::prelude::{DkgEncKey, LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::vess::ShoupVess;
@@ -119,6 +119,11 @@ impl Decrypter {
                 .into(),
         );
 
+        if cfg.dkg_store.committee().id() != cfg.committee.committee().id() {
+            return Err(DecrypterError::Internal(
+                "Wrong committee in DkgKeyStore".to_string(),
+            ));
+        }
         let dkg_stores = Arc::new(RwLock::new({
             let mut arr = ArrayVec::new();
             arr.push(cfg.dkg_store);
@@ -154,19 +159,6 @@ impl Decrypter {
     /// Check if the channels between decrypter and its core worker still have capacity left
     pub fn has_capacity(&mut self) -> bool {
         self.worker_tx.capacity() > 0 && self.worker_rx.capacity() > 0
-    }
-
-    /// Returns the currently active DKG encryption keys
-    pub fn current_enc_keys(&self) -> Option<Vec<DkgEncKey>> {
-        let entries = self
-            .dkg_stores
-            .read()
-            .iter()
-            .find(|s| s.committee().id() == self.current)?
-            .sorted_keys()
-            .cloned()
-            .collect();
-        Some(entries)
     }
 
     /// Returns the currently active decryption committee
@@ -228,7 +220,8 @@ impl Decrypter {
             trace!(node = %self.label, committee = %committee_id, "dkg bundle already submitted");
             return None;
         }
-        let Some(enc_keys) = self.current_enc_keys() else {
+        let stores = self.dkg_stores.read();
+        let Some(store) = stores.iter().find(|s| s.committee().id() == committee_id) else {
             warn!(node = %self.label, committee = %committee_id, "missing dkg store");
             return None;
         };
@@ -236,7 +229,9 @@ impl Decrypter {
 
         let mut rng = thread_rng();
         let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-        let (ct, cm) = vess.encrypted_shares(&enc_keys, secret, b"dkg").ok()?;
+        let (ct, cm) = vess
+            .encrypted_shares(store.sorted_keys(), secret, b"dkg")
+            .ok()?;
         self.submitted.insert(committee_id);
         Some(DkgBundle::new(committee_id, ct, cm))
     }

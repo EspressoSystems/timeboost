@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, btree_map};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
@@ -166,7 +166,7 @@ impl DkgKeyStore {
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
-    pub fn sorted_keys(&self) -> impl Iterator<Item = &DkgEncKey> {
+    pub fn sorted_keys(&self) -> btree_map::Values<KeyId, DkgEncKey> {
         self.keys.values()
     }
 }
@@ -202,10 +202,14 @@ impl DkgAccumulator {
 
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         let aad: &[u8; 3] = b"dkg";
-        let sorted_keys: Vec<_> = self.store.sorted_keys().cloned().collect();
         let committee = self.store.committee();
         let vess = ShoupVess::new_fast_from(committee);
-        vess.verify(&sorted_keys, bundle.vess_ct(), bundle.comm(), aad)?;
+        vess.verify(
+            self.store.sorted_keys(),
+            bundle.vess_ct(),
+            bundle.comm(),
+            aad,
+        )?;
         self.bundles.insert(bundle);
         Ok(())
     }
