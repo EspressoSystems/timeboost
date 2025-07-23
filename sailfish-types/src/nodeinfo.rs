@@ -43,8 +43,8 @@ impl<T: Default + PartialOrd + Clone> NodeInfo<T> {
     }
 
     /// Gets the lower bound of the highest quorum interval.
-    pub fn quorum(&self) -> T {
+    pub fn quorum(&self) -> &T {
         debug_assert!(self.quorum <= self.nodes.len());
-        self.nodes[self.quorum - 1].1.clone()
+        &self.nodes[self.quorum - 1].1
     }
 }
