@@ -6,9 +6,9 @@ use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use timeboost_crypto::{
     DecryptionScheme,
-    prelude::{DkgEncKey, Vss},
+    prelude::{DkgEncKey, Vess, Vss},
     traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
-    vess::{ShoupVess, VessError},
+    vess::VessError,
 };
 
 use crate::DkgBundle;
@@ -203,7 +203,7 @@ impl DkgAccumulator {
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
-        let vess = ShoupVess::new_fast_from(committee);
+        let vess = Vess::new_fast_from(committee);
         vess.verify(
             self.store.sorted_keys(),
             bundle.vess_ct(),

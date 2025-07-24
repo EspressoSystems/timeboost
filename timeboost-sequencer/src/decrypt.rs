@@ -589,8 +589,8 @@ impl Worker {
                     )
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                    self.dec_sk = Some(dec_sk.clone());
                     self.enc_key.set(dec_sk.pubkey().clone());
+                    self.dec_sk = Some(dec_sk);
                     self.dkg_completed.insert(committee.id());
                 } else {
                     // TODO(resharing): these ciphertexts are for next committee
@@ -1038,7 +1038,7 @@ impl From<NetworkDown> for EndOfPlay {
 
 #[cfg(test)]
 mod tests {
-    use ark_std::test_rng;
+    use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use metrics::NoMetrics;
     use std::{
         net::{Ipv4Addr, SocketAddr},
@@ -1049,266 +1049,537 @@ mod tests {
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
-    use sailfish::types::{Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
+    use sailfish::types::{Evidence, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKeyCell},
-        traits::threshold_enc::ThresholdEncScheme,
+        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, ThresholdEncKeyCell, Vess, Vss},
+        traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     };
     use timeboost_types::{
         Address, Bundle, ChainId, DkgKeyStore, Epoch, InclusionList, PriorityBundle, SeqNo, Signer,
         Timestamp,
     };
-    use tracing::warn;
 
     use crate::{config::DecrypterConfig, decrypt::Decrypter};
 
+    // Test constants
+    const COMMITTEE_SIZE: usize = 5;
+    const DKG_AAD: &[u8] = b"dkg";
+    const THRESHOLD_AAD: &[u8] = b"threshold";
+    const DKG_ROUND: u64 = 41;
+    const DECRYPTION_ROUND: u64 = 42;
+    const TEST_EPOCH: u64 = 42;
+    const TEST_CHAIN_ID: u64 = 0;
+    const TEST_SEQNO: u64 = 10;
+    const NETWORK_SETUP_DELAY_SECS: u64 = 1;
+    const DKG_TERMINATION_DELAY_SECS: f32 = 0.5;
+    const RETAIN_ROUNDS: usize = 100;
+
+    // Pre-generated deterministic keys for consistent testing
+    // Generated via: `just mkconfig_local 5 --seed 42`
+    const SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
+        "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
+        "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
+        "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
+        "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
+    ];
+
+    const DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
+        "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
+        "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
+        "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
+        "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
+    ];
+
+    const DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
+        "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
+        "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
+        "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
+        "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
+    ];
+
+    #[test]
+    /// Tests the local DKG (Distributed Key Generation) end-to-end flow without networking.
+    /// Verifies that committee members can generate threshold decryption keys and perform
+    /// threshold encryption/decryption operations.
+    fn test_local_dkg_e2e() {
+        let mut rng = thread_rng();
+        let dkg_aad = DKG_AAD.to_vec();
+
+        // Setup committee with generated keypairs
+        let committee_keys: Vec<_> = (0..COMMITTEE_SIZE)
+            .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
+            .collect();
+        let committee = Committee::new(COMMITTEE_SIZE as u64, committee_keys);
+        let threshold = committee.one_honest_threshold().get();
+
+        // Generate DKG keypairs for secure communication between committee members
+        let dkg_private_keys: Vec<_> = (0..COMMITTEE_SIZE)
+            .map(|_| DkgDecKey::rand(&mut rng))
+            .collect();
+        let dkg_public_keys: Vec<_> = dkg_private_keys.iter().map(DkgEncKey::from).collect();
+
+        let vess = Vess::new_fast_from(&committee);
+
+        // Generate dealings: each committee member contributes a random secret
+        let dealings: Vec<_> = (0..COMMITTEE_SIZE)
+            .map(|_| {
+                let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+                vess.encrypted_shares(&dkg_public_keys, secret, &dkg_aad)
+                    .unwrap()
+            })
+            .collect();
+
+        // Simulate ACS (Asynchronous Common Subset): randomly select subset of dealings for
+        // aggregation
+        let mut dealing_indices: Vec<_> = (0..COMMITTEE_SIZE).collect();
+        dealing_indices.shuffle(&mut rng);
+        let selected_dealing_indices = &dealing_indices[..threshold];
+
+        // Extract commitments from selected dealings
+        let commitments: Vec<_> = selected_dealing_indices
+            .iter()
+            .map(|&idx| dealings[idx].1.clone())
+            .collect();
+
+        // Decrypt shares for each node from selected dealings
+        let decrypted_shares_per_node: Vec<Vec<_>> = (0..COMMITTEE_SIZE)
+            .map(|node_idx| {
+                let labeled_secret_key = dkg_private_keys[node_idx].clone().label(node_idx);
+                selected_dealing_indices
+                    .iter()
+                    .map(|&dealing_idx| {
+                        let (ref ciphertext, _) = dealings[dealing_idx];
+                        vess.decrypt_share(&labeled_secret_key, ciphertext, &dkg_aad)
+                            .expect("DKG share decryption should succeed")
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Derive threshold decryption keys for each node using DKG output
+        let threshold_decryption_keys: Vec<_> = decrypted_shares_per_node
+            .iter()
+            .enumerate()
+            .map(|(node_idx, shares)| {
+                super::DecryptionKey::from_dkg(COMMITTEE_SIZE, node_idx, &commitments, shares)
+                    .expect("threshold key derivation should succeed")
+            })
+            .collect();
+
+        // Verify that all nodes derive the same public and combiner keys
+        let (expected_pubkey, expected_combkey) = {
+            let first_key = &threshold_decryption_keys[0];
+            (first_key.pubkey(), first_key.combkey())
+        };
+
+        for (index, key) in threshold_decryption_keys.iter().enumerate().skip(1) {
+            assert_eq!(
+                key.pubkey(),
+                expected_pubkey,
+                "Mismatched public key for node {index}"
+            );
+            assert_eq!(
+                key.combkey(),
+                expected_combkey,
+                "Mismatched combiner key for node {index}"
+            );
+        }
+
+        // Test threshold encryption/decryption process
+        let sample_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
+        let threshold_aad = THRESHOLD_AAD.to_vec();
+        let ciphertext =
+            DecryptionScheme::encrypt(&mut rng, expected_pubkey, &sample_plaintext, &threshold_aad)
+                .expect("encryption should succeed");
+
+        // Generate decryption shares from all nodes
+        let decryption_shares: Vec<_> = threshold_decryption_keys
+            .iter()
+            .map(|key| {
+                DecryptionScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                    .expect("decryption share generation should succeed")
+            })
+            .collect();
+
+        // Combine threshold number of shares to recover the original plaintext
+        let selected_shares: Vec<_> = decryption_shares.iter().take(threshold).collect();
+        let recovered_plaintext = DecryptionScheme::combine(
+            &committee,
+            expected_combkey,
+            selected_shares,
+            &ciphertext,
+            &threshold_aad,
+        )
+        .expect("threshold decryption combination should succeed");
+
+        assert_eq!(
+            recovered_plaintext, sample_plaintext,
+            "Recovered plaintext must match the original plaintext"
+        );
+    }
+
     #[tokio::test]
-    async fn test_with_dkg_data() {
+    /// Tests integrated DKG to ensure it terminates with consistent public encryption keys
+    /// across all committee members in a networked environment.
+    async fn test_dkg_termination() {
         logging::init_logging();
         let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
 
-        // Create inclusion lists with DKG bundles
-        let round = RoundNumber::new(41);
+        let dkg_round = RoundNumber::new(DKG_ROUND);
+        let dkg_inclusion_list =
+            create_dkg_inclusion_list(dkg_round, committee, &signature_keys, &mut decrypters);
 
-        let evidence = {
-            let mut va = VoteAccumulator::new(committee);
-            for sk in signature_keys {
-                let keypair = Keypair::from(sk);
-                va.add(Signed::new(
-                    Round::new(round - 1, UNKNOWN_COMMITTEE_ID),
-                    &keypair,
-                ))
-                .unwrap();
-            }
-            let cert = va.into_certificate().unwrap();
-            cert.into()
-        };
+        enqueue_to_all_decrypters(&mut decrypters, dkg_inclusion_list).await;
 
-        let dkg_bundles = decrypters
-            .iter_mut()
-            .map(|d| d.next_dkg().expect("first dkg submission"))
-            .collect();
-        let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
-        incl_list.set_dkg_bundles(dkg_bundles);
+        // Allow time for DKG bundles to be processed
+        tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
 
-        // Enqueue inclusion list to each decrypter
-        for d in decrypters.iter_mut() {
-            if let Err(e) = d.enqueue(incl_list.clone()).await {
-                warn!("failed to enqueue inclusion list: {:?}", e);
-            }
-        }
-
-        // Wait for dkg bundles
-        let _ = tokio::time::sleep(Duration::from_secs(1)).await;
-
-        // Verify that all decrypters agree on the encryption key
-        let enc_keys: Vec<_> = enc_key_cells
+        // Verify all committee members derive the same public encryption keys
+        let generated_keys: Vec<_> = enc_key_cells
             .iter()
-            .map(|cell| cell.get().expect("enc_key is generated"))
+            .map(|cell| {
+                cell.get()
+                    .expect("Encryption key should be generated after DKG completion")
+            })
             .collect();
-        for i in 1..enc_keys.len() {
+
+        let expected_public_key = &generated_keys[0];
+        for (index, key) in generated_keys.iter().enumerate().skip(1) {
             assert_eq!(
-                enc_keys[0], enc_keys[i],
-                "encryption keys are not identical"
+                key, expected_public_key,
+                "Node {index} has mismatched public key"
             );
         }
     }
 
-    #[ignore]
     #[tokio::test]
-    async fn test_with_encrypted_data() {
+    /// Tests the complete DKG and decryption phase end-to-end flow in a networked environment.
+    /// Verifies that encrypted transactions can be properly decrypted after DKG completion.
+    async fn test_dkg_and_decryption_phase_e2e() {
         logging::init_logging();
 
-        let (_enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
-        // TODO: (alex) get the Threshold Public Encryption key after DKG is done
-        let enc_key = <DecryptionScheme as ThresholdEncScheme>::PublicKey::try_from_str::<64>("")
-            .expect("into threshold pubkey");
-        // Craft a ciphertext for decryption
-        let ptx_message = b"The quick brown fox jumps over the lazy dog".to_vec();
-        let tx_message = b"The slow brown fox jumps over the lazy dog".to_vec();
-        let ptx_plaintext = Plaintext::new(ptx_message.clone());
-        let tx_plaintext = Plaintext::new(tx_message.clone());
-        let ptx_ciphertext =
-            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &ptx_plaintext, &vec![]).unwrap();
-        let tx_ciphertext =
-            DecryptionScheme::encrypt(&mut test_rng(), &enc_key, &tx_plaintext, &vec![]).unwrap();
-        let ptx_ciphertext_bytes =
-            bincode::serde::encode_to_vec(&ptx_ciphertext, bincode::config::standard())
-                .expect("Failed to encode ciphertext");
-        let tx_ciphertext_bytes =
-            bincode::serde::encode_to_vec(&tx_ciphertext, bincode::config::standard())
-                .expect("Failed to encode ciphertext");
+        let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
 
-        // Create inclusion lists with encrypted transactions
-        let round = RoundNumber::new(42);
-        // generate round evidence by signing for round-1
-        let evidence = {
-            let mut va = VoteAccumulator::new(committee);
-            for sk in signature_keys {
-                let keypair = Keypair::from(sk);
-                va.add(Signed::new(
-                    Round::new(round - 1, UNKNOWN_COMMITTEE_ID),
-                    &keypair,
-                ))
-                .unwrap();
-            }
-            let cert = va.into_certificate().unwrap();
-            cert.into()
-        };
-        let mut incl_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
-        let chain_id = ChainId::from(0);
-        let epoch = Epoch::from(42);
-        let auction = Address::default();
-        let seqno = SeqNo::from(10);
-        let signer = Signer::default();
-        let bundle = PriorityBundle::new(
-            Bundle::new(chain_id, epoch, ptx_ciphertext_bytes.into(), true),
-            auction,
-            seqno,
+        // Phase 1: DKG setup
+        let dkg_round = RoundNumber::new(DKG_ROUND);
+        let dkg_inclusion_list = create_dkg_inclusion_list(
+            dkg_round,
+            committee.clone(),
+            &signature_keys,
+            &mut decrypters,
         );
-        let signed_bundle = bundle.sign(signer).expect("default signer");
-        incl_list.set_priority_bundles(vec![signed_bundle]);
-        incl_list.set_regular_bundles(vec![Bundle::new(
-            chain_id,
-            epoch,
-            tx_ciphertext_bytes.into(),
-            true,
-        )]);
 
-        // Enqueue inclusion lists to each decrypter
-        for d in decrypters.iter_mut() {
-            if let Err(e) = d.enqueue(incl_list.clone()).await {
-                warn!("failed to enqueue inclusion list: {:?}", e);
-            }
+        enqueue_to_all_decrypters(&mut decrypters, dkg_inclusion_list).await;
+
+        let processed_dkg_lists = collect_inclusion_lists(&mut decrypters).await;
+
+        // Verify that all DKG inclusion lists are processed correctly
+        for dkg_list in processed_dkg_lists {
+            assert_eq!(dkg_list.round(), RoundNumber::new(DKG_ROUND));
+            assert_eq!(dkg_list.dkg_bundles().len(), COMMITTEE_SIZE);
         }
 
-        // Collect decrypted inclusion lists
-        let mut decrypted_lists = Vec::new();
-        for d in decrypters.iter_mut() {
-            let incl = d.next().await.unwrap();
-            decrypted_lists.push(incl);
-        }
+        // Allow time for DKG bundle processing
+        tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
+
+        let encryption_key = &enc_key_cells[0]
+            .get()
+            .expect("encryption key should be generated after DKG");
+
+        // Phase 2: Encrypted transaction testing
+        let priority_tx_message = b"The quick brown fox jumps over the lazy dog";
+        let regular_tx_message = b"The slow brown fox jumps over the lazy dog";
+
+        let decryption_round = RoundNumber::new(DECRYPTION_ROUND);
+        let encrypted_inclusion_list = create_encrypted_inclusion_list(
+            decryption_round,
+            committee,
+            &signature_keys,
+            encryption_key,
+            priority_tx_message,
+            regular_tx_message,
+        );
+
+        enqueue_to_all_decrypters(&mut decrypters, encrypted_inclusion_list).await;
+
+        let decrypted_inclusion_lists = collect_inclusion_lists(&mut decrypters).await;
 
         // Verify that all decrypted inclusion lists are correct
-        for d in decrypted_lists {
-            assert_eq!(d.round(), RoundNumber::new(42));
-            assert_eq!(d.priority_bundles().len(), 1);
-            assert_eq!(d.regular_bundles().len(), 1);
-            let decrypted_ptx_data = d.priority_bundles()[0].bundle().data();
-            let decrypted_tx_data = d.regular_bundles()[0].data();
-            assert_eq!(decrypted_ptx_data.to_vec(), ptx_message);
-            assert_eq!(decrypted_tx_data.to_vec(), tx_message);
+        for decrypted_list in decrypted_inclusion_lists {
+            assert_eq!(
+                decrypted_list.round(),
+                RoundNumber::new(DECRYPTION_ROUND),
+                "Decrypted list should have the expected round number"
+            );
+            assert_eq!(
+                decrypted_list.priority_bundles().len(),
+                1,
+                "Should have exactly one priority bundle"
+            );
+            assert_eq!(
+                decrypted_list.regular_bundles().len(),
+                1,
+                "Should have exactly one regular bundle"
+            );
+
+            let decrypted_priority_data = decrypted_list.priority_bundles()[0].bundle().data();
+            let decrypted_regular_data = decrypted_list.regular_bundles()[0].data();
+
+            assert_eq!(
+                decrypted_priority_data.to_vec(),
+                priority_tx_message.to_vec(),
+                "Decrypted priority transaction should match original"
+            );
+            assert_eq!(
+                decrypted_regular_data.to_vec(),
+                regular_tx_message.to_vec(),
+                "Decrypted regular transaction should match original"
+            );
         }
     }
 
+    /// Creates round evidence by having all committee members sign the previous round.
+    /// This evidence is required to validate the legitimacy of the current round.
+    fn create_round_evidence(
+        committee: Committee,
+        signature_keys: &[SecretKey],
+        current_round: RoundNumber,
+    ) -> Evidence {
+        let mut vote_accumulator = VoteAccumulator::new(committee);
+        let previous_round = Round::new(current_round - 1, UNKNOWN_COMMITTEE_ID);
+
+        for secret_key in signature_keys {
+            let keypair = Keypair::from(secret_key.clone());
+            let signed_round = Signed::new(previous_round, &keypair);
+            vote_accumulator
+                .add(signed_round)
+                .expect("Vote should be added successfully");
+        }
+
+        let certificate = vote_accumulator
+            .into_certificate()
+            .expect("Certificate should be created successfully");
+        certificate.into()
+    }
+
+    /// Creates an inclusion list containing DKG bundles from all decrypters.
+    /// This simulates the first phase where committee members share their DKG contributions.
+    fn create_dkg_inclusion_list(
+        round: RoundNumber,
+        committee: Committee,
+        signature_keys: &[SecretKey],
+        decrypters: &mut [Decrypter],
+    ) -> InclusionList {
+        let evidence = create_round_evidence(committee, signature_keys, round);
+        let dkg_bundles = decrypters
+            .iter_mut()
+            .map(|decrypter| {
+                decrypter
+                    .next_dkg()
+                    .expect("DKG bundle should be generated")
+            })
+            .collect();
+
+        let mut inclusion_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
+        inclusion_list.set_dkg_bundles(dkg_bundles);
+        inclusion_list
+    }
+
+    /// Enqueues the same inclusion list to all decrypters for processing.
+    async fn enqueue_to_all_decrypters(
+        decrypters: &mut [Decrypter],
+        inclusion_list: InclusionList,
+    ) {
+        for decrypter in decrypters.iter_mut() {
+            decrypter
+                .enqueue(inclusion_list.clone())
+                .await
+                .expect("Inclusion list should be enqueued successfully");
+        }
+    }
+
+    /// Collects processed inclusion lists from all decrypters.
+    /// This simulates gathering the results after decryption processing.
+    async fn collect_inclusion_lists(decrypters: &mut [Decrypter]) -> Vec<InclusionList> {
+        let mut processed_lists = Vec::with_capacity(decrypters.len());
+        for decrypter in decrypters.iter_mut() {
+            let processed_list = decrypter
+                .next()
+                .await
+                .expect("Processed inclusion list should be available");
+            processed_lists.push(processed_list);
+        }
+        processed_lists
+    }
+
+    /// Creates an inclusion list with encrypted priority and regular transactions.
+    /// This simulates the second phase where encrypted transactions are processed.
+    fn create_encrypted_inclusion_list(
+        round: RoundNumber,
+        committee: Committee,
+        signature_keys: &[SecretKey],
+        encryption_key: &ThresholdEncKey,
+        priority_message: &[u8],
+        regular_message: &[u8],
+    ) -> InclusionList {
+        let evidence = create_round_evidence(committee, signature_keys, round);
+        let empty_aad = vec![];
+
+        // Encrypt both message types
+        let priority_plaintext = Plaintext::new(priority_message.to_vec());
+        let regular_plaintext = Plaintext::new(regular_message.to_vec());
+
+        let priority_ciphertext = DecryptionScheme::encrypt(
+            &mut test_rng(),
+            encryption_key,
+            &priority_plaintext,
+            &empty_aad,
+        )
+        .expect("Priority transaction encryption should succeed");
+
+        let regular_ciphertext = DecryptionScheme::encrypt(
+            &mut test_rng(),
+            encryption_key,
+            &regular_plaintext,
+            &empty_aad,
+        )
+        .expect("Regular transaction encryption should succeed");
+
+        let priority_ciphertext_bytes =
+            bincode::serde::encode_to_vec(&priority_ciphertext, bincode::config::standard())
+                .expect("Priority ciphertext encoding should succeed");
+
+        let regular_ciphertext_bytes =
+            bincode::serde::encode_to_vec(&regular_ciphertext, bincode::config::standard())
+                .expect("Regular ciphertext encoding should succeed");
+
+        // Create inclusion list with encrypted transaction bundles
+        let mut inclusion_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
+        let chain_id = ChainId::from(TEST_CHAIN_ID);
+        let epoch = Epoch::from(TEST_EPOCH);
+        let auction_address = Address::default();
+        let sequence_number = SeqNo::from(TEST_SEQNO);
+        let default_signer = Signer::default();
+
+        // Create priority bundle with encrypted data
+        let priority_bundle = PriorityBundle::new(
+            Bundle::new(chain_id, epoch, priority_ciphertext_bytes.into(), true),
+            auction_address,
+            sequence_number,
+        );
+        let signed_priority_bundle = priority_bundle
+            .sign(default_signer)
+            .expect("Priority bundle signing should succeed");
+
+        // Create regular bundle with encrypted data
+        let regular_bundle = Bundle::new(
+            chain_id,
+            epoch,
+            regular_ciphertext_bytes.into(),
+            true, // is_encrypted = true
+        );
+
+        inclusion_list.set_priority_bundles(vec![signed_priority_bundle]);
+        inclusion_list.set_regular_bundles(vec![regular_bundle]);
+        inclusion_list
+    }
+
+    /// Sets up a complete test environment with committee members, decrypters, and network
+    /// connections. Returns encryption key cells, committee, decrypters, and signature keys for
+    /// testing.
     async fn setup() -> (
         Vec<ThresholdEncKeyCell>,
         Committee,
         Vec<Decrypter>,
         Vec<SecretKey>,
     ) {
-        // these keys are generated via
-        // `just mkconfig_local 5 --seed 42`
-        let signature_private_keys = [
-            "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
-            "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
-            "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
-            "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk",
-            "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
-        ];
-        let dh_private_keys = [
-            "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
-            "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
-            "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
-            "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
-            "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
-        ];
-        let hpke_private_keys = [
-            "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
-            "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
-            "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
-            "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
-            "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
-        ];
-
-        let signature_keys: Vec<_> = signature_private_keys
+        // Parse all key types from their string representations
+        let signature_keys: Vec<_> = SIGNATURE_PRIVATE_KEY_STRINGS
             .iter()
-            .map(|s| SecretKey::try_from(*s).expect("into secret key"))
+            .map(|key_str| SecretKey::try_from(*key_str).expect("Valid signature key string"))
             .collect();
 
-        let dh_keys: Vec<_> = dh_private_keys
+        let dh_keys: Vec<_> = DH_PRIVATE_KEY_STRINGS
             .iter()
-            .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
-            .collect();
-        let dkg_keys: Vec<_> = hpke_private_keys
-            .iter()
-            .map(|s| DkgDecKey::try_from_str::<64>(s).expect("into secret key"))
+            .map(|key_str| x25519::SecretKey::try_from(*key_str).expect("Valid DH key string"))
             .collect();
 
-        let c = Committee::new(
+        let dkg_keys: Vec<_> = DKG_PRIVATE_KEY_STRINGS
+            .iter()
+            .map(|key_str| DkgDecKey::try_from_str::<64>(key_str).expect("Valid DKG key string"))
+            .collect();
+
+        // Create committee from signature keys
+        let committee = Committee::new(
             UNKNOWN_COMMITTEE_ID,
             signature_keys
                 .iter()
                 .enumerate()
-                .map(|(i, k)| (KeyId::from(i as u8), k.public_key()))
+                .map(|(index, secret_key)| (KeyId::from(index as u8), secret_key.public_key()))
                 .collect::<Vec<_>>(),
         );
 
+        // Create DKG key store with committee and DKG public keys
         let dkg_store = DkgKeyStore::new(
-            c.clone(),
+            committee.clone(),
             dkg_keys
                 .iter()
                 .enumerate()
-                .map(|(i, k)| (KeyId::from(i as u8), DkgEncKey::from(k))),
+                .map(|(index, dkg_key)| (KeyId::from(index as u8), DkgEncKey::from(dkg_key))),
         );
 
-        let peers: Vec<_> = signature_keys
+        // Set up network peers with available ports
+        let network_peers: Vec<_> = signature_keys
             .iter()
             .zip(&dh_keys)
-            .map(|(k, x)| {
-                let port = portpicker::pick_unused_port().expect("find open port");
+            .map(|(sig_key, dh_key)| {
+                let available_port =
+                    portpicker::pick_unused_port().expect("Should find available port");
                 (
-                    k.public_key(),
-                    x.public_key(),
-                    SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+                    sig_key.public_key(),
+                    dh_key.public_key(),
+                    SocketAddr::from((Ipv4Addr::LOCALHOST, available_port)),
                 )
             })
             .collect();
-        let ac = AddressableCommittee::new(c.clone(), peers.clone());
-        let mut decrypters = Vec::new();
-        let mut enc_key_cells = Vec::new();
-        for i in 0..peers.len() {
-            let sig_key = signature_keys[i].clone();
-            let dh_key = dh_keys[i].clone();
-            let (_, _, addr) = peers[i];
-            let enc_key_cell = ThresholdEncKeyCell::new();
-            let conf = DecrypterConfig::builder()
-                .label(sig_key.public_key())
-                .address(addr.into())
+
+        let addressable_committee =
+            AddressableCommittee::new(committee.clone(), network_peers.clone());
+        let mut decrypters = Vec::with_capacity(COMMITTEE_SIZE);
+        let mut encryption_key_cells = Vec::with_capacity(COMMITTEE_SIZE);
+
+        // Create decrypter instances for each committee member
+        for peer_index in 0..network_peers.len() {
+            let signature_key = signature_keys[peer_index].clone();
+            let dh_key = dh_keys[peer_index].clone();
+            let (_, _, network_address) = network_peers[peer_index];
+            let encryption_key_cell = ThresholdEncKeyCell::new();
+
+            let decrypter_config = DecrypterConfig::builder()
+                .label(signature_key.public_key())
+                .address(network_address.into())
                 .dh_keypair(dh_key.into())
-                .dkg_key(dkg_keys[i].clone())
+                .dkg_key(dkg_keys[peer_index].clone())
                 .dkg_store(dkg_store.clone())
-                .committee(ac.clone())
-                .retain(100)
-                .threshold_enc_key(enc_key_cell.clone())
+                .committee(addressable_committee.clone())
+                .retain(RETAIN_ROUNDS)
+                .threshold_enc_key(encryption_key_cell.clone())
                 .build();
 
-            let decrypter = Decrypter::new(conf, &NoMetrics).await.unwrap();
+            let decrypter = Decrypter::new(decrypter_config, &NoMetrics)
+                .await
+                .expect("Decrypter creation should succeed");
             decrypters.push(decrypter);
-            enc_key_cells.push(enc_key_cell);
+            encryption_key_cells.push(encryption_key_cell);
         }
-        // wait for network
-        let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
-        (enc_key_cells, c, decrypters, signature_keys)
-    }
+        // Allow time for network setup
+        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
 
-    #[allow(dead_code)]
-    fn decode_bincode<T: serde::de::DeserializeOwned>(encoded: &str) -> T {
-        let conf = bincode::config::standard().with_limit::<{ 1024 * 1024 }>();
-        bincode::serde::decode_from_slice(&bs58::decode(encoded).into_vec().unwrap(), conf)
-            .unwrap()
-            .0
+        (encryption_key_cells, committee, decrypters, signature_keys)
     }
 }

@@ -134,7 +134,7 @@ pub struct KeyShare<C: CurveGroup> {
     index: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Plaintext(Vec<u8>);
 
 #[serde_as]
