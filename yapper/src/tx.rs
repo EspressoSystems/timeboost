@@ -96,7 +96,9 @@ pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
     let enckey_url = &urls.first().expect("urls shouldn't be empty").2;
     loop {
         if enc_key.get_ref().is_none() {
+            tracing::debug!("DKG ongoing ...");
             if let Some(k) = fetch_encryption_key(&c, enckey_url).await {
+                tracing::info!("DKG done");
                 enc_key.set(k)
             }
         }
