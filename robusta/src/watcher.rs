@@ -52,8 +52,7 @@ impl Watcher {
                         }
                     }
                 };
-                self.websocket = Some(w);
-                self.websocket.as_mut().expect("self.websocket.is_some()")
+                self.websocket.insert(w)
             };
 
             if let Some(bytes) = &self.ping {
