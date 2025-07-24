@@ -6,11 +6,9 @@ use futures::{StreamExt, stream::SelectAll};
 use tokio::{spawn, sync::mpsc, task::JoinHandle};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
-use url::Url;
 
 #[derive(Debug)]
 pub struct Multiwatcher {
-    height: Height,
     threshold: usize,
     watchers: Vec<JoinHandle<()>>,
     headers: BTreeMap<Height, HashMap<Header, HashSet<Id>>>,
@@ -29,11 +27,10 @@ impl Drop for Multiwatcher {
 }
 
 impl Multiwatcher {
-    pub fn new<C, H, I, N>(configs: C, height: H, nsid: N, threshold: usize) -> Self
+    pub fn new<C, H, N>(configs: C, height: H, nsid: N, threshold: usize) -> Self
     where
         C: IntoIterator<Item = Config>,
         H: Into<Height>,
-        I: IntoIterator<Item = Url>,
         N: Into<NamespaceId>,
     {
         let height = height.into();
@@ -49,8 +46,8 @@ impl Multiwatcher {
                 while tx.send((id, w.next().await)).await.is_ok() {}
             }));
         }
+        assert!(!watchers.is_empty());
         Self {
-            height,
             threshold,
             stream,
             watchers,
@@ -58,26 +55,27 @@ impl Multiwatcher {
         }
     }
 
-    pub async fn next(&mut self) -> Option<Header> {
+    pub async fn next(&mut self) -> Header {
         loop {
-            let (i, hdr) = self.stream.next().await?;
+            let (i, hdr) = self.stream.next().await.expect("watchers never terminate");
             let h = Height::from(hdr.height());
             if Some(h) < self.headers.first_entry().map(|e| *e.key()) {
-                debug!(%h, "ignoring header below minimum height");
+                debug!(height = %h, "ignoring header below minimum height");
                 continue;
             }
             if self.has_voted(h, i) {
-                warn!(%h, "source sent multiple headers for same height");
+                warn!(height = %h, "source sent multiple headers for same height");
                 continue;
             }
-            let votes = self.headers.entry(h).or_default();
-            if let Some(ids) = votes.get(&hdr)
-                && ids.len() + 1 >= self.threshold
-            {
-                self.gc(h);
-                return Some(hdr);
+            let counter = self.headers.entry(h).or_default();
+            let votes = counter.get(&hdr).map(|ids| ids.len()).unwrap_or(0) + 1;
+            if votes >= self.threshold {
+                self.headers.retain(|k, _| *k > h);
+                debug!(height = %h, "header available");
+                return hdr;
             }
-            votes.entry(hdr).or_default().insert(i);
+            debug!(height = %h, %votes, "vote added");
+            counter.entry(hdr).or_default().insert(i);
         }
     }
 
@@ -85,16 +83,11 @@ impl Multiwatcher {
         let Some(m) = self.headers.get(&height) else {
             return false;
         };
-        for v in m.values() {
-            if v.contains(&id) {
+        for ids in m.values() {
+            if ids.contains(&id) {
                 return true;
             }
         }
         false
-    }
-
-    fn gc(&mut self, height: Height) {
-        self.headers.retain(|h, _| *h >= height);
-        self.height = height;
     }
 }

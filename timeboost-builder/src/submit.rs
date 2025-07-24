@@ -42,7 +42,7 @@ impl Submitter {
     where
         M: ::metrics::Metrics,
     {
-        let client = robusta::Client::new(cfg.robusta.clone());
+        let client = robusta::Client::new(cfg.robusta.0.clone());
         let verified = Arc::new(Mutex::new(BTreeSet::new()));
         let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
         let handler = Handler {
@@ -58,10 +58,12 @@ impl Submitter {
             client: client.clone(),
             verified,
         };
+        let mut configs = vec![cfg.robusta.0.clone()];
+        configs.extend(cfg.robusta.1.iter().cloned());
         Submitter {
             handler,
             config: cfg,
-            verify_task: spawn(verifier.verify()),
+            verify_task: spawn(verifier.verify(configs)),
             submitters: TaskTracker::new(),
             committees,
             task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
@@ -109,7 +111,7 @@ struct Verifier {
 }
 
 impl Verifier {
-    async fn verify(self) -> Empty {
+    async fn verify(self, configs: Vec<robusta::Config>) -> Empty {
         let mut delays = self.client.config().delay_iter();
         let height = loop {
             if let Ok(h) = self.client.height().await {
@@ -118,7 +120,8 @@ impl Verifier {
             let d = delays.next().expect("delay iterator repeats endlessly");
             sleep(d).await;
         };
-        let mut watcher = robusta::Watcher::new(self.client.config().clone(), height, self.nsid);
+        let threshold = 2 * configs.len() / 3 + 1;
+        let mut watcher = robusta::Multiwatcher::new(configs, height, self.nsid, threshold);
         loop {
             let h = watcher.next().await;
             let committees = self.committees.lock().await;
@@ -297,7 +300,7 @@ mod tests {
 
             let scfg = SubmitterConfig::builder()
                 .pubkey(k.public_key())
-                .robusta(rcfg.clone())
+                .robusta((rcfg.clone(), Vec::new()))
                 .namespace(10_101u64)
                 .committee(committee.clone())
                 .build();
