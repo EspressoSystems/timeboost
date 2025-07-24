@@ -1,15 +1,26 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use crate::{Config, Height, Watcher};
 use espresso_types::{Header, NamespaceId};
 use futures::{StreamExt, stream::SelectAll};
-use tokio::{spawn, sync::mpsc, task::JoinHandle};
+use tokio::{
+    spawn,
+    sync::{Barrier, mpsc},
+    task::JoinHandle,
+};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
 #[derive(Debug)]
 pub struct Multiwatcher {
     threshold: usize,
+    lower_bound: Arc<AtomicU64>,
     watchers: Vec<JoinHandle<()>>,
     headers: BTreeMap<Height, HashMap<Header, HashSet<Id>>>,
     stream: SelectAll<ReceiverStream<(Id, Header)>>,
@@ -35,22 +46,47 @@ impl Multiwatcher {
     {
         let height = height.into();
         let nsid = nsid.into();
+
+        // We require `threshold` watchers to deliver the next header.
+        // Adversaries may produce headers in quick succession, causing
+        // excessive memory usage.
+        let barrier = Arc::new(Barrier::new(threshold));
+
+        // We track the last delivered height as a lower bound.
+        // Watchers skip over headers up to and including that height.
+        let lower_bound = Arc::new(AtomicU64::new(height.into()));
+
         let mut stream = SelectAll::new();
         let mut watchers = Vec::new();
+
         for (i, c) in configs.into_iter().enumerate() {
-            let (tx, rx) = mpsc::channel(32);
+            let (tx, rx) = mpsc::channel(10);
             stream.push(ReceiverStream::new(rx));
+            let barrier = barrier.clone();
+            let lower_bound = lower_bound.clone();
             watchers.push(spawn(async move {
-                let id = Id(i);
+                let i = Id(i);
                 let mut w = Watcher::new(c, height, nsid);
-                while tx.send((id, w.next().await)).await.is_ok() {}
+                loop {
+                    let h = w.next().await;
+                    if h.height() <= lower_bound.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    if tx.send((i, h)).await.is_err() {
+                        break;
+                    }
+                    barrier.wait().await;
+                }
             }));
         }
+
         assert!(!watchers.is_empty());
+
         Self {
             threshold,
             stream,
             watchers,
+            lower_bound,
             headers: BTreeMap::from_iter([(height, HashMap::new())]),
         }
     }
@@ -71,6 +107,7 @@ impl Multiwatcher {
             let votes = counter.get(&hdr).map(|ids| ids.len()).unwrap_or(0) + 1;
             if votes >= self.threshold {
                 self.headers.retain(|k, _| *k > h);
+                self.lower_bound.store(h.into(), Ordering::Relaxed);
                 debug!(height = %h, "header available");
                 return hdr;
             }
