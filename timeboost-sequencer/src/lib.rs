@@ -1,5 +1,6 @@
 mod config;
 mod decrypt;
+mod delayed_messages;
 mod include;
 mod metrics;
 mod queue;
@@ -8,6 +9,7 @@ mod sort;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use alloy_primitives::Address;
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -30,6 +32,8 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
+use crate::delayed_messages::DelayedMessages;
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -46,6 +50,7 @@ pub enum Output {
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
+    delayed_task: JoinHandle<()>,
     bundles: BundleQueue,
     commands: Sender<Command>,
     output: Receiver<Output>,
@@ -53,7 +58,8 @@ pub struct Sequencer {
 
 impl Drop for Sequencer {
     fn drop(&mut self) {
-        self.task.abort()
+        self.task.abort();
+        self.delayed_task.abort();
     }
 }
 
@@ -108,6 +114,16 @@ impl Sequencer {
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
+
+        let delayed = DelayedMessages::connect(
+            "https://theserversroom.com/ethereum/54cmzzhcj1o/",
+            "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                .parse::<Address>()
+                .expect("valid contract"),
+            queue.clone(),
+        )
+        .await
+        .expect("connection to succeed");
 
         let sailfish = {
             let met = NetworkMetrics::new(
@@ -178,6 +194,7 @@ impl Sequencer {
         Ok(Self {
             label: public_key,
             task: spawn(task.go()),
+            delayed_task: spawn(delayed.go()),
             bundles: queue,
             output: rx,
             commands: cx,
