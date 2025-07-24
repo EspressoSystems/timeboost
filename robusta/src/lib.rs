@@ -2,15 +2,19 @@ mod config;
 mod types;
 mod watcher;
 
+use std::iter::empty;
 use std::time::Duration;
 
+use either::Either;
 use espresso_types::{Header, NamespaceId, Transaction};
-use reqwest::{StatusCode, Url, redirect::Policy};
+use multisig::{Unchecked, Validated};
+use reqwest::{StatusCode, Url};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
-use timeboost_types::CertifiedBlock;
+use timeboost_types::sailfish::CommitteeVec;
+use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::types::{TX, TaggedBase64, TransactionsWithProof, VidCommonResponse};
 
@@ -20,7 +24,7 @@ pub use config::{Config, ConfigBuilder};
 pub use espresso_types;
 
 /// A client for the Espresso network.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
     config: Config,
     client: reqwest::Client,
@@ -31,7 +35,6 @@ impl Client {
         let r = reqwest::Client::builder()
             .https_only(true)
             .timeout(Duration::from_secs(30))
-            .redirect(Policy::limited(c.max_redirects))
             .build()
             .expect("TLS and DNS resolver work");
         Self {
@@ -40,45 +43,90 @@ impl Client {
         }
     }
 
-    pub async fn height(&mut self) -> Result<Height, Error> {
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub async fn height(&self) -> Result<Height, Error> {
         let u = self.config.base_url.join("status/block-height")?;
         self.get_with_retry(u).await
     }
 
-    pub async fn submit(&mut self, cb: &CertifiedBlock) -> Result<(), Error> {
-        let nid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
-        let trx = Transaction::new(nid, serialize(cb)?);
+    pub async fn submit<N>(&self, nsid: N, cb: &CertifiedBlock<Validated>) -> Result<(), Error>
+    where
+        N: Into<NamespaceId>,
+    {
+        let trx = Transaction::new(nsid.into(), serialize(cb)?);
         let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
         Ok(())
     }
 
-    pub async fn verify(&mut self, h: &Header, cb: &CertifiedBlock) -> Result<(), Error> {
-        let nsid = NamespaceId::from(u64::from(u32::from(cb.data().namespace())));
-
-        let trxs = self.transactions(h.height(), nsid).await?;
-        let Some(proof) = trxs.proof else {
-            return Err(ProofError::NoProof.into());
+    pub async fn verified<N, const C: usize>(
+        &self,
+        nsid: N,
+        hdr: &Header,
+        cvec: &CommitteeVec<C>,
+    ) -> impl Iterator<Item = BlockNumber>
+    where
+        N: Into<NamespaceId>,
+    {
+        let nsid = nsid.into();
+        debug!(node = %self.config.label, %nsid, height = %hdr.height(), "verifying blocks");
+        let Ok(trxs) = self.transactions(hdr.height(), nsid).await else {
+            debug!(node = %self.config.label, %nsid, height = %hdr.height(), "no transactions");
+            return Either::Left(empty());
         };
-        if !trxs.transactions.iter().any(|t| matches(t.payload(), cb)) {
-            return Err(Error::TransactionNotFound);
-        }
-
-        let vidc = self.vid_common(h.height()).await?;
-
-        let Some((trxs, ns)) = proof.verify(h.ns_table(), &h.payload_commitment(), &vidc.common)
+        let Some(proof) = trxs.proof else {
+            debug!(node = %self.config.label, %nsid, height = %hdr.height(), "no proof");
+            return Either::Left(empty());
+        };
+        let Ok(vidc) = self.vid_common(hdr.height()).await else {
+            debug!(node = %self.config.label, height = %hdr.height(), "no vid common");
+            return Either::Left(empty());
+        };
+        let Some((trxs, ns)) =
+            proof.verify(hdr.ns_table(), &hdr.payload_commitment(), &vidc.common)
         else {
-            return Err(ProofError::InvalidProof.into());
+            warn!(node = %self.config.label, %nsid, height = %hdr.height(), "proof verification failed");
+            return Either::Left(empty());
         };
         if ns != nsid {
-            return Err(ProofError::NamespaceMismatch(ns, nsid).into());
+            warn!(node = %self.config.label, a = %nsid, b = %ns, height = %hdr.height(), "namespace mismatch");
+            return Either::Left(empty());
         }
-        if !trxs.iter().any(|t| matches(t.payload(), cb)) {
-            return Err(ProofError::TransactionNotInProof.into());
-        }
-
-        Ok(())
+        Either::Right(trxs.into_iter().filter_map(move |t| {
+            match deserialize::<CertifiedBlock<Unchecked>>(t.payload()) {
+                Ok(b) => {
+                    let Some(c) = cvec.get(b.committee()) else {
+                        warn!(
+                            node      = %self.config.label,
+                            height    = %hdr.height(),
+                            committee = %b.committee(),
+                            "unknown committee"
+                        );
+                        return None;
+                    };
+                    if let Some(b) = b.validated(c) {
+                        Some(b.cert().data().num())
+                    } else {
+                        warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
+                        None
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        node   = %self.config.label,
+                        nsid   = %nsid,
+                        height = %hdr.height(),
+                        err    = %err,
+                        "could not deserialize block"
+                    );
+                    None
+                }
+            }
+        }))
     }
 
     async fn transactions<H, N>(&self, height: H, nsid: N) -> Result<TransactionsWithProof, Error>
@@ -116,7 +164,7 @@ impl Client {
             match self.get(url.clone()).await {
                 Ok(a) => return Ok(a),
                 Err(err) => {
-                    warn!(%url, %err, "failed to get response");
+                    warn!(node = %self.config.label, %url, %err, "failed to get response");
                     sleep(delay.next().expect("infinite delay sequence")).await;
                 }
             }
@@ -133,7 +181,7 @@ impl Client {
             match self.post(url.clone(), a).await {
                 Ok(b) => return Ok(b),
                 Err(err) => {
-                    warn!(%url, %err, "failed to post request");
+                    warn!(node = %self.config.label, %url, %err, "failed to post request");
                     sleep(delay.next().expect("infinite delay sequence")).await;
                 }
             }
@@ -166,13 +214,6 @@ impl Client {
 
         Ok(res.json().await?)
     }
-}
-
-fn matches(a: &[u8], b: &CertifiedBlock) -> bool {
-    let Ok(a) = deserialize::<CertifiedBlock>(a) else {
-        return false;
-    };
-    a.data().hash() == b.data().hash() && a.data().hash() == b.cert().data().hash()
 }
 
 /// Errors `Client` can not recover from.
@@ -235,6 +276,9 @@ fn deserialize<T: DeserializeOwned>(d: &[u8]) -> Result<T, Error> {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+    use tokio::pin;
+
     use super::{Client, Config};
 
     #[tokio::test]
@@ -248,11 +292,13 @@ mod tests {
             .unwrap()
             .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
             .unwrap()
+            .label("decaf_smoke")
             .build();
 
-        let mut clt = Client::new(cfg.clone());
+        let clt = Client::new(cfg.clone());
         let height = clt.height().await.unwrap();
-        let header = super::watch(&cfg, height, None).await.unwrap();
-        assert_eq!(u64::from(height), header.height());
+        let headers = super::watch(&cfg, height, None).await.unwrap();
+        pin!(headers);
+        assert_eq!(u64::from(height), headers.next().await.unwrap().height());
     }
 }

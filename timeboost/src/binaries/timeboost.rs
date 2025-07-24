@@ -91,6 +91,9 @@ struct Cli {
     /// Base URL of Espresso's Websocket API.
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: String,
+
+    #[clap(long)]
+    namespace: u64,
 }
 
 #[tokio::main]
@@ -228,6 +231,7 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
 
+    let pubkey = sign_keypair.public_key();
     let config = TimeboostConfig::builder()
         .metrics_port(cli.metrics_port)
         .sailfish_committee(sailfish_committee)
@@ -248,8 +252,10 @@ async fn main() -> Result<()> {
             robusta::Config::builder()
                 .base_url(&cli.espresso_base_url)?
                 .wss_base_url(&cli.espresso_websocket_url)?
+                .label(pubkey.to_string())
                 .build(),
         )
+        .namespace(cli.namespace)
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;
