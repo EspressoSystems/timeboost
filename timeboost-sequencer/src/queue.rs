@@ -191,17 +191,16 @@ impl DataSource for BundleQueue {
 
         inner.set_time(time);
 
-        let dkg_present = inner.dkg.is_some();
-
         if r.is_genesis() || inner.mode.is_passive() {
-            let mut builder = CandidateList::builder(Timestamp::now(), inner.index);
-            if dkg_present {
-                builder = builder.with_dkg(inner.dkg.clone());
-            }
-            return builder.finish().try_into().unwrap_or_else(|err| {
-                error!(%err, "candidate list serialization error");
-                CandidateListBytes::default()
-            });
+            // allow DKG in passive mode (first 8 rounds from genesis)
+            return CandidateList::builder(Timestamp::now(), inner.index)
+                .with_dkg(inner.dkg.clone())
+                .finish()
+                .try_into()
+                .unwrap_or_else(|err| {
+                    error!(%err, "candidate list serialization error");
+                    CandidateListBytes::default()
+                });
         }
 
         let mut size_budget = inner.max_len;
@@ -229,16 +228,16 @@ impl DataSource for BundleQueue {
             regular.push(b.clone())
         }
 
-        let mut builder = CandidateList::builder(inner.time, inner.index)
+        let candidate_list = CandidateList::builder(inner.time, inner.index)
             .with_priority_bundles(priority)
-            .with_regular_bundles(regular);
-        if dkg_present {
-            builder = builder.with_dkg(inner.dkg.clone());
-        }
-        let candidate_list = builder.finish().try_into().unwrap_or_else(|err| {
-            error!(%err, "candidate list serialization error");
-            CandidateListBytes::default()
-        });
+            .with_regular_bundles(regular)
+            .with_dkg(inner.dkg.clone())
+            .finish()
+            .try_into()
+            .unwrap_or_else(|err| {
+                error!(%err, "candidate list serialization error");
+                CandidateListBytes::default()
+            });
 
         inner.dkg = None;
         candidate_list
