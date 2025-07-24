@@ -589,8 +589,8 @@ impl Worker {
                     )
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                    self.dec_sk = Some(dec_sk.clone());
                     self.enc_key.set(dec_sk.pubkey().clone());
+                    self.dec_sk = Some(dec_sk);
                     self.dkg_completed.insert(committee.id());
                 } else {
                     // TODO(resharing): these ciphertexts are for next committee
@@ -1038,7 +1038,7 @@ impl From<NetworkDown> for EndOfPlay {
 
 #[cfg(test)]
 mod tests {
-    use ark_std::test_rng;
+    use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use metrics::NoMetrics;
     use std::{
         net::{Ipv4Addr, SocketAddr},
@@ -1052,8 +1052,8 @@ mod tests {
     use sailfish::types::{Evidence, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, ThresholdEncKeyCell},
-        traits::threshold_enc::ThresholdEncScheme,
+        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, ThresholdEncKeyCell, Vess, Vss},
+        traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     };
     use timeboost_types::{
         Address, Bundle, ChainId, DkgKeyStore, Epoch, InclusionList, PriorityBundle, SeqNo, Signer,
@@ -1062,8 +1062,129 @@ mod tests {
 
     use crate::{config::DecrypterConfig, decrypt::Decrypter};
 
+    #[test]
+    /// non-integrated/networked DKG e2e flow
+    fn test_local_dkg_e2e() {
+        // Test parameters
+        let committee_size = 5;
+        let dkg_aad = b"dkg".to_vec();
+        let mut rng = thread_rng();
+
+        // Setup committee with keypairs
+        let committee_keys: Vec<_> = (0..committee_size)
+            .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
+            .collect();
+        let committee = Committee::new(committee_size as u64, committee_keys);
+        let threshold = committee.one_honest_threshold().get();
+
+        // Generate DKG keypairs for secure communication
+        let dkg_priv_keys: Vec<_> = (0..committee_size)
+            .map(|_| DkgDecKey::rand(&mut rng))
+            .collect();
+        let dkg_pub_keys: Vec<_> = dkg_priv_keys.iter().map(DkgEncKey::from).collect();
+
+        let vess = Vess::new_fast_from(&committee);
+
+        // Generate dealings: each committee member contributes a random secret
+        let dealings: Vec<_> = (0..committee_size)
+            .map(|_| {
+                let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+                vess.encrypted_shares(&dkg_pub_keys, secret, &dkg_aad)
+                    .unwrap()
+            })
+            .collect();
+
+        // Simulate ACS: randomly select subset of dealings for aggregation
+        let mut dealing_indices: Vec<_> = (0..committee_size).collect();
+        dealing_indices.shuffle(&mut rng);
+        let selected_dealings = &dealing_indices[..threshold];
+
+        // Extract commitments from selected dealings
+        let commitments: Vec<_> = selected_dealings
+            .iter()
+            .map(|&idx| dealings[idx].1.clone())
+            .collect();
+
+        // Decrypt shares for each node from selected dealings
+        let node_shares: Vec<Vec<_>> = (0..committee_size)
+            .map(|node_idx| {
+                let labeled_sk = dkg_priv_keys[node_idx].clone().label(node_idx);
+                selected_dealings
+                    .iter()
+                    .map(|&dealing_idx| {
+                        let (ref ciphertext, _) = dealings[dealing_idx];
+                        vess.decrypt_share(&labeled_sk, ciphertext, &dkg_aad)
+                            .expect("decryption should succeed")
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Given the DKG output, derive threshold decryption keys for each node
+        let threshold_keys: Vec<_> = node_shares
+            .iter()
+            .enumerate()
+            .map(|(node_idx, shares)| {
+                super::DecryptionKey::from_dkg(committee_size, node_idx, &commitments, shares)
+                    .expect("from_dkg should succeed")
+            })
+            .collect();
+
+        // Verify all nodes derive the same public and combiner keys
+        let (expected_pubkey, expected_combkey) = {
+            let first = &threshold_keys[0];
+            (first.pubkey(), first.combkey())
+        };
+
+        for (idx, key) in threshold_keys.iter().enumerate().skip(1) {
+            assert_eq!(
+                key.pubkey(),
+                expected_pubkey,
+                "Node {idx} has mismatched public key"
+            );
+            assert_eq!(
+                key.combkey(),
+                expected_combkey,
+                "Node {idx} has mismatched combiner key"
+            );
+        }
+
+        // Test threshold encryption/decryption
+        let test_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
+        let threshold_aad = b"threshold".to_vec();
+        let ciphertext =
+            DecryptionScheme::encrypt(&mut rng, expected_pubkey, &test_plaintext, &threshold_aad)
+                .expect("encryption should succeed");
+
+        // Generate decryption shares from all nodes
+        let decryption_shares: Vec<_> = threshold_keys
+            .iter()
+            .map(|key| {
+                DecryptionScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                    .expect("decryption share should succeed")
+            })
+            .collect();
+
+        // Combine threshold number of shares to recover plaintext
+        let selected_shares: Vec<_> = decryption_shares.iter().take(threshold).collect();
+        let recovered = DecryptionScheme::combine(
+            &committee,
+            expected_combkey,
+            selected_shares,
+            &ciphertext,
+            &threshold_aad,
+        )
+        .expect("combine should succeed");
+
+        assert_eq!(
+            recovered, test_plaintext,
+            "Recovered plaintext should match original"
+        );
+    }
+
     #[tokio::test]
-    async fn test_with_dkg_data() {
+    /// integrated DKG: ensure it terminates with consistent public encryption key
+    async fn test_dkg_termination() {
         logging::init_logging();
         let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
 
@@ -1076,20 +1197,23 @@ mod tests {
         // Wait for dkg bundles
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
+        // Verify all nodes derive the same public keys
         let enc_keys: Vec<_> = enc_key_cells
             .iter()
-            .map(|cell| cell.get().expect("enc_key is generated"))
+            .map(|cell| {
+                cell.get()
+                    .expect("enc_key is generated, DKG not terminated!")
+            })
             .collect();
-        for i in 1..enc_keys.len() {
-            assert_eq!(
-                enc_keys[0], enc_keys[i],
-                "encryption keys are not identical"
-            );
+
+        let expected_pubkey = &enc_keys[0];
+        for (idx, key) in enc_keys.iter().enumerate().skip(1) {
+            assert_eq!(key, expected_pubkey, "Node {idx} has mismatched public key");
         }
     }
 
     #[tokio::test]
-    async fn test_with_encrypted_data() {
+    async fn test_dkg_and_decryption_phase_e2e() {
         logging::init_logging();
 
         let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
@@ -1108,7 +1232,6 @@ mod tests {
             assert_eq!(incl.round(), RoundNumber::new(41));
             assert_eq!(incl.dkg_bundles().len(), 5);
         }
-
         // Wait for dkg bundles
         let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -1268,7 +1391,7 @@ mod tests {
             "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
             "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
         ];
-        let hpke_private_keys = [
+        let dkg_private_keys = [
             "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
             "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
             "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
@@ -1286,7 +1409,7 @@ mod tests {
             .map(|s| x25519::SecretKey::try_from(*s).expect("into secret key"))
             .collect();
 
-        let dkg_keys: Vec<_> = hpke_private_keys
+        let dkg_keys: Vec<_> = dkg_private_keys
             .iter()
             .map(|s| DkgDecKey::try_from_str::<64>(s).expect("into secret key"))
             .collect();
