@@ -55,7 +55,7 @@ pub struct TimeboostConfig {
     pub(crate) leash_len: usize,
 
     /// Configuration of espresso network client.
-    pub(crate) robusta: robusta::Config,
+    pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
 
     #[builder(into)]
     pub(crate) namespace: NamespaceId,

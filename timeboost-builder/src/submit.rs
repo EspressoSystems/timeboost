@@ -1,6 +1,5 @@
 use std::{cmp::min, collections::BTreeSet, sync::Arc, time::Duration};
 
-use futures::stream::StreamExt;
 use multisig::{Committee, PublicKey, Validated};
 use parking_lot::Mutex;
 use robusta::espresso_types::NamespaceId;
@@ -43,7 +42,7 @@ impl Submitter {
     where
         M: ::metrics::Metrics,
     {
-        let client = robusta::Client::new(cfg.robusta.clone());
+        let client = robusta::Client::new(cfg.robusta.0.clone());
         let verified = Arc::new(Mutex::new(BTreeSet::new()));
         let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
         let handler = Handler {
@@ -59,10 +58,12 @@ impl Submitter {
             client: client.clone(),
             verified,
         };
+        let mut configs = vec![cfg.robusta.0.clone()];
+        configs.extend(cfg.robusta.1.iter().cloned());
         Submitter {
             handler,
             config: cfg,
-            verify_task: spawn(verifier.verify()),
+            verify_task: spawn(verifier.verify(configs)),
             submitters: TaskTracker::new(),
             committees,
             task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
@@ -110,35 +111,28 @@ struct Verifier {
 }
 
 impl Verifier {
-    async fn verify(self) -> Empty {
+    async fn verify(self, configs: Vec<robusta::Config>) -> Empty {
         let mut delays = self.client.config().delay_iter();
-        let mut height = loop {
+        let height = loop {
             if let Ok(h) = self.client.height().await {
                 break h;
             };
-            let d = delays.next().expect("delay iterator repeats");
+            let d = delays.next().expect("delay iterator repeats endlessly");
             sleep(d).await;
         };
+        let threshold = 2 * configs.len() / 3 + 1;
+        let mut watcher = robusta::Multiwatcher::new(configs, height, self.nsid, threshold);
         loop {
-            let mut headers;
-            loop {
-                if let Ok(it) = robusta::watch(self.client.config(), height, self.nsid).await {
-                    headers = it.boxed();
-                    break;
+            let h = watcher.next().await;
+            let committees = self.committees.lock().await;
+            let numbers = self.client.verified(self.nsid, &h, &committees).await;
+            let mut set = self.verified.lock();
+            for n in numbers {
+                debug!(node = %self.label, num = %n, "verified");
+                if set.len() == CACHE_SIZE {
+                    set.pop_first();
                 }
-            }
-            while let Some(h) = headers.next().await {
-                let committees = self.committees.lock().await;
-                let numbers = self.client.verified(self.nsid, &h, &committees).await;
-                let mut set = self.verified.lock();
-                for n in numbers {
-                    debug!(node = %self.label, num = %n, "verified");
-                    if set.len() == CACHE_SIZE {
-                        set.pop_first();
-                    }
-                    set.insert(n);
-                }
-                height = h.height().into();
+                set.insert(n);
             }
         }
     }
@@ -291,16 +285,22 @@ mod tests {
             };
 
             let rcfg = robusta::Config::builder()
-                .base_url("https://query.decaf.testnet.espresso.network/v1/")
-                .unwrap()
-                .wss_base_url("wss://query.decaf.testnet.espresso.network/v1/")
-                .unwrap()
+                .base_url(
+                    "https://query.decaf.testnet.espresso.network/v1/"
+                        .parse()
+                        .unwrap(),
+                )
+                .wss_base_url(
+                    "wss://query.decaf.testnet.espresso.network/v1/"
+                        .parse()
+                        .unwrap(),
+                )
                 .label(k.public_key().to_string())
                 .build();
 
             let scfg = SubmitterConfig::builder()
                 .pubkey(k.public_key())
-                .robusta(rcfg.clone())
+                .robusta((rcfg.clone(), Vec::new()))
                 .namespace(10_101u64)
                 .committee(committee.clone())
                 .build();

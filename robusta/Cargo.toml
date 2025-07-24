@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 bincode = { workspace = true }
 bon = { workspace = true }
+bytes = { workspace = true }
 data-encoding = { workspace = true }
 either = { workspace = true }
 espresso-types = { workspace = true }
@@ -21,6 +22,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
