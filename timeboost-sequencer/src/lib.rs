@@ -408,7 +408,13 @@ impl Task {
                 self.mode = Mode::Passive;
                 self.bundles.set_mode(self.mode);
                 info!(node = %self.label, %round, "passive mode");
-                continue;
+
+                // even in passive mode, we process DkgBundle containing inclusion list
+                if outcome.ilist.has_dkg_bundles() {
+                    return Some(outcome.ilist);
+                } else {
+                    continue;
+                }
             }
             if self.mode.is_passive() {
                 info!(node = %self.label, %round, "entering active mode");

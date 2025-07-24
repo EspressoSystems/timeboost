@@ -193,7 +193,7 @@ impl DataSource for BundleQueue {
 
         if r.is_genesis() || inner.mode.is_passive() {
             // allow DKG in passive mode (first 8 rounds from genesis)
-            return CandidateList::builder(Timestamp::now(), inner.index)
+            let candidate_list = CandidateList::builder(Timestamp::now(), inner.index)
                 .with_dkg(inner.dkg.clone())
                 .finish()
                 .try_into()
@@ -201,6 +201,8 @@ impl DataSource for BundleQueue {
                     error!(%err, "candidate list serialization error");
                     CandidateListBytes::default()
                 });
+            inner.dkg = None;
+            return candidate_list;
         }
 
         let mut size_budget = inner.max_len;

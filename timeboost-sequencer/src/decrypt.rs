@@ -190,6 +190,7 @@ impl Decrypter {
                 .send(Command::Dkg(incl.clone()))
                 .await
                 .map_err(|_| DecrypterDown(()))?;
+            debug!(node = %self.label, %round, "enqueued dkg bundles");
         }
 
         if incl.is_encrypted() {
@@ -199,11 +200,11 @@ impl Decrypter {
                 .await
                 .map_err(|_| DecrypterDown(()))?;
             self.incls.insert(round, Status::Encrypted);
+            debug!(node = %self.label, %round, "enqueued encrypted inclusion list");
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
+            debug!(node = %self.label, %round, "enqueued non-encrypted inclusion list");
         }
-
-        debug!(node = %self.label, %round, "enqueued inclusion list");
 
         Ok(())
     }
@@ -420,7 +421,7 @@ impl Worker {
                 cmd = self.rx.recv() => match cmd {
                     Some(Command::Dkg(incl)) => {
                         let round = incl.round();
-                        trace!(%node, %round, "dkg request");
+                        info!(%node, %round, num_dealings=%incl.dkg_bundles().len(), "dkg request");
                         match self.on_dkg_request(incl).await {
                             Ok(()) => {}
                             Err(DecrypterError::End(end)) => return end,
@@ -592,6 +593,7 @@ impl Worker {
                     self.enc_key.set(dec_sk.pubkey().clone());
                     self.dec_sk = Some(dec_sk);
                     self.dkg_completed.insert(committee.id());
+                    info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
                 } else {
                     // TODO(resharing): these ciphertexts are for next committee
                     // send the resulting subset to (passive) nodes in the new committee
