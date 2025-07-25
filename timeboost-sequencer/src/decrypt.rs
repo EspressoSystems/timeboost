@@ -1044,7 +1044,7 @@ mod tests {
     use metrics::NoMetrics;
     use std::{
         net::{Ipv4Addr, SocketAddr},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use timeboost_utils::types::logging;
@@ -1108,6 +1108,7 @@ mod tests {
     /// Verifies that committee members can generate threshold decryption keys and perform
     /// threshold encryption/decryption operations.
     fn test_local_dkg_e2e() {
+        logging::init_logging();
         let mut rng = thread_rng();
         let dkg_aad = DKG_AAD.to_vec();
 
@@ -1127,6 +1128,7 @@ mod tests {
         let vess = Vess::new_fast_from(&committee);
 
         // Generate dealings: each committee member contributes a random secret
+        let start = Instant::now();
         let dealings: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|_| {
                 let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
@@ -1134,6 +1136,21 @@ mod tests {
                     .unwrap()
             })
             .collect();
+        tracing::info!(
+            "VESS::encrypt_shares takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
+
+        // double check all dealings are correct
+        let start = Instant::now();
+        assert!(dealings.iter().all(|(ct, comm)| {
+            vess.verify(dkg_public_keys.iter(), ct, comm, &dkg_aad)
+                .is_ok()
+        }));
+        tracing::info!(
+            "VESS::verify takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
 
         // Simulate ACS (Asynchronous Common Subset): randomly select subset of dealings for
         // aggregation
@@ -1148,6 +1165,7 @@ mod tests {
             .collect();
 
         // Decrypt shares for each node from selected dealings
+        let start = Instant::now();
         let decrypted_shares_per_node: Vec<Vec<_>> = (0..COMMITTEE_SIZE)
             .map(|node_idx| {
                 let labeled_secret_key = dkg_private_keys[node_idx].clone().label(node_idx);
@@ -1161,6 +1179,10 @@ mod tests {
                     .collect()
             })
             .collect();
+        tracing::info!(
+            "VESS::decrypt_shares takes {} ms",
+            start.elapsed().as_millis() / (COMMITTEE_SIZE * threshold) as u128
+        );
 
         // Derive threshold decryption keys for each node using DKG output
         let threshold_decryption_keys: Vec<_> = decrypted_shares_per_node
@@ -1171,6 +1193,10 @@ mod tests {
                     .expect("threshold key derivation should succeed")
             })
             .collect();
+        tracing::info!(
+            "Post-ACS processing takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
 
         // Verify that all nodes derive the same public and combiner keys
         let (expected_pubkey, expected_combkey) = {
