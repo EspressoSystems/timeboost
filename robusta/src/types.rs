@@ -19,7 +19,9 @@ pub(crate) struct VidCommonResponse {
 
 macro_rules! Primitive {
     ($name:ident, $t:ty) => {
-        #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+        #[derive(
+            Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize,
+        )]
         #[serde(transparent)]
         pub struct $name($t);
 

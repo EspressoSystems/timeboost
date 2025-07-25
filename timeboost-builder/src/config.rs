@@ -18,6 +18,6 @@ pub struct SubmitterConfig {
     pub(crate) pubkey: PublicKey,
     #[builder(into)]
     pub(crate) namespace: NamespaceId,
-    pub(crate) robusta: robusta::Config,
+    pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
     pub(crate) committee: Committee,
 }
