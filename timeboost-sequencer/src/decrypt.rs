@@ -10,7 +10,7 @@ use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
@@ -33,8 +33,8 @@ type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecSha
 
 /// Command sent to Decrypter's background worker
 enum Command {
-    // request to inform the worker of DKG shares (dealings) in the inclusion list
-    Dkg(InclusionList),
+    // request to inform the worker of DKG bundle (one dealing at a time)
+    Dkg(DkgBundle),
     // request to decrypt all encrypted transactions inside the inclusion list
     Decrypt(InclusionList),
     /// Prepare for the next committee.
@@ -185,14 +185,6 @@ impl Decrypter {
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
 
-        if incl.has_dkg_bundles() {
-            self.worker_tx
-                .send(Command::Dkg(incl.clone()))
-                .await
-                .map_err(|_| DecrypterDown(()))?;
-            debug!(node = %self.label, %round, "enqueued dkg bundles");
-        }
-
         if incl.is_encrypted() {
             self.worker_tx
                 // TODO:(alex) don't send this command if not ready
@@ -209,12 +201,27 @@ impl Decrypter {
         Ok(())
     }
 
+    /// Send the received DKG bundles to worker
+    pub async fn enqueue_dkg(
+        &self,
+        pending_dkgs: &mut VecDeque<DkgBundle>,
+    ) -> StdResult<(), DecrypterDown> {
+        while let Some(b) = pending_dkgs.pop_front() {
+            self.worker_tx
+                .send(Command::Dkg(b))
+                .await
+                .map_err(|_| DecrypterDown(()))?;
+            debug!(node = %self.label, "enqueued one dkg bundle");
+        }
+        Ok(())
+    }
+
     /// Generates and returns a new DKG bundle for the current committee, if not already submitted.
     ///
     /// # Returns
     /// - `Some(DkgBundle)` if a new DKG dealing was successfully created for the current committee.
     /// - `None` if already submitted or if encryption keys are missing.
-    pub fn next_dkg(&mut self) -> Option<DkgBundle> {
+    pub fn gen_dkg_bundle(&mut self) -> Option<DkgBundle> {
         let committee = self.current_committee();
         let committee_id = committee.id();
         if self.submitted.contains(&committee_id) {
@@ -419,13 +426,11 @@ impl Worker {
                 },
                 // receiving a request from the decrypter
                 cmd = self.rx.recv() => match cmd {
-                    Some(Command::Dkg(incl)) => {
-                        let round = incl.round();
-                        info!(%node, %round, num_dealings=%incl.dkg_bundles().len(), "dkg request");
-                        match self.on_dkg_request(incl).await {
+                    Some(Command::Dkg(b)) => {
+                        match self.on_dkg_request(b).await {
                             Ok(()) => {}
                             Err(DecrypterError::End(end)) => return end,
-                            Err(err) => warn!(node = %self.label, %round, %err, "error on dkg request")
+                            Err(err) => warn!(node = %self.label, %err, "error on dkg request")
                         }
                         continue;
                     },
@@ -536,68 +541,62 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
-    async fn on_dkg_request(&mut self, incl: InclusionList) -> Result<()> {
-        let dkg_bundles = incl.dkg_bundles();
+    async fn on_dkg_request(&mut self, bundle: DkgBundle) -> Result<()> {
+        let cid = bundle.committee_id();
+        if self.dkg_completed.contains(bundle.committee_id()) {
+            trace!(
+                node = %self.label,
+                committee_id = %cid,
+                "received bundle but dkg already completed"
+            );
+            return Ok(());
+        }
+        let stores = self.dkg_stores.read();
+        let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == *cid) else {
+            return Err(DecrypterError::Dkg(format!(
+                "dkg_store missing for committee_id={cid}",
+            )));
+        };
 
-        for b in dkg_bundles {
-            if self.dkg_completed.contains(b.committee_id()) {
-                trace!(
-                    node = %self.label,
-                    committee_id = %b.committee_id(),
-                    "received bundle but dkg already completed"
-                );
-                continue;
-            }
-            let stores = self.dkg_stores.read();
-            let Some(dkg_store) = stores
-                .iter()
-                .find(|s| s.committee().id() == *b.committee_id())
-            else {
-                return Err(DecrypterError::Dkg(format!(
-                    "dkg_store missing for committee_id={}",
-                    b.committee_id(),
-                )));
-            };
+        let acc = self
+            .dkg_tracker
+            .entry(*cid)
+            .or_insert_with(|| DkgAccumulator::new(dkg_store.to_owned()));
 
-            let acc = self
-                .dkg_tracker
-                .entry(*b.committee_id())
-                .or_insert_with(|| DkgAccumulator::new(dkg_store.to_owned()));
+        acc.try_add(bundle)
+            .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
-            acc.try_add(b.to_owned())
-                .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
+        if let Some(subset) = acc.try_finalize() {
+            if *subset.committe_id() == self.current {
+                let committee = dkg_store.committee();
+                // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
+                let aad: &[u8; 3] = b"dkg";
+                let vess = ShoupVess::new_fast_from(committee);
+                let (shares, commitments) = subset
+                    .bundles()
+                    .iter()
+                    .map(|b| {
+                        vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
+                            .map(|s| (s, b.comm().clone()))
+                            .map_err(|e| DecrypterError::Dkg(e.to_string()))
+                    })
+                    .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
-            if let Some(subset) = acc.try_finalize() {
-                if *subset.committe_id() == self.current {
-                    let committee = dkg_store.committee();
-                    let aad: &[u8; 3] = b"dkg";
-                    let vess = ShoupVess::new_fast_from(committee);
-                    let (shares, commitments) = subset
-                        .bundles()
-                        .iter()
-                        .map(|b| {
-                            vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
-                                .map(|s| (s, b.comm().clone()))
-                                .map_err(|e| DecrypterError::Dkg(e.to_string()))
-                        })
-                        .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+                let dec_sk = DecryptionKey::from_dkg(
+                    committee.size().into(),
+                    self.dkg_sk.node_idx(),
+                    &commitments,
+                    &shares,
+                )
+                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                    let dec_sk = DecryptionKey::from_dkg(
-                        committee.size().into(),
-                        self.dkg_sk.node_idx(),
-                        &commitments,
-                        &shares,
-                    )
-                    .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
-                    self.enc_key.set(dec_sk.pubkey().clone());
-                    self.dec_sk = Some(dec_sk);
-                    self.dkg_completed.insert(committee.id());
-                    info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
-                } else {
-                    // TODO(resharing): these ciphertexts are for next committee
-                    // send the resulting subset to (passive) nodes in the new committee
-                }
+                self.enc_key.set(dec_sk.pubkey().clone());
+                self.dec_sk = Some(dec_sk);
+                self.dkg_completed.insert(committee.id());
+                info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
+            } else {
+                // TODO(resharing): these ciphertexts are for next committee
+                // send the resulting subset to (passive) nodes in the new committee
             }
         }
         Ok(())
@@ -1043,6 +1042,7 @@ mod tests {
     use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use metrics::NoMetrics;
     use std::{
+        collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
         time::{Duration, Instant},
     };
@@ -1068,7 +1068,6 @@ mod tests {
     const COMMITTEE_SIZE: usize = 5;
     const DKG_AAD: &[u8] = b"dkg";
     const THRESHOLD_AAD: &[u8] = b"threshold";
-    const DKG_ROUND: u64 = 41;
     const DECRYPTION_ROUND: u64 = 42;
     const TEST_EPOCH: u64 = 42;
     const TEST_CHAIN_ID: u64 = 0;
@@ -1255,13 +1254,10 @@ mod tests {
     /// across all committee members in a networked environment.
     async fn test_dkg_termination() {
         logging::init_logging();
-        let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
+        let (enc_key_cells, _committee, mut decrypters, _signature_keys) = setup().await;
 
-        let dkg_round = RoundNumber::new(DKG_ROUND);
-        let dkg_inclusion_list =
-            create_dkg_inclusion_list(dkg_round, committee, &signature_keys, &mut decrypters);
-
-        enqueue_to_all_decrypters(&mut decrypters, dkg_inclusion_list).await;
+        // Enqueuing all DKG bundles
+        enqueue_all_dkg_bundles(&mut decrypters).await;
 
         // Allow time for DKG bundles to be processed
         tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
@@ -1292,24 +1288,8 @@ mod tests {
 
         let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
 
-        // Phase 1: DKG setup
-        let dkg_round = RoundNumber::new(DKG_ROUND);
-        let dkg_inclusion_list = create_dkg_inclusion_list(
-            dkg_round,
-            committee.clone(),
-            &signature_keys,
-            &mut decrypters,
-        );
-
-        enqueue_to_all_decrypters(&mut decrypters, dkg_inclusion_list).await;
-
-        let processed_dkg_lists = collect_inclusion_lists(&mut decrypters).await;
-
-        // Verify that all DKG inclusion lists are processed correctly
-        for dkg_list in processed_dkg_lists {
-            assert_eq!(dkg_list.round(), RoundNumber::new(DKG_ROUND));
-            assert_eq!(dkg_list.dkg_bundles().len(), COMMITTEE_SIZE);
-        }
+        // Enqueuing all DKG bundles
+        enqueue_all_dkg_bundles(&mut decrypters).await;
 
         // Allow time for DKG bundle processing
         tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
@@ -1332,7 +1312,13 @@ mod tests {
             regular_tx_message,
         );
 
-        enqueue_to_all_decrypters(&mut decrypters, encrypted_inclusion_list).await;
+        // Enqueues the same inclusion list to all decrypters for processing.
+        for decrypter in decrypters.iter_mut() {
+            decrypter
+                .enqueue(encrypted_inclusion_list.clone())
+                .await
+                .expect("Inclusion list should be enqueued successfully");
+        }
 
         let decrypted_inclusion_lists = collect_inclusion_lists(&mut decrypters).await;
 
@@ -1370,6 +1356,27 @@ mod tests {
         }
     }
 
+    /// Generate all DKG bundle (one per decrypter) then enqueue all bundles at all decrypters
+    async fn enqueue_all_dkg_bundles(decrypters: &mut [Decrypter]) {
+        let dkg_bundles = decrypters
+            .iter_mut()
+            .map(|decrypter| {
+                decrypter
+                    .gen_dkg_bundle()
+                    .expect("DKG bundle should be generated")
+            })
+            .collect::<VecDeque<_>>();
+
+        // enqueuing them all to decrypters
+        for decrypter in decrypters.iter_mut() {
+            let mut pending_dkgs = dkg_bundles.clone();
+            decrypter
+                .enqueue_dkg(&mut pending_dkgs)
+                .await
+                .expect("DKG bundles should be enqueued successfully");
+        }
+    }
+
     /// Creates round evidence by having all committee members sign the previous round.
     /// This evidence is required to validate the legitimacy of the current round.
     fn create_round_evidence(
@@ -1392,42 +1399,6 @@ mod tests {
             .into_certificate()
             .expect("Certificate should be created successfully");
         certificate.into()
-    }
-
-    /// Creates an inclusion list containing DKG bundles from all decrypters.
-    /// This simulates the first phase where committee members share their DKG contributions.
-    fn create_dkg_inclusion_list(
-        round: RoundNumber,
-        committee: Committee,
-        signature_keys: &[SecretKey],
-        decrypters: &mut [Decrypter],
-    ) -> InclusionList {
-        let evidence = create_round_evidence(committee, signature_keys, round);
-        let dkg_bundles = decrypters
-            .iter_mut()
-            .map(|decrypter| {
-                decrypter
-                    .next_dkg()
-                    .expect("DKG bundle should be generated")
-            })
-            .collect();
-
-        let mut inclusion_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
-        inclusion_list.set_dkg_bundles(dkg_bundles);
-        inclusion_list
-    }
-
-    /// Enqueues the same inclusion list to all decrypters for processing.
-    async fn enqueue_to_all_decrypters(
-        decrypters: &mut [Decrypter],
-        inclusion_list: InclusionList,
-    ) {
-        for decrypter in decrypters.iter_mut() {
-            decrypter
-                .enqueue(inclusion_list.clone())
-                .await
-                .expect("Inclusion list should be enqueued successfully");
-        }
     }
 
     /// Collects processed inclusion lists from all decrypters.

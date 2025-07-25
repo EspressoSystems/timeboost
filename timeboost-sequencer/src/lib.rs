@@ -18,7 +18,7 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, DkgBundle, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -248,6 +248,7 @@ impl Task {
     // processing its actions continues unhindered.
     async fn go(mut self) -> Result<()> {
         let mut pending = None;
+        let mut pending_dkgs = VecDeque::new();
         let mut candidates = Candidates::new();
 
         if !self.sailfish.is_init() {
@@ -256,14 +257,14 @@ impl Task {
 
             // DKG dealing generation
             // TODO: move/copy to main loop when resharing
-            if let Some(bundle) = self.decrypter.next_dkg() {
+            if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }
         }
 
         loop {
             if pending.is_none() {
-                while let Some(ilist) = self.next_inclusion(&mut candidates) {
+                while let Some(ilist) = self.next_inclusion(&mut candidates, &mut pending_dkgs) {
                     if !self.decrypter.has_capacity() {
                         pending = Some(ilist);
                         break;
@@ -273,6 +274,16 @@ impl Task {
                     }
                 }
             }
+
+            // always sync DKG bundles
+            self.next_dkg(&mut candidates, &mut pending_dkgs);
+            if !pending_dkgs.is_empty() {
+                tracing::debug!(num_bundles = %pending_dkgs.len(), "enqueuing dkg bundles");
+                if let Err(err) = self.decrypter.enqueue_dkg(&mut pending_dkgs).await {
+                    error!(node = %self.label, %err, "dkg enqueue error");
+                }
+            }
+
             select! {
                 result = self.sailfish.next(), if pending.is_none() => match result {
                     Ok(actions) => {
@@ -400,21 +411,27 @@ impl Task {
     }
 
     /// Handle candidate lists and return the next inclusion list.
-    fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
+    /// While processing candidates, will append the DKG bundles to `pending_dkgs`.
+    fn next_inclusion(
+        &mut self,
+        candidates: &mut Candidates,
+        pending_dkgs: &mut VecDeque<DkgBundle>,
+    ) -> Option<InclusionList> {
         while let Some((round, evidence, lists)) = candidates.pop_front() {
+            // preprocess the candidate list to pull out the DKG bundles first
+            for cl in lists.iter() {
+                if let Some(dkg) = cl.dkg_bundle() {
+                    pending_dkgs.push_back(dkg);
+                }
+            }
+            // then process it to construct the next inclusion list
             let outcome = self.includer.inclusion_list(round, evidence, lists);
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {
                 self.mode = Mode::Passive;
                 self.bundles.set_mode(self.mode);
                 info!(node = %self.label, %round, "passive mode");
-
-                // even in passive mode, we process DkgBundle containing inclusion list
-                if outcome.ilist.has_dkg_bundles() {
-                    return Some(outcome.ilist);
-                } else {
-                    continue;
-                }
+                continue;
             }
             if self.mode.is_passive() {
                 info!(node = %self.label, %round, "entering active mode");
@@ -424,6 +441,19 @@ impl Task {
             return Some(outcome.ilist);
         }
         None
+    }
+
+    /// Handle candidate lists and "pull" out the DKG bundles, it won't touch or drop or consume
+    /// regular/priority bundles, but only consume/take the DKG bundles inside `candidates` then
+    /// append them to `pending_dkgs`.
+    fn next_dkg(&mut self, candidates: &mut Candidates, pending_dkgs: &mut VecDeque<DkgBundle>) {
+        for (_, _, list) in candidates.iter_mut() {
+            for cl in list.iter_mut() {
+                if let Some(dkg) = cl.take_dkg_bundle() {
+                    pending_dkgs.push_back(dkg);
+                }
+            }
+        }
     }
 }
 
