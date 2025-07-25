@@ -118,7 +118,7 @@ impl Sequencer {
 
         let ibox = DelayedInbox::<Ethereum>::connect(
             public_key,
-            cfg.chain_config.parent_chain_rpc_url().to_string(),
+            cfg.chain_config.parent_chain_rpc_url().clone(),
             cfg.chain_config.parent_ibox_contr_addr(),
             cfg.chain_config.parent_chain_id(),
             queue.clone(),
