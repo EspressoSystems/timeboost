@@ -452,7 +452,7 @@ impl Worker {
 
     /// Go over trackers and deliver the next certified block, if any.
     async fn deliver(&mut self) -> Result<()> {
-        let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
+        let lower_bound: BlockNumber = *self.info.quorum().saturating_sub(self.history).into();
 
         // Check if we need to catch up to the others.
         if self
