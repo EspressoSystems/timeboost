@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use alloy_primitives::Address;
+use alloy_provider::network::Ethereum;
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -115,12 +116,14 @@ impl Sequencer {
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
-        let ibox = DelayedInbox::connect(
+        // TODO: Config values for all these and verify correct contract address
+        let ibox = DelayedInbox::<Ethereum>::connect(
             public_key,
             "https://theserversroom.com/ethereum/54cmzzhcj1o/",
             "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
                 .parse::<Address>()
                 .expect("valid contract"),
+            1,
             queue.clone(),
         )
         .await

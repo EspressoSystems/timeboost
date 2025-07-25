@@ -1,12 +1,13 @@
 use std::time::Duration;
 
+use alloy_consensus::BlockHeader;
 use alloy_primitives::{Address, U256};
-use alloy_provider::{Provider, RootProvider, network::Ethereum};
+use alloy_provider::{Network, Provider, RootProvider, network::BlockResponse};
 use alloy_rpc_types::{BlockId, BlockNumberOrTag, Filter};
 use alloy_sol_types::{SolEvent, sol};
 use multisig::PublicKey;
 use tokio::time::sleep;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::queue::BundleQueue;
 
@@ -17,23 +18,32 @@ sol! {
     event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
 
-pub struct DelayedInbox {
+pub struct DelayedInbox<N: Network> {
     node: PublicKey,
     ibox_addr: Address,
-    provider: RootProvider<Ethereum>,
+    provider: RootProvider<N>,
     queue: BundleQueue,
 }
 
-impl DelayedInbox {
+impl<N: Network> DelayedInbox<N> {
     pub async fn connect(
         node: PublicKey,
         url: &str,
         ibox_addr: Address,
+        l1_chain_id: u64,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let provider = RootProvider::<Ethereum>::connect(url)
+        let provider = RootProvider::<N>::connect(url)
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
+        let rpc_chain_id = provider
+            .get_chain_id()
+            .await
+            .map_err(|e| Error::RpcError(e.to_string()))?;
+        if l1_chain_id != rpc_chain_id {
+            error!(%l1_chain_id, %rpc_chain_id, "mismatching chain id");
+            return Err(Error::MismatchingChainID(l1_chain_id, rpc_chain_id));
+        }
         Ok(Self {
             node,
             ibox_addr,
@@ -59,7 +69,7 @@ impl DelayedInbox {
                 .get_block(BlockId::Number(BlockNumberOrTag::Finalized))
                 .await
             {
-                let finalized = b.header.number;
+                let finalized = b.header().number();
                 if finalized == last_finalized {
                     continue;
                 }
@@ -107,6 +117,8 @@ impl DelayedInbox {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("invalid uri: {0}")]
+    #[error("rpc err: {0}")]
     RpcError(String),
+    #[error("mismatching chain id: {0} != {1}")]
+    MismatchingChainID(u64, u64),
 }
