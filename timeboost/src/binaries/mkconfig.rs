@@ -9,9 +9,10 @@ use cliquenet::Address;
 use multisig::{Committee, KeyId, x25519};
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::DecryptionScheme;
-use timeboost_types::UNKNOWN_COMMITTEE_ID;
+use timeboost_types::{ChainConfig, UNKNOWN_COMMITTEE_ID};
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
 use timeboost_utils::types::logging;
+use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
@@ -46,6 +47,18 @@ struct Args {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
+
+    /// Parent chain rpc url
+    #[clap(long)]
+    parent_rpc_url: Url,
+
+    /// Parent chain id
+    #[clap(long)]
+    parent_chain_id: u64,
+
+    /// Parent chain inbox contract adddress
+    #[clap(long)]
+    parent_ibox_contr_addr: alloy_primitives::Address,
 }
 
 /// How should addresses be updated?
@@ -126,6 +139,11 @@ impl Args {
                     dec_key: hpke,
                 }),
                 nitro_addr: self.nitro_addr.clone(),
+                chain_config: ChainConfig::new(
+                    self.parent_chain_id,
+                    self.parent_rpc_url.clone(),
+                    self.parent_ibox_contr_addr,
+                ),
             })
             .collect();
         Ok(KeysetConfig {

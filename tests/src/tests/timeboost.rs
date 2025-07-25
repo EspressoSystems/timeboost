@@ -16,10 +16,12 @@ use timeboost_builder::CertifierConfig;
 use timeboost_crypto::DecryptionScheme;
 use timeboost_crypto::traits::threshold_enc::ThresholdEncScheme;
 use timeboost_sequencer::SequencerConfig;
+use timeboost_types::ChainConfig;
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
+use url::Url;
 
 fn make_configs<R>(
     size: NonZeroUsize,
@@ -94,6 +96,15 @@ where
             .decrypt_committee(decrypt_committee.clone())
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
+            .chain_config(ChainConfig::new(
+                1,
+                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                    .parse::<Url>()
+                    .expect("valid url"),
+                "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                    .parse::<alloy_primitives::Address>()
+                    .expect("valid contract"),
+            ))
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)

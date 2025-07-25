@@ -18,23 +18,23 @@ sol! {
     event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
 
-pub struct DelayedInbox<'a, N: Network> {
+pub struct DelayedInbox<N: Network> {
     node: PublicKey,
     ibox_addr: Address,
     provider: RootProvider<N>,
     queue: BundleQueue,
-    url: &'a str,
+    url: String,
 }
 
-impl<'a, N: Network> DelayedInbox<'a, N> {
+impl<N: Network> DelayedInbox<N> {
     pub async fn connect(
         node: PublicKey,
-        url: &'a str,
+        url: String,
         ibox_addr: Address,
         parent_chain_id: u64,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let provider = RootProvider::<N>::connect(url)
+        let provider = RootProvider::<N>::connect(&url)
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
         let rpc_chain_id = provider
@@ -87,7 +87,8 @@ impl<'a, N: Network> DelayedInbox<'a, N> {
                 last_finalized = finalized;
 
                 if let Ok(mut logs) = self.provider.get_logs(&filter).await {
-                    // Make sure event logs are in order, we need highest block number first
+                    // Make sure event logs are in order, we need highest block number first then
+                    // latest log
                     logs.sort_by(|a, b| {
                         b.block_number
                             .cmp(&a.block_number)
@@ -103,7 +104,7 @@ impl<'a, N: Network> DelayedInbox<'a, N> {
                             .expect("valid msg number");
                         if delayed_index != last_delayed_index {
                             debug_assert!(delayed_index > last_delayed_index);
-                            info!(node = %self.node, ibox_addr = %self.ibox_addr, parent_finalized_block = %finalized, %delayed_index, %tx_hash, "delayed index updated");
+                            info!(node = %self.node, %delayed_index, parent_finalized_block = %finalized, ibox_addr = %self.ibox_addr, %tx_hash, "delayed index updated");
                             last_delayed_index = delayed_index;
                             self.queue.set_delayed_inbox_index(delayed_index.into());
                         }
