@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
+use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
 use crate::{Bytes, Epoch, SeqNo, Timestamp};
 
@@ -297,17 +298,23 @@ impl Committable for SignedPriorityBundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
+    /// target committee for the dkg bundle
     committee_id: CommitteeId,
-    transcript: Vec<u8>, // TODO: replace with VESS transcript (dealing)
+    /// encrypted secret shares in a dealing
+    vess_ct: VessCiphertext,
+    // vess: VessCiphertext,
+    /// Feldman commitment to the secret sharing dealing
+    comm: VssCommitment,
 }
 
 impl DkgBundle {
-    pub fn new(committee_id: CommitteeId, transcript: Vec<u8>) -> Self {
+    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
         Self {
             committee_id,
-            transcript,
+            vess_ct,
+            comm,
         }
     }
 
@@ -315,8 +322,18 @@ impl DkgBundle {
         &self.committee_id
     }
 
-    pub fn transcript(&self) -> &Vec<u8> {
-        &self.transcript
+    pub fn vess_ct(&self) -> &VessCiphertext {
+        &self.vess_ct
+    }
+
+    pub fn comm(&self) -> &VssCommitment {
+        &self.comm
+    }
+}
+
+impl std::hash::Hash for DkgBundle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.commit().hash(state);
     }
 }
 
@@ -324,7 +341,8 @@ impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
             .field("committee", self.committee_id.commit())
-            .var_size_bytes(&self.transcript)
+            .var_size_field("ciphertexts", self.vess_ct.as_bytes())
+            .var_size_field("commitment", &self.comm.to_bytes())
             .finalize()
     }
 }

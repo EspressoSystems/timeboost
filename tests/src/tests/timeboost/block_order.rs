@@ -74,6 +74,13 @@ async fn block_order() {
         rxs.push(rx)
     }
 
+    // wait until DKG is done
+    while enc_key.get().is_none() {
+        tracing::debug!("DKG ongoing, sleep 0.5s ...");
+        sleep(Duration::from_secs_f32(0.5)).await;
+    }
+    tracing::info!("DKG done");
+
     tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
     // Collect all outputs:

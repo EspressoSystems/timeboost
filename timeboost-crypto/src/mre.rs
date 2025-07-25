@@ -63,6 +63,11 @@ pub struct DecryptionKey<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> DecryptionKey<C> {
+    /// Similar to [`Self::rand()`] with thread_rng internally
+    pub fn generate() -> Self {
+        Self::rand(&mut ark_std::rand::thread_rng())
+    }
+
     pub fn rand<R: Rng>(rng: &mut R) -> Self {
         let alpha = C::ScalarField::rand(rng);
         Self { alpha }
@@ -105,6 +110,11 @@ pub struct LabeledDecryptionKey<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> LabeledDecryptionKey<C> {
+    /// Returns the node idx for this decryption key.
+    pub fn node_idx(&self) -> usize {
+        self.node_idx
+    }
+
     /// Decryption for an individual ciphertext produced and extracted from [`encrypt()`]
     pub fn decrypt<H: Digest>(
         &self,
@@ -169,8 +179,8 @@ pub struct Ciphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
 /// - `aad` is the associated data
 /// - `C` is the DL group, `H` is the choice of H_enc whose output space = message space
 ///   - preprocess messages to pad them to proper length before passing in
-pub fn encrypt<C, H, R>(
-    recipients: &[EncryptionKey<C>],
+pub fn encrypt<'a, C, H, R, I>(
+    recipients: I,
     messages: &[Vec<u8>],
     aad: &[u8],
     rng: &mut R,
@@ -179,14 +189,17 @@ where
     C: CurveGroup,
     H: Digest,
     R: Rng + CryptoRng,
+    I: IntoIterator<Item = &'a EncryptionKey<C>>,
+    I::IntoIter: ExactSizeIterator,
 {
     // input validation
-    if recipients.is_empty() || messages.is_empty() {
+    let recipients_iter = recipients.into_iter();
+    if messages.is_empty() {
         return Err(MultiRecvEncError::EmptyInput);
     }
-    if recipients.len() != messages.len() {
+    if recipients_iter.len() != messages.len() {
         return Err(MultiRecvEncError::MismatchedInputLength(
-            recipients.len(),
+            recipients_iter.len(),
             messages.len(),
         ));
     }
@@ -205,8 +218,7 @@ where
     let epk = C::generator().mul(&esk);
 
     // generate recipient-specific ciphertext parts
-    let cts = recipients
-        .iter()
+    let cts = recipients_iter
         .zip(messages.iter())
         .enumerate()
         .map(|(idx, (pk, msg))| {
@@ -223,7 +235,7 @@ where
 
             // TODO(alex): use SIMD vectorized XOR when `std::simd` move out of nightly,
             // or rayon as an intermediate improvement
-            let ct = Output::<H>::from_iter(k.iter().zip(msg).map(|(ki, m)| ki ^ m));
+            let ct = Output::<H>::from_iter(k.iter().zip(msg.iter()).map(|(ki, m)| ki ^ m));
             Ok(ct)
         })
         .collect::<Result<Vec<_>, MultiRecvEncError>>()?;
@@ -271,7 +283,7 @@ impl From<ark_serialize::SerializationError> for MultiRecvEncError {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::repeat_with;
+    use std::{collections::BTreeMap, iter::repeat_with};
 
     use ark_bls12_381::G1Projective;
     use ark_std::rand;
@@ -285,8 +297,12 @@ mod tests {
         let n = 10; // num of recipients
         let recv_sks: Vec<DecryptionKey<G1Projective>> =
             repeat_with(|| DecryptionKey::rand(rng)).take(n).collect();
-        let recv_pks: Vec<EncryptionKey<G1Projective>> =
-            recv_sks.iter().map(EncryptionKey::from).collect();
+        // collecting into a BTreeSet to demonstrate flexible encrypt() input type
+        let recv_pks: BTreeMap<usize, EncryptionKey<G1Projective>> = recv_sks
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i, EncryptionKey::from(sk)))
+            .collect();
         let labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = recv_sks
             .into_iter()
             .enumerate()
@@ -297,7 +313,7 @@ mod tests {
             .collect::<Vec<_>>();
         let aad = b"Alice";
 
-        let mre_ct = encrypt::<G1Projective, H, _>(&recv_pks, &msgs, aad, rng).unwrap();
+        let mre_ct = encrypt::<G1Projective, H, _, _>(recv_pks.values(), &msgs, aad, rng).unwrap();
         for i in 0..n {
             let ct = mre_ct.get_recipient_ct(i).unwrap();
             assert_eq!(
