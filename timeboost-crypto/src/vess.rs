@@ -8,9 +8,11 @@ use ark_std::{
     marker::PhantomData,
     rand::{Rng, SeedableRng},
 };
+use multisig::Committee;
 use num_integer::{binomial, gcd};
 use rand_chacha::ChaCha20Rng;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use spongefish::{
     ByteReader, ByteWriter, DefaultHash, UnitToBytes, VerifierState,
@@ -19,11 +21,11 @@ use spongefish::{
         GroupDomainSeparator, GroupToUnit,
     },
 };
-use std::{collections::VecDeque, num::NonZeroU32};
+use std::{collections::VecDeque, num::NonZeroUsize};
 use thiserror::Error;
 
 use crate::{
-    feldman::{FeldmanVss, FeldmanVssPublicParam},
+    feldman::{FeldmanCommitment, FeldmanVss, FeldmanVssPublicParam},
     mre::{self, LabeledDecryptionKey, MultiRecvCiphertext},
     traits::dkg::{VerifiableSecretSharing, VssError},
 };
@@ -54,10 +56,20 @@ where
 }
 
 /// Ciphertext of [`ShoupVess`] scheme, verifiable by itself as its constructed as a sigma proof
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VessCiphertext {
     /// Sigma proof transcript (which contains encrypted MRE ciphertexts to be decrypted)
     transcript: Vec<u8>,
+}
+
+impl VessCiphertext {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.transcript
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.transcript.clone()
+    }
 }
 
 impl<C: CurveGroup> ShoupVess<C> {
@@ -65,7 +77,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_fast(vss_threshold: NonZeroU32, vss_num_shares: NonZeroU32) -> Self {
+    pub fn new_fast(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
         let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
         Self {
             num_repetition: 132,
@@ -80,7 +92,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_short(vss_threshold: NonZeroU32, vss_num_shares: NonZeroU32) -> Self {
+    pub fn new_short(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
         let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
         Self {
             num_repetition: 245,
@@ -91,12 +103,26 @@ impl<C: CurveGroup> ShoupVess<C> {
         }
     }
 
+    /// Handy constructor for a VSS committee, see [`Self::new_fast()`]
+    pub fn new_fast_from(committee: &Committee) -> Self {
+        let threshold = committee.one_honest_threshold();
+        let num_shares = committee.size();
+        Self::new_fast(threshold, num_shares)
+    }
+
+    /// Handy constructor for a VSS committee, see [`Self::new_short()`]
+    pub fn new_short_from(committee: &Committee) -> Self {
+        let threshold = committee.one_honest_threshold();
+        let num_shares = committee.size();
+        Self::new_short(threshold, num_shares)
+    }
+
     /// construct the transcript pattern in the interactive proof for Fiat-Shamir transformation.
     /// `aad`: associated data for context/session identifier
     /// IOPattern binds all public parameters including N, M, t, n, aad, to avoid weak FS attack.
     fn io_pattern(&self, aad: &[u8]) -> spongefish::DomainSeparator {
-        let t = self.vss_pp.t.get() as usize;
-        let n = self.vss_pp.n.get() as usize;
+        let t = self.vss_pp.t.get();
+        let n = self.vss_pp.n.get();
 
         let mut ds = spongefish::DomainSeparator::<DefaultHash>::new(&format!(
             "vess-ad-{}",
@@ -183,11 +209,11 @@ impl<C: CurveGroup> ShoupVess<C> {
 
     // deterministically generate the `i`-th dealing from a random seed
     // each dealing contains (Shamir poly + Feldman commitment + MRE ciphertext)
-    fn new_dealing(
+    fn new_dealing<'a, I>(
         &self,
         ith: usize,
         seed: &[u8; 32],
-        recipients: &[mre::EncryptionKey<C>],
+        recipients: I,
         aad: &[u8],
     ) -> Result<
         (
@@ -196,7 +222,11 @@ impl<C: CurveGroup> ShoupVess<C> {
             MultiRecvCiphertext<C, sha2::Sha256>,
         ),
         VessError,
-    > {
+    >
+    where
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>>,
+        I::IntoIter: ExactSizeIterator,
+    {
         let mut rng = ChaCha20Rng::from_seed(*seed);
         let vss_secret = C::ScalarField::rand(&mut rng);
 
@@ -205,7 +235,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         let serialized_shares: Vec<Vec<u8>> =
             FeldmanVss::<C>::compute_serialized_shares(&self.vss_pp, &poly).collect();
 
-        let mre_ct = mre::encrypt::<C, sha2::Sha256, _>(
+        let mre_ct = mre::encrypt::<C, sha2::Sha256, _, _>(
             recipients,
             &serialized_shares,
             &self.indexed_aad(aad, ith),
@@ -232,9 +262,9 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///   step 1.a is split as two internal steps in the two APIs above. r_k is 32 bytes and
     ///   SpongeFish's built-in prover private coin toss.
     /// - random subset seed s: see [`Self::map_subset_seed()`]
-    pub fn encrypted_shares(
+    pub fn encrypted_shares<'a, I>(
         &self,
-        recipients: &[mre::EncryptionKey<C>],
+        recipients: I,
         secret: C::ScalarField,
         aad: &[u8],
     ) -> Result<
@@ -243,11 +273,16 @@ impl<C: CurveGroup> ShoupVess<C> {
             <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
         ),
         VessError,
-    > {
-        // input validation
-        let n = self.vss_pp.n.get() as usize;
-        if recipients.len() != n {
-            return Err(VessError::WrongRecipientsLength(n, recipients.len()));
+    >
+    where
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>>,
+        I::IntoIter: ExactSizeIterator + Clone + Sync,
+    {
+        // input validation - check length without consuming the iterator
+        let recipients_iter = recipients.into_iter();
+        let n = self.vss_pp.n.get();
+        if recipients_iter.len() != n {
+            return Err(VessError::WrongRecipientsLength(n, recipients_iter.len()));
         }
 
         let mut prover_state = self.io_pattern(aad).to_prover_state();
@@ -267,7 +302,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         )> = seeds
             .par_iter()
             .enumerate()
-            .map(|(i, r)| self.new_dealing(i, r, recipients, aad))
+            .map(|(i, r)| self.new_dealing(i, r, recipients_iter.clone(), aad))
             .collect::<Result<_, VessError>>()?;
 
         // compute h:= H_compress(aad, dealings)
@@ -330,8 +365,8 @@ impl<C: CurveGroup> ShoupVess<C> {
         &self,
         verifier_state: &mut VerifierState,
     ) -> Result<ProverMessageUntilStep4b<C>, VessError> {
-        let t = self.vss_pp.t.get() as usize;
-        let n = self.vss_pp.n.get() as usize;
+        let t = self.vss_pp.t.get();
+        let n = self.vss_pp.n.get();
 
         // read C and h from transcript
         let mut expected_comm = vec![C::default(); t];
@@ -361,18 +396,22 @@ impl<C: CurveGroup> ShoupVess<C> {
             }
             mre_cts.push_back(MultiRecvCiphertext { epk, cts });
         }
-        Ok((comm, h, subset_seed, shifted_polys, mre_cts))
+        Ok((comm.into(), h, subset_seed, shifted_polys, mre_cts))
     }
 
     /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
     /// verifiable by anyone.
-    pub fn verify(
+    pub fn verify<'a, I>(
         &self,
-        recipients: &[mre::EncryptionKey<C>],
+        recipients: I,
         ct: &VessCiphertext,
         comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
         aad: &[u8],
-    ) -> Result<(), VessError> {
+    ) -> Result<(), VessError>
+    where
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
+        I::IntoIter: ExactSizeIterator,
+    {
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
         // verifier logic until Step 4b
@@ -428,7 +467,8 @@ impl<C: CurveGroup> ShoupVess<C> {
                     let seed = seeds
                         .pop_front()
                         .expect("subset_size < num_repetitions, so seeds.len() > 0");
-                    let (_poly, cm, mre_ct) = self.new_dealing(i, &seed, recipients, aad)?;
+                    let (_poly, cm, mre_ct) =
+                        self.new_dealing(i, &seed, recipients.clone(), aad)?;
 
                     hasher.update(serialize_to_vec![cm]?);
                     hasher.update(mre_ct.to_bytes());
@@ -453,7 +493,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         ct: &VessCiphertext,
         aad: &[u8],
     ) -> Result<C::ScalarField, VessError> {
-        let n = self.vss_pp.n.get() as usize;
+        let n = self.vss_pp.n.get();
         let node_idx = recv_sk.node_idx;
         let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
 
@@ -495,7 +535,7 @@ impl<C: CurveGroup> ShoupVess<C> {
 /// shifted_poly is omega''_k in paper
 #[allow(type_alias_bounds)]
 type ProverMessageUntilStep4b<C: CurveGroup> = (
-    Vec<C::Affine>,
+    FeldmanCommitment<C>,
     [u8; 32],
     [u8; 16],
     VecDeque<Vec<C::ScalarField>>,
@@ -677,7 +717,11 @@ mod tests {
         UniformRand,
         rand::{SeedableRng, rngs::StdRng},
     };
-    use std::{collections::BTreeSet, iter::repeat_with};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        iter::repeat_with,
+        num::NonZeroUsize,
+    };
 
     type H = sha2::Sha256;
     type Vss = FeldmanVss<G1Projective>;
@@ -685,14 +729,17 @@ mod tests {
     fn test_vess_correctness_helper(vess: ShoupVess<G1Projective, H, Vss>) {
         let rng = &mut StdRng::seed_from_u64(0);
         let secret = Fr::rand(rng);
-        let n = vess.vss_pp.n.get() as usize;
+        let n = vess.vss_pp.n.get();
 
         let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
             repeat_with(|| mre::DecryptionKey::rand(rng))
                 .take(n)
                 .collect();
-        let recv_pks: Vec<mre::EncryptionKey<G1Projective>> =
-            recv_sks.iter().map(mre::EncryptionKey::from).collect();
+        let recv_pks: BTreeMap<usize, mre::EncryptionKey<G1Projective>> = recv_sks
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i, mre::EncryptionKey::from(sk)))
+            .collect();
         let labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = recv_sks
             .into_iter()
             .enumerate()
@@ -700,9 +747,11 @@ mod tests {
             .collect();
 
         let aad = b"Associated data";
-        let (ct, comm) = vess.encrypted_shares(&recv_pks, secret, aad).unwrap();
+        let (ct, comm) = vess
+            .encrypted_shares(recv_pks.values(), secret, aad)
+            .unwrap();
 
-        assert!(vess.verify(&recv_pks, &ct, &comm, aad).is_ok());
+        assert!(vess.verify(recv_pks.values(), &ct, &comm, aad).is_ok());
         for labeled_recv_sk in labeled_sks {
             let share = vess.decrypt_share(&labeled_recv_sk, &ct, aad).unwrap();
             assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).is_ok());
@@ -712,12 +761,12 @@ mod tests {
     #[test]
     fn test_vess_correctness() {
         test_vess_correctness_helper(ShoupVess::new_fast(
-            NonZeroU32::new(5).unwrap(),
-            NonZeroU32::new(13).unwrap(),
+            NonZeroUsize::new(5).unwrap(),
+            NonZeroUsize::new(13).unwrap(),
         ));
         test_vess_correctness_helper(ShoupVess::new_short(
-            NonZeroU32::new(10).unwrap(),
-            NonZeroU32::new(20).unwrap(),
+            NonZeroUsize::new(10).unwrap(),
+            NonZeroUsize::new(20).unwrap(),
         ));
     }
 
