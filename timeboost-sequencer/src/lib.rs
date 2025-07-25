@@ -19,7 +19,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_types::{BundleVariant, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, DelayedInboxIndex, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -44,6 +44,7 @@ pub enum Output {
         round: RoundNumber,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
+        delayed_inbox_index: DelayedInboxIndex,
     },
     UseCommittee(Round),
 }
@@ -300,9 +301,10 @@ impl Task {
                     Ok(incl) => {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
+                        let delayed_inbox_index = incl.delayed_inbox_index();
                         let transactions = self.sorter.sort(incl);
                         if !transactions.is_empty() {
-                            let out = Output::Transactions { round, timestamp, transactions };
+                            let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
