@@ -12,6 +12,8 @@ FROM debian:bullseye-slim
 
 WORKDIR /app
 
+RUN apt update && apt-get install -y libcurl4
+
 # Create non-root user and group
 RUN groupadd -r appgroup && useradd -r -g appgroup yapperuser
 

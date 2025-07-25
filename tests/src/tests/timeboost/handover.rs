@@ -16,6 +16,7 @@ use sailfish::{Coordinator, Event};
 use timeboost::crypto::DecryptionScheme;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::DecryptionKey;
+use timeboost_types::ChainConfig;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -23,6 +24,7 @@ use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
+use url::Url;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -136,6 +138,15 @@ where
                 )
                 .recover(false)
                 .leash_len(100)
+                .chain_config(ChainConfig::new(
+                    1,
+                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                        .parse::<Url>()
+                        .expect("valid url"),
+                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                        .parse::<alloy_primitives::Address>()
+                        .expect("valid contract"),
+                ))
                 .build()
         })
 }

@@ -4,7 +4,7 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_types::{Address, DecryptionKey, DelayedInboxIndex};
+use timeboost_types::{Address, ChainConfig, DecryptionKey, DelayedInboxIndex};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -46,6 +46,9 @@ pub struct SequencerConfig {
 
     /// Length of the leash between Sailfish and other phases.
     pub(crate) leash_len: usize,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl SequencerConfig {
