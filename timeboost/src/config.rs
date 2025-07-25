@@ -61,7 +61,7 @@ pub struct TimeboostConfig {
     pub(crate) threshold_enc_key: ThresholdEncKeyCell,
 
     /// Configuration of espresso network client.
-    pub(crate) robusta: robusta::Config,
+    pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
 
     #[builder(into)]
     pub(crate) namespace: NamespaceId,
