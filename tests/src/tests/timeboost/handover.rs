@@ -138,15 +138,19 @@ where
                 )
                 .recover(false)
                 .leash_len(100)
-                .chain_config(ChainConfig::new(
-                    1,
-                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                        .parse::<Url>()
-                        .expect("valid url"),
-                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-                        .parse::<alloy_primitives::Address>()
-                        .expect("valid contract"),
-                ))
+                .chain_config(
+                    ChainConfig::new(
+                        1,
+                        "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                            .parse::<Url>()
+                            .expect("valid url"),
+                        "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                            .parse::<alloy_primitives::Address>()
+                            .expect("valid contract"),
+                        "finalized",
+                    )
+                    .expect("valid block tag"),
+                )
                 .build()
         })
 }

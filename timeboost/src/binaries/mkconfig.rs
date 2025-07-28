@@ -59,6 +59,10 @@ struct Args {
     /// Parent chain inbox contract adddress
     #[clap(long)]
     parent_ibox_contr_addr: alloy_primitives::Address,
+
+    /// Parent chain inbox contract adddress
+    #[clap(long, default_value = "finalized")]
+    parent_block_tag: String,
 }
 
 /// How should addresses be updated?
@@ -143,7 +147,9 @@ impl Args {
                     self.parent_chain_id,
                     self.parent_rpc_url.clone(),
                     self.parent_ibox_contr_addr,
-                ),
+                    &self.parent_block_tag,
+                )
+                .expect("valid block tag"),
             })
             .collect();
         Ok(KeysetConfig {

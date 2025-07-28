@@ -116,15 +116,9 @@ impl Sequencer {
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
-        let ibox = DelayedInbox::<Ethereum>::connect(
-            public_key,
-            cfg.chain_config.parent_chain_rpc_url(),
-            cfg.chain_config.parent_ibox_contr_addr(),
-            cfg.chain_config.parent_chain_id(),
-            queue.clone(),
-        )
-        .await
-        .expect("connection to succeed");
+        let ibox = DelayedInbox::<Ethereum>::connect(public_key, &cfg.chain_config, queue.clone())
+            .await
+            .expect("connection to succeed");
 
         let sailfish = {
             let met = NetworkMetrics::new(

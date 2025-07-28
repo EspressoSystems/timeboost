@@ -176,7 +176,8 @@ mod tests {
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
       "private": {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",

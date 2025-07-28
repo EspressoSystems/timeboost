@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use alloy_eips::{BlockNumberOrTag, eip1898::ParseBlockNumberError};
 use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -7,15 +10,23 @@ pub struct ChainConfig {
     parent_chain_id: u64,
     parent_chain_rpc_url: String,
     parent_ibox_contr_addr: Address,
+    parent_block_tag: BlockNumberOrTag,
 }
 
 impl ChainConfig {
-    pub fn new(chain_id: u64, rpc_url: Url, ibox_addr: Address) -> Self {
-        Self {
+    pub fn new(
+        chain_id: u64,
+        rpc_url: Url,
+        ibox_addr: Address,
+        parent_block_tag: &str,
+    ) -> Result<Self, ParseBlockNumberError> {
+        let tag = BlockNumberOrTag::from_str(parent_block_tag)?;
+        Ok(Self {
             parent_chain_id: chain_id,
             parent_chain_rpc_url: rpc_url.to_string(),
             parent_ibox_contr_addr: ibox_addr,
-        }
+            parent_block_tag: tag,
+        })
     }
     pub fn parent_chain_id(&self) -> u64 {
         self.parent_chain_id
@@ -27,5 +38,9 @@ impl ChainConfig {
 
     pub fn parent_ibox_contr_addr(&self) -> Address {
         self.parent_ibox_contr_addr
+    }
+
+    pub fn parent_block_tag(&self) -> BlockNumberOrTag {
+        self.parent_block_tag
     }
 }

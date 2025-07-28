@@ -5,19 +5,20 @@
       "decrypt_address": "127.0.0.1:10000",
       "certifier_address": "127.0.0.1:11000",
       "internal_address": "127.0.0.1:5000",
-      "signing_key": "25AKf8hBE5x5k3FFhyt8XfWZqDqpVJXa2JQxJEc3joCes",
-      "dh_key": "7Hn7n8h8GG35dw1NPEkd1h6VELo27QUb7x8mSCktsuk5",
+      "signing_key": "28HQvVEjkTFGU5B69U3Wbjp2uNWKHCQ2g4P3BN7wtuHJ6",
+      "dh_key": "Dh6hycBkkY8vZySQSdnghmaHcXdC23gyDzH4dgoKQAbZ",
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
-      "enc_key": "8s4Ev79WxN3WYjkmbzs6bT24RVrg7dHm8MFG8UMt4Lqa6CiFmtqLMA1agtMizn4DtT8",
+      "enc_key": "8ri9CTrHiW9S4Hod4T4CbdH8qRbQuWTv48XYZM61bCtFgiJsMftcU9TETQK9sTMZ1PA",
       "private": {
-        "signing_key": "8QEiUpmdDRrZJrRMmZG1zFQVUnMTgvaRQH8jHxw2DsaB",
-        "dh_key": "EfU5paFddhF9yCpftnhFUow3byyxmmiF7TJ7XGhZouUt",
-        "dec_share": "jbAeeMyWa3gx7U3Aozgy8LhRnC5WmoYSBnqS2xyHmGKmeo",
-        "dec_key": "AnPa2huPuCmkmYBxcYiRGVyqnkQcvezvg9BnuWeL17bXF"
+        "signing_key": "CDTobVTaC6TRXTUjdQo5qpKYGSEeskE3PSaNcVdbwyoa",
+        "dh_key": "6QqrRq2f94T9F8T2LooBbRQkUi9jy7NoAdEX3XZZ2ZiG",
+        "dec_share": "jabspQ4SGVSCVA8ts9NRQHebtrtav58JbKbiS3967nL5Ry",
+        "dec_key": "Ah1p8ymZFGu2JhU3eEP4MzYPJr3dsNnCU6BhtmAx4YeUb"
       }
     },
     {
@@ -25,19 +26,20 @@
       "decrypt_address": "127.0.0.1:10001",
       "certifier_address": "127.0.0.1:11001",
       "internal_address": "127.0.0.1:5001",
-      "signing_key": "gCV2iBnr8MRPuAz4kjUB5y5wf85ZNvvsgb9QXoMdF1df",
-      "dh_key": "FSLH8BE3GMfRbdazhyqMsMuovGe7fQadVf9swkZ5k2sx",
+      "signing_key": "gMy9tW7nR1LoqZ9jCSvkhfDYTEpWM3x8ZqfbQvzxVUva",
+      "dh_key": "Es1SyzQPF2V2EFhcZxwHasPmk6oVcscVjhaST2FMSFgV",
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
-      "enc_key": "8t36icm52vihM6kK7BkkWnyRuCXKaES29vs4CJxEwufFT6Kbt22qiBALAiQu5TxVBBc",
+      "enc_key": "8sefVbZzk5Z384c8mijLYxQzwQj99d6HeLj8V39xCPe5hyiijAXcE3GDg27c2NTNCK6",
       "private": {
-        "signing_key": "HxdfYv33K4c8tskGVDVJZs6TeqosmPHoPQyY68pvNgPo",
-        "dh_key": "2y2Fjw8g8rN2rTHVxibqZQ2otApFweWAL1275Fpva34M",
-        "dec_share": "k66suXuQWvDXQGLKm5WVuqLQhkvC2UiWT4rhsfwT7U2rv4",
-        "dec_key": "AfVvHccHxHcEhoqsg32J3A9N6JCRJmKLVXZF7vYn15G5M"
+        "signing_key": "6cCLaTp6W2ULnYbsM6gkkwNiDJkF6X2KZQu4mwp6hoVf",
+        "dh_key": "ATHaGiNCNrAK3oBmQiGCERij5ngTnDuaWdcibixxmBEu",
+        "dec_share": "j2FJnuciXrXKokGHBUUN7aYF3rrd59B6m6yqLkPUrrEvqv",
+        "dec_key": "AWUA53DJcR3vgoGWNFnjfB9XHmRRt31644byktscLceV9"
       }
     },
     {
@@ -45,19 +47,20 @@
       "decrypt_address": "127.0.0.1:10002",
       "certifier_address": "127.0.0.1:11002",
       "internal_address": "127.0.0.1:5002",
-      "signing_key": "eAT95uxoAanUD2V8K1UuLmVcfLEGSY83yP5WZCu3jUvR",
-      "dh_key": "9Dy5cHoH843fADfPP2Azw3RWKu7B9mXRRVpz6ZXruvs4",
+      "signing_key": "25a7FA1j77SXJTUSn3B5ePMtFPokgTrox6YFFJ7kDAaGW",
+      "dh_key": "5zeyqWVtqbxyudwcvG5XNy1H3MtBS7r4sb1JSmf7XmDP",
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
-      "enc_key": "8syLSi719af1reoB1bw5nenqakPxcQRCD8usowhRZe7KiC4vNRCikah23pMjC5FmiC6",
+      "enc_key": "8skBinD5fN5r5qWY5ScUkxXk4VLj6Ffff2Z4tYdSPYRsj3EdKUqnNHe3jgFf5oSHCXA",
       "private": {
-        "signing_key": "Chssh62FGwFqqf2ddxJtDMH24SabKPMpvc3vb1GvqJz5",
-        "dh_key": "BKtwa3rWxYmwxAVNsEKkV6PrRbbAjALn9bb2wsgu57Tv",
-        "dec_share": "jzP4s2vUt6BtZan5ypHriP69UidFRUxFcJ9Ddm25pQSSZ7",
-        "dec_key": "AhPB5ZVKcJ69EbiVJoEG2JUotynzufevzem9dWe3WnieS"
+        "signing_key": "6q4pyJ4khe6Yxj5s95CeMhmYeHYJHL1tPMYoewKudWbo",
+        "dh_key": "FXg5fgKs1CCevLEqkzLQ8SWAQg4sRDZwKchyk7Sa5vRY",
+        "dec_share": "jv9cPriEDf9AxQmgp8yZ5S2XXXjXYwFEu3gUXD3hwrXf69",
+        "dec_key": "AXZ3HQ6ZtaWU4YnhDLbqDLokuXrZEriikSHoi1MZf4bX8"
       }
     },
     {
@@ -65,19 +68,20 @@
       "decrypt_address": "127.0.0.1:10003",
       "certifier_address": "127.0.0.1:11003",
       "internal_address": "127.0.0.1:5003",
-      "signing_key": "k92WrZz3GeEB58Bg1SbcBe2SXig3k8ppNJkt6yCiumBC",
-      "dh_key": "5HVWCWWCkyhKuheub4hQd4ECfdxzYARbM7KyNhVgcUFq",
+      "signing_key": "28JQ84PtuHLjKxrwbsJ3XW7g1UVJ9rv4aYoB36Vq1iUj3",
+      "dh_key": "H8ZVA9AEusqmx4mhHWGHiJBX4HNFMnztf6ZRtg4iU3yz",
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
-      "enc_key": "8sCLWsuaa5FGEXp4D41twsUzJw8hSgaVp2MzaeZ2pCzK9Lo1mMNHCeUooFBmTpSAajF",
+      "enc_key": "8sMddUEgejCevnsMGp3hrGaTfbcmXQxX9E9MWifS1Aj3w7LABYsunLPcCPPrNzc43Gt",
       "private": {
-        "signing_key": "Dks99xoMrBXKsQXuxoY3estkuDfN4uGYCqnmxaJMxv9L",
-        "dh_key": "9Uqx4Xc1qdKEue9c7f5SkEJcRDLw6NfcNAtDnrmzaqsQ",
-        "dec_share": "jASzDmUEH9DobG5LP91kjBq4eJJppNe9pmVAJ4X8xXRgWv",
-        "dec_key": "AigvRmWFWW1GPsxuctMpuacoq52s191kvaKrEWpbHKKL1"
+        "signing_key": "4UunFA4UJ4wqFo1yCj2jjmB4Z9CbpUASHfw1WU92MsjV",
+        "dh_key": "DEJN78DzVLEBtmgyX2YNA5rnFArj4xuoJVoe2T83GpjJ",
+        "dec_share": "k7b3XhATrKKQKBgf9uy6TWGpqwbPM7W9Uo51xj8rJL16Wn",
+        "dec_key": "AYt6K63sm2BG3Q8vrLHvkpAjfE73qNN4zuMsxiDZPb5xA"
       }
     },
     {
@@ -85,24 +89,25 @@
       "decrypt_address": "127.0.0.1:10004",
       "certifier_address": "127.0.0.1:11004",
       "internal_address": "127.0.0.1:5004",
-      "signing_key": "2BCTG6xkJfi5dt9CfmcRLVaT8ApD8MEFyCZaYtPgR89yN",
-      "dh_key": "GFoe7nCVQEuJwEQZztpELYvcvmoSnv7XKeZxwd7UPVUx",
+      "signing_key": "fnwhXEPXJvt7aqw6s1xgUSADtTzm2u1LCDVkewA7tmqP",
+      "dh_key": "65MYZBgpYwDZPTb9Aet2zocbdQQyTiiuiUSrFiZdmc1i",
       "chain_config": {
         "parent_chain_id": 1,
         "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
-        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
       },
-      "enc_key": "8rUJxUbZcWLyxk8QUKbvqmwBr7gaEZPhCLmLatRtWYRwbhVVtzSDxRM3dZYi9XqJ1xg",
+      "enc_key": "8sw9fmJeoWNXyVVxTrXGwcdtwZMtHRPNaKTQcHLju2tABrTNS4pUyKas3XxCqtdaN7d",
       "private": {
-        "signing_key": "B6Tvqq5GyYtpmSzrEPrxQJazNQDwfJrs379vTf1MCctY",
-        "dh_key": "7SwVQuinAgwwKjivg823DeYJxXfmK6G3pi7h45Yp3esz",
-        "dec_share": "jaFuHoDJGcZ7WQzyVLDahiwsN736avm9XurZqg5sF35Raj",
-        "dec_key": "Ah471UdqbnFrZ6rRcE1CTNm14Hf7CWfHMcPdXSDck56gE"
+        "signing_key": "3THmZJKpVQhHgbx53P55iQkfSQENuSQHkxLkuFR7z8ga",
+        "dh_key": "H8YHC1eMTGZ2Ux1f6pcKwwLFZkfnsUJiPQyk3UESLLdG",
+        "dec_share": "jh4CoNjexaxFD2oLAUwfacmCf1hUiDTy3DzX8UR47qVU2X",
+        "dec_key": "AZxon6P6bYAatmB8DYyza6yhpN3AGGqkH4qZDqy67BGUG"
       }
     }
   ],
   "dec_keyset": {
-    "pubkey": "8sniKp3A3n7hSr2xmF9vdsqdH7Nio37KNQFTDTkF9SR1GscK6g75whHU88AtNrFkyv4",
-    "combkey": "y77vyxpoY7zgyaKHLjy6F9iMghkVGUaQZQjbUvm1ggQYFS9Jc6ounFAteXP5nkhHgWcoPfr6p9MubcdvWRR2biYsRwbk9eEVzVF46dAHPd8ZXSbYViC7zCA3gFDK8CW4etM7TubwP6L4cYZgvJ71QDj2P7AMCNzREywrJ1qFdDA78KZZa9FgtNeqzV7AJumfFFQvhSMpwppEod3fa3cXPPmx9kqM9GQ6oi783coFHsSrvS94Ldg1dD9wyUDSC4bjPvKy4i7NVo3cL5fnhnMpzZhK7aZ5F1cxEwhNjEP3DwcLPFi6hJ1jqNqBaLkd9YL2dPB7qM2UF3BhpE1"
+    "pubkey": "8ryKUxPcYymQazHXA5LUtwfaVcA23XKTrdcjQPBMub6PrXiK6f23jGgxAXXiSX1aqgE",
+    "combkey": "y6vevdWJBfCE1kmbGMQqvAxFd6JQFxYgEMB9sxrRZmPCYXBggTw1bUsVyxjbqtRgvSePYUYNSagqQ3bB6ffv8W19f9ADL7b6SmyHQaP2BwbTsXXaMhexYoCBkSd6b1H8mgMUg9vEhDWVKvxPpGJYaXMVa1Bh7eZtDapXYEzH8e9uvB5TptJW8SjS5zEQJ6Bm8PkuhMA8maSaZmKc4AAdpmWgkLbM6F5XAoGRDGfd8uDW4r4EQY1PW3vAaR6oppVrG8t94XsMGJcNK1n6Sg2Hg7wXQtuNU2dsjX3vQg5oM7CefHSAwqa4RUoDBRsajd3BCwDPtKi5XCi81wB"
   }
 }
