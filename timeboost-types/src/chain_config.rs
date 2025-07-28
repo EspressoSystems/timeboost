@@ -21,7 +21,7 @@ impl ChainConfig {
         self.parent_chain_id
     }
 
-    pub fn parent_chain_rpc_url(&self) -> &String {
+    pub fn parent_chain_rpc_url(&self) -> &str {
         &self.parent_chain_rpc_url
     }
 
