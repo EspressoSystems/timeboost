@@ -60,7 +60,8 @@ impl<N: Network> DelayedInbox<N> {
 
     pub async fn go(self) {
         let mut prev_finalized = 0;
-        let mut prev_delayed_idx = 0;
+        // The first delayed message index will be 0, so initialize with `u64::Max` instead
+        let mut prev_delayed_idx = u64::MAX;
         let events = vec![
             InboxMessageDelivered::SIGNATURE,
             InboxMessageDeliveredFromOrigin::SIGNATURE,
@@ -111,7 +112,6 @@ impl<N: Network> DelayedInbox<N> {
                             .try_into()
                             .expect("valid msg number");
                         if delayed_idx != prev_delayed_idx {
-                            debug_assert!(delayed_idx > prev_delayed_idx);
                             info!(node = %self.node, %delayed_idx, parent_finalized_block = %finalized, ibox_addr = %self.ibox_addr, %tx_hash, "delayed index updated");
                             prev_delayed_idx = delayed_idx;
                             self.queue.set_delayed_inbox_index(delayed_idx.into());
