@@ -11,7 +11,8 @@ use cliquenet::{
 };
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{
-    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked, VoteAccumulator,
+    Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked, Validated,
+    VoteAccumulator,
 };
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -35,7 +36,7 @@ pub struct Certifier {
     /// Command channel to worker.
     worker_tx: Sender<Command>,
     /// Receiver of certified blocks from worker.
-    worker_rx: Receiver<CertifiedBlock>,
+    worker_rx: Receiver<CertifiedBlock<Validated>>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
     /// Block number counter.
@@ -115,7 +116,7 @@ impl Certifier {
     /// # Panics
     ///
     /// Once a `CertifierDown` error is returned, calling `next_block` again panics.
-    pub async fn next_block(&mut self) -> StdResult<CertifiedBlock, CertifierDown> {
+    pub async fn next_block(&mut self) -> StdResult<CertifiedBlock<Validated>, CertifierDown> {
         select! {
             end = &mut self.worker => match end {
                 Ok(end) => {
@@ -209,7 +210,7 @@ struct Worker {
     rx: Receiver<Command>,
 
     /// Sender to return certified blocks back to the application.
-    tx: Sender<CertifiedBlock>,
+    tx: Sender<CertifiedBlock<Validated>>,
 
     /// Track votes for block signatures.
     tracking: BTreeMap<BlockNumber, Tracking>,
@@ -306,7 +307,7 @@ impl Worker {
         self.maybe_switch_committee().await?;
 
         let round = Round::new(block.round(), self.current);
-        let info = BlockInfo::new(num, round, *block.hash());
+        let info = BlockInfo::new(num, round, block.hash());
 
         let Some(evi) = self.evidence(num) else {
             debug!(
@@ -602,10 +603,10 @@ impl Worker {
 }
 
 impl Tracker {
-    async fn deliver(&self, is_leader: bool, tx: &Sender<CertifiedBlock>) -> Result<bool> {
+    async fn deliver(&self, leader: bool, tx: &Sender<CertifiedBlock<Validated>>) -> Result<bool> {
         if let Some(cert) = self.votes.certificate() {
             if let Some(block) = &self.block {
-                let cb = CertifiedBlock::new(cert.clone(), block.clone(), is_leader);
+                let cb = CertifiedBlock::new(cert.clone(), block.clone(), leader);
                 tx.send(cb).await.map_err(|_| EndOfPlay::CertifierDown)?;
                 return Ok(true);
             }

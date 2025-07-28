@@ -16,12 +16,17 @@ tps=1
 stamp=
 ignore_stamp=false
 nitro_node_url=
+namespace=10101
 yapper=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -k|--keyset-file)
             keyset_file="$2"
+            shift 2
+            ;;
+        -n|--namespace)
+            namespace="$2"
             shift 2
             ;;
         -l|--late)
@@ -56,6 +61,9 @@ Options:
 
     -l | --late
         Delayed startup of first node.
+
+    -n | --namespace <NUMBER>
+        Espresso transactions namespace ID.
 
     -k | --keyset-file <PATH>
         Use a JSON file for node keys.
@@ -116,7 +124,8 @@ for (( i=0; i<$nodes; i++ )); do
         --until $rounds
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
-        --watchdog-timeout $rounds)
+        --watchdog-timeout $rounds
+        --namespace $namespace)
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)
@@ -141,4 +150,3 @@ if $yapper; then
 fi
 
 wait "${pids[@]}"
-
