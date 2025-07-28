@@ -110,6 +110,11 @@ pub struct LabeledDecryptionKey<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> LabeledDecryptionKey<C> {
+    /// Returns the node idx for this decryption key.
+    pub fn node_idx(&self) -> usize {
+        self.node_idx
+    }
+
     /// Decryption for an individual ciphertext produced and extracted from [`encrypt()`]
     pub fn decrypt<H: Digest>(
         &self,
