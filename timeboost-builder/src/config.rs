@@ -1,6 +1,7 @@
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
-use multisig::{Keypair, PublicKey, x25519};
+use multisig::{Committee, Keypair, PublicKey, x25519};
+use robusta::espresso_types::NamespaceId;
 
 #[derive(Debug, Clone, Builder)]
 pub struct CertifierConfig {
@@ -15,5 +16,8 @@ pub struct CertifierConfig {
 #[derive(Debug, Clone, Builder)]
 pub struct SubmitterConfig {
     pub(crate) pubkey: PublicKey,
-    pub(crate) robusta: robusta::Config,
+    #[builder(into)]
+    pub(crate) namespace: NamespaceId,
+    pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
+    pub(crate) committee: Committee,
 }
