@@ -1111,8 +1111,7 @@ where
     /// It is defined as the quorum of committed round numbers of the committee
     /// minus an extra margin to avoid overly aggressive cleanup.
     fn lower_round_bound(&self) -> RoundNumber {
-        (*self.nodes
-            .quorum())
+        (*self.nodes.quorum())
             .saturating_sub(self.committee.quorum_size().get() as u64)
             .into()
     }
