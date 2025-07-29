@@ -40,6 +40,7 @@ use crate::{
 use ark_bls12_381::G1Projective;
 use parking_lot::RwLock;
 use std::{ops::Deref, sync::Arc};
+use tokio::sync::Notify;
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -75,8 +76,18 @@ pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 /// Decryption key share in the threshold decryption scheme
 pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 
+/// `ThresholdEncKeyCell` is a thread-safe container for an optional `ThresholdEncKey`
+/// that allows asynchronous notification when the key is set.
+///
+/// Internally, it uses an `RwLock<Option<ThresholdEncKey>>` to guard the key,
+/// and a `Notify` to wake up tasks waiting for the key to become available.
 #[derive(Debug, Clone, Default)]
-pub struct ThresholdEncKeyCell(Arc<RwLock<Option<ThresholdEncKey>>>);
+pub struct ThresholdEncKeyCell {
+    key: Arc<RwLock<Option<ThresholdEncKey>>>,
+    notify: Arc<Notify>,
+}
+
+impl ThresholdEncKeyCell {}
 
 impl ThresholdEncKeyCell {
     pub fn new() -> Self {
@@ -84,14 +95,30 @@ impl ThresholdEncKeyCell {
     }
 
     pub fn set(&self, key: ThresholdEncKey) {
-        *self.0.write() = Some(key)
+        *self.key.write() = Some(key);
+        self.notify.notify_waiters();
     }
 
     pub fn get(&self) -> Option<ThresholdEncKey> {
-        (*self.0.read()).clone()
+        (*self.key.read()).clone()
     }
 
     pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdEncKey>> {
-        self.0.read()
+        self.key.read()
+    }
+
+    /// Asynchronously waits for the key to become available, then returns it.
+    ///
+    /// If the key is already present, it is returned immediately.
+    /// Otherwise, the current task is suspended until `set()` is called.
+    ///
+    /// The returned key is a clone of the stored key.
+    pub async fn wait(&self) -> ThresholdEncKey {
+        loop {
+            if let Some(k) = self.get() {
+                return k;
+            }
+            self.notify.notified().await;
+        }
     }
 }

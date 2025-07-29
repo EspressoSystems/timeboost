@@ -58,6 +58,7 @@ pub struct TimeboostConfig {
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
 
+    /// Pending encryption key that will be updated after DKG/resharing.
     pub(crate) threshold_enc_key: ThresholdEncKeyCell,
 
     /// Configuration of espresso network client.

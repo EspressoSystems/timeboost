@@ -115,7 +115,8 @@ impl<C: CurveGroup> FeldmanVss<C> {
         .take(t)
         .collect::<Vec<_>>();
 
-        C::msm(commitment, &powers).expect("infallible: commitment and powers has diff lengths")
+        // infalliable
+        C::msm(commitment, &powers).expect("bases and scalars shouuld have the same length")
     }
 }
 

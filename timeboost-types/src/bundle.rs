@@ -304,7 +304,6 @@ pub struct DkgBundle {
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
     vess_ct: VessCiphertext,
-    // vess: VessCiphertext,
     /// Feldman commitment to the secret sharing dealing
     comm: VssCommitment,
 }

@@ -51,6 +51,7 @@ pub struct SequencerConfig {
     /// Length of the leash between Sailfish and other phases.
     pub(crate) leash_len: usize,
 
+    /// Atomic cell holding the threshold encryption key post DKG.
     pub(crate) threshold_enc_key: ThresholdEncKeyCell,
 }
 

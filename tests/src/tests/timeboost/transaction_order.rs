@@ -74,10 +74,7 @@ async fn transaction_order() {
     }
 
     // wait until DKG is done
-    while enc_key.get().is_none() {
-        tracing::debug!("DKG ongoing, sleep 0.5s ...");
-        sleep(Duration::from_secs_f32(0.5)).await;
-    }
+    enc_key.wait().await;
     tracing::info!("DKG done");
 
     tasks.spawn(gen_bundles(enc_key, bcast.clone()));

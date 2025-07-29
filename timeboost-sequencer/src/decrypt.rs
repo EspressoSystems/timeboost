@@ -187,7 +187,6 @@ impl Decrypter {
 
         if incl.is_encrypted() {
             self.worker_tx
-                // TODO:(alex) don't send this command if not ready
                 .send(Command::Decrypt(incl))
                 .await
                 .map_err(|_| DecrypterDown(()))?;
@@ -365,7 +364,7 @@ struct Worker {
     /// Number of rounds to retain.
     retain: usize,
 
-    /// Tracker for Dkg bundles received through inclusion lists.
+    /// Tracker for Dkg bundles received through candidate lists.
     #[builder(default)]
     dkg_tracker: BTreeMap<CommitteeId, DkgAccumulator>,
 
