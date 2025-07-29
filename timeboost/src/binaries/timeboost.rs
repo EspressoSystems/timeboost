@@ -243,6 +243,7 @@ async fn main() -> Result<()> {
             Vec::new(),
         ))
         .namespace(cli.namespace)
+        .chain_config(my_keyset.chain_config.clone())
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;
