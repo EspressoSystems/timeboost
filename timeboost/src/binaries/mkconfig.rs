@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::num::NonZeroU8;
 use std::{io, iter};
 
+use alloy_eips::BlockNumberOrTag;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
@@ -60,9 +61,9 @@ struct Args {
     #[clap(long)]
     parent_ibox_contr_addr: alloy_primitives::Address,
 
-    /// Parent chain inbox contract adddress
+    /// Parent chain inbox block tag
     #[clap(long, default_value = "finalized")]
-    parent_block_tag: String,
+    parent_block_tag: BlockNumberOrTag,
 }
 
 /// How should addresses be updated?
@@ -147,9 +148,8 @@ impl Args {
                     self.parent_chain_id,
                     self.parent_rpc_url.clone(),
                     self.parent_ibox_contr_addr,
-                    &self.parent_block_tag,
-                )
-                .expect("valid block tag"),
+                    self.parent_block_tag,
+                ),
             })
             .collect();
         Ok(KeysetConfig {

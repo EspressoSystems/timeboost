@@ -6,6 +6,7 @@ mod transaction_order;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 
+use alloy_eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::Keypair;
 use multisig::{Committee, x25519};
@@ -96,19 +97,16 @@ where
             .decrypt_committee(decrypt_committee.clone())
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
-            .chain_config(
-                ChainConfig::new(
-                    1,
-                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                        .parse::<Url>()
-                        .expect("valid url"),
-                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-                        .parse::<alloy_primitives::Address>()
-                        .expect("valid contract"),
-                    "finalized",
-                )
-                .expect("valid block tag"),
-            )
+            .chain_config(ChainConfig::new(
+                1,
+                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                    .parse::<Url>()
+                    .expect("valid url"),
+                "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                    .parse::<alloy_primitives::Address>()
+                    .expect("valid contract"),
+                BlockNumberOrTag::Finalized,
+            ))
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)
