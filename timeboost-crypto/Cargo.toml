@@ -7,7 +7,6 @@ rust-version.workspace = true
 
 [dependencies]
 aes-gcm = { workspace = true }
-alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
 ark-bls12-381 = { workspace = true }
 ark-ec = { workspace = true }

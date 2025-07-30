@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::iter::once;
 use std::sync::Arc;
 
-use alloy_provider::network::Ethereum;
+use alloy::providers::network::Ethereum;
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -20,7 +20,7 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, DelayedInboxIndex, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, DelayedInboxIndex, DkgBundle, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};

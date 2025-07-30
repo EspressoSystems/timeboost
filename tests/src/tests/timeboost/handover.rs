@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use alloy_eips::BlockNumberOrTag;
+use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
@@ -157,7 +157,7 @@ where
                         .parse::<Url>()
                         .expect("valid url"),
                     "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-                        .parse::<alloy_primitives::Address>()
+                        .parse::<alloy::primitives::Address>()
                         .expect("valid contract"),
                     BlockNumberOrTag::Finalized,
                 ))

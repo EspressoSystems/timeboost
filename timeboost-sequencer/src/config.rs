@@ -5,7 +5,7 @@ use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
 use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
-use timeboost_types::{Address, ChainConfig, DecryptionKey, DelayedInboxIndex};
+use timeboost_types::{Address, ChainConfig, DelayedInboxIndex, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {

@@ -2,15 +2,14 @@ use std::net::IpAddr;
 use std::num::NonZeroU8;
 use std::{io, iter};
 
-use alloy_eips::BlockNumberOrTag;
+use alloy::eips::BlockNumberOrTag;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::DecryptionScheme;
-use timeboost_types::{ChainConfig, UNKNOWN_COMMITTEE_ID};
+use timeboost_types::ChainConfig;
 use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys};
 use timeboost_utils::types::logging;
 use url::Url;
@@ -59,7 +58,7 @@ struct Args {
 
     /// Parent chain inbox contract adddress
     #[clap(long)]
-    parent_ibox_contr_addr: alloy_primitives::Address,
+    parent_ibox_contr_addr: alloy::primitives::Address,
 
     /// Parent chain inbox block tag
     #[clap(long, default_value = "finalized")]
