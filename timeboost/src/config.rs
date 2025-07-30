@@ -6,7 +6,7 @@ use timeboost_builder::{
     robusta::{self, espresso_types::NamespaceId},
 };
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DecryptionKey;
+use timeboost_types::{ChainConfig, DecryptionKey};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -59,6 +59,9 @@ pub struct TimeboostConfig {
 
     #[builder(into)]
     pub(crate) namespace: NamespaceId,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl TimeboostConfig {
@@ -73,6 +76,7 @@ impl TimeboostConfig {
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
             .leash_len(self.leash_len)
+            .chain_config(self.chain_config.clone())
             .build()
     }
 
