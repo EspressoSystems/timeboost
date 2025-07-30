@@ -30,8 +30,22 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-proto`: Contains protobuf schema and protobuf generated code for inlusion list
 - `yapper`: Transaction submission test tool.
 
-## MSRV (minimum supported Rust version)
-The MSRV of this repository is 1.85.
+## Pre-requisites
+- **Rust toolchain** (Minimum supported rust version (MSRV): 1.88): [Install via rustup](https://rustup.rs/)
+- **just** (for command aliases):
+  ```sh
+  cargo install just
+  ```
+- **cargo-nextest** (for running tests):
+  ```sh
+  cargo install cargo-nextest
+  ```
+- **Docker** (for integration tests, if needed): [Install Docker](https://docs.docker.com/get-docker/)
+
+- **Initialize Submodules:**
+   ```sh
+   git submodule update --init --recursive
+   ```
 
 ## Build
 
