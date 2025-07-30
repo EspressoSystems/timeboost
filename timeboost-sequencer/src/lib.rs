@@ -156,7 +156,8 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
+        let decrypter =
+            Decrypter::new(cfg.decrypter_config(), metrics, seq_metrics.clone()).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);

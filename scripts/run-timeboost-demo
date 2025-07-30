@@ -124,7 +124,7 @@ for (( i=0; i<$nodes; i++ )); do
         --until $rounds
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
-        --watchdog-timeout $rounds
+        --watchdog-timeout 30
         --namespace $namespace)
 
     if $ignore_stamp; then

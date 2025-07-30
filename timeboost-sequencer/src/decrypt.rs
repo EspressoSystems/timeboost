@@ -25,6 +25,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
+use crate::metrics::SequencerMetrics;
 
 type Result<T> = StdResult<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
@@ -87,10 +88,16 @@ pub struct Decrypter {
     dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
     /// Current committee.
     current: CommitteeId,
+    /// Metrics to keep track of decrypter status
+    metrics: Arc<SequencerMetrics>,
 }
 
 impl Decrypter {
-    pub async fn new<M>(cfg: DecrypterConfig, metrics: &M) -> Result<Self>
+    pub async fn new<M>(
+        cfg: DecrypterConfig,
+        metrics: &M,
+        seq_metrics: Arc<SequencerMetrics>,
+    ) -> Result<Self>
     where
         M: metrics::Metrics,
     {
@@ -153,6 +160,7 @@ impl Decrypter {
             committees: CommitteeVec::new(committee.clone()),
             dkg_stores: dkg_stores.clone(),
             current: committee.id(),
+            metrics: seq_metrics,
         })
     }
 
@@ -191,7 +199,9 @@ impl Decrypter {
                 .await
                 .map_err(|_| DecrypterDown(()))?;
             self.incls.insert(round, Status::Encrypted);
+
             debug!(node = %self.label, %round, "enqueued encrypted inclusion list");
+            self.metrics.queued_encrypted.update(1);
         } else {
             self.incls.insert(round, Status::Decrypted(incl));
             debug!(node = %self.label, %round, "enqueued non-encrypted inclusion list");
@@ -269,6 +279,7 @@ impl Decrypter {
                 "decrypter worker returns non-decrypted inclusion list"
             );
             self.incls.insert(round, Status::Decrypted(dec_incl));
+            self.metrics.output_decrypted.update(1);
 
             // since the newly finished/responded inclusion list might belong to a later round
             // the first entry might still be unencrypted, in which case continue the loop and
@@ -1043,6 +1054,7 @@ mod tests {
     use std::{
         collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
+        sync::Arc,
         time::{Duration, Instant},
     };
 
@@ -1061,7 +1073,7 @@ mod tests {
         Timestamp,
     };
 
-    use crate::{config::DecrypterConfig, decrypt::Decrypter};
+    use crate::{config::DecrypterConfig, decrypt::Decrypter, metrics::SequencerMetrics};
 
     // Test constants
     const COMMITTEE_SIZE: usize = 5;
@@ -1568,9 +1580,13 @@ mod tests {
                 .threshold_enc_key(encryption_key_cell.clone())
                 .build();
 
-            let decrypter = Decrypter::new(decrypter_config, &NoMetrics)
-                .await
-                .expect("Decrypter creation should succeed");
+            let decrypter = Decrypter::new(
+                decrypter_config,
+                &NoMetrics,
+                Arc::new(SequencerMetrics::default()),
+            )
+            .await
+            .expect("Decrypter creation should succeed");
             decrypters.push(decrypter);
             encryption_key_cells.push(encryption_key_cell);
         }
