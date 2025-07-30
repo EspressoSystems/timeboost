@@ -6,6 +6,7 @@ mod transaction_order;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 
+use alloy_eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::Keypair;
 use multisig::{Committee, x25519};
@@ -14,11 +15,12 @@ use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
 use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DkgKeyStore;
+use timeboost_types::{ChainConfig, DkgKeyStore};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
+use url::Url;
 
 fn make_configs<R>(
     size: NonZeroUsize,
@@ -101,6 +103,16 @@ where
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .threshold_enc_key(enc_key.clone())
+            .chain_config(ChainConfig::new(
+                1,
+                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                    .parse::<Url>()
+                    .expect("valid url"),
+                "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                    .parse::<alloy_primitives::Address>()
+                    .expect("valid contract"),
+                BlockNumberOrTag::Finalized,
+            ))
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)

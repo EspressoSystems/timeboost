@@ -7,7 +7,7 @@ use timeboost_builder::{
 };
 use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DkgKeyStore;
+use timeboost_types::{ChainConfig, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -66,6 +66,9 @@ pub struct TimeboostConfig {
 
     #[builder(into)]
     pub(crate) namespace: NamespaceId,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl TimeboostConfig {
@@ -82,6 +85,7 @@ impl TimeboostConfig {
             .recover(self.recover)
             .leash_len(self.leash_len)
             .threshold_enc_key(self.threshold_enc_key.clone())
+            .chain_config(self.chain_config.clone())
             .build()
     }
 

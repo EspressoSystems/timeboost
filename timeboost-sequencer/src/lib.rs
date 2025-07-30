@@ -1,5 +1,6 @@
 mod config;
 mod decrypt;
+mod delayed_inbox;
 mod include;
 mod metrics;
 mod queue;
@@ -9,6 +10,7 @@ use std::collections::VecDeque;
 use std::iter::once;
 use std::sync::Arc;
 
+use alloy_provider::network::Ethereum;
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -18,7 +20,7 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, DkgBundle, Timestamp, Transaction};
+use timeboost_types::{BundleVariant, DelayedInboxIndex, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -32,6 +34,8 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
+use crate::delayed_inbox::DelayedInbox;
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -41,6 +45,7 @@ pub enum Output {
         round: RoundNumber,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
+        delayed_inbox_index: DelayedInboxIndex,
     },
     UseCommittee(Round),
 }
@@ -48,6 +53,7 @@ pub enum Output {
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
+    ibox_task: JoinHandle<()>,
     bundles: BundleQueue,
     commands: Sender<Command>,
     output: Receiver<Output>,
@@ -55,7 +61,8 @@ pub struct Sequencer {
 
 impl Drop for Sequencer {
     fn drop(&mut self) {
-        self.task.abort()
+        self.task.abort();
+        self.ibox_task.abort();
     }
 }
 
@@ -110,6 +117,10 @@ impl Sequencer {
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
+
+        let ibox = DelayedInbox::<Ethereum>::connect(public_key, &cfg.chain_config, queue.clone())
+            .await
+            .expect("connection to succeed");
 
         let sailfish = {
             let met = NetworkMetrics::new(
@@ -181,6 +192,7 @@ impl Sequencer {
         Ok(Self {
             label: public_key,
             task: spawn(task.go()),
+            ibox_task: spawn(ibox.go()),
             bundles: queue,
             output: rx,
             commands: cx,
@@ -299,9 +311,10 @@ impl Task {
                     Ok(incl) => {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
+                        let delayed_inbox_index = incl.delayed_inbox_index();
                         let transactions = self.sorter.sort(incl);
                         if !transactions.is_empty() {
-                            let out = Output::Transactions { round, timestamp, transactions };
+                            let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {

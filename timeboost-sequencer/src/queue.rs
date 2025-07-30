@@ -61,7 +61,6 @@ impl BundleQueue {
         })))
     }
 
-    #[allow(unused)]
     pub fn set_delayed_inbox_index(&self, idx: DelayedInboxIndex) {
         self.0.lock().index = idx
     }

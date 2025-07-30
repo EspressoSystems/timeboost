@@ -33,6 +33,7 @@ thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 quickcheck = "1"
