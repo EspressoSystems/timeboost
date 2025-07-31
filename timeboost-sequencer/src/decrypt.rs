@@ -101,7 +101,7 @@ impl Decrypter {
     where
         M: metrics::Metrics,
     {
-        let (cmd_tx, cmd_rx) = channel(cfg.retain);
+        let (cmd_tx, cmd_rx) = channel(cfg.retain+200);
         let (dec_tx, dec_rx) = channel(cfg.retain);
         let net_metrics = NetworkMetrics::new("decrypt", metrics, cfg.committee.parties().copied());
 
