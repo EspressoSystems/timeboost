@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::time::{Duration, Instant};
 use tokio::signal;
 
-const ROUND_TIMEOUT_SECS: u64 = 30;
-const MAX_ROUND_TIMEOUTS: u64 = 15;
+const ROUND_TIMEOUT_SECS: u64 = 60;
+const MAX_ROUND_TIMEOUTS: u64 = 30;
 
 pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<()> {
     use futures::FutureExt;
@@ -35,7 +35,7 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
                             .and_then(|num| num.parse::<u64>().ok())
                             .unwrap_or(0);
 
-                        if committed_round > 0 && committed_round % 10 == 0 {
+                        if committed_round > 0 {
                             tracing::info!("committed_round: {}", committed_round);
                         }
 
