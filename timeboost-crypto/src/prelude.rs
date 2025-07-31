@@ -87,8 +87,6 @@ pub struct ThresholdEncKeyCell {
     notify: Arc<Notify>,
 }
 
-impl ThresholdEncKeyCell {}
-
 impl ThresholdEncKeyCell {
     pub fn new() -> Self {
         Self::default()
