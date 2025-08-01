@@ -22,7 +22,7 @@ pub use bundle::{
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
 pub use chain_config::ChainConfig;
-pub use decryption::{DecryptionKey, DkgAccumulator, DkgKeyStore};
+pub use decryption::{DecryptionKey, DkgAccumulator, DkgKeyStore, Subset};
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;
