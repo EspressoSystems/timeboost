@@ -21,7 +21,7 @@ use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList};
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -139,7 +139,7 @@ impl Decrypter {
         let committee = cfg.committee.committee();
         let worker = Worker::builder()
             .label(cfg.label)
-            .dkg_sk(labeled_sk)
+            .dkg_sk(Arc::new(labeled_sk))
             .committees(CommitteeVec::new(committee.clone()))
             .dkg_stores(dkg_stores.clone())
             .current(committee.id())
@@ -362,7 +362,7 @@ struct Worker {
     first_requested_round: Option<RoundNumber>,
 
     /// decryption key used in the DKG or key resharing for secure communication between nodes
-    dkg_sk: LabeledDkgDecKey,
+    dkg_sk: Arc<LabeledDkgDecKey>,
 
     /// public key material encrypted DKG bundles (shared with Decrypter)
     dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
@@ -377,7 +377,13 @@ struct Worker {
 
     /// Tracker for Dkg bundles received through candidate lists.
     #[builder(default)]
-    dkg_tracker: BTreeMap<CommitteeId, DkgAccumulator>,
+    dkg_tracker: Arc<RwLock<BTreeMap<CommitteeId, DkgAccumulator>>>,
+
+    /// JoinHandle of running threads for processing incoming DKG bundle, which might take a while
+    /// Each working task will return the cid and potential finalized decryption key if DKG
+    /// finishes
+    #[builder(default)]
+    dkg_workers: JoinSet<Result<(CommitteeId, Option<DecryptionKey>)>>,
 
     /// Committees for which Dkg has already been completed.
     #[builder(default)]
@@ -434,14 +440,48 @@ impl Worker {
                         return EndOfPlay::NetworkDown
                     }
                 },
+                // one of the DKG processing is done
+                Some(res) = self.dkg_workers.join_next() => match res {
+                    Ok(inner_res) => { match inner_res {
+                        // we update finalized DKG result outside of `on_dkg_request()`
+                        // to save from complicating types of mutable variables for thread-safety
+                        Ok((cid, k)) => {if let Some(dec_sk) = k {
+                            self.enc_key.set(dec_sk.pubkey().clone());
+                            self.dec_sk = Some(dec_sk);
+                            self.dkg_completed.insert(cid);
+                            info!(committee_id = %cid, node = %self.label, "DKG finished");
+
+                            // TODO(resharing): if cid is for the next committee
+                            // send the resulting subset to (passive) nodes in the new committee
+                        }}
+                        Err(DecrypterError::End(end)) => return end,
+                        Err(err) => warn!(node = %self.label, %err, "error on dkg request")
+                    }},
+                    Err(err) => warn!(node = %self.label, %err, "join error on dkg task"),
+                },
                 // receiving a request from the decrypter
                 cmd = self.rx.recv() => match cmd {
                     Some(Command::Dkg(b)) => {
-                        match self.on_dkg_request(b).await {
-                            Ok(()) => {}
-                            Err(DecrypterError::End(end)) => return end,
-                            Err(err) => warn!(node = %self.label, %err, "error on dkg request")
+                        // we check DKG completion status outside of `on_dkg_request()`
+                        // to save from complicating `dkg_completed` types for thread-safety
+                        let cid = b.committee_id();
+                        if self.dkg_completed.contains(cid) {
+                            trace!(
+                                node = %self.label,
+                                committee_id = %cid,
+                                "received bundle but dkg already completed"
+                            );
+                            continue;
                         }
+
+                        let dkg_stores = self.dkg_stores.clone();
+                        let dkg_tracker = self.dkg_tracker.clone();
+                        let dkg_sk = self.dkg_sk.clone();
+
+                        self.dkg_workers.spawn_blocking(move || {
+                            Self::on_dkg_request(dkg_stores, dkg_tracker, dkg_sk, b)
+                        });
+                        trace!(%node, "spawn a dkg processing task");
                         continue;
                     },
                     Some(Command::Decrypt(incl)) => {
@@ -551,65 +591,60 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
-    async fn on_dkg_request(&mut self, bundle: DkgBundle) -> Result<()> {
-        let cid = bundle.committee_id();
-        if self.dkg_completed.contains(bundle.committee_id()) {
-            trace!(
-                node = %self.label,
-                committee_id = %cid,
-                "received bundle but dkg already completed"
-            );
-            return Ok(());
-        }
-        let stores = self.dkg_stores.read();
-        let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == *cid) else {
+    /// DKG processing logic in a dedicated thread,
+    /// contract: `dkg_completed` for `bundle.committee_id()` is ensured beforehand by the caller
+    ///
+    /// return: (cid, Some(dec_sk)) if accumulator finalize into the DecryptionKey, else None,
+    /// where cid is the CommitteeId of the bundle processed.
+    fn on_dkg_request(
+        dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
+        dkg_tracker: Arc<RwLock<BTreeMap<CommitteeId, DkgAccumulator>>>,
+        dkg_sk: Arc<LabeledDkgDecKey>,
+        bundle: DkgBundle,
+    ) -> Result<(CommitteeId, Option<DecryptionKey>)> {
+        let cid = bundle.committee_id().to_owned();
+        let stores = dkg_stores.read();
+        let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == cid) else {
             return Err(DecrypterError::Dkg(format!(
                 "dkg_store missing for committee_id={cid}",
             )));
         };
 
-        let acc = self
-            .dkg_tracker
-            .entry(*cid)
+        let mut tracker = dkg_tracker.write();
+        let acc = tracker
+            .entry(cid)
             .or_insert_with(|| DkgAccumulator::new(dkg_store.to_owned()));
 
         acc.try_add(bundle)
             .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
         if let Some(subset) = acc.try_finalize() {
-            if *subset.committe_id() == self.current {
-                let committee = dkg_store.committee();
-                // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
-                let aad: &[u8; 3] = b"dkg";
-                let vess = ShoupVess::new_fast_from(committee);
-                let (shares, commitments) = subset
-                    .bundles()
-                    .iter()
-                    .map(|b| {
-                        vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
-                            .map(|s| (s, b.comm().clone()))
-                            .map_err(|e| DecrypterError::Dkg(e.to_string()))
-                    })
-                    .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+            let committee = dkg_store.committee();
+            // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
+            let aad: &[u8; 3] = b"dkg";
+            let vess = ShoupVess::new_fast_from(committee);
+            let (shares, commitments) = subset
+                .bundles()
+                .iter()
+                .map(|b| {
+                    vess.decrypt_share(&dkg_sk, b.vess_ct(), aad)
+                        .map(|s| (s, b.comm().clone()))
+                        .map_err(|e| DecrypterError::Dkg(e.to_string()))
+                })
+                .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
-                let dec_sk = DecryptionKey::from_dkg(
-                    committee.size().into(),
-                    self.dkg_sk.node_idx(),
-                    &commitments,
-                    &shares,
-                )
-                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            let dec_sk = DecryptionKey::from_dkg(
+                committee.size().into(),
+                dkg_sk.node_idx(),
+                &commitments,
+                &shares,
+            )
+            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                self.enc_key.set(dec_sk.pubkey().clone());
-                self.dec_sk = Some(dec_sk);
-                self.dkg_completed.insert(committee.id());
-                info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
-            } else {
-                // TODO(resharing): these ciphertexts are for next committee
-                // send the resulting subset to (passive) nodes in the new committee
-            }
+            Ok((cid, Some(dec_sk)))
+        } else {
+            Ok((cid, None))
         }
-        Ok(())
     }
 
     /// logic to process a decryption request
@@ -1084,7 +1119,7 @@ mod tests {
     const TEST_CHAIN_ID: u64 = 0;
     const TEST_SEQNO: u64 = 10;
     const NETWORK_SETUP_DELAY_SECS: u64 = 1;
-    const DKG_TERMINATION_DELAY_SECS: f32 = 0.5;
+    const DKG_TERMINATION_DELAY_SECS: f32 = 3.5;
     const RETAIN_ROUNDS: usize = 100;
 
     // Pre-generated deterministic keys for consistent testing
