@@ -9,7 +9,7 @@ use api::metrics::serve_metrics_api;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use reqwest::Url;
-use timeboost_builder::{Certifier, CertifierDown};
+use timeboost_builder::{Certifier, CertifierDown, Submitter};
 use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
@@ -45,12 +45,13 @@ pub struct Timeboost {
     nitro_forwarder: Option<NitroForwarder>,
     metrics_task: JoinHandle<()>,
     internal_api: JoinHandle<Result<(), tonic::transport::Error>>,
+    submitter: Submitter,
 }
 
 impl Drop for Timeboost {
     fn drop(&mut self) {
         self.metrics_task.abort();
-        self.internal_api.abort()
+        self.internal_api.abort();
     }
 }
 
@@ -60,6 +61,7 @@ impl Timeboost {
         let met = Arc::new(TimeboostMetrics::new(&*pro));
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
+        let sub = Submitter::new(cfg.submitter_config(), &*pro);
 
         // TODO: Once we have e2e listener this check wont be needed
         let nitro_forwarder = if let Some(nitro_addr) = cfg.nitro_addr.clone() {
@@ -72,7 +74,7 @@ impl Timeboost {
             let Some(addr) = lookup_host(cfg.internal_api.to_string()).await?.next() else {
                 bail!("{} does not resolve to a socket address", cfg.internal_api)
             };
-            let svc = InternalApiService::new(cfg.sign_keypair.public_key(), blk.handle());
+            let svc = InternalApiService::new(blk.handle());
             tonic::transport::Server::builder()
                 .add_service(InternalApiServer::new(svc))
                 .serve(addr)
@@ -87,6 +89,7 @@ impl Timeboost {
             _metrics: met,
             nitro_forwarder,
             internal_api: spawn(internal_api),
+            submitter: sub,
         })
     }
 
@@ -101,7 +104,7 @@ impl Timeboost {
                     }
                 },
                 out = self.sequencer.next() => match out {
-                    Ok(Output::Transactions { round, timestamp, transactions }) => {
+                    Ok(Output::Transactions { round, timestamp, transactions, delayed_inbox_index }) => {
                         info!(
                             node  = %self.label,
                             round = %round,
@@ -109,7 +112,7 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            f.enqueue(round, timestamp, &transactions).await?;
+                            f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
                         }
                         else {
                             warn!(node = %self.label, %round, "no forwarder => dropping output")
@@ -128,6 +131,7 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
+                        self.submitter.submit(b).await
                     }
                     Err(e) => {
                         let e: CertifierDown = e;

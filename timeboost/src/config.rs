@@ -1,9 +1,12 @@
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
-use timeboost_builder::CertifierConfig;
+use timeboost_builder::{
+    CertifierConfig, SubmitterConfig,
+    robusta::{self, espresso_types::NamespaceId},
+};
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DecryptionKey;
+use timeboost_types::{ChainConfig, DecryptionKey};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -50,6 +53,15 @@ pub struct TimeboostConfig {
     /// Length of the leash between Sailfish an other phases.
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
+
+    /// Configuration of espresso network client.
+    pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
+
+    #[builder(into)]
+    pub(crate) namespace: NamespaceId,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl TimeboostConfig {
@@ -64,6 +76,7 @@ impl TimeboostConfig {
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
             .leash_len(self.leash_len)
+            .chain_config(self.chain_config.clone())
             .build()
     }
 
@@ -74,6 +87,15 @@ impl TimeboostConfig {
             .address(self.certifier_addr.clone())
             .committee(self.certifier_committee.clone())
             .recover(self.recover)
+            .build()
+    }
+
+    pub fn submitter_config(&self) -> SubmitterConfig {
+        SubmitterConfig::builder()
+            .pubkey(self.sign_keypair.public_key())
+            .robusta(self.robusta.clone())
+            .namespace(self.namespace)
+            .committee(self.sailfish_committee.committee().clone())
             .build()
     }
 }

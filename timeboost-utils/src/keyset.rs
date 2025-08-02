@@ -9,7 +9,7 @@ use timeboost_crypto::{
     prelude::{DecryptionKey as HpkeDecKey, EncryptionKey as HpkeEncKey},
     traits::threshold_enc::ThresholdEncScheme,
 };
-use timeboost_types::DecryptionKey;
+use timeboost_types::{ChainConfig, DecryptionKey};
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -29,6 +29,7 @@ pub struct NodeInfo {
     pub internal_address: Address,
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
+    pub chain_config: ChainConfig,
 
     /// public key in hybrid public key encryption (HPKE) for secure communication
     #[serde(with = "hpkeenckey")]
@@ -172,6 +173,12 @@ mod tests {
       "signing_key": "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX",
       "dh_key": "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY",
       "enc_key": "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK",
+      "chain_config": {
+        "parent_chain_id": 1,
+        "parent_chain_rpc_url": "https://theserversroom.com/ethereum/54cmzzhcj1o/",
+        "parent_ibox_contr_addr": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+        "parent_block_tag": "finalized"
+      },
       "private": {
         "signing_key": "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "dh_key": "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",

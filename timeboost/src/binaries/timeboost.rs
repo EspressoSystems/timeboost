@@ -5,9 +5,11 @@ use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 
+use timeboost_builder::robusta;
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
+use url::Url;
 
 #[cfg(feature = "until")]
 use anyhow::ensure;
@@ -78,6 +80,20 @@ struct Cli {
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
+
+    /// Base URL of Espresso's REST API.
+    #[clap(
+        long,
+        default_value = "https://query.decaf.testnet.espresso.network/v1/"
+    )]
+    espresso_base_url: Url,
+
+    /// Base URL of Espresso's Websocket API.
+    #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
+    espresso_websocket_url: Url,
+
+    #[clap(long)]
+    namespace: u64,
 }
 
 #[tokio::main]
@@ -203,6 +219,7 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
 
+    let pubkey = sign_keypair.public_key();
     let config = TimeboostConfig::builder()
         .metrics_port(cli.metrics_port)
         .sailfish_committee(sailfish_committee)
@@ -217,6 +234,16 @@ async fn main() -> Result<()> {
         .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
+        .robusta((
+            robusta::Config::builder()
+                .base_url(cli.espresso_base_url)
+                .wss_base_url(cli.espresso_websocket_url)
+                .label(pubkey.to_string())
+                .build(),
+            Vec::new(),
+        ))
+        .namespace(cli.namespace)
+        .chain_config(my_keyset.chain_config.clone())
         .build();
 
     let timeboost = Timeboost::new(config, tb_app_rx).await?;

@@ -1,6 +1,6 @@
 [package]
-name = "timeboost-builder"
-description = "Timeboost block builder"
+name = "robusta"
+description = "espresso client"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,22 +9,23 @@ rust-version.workspace = true
 bincode = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
-cliquenet = { path = "../cliquenet" }
-committable = { workspace = true }
+data-encoding = { workspace = true }
+either = { workspace = true }
+espresso-types = { workspace = true }
 futures = { workspace = true }
-metrics = { path = "../metrics" }
+hotshot-query-service = { workspace = true }
+hotshot-types = { workspace = true }
 multisig = { path = "../multisig" }
-parking_lot = { workspace = true }
-robusta = { path = "../robusta" }
+reqwest = { workspace = true }
 serde = { workspace = true }
-smallvec = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-timeboost-proto = { path = "../timeboost-proto" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
 tracing-subscriber = { workspace = true }

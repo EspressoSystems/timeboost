@@ -133,6 +133,10 @@ impl Round {
         self.num
     }
 
+    pub fn set_num<N: Into<RoundNumber>>(&mut self, r: N) {
+        self.num = r.into()
+    }
+
     pub fn committee(&self) -> CommitteeId {
         self.com
     }

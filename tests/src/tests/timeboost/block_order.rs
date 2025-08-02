@@ -56,7 +56,7 @@ async fn block_order() {
                         let Output::Transactions { round, .. } = o.unwrap() else {
                             continue
                         };
-                        let b = Block::new(0, *round, Default::default(), Bytes::new());
+                        let b = Block::new(*round, Bytes::new());
                         p.handle().enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {

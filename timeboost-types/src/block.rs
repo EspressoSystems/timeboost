@@ -1,13 +1,15 @@
 use core::fmt;
-use std::ops::{Add, Deref, Sub};
+use std::{
+    marker::PhantomData,
+    ops::{Add, Deref, Sub},
+};
 
 use alloy_primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::Certificate;
+use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
 use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use timeboost_proto::block as proto;
 
 /// The genesis timeboost block number.
 pub const GENESIS_BLOCK: BlockNumber = BlockNumber::new(0);
@@ -116,79 +118,36 @@ impl Committable for BlockHash {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct NamespaceId(u32);
-
-impl From<u32> for NamespaceId {
-    fn from(val: u32) -> Self {
-        Self(val)
-    }
-}
-
-impl From<NamespaceId> for u32 {
-    fn from(val: NamespaceId) -> Self {
-        val.0
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    namespace: NamespaceId,
     round: RoundNumber,
-    hash: BlockHash,
     payload: Bytes,
 }
 
 impl Block {
-    pub fn new<N, R>(n: N, r: R, h: BlockHash, p: Bytes) -> Self
+    pub fn new<N>(r: N, p: Bytes) -> Self
     where
-        N: Into<NamespaceId>,
-        R: Into<RoundNumber>,
+        N: Into<RoundNumber>,
     {
         Self {
-            namespace: n.into(),
             round: r.into(),
-            hash: h,
             payload: p,
         }
-    }
-
-    pub fn namespace(&self) -> NamespaceId {
-        self.namespace
     }
 
     pub fn round(&self) -> RoundNumber {
         self.round
     }
 
-    pub fn hash(&self) -> &BlockHash {
-        &self.hash
-    }
-
     pub fn payload(&self) -> &[u8] {
         &self.payload
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-#[error("invalid block: {0}")]
-pub struct InvalidBlock(&'static str);
-
-impl TryFrom<proto::Block> for Block {
-    type Error = InvalidBlock;
-
-    fn try_from(b: proto::Block) -> Result<Self, Self::Error> {
-        let h: [u8; 32] = b
-            .hash
-            .try_into()
-            .map_err(|_| InvalidBlock("block hash != 32 bytes"))?;
-
-        Ok(Self {
-            namespace: NamespaceId(b.namespace),
-            round: b.round.into(),
-            hash: BlockHash::from(h),
-            payload: b.payload,
-        })
+    pub fn hash(&self) -> BlockHash {
+        let mut h = blake3::Hasher::new();
+        h.update(&self.round.to_be_bytes());
+        h.update(&self.payload);
+        BlockHash::from(*h.finalize().as_bytes())
     }
 }
 
@@ -234,14 +193,35 @@ impl Committable for BlockInfo {
     }
 }
 
-pub struct CertifiedBlock {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(bound(deserialize = "S: Deserialize<'de>"))]
+pub struct CertifiedBlock<S> {
     data: Block,
     cert: Certificate<BlockInfo>,
+    #[serde(skip)]
+    leader: bool,
+    #[serde(skip)]
+    _marker: PhantomData<fn(S)>,
 }
 
-impl CertifiedBlock {
-    pub fn new(cert: Certificate<BlockInfo>, data: Block) -> Self {
-        Self { cert, data }
+impl<S> CertifiedBlock<S> {
+    pub fn new(cert: Certificate<BlockInfo>, data: Block, leader: bool) -> Self {
+        Self {
+            cert,
+            data,
+            leader,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn committee(&self) -> CommitteeId {
+        self.cert.data().round().committee()
+    }
+}
+
+impl CertifiedBlock<Validated> {
+    pub fn is_leader(&self) -> bool {
+        self.leader
     }
 
     pub fn cert(&self) -> &Certificate<BlockInfo> {
@@ -253,14 +233,32 @@ impl CertifiedBlock {
     }
 }
 
-impl From<CertifiedBlock> for Certificate<BlockInfo> {
-    fn from(block: CertifiedBlock) -> Self {
+impl CertifiedBlock<Unchecked> {
+    pub fn validated(self, c: &Committee) -> Option<CertifiedBlock<Validated>> {
+        if self.data.round == self.cert.data().round.num()
+            && self.data.hash() == self.cert.data().hash
+            && self.cert.is_valid_par(c)
+        {
+            Some(CertifiedBlock {
+                data: self.data,
+                cert: self.cert,
+                leader: self.leader,
+                _marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<S> From<CertifiedBlock<S>> for Certificate<BlockInfo> {
+    fn from(block: CertifiedBlock<S>) -> Self {
         block.cert
     }
 }
 
-impl From<CertifiedBlock> for Block {
-    fn from(block: CertifiedBlock) -> Self {
+impl<S> From<CertifiedBlock<S>> for Block {
+    fn from(block: CertifiedBlock<S>) -> Self {
         block.data
     }
 }
