@@ -6,8 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+alloy = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }

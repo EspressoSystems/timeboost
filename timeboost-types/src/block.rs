@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Deref, Sub},
 };
 
-use alloy_primitives::B256;
+use alloy::primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};

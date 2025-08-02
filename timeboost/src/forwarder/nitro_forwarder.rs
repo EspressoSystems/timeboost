@@ -2,7 +2,7 @@ mod worker;
 
 use std::io;
 
-use alloy_eips::Encodable2718;
+use alloy::eips::Encodable2718;
 use cliquenet::Address;
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;

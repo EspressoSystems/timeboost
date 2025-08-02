@@ -1,5 +1,5 @@
-use std::ops::Deref;
 use std::sync::Arc;
+use std::{ops::Deref, sync::RwLock};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
@@ -9,18 +9,18 @@ use crate::{
     Bundle, DelayedInboxIndex, DkgBundle, Epoch, HasTime, SignedPriorityBundle, Timestamp,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CandidateList(Arc<Inner>);
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename = "CandidateList")]
 struct Inner {
     time: Timestamp,
     index: DelayedInboxIndex,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
-    dkg: Option<DkgBundle>,
+    dkg: RwLock<Option<DkgBundle>>,
 }
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ pub struct Builder {
     index: DelayedInboxIndex,
     priority: Vec<SignedPriorityBundle>,
     regular: Vec<Bundle>,
-    dkg: Option<DkgBundle>,
+    dkg: RwLock<Option<DkgBundle>>,
 }
 
 impl Builder {
@@ -44,7 +44,7 @@ impl Builder {
     }
 
     pub fn with_dkg(mut self, d: Option<DkgBundle>) -> Self {
-        self.dkg = d;
+        self.dkg = RwLock::new(d);
         self
     }
 
@@ -69,7 +69,7 @@ impl CandidateList {
             index: i.into(),
             regular: Vec::new(),
             priority: Vec::new(),
-            dkg: None,
+            dkg: RwLock::new(None),
         }
     }
 
@@ -93,10 +93,10 @@ impl CandidateList {
         self.0.regular.len() + self.0.priority.len()
     }
 
-    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>, Option<DkgBundle>) {
+    pub fn into_bundles(self) -> (Vec<SignedPriorityBundle>, Vec<Bundle>) {
         match Arc::try_unwrap(self.0) {
-            Ok(inner) => (inner.priority, inner.regular, inner.dkg),
-            Err(arc) => (arc.priority.clone(), arc.regular.clone(), arc.dkg.clone()),
+            Ok(inner) => (inner.priority, inner.regular),
+            Err(arc) => (arc.priority.clone(), arc.regular.clone()),
         }
     }
 
@@ -113,7 +113,25 @@ impl CandidateList {
     }
 
     pub fn dkg_bundle(&self) -> Option<DkgBundle> {
-        self.0.dkg.clone()
+        match self.0.dkg.read() {
+            Ok(dkg) => dkg.clone(),
+            Err(poisoned) => {
+                tracing::error!("RwLock on DkgBundle poisoned during read");
+                let dkg = poisoned.into_inner();
+                dkg.clone()
+            }
+        }
+    }
+
+    pub fn take_dkg_bundle(&self) -> Option<DkgBundle> {
+        match self.0.dkg.write() {
+            Ok(mut dkg) => dkg.take(),
+            Err(poisoned) => {
+                tracing::error!("RwLock on DkgBundle poisoned during write");
+                let mut dkg = poisoned.into_inner();
+                dkg.take()
+            }
+        }
     }
 }
 
@@ -122,7 +140,7 @@ impl Committable for CandidateList {
         let mut builder = RawCommitmentBuilder::new("CandidateList")
             .u64_field("time", self.0.time.into())
             .u64_field("index", self.0.index.into())
-            .optional("dkg", &self.0.dkg)
+            .optional("dkg", &self.dkg_bundle())
             .u64_field("priority", self.0.priority.len() as u64);
         builder = self
             .0

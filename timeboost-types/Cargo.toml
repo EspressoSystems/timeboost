@@ -9,14 +9,11 @@ rust-version.workspace = true
 arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
 
 [dependencies]
-alloy-consensus = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+alloy = { workspace = true }
 alloy-rlp = { workspace = true }
-alloy-signer = { workspace = true }
-alloy-signer-local = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true, optional = true }
+ark-ec = { workspace = true }
 ark-std = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
@@ -25,6 +22,7 @@ bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
+rayon = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
