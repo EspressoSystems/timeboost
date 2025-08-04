@@ -415,10 +415,6 @@ struct Worker {
     #[builder(default)]
     dkg_tracker: BTreeMap<CommitteeId, DkgAccumulator>,
 
-    /// Committees for which Dkg has already been completed.
-    #[builder(default)]
-    dkg_completed: BTreeSet<CommitteeId>,
-
     /// cache of decrypted shares (keyed by round), each entry value is a nested vector: an
     /// ordered list of per-ciphertext decryption shares. the order is derived from the
     /// ciphertext payload from the inclusion list `self.incls` of the same round
@@ -678,7 +674,6 @@ impl Worker {
 
                 self.enc_key.set(dec_sk.pubkey().clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
-                self.dkg_completed.insert(committee.id());
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished (node successfully recovered)");
             }
         }
@@ -728,9 +723,18 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
+    /// Returns true if completed, false otherwise (ongoing or no pending DKG found)
+    fn is_dkg_completed(&self, committee_id: &CommitteeId) -> bool {
+        if let Some(acc) = self.dkg_tracker.get(committee_id) {
+            acc.completed()
+        } else {
+            false
+        }
+    }
+
     async fn on_dkg_request(&mut self, bundle: DkgBundle) -> Result<()> {
         let cid = bundle.committee_id();
-        if self.dkg_completed.contains(bundle.committee_id()) {
+        if self.is_dkg_completed(bundle.committee_id()) {
             trace!(
                 node = %self.label,
                 committee_id = %cid,
@@ -779,7 +783,6 @@ impl Worker {
 
                 self.enc_key.set(dec_sk.pubkey().clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
-                self.dkg_completed.insert(committee.id());
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
             } else {
                 // TODO(resharing): these ciphertexts are for next committee
