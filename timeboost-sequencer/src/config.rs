@@ -4,7 +4,8 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_types::{Address, DecryptionKey, DelayedInboxIndex};
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
+use timeboost_types::{Address, ChainConfig, DelayedInboxIndex, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -14,8 +15,11 @@ pub struct SequencerConfig {
     /// The keypair for Diffie-Hellman key exchanges.
     pub(crate) dh_keypair: x25519::Keypair,
 
-    /// The key material for the decryption phase.
-    pub(crate) decryption_key: DecryptionKey,
+    /// The encryption/decryption key used in the DKG or key resharing for secure communication.
+    pub(crate) dkg_key: DkgDecKey,
+
+    /// Key store containing DKG public keys of all nodes.
+    pub(crate) dkg_keystore: DkgKeyStore,
 
     /// The address the Sailfish TCP listener binds to.
     pub(crate) sailfish_addr: net::Address,
@@ -46,6 +50,12 @@ pub struct SequencerConfig {
 
     /// Length of the leash between Sailfish and other phases.
     pub(crate) leash_len: usize,
+
+    /// Atomic cell holding the threshold encryption key post DKG.
+    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl SequencerConfig {
@@ -55,6 +65,10 @@ impl SequencerConfig {
 
     pub fn dh_keypair(&self) -> &x25519::Keypair {
         &self.dh_keypair
+    }
+
+    pub fn dkg_key(&self) -> &DkgDecKey {
+        &self.dkg_key
     }
 
     pub fn sailfish_address(&self) -> &net::Address {
@@ -81,6 +95,10 @@ impl SequencerConfig {
         self.recover
     }
 
+    pub fn enc_key(&self) -> &ThresholdEncKeyCell {
+        &self.threshold_enc_key
+    }
+
     /// Derive an RBC config from this sequencer config.
     pub fn rbc_config(&self) -> RbcConfig {
         let cv = if let Some(prev) = &self.previous_sailfish_committee {
@@ -98,9 +116,11 @@ impl SequencerConfig {
             .label(self.sign_keypair.public_key())
             .address(self.decrypt_addr.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .decryption_key(self.decryption_key.clone())
+            .dkg_key(self.dkg_key.clone())
+            .dkg_store(self.dkg_keystore.clone())
             .committee(self.decrypt_committee.clone())
             .retain(self.leash_len)
+            .threshold_enc_key(self.threshold_enc_key.clone())
             .build()
     }
 }
@@ -110,7 +130,9 @@ pub struct DecrypterConfig {
     pub(crate) label: PublicKey,
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
-    pub(crate) decryption_key: DecryptionKey,
+    pub(crate) dkg_key: DkgDecKey,
+    pub(crate) dkg_store: DkgKeyStore,
     pub(crate) committee: AddressableCommittee,
+    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
     pub(crate) retain: usize,
 }

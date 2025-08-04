@@ -6,8 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alloy-consensus = { workspace = true }
+alloy = { workspace = true }
 arrayvec = { workspace = true }
+ark-std = { workspace = true }
 bimap = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }

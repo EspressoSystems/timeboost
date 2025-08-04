@@ -120,7 +120,7 @@ pub struct CombKey<C: CurveGroup> {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
 pub struct PublicKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     key: C,

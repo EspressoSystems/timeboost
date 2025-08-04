@@ -82,19 +82,31 @@ bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
 mkconfig_local NUM_NODES *ARGS:
+  just mkconfig_local_full {{NUM_NODES}} "https://theserversroom.com/ethereum/54cmzzhcj1o/" 1 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" {{ARGS}}
+
+mkconfig_local_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
   cargo run --bin mkconfig -- -n {{NUM_NODES}} \
     --sailfish-base-addr "127.0.0.1:8000" \
     --decrypt-base-addr "127.0.0.1:10000" \
     --certifier-base-addr "127.0.0.1:11000" \
     --internal-base-addr "127.0.0.1:5000" \
+    --parent-rpc-url {{RPC_URL}} \
+    --parent-chain-id {{PARENT_CHAIN_ID}} \
+    --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
     --mode "increment-port" {{ARGS}} | jq
 
 mkconfig_docker NUM_NODES *ARGS:
+  just mkconfig_docker_full {{NUM_NODES}} "https://theserversroom.com/ethereum/54cmzzhcj1o/" 1 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" {{ARGS}}
+
+mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
   cargo run --bin mkconfig -- -n {{NUM_NODES}} \
     --sailfish-base-addr "172.20.0.2:8000" \
     --decrypt-base-addr "172.20.0.2:8001" \
     --certifier-base-addr "172.20.0.2:8002" \
     --internal-base-addr "172.20.0.2:5000" \
+    --parent-rpc-url {{RPC_URL}} \
+    --parent-chain-id {{PARENT_CHAIN_ID}} \
+    --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
     --mode "increment-address" {{ARGS}} | jq
 
 ####################

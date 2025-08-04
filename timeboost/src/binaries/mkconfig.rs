@@ -2,16 +2,17 @@ use std::net::IpAddr;
 use std::num::NonZeroU8;
 use std::{io, iter};
 
+use alloy::eips::BlockNumberOrTag;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
-use multisig::{Committee, KeyId, x25519};
+use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::DecryptionScheme;
-use timeboost_types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys, PublicDecInfo};
+use timeboost_types::ChainConfig;
+use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys};
 use timeboost_utils::types::logging;
+use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
@@ -46,6 +47,22 @@ struct Args {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
+
+    /// Parent chain rpc url
+    #[clap(long)]
+    parent_rpc_url: Url,
+
+    /// Parent chain id
+    #[clap(long)]
+    parent_chain_id: u64,
+
+    /// Parent chain inbox contract adddress
+    #[clap(long)]
+    parent_ibox_contr_addr: alloy::primitives::Address,
+
+    /// Parent chain inbox block tag
+    #[clap(long, default_value = "finalized")]
+    parent_block_tag: BlockNumberOrTag,
 }
 
 /// How should addresses be updated?
@@ -81,35 +98,18 @@ impl Args {
             iter::repeat_with(move || x25519::Keypair::generate_with_rng(&mut d_rng).unwrap())
                 .take(num_nodes as usize)
                 .collect();
-        // Generate HPKE keypair for this node using p_rng
+        // Generate DKG keypair for this node using p_rng
         let encryption_keys: Vec<_> =
             iter::repeat_with(move || timeboost_crypto::prelude::DkgDecKey::rand(&mut p_rng))
                 .take(num_nodes as usize)
                 .collect();
-        // Generate committee from signature keys
-        let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
-            signing_keys
-                .iter()
-                .enumerate()
-                .map(|(i, kp)| (KeyId::from(i as u8), kp.public_key())),
-        );
-        // Generate threshold decryption trusted setup (incl. decryption key shares).
-        let decryption_keys = match seed {
-            Some(seed) => {
-                let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(seed);
-                DecryptionScheme::trusted_keygen_with_rng(committee, &mut rng)
-            }
-            None => DecryptionScheme::trusted_keygen(committee),
-        };
 
         let configs: Vec<_> = signing_keys
             .into_iter()
             .enumerate()
             .zip(auth_keys)
             .zip(encryption_keys)
-            .zip(decryption_keys.2)
-            .map(|((((i, kp), xp), hpke), share)| NodeInfo {
+            .map(|(((i, kp), xp), dkg_sk)| NodeInfo {
                 sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
                 decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
                 certifier_address: self
@@ -118,23 +118,22 @@ impl Args {
                 internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
                 signing_key: kp.public_key(),
                 dh_key: xp.public_key(),
-                enc_key: timeboost_crypto::prelude::DkgEncKey::from(&hpke),
+                enc_key: timeboost_crypto::prelude::DkgEncKey::from(&dkg_sk),
                 private: Some(PrivateKeys {
                     signing_key: kp.secret_key(),
                     dh_key: xp.secret_key(),
-                    dec_share: share.clone(),
-                    dec_key: hpke,
+                    dec_key: dkg_sk,
                 }),
                 nitro_addr: self.nitro_addr.clone(),
+                chain_config: ChainConfig::new(
+                    self.parent_chain_id,
+                    self.parent_rpc_url.clone(),
+                    self.parent_ibox_contr_addr,
+                    self.parent_block_tag,
+                ),
             })
             .collect();
-        Ok(KeysetConfig {
-            keyset: configs,
-            dec_keyset: PublicDecInfo {
-                pubkey: decryption_keys.0.clone(),
-                combkey: decryption_keys.1.clone(),
-            },
-        })
+        Ok(KeysetConfig { keyset: configs })
     }
 
     fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
