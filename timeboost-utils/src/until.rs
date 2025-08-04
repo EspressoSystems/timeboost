@@ -60,7 +60,22 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
                             anyhow::bail!("Node timed out too many rounds")
                         }
 
-                        if committed_round >= until {
+                        let queued_encrypted = text
+                            .lines()
+                            .find(|line| line.starts_with("queued_encrypted_ilist"))
+                            .and_then(|line| line.split(' ').nth(1))
+                            .and_then(|num| num.parse::<u64>().ok())
+                            .unwrap_or(0);
+                        let output_decrypted = text
+                            .lines()
+                            .find(|line| line.starts_with("output_decrypted_ilist"))
+                            .and_then(|line| line.split(' ').nth(1))
+                            .and_then(|num| num.parse::<u64>().ok())
+                            .unwrap_or(0);
+
+                        if committed_round >= until && output_decrypted > 0 {
+                            tracing::info!("committed_round: {}", committed_round);
+                            tracing::info!("enqueued encrypted: {}, output decrypted: {}", queued_encrypted, output_decrypted);
                             tracing::info!("watchdog completed successfully");
                             break;
                         }
