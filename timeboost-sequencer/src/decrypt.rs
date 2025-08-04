@@ -591,7 +591,7 @@ impl Worker {
             .ok_or_else(|| DecrypterError::UnknownKey(src))?;
 
         let subset = match self.dkg_tracker.get(&committee_id) {
-            Some(acc) => acc.bundles(),
+            Some(acc) if acc.completed() => acc.bundles(),
             _ => {
                 return Err(DecrypterError::Dkg(format!(
                     "DKG incomplete for requested committee: {committee_id}",

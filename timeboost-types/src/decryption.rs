@@ -182,6 +182,7 @@ pub struct DkgAccumulator {
     store: DkgKeyStore,
     threshold: usize,
     bundles: Vec<DkgBundle>,
+    completed: bool,
 }
 
 impl DkgAccumulator {
@@ -190,6 +191,7 @@ impl DkgAccumulator {
             threshold: store.committee().one_honest_threshold().get(),
             store,
             bundles: Vec::new(),
+            completed: false,
         }
     }
 
@@ -201,7 +203,18 @@ impl DkgAccumulator {
         &self.bundles
     }
 
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bundles.is_empty()
+    }
+
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+        if self.completed {
+            return Ok(());
+        }
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
         let vess = Vess::new_fast_from(committee);
@@ -216,11 +229,12 @@ impl DkgAccumulator {
     }
 
     pub fn try_finalize(&mut self) -> Option<Subset> {
-        if self.bundles.len() >= self.threshold {
+        if self.completed || self.bundles.len() >= self.threshold {
             let subset = Subset::new(
                 self.committee().id(),
                 self.bundles.clone().into_iter().collect(),
             );
+            self.completed = true;
             Some(subset)
         } else {
             None
