@@ -38,7 +38,7 @@ type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecSha
 #[derive(Debug, Serialize, Deserialize)]
 enum Protocol {
     /// A request to retrieve a subset identified by the committee id.
-    GetRequest(Round),
+    GetRequest(CommitteeId),
 
     /// The direct reply to a get request.
     GetResponse(SubsetResponse),
@@ -576,9 +576,8 @@ impl Worker {
     }
 
     /// A get request for DKG subset has been received.
-    async fn on_get_request(&mut self, src: PublicKey, round: Round) -> Result<()> {
-        let (round_num, committee_id) = round.into_parts();
-        trace!(node = %self.label, from=%src, %committee_id, round=%round_num, "received get_request");
+    async fn on_get_request(&mut self, src: PublicKey, committee_id: CommitteeId) -> Result<()> {
+        trace!(node = %self.label, from=%src, %committee_id, "received get_request");
 
         if !matches!(self.dkg_state, DkgState::Completed(_)) {
             return Err(DecrypterError::Dkg(
@@ -604,13 +603,13 @@ impl Worker {
         };
 
         let response = SubsetResponse {
-            round,
+            committee_id,
             subset: Subset::new(committee_id, subset.to_vec()),
         };
         self.net
             .unicast(
                 src,
-                *round_num,
+                0, // Minimal round number since API requires it
                 serialize(&Protocol::GetResponse(response))?,
             )
             .await
@@ -621,9 +620,11 @@ impl Worker {
 
     /// A get response for DKG subset has been received.
     async fn on_get_response(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
-        let SubsetResponse { round, subset } = res;
-        let (round_num, committee_id) = round.into_parts();
-        trace!(node = %self.label, from=%src, %committee_id, round=%round_num, "received get_response");
+        let SubsetResponse {
+            committee_id,
+            subset,
+        } = res;
+        trace!(node = %self.label, from=%src, %committee_id, "received get_response");
 
         let DkgState::Pending(ref mut subsets) = self.dkg_state else {
             trace!("received get_response but not in a recovering state");
@@ -833,10 +834,9 @@ impl Worker {
 
     /// The node will always try to catchup with the help of remote nodes first.
     async fn dkg_catchup(&mut self) -> Result<()> {
-        let round = self.first_requested_round.unwrap_or_default();
-        let req = Protocol::GetRequest(Round::new(round, self.current));
+        let req = Protocol::GetRequest(self.current);
         self.net
-            .broadcast(round.u64(), serialize(&req)?)
+            .broadcast(0, serialize(&req)?) // placeholder round value, ignored by receiver
             .await
             .map_err(|e| DecrypterError::End(e.into()))?;
         Ok(())
@@ -1180,7 +1180,7 @@ impl DecShareBatch {
 /// A response with the agreed-upon subset of dealings.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SubsetResponse {
-    round: Round,
+    committee_id: CommitteeId,
     subset: Subset,
 }
 
