@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, HashSet, btree_map};
+use std::collections::{BTreeMap, btree_map};
 
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup};
 use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use timeboost_crypto::{
     DecryptionScheme,
     prelude::{DkgEncKey, Vess, Vss},
@@ -180,7 +181,8 @@ impl DkgKeyStore {
 pub struct DkgAccumulator {
     store: DkgKeyStore,
     threshold: usize,
-    bundles: HashSet<DkgBundle>,
+    bundles: Vec<DkgBundle>,
+    completed: bool,
 }
 
 impl DkgAccumulator {
@@ -188,7 +190,8 @@ impl DkgAccumulator {
         Self {
             threshold: store.committee().one_honest_threshold().get(),
             store,
-            bundles: HashSet::new(),
+            bundles: Vec::new(),
+            completed: false,
         }
     }
 
@@ -196,11 +199,22 @@ impl DkgAccumulator {
         &self.store.committee
     }
 
+    pub fn bundles(&self) -> &[DkgBundle] {
+        &self.bundles
+    }
+
+    pub fn completed(&self) -> bool {
+        self.completed
+    }
+
     pub fn is_empty(&self) -> bool {
         self.bundles.is_empty()
     }
 
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+        if self.completed {
+            return Ok(());
+        }
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
         let vess = Vess::new_fast_from(committee);
@@ -210,16 +224,18 @@ impl DkgAccumulator {
             bundle.comm(),
             aad,
         )?;
-        self.bundles.insert(bundle);
+        self.bundles.push(bundle);
         Ok(())
     }
 
-    pub fn try_finalize(&self) -> Option<Subset> {
-        if self.bundles.len() >= self.threshold {
-            Some(Subset {
-                committe_id: self.committee().id(),
-                bundles: &self.bundles,
-            })
+    pub fn try_finalize(&mut self) -> Option<Subset> {
+        if self.completed || self.bundles.len() >= self.threshold {
+            let subset = Subset::new(
+                self.committee().id(),
+                self.bundles.clone().into_iter().collect(),
+            );
+            self.completed = true;
+            Some(subset)
         } else {
             None
         }
@@ -227,18 +243,25 @@ impl DkgAccumulator {
 }
 
 /// Represents a finalized subset of DKG bundles sufficient to combine.
-#[derive(Debug, Clone)]
-pub struct Subset<'a> {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Subset {
     committe_id: CommitteeId,
-    bundles: &'a HashSet<DkgBundle>,
+    bundles: Vec<DkgBundle>,
 }
 
-impl<'a> Subset<'a> {
+impl Subset {
+    pub fn new(committe_id: CommitteeId, bundles: Vec<DkgBundle>) -> Self {
+        Self {
+            committe_id,
+            bundles,
+        }
+    }
+
     pub fn committe_id(&self) -> &CommitteeId {
         &self.committe_id
     }
 
-    pub fn bundles(&self) -> &HashSet<DkgBundle> {
-        self.bundles
+    pub fn bundles(&self) -> &[DkgBundle] {
+        &self.bundles
     }
 }
