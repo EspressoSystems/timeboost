@@ -159,7 +159,7 @@ impl Decrypter {
             .dkg_stores(dkg_stores.clone())
             .current(committee.id())
             .net(Overlay::new(net))
-            .dkg_state(DkgState::Genesis)
+            .dkg_state(DkgState::default())
             .tx(dec_tx)
             .rx(cmd_rx)
             .enc_key(cfg.threshold_enc_key.clone())
@@ -350,19 +350,21 @@ impl Drop for Decrypter {
 
 #[derive(Debug, Clone)]
 enum DkgState {
-    /// The node has not yet received sufficient DkgBundles to obtain the threshold
-    /// decryption key material.
-    Genesis,
-
     /// The node received inclusion lists with encrypted bundles but did not receive enough
     /// DkgBundles to obtain the key. This suggests that the node is catching up.
     ///
     /// In this state, the node will broadcast a DKG subset request and will obtain the key
     /// once sufficient subsets have been received from remote nodes over the network.
-    Recover(HashMap<PublicKey, Subset>),
+    Pending(HashMap<PublicKey, Subset>),
 
     /// The node has completed DKG and can now combine/produce threshold decryption shares.
     Completed(DecryptionKey),
+}
+
+impl Default for DkgState {
+    fn default() -> Self {
+        Self::Pending(HashMap::new())
+    }
 }
 
 /// Worker is responsible for "hatching" ciphertexts.
@@ -449,6 +451,12 @@ impl Worker {
     // entry point of `worker` thread, it runs in a loop until shutdown or out of channel capacity.
     pub async fn go(mut self) -> EndOfPlay {
         let node = self.label;
+
+        // always try to catchup first, if other nodes haven't finished, they simply won't respond
+        if let Err(e) = self.dkg_catchup().await {
+            debug!("err during dkg_catchup: {:?}", e);
+            return EndOfPlay::NetworkDown;
+        }
 
         loop {
             let mut cache_modified = false;
@@ -557,7 +565,7 @@ impl Worker {
         let conf = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
         match bincode::serde::decode_from_slice(&bytes, conf)?.0 {
             Protocol::GetRequest(cid) => self.on_get_request(src, cid).await?,
-            Protocol::GetResponse(subset) => self.on_get_response(src, subset).await?,
+            Protocol::GetResponse(res) => self.on_get_response(src, res).await?,
             Protocol::Batch(batch) => {
                 self.on_batch_msg(src, batch).await?;
                 return Ok(true);
@@ -612,12 +620,12 @@ impl Worker {
     }
 
     /// A get response for DKG subset has been received.
-    async fn on_get_response(&mut self, src: PublicKey, subset: SubsetResponse) -> Result<()> {
-        let SubsetResponse { round, subset } = subset;
+    async fn on_get_response(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
+        let SubsetResponse { round, subset } = res;
         let (round_num, committee_id) = round.into_parts();
         trace!(node = %self.label, from=%src, %committee_id, round=%round_num, "received get_response");
 
-        let DkgState::Recover(ref mut subsets) = self.dkg_state else {
+        let DkgState::Pending(ref mut subsets) = self.dkg_state else {
             trace!("received get_response but not in a recovering state");
             return Ok(());
         };
@@ -823,11 +831,12 @@ impl Worker {
         Ok(())
     }
 
-    /// The node entered recover state and will catchup with the help of remote nodes.
-    async fn recover(&mut self, incl: InclusionList) -> Result<()> {
-        let req = Protocol::GetRequest(Round::new(incl.round(), self.current));
+    /// The node will always try to catchup with the help of remote nodes first.
+    async fn dkg_catchup(&mut self) -> Result<()> {
+        let round = self.first_requested_round.unwrap_or_default();
+        let req = Protocol::GetRequest(Round::new(round, self.current));
         self.net
-            .broadcast(incl.round().u64(), serialize(&req)?)
+            .broadcast(round.u64(), serialize(&req)?)
             .await
             .map_err(|e| DecrypterError::End(e.into()))?;
         Ok(())
@@ -877,14 +886,7 @@ impl Worker {
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
         let dec_sk = match &self.dkg_state {
-            DkgState::Genesis => {
-                // received encrypted bundles but haven't received enough DkgBundles.
-                self.recover(incl.clone()).await?;
-                self.pending.insert(incl.round(), incl.clone());
-                self.dkg_state = DkgState::Recover(HashMap::default());
-                return Err(DecrypterError::DkgPending);
-            }
-            DkgState::Recover(_) => {
+            DkgState::Pending(_) => {
                 // we already initiated catchup; awaiting response from remote nodes.
                 self.pending.insert(incl.round(), incl.clone());
                 return Err(DecrypterError::DkgPending);

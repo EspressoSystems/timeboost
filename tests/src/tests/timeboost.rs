@@ -128,8 +128,6 @@ where
 
 /// Generate random bundles at a fixed frequency.
 async fn gen_bundles(enc_key: ThresholdEncKeyCell, tx: broadcast::Sender<BundleVariant>) {
-    // allow time for DKG to settle so recovering nodes may catchup
-    sleep(Duration::from_secs(20)).await;
     loop {
         let Ok(b) = make_bundle(&enc_key) else {
             warn!("Failed to generate bundle");
