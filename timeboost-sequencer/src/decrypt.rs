@@ -472,7 +472,7 @@ impl Worker {
                 msg = self.net.receive() => match msg {
                     Ok((src, data)) => {
                         match self.on_inbound(src, data).await {
-                            Ok(update) => cache_modified |= update,
+                            Ok(updated) => cache_modified |= updated,
                             Err(DecrypterError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, %src, "error on message")
                         }
@@ -549,7 +549,7 @@ impl Worker {
     /// A message from another node has been received.
     /// Returns true if decryption shares have been updated.
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<bool> {
-        trace!(node = %src, buf = %bytes.len(), "inbound message");
+        trace!(node = %self.label, from = %src, buf = %bytes.len(), "inbound message");
         // ignore msg sent to self during broadcast
         if src == self.label {
             return Ok(false);
@@ -578,7 +578,7 @@ impl Worker {
             ));
         }
 
-        let Some(committee) = self.committees.get(committee_id).cloned() else {
+        let Some(committee) = self.committees.get(committee_id) else {
             return Err(DecrypterError::NoCommittee(committee_id));
         };
 
@@ -622,7 +622,7 @@ impl Worker {
             return Ok(());
         };
 
-        let Some(committee) = self.committees.get(committee_id).cloned() else {
+        let Some(committee) = self.committees.get(committee_id) else {
             return Err(DecrypterError::NoCommittee(committee_id));
         };
         committee
@@ -700,10 +700,7 @@ impl Worker {
             return Ok(());
         };
 
-        if round <= self.last_hatched_round || round < self.oldest_cached_round() {
-            // shares for which the ciphertexts have already hatched
-            // or shares that are older than the first ciphertext in
-            // the local cache are not inserted.
+        if round <= self.last_hatched_round {
             return Ok(());
         }
         trace!(node = %self.label, from=%src, %round, "inserting decrypted shares");
@@ -734,7 +731,7 @@ impl Worker {
 
     async fn on_dkg_request(&mut self, bundle: DkgBundle) -> Result<()> {
         let cid = bundle.committee_id();
-        if self.is_dkg_completed(bundle.committee_id()) {
+        if self.is_dkg_completed(cid) {
             trace!(
                 node = %self.label,
                 committee_id = %cid,
@@ -742,6 +739,7 @@ impl Worker {
             );
             return Ok(());
         }
+
         let stores = self.dkg_stores.read();
         let Some(dkg_store) = stores.iter().find(|s| s.committee().id() == *cid) else {
             return Err(DecrypterError::Internal(format!(
@@ -753,13 +751,14 @@ impl Worker {
             .dkg_tracker
             .entry(*cid)
             .or_insert_with(|| DkgAccumulator::new(dkg_store.to_owned()));
+        drop(stores);
 
         acc.try_add(bundle)
             .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
         if let Some(subset) = acc.try_finalize() {
             if *subset.committe_id() == self.current {
-                let committee = dkg_store.committee();
+                let committee = acc.committee();
                 // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
                 let aad: &[u8; 3] = b"dkg";
                 let vess = ShoupVess::new_fast_from(committee);
