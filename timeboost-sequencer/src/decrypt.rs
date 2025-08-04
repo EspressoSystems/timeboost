@@ -835,8 +835,11 @@ impl Worker {
     /// The node will always try to catchup with the help of remote nodes first.
     async fn dkg_catchup(&mut self) -> Result<()> {
         let req = Protocol::GetRequest(self.current);
+        // the round number is ignored by the recieving party, but we don't want to give an
+        // arbitrary value since `gc()` will probably clean it up too early. Thus, we put in
+        // an estimated round number using the `.oldest_cached_round()`.
         self.net
-            .broadcast(0, serialize(&req)?) // placeholder round value, ignored by receiver
+            .broadcast(self.oldest_cached_round().u64(), serialize(&req)?)
             .await
             .map_err(|e| DecrypterError::End(e.into()))?;
         Ok(())
