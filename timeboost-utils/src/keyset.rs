@@ -4,9 +4,9 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
-
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::ChainConfig;
+
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {
     pub keyset: Vec<NodeInfo>,
