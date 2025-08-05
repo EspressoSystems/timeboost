@@ -217,8 +217,9 @@ impl DkgAccumulator {
         }
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
-        let vess = Vess::new_fast_from(committee);
+        let vess = Vess::new_fast();
         vess.verify(
+            committee,
             self.store.sorted_keys(),
             bundle.vess_ct(),
             bundle.comm(),

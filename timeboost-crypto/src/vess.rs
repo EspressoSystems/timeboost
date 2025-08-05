@@ -21,7 +21,7 @@ use spongefish::{
         GroupDomainSeparator, GroupToUnit,
     },
 };
-use std::{collections::VecDeque, num::NonZeroUsize};
+use std::collections::VecDeque;
 use thiserror::Error;
 
 use crate::{
@@ -38,21 +38,15 @@ use crate::{
 /// dev note: we fix MultiReceiver encryption choice, default to Feldman VSS, leave DLog Group
 /// choice open as a generic parameter.
 #[derive(Clone, Debug)]
-pub struct ShoupVess<C, H = sha2::Sha256, VSS = FeldmanVss<C>>
+pub struct ShoupVess<C>
 where
     C: CurveGroup,
-    H: Digest,
-    VSS: VerifiableSecretSharing<Secret = C::ScalarField>,
 {
     /// repetition param, N in paper
     num_repetition: usize,
     /// verifier "open" subset S, M=|S| in paper
     subset_size: usize,
-    /// public parameter for the underlying VSS
-    vss_pp: VSS::PublicParam,
-
     _group: PhantomData<C>,
-    _mre_hash: PhantomData<H>,
 }
 
 /// Ciphertext of [`ShoupVess`] scheme, verifiable by itself as its constructed as a sigma proof
@@ -77,14 +71,11 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_fast(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
-        let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
+    pub fn new_fast() -> Self {
         Self {
             num_repetition: 132,
             subset_size: 60,
-            vss_pp,
             _group: PhantomData,
-            _mre_hash: PhantomData,
         }
     }
 
@@ -92,37 +83,281 @@ impl<C: CurveGroup> ShoupVess<C> {
     ///
     /// # 127+ bit security instead of strictly =128 bit
     /// parameter different from paper, see rationale in [`Self::map_subset_seed()`]
-    pub fn new_short(vss_threshold: NonZeroUsize, vss_num_shares: NonZeroUsize) -> Self {
-        let vss_pp = FeldmanVssPublicParam::new(vss_threshold, vss_num_shares);
+    pub fn new_short() -> Self {
         Self {
             num_repetition: 245,
             subset_size: 30,
-            vss_pp,
             _group: PhantomData,
-            _mre_hash: PhantomData,
         }
     }
 
-    /// Handy constructor for a VSS committee, see [`Self::new_fast()`]
-    pub fn new_fast_from(committee: &Committee) -> Self {
-        let threshold = committee.one_honest_threshold();
-        let num_shares = committee.size();
-        Self::new_fast(threshold, num_shares)
+    /// Encrypt secret sharing from `VSS::share()` with publicly verifiable proof.
+    /// In our specific Shoup25 VESS, the ciphertext itself is a cut-and-choose style sigma proof,
+    /// thus no extra dedicated proof in the output.
+    ///
+    /// # Parameters
+    /// - `aad`: associated data (e.g. domain separator for this encryption, round number & context)
+    ///
+    /// # Choices
+    /// - H_choose: SpongeFish's sponge-based permutation (specifically, DefaultHash=Keccak)
+    /// - H_compress: sha2::Sha256
+    /// - H_expand: we slightly deviate from the paper to better align with our APIs: instead of
+    ///   H_expand some expansion-seed r_k, we directly use r_k to seed a SeedableRng, this rng is
+    ///   used to first randomly sample a secret (basically \omega'_k(0) in paper), then passed to
+    ///   `FeldmanVss::share(pp, rng, secret)` where the rest of coeffs are sampled, then passed to
+    ///   `mre::encrypt(.., rng)` for sampling the ephemeral sk, or beta_k in paper. Effectively,
+    ///   step 1.a is split as two internal steps in the two APIs above. r_k is 32 bytes and
+    ///   SpongeFish's built-in prover private coin toss.
+    /// - random subset seed s: see [`Self::map_subset_seed()`]
+    pub fn encrypt_shares<'a, I>(
+        &self,
+        committee: &Committee,
+        recipients: I,
+        secret: C::ScalarField,
+        aad: &[u8],
+    ) -> Result<
+        (
+            VessCiphertext,
+            <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+        ),
+        VessError,
+    >
+    where
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>>,
+        I::IntoIter: ExactSizeIterator + Clone + Sync,
+    {
+        // input validation - check length without consuming the iterator
+        let recipients_iter = recipients.into_iter();
+        let vss_pp = FeldmanVssPublicParam::from(committee);
+        let n = vss_pp.num_nodes();
+        if recipients_iter.len() != n {
+            return Err(VessError::WrongRecipientsLength(n, recipients_iter.len()));
+        }
+
+        let mut prover_state = self.io_pattern(&vss_pp, aad).to_prover_state();
+
+        // r_k: expansion seed from prover private coin
+        let mut seeds = vec![];
+        for _ in 0..self.num_repetition {
+            let r_k = prover_state.rng().r#gen::<[u8; 32]>();
+            seeds.push(r_k);
+        }
+
+        // prepare N random dealings
+        let dealings: Vec<(
+            DensePolynomial<C::ScalarField>,
+            <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+            MultiRecvCiphertext<C, sha2::Sha256>,
+        )> = seeds
+            .par_iter()
+            .enumerate()
+            .map(|(i, r)| self.new_dealing(&vss_pp, i, r, recipients_iter.clone(), aad))
+            .collect::<Result<_, VessError>>()?;
+
+        // compute h:= H_compress(aad, dealings)
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(aad);
+        for theta in dealings.iter() {
+            hasher.update(serialize_to_vec![theta.1]?);
+            hasher.update(theta.2.to_bytes());
+        }
+        let h = hasher.finalize();
+
+        // commit the actual/original secret poly, (`comm` is C in paper)
+        let (poly, comm) =
+            FeldmanVss::<C>::rand_poly_and_commit(&vss_pp, secret, prover_state.rng());
+
+        // prover send C and h to the verifier
+        prover_state.add_points(
+            &comm
+                .iter()
+                .map(|c: &C::Affine| c.into_group())
+                .collect::<Vec<_>>(),
+        )?;
+        prover_state.add_bytes(&h)?;
+
+        // verifier challenge for random subset seed s, see `Self::map_subset_seed()` about
+        // the rationale for 16 random bytes per in-subset index
+        let mut subset_seed = [0u8; 16];
+        prover_state.fill_challenge_bytes(&mut subset_seed)?;
+        let subset_indices = self.map_subset_seed(subset_seed);
+
+        // prover response: for k in S, shift poly; for s not in S, open by revealing r_k
+        let (subset_members, subset_non_members) =
+            partition_refs(&dealings, &seeds, &subset_indices);
+        for dealing in subset_members {
+            let shifted_poly: DensePolynomial<C::ScalarField> = &dealing.0 + &poly;
+            // omega''_k in paper
+            prover_state.add_scalars(&shifted_poly.coeffs)?;
+
+            // v_k in paper
+            prover_state.add_points(&[dealing.2.epk.into_group()])?;
+            // e_k1, .., e_kn in paper
+            for ct in dealing.2.cts.iter() {
+                prover_state.add_bytes(ct)?;
+            }
+        }
+        for seed in subset_non_members {
+            prover_state.add_bytes(seed)?;
+        }
+
+        Ok((
+            VessCiphertext {
+                transcript: prover_state.narg_string().to_vec(),
+            },
+            comm,
+        ))
     }
 
-    /// Handy constructor for a VSS committee, see [`Self::new_short()`]
-    pub fn new_short_from(committee: &Committee) -> Self {
-        let threshold = committee.one_honest_threshold();
-        let num_shares = committee.size();
-        Self::new_short(threshold, num_shares)
+    /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
+    /// verifiable by anyone.
+    pub fn verify<'a, I>(
+        &self,
+        committee: &Committee,
+        recipients: I,
+        ct: &VessCiphertext,
+        comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
+        aad: &[u8],
+    ) -> Result<(), VessError>
+    where
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let vss_pp = FeldmanVssPublicParam::from(committee);
+        let mut verifier_state = self
+            .io_pattern(&vss_pp, aad)
+            .to_verifier_state(&ct.transcript);
+
+        // verifier logic until Step 4b
+        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts) =
+            self.verify_internal(&vss_pp, &mut verifier_state)?;
+        if &expected_comm != comm {
+            return Err(VessError::WrongCommitment);
+        }
+
+        // parse out prover's response for k notin S
+        let mut seeds = VecDeque::new();
+        for _ in self.subset_size..self.num_repetition {
+            let seed: [u8; 32] = verifier_state.next_bytes()?;
+            seeds.push_back(seed);
+        }
+
+        // recompute the hash of all the dealings,
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(aad);
+
+        // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
+        let subset_indices = self.map_subset_seed(subset_seed);
+        let mut subset_iter = subset_indices.iter().peekable();
+        let mut next_subset_idx = subset_iter.next();
+        for i in 0..self.num_repetition {
+            match next_subset_idx {
+                Some(j) if i == *j => {
+                    // k in S, shift the commitment
+                    let shifted_comm = C::generator().batch_mul(
+                        shifted_polys
+                            .pop_front()
+                            .expect("subset_size > 0, so is shifted_polys.len()")
+                            .as_ref(),
+                    );
+
+                    let mut unshifted_comm = vec![];
+                    for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
+                        // g^omega'' / C in paper
+                        unshifted_comm.push(shifted - delta);
+                    }
+                    let unshifted_comm = C::normalize_batch(&unshifted_comm);
+                    hasher.update(serialize_to_vec![unshifted_comm]?);
+
+                    let mre_ct = mre_cts
+                        .pop_front()
+                        .expect("subset_size > 0, so is mre_cts.len()");
+                    hasher.update(mre_ct.to_bytes());
+
+                    next_subset_idx = subset_iter.next();
+                }
+                _ => {
+                    // k notin S, reproduce the dealing deterministically from seed
+                    let seed = seeds
+                        .pop_front()
+                        .expect("subset_size < num_repetitions, so seeds.len() > 0");
+                    let (_poly, cm, mre_ct) =
+                        self.new_dealing(&vss_pp, i, &seed, recipients.clone(), aad)?;
+
+                    hasher.update(serialize_to_vec![cm]?);
+                    hasher.update(mre_ct.to_bytes());
+                }
+            }
+        }
+        debug_assert!(shifted_polys.is_empty());
+        debug_assert!(mre_cts.is_empty());
+        debug_assert!(seeds.is_empty());
+
+        if h == hasher.finalize().as_slice() {
+            Ok(())
+        } else {
+            Err(VessError::FailedVerification)
+        }
     }
 
+    /// Decrypt with a decryption key `recv_sk` (labeled with node_idx, see `LabeledDecryptionKey`)
+    pub fn decrypt_share(
+        &self,
+        committee: &Committee,
+        recv_sk: &LabeledDecryptionKey<C>,
+        ct: &VessCiphertext,
+        aad: &[u8],
+    ) -> Result<C::ScalarField, VessError> {
+        let vss_pp = FeldmanVssPublicParam::from(committee);
+        let n = vss_pp.n.get();
+        let node_idx = recv_sk.node_idx;
+        let mut verifier_state = self
+            .io_pattern(&vss_pp, aad)
+            .to_verifier_state(&ct.transcript);
+
+        // verifier logic until Step 4b
+        let (comm, _h, subset_seed, shifted_polys, mre_cts) =
+            self.verify_internal(&vss_pp, &mut verifier_state)?;
+        let subset_indices = self.map_subset_seed(subset_seed);
+        debug_assert_eq!(subset_indices.len(), shifted_polys.len());
+
+        for ((shifted_coeffs, mre_ct), ith) in
+            shifted_polys.iter().zip(mre_cts.iter()).zip(subset_indices)
+        {
+            let recv_ct = mre_ct
+                .get_recipient_ct(node_idx)
+                .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
+            let pt = recv_sk.decrypt(&recv_ct, &self.indexed_aad(aad, ith))?;
+            // mu'_kj in paper
+            let unshifted_eval: C::ScalarField =
+                CanonicalDeserialize::deserialize_compressed(&*pt)?;
+
+            let shifted_poly = DensePolynomial::from_coefficients_slice(shifted_coeffs);
+            let shifted_eval = shifted_poly.evaluate(&C::ScalarField::from(node_idx as u64 + 1));
+
+            // mu_kj in paper
+            let share = shifted_eval - unshifted_eval;
+
+            // check correctness
+            if FeldmanVss::<C>::verify(&vss_pp, node_idx, &share, &comm).is_ok() {
+                return Ok(share);
+            }
+        }
+        Err(VessError::DecryptionFailed)
+    }
+}
+
+impl<C: CurveGroup> ShoupVess<C> {
     /// construct the transcript pattern in the interactive proof for Fiat-Shamir transformation.
     /// `aad`: associated data for context/session identifier
     /// IOPattern binds all public parameters including N, M, t, n, aad, to avoid weak FS attack.
-    fn io_pattern(&self, aad: &[u8]) -> spongefish::DomainSeparator {
-        let t = self.vss_pp.t.get();
-        let n = self.vss_pp.n.get();
+    fn io_pattern(
+        &self,
+        vss_pp: &FeldmanVssPublicParam,
+        aad: &[u8],
+    ) -> spongefish::DomainSeparator {
+        let t = vss_pp.t.get();
+        let n = vss_pp.n.get();
 
         let mut ds = spongefish::DomainSeparator::<DefaultHash>::new(&format!(
             "vess-ad-{}",
@@ -211,6 +446,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     // each dealing contains (Shamir poly + Feldman commitment + MRE ciphertext)
     fn new_dealing<'a, I>(
         &self,
+        vss_pp: &FeldmanVssPublicParam,
         ith: usize,
         seed: &[u8; 32],
         recipients: I,
@@ -230,10 +466,9 @@ impl<C: CurveGroup> ShoupVess<C> {
         let mut rng = ChaCha20Rng::from_seed(*seed);
         let vss_secret = C::ScalarField::rand(&mut rng);
 
-        let (poly, comm) =
-            FeldmanVss::<C>::rand_poly_and_commit(&self.vss_pp, vss_secret, &mut rng);
+        let (poly, comm) = FeldmanVss::<C>::rand_poly_and_commit(vss_pp, vss_secret, &mut rng);
         let serialized_shares: Vec<Vec<u8>> =
-            FeldmanVss::<C>::compute_serialized_shares(&self.vss_pp, &poly).collect();
+            FeldmanVss::<C>::compute_serialized_shares(vss_pp, &poly).collect();
 
         let mre_ct = mre::encrypt::<C, sha2::Sha256, _, _>(
             recipients,
@@ -244,129 +479,14 @@ impl<C: CurveGroup> ShoupVess<C> {
         Ok((poly, comm, mre_ct))
     }
 
-    /// Encrypt secret sharing from `VSS::share()` with publicly verifiable proof.
-    /// In our specific Shoup25 VESS, the ciphertext itself is a cut-and-choose style sigma proof,
-    /// thus no extra dedicated proof in the output.
-    ///
-    /// # Parameters
-    /// - `aad`: associated data (e.g. domain separator for this encryption, round number & context)
-    ///
-    /// # Choices
-    /// - H_choose: SpongeFish's sponge-based permutation (specifically, DefaultHash=Keccak)
-    /// - H_compress: sha2::Sha256
-    /// - H_expand: we slightly deviate from the paper to better align with our APIs: instead of
-    ///   H_expand some expansion-seed r_k, we directly use r_k to seed a SeedableRng, this rng is
-    ///   used to first randomly sample a secret (basically \omega'_k(0) in paper), then passed to
-    ///   `FeldmanVss::share(pp, rng, secret)` where the rest of coeffs are sampled, then passed to
-    ///   `mre::encrypt(.., rng)` for sampling the ephemeral sk, or beta_k in paper. Effectively,
-    ///   step 1.a is split as two internal steps in the two APIs above. r_k is 32 bytes and
-    ///   SpongeFish's built-in prover private coin toss.
-    /// - random subset seed s: see [`Self::map_subset_seed()`]
-    pub fn encrypted_shares<'a, I>(
-        &self,
-        recipients: I,
-        secret: C::ScalarField,
-        aad: &[u8],
-    ) -> Result<
-        (
-            VessCiphertext,
-            <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
-        ),
-        VessError,
-    >
-    where
-        I: IntoIterator<Item = &'a mre::EncryptionKey<C>>,
-        I::IntoIter: ExactSizeIterator + Clone + Sync,
-    {
-        // input validation - check length without consuming the iterator
-        let recipients_iter = recipients.into_iter();
-        let n = self.vss_pp.n.get();
-        if recipients_iter.len() != n {
-            return Err(VessError::WrongRecipientsLength(n, recipients_iter.len()));
-        }
-
-        let mut prover_state = self.io_pattern(aad).to_prover_state();
-
-        // r_k: expansion seed from prover private coin
-        let mut seeds = vec![];
-        for _ in 0..self.num_repetition {
-            let r_k = prover_state.rng().r#gen::<[u8; 32]>();
-            seeds.push(r_k);
-        }
-
-        // prepare N random dealings
-        let dealings: Vec<(
-            DensePolynomial<C::ScalarField>,
-            <FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
-            MultiRecvCiphertext<C, sha2::Sha256>,
-        )> = seeds
-            .par_iter()
-            .enumerate()
-            .map(|(i, r)| self.new_dealing(i, r, recipients_iter.clone(), aad))
-            .collect::<Result<_, VessError>>()?;
-
-        // compute h:= H_compress(aad, dealings)
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(aad);
-        for theta in dealings.iter() {
-            hasher.update(serialize_to_vec![theta.1]?);
-            hasher.update(theta.2.to_bytes());
-        }
-        let h = hasher.finalize();
-
-        // commit the actual/original secret poly, (`comm` is C in paper)
-        let (poly, comm) =
-            FeldmanVss::<C>::rand_poly_and_commit(&self.vss_pp, secret, prover_state.rng());
-
-        // prover send C and h to the verifier
-        prover_state.add_points(
-            &comm
-                .iter()
-                .map(|c: &C::Affine| c.into_group())
-                .collect::<Vec<_>>(),
-        )?;
-        prover_state.add_bytes(&h)?;
-
-        // verifier challenge for random subset seed s, see `Self::map_subset_seed()` about
-        // the rationale for 16 random bytes per in-subset index
-        let mut subset_seed = [0u8; 16];
-        prover_state.fill_challenge_bytes(&mut subset_seed)?;
-        let subset_indices = self.map_subset_seed(subset_seed);
-
-        // prover response: for k in S, shift poly; for s not in S, open by revealing r_k
-        let (subset_members, subset_non_members) =
-            partition_refs(&dealings, &seeds, &subset_indices);
-        for dealing in subset_members {
-            let shifted_poly: DensePolynomial<C::ScalarField> = &dealing.0 + &poly;
-            // omega''_k in paper
-            prover_state.add_scalars(&shifted_poly.coeffs)?;
-
-            // v_k in paper
-            prover_state.add_points(&[dealing.2.epk.into_group()])?;
-            // e_k1, .., e_kn in paper
-            for ct in dealing.2.cts.iter() {
-                prover_state.add_bytes(ct)?;
-            }
-        }
-        for seed in subset_non_members {
-            prover_state.add_bytes(seed)?;
-        }
-
-        Ok((
-            VessCiphertext {
-                transcript: prover_state.narg_string().to_vec(),
-            },
-            comm,
-        ))
-    }
-
     // Verifier's logic until step 4.b (exclusive), shared between `verify()` and `decrypt()`.
     fn verify_internal(
         &self,
+        vss_pp: &FeldmanVssPublicParam,
         verifier_state: &mut VerifierState,
     ) -> Result<ProverMessageUntilStep4b<C>, VessError> {
-        let t = self.vss_pp.t.get();
-        let n = self.vss_pp.n.get();
+        let t = vss_pp.t.get();
+        let n = vss_pp.n.get();
 
         // read C and h from transcript
         let mut expected_comm = vec![C::default(); t];
@@ -397,135 +517,6 @@ impl<C: CurveGroup> ShoupVess<C> {
             mre_cts.push_back(MultiRecvCiphertext { epk, cts });
         }
         Ok((comm.into(), h, subset_seed, shifted_polys, mre_cts))
-    }
-
-    /// Verify if the ciphertext (for all recipients) correctly encrypting valid secret shares,
-    /// verifiable by anyone.
-    pub fn verify<'a, I>(
-        &self,
-        recipients: I,
-        ct: &VessCiphertext,
-        comm: &<FeldmanVss<C> as VerifiableSecretSharing>::Commitment,
-        aad: &[u8],
-    ) -> Result<(), VessError>
-    where
-        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
-        I::IntoIter: ExactSizeIterator,
-    {
-        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
-
-        // verifier logic until Step 4b
-        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts) =
-            self.verify_internal(&mut verifier_state)?;
-        if &expected_comm != comm {
-            return Err(VessError::WrongCommitment);
-        }
-
-        // parse out prover's response for k notin S
-        let mut seeds = VecDeque::new();
-        for _ in self.subset_size..self.num_repetition {
-            let seed: [u8; 32] = verifier_state.next_bytes()?;
-            seeds.push_back(seed);
-        }
-
-        // recompute the hash of all the dealings,
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(aad);
-
-        // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
-        let subset_indices = self.map_subset_seed(subset_seed);
-        let mut subset_iter = subset_indices.iter().peekable();
-        let mut next_subset_idx = subset_iter.next();
-        for i in 0..self.num_repetition {
-            match next_subset_idx {
-                Some(j) if i == *j => {
-                    // k in S, shift the commitment
-                    let shifted_comm = C::generator().batch_mul(
-                        shifted_polys
-                            .pop_front()
-                            .expect("subset_size > 0, so is shifted_polys.len()")
-                            .as_ref(),
-                    );
-
-                    let mut unshifted_comm = vec![];
-                    for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
-                        // g^omega'' / C in paper
-                        unshifted_comm.push(shifted - delta);
-                    }
-                    let unshifted_comm = C::normalize_batch(&unshifted_comm);
-                    hasher.update(serialize_to_vec![unshifted_comm]?);
-
-                    let mre_ct = mre_cts
-                        .pop_front()
-                        .expect("subset_size > 0, so is mre_cts.len()");
-                    hasher.update(mre_ct.to_bytes());
-
-                    next_subset_idx = subset_iter.next();
-                }
-                _ => {
-                    // k notin S, reproduce the dealing deterministically from seed
-                    let seed = seeds
-                        .pop_front()
-                        .expect("subset_size < num_repetitions, so seeds.len() > 0");
-                    let (_poly, cm, mre_ct) =
-                        self.new_dealing(i, &seed, recipients.clone(), aad)?;
-
-                    hasher.update(serialize_to_vec![cm]?);
-                    hasher.update(mre_ct.to_bytes());
-                }
-            }
-        }
-        debug_assert!(shifted_polys.is_empty());
-        debug_assert!(mre_cts.is_empty());
-        debug_assert!(seeds.is_empty());
-
-        if h == hasher.finalize().as_slice() {
-            Ok(())
-        } else {
-            Err(VessError::FailedVerification)
-        }
-    }
-
-    /// Decrypt with a decryption key `recv_sk` (labeled with node_idx, see `LabeledDecryptionKey`)
-    pub fn decrypt_share(
-        &self,
-        recv_sk: &LabeledDecryptionKey<C>,
-        ct: &VessCiphertext,
-        aad: &[u8],
-    ) -> Result<C::ScalarField, VessError> {
-        let n = self.vss_pp.n.get();
-        let node_idx = recv_sk.node_idx;
-        let mut verifier_state = self.io_pattern(aad).to_verifier_state(&ct.transcript);
-
-        // verifier logic until Step 4b
-        let (comm, _h, subset_seed, shifted_polys, mre_cts) =
-            self.verify_internal(&mut verifier_state)?;
-        let subset_indices = self.map_subset_seed(subset_seed);
-        debug_assert_eq!(subset_indices.len(), shifted_polys.len());
-
-        for ((shifted_coeffs, mre_ct), ith) in
-            shifted_polys.iter().zip(mre_cts.iter()).zip(subset_indices)
-        {
-            let recv_ct = mre_ct
-                .get_recipient_ct(node_idx)
-                .ok_or(VessError::IndexOutOfBound(n, node_idx))?;
-            let pt = recv_sk.decrypt(&recv_ct, &self.indexed_aad(aad, ith))?;
-            // mu'_kj in paper
-            let unshifted_eval: C::ScalarField =
-                CanonicalDeserialize::deserialize_compressed(&*pt)?;
-
-            let shifted_poly = DensePolynomial::from_coefficients_slice(shifted_coeffs);
-            let shifted_eval = shifted_poly.evaluate(&C::ScalarField::from(node_idx as u64 + 1));
-
-            // mu_kj in paper
-            let share = shifted_eval - unshifted_eval;
-
-            // check correctness
-            if FeldmanVss::<C>::verify(&self.vss_pp, node_idx, &share, &comm).is_ok() {
-                return Ok(share);
-            }
-        }
-        Err(VessError::DecryptionFailed)
     }
 }
 
@@ -720,16 +711,27 @@ mod tests {
     use std::{
         collections::{BTreeMap, BTreeSet},
         iter::repeat_with,
-        num::NonZeroUsize,
     };
 
-    type H = sha2::Sha256;
     type Vss = FeldmanVss<G1Projective>;
 
-    fn test_vess_correctness_helper(vess: ShoupVess<G1Projective, H, Vss>) {
+    fn test_vess_correctness_helper(vess: ShoupVess<G1Projective>) {
         let rng = &mut StdRng::seed_from_u64(0);
         let secret = Fr::rand(rng);
-        let n = vess.vss_pp.n.get();
+
+        // Create a test committee
+        let committee_size = 13;
+        let keypairs: Vec<multisig::Keypair> = (0..committee_size)
+            .map(|_| multisig::Keypair::generate())
+            .collect();
+        let committee = multisig::Committee::new(
+            0u64,
+            keypairs
+                .iter()
+                .enumerate()
+                .map(|(i, kp)| (i as u8, kp.public_key())),
+        );
+        let n = committee.size().get();
 
         let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
             repeat_with(|| mre::DecryptionKey::rand(rng))
@@ -748,26 +750,26 @@ mod tests {
 
         let aad = b"Associated data";
         let (ct, comm) = vess
-            .encrypted_shares(recv_pks.values(), secret, aad)
+            .encrypt_shares(&committee, recv_pks.values(), secret, aad)
             .unwrap();
 
-        assert!(vess.verify(recv_pks.values(), &ct, &comm, aad).is_ok());
+        assert!(
+            vess.verify(&committee, recv_pks.values(), &ct, &comm, aad)
+                .is_ok()
+        );
         for labeled_recv_sk in labeled_sks {
-            let share = vess.decrypt_share(&labeled_recv_sk, &ct, aad).unwrap();
-            assert!(Vss::verify(&vess.vss_pp, labeled_recv_sk.node_idx, &share, &comm).is_ok());
+            let share = vess
+                .decrypt_share(&committee, &labeled_recv_sk, &ct, aad)
+                .unwrap();
+            let vss_pp = FeldmanVssPublicParam::from(&committee);
+            assert!(Vss::verify(&vss_pp, labeled_recv_sk.node_idx, &share, &comm).is_ok());
         }
     }
 
     #[test]
     fn test_vess_correctness() {
-        test_vess_correctness_helper(ShoupVess::new_fast(
-            NonZeroUsize::new(5).unwrap(),
-            NonZeroUsize::new(13).unwrap(),
-        ));
-        test_vess_correctness_helper(ShoupVess::new_short(
-            NonZeroUsize::new(10).unwrap(),
-            NonZeroUsize::new(20).unwrap(),
-        ));
+        test_vess_correctness_helper(ShoupVess::new_fast());
+        test_vess_correctness_helper(ShoupVess::new_short());
     }
 
     #[test]
