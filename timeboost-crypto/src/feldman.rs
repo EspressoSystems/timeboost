@@ -10,7 +10,7 @@ use multisig::Committee;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::{iter::successors, num::NonZeroUsize};
+use std::{iter::successors, num::NonZeroUsize, ops::Add};
 
 use crate::{
     interpolation::{interpolate, interpolate_in_exponent},
@@ -158,27 +158,26 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
 
     fn reconstruct(
         pp: &Self::PublicParam,
-        shares: impl Iterator<Item = (usize, Self::SecretShare)>,
+        shares: impl ExactSizeIterator<Item = (usize, Self::SecretShare)> + Clone,
     ) -> Result<Self::Secret, VssError> {
-        let shares = shares.collect::<Vec<_>>();
         let n = pp.n.get();
         let t = pp.t.get();
         // input validation
         if shares.len() != t {
             return Err(VssError::MismatchedSharesCount(t, shares.len()));
         }
-        for (idx, _) in shares.iter() {
-            if *idx >= n {
-                return Err(VssError::IndexOutOfBound(n - 1, *idx));
+        for (idx, _) in shares.clone() {
+            if idx >= n {
+                return Err(VssError::IndexOutOfBound(n - 1, idx));
             }
         }
 
         // Lagrange interpolate to get back the secret
         let eval_points: Vec<_> = shares
-            .iter()
-            .map(|&(idx, _)| C::ScalarField::from(idx as u64 + 1))
+            .clone()
+            .map(|(idx, _)| C::ScalarField::from(idx as u64 + 1))
             .collect();
-        let evals: Vec<_> = shares.iter().map(|&(_, share)| share).collect();
+        let evals: Vec<_> = shares.map(|(_, share)| share).collect();
         interpolate::<C>(&eval_points, &evals)
             .map_err(|e| VssError::FailedReconstruction(e.to_string()))
     }
@@ -217,6 +216,36 @@ impl<C: CurveGroup> FeldmanCommitment<C> {
     }
 }
 
+impl<C: CurveGroup> Add<FeldmanCommitment<C>> for FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: FeldmanCommitment<C>) -> Self::Output {
+        &self + &other
+    }
+}
+
+impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: &FeldmanCommitment<C>) -> Self::Output {
+        &self + other
+    }
+}
+
+impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for &FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: &FeldmanCommitment<C>) -> Self::Output {
+        let combined: Vec<C> = self
+            .comm
+            .iter()
+            .zip(other.comm.iter())
+            .map(|(x, y)| *x + y)
+            .collect();
+        C::normalize_batch(&combined).into()
+    }
+}
+
 impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
     fn reshare<R: Rng>(
         new_pp: &FeldmanVssPublicParam,
@@ -252,19 +281,17 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
     fn combine(
         old_pp: &FeldmanVssPublicParam,
         new_pp: &FeldmanVssPublicParam,
-        send_node_indices: &[usize],
-        row_commitments: &[FeldmanCommitment<C>],
         recv_node_idx: usize,
-        recv_reshares: &[C::ScalarField],
+        reshares: impl ExactSizeIterator<Item = (usize, C::ScalarField, FeldmanCommitment<C>)> + Clone,
     ) -> Result<(C::ScalarField, FeldmanCommitment<C>), VssError> {
         // input validation
         let n = old_pp.n.get();
-        if send_node_indices.is_empty() || row_commitments.is_empty() || recv_reshares.is_empty() {
+        if reshares.len() == 0 {
             return Err(VssError::EmptyReshare);
         }
-        for idx in send_node_indices.iter() {
-            if *idx >= n {
-                return Err(VssError::IndexOutOfBound(n - 1, *idx));
+        for (idx, _, _) in reshares.clone() {
+            if idx >= n {
+                return Err(VssError::IndexOutOfBound(n - 1, idx));
             }
         }
 
@@ -273,24 +300,23 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
         if recv_node_idx >= new_n {
             return Err(VssError::IndexOutOfBound(new_n - 1, recv_node_idx));
         }
-        if row_commitments.iter().any(|cm| cm.len() != new_t) {
-            return Err(VssError::InvalidCommitment);
-        }
-
-        let subset_size = recv_reshares.len();
-        if send_node_indices.len() != subset_size || row_commitments.len() != subset_size {
-            return Err(VssError::MismatchedInputLength);
+        for (_, _, row_commitment) in reshares.clone() {
+            if row_commitment.len() != new_t {
+                return Err(VssError::InvalidCommitment);
+            }
         }
 
         // interpolate reshares to get new secret share
-        let eval_points: Vec<_> = send_node_indices
-            .iter()
-            .map(|&idx| C::ScalarField::from(idx as u64 + 1))
+        let eval_points: Vec<_> = reshares
+            .clone()
+            .map(|(idx, _, _)| C::ScalarField::from(idx as u64 + 1))
             .collect();
-        let new_secret = interpolate::<C>(&eval_points, recv_reshares)
+        let recv_reshares: Vec<_> = reshares.clone().map(|(_, share, _)| share).collect();
+        let new_secret = interpolate::<C>(&eval_points, &recv_reshares)
             .map_err(|e| VssError::FailedCombine(e.to_string()))?;
 
         // interpolate in the exponent to get new Feldman commitment
+        let row_commitments: Vec<_> = reshares.map(|(_, _, commitment)| commitment).collect();
         let new_commitment = (0..new_t)
             .into_par_iter()
             .map(|j| {
@@ -461,15 +487,10 @@ mod tests {
             let selected_row_commitments: Vec<FeldmanCommitment<_>> =
                 (0..old_t).map(|i| row_commitments[i].clone()).collect();
 
-            let (new_secret_share, new_commitment) = FeldmanVss::<G1Projective>::combine(
-                &old_pp,
-                &new_pp,
-                &(0..old_t).collect::<Vec<_>>(),
-                &selected_row_commitments,
-                j,
-                &recv_reshares,
-            )
-            .unwrap();
+            let reshares_iter =
+                (0..old_t).map(|i| (i, recv_reshares[i], selected_row_commitments[i].clone()));
+            let (new_secret_share, new_commitment) =
+                FeldmanVss::<G1Projective>::combine(&old_pp, &new_pp, j, reshares_iter).unwrap();
 
             new_shares.push(new_secret_share);
             new_commitments.push(new_commitment);

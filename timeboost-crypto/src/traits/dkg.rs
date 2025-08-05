@@ -1,6 +1,7 @@
 //! Traits related to Distributed Key Generation (DKG) and Key Resharing
 
 use ark_std::rand::Rng;
+use std::ops::Add;
 use thiserror::Error;
 
 /// A trait for (t, n)-Verifiable Secret Sharing (VSS) schemes.
@@ -51,8 +52,24 @@ pub trait VerifiableSecretSharing {
     /// Returns `Ok(secret)` if reconstruction succeeds, or an appropriate `VssError` otherwise.
     fn reconstruct(
         pp: &Self::PublicParam,
-        shares: impl Iterator<Item = (usize, Self::SecretShare)>,
+        shares: impl ExactSizeIterator<Item = (usize, Self::SecretShare)> + Clone,
     ) -> Result<Self::Secret, VssError>;
+
+    /// Aggregates multiple commitments and secret shares into a single commitment and secret share.
+    ///
+    /// This is commonly used in DKG protocols to combine multiple dealings/contributions.
+    ///
+    /// Returns `Ok((secret_share, commitment))` if aggregation succeeds
+    fn aggregate<I>(dealings: I) -> Result<(Self::SecretShare, Self::Commitment), VssError>
+    where
+        I: Iterator<Item = (Self::SecretShare, Self::Commitment)>,
+        Self::Commitment: Add<Self::Commitment, Output = Self::Commitment>,
+        Self::SecretShare: Add<Self::SecretShare, Output = Self::SecretShare>,
+    {
+        dealings
+            .reduce(|(acc_share, acc_comm), (share, comm)| (acc_share + share, acc_comm + comm))
+            .ok_or(VssError::EmptyAggInput)
+    }
 }
 
 /// Publicly verifiable key resharing scheme for a VSS where existing share holders of a Shamir
@@ -94,10 +111,8 @@ pub trait KeyResharing<VSS: VerifiableSecretSharing> {
     fn combine(
         old_pp: &VSS::PublicParam,
         new_pp: &VSS::PublicParam,
-        send_node_indices: &[usize],
-        row_commitments: &[VSS::Commitment],
         recv_node_idx: usize,
-        recv_reshares: &[VSS::SecretShare],
+        reshares: impl ExactSizeIterator<Item = (usize, VSS::SecretShare, VSS::Commitment)> + Clone,
     ) -> Result<(VSS::Secret, VSS::Commitment), VssError>;
 }
 
@@ -118,6 +133,8 @@ pub enum VssError {
     FailedReconstruction(String),
     #[error("internal err: {0}")]
     InternalError(String),
+    #[error("aggregation input is empty")]
+    EmptyAggInput,
 
     #[error("reshare data is empty")]
     EmptyReshare,

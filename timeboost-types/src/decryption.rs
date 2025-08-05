@@ -1,10 +1,9 @@
-use std::collections::{BTreeMap, btree_map};
-
 use anyhow::anyhow;
-use ark_ec::{AffineRepr, CurveGroup};
+use ark_ec::AffineRepr;
 use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, btree_map};
 use timeboost_crypto::{
     DecryptionScheme,
     prelude::{DkgEncKey, Vess, Vss},
@@ -43,38 +42,25 @@ impl DecryptionKey {
     /// # Parameters
     /// - `committee_size`: size of the threshold committee
     /// - `node_idx`: in 0..committee_size, currently same as KeyId
-    /// - `commitments`: the Feldman Commitments: multiple output of `ShoupVess::encrypted_shares()`
-    /// - `key_shares`: multiple decrypted secret shares from `ShoupVess::decrypt_share()`
-    pub fn from_dkg(
+    /// - `dealings`: ResultIter containing decrypted shares and commitments
+    pub fn from_dkg<I>(
         committee_size: usize,
         node_idx: usize,
-        commitments: &[<Vss as VerifiableSecretSharing>::Commitment],
-        key_shares: &[<Vss as VerifiableSecretSharing>::SecretShare],
-    ) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            commitments.len() == key_shares.len(),
-            "mismatched input length"
-        );
-
-        // aggregate selected dealings/contributions
-        let agg_comm = commitments
-            .par_iter()
-            .cloned()
-            .reduce_with(|a, b| {
-                let combined: Vec<_> = a
-                    .into_iter()
-                    .zip(b.into_iter())
-                    // NOTE: ideally we can use C::normalize_batch(), but C is not exposed,
-                    // minor optimization, so ignore for now.
-                    .map(|(x, y)| (x + y).into_affine())
-                    .collect();
-                combined.into()
-            })
-            .ok_or_else(|| anyhow!("no commitments provided"))?;
-        let agg_key_share = key_shares.iter().sum();
+        mut dealings: I,
+    ) -> anyhow::Result<Self>
+    where
+        I: Iterator<
+            Item = (
+                <Vss as VerifiableSecretSharing>::SecretShare,
+                <Vss as VerifiableSecretSharing>::Commitment,
+            ),
+        >,
+    {
+        // aggregate selected dealings
+        let (agg_key_share, agg_comm) = Vss::aggregate(&mut dealings)?;
 
         // derive key material
-        Self::from_single_dkg(committee_size, node_idx, &agg_comm, agg_key_share)
+        Self::from_single_dkg(committee_size, node_idx, agg_key_share, &agg_comm)
     }
 
     /// inner routine to construct from a single (aggregated or interpolated) DKG output,
@@ -82,8 +68,8 @@ impl DecryptionKey {
     fn from_single_dkg(
         committee_size: usize,
         node_idx: usize,
-        commitment: &<Vss as VerifiableSecretSharing>::Commitment,
         key_share: <Vss as VerifiableSecretSharing>::SecretShare,
+        commitment: &<Vss as VerifiableSecretSharing>::Commitment,
     ) -> anyhow::Result<Self> {
         // note: all .into() are made available via derive_more::From on those structs
         let pk: PublicKey = commitment

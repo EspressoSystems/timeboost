@@ -20,6 +20,7 @@ use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{
     DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList, Subset,
 };
+use timeboost_utils::ResultIter;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -662,23 +663,22 @@ impl Worker {
                 // TODO: centralize these constant, redeclared in DkgAccumulator.try_add()
                 let aad: &[u8; 3] = b"dkg";
                 let vess = Vess::new_fast();
-                let (shares, commitments) = subset
-                    .bundles()
-                    .iter()
-                    .map(|b| {
-                        vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
-                            .map(|s| (s, b.comm().clone()))
-                            .map_err(|e| DecrypterError::Dkg(e.to_string()))
-                    })
-                    .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+                let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
+                    vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
+                        .map(|s| (s, b.comm().clone()))
+                }));
 
                 let dec_sk = DecryptionKey::from_dkg(
                     committee.size().into(),
                     self.dkg_sk.node_idx(),
-                    &commitments,
-                    &shares,
+                    &mut dealings_iter,
                 )
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+
+                // in case of early-return of ResultIter
+                dealings_iter
+                    .result()
+                    .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
                 self.enc_key.set(dec_sk.pubkey().clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
@@ -770,23 +770,22 @@ impl Worker {
                 // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
                 let aad: &[u8; 3] = b"dkg";
                 let vess = Vess::new_fast();
-                let (shares, commitments) = subset
-                    .bundles()
-                    .iter()
-                    .map(|b| {
-                        vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
-                            .map(|s| (s, b.comm().clone()))
-                            .map_err(|e| DecrypterError::Dkg(e.to_string()))
-                    })
-                    .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+                let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
+                    vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
+                        .map(|s| (s, b.comm().clone()))
+                }));
 
                 let dec_sk = DecryptionKey::from_dkg(
                     committee.size().into(),
                     self.dkg_sk.node_idx(),
-                    &commitments,
-                    &shares,
+                    &mut dealings_iter,
                 )
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+
+                // in case of early-return of ResultIter
+                dealings_iter
+                    .result()
+                    .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
                 self.enc_key.set(dec_sk.pubkey().clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
@@ -1418,8 +1417,12 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(node_idx, shares)| {
-                super::DecryptionKey::from_dkg(COMMITTEE_SIZE, node_idx, &commitments, shares)
-                    .expect("threshold key derivation should succeed")
+                super::DecryptionKey::from_dkg(
+                    COMMITTEE_SIZE,
+                    node_idx,
+                    shares.iter().cloned().zip(commitments.iter().cloned()),
+                )
+                .expect("threshold key derivation should succeed")
             })
             .collect();
         tracing::info!(
