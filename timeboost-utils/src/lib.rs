@@ -68,6 +68,8 @@ pub fn select_peer_hosts(
 ///
 /// # Usage
 /// ```no_run
+/// use timeboost_utils::ResultIter;
+///
 /// fn use_result_iter<I, T, E>(iter: I) -> Result<(), E>
 /// where
 ///     I: Iterator<Item = Result<T, E>>,
