@@ -5,8 +5,9 @@ use timeboost_builder::{
     CertifierConfig, SubmitterConfig,
     robusta::{self, espresso_types::NamespaceId},
 };
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::DecryptionKey;
+use timeboost_types::{ChainConfig, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -28,8 +29,11 @@ pub struct TimeboostConfig {
     /// The keypair for Diffie-Hellman key exchange.
     pub(crate) dh_keypair: x25519::Keypair,
 
-    /// The decryption key material for the node.
-    pub(crate) decryption_key: DecryptionKey,
+    /// The encryption/decryption key used in the DKG or key resharing for secure communication.
+    pub(crate) dkg_key: DkgDecKey,
+
+    /// Key store containing DKG public keys of all nodes.
+    pub(crate) dkg_keystore: DkgKeyStore,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -54,11 +58,17 @@ pub struct TimeboostConfig {
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
 
+    /// Pending encryption key that will be updated after DKG/resharing.
+    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
 
     #[builder(into)]
     pub(crate) namespace: NamespaceId,
+
+    /// Chain configuration
+    pub(crate) chain_config: ChainConfig,
 }
 
 impl TimeboostConfig {
@@ -66,13 +76,16 @@ impl TimeboostConfig {
         SequencerConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
-            .decryption_key(self.decryption_key.clone())
+            .dkg_key(self.dkg_key.clone())
+            .dkg_keystore(self.dkg_keystore.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee(self.decrypt_committee.clone())
             .recover(self.recover)
             .leash_len(self.leash_len)
+            .threshold_enc_key(self.threshold_enc_key.clone())
+            .chain_config(self.chain_config.clone())
             .build()
     }
 

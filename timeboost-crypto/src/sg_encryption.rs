@@ -2,9 +2,7 @@ use aes_gcm::{AeadCore, Aes256Gcm, aead};
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup, hashing::HashToCurve};
 use ark_ff::{PrimeField, UniformRand};
-use ark_poly::EvaluationDomain;
-use ark_poly::Radix2EvaluationDomain;
-use ark_poly::{DenseUVPolynomial, polynomial::univariate::DensePolynomial};
+use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use digest::{Digest, generic_array::GenericArray};
@@ -73,12 +71,15 @@ where
         let generator = C::generator();
         let mut poly: DensePolynomial<_> = DensePolynomial::rand(degree, rng);
 
-        let domain = Radix2EvaluationDomain::<C::ScalarField>::new(committee_size)
-            .ok_or_else(|| ThresholdEncError::Internal(anyhow!("Unable to create eval domain")))?;
-
         let mut alpha_0 = poly[0];
-        let mut evals: Vec<_> = domain.fft(&poly);
-        evals.truncate(committee_size); // FFT might produce to next_power_of_two(committee_size)
+
+        // Evaluate polynomial at points 1, 2, 3, ..., committee_size (same as Feldman VSS)
+        let mut evals = Vec::with_capacity(committee_size);
+        for i in 0..committee_size {
+            let eval_point = C::ScalarField::from((i + 1) as u64);
+            let eval = poly.evaluate(&eval_point);
+            evals.push(eval);
+        }
 
         let u_0 = generator * alpha_0;
         let pub_key = PublicKey { key: u_0 };
@@ -178,7 +179,6 @@ where
         ciphertext: &Self::Ciphertext,
         aad: &Self::AssociatedData,
     ) -> Result<Self::Plaintext, ThresholdEncError> {
-        let committee_size: usize = committee.size().get();
         let threshold = committee.one_honest_threshold().get();
         let generator = C::generator();
 
@@ -188,13 +188,6 @@ where
         if dec_shares.len() < threshold {
             return Err(ThresholdEncError::NotEnoughShares);
         }
-        let domain: Radix2EvaluationDomain<C::ScalarField> =
-            Radix2EvaluationDomain::new(committee_size).ok_or_else(|| {
-                ThresholdEncError::Internal(anyhow!(
-                    "Unable to create eval domain for size {:?}",
-                    committee_size
-                ))
-            })?;
 
         let (v, nonce, data) = (
             ciphertext.v,
@@ -229,11 +222,11 @@ where
             return Err(ThresholdEncError::FaultySubset(faulty_subset));
         }
 
-        // Collect eval points for decryption shares
+        // Collect eval points using simple evaluation points (same as Feldman VSS)
         let (x, w_vec): (Vec<_>, Vec<_>) = dec_shares
             .iter()
             .take(threshold)
-            .map(|share| (domain.element(share.index as usize), share.w))
+            .map(|share| (C::ScalarField::from((share.index + 1) as u64), share.w))
             .unzip();
 
         // interpolate in the exponent

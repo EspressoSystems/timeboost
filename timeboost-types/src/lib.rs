@@ -2,6 +2,7 @@ mod block;
 mod bundle;
 mod bytes;
 mod candidate_list;
+mod chain_config;
 mod decryption;
 mod delayed_inbox;
 mod inclusion_list;
@@ -20,7 +21,8 @@ pub use bundle::{
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
-pub use decryption::DecryptionKey;
+pub use chain_config::ChainConfig;
+pub use decryption::{DecryptionKey, DkgAccumulator, DkgKeyStore, Subset};
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use retry_list::RetryList;

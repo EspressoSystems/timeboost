@@ -1,13 +1,16 @@
 mod config;
 mod decrypt;
+mod delayed_inbox;
 mod include;
 mod metrics;
 mod queue;
 mod sort;
 
 use std::collections::VecDeque;
+use std::iter::once;
 use std::sync::Arc;
 
+use alloy::providers::network::Ethereum;
 use cliquenet::MAX_MESSAGE_SIZE;
 use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Overlay};
 use metrics::SequencerMetrics;
@@ -16,7 +19,8 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_types::{BundleVariant, Timestamp, Transaction};
+use timeboost_crypto::vess::VessError;
+use timeboost_types::{BundleVariant, DelayedInboxIndex, DkgBundle, Timestamp, Transaction};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -30,6 +34,8 @@ use sort::Sorter;
 
 pub use config::{SequencerConfig, SequencerConfigBuilder};
 
+use crate::delayed_inbox::DelayedInbox;
+
 type Result<T> = std::result::Result<T, TimeboostError>;
 type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 
@@ -39,6 +45,7 @@ pub enum Output {
         round: RoundNumber,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
+        delayed_inbox_index: DelayedInboxIndex,
     },
     UseCommittee(Round),
 }
@@ -46,6 +53,7 @@ pub enum Output {
 pub struct Sequencer {
     label: PublicKey,
     task: JoinHandle<Result<()>>,
+    ibox_task: JoinHandle<()>,
     bundles: BundleQueue,
     commands: Sender<Command>,
     output: Receiver<Output>,
@@ -53,7 +61,8 @@ pub struct Sequencer {
 
 impl Drop for Sequencer {
     fn drop(&mut self) {
-        self.task.abort()
+        self.task.abort();
+        self.ibox_task.abort();
     }
 }
 
@@ -109,6 +118,10 @@ impl Sequencer {
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
 
+        let ibox = DelayedInbox::<Ethereum>::connect(public_key, &cfg.chain_config, queue.clone())
+            .await
+            .expect("connection to succeed");
+
         let sailfish = {
             let met = NetworkMetrics::new(
                 "sailfish",
@@ -154,7 +167,8 @@ impl Sequencer {
             Coordinator::new(rbc, cons, cfg.previous_sailfish_committee.is_some())
         };
 
-        let decrypter = Decrypter::new(cfg.decrypter_config(), metrics).await?;
+        let decrypter =
+            Decrypter::new(cfg.decrypter_config(), metrics, seq_metrics.clone()).await?;
 
         let (tx, rx) = mpsc::channel(1024);
         let (cx, cr) = mpsc::channel(4);
@@ -178,6 +192,7 @@ impl Sequencer {
         Ok(Self {
             label: public_key,
             task: spawn(task.go()),
+            ibox_task: spawn(ibox.go()),
             bundles: queue,
             output: rx,
             commands: cx,
@@ -246,16 +261,23 @@ impl Task {
     // processing its actions continues unhindered.
     async fn go(mut self) -> Result<()> {
         let mut pending = None;
+        let mut pending_dkgs = VecDeque::new();
         let mut candidates = Candidates::new();
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
             candidates = self.execute(actions).await?;
+
+            // DKG dealing generation
+            // TODO: move/copy to main loop when resharing
+            if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
+                self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+            }
         }
 
         loop {
             if pending.is_none() {
-                while let Some(ilist) = self.next_inclusion(&mut candidates) {
+                while let Some(ilist) = self.next_inclusion(&mut candidates, &mut pending_dkgs) {
                     if !self.decrypter.has_capacity() {
                         pending = Some(ilist);
                         break;
@@ -265,6 +287,16 @@ impl Task {
                     }
                 }
             }
+
+            // always sync DKG bundles
+            self.next_dkg(&mut candidates, &mut pending_dkgs);
+            if !pending_dkgs.is_empty() {
+                tracing::debug!(num_bundles = %pending_dkgs.len(), "enqueuing dkg bundles");
+                if let Err(err) = self.decrypter.enqueue_dkg(&mut pending_dkgs).await {
+                    error!(node = %self.label, %err, "dkg enqueue error");
+                }
+            }
+
             select! {
                 result = self.sailfish.next(), if pending.is_none() => match result {
                     Ok(actions) => {
@@ -279,9 +311,10 @@ impl Task {
                     Ok(incl) => {
                         let round = incl.round();
                         let timestamp = incl.timestamp();
+                        let delayed_inbox_index = incl.delayed_inbox_index();
                         let transactions = self.sorter.sort(incl);
                         if !transactions.is_empty() {
-                            let out = Output::Transactions { round, timestamp, transactions };
+                            let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {
@@ -299,6 +332,7 @@ impl Task {
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
                     Some(Command::NextCommittee(t, a, b)) => {
+                        // TODO(alex): reshare dealing generation here
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
@@ -391,8 +425,20 @@ impl Task {
     }
 
     /// Handle candidate lists and return the next inclusion list.
-    fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
+    /// While processing candidates, will append the DKG bundles to `pending_dkgs`.
+    fn next_inclusion(
+        &mut self,
+        candidates: &mut Candidates,
+        pending_dkgs: &mut VecDeque<DkgBundle>,
+    ) -> Option<InclusionList> {
         while let Some((round, evidence, lists)) = candidates.pop_front() {
+            // preprocess the candidate list to pull out the DKG bundles first
+            for cl in lists.iter() {
+                if let Some(dkg) = cl.dkg_bundle() {
+                    pending_dkgs.push_back(dkg);
+                }
+            }
+            // then process it to construct the next inclusion list
             let outcome = self.includer.inclusion_list(round, evidence, lists);
             self.bundles.update_bundles(&outcome.ilist, outcome.retry);
             if !outcome.is_valid {
@@ -409,6 +455,19 @@ impl Task {
             return Some(outcome.ilist);
         }
         None
+    }
+
+    /// Handle candidate lists and "pull" out the DKG bundles, it won't touch or drop or consume
+    /// regular/priority bundles, but only consume/take the DKG bundles inside `candidates` then
+    /// append them to `pending_dkgs`.
+    fn next_dkg(&mut self, candidates: &mut Candidates, pending_dkgs: &mut VecDeque<DkgBundle>) {
+        for (_, _, list) in candidates.iter_mut() {
+            for cl in list.iter_mut() {
+                if let Some(dkg) = cl.take_dkg_bundle() {
+                    pending_dkgs.push_back(dkg);
+                }
+            }
+        }
     }
 }
 
@@ -429,4 +488,7 @@ pub enum TimeboostError {
 
     #[error("decrypt error: {0}")]
     Decrypt(#[from] DecrypterError),
+
+    #[error("dkg/reshare error: {0}")]
+    Dkg(#[from] VessError),
 }

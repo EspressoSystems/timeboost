@@ -4,6 +4,7 @@ use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
@@ -13,9 +14,9 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost::crypto::DecryptionScheme;
-use timeboost::sequencer::SequencerConfig;
-use timeboost::types::DecryptionKey;
+use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
+use timeboost_sequencer::SequencerConfig;
+use timeboost_types::{ChainConfig, DkgKeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -23,6 +24,7 @@ use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
+use url::Url;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -113,20 +115,32 @@ where
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
 
-    let (pubkey, combkey, shares) = DecryptionScheme::trusted_keygen(committee);
+    let dkg_keys = (0..sign_keys.len())
+        .map(|_| DkgDecKey::generate())
+        .collect::<Vec<_>>();
+
+    let dkg_keystore = DkgKeyStore::new(
+        committee.clone(),
+        dkg_keys
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i as u8, sk.into())),
+    );
+
+    let enc_key = ThresholdEncKeyCell::new();
 
     sign_keys
         .into_iter()
         .zip(dh_keys)
         .zip(sf_addrs)
         .zip(de_addrs)
-        .zip(shares)
-        .map(move |((((k, x), sa), da), share)| {
-            let key = DecryptionKey::new(pubkey.clone(), combkey.clone(), share);
+        .zip(dkg_keys)
+        .map(move |((((k, x), sa), da), dkg_key)| {
             SequencerConfig::builder()
                 .sign_keypair(k)
                 .dh_keypair(x)
-                .decryption_key(key)
+                .dkg_key(dkg_key)
+                .dkg_keystore(dkg_keystore.clone())
                 .sailfish_addr(sa)
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())
@@ -136,6 +150,17 @@ where
                 )
                 .recover(false)
                 .leash_len(100)
+                .threshold_enc_key(enc_key.clone())
+                .chain_config(ChainConfig::new(
+                    1,
+                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                        .parse::<Url>()
+                        .expect("valid url"),
+                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+                        .parse::<alloy::primitives::Address>()
+                        .expect("valid contract"),
+                    BlockNumberOrTag::Finalized,
+                ))
                 .build()
         })
 }

@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+alloy = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }
@@ -30,3 +31,4 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true }
+url = { workspace = true }
