@@ -14,6 +14,7 @@ use ark_ff::field_hashers::DefaultFieldHasher;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
+use derive_more::From;
 use digest::{generic_array::GenericArray, typenum};
 use multisig::Committee;
 use serde::de::DeserializeOwned;
@@ -112,28 +113,28 @@ impl Keyset {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From)]
 pub struct CombKey<C: CurveGroup> {
     #[serde_as(as = "Vec<crate::SerdeAs>")]
     pub key: Vec<C>,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
 pub struct PublicKey<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     key: C,
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop, From)]
 pub struct KeyShare<C: CurveGroup> {
     #[serde_as(as = "crate::SerdeAs")]
     share: C::ScalarField,
     index: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Plaintext(Vec<u8>);
 
 #[serde_as]

@@ -27,13 +27,10 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy-chains = "0.2.0"
-alloy-consensus = { version = "1.0.5", features = ["arbitrary", "k256"] }
-alloy-eips = "1.0.5"
-alloy-primitives = { version = "1.0.0", features = ["serde", "rlp"] }
-alloy-rlp = { version = "0.3.11", features = ["derive"] }
-alloy-signer = "1.0.5"
-alloy-signer-local = "1.0.5"
+alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp"] }
+alloy-chains = "0.2"
+# derive feature is not exposed via `alloy`, thus has to explicitly declare here
+alloy-rlp = { version = "0.3.12", features = ["derive"] }
 anyhow = "1.0.89"
 arbitrary = "1.4.1"
 arbtest = "0.3.2"
@@ -61,6 +58,7 @@ criterion = "0.7"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
 derive_builder = "0.20"
+derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
 dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
