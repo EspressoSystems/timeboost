@@ -70,7 +70,7 @@ impl Sorter {
 
 #[rustfmt::skip]
 fn compare(seed: &[u8], x: &Transaction, y: &Transaction) -> Ordering {
-    use alloy_consensus::transaction::Transaction;
+    use alloy::consensus::transaction::Transaction;
 
     let mut hx = blake3::Hasher::new();
     let mut hy = blake3::Hasher::new();

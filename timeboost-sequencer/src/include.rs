@@ -109,12 +109,8 @@ impl Includer {
         let mut regular: BTreeMap<Bundle, usize> = BTreeMap::new();
         let mut priority: BTreeMap<SeqNo, SignedPriorityBundle> = BTreeMap::new();
         let mut retry = RetryList::new();
-        let mut dkg = Vec::new();
 
-        for (pbs, rbs, dbs) in lists.into_iter().map(CandidateList::into_bundles) {
-            if let Some(d) = dbs {
-                dkg.push(d)
-            }
+        for (pbs, rbs) in lists.into_iter().map(CandidateList::into_bundles) {
             for rb in rbs {
                 *regular.entry(rb).or_default() += 1
             }
@@ -171,7 +167,6 @@ impl Includer {
 
         let mut ilist = InclusionList::new(self.round, self.time, self.index, evidence);
         ilist
-            .set_dkg_bundles(dkg)
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);
 
