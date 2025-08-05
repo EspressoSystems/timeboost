@@ -1,13 +1,12 @@
 use std::ops::{Deref, DerefMut};
 
-use alloy_consensus::transaction::SignerRecoverable;
-use alloy_consensus::{Sealed, TxEnvelope};
-
-use alloy_eips::{Encodable2718, Typed2718};
-use alloy_primitives::B256;
-use alloy_rlp::Decodable;
-use alloy_signer::{Error, SignerSync, k256::ecdsa::SigningKey};
-use alloy_signer_local::PrivateKeySigner;
+use alloy::consensus::transaction::SignerRecoverable;
+use alloy::consensus::{Sealed, TxEnvelope};
+use alloy::eips::{Encodable2718, Typed2718};
+use alloy::primitives::B256;
+use alloy::rlp::Decodable;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::{Error, SignerSync, k256::ecdsa::SigningKey};
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::CommitteeId;
@@ -15,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::{Arbitrary, Result, Unstructured};
+use timeboost_crypto::prelude::{VessCiphertext, VssCommitment};
 
 use crate::{Bytes, Epoch, SeqNo, Timestamp};
 
@@ -94,7 +94,7 @@ impl Bundle {
 
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary(u: &mut Unstructured<'_>) -> Result<Self, InvalidTransaction> {
-        use alloy_rlp::Encodable;
+        use alloy::rlp::Encodable;
 
         let t: Transaction = loop {
             let candidate = Transaction::arbitrary(u)?;
@@ -178,7 +178,7 @@ impl PriorityBundle {
     }
 
     pub fn sign(self, signer: Signer) -> Result<SignedPriorityBundle, Error> {
-        use alloy_signer::Signer;
+        use alloy::signers::Signer;
         let signer = signer.0.with_chain_id(Some(self.bundle().chain_id().0));
         signer.sign_message_sync(&self.to_bytes()).map(|signature| {
             SignedPriorityBundle::new(
@@ -297,17 +297,22 @@ impl Committable for SignedPriorityBundle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
+    /// target committee for the dkg bundle
     committee_id: CommitteeId,
-    transcript: Vec<u8>, // TODO: replace with VESS transcript (dealing)
+    /// encrypted secret shares in a dealing
+    vess_ct: VessCiphertext,
+    /// Feldman commitment to the secret sharing dealing
+    comm: VssCommitment,
 }
 
 impl DkgBundle {
-    pub fn new(committee_id: CommitteeId, transcript: Vec<u8>) -> Self {
+    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
         Self {
             committee_id,
-            transcript,
+            vess_ct,
+            comm,
         }
     }
 
@@ -315,8 +320,18 @@ impl DkgBundle {
         &self.committee_id
     }
 
-    pub fn transcript(&self) -> &Vec<u8> {
-        &self.transcript
+    pub fn vess_ct(&self) -> &VessCiphertext {
+        &self.vess_ct
+    }
+
+    pub fn comm(&self) -> &VssCommitment {
+        &self.comm
+    }
+}
+
+impl std::hash::Hash for DkgBundle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.commit().hash(state);
     }
 }
 
@@ -324,7 +339,8 @@ impl Committable for DkgBundle {
     fn commit(&self) -> Commitment<Self> {
         RawCommitmentBuilder::new("DkgBundle")
             .field("committee", self.committee_id.commit())
-            .var_size_bytes(&self.transcript)
+            .var_size_field("ciphertexts", self.vess_ct.as_bytes())
+            .var_size_field("commitment", &self.comm.to_bytes())
             .finalize()
     }
 }
@@ -333,7 +349,7 @@ impl Committable for DkgBundle {
     Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ChainId(alloy_primitives::ChainId);
+pub struct ChainId(alloy::primitives::ChainId);
 
 impl From<u64> for ChainId {
     fn from(value: u64) -> Self {
@@ -443,10 +459,10 @@ impl std::ops::Deref for Transaction {
 // Address wrapper
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Address(alloy_primitives::Address);
+pub struct Address(alloy::primitives::Address);
 
 impl std::ops::Deref for Address {
-    type Target = alloy_primitives::Address;
+    type Target = alloy::primitives::Address;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -459,13 +475,13 @@ impl Default for Address {
     }
 }
 
-impl From<alloy_primitives::Address> for Address {
-    fn from(address: alloy_primitives::Address) -> Self {
+impl From<alloy::primitives::Address> for Address {
+    fn from(address: alloy::primitives::Address) -> Self {
         Address(address)
     }
 }
 
-impl From<Address> for alloy_primitives::Address {
+impl From<Address> for alloy::primitives::Address {
     fn from(eth_address: Address) -> Self {
         eth_address.0
     }
@@ -481,10 +497,10 @@ impl Committable for Address {
 
 // Signature wrapper
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Signature(alloy_signer::Signature);
+pub struct Signature(alloy::signers::Signature);
 
 impl std::ops::Deref for Signature {
-    type Target = alloy_signer::Signature;
+    type Target = alloy::signers::Signature;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -510,7 +526,7 @@ impl Committable for Signature {
 }
 
 // Signer wrapper
-pub struct Signer(alloy_signer_local::PrivateKeySigner);
+pub struct Signer(alloy::signers::local::PrivateKeySigner);
 
 impl Default for Signer {
     fn default() -> Self {
@@ -523,8 +539,8 @@ impl Default for Signer {
     }
 }
 
-impl From<alloy_signer_local::PrivateKeySigner> for Signer {
-    fn from(signer: alloy_signer_local::PrivateKeySigner) -> Self {
+impl From<alloy::signers::local::PrivateKeySigner> for Signer {
+    fn from(signer: alloy::signers::local::PrivateKeySigner) -> Self {
         Signer(signer)
     }
 }
@@ -533,13 +549,13 @@ impl From<alloy_signer_local::PrivateKeySigner> for Signer {
 #[non_exhaustive]
 pub enum InvalidTransaction {
     #[error("invalid signature: {0}")]
-    Signature(#[from] alloy_primitives::SignatureError),
+    Signature(#[from] alloy::primitives::SignatureError),
 
     #[error("recovery error: {0}")]
-    Recovery(#[from] alloy_consensus::crypto::RecoveryError),
+    Recovery(#[from] alloy::consensus::crypto::RecoveryError),
 
     #[error("invalid rlp encoding: {0}")]
-    Rlp(#[from] alloy_rlp::Error),
+    Rlp(#[from] alloy::rlp::Error),
 
     #[cfg(feature = "arbitrary")]
     #[error("arbitrary error: {0}")]
@@ -570,8 +586,8 @@ pub enum ValidationError {
 
 #[cfg(test)]
 mod tests {
-    use alloy_signer::k256::ecdsa::SigningKey;
-    use alloy_signer_local::PrivateKeySigner;
+    use alloy::signers::k256::ecdsa::SigningKey;
+    use alloy::signers::local::PrivateKeySigner;
     use ark_std::rand;
     use ssz::ssz_encode;
 

@@ -60,8 +60,7 @@ async fn main() -> Result<()> {
         addresses.push(addr);
     }
 
-    let mut jh =
-        tokio::spawn(async move { yap(&addresses, &keyset.dec_keyset.pubkey, cli.tps).await });
+    let mut jh = tokio::spawn(async move { yap(&addresses, cli.tps).await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {

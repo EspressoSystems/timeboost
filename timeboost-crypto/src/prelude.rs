@@ -10,8 +10,8 @@
 //! use ark_std::rand;
 //!
 //! let rng = &mut rand::thread_rng();
-//! let sk = DecryptionKey::rand(rng);
-//! let pk = EncryptionKey::from(&sk);
+//! let sk = DkgDecKey::rand(rng);
+//! let pk = DkgEncKey::from(&sk);
 //! let node_idx = 0;
 //! let labeled_sk = sk.label(node_idx);
 //!
@@ -30,21 +30,93 @@
 //! assert_eq!(plaintext, messages[node_idx]);
 //! ```
 
-use ark_bls12_381::G1Projective;
-
 pub use crate::mre;
+use crate::{
+    DecryptionScheme,
+    feldman::FeldmanVss,
+    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
+    vess::{self, ShoupVess},
+};
+use ark_bls12_381::G1Projective;
+use parking_lot::RwLock;
+use std::{ops::Deref, sync::Arc};
+use tokio::sync::Notify;
+pub use vess::VessCiphertext;
 
-/// Encryption key using BLS12-381 G1 curve
-pub type EncryptionKey = mre::EncryptionKey<G1Projective>;
+/// Encryption key used in the DKG and key resharing for secure communication
+pub type DkgEncKey = mre::EncryptionKey<G1Projective>;
 
-/// Decryption key using BLS12-381 G1 curve  
-pub type DecryptionKey = mre::DecryptionKey<G1Projective>;
+/// Decryption key used in the DKG and key resharing for secure communication
+pub type DkgDecKey = mre::DecryptionKey<G1Projective>;
 
-/// Labeled decryption key using BLS12-381 G1 curve
-pub type LabeledDecryptionKey = mre::LabeledDecryptionKey<G1Projective>;
+/// [`DkgDecryptionKey`] labeled with key/node ID
+pub type LabeledDkgDecKey = mre::LabeledDecryptionKey<G1Projective>;
 
 /// Multi-recipient ciphertext using BLS12-381 G1 curve and SHA-256
 pub type MultiRecvCiphertext = mre::MultiRecvCiphertext<G1Projective>;
 
-/// Individual recipient ciphertext using BLS12-381 G1 curve and SHA-256  
-pub type Ciphertext = mre::Ciphertext<G1Projective>;
+/// Individual recipient ciphertext for encryption/decryption key used in DKG or key resharing
+pub type DkgCiphertext = mre::Ciphertext<G1Projective>;
+
+/// Verifiable Encrypted Secret Sharing (VESS) scheme used in DKG/resharing
+pub type Vess = ShoupVess<G1Projective>;
+
+/// Verifiable secret sharing scheme used in DKG/resharing
+pub type Vss = FeldmanVss<G1Projective>;
+
+/// Commitment to a Shamir secret dealing
+pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::Commitment;
+
+/// Public encryption key in the threshold decryption scheme
+pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+
+/// Combiner key in the threshold decryption scheme
+pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+
+/// Decryption key share in the threshold decryption scheme
+pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
+
+/// `ThresholdEncKeyCell` is a thread-safe container for an optional `ThresholdEncKey`
+/// that allows asynchronous notification when the key is set.
+///
+/// Internally, it uses an `RwLock<Option<ThresholdEncKey>>` to guard the key,
+/// and a `Notify` to wake up tasks waiting for the key to become available.
+#[derive(Debug, Clone, Default)]
+pub struct ThresholdEncKeyCell {
+    key: Arc<RwLock<Option<ThresholdEncKey>>>,
+    notify: Arc<Notify>,
+}
+
+impl ThresholdEncKeyCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, key: ThresholdEncKey) {
+        *self.key.write() = Some(key);
+        self.notify.notify_waiters();
+    }
+
+    pub fn get(&self) -> Option<ThresholdEncKey> {
+        (*self.key.read()).clone()
+    }
+
+    pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdEncKey>> {
+        self.key.read()
+    }
+
+    /// Asynchronously waits for the key to become available, then returns it.
+    ///
+    /// If the key is already present, it is returned immediately.
+    /// Otherwise, the current task is suspended until `set()` is called.
+    ///
+    /// The returned key is a clone of the stored key.
+    pub async fn wait(&self) -> ThresholdEncKey {
+        loop {
+            if let Some(k) = self.get() {
+                return k;
+            }
+            self.notify.notified().await;
+        }
+    }
+}

@@ -2,13 +2,13 @@ mod worker;
 
 use std::io;
 
-use alloy_eips::Encodable2718;
+use alloy::eips::Encodable2718;
 use cliquenet::Address;
 use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use timeboost_proto::forward::forward_api_client::ForwardApiClient;
 use timeboost_proto::inclusion::InclusionList;
-use timeboost_types::{Timestamp, Transaction};
+use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
@@ -44,6 +44,7 @@ impl NitroForwarder {
         round: RoundNumber,
         timestamp: Timestamp,
         txns: &[Transaction],
+        index: DelayedInboxIndex,
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
@@ -56,7 +57,7 @@ impl NitroForwarder {
                 })
                 .collect(),
             consensus_timestamp: timestamp.into(),
-            delayed_messages_read: 0,
+            delayed_messages_read: index.into(),
         };
         self.incls_tx
             .send(incl)

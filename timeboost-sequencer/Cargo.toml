@@ -6,8 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alloy-consensus = { workspace = true }
+alloy = { workspace = true }
 arrayvec = { workspace = true }
+ark-std = { workspace = true }
 bimap = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
@@ -23,6 +24,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
@@ -30,4 +32,3 @@ tracing = { workspace = true }
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 portpicker = { workspace = true }
-timeboost-utils = { path = "../timeboost-utils" }
