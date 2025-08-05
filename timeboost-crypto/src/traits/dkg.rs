@@ -94,10 +94,8 @@ pub trait KeyResharing<VSS: VerifiableSecretSharing> {
     fn combine(
         old_pp: &VSS::PublicParam,
         new_pp: &VSS::PublicParam,
-        send_node_indices: &[usize],
-        row_commitments: &[VSS::Commitment],
         recv_node_idx: usize,
-        recv_reshares: &[VSS::SecretShare],
+        reshares: impl ExactSizeIterator<Item = (usize, VSS::SecretShare, VSS::Commitment)> + Clone,
     ) -> Result<(VSS::Secret, VSS::Commitment), VssError>;
 }
 
