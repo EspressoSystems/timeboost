@@ -9,7 +9,7 @@ use derive_more::{Deref, From, IntoIterator};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::{iter::successors, num::NonZeroUsize};
+use std::{iter::successors, num::NonZeroUsize, ops::Add};
 
 use crate::{
     interpolation::{interpolate, interpolate_in_exponent},
@@ -208,6 +208,30 @@ impl<C: CurveGroup> FeldmanCommitment<C> {
     }
     pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
         crate::try_from_str::<Self, N>(value)
+    }
+}
+
+// Implementation of Add trait for FeldmanCommitment + &FeldmanCommitment
+impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: &FeldmanCommitment<C>) -> Self::Output {
+        &self + other
+    }
+}
+
+// Implementation of Add trait for &FeldmanCommitment + &FeldmanCommitment
+impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for &FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: &FeldmanCommitment<C>) -> Self::Output {
+        let combined: Vec<C> = self
+            .comm
+            .iter()
+            .zip(other.comm.iter())
+            .map(|(x, y)| *x + y)
+            .collect();
+        C::normalize_batch(&combined).into()
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, btree_map};
 
 use anyhow::anyhow;
-use ark_ec::{AffineRepr, CurveGroup};
+use ark_ec::AffineRepr;
 use multisig::{Committee, CommitteeId, KeyId};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -60,16 +60,7 @@ impl DecryptionKey {
         let agg_comm = commitments
             .par_iter()
             .cloned()
-            .reduce_with(|a, b| {
-                let combined: Vec<_> = a
-                    .into_iter()
-                    .zip(b.into_iter())
-                    // NOTE: ideally we can use C::normalize_batch(), but C is not exposed,
-                    // minor optimization, so ignore for now.
-                    .map(|(x, y)| (x + y).into_affine())
-                    .collect();
-                combined.into()
-            })
+            .reduce_with(|a, b| a + &b)
             .ok_or_else(|| anyhow!("no commitments provided"))?;
         let agg_key_share = key_shares.iter().sum();
 
