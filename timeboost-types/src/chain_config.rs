@@ -1,5 +1,5 @@
-use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::Address;
+use alloy::eips::BlockNumberOrTag;
+use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use url::Url;
 

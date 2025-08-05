@@ -1,10 +1,11 @@
 use std::time::Duration;
 
-use alloy_consensus::BlockHeader;
-use alloy_primitives::{Address, U256};
-use alloy_provider::{Network, Provider, RootProvider, network::BlockResponse};
-use alloy_rpc_types::{BlockId, BlockNumberOrTag, Filter};
-use alloy_sol_types::{SolEvent, sol};
+use alloy::consensus::BlockHeader;
+use alloy::primitives::{Address, U256};
+use alloy::providers::{Network, Provider, RootProvider, network::BlockResponse};
+use alloy::rpc::types::{BlockId, BlockNumberOrTag, Filter};
+use alloy::sol;
+use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
 use timeboost_types::ChainConfig;
 use tokio::time::sleep;

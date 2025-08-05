@@ -1,5 +1,5 @@
-use alloy_chains::NamedChain;
-use alloy_providers::ProviderBuilder;
+use alloy::chains::NamedChain;
+use alloy::providers::ProviderBuilder;
 use committable::{Commitment, Committable};
 use dashmap::DashMap;
 use futures::future::join_all;
