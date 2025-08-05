@@ -51,7 +51,7 @@ pub trait VerifiableSecretSharing {
     /// Returns `Ok(secret)` if reconstruction succeeds, or an appropriate `VssError` otherwise.
     fn reconstruct(
         pp: &Self::PublicParam,
-        shares: impl Iterator<Item = (usize, Self::SecretShare)>,
+        shares: impl ExactSizeIterator<Item = (usize, Self::SecretShare)> + Clone,
     ) -> Result<Self::Secret, VssError>;
 }
 

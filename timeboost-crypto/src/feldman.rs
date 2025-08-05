@@ -153,27 +153,26 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
 
     fn reconstruct(
         pp: &Self::PublicParam,
-        shares: impl Iterator<Item = (usize, Self::SecretShare)>,
+        shares: impl ExactSizeIterator<Item = (usize, Self::SecretShare)> + Clone,
     ) -> Result<Self::Secret, VssError> {
-        let shares = shares.collect::<Vec<_>>();
         let n = pp.n.get();
         let t = pp.t.get();
         // input validation
         if shares.len() != t {
             return Err(VssError::MismatchedSharesCount(t, shares.len()));
         }
-        for (idx, _) in shares.iter() {
-            if *idx >= n {
-                return Err(VssError::IndexOutOfBound(n - 1, *idx));
+        for (idx, _) in shares.clone() {
+            if idx >= n {
+                return Err(VssError::IndexOutOfBound(n - 1, idx));
             }
         }
 
         // Lagrange interpolate to get back the secret
         let eval_points: Vec<_> = shares
-            .iter()
-            .map(|&(idx, _)| C::ScalarField::from(idx as u64 + 1))
+            .clone()
+            .map(|(idx, _)| C::ScalarField::from(idx as u64 + 1))
             .collect();
-        let evals: Vec<_> = shares.iter().map(|&(_, share)| share).collect();
+        let evals: Vec<_> = shares.map(|(_, share)| share).collect();
         interpolate::<C>(&eval_points, &evals)
             .map_err(|e| VssError::FailedReconstruction(e.to_string()))
     }
