@@ -61,3 +61,67 @@ pub fn select_peer_hosts(
         Box::new(keyset.iter().take(keyset.len())) as Box<dyn Iterator<Item = _>>
     }
 }
+
+/// Wrapper iterator that bridges type conversion
+/// from Iterator<Item = Result<T, E>> to Iterator<Item = T>
+/// while early-returning an Err(E) if any item is an Err, without collecting or allocating memory.
+///
+/// # Usage
+/// ```no_run
+/// fn use_result_iter<I, T, E>(iter: I) -> Result<(), E>
+/// where
+///     I: Iterator<Item = Result<T, E>>,
+/// {
+///     let mut result_iter = ResultIter::new(iter);
+///     for _ in &mut result_iter {
+///         // use item
+///     }
+///     result_iter.result()
+/// }
+/// ```
+pub struct ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    iter: I,
+    error: Option<E>,
+}
+
+impl<I, T, E> ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    /// construct a new ResultIter
+    pub fn new(iter: I) -> Self {
+        Self { iter, error: None }
+    }
+
+    /// Get the early-return result
+    pub fn result(self) -> Result<(), E> {
+        match self.error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<I, T, E> Iterator for ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.error.is_some() {
+            return None;
+        }
+        match self.iter.next() {
+            Some(Ok(v)) => Some(v),
+            Some(Err(e)) => {
+                self.error = Some(e);
+                None
+            }
+            None => None,
+        }
+    }
+}

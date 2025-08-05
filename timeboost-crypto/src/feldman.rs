@@ -211,7 +211,14 @@ impl<C: CurveGroup> FeldmanCommitment<C> {
     }
 }
 
-// Implementation of Add trait for FeldmanCommitment + &FeldmanCommitment
+impl<C: CurveGroup> Add<FeldmanCommitment<C>> for FeldmanCommitment<C> {
+    type Output = FeldmanCommitment<C>;
+
+    fn add(self, other: FeldmanCommitment<C>) -> Self::Output {
+        &self + &other
+    }
+}
+
 impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for FeldmanCommitment<C> {
     type Output = FeldmanCommitment<C>;
 
@@ -220,7 +227,6 @@ impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for FeldmanCommitment<C> {
     }
 }
 
-// Implementation of Add trait for &FeldmanCommitment + &FeldmanCommitment
 impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for &FeldmanCommitment<C> {
     type Output = FeldmanCommitment<C>;
 
