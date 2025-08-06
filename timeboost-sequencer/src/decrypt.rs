@@ -1372,7 +1372,7 @@ mod tests {
         // double check all dealings are correct
         let start = Instant::now();
         assert!(dealings.iter().all(|(ct, comm)| {
-            vess.verify(&committee, dkg_public_keys.iter(), ct, comm, &dkg_aad)
+            vess.verify_shares(&committee, dkg_public_keys.iter(), ct, comm, &dkg_aad)
                 .is_ok()
         }));
         tracing::info!(
