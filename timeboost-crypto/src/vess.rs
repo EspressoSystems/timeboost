@@ -860,7 +860,9 @@ impl From<spongefish::DomainSeparatorMismatch> for VessError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::traits::dkg::KeyResharing;
     use ark_bls12_381::{Fr, G1Projective};
+    use ark_ec::PrimeGroup;
     use ark_std::{
         UniformRand,
         rand::{SeedableRng, rngs::StdRng},
@@ -872,22 +874,25 @@ mod tests {
 
     type Vss = FeldmanVss<G1Projective>;
 
+    /// Helper function to create a test committee with specified parameters
+    fn create_test_committee(epoch: u64, size: usize) -> multisig::Committee {
+        let keypairs: Vec<multisig::Keypair> =
+            (0..size).map(|_| multisig::Keypair::generate()).collect();
+        multisig::Committee::new(
+            epoch,
+            keypairs
+                .iter()
+                .enumerate()
+                .map(|(i, kp)| (i as u8, kp.public_key())),
+        )
+    }
+
     fn test_vess_correctness_helper(vess: ShoupVess<G1Projective>) {
         let rng = &mut StdRng::seed_from_u64(0);
         let secret = Fr::rand(rng);
 
         // Create a test committee
-        let committee_size = 13;
-        let keypairs: Vec<multisig::Keypair> = (0..committee_size)
-            .map(|_| multisig::Keypair::generate())
-            .collect();
-        let committee = multisig::Committee::new(
-            0u64,
-            keypairs
-                .iter()
-                .enumerate()
-                .map(|(i, kp)| (i as u8, kp.public_key())),
-        );
+        let committee = create_test_committee(0, 13);
         let n = committee.size().get();
 
         let recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
@@ -944,5 +949,186 @@ mod tests {
             // ensure every subset is unique (has not been inserted before)
             assert!(subsets.insert(subset));
         }
+    }
+
+    /// Test VESS resharing functionality with comprehensive verification
+    #[test]
+    fn test_vess_resharing_correctness() {
+        test_vess_resharing_helper(ShoupVess::new_fast());
+        test_vess_resharing_helper(ShoupVess::new_short());
+    }
+
+    /// Helper function for testing VESS resharing with different parameter sets
+    fn test_vess_resharing_helper(vess: ShoupVess<G1Projective>) {
+        let rng = &mut StdRng::seed_from_u64(42);
+
+        // Test multiple scenarios with different committee sizes
+        let test_scenarios = vec![
+            (7, 7), // Same committee size
+            (5, 8), // Expanding committee
+            (9, 6), // Shrinking committee
+            (6, 7), // Mixed changes
+        ];
+
+        for (old_n, new_n) in test_scenarios {
+            run_vess_resharing_scenario(&vess, old_n, new_n, rng);
+        }
+    }
+
+    /// Core test logic for a single VESS resharing scenario
+    fn run_vess_resharing_scenario(
+        vess: &ShoupVess<G1Projective>,
+        old_n: usize,
+        new_n: usize,
+        rng: &mut StdRng,
+    ) {
+        // Step 1: Set up old committee and perform initial VSS
+        let old_committee = create_test_committee(0, old_n);
+        let secret = Fr::rand(rng);
+        let old_vss_pp = FeldmanVssPublicParam::from(&old_committee);
+        let (old_shares, old_commitment) = Vss::share(&old_vss_pp, rng, secret);
+
+        // Step 2: Set up new committee
+        let new_committee = create_test_committee(1, new_n);
+        let new_vss_pp = FeldmanVssPublicParam::from(&new_committee);
+
+        // Generate encryption keys for new committee members
+        let new_recv_sks: Vec<mre::DecryptionKey<G1Projective>> =
+            repeat_with(|| mre::DecryptionKey::rand(rng))
+                .take(new_n)
+                .collect();
+        let new_recv_pks: BTreeMap<usize, mre::EncryptionKey<G1Projective>> = new_recv_sks
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i, mre::EncryptionKey::from(sk)))
+            .collect();
+        let new_labeled_sks: Vec<LabeledDecryptionKey<G1Projective>> = new_recv_sks
+            .into_iter()
+            .enumerate()
+            .map(|(i, sk)| sk.label(i))
+            .collect();
+
+        // Step 3: Perform resharing for each old committee member
+        let aad = b"reshare_test_associated_data";
+        let mut reshare_dealings = Vec::new();
+
+        // Each old committee member creates encrypted reshares
+        for (sender_idx, old_share) in old_shares.iter().enumerate() {
+            // Derive the public share for this sender from the old committee
+            let sender_pub_share = G1Projective::generator() * old_shares[sender_idx];
+
+            // Create VESS encrypted reshares using the public encrypt_reshares API
+            let (reshare_ct, reshare_comm) = vess
+                .encrypt_reshares(&new_committee, new_recv_pks.values(), *old_share, aad)
+                .expect("Reshare encryption should succeed");
+
+            // Step 4: Verify the encrypted reshares
+            assert!(
+                vess.verify_reshares(
+                    &new_committee,
+                    new_recv_pks.values(),
+                    &reshare_ct,
+                    &reshare_comm,
+                    aad,
+                    sender_pub_share,
+                )
+                .is_ok(),
+                "Reshare verification should succeed for sender {sender_idx}"
+            );
+
+            reshare_dealings.push((reshare_ct, reshare_comm, sender_pub_share));
+        }
+
+        // Step 5: Decrypt reshares and verify they pass FeldmanVss::verify_reshare
+        for (new_member_idx, new_labeled_sk) in new_labeled_sks.iter().enumerate() {
+            // Decrypt reshares from each old committee member
+            for (sender_idx, (reshare_ct, reshare_comm, sender_pub_share)) in
+                reshare_dealings.iter().enumerate()
+            {
+                let decrypted_reshare = vess
+                    .decrypt_reshare(
+                        &new_committee,
+                        new_labeled_sk,
+                        reshare_ct,
+                        aad,
+                        *sender_pub_share,
+                    )
+                    .expect(
+                        "Decrypt should succeed, sender: {sender_idx}, receiver: {new_member_idx}",
+                    );
+
+                assert!(
+                    Vss::verify_reshare(
+                        &old_vss_pp,
+                        &new_vss_pp,
+                        sender_idx,
+                        new_member_idx,
+                        &old_commitment,
+                        reshare_comm,
+                        &decrypted_reshare,
+                    )
+                    .is_ok(),
+                    "Verification should pass, sender: {sender_idx}, receiver: {new_member_idx}"
+                );
+            }
+        }
+    }
+
+    /// Test invalid scenarios that should fail verification
+    #[test]
+    fn test_vess_resharing_basic_soundness() {
+        let vess = ShoupVess::new_fast();
+        let rng = &mut StdRng::seed_from_u64(456);
+
+        // Set up committees
+        let old_committee = create_test_committee(0, 3);
+        let new_committee = create_test_committee(1, 4);
+
+        let secret = Fr::rand(rng);
+        let old_vss_pp = FeldmanVssPublicParam::from(&old_committee);
+        let (old_shares, old_commitment) = Vss::share(&old_vss_pp, rng, secret);
+
+        // Create recipient keys
+        let new_recv_pks: Vec<mre::EncryptionKey<G1Projective>> = (0..4)
+            .map(|_| mre::EncryptionKey::from(&mre::DecryptionKey::rand(rng)))
+            .collect();
+
+        let sender_pub_share = Vss::derive_public_share_unchecked(0, &old_commitment);
+        let aad = b"test_failure_cases";
+
+        // Create valid encrypted reshares
+        let (reshare_ct, reshare_comm) = vess
+            .encrypt_reshares(&new_committee, &new_recv_pks, old_shares[0], aad)
+            .unwrap();
+
+        // Test 1: Wrong public share should fail verification
+        let wrong_pub_share = G1Projective::generator() * Fr::rand(rng);
+        assert!(
+            vess.verify_reshares(
+                &new_committee,
+                &new_recv_pks,
+                &reshare_ct,
+                &reshare_comm,
+                aad,
+                wrong_pub_share,
+            )
+            .is_err(),
+            "Verification with wrong public share should fail"
+        );
+
+        // Test 2: Wrong AAD should fail verification
+        let wrong_aad = b"wrong_associated_data";
+        assert!(
+            vess.verify_reshares(
+                &new_committee,
+                &new_recv_pks,
+                &reshare_ct,
+                &reshare_comm,
+                wrong_aad,
+                sender_pub_share,
+            )
+            .is_err(),
+            "Verification with wrong AAD should fail"
+        );
     }
 }
