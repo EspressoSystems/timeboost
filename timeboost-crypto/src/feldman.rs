@@ -6,6 +6,7 @@ use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
 use derive_more::{Deref, From, IntoIterator};
+use multisig::Committee;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -31,6 +32,10 @@ pub struct FeldmanVssPublicParam {
 impl FeldmanVssPublicParam {
     pub fn new(t: NonZeroUsize, n: NonZeroUsize) -> Self {
         Self { t, n }
+    }
+
+    pub fn from(c: &Committee) -> Self {
+        Self::new(c.one_honest_threshold(), c.size())
     }
 
     pub fn threshold(&self) -> usize {
