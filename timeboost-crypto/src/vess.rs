@@ -498,18 +498,11 @@ impl<C: CurveGroup> ShoupVess<C> {
             .io_pattern(&vss_pp, aad, &mode)
             .to_verifier_state(&ct.transcript);
 
-        // verifier logic until Step 4b
-        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts) =
+        // verifier logic
+        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts, mut seeds) =
             self.verify_core(&vss_pp, &mut verifier_state, &mode)?;
         if &expected_comm != comm {
             return Err(VessError::WrongCommitment);
-        }
-
-        // parse out prover's response for k notin S
-        let mut seeds = VecDeque::new();
-        for _ in self.subset_size..self.num_repetition {
-            let seed: [u8; 32] = verifier_state.next_bytes()?;
-            seeds.push_back(seed);
         }
 
         // recompute the hash of all the dealings,
@@ -570,13 +563,13 @@ impl<C: CurveGroup> ShoupVess<C> {
         }
     }
 
-    // Verifier's core logic until step 4.b (exclusive), shared between `verify()` and `decrypt()`.
+    // Verifier's core logic, shared between `verify()` and `decrypt()`.
     fn verify_core(
         &self,
         vss_pp: &FeldmanVssPublicParam,
         verifier_state: &mut VerifierState,
         mode: &Mode<C>,
-    ) -> Result<ProverMessageUntilStep4b<C>, VessError> {
+    ) -> Result<ProverMessage<C>, VessError> {
         let t = vss_pp.t.get();
         let n = vss_pp.n.get();
 
@@ -624,7 +617,15 @@ impl<C: CurveGroup> ShoupVess<C> {
             }
             mre_cts.push_back(MultiRecvCiphertext { epk, cts });
         }
-        Ok((comm.into(), h, subset_seed, shifted_polys, mre_cts))
+
+        // parse out prover's response for k notin S (now internalized)
+        let mut seeds = VecDeque::new();
+        for _ in self.subset_size..self.num_repetition {
+            let seed: [u8; 32] = verifier_state.next_bytes()?;
+            seeds.push_back(seed);
+        }
+
+        Ok((comm.into(), h, subset_seed, shifted_polys, mre_cts, seeds))
     }
 
     // core logic to decrypt
@@ -643,8 +644,8 @@ impl<C: CurveGroup> ShoupVess<C> {
             .io_pattern(&vss_pp, aad, &mode)
             .to_verifier_state(&ct.transcript);
 
-        // verifier logic until Step 4b
-        let (comm, _h, subset_seed, shifted_polys, mre_cts) =
+        // verifier logic
+        let (comm, _h, subset_seed, shifted_polys, mre_cts, _seeds) =
             self.verify_core(&vss_pp, &mut verifier_state, &mode)?;
         let subset_indices = self.map_subset_seed(subset_seed);
         debug_assert_eq!(subset_indices.len(), shifted_polys.len());
@@ -675,17 +676,19 @@ impl<C: CurveGroup> ShoupVess<C> {
     }
 }
 
-/// (C, h, s, { rho_k.shifted_poly }_{k in S}, { rho_k.mre_ciphertext }_{k in S})
+/// (C, h, s, { rho_k.shifted_poly }_{k in S}, { rho_k.mre_ciphertext }_{k in S}, seeds)
 /// where C is Feldman commitment, h is output of H_compress of all dealings,
 /// s is subset seed, S is the corresponding subset
 /// shifted_poly is omega''_k in paper
+/// seeds are the random seeds for k not in S
 #[allow(type_alias_bounds)]
-type ProverMessageUntilStep4b<C: CurveGroup> = (
+type ProverMessage<C: CurveGroup> = (
     FeldmanCommitment<C>,
     [u8; 32],
     [u8; 16],
     VecDeque<Vec<C::ScalarField>>,
     VecDeque<MultiRecvCiphertext<C>>,
+    VecDeque<[u8; 32]>,
 );
 
 // returns x * a / b without overflow panic, assuming the result < u128::MAX
