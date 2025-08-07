@@ -124,3 +124,46 @@ jobs:
       run: just run_demo -l -s /tmp/stamp --ignore-stamp --yapper -k test-configs/local-5.json
     - name: Run sailfish demo
       run: just run_sailfish_demo
+  nitro-timeboost-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    - name: Install Just
+      run: |
+        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
+        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
+        sudo cp just /usr/bin/just
+    - name: Clone Espresso Testnode Repository
+      run: |
+        git clone https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
+        cd decentralized-timeboost-nitro-testnode
+    - name: Run Test Node with Timeboost
+      run: |
+        ./test-node.bash \
+          --build-dev-nitro \
+          --batchposters 0 \
+          --redundantsequencers 1 \
+          --decentralized-timeboost \
+          --init
+          --detach &
+    - name: Check Sequencer Health
+      run: |
+        while true; do
+          if curl -s http://localhost:8547 >/dev/null; then
+            echo "✓ RPC is alive - Proceeding!"
+            break  # Exit loop when healthy
+          else
+            echo "✗ RPC is down (retrying in 5s...)"
+            sleep 5
+          fi
+        done
+        echo "Continuing with workflow..."
+
