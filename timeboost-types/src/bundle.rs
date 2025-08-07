@@ -135,7 +135,7 @@ impl Bundle {
 
         let mut tx = TxEip1559 {
             chain_id,
-            nonce: nonce,
+            nonce,
             max_priority_fee_per_gas,
             max_fee_per_gas,
             gas_limit,
