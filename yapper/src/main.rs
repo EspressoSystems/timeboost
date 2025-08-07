@@ -43,7 +43,7 @@ struct Cli {
     #[clap(long, default_value_t = false)]
     nitro_integration: bool,
 
-    #[clap(long, default_value_t = 10)]
+    #[clap(long, default_value_t = 20)]
     nitro_txn_limit: u64,
 }
 

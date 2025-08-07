@@ -156,7 +156,7 @@ jobs:
           --init &
         cd ..
     - name: Run test timeboost with nitro sequencer
-      run: just run_demo -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 3000 --yapper --nitro
+      run: just run_demo -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 10000 --yapper --nitro
     - name: Verify sequencer blocks
       run: |
         just verify_blocks

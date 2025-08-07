@@ -198,7 +198,7 @@ pub async fn yap_with_nitro(addresses: &[Address], txn_limit: u64) -> Result<()>
         .await;
         txns_sent += 1;
         if txns_sent == txn_limit {
-            tracing::error!("done");
+            tracing::error!("hit txn limit, terminating yapper");
             return Ok(());
         }
         sleep(Duration::from_secs(1)).await;
