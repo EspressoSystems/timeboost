@@ -94,7 +94,7 @@ impl<N: Network> DelayedInbox<N> {
                     .to_block(block_num)
                     .events(&events);
                 prev_block = block_num;
-                tracing::error!("block: {}", block_num);
+
                 if let Ok(mut logs) = self.provider.get_logs(&filter).await {
                     // Make sure event logs are in order, we need highest block number first then
                     // latest log
@@ -103,12 +103,10 @@ impl<N: Network> DelayedInbox<N> {
                             .cmp(&a.block_number)
                             .then(b.log_index.cmp(&a.log_index))
                     });
-                    tracing::error!("logs: {:?}", logs);
                     if let Some((Some(tx_hash), Some(index))) = logs
                         .first()
                         .map(|log| (log.transaction_hash, log.topics().get(1)))
                     {
-                        tracing::error!("index: {:?}", index);
                         // Update delayed index if newer
                         let delayed_idx = U256::from_be_bytes(index.0)
                             .try_into()

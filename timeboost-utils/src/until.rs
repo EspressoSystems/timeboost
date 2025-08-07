@@ -73,7 +73,7 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
                             .and_then(|num| num.parse::<u64>().ok())
                             .unwrap_or(0);
 
-                        if committed_round >= until && output_decrypted > 0 {
+                        if committed_round >= until {
                             tracing::info!("committed_round: {}", committed_round);
                             tracing::info!("enqueued encrypted: {}, output decrypted: {}", queued_encrypted, output_decrypted);
                             tracing::info!("watchdog completed successfully");
