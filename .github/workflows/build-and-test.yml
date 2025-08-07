@@ -143,7 +143,7 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Clone Espresso Testnode Repository
       run: |
-        git clone https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
+        git clone --recursive https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
     - name: Run Test Node with Timeboost
       run: |
         cd decentralized-timeboost-nitro-testnode
