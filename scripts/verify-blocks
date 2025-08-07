@@ -18,7 +18,7 @@ function rpc_call() {
 function get_latest_block() {
   local response=$(rpc_call $RPC1 "eth_blockNumber" "[]")
   local block_hex=$(echo "$response" | jq -r .result)
-  printf "%d" $((block_hex))  # Convert hex to decimal
+  printf "%d" $((block_hex))
 }
 
 function verify_block() {

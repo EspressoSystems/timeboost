@@ -160,15 +160,15 @@ jobs:
         while true; do
           if curl -s http://localhost:8547 >/dev/null; then
             echo "✓ RPC is alive - Proceeding!"
-            break  # Exit loop when healthy
+            break
           else
-            echo "✗ RPC is down (retrying in 5s...)"
+            echo "✗ RPC is down (retrying in 10s...)"
             sleep 10
           fi
         done
         echo "Continuing with workflow..."
-    - name: Run tests with late-start node
-      run: just run_demo -l -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 1000
+    - name: Run test timeboost with nitro sequencer
+      run: just run_demo -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 1000
     - name: Verify sequencer blocks
       run: |
         just verify_blocks
