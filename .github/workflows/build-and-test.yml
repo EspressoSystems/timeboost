@@ -153,8 +153,7 @@ jobs:
           --batchposters 0 \
           --redundantsequencers 1 \
           --decentralized-timeboost \
-          --init
-          --detach &
+          --init 2>&1 | tee testnode.log &
     - name: Check Sequencer Health
       run: |
         while true; do
