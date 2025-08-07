@@ -11,6 +11,7 @@ arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
 [dependencies]
 alloy = { workspace = true }
 alloy-rlp = { workspace = true }
+alloy-signer = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true, optional = true }
 ark-ec = { workspace = true }

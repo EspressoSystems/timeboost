@@ -1,10 +1,15 @@
+use alloy::{
+    network::Ethereum,
+    primitives::address,
+    providers::{Provider, RootProvider},
+};
 use futures::future::join_all;
 use reqwest::{Client, Url};
 use std::{collections::HashMap, time::Duration};
 use timeboost::types::BundleVariant;
 use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
-use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
-use tokio::time::interval;
+use timeboost_utils::load_generation::{make_bundle, make_nitro_bundle, tps_to_millis};
+use tokio::time::{interval, sleep};
 
 use anyhow::{Context, Result};
 use cliquenet::Address;
@@ -150,8 +155,15 @@ pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
 
     let mut acc =
         ThresholdEncKeyCellAccumulator::new(c.clone(), urls.iter().map(|url| url.2.clone()));
+    let rpc_url = "http://localhost:8547";
+    let provider = RootProvider::<Ethereum>::connect(rpc_url)
+        .await
+        .expect("to connect");
+    let address = address!("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E");
 
     loop {
+        let nonce = provider.get_transaction_count(address).await?;
+        println!("Current nonce: {}", nonce);
         // create a bundle for next `interval.tick()`, then send this bundle to each node
         let Ok(b) = make_bundle(acc.enc_key().await) else {
             warn!("failed to generate bundle");
@@ -164,5 +176,38 @@ pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
             send_bundle_to_node(&b, &c, regular_url, priority_url).await
         }))
         .await;
+    }
+}
+
+pub async fn yap_with_nitro(addresses: &[Address], txn_limit: u64) -> Result<()> {
+    let c = Client::builder().timeout(Duration::from_secs(1)).build()?;
+    let urls = setup_urls(addresses)?;
+
+    let mut acc =
+        ThresholdEncKeyCellAccumulator::new(c.clone(), urls.iter().map(|url| url.2.clone()));
+    let rpc_url = "http://localhost:8547";
+    let provider = RootProvider::<Ethereum>::connect(rpc_url)
+        .await
+        .expect("to connect");
+    let address = address!("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E");
+
+    let mut txns_sent = 0;
+    loop {
+        let nonce = provider.get_transaction_count(address).await?;
+        let Ok(b) = make_nitro_bundle(acc.enc_key().await, nonce) else {
+            warn!("failed to generate bundle");
+            continue;
+        };
+
+        join_all(urls.iter().map(|(regular_url, priority_url, _)| async {
+            send_bundle_to_node(&b, &c, regular_url, priority_url).await
+        }))
+        .await;
+        txns_sent += 1;
+        if txns_sent == txn_limit {
+            tracing::error!("done");
+            return Ok(());
+        }
+        sleep(Duration::from_secs(1)).await;
     }
 }

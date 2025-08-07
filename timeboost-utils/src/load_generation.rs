@@ -43,6 +43,43 @@ pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant
     }
 }
 
+pub fn make_nitro_bundle(
+    pubkey: &ThresholdEncKeyCell,
+    nonce: u64,
+) -> anyhow::Result<BundleVariant> {
+    let mut rng = rand::thread_rng();
+    let mut v = [0; 256];
+    rng.fill(&mut v);
+    let mut u = Unstructured::new(&v);
+
+    let max_seqno = 10;
+    let mut bundle = Bundle::create_testnode_transaction_bundle(nonce)?;
+
+    if let Some(pubkey) = &*pubkey.get_ref()
+        && rng.gen_bool(0.5)
+    {
+        // encrypt bundle
+        let data = bundle.data();
+        let plaintext = Plaintext::new(data.to_vec());
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
+        let encoded = serialize(&ciphertext)?;
+        bundle.set_encrypted_data(encoded.into());
+    }
+
+    if rng.gen_bool(0.5) {
+        // priority
+        let auction = Address::default();
+        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
+        let signer = Signer::default();
+        let priority = PriorityBundle::new(bundle, auction, seqno);
+        let signed_priority = priority.sign(signer)?;
+        Ok(BundleVariant::Priority(signed_priority))
+    } else {
+        // non-priority
+        Ok(BundleVariant::Regular(bundle))
+    }
+}
+
 /// Transactions per second to milliseconds is 1000 / TPS
 pub fn tps_to_millis<N: Into<u64>>(tps: N) -> u64 {
     1000 / tps.into()

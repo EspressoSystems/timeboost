@@ -19,6 +19,8 @@ use tokio::signal::{
 use tracing::{info, warn};
 use tx::yap;
 
+use crate::tx::yap_with_nitro;
+
 mod tx;
 
 #[derive(Parser, Debug)]
@@ -36,6 +38,13 @@ struct Cli {
     /// Specify how to read the configuration file.
     #[clap(long, default_value_t = false)]
     multi_region: bool,
+
+    /// Is there a nitro setup?
+    #[clap(long, default_value_t = false)]
+    nitro_integration: bool,
+
+    #[clap(long, default_value_t = 10)]
+    nitro_txn_limit: u64,
 }
 
 #[tokio::main]
@@ -60,7 +69,13 @@ async fn main() -> Result<()> {
         addresses.push(addr);
     }
 
-    let mut jh = tokio::spawn(async move { yap(&addresses, cli.tps).await });
+    let mut jh = tokio::spawn(async move {
+        if !cli.nitro_integration {
+            yap(&addresses, cli.tps).await
+        } else {
+            yap_with_nitro(&addresses, cli.nitro_txn_limit).await
+        }
+    });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {

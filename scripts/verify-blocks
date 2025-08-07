@@ -26,6 +26,7 @@ function verify_block() {
   local block_hex=$(printf "0x%x" $block_num)
   
   echo -n "Verifying block $block_num (0x${block_hex#0x})..."
+  echo
   
   block1=$(rpc_call $RPC1 "eth_getBlockByNumber" "[\"$block_hex\", true]")
   block2=$(rpc_call $RPC2 "eth_getBlockByNumber" "[\"$block_hex\", true]")
@@ -45,19 +46,31 @@ function verify_block() {
   
   tx_count=$(echo "$block1" | jq -r '.result.transactions | length')
   echo -n " $tx_count tx..."
+  echo
   
   for ((i=0; i<tx_count; i++)); do
-    tx_hash=$(echo "$block1" | jq -r .result.transactions[$i].hash)
-    tx1=$(rpc_call $RPC1 "eth_getTransactionByHash" "[\"$tx_hash\"]")
-    tx2=$(rpc_call $RPC2 "eth_getTransactionByHash" "[\"$tx_hash\"]")
+    tx_hash1=$(echo "$block1" | jq -r .result.transactions[$i].hash)
+    tx_hash2=$(echo "$block2" | jq -r .result.transactions[$i].hash)
+    
+    # Verify transaction order and hash match
+    if [ "$tx_hash1" != "$tx_hash2" ]; then
+        echo "❌ Transaction order mismatch at position $i!"
+        echo "  $RPC1: $tx_hash1"
+        echo "  $RPC2: $tx_hash2"
+        return 1
+    fi
+    
+    tx1=$(rpc_call $RPC1 "eth_getTransactionByHash" "[\"$tx_hash1\"]")
+    tx2=$(rpc_call $RPC2 "eth_getTransactionByHash" "[\"$tx_hash2\"]")
     
     if [ "$tx1" != "$tx2" ]; then
-      echo "❌ Tx $tx_hash mismatch!"
-      return 1
+        echo "❌ Tx content mismatch for $tx_hash1!"
+        return 1
     fi
+    printf "✅ Tx content match for $tx_hash1!"
+    echo
   done
-  
-  echo " ✅"
+  echo
   return 0
 }
 

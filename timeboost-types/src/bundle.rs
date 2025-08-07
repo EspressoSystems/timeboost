@@ -1,12 +1,16 @@
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
 
 use alloy::consensus::transaction::SignerRecoverable;
-use alloy::consensus::{Sealed, TxEnvelope};
+use alloy::consensus::{Sealed, SignableTransaction, TxEip1559, TxEnvelope};
 use alloy::eips::{Encodable2718, Typed2718};
-use alloy::primitives::B256;
+use alloy::network::TxSignerSync;
+use alloy::primitives::{B256, TxKind, U256, address};
 use alloy::rlp::Decodable;
+use alloy::rpc::types::AccessList;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Error, SignerSync, k256::ecdsa::SigningKey};
+use alloy_rlp::Encodable;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::CommitteeId;
@@ -115,6 +119,47 @@ impl Bundle {
         let b = Bundle::new(c, e, encoded.into(), false);
 
         Ok(b)
+    }
+
+    pub fn create_testnode_transaction_bundle(nonce: u64) -> Result<Bundle, InvalidTransaction> {
+        // private key from pre funded dev account on test node
+        // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation
+        let private_key = "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659";
+        let to_address: alloy::primitives::Address =
+            address!("6A568afe0f82d34759347bb36F14A6bB171d2CBe");
+        let chain_id = 412346;
+        let value = U256::from(1);
+        let gas_limit = 21000;
+        let max_fee_per_gas = 1000000000;
+        let max_priority_fee_per_gas = 1000000000;
+
+        let mut tx = TxEip1559 {
+            chain_id,
+            nonce: nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to: TxKind::Call(to_address),
+            value,
+            input: alloy::primitives::Bytes::new(),
+            access_list: AccessList::default(),
+        };
+
+        let signer = PrivateKeySigner::from_str(private_key).expect("valid private key");
+        let signature = signer
+            .sign_transaction_sync(&mut tx)
+            .expect("valid signature");
+        let signed_tx = tx.into_signed(signature);
+        let tx_envelope = TxEnvelope::Eip1559(signed_tx);
+
+        let mut rlp_encoded = Vec::new();
+        tx_envelope.encode(&mut rlp_encoded);
+
+        let encoded = ssz::ssz_encode(&vec![&rlp_encoded]);
+
+        let bundle = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
+
+        Ok(bundle)
     }
 }
 
