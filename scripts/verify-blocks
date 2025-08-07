@@ -1,0 +1,76 @@
+#!/bin/bash
+set -euo pipefail
+
+# Configuration
+RPC1="http://localhost:8547"
+RPC2="http://localhost:8647"
+
+function rpc_call() {
+  local endpoint=$1
+  local method=$2
+  local params=$3
+  curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}" \
+    $endpoint
+}
+
+function get_latest_block() {
+  local response=$(rpc_call $RPC1 "eth_blockNumber" "[]")
+  local block_hex=$(echo "$response" | jq -r .result)
+  printf "%d" $((block_hex))  # Convert hex to decimal
+}
+
+function verify_block() {
+  local block_num=$1
+  local block_hex=$(printf "0x%x" $block_num)
+  
+  echo -n "Verifying block $block_num (0x${block_hex#0x})..."
+  
+  block1=$(rpc_call $RPC1 "eth_getBlockByNumber" "[\"$block_hex\", true]")
+  block2=$(rpc_call $RPC2 "eth_getBlockByNumber" "[\"$block_hex\", true]")
+  
+  if [ "$(echo "$block1" | jq -r .result)" == "null" ] || [ "$(echo "$block2" | jq -r .result)" == "null" ]; then
+    echo "❌ Block not found on one or both endpoints!"
+    return 1
+  fi
+  
+  hash1=$(echo "$block1" | jq -r .result.hash)
+  hash2=$(echo "$block2" | jq -r .result.hash)
+  
+  if [ "$hash1" != "$hash2" ]; then
+    echo "❌ Hash mismatch! $RPC1: $hash1, $RPC2: $hash2"
+    return 1
+  fi
+  
+  tx_count=$(echo "$block1" | jq -r '.result.transactions | length')
+  echo -n " $tx_count tx..."
+  
+  for ((i=0; i<tx_count; i++)); do
+    tx_hash=$(echo "$block1" | jq -r .result.transactions[$i].hash)
+    tx1=$(rpc_call $RPC1 "eth_getTransactionByHash" "[\"$tx_hash\"]")
+    tx2=$(rpc_call $RPC2 "eth_getTransactionByHash" "[\"$tx_hash\"]")
+    
+    if [ "$tx1" != "$tx2" ]; then
+      echo "❌ Tx $tx_hash mismatch!"
+      return 1
+    fi
+  done
+  
+  echo " ✅"
+  return 0
+}
+
+echo "=== Starting Chain Verification ==="
+latest_block=$(get_latest_block)
+echo "Latest block: $latest_block"
+
+for ((block=0; block<=latest_block; block++)); do
+  if ! verify_block $block; then
+    echo "❌ Failed for block $block"
+    exit 1
+  fi
+done
+
+echo "=== Verification Complete ==="
+echo "Successfully verified $((latest_block+1)) blocks"

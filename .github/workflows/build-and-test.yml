@@ -153,7 +153,8 @@ jobs:
           --batchposters 0 \
           --redundantsequencers 1 \
           --decentralized-timeboost \
-          --init
+          --init &
+        cd ..
     - name: Check Sequencer Health
       run: |
         while true; do
@@ -162,8 +163,13 @@ jobs:
             break  # Exit loop when healthy
           else
             echo "✗ RPC is down (retrying in 5s...)"
-            sleep 5
+            sleep 10
           fi
         done
         echo "Continuing with workflow..."
+    - name: Run tests with late-start node
+      run: just run_demo -l -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 1000
+    - name: Verify sequencer blocks
+      run: |
+        just verify_blocks
 

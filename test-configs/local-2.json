@@ -18,7 +18,8 @@
         "signing_key": "CvsiyNPUVMT9z7KK8a5E1qedyctHJbsVDD7vWk2BwenA",
         "dh_key": "CZBrm6uQCF7NZH9uhW7hwYr1kwRU83ax4EZsDKi6evBX",
         "dec_key": "Akm2Zdo5jxgrjjKsssz1zq544BpQA7HLNwFTmc9R95xgL"
-      }
+      },
+      "nitro_addr": "localhost:55000"
     },
     {
       "sailfish_address": "127.0.0.1:8001",
@@ -38,7 +39,8 @@
         "signing_key": "HQQFWDXnReUV5cAUNJygcvBvMSJ2R3ud6MuKVCChNqeX",
         "dh_key": "5iNXUDM6KfJQPvqmRFx7vHZNQdULSpZU9t585m3HWv9m",
         "dec_key": "AgJ3t22a7QbCLhVRCoQxq5caAKmeGCR6JuFEnkwvNXoVQ"
-      }
+      },
+      "nitro_addr": "localhost:55001"
     }
   ]
 }
