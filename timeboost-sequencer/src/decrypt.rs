@@ -152,10 +152,16 @@ impl Decrypter {
             arr
         }));
         let committee = cfg.committee.committee();
+        let cv = if let Some(prev) = &cfg.prev_committee {
+            CommitteeVec::new(prev.committee().clone()).with(committee.clone())
+        } else {
+            CommitteeVec::new(committee.clone())
+        };
+
         let worker = Worker::builder()
             .label(cfg.label)
             .dkg_sk(labeled_sk)
-            .committees(CommitteeVec::new(committee.clone()))
+            .committees(cv.clone())
             .dkg_stores(dkg_stores.clone())
             .current(committee.id())
             .net(Overlay::new(net))

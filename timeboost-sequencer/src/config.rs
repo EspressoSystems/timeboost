@@ -48,6 +48,9 @@ pub struct SequencerConfig {
     /// The previous Sailfish committee.
     pub(crate) previous_sailfish_committee: Option<AddressableCommittee>,
 
+    /// The previous Decrypter committee.
+    pub(crate) previous_decrypt_committee: Option<AddressableCommittee>,
+
     /// Length of the leash between Sailfish and other phases.
     pub(crate) leash_len: usize,
 
@@ -81,6 +84,10 @@ impl SequencerConfig {
 
     pub fn previous_sailfish_committee(&self) -> Option<&AddressableCommittee> {
         self.previous_sailfish_committee.as_ref()
+    }
+
+    pub fn previous_decrypt_committee(&self) -> Option<&AddressableCommittee> {
+        self.previous_decrypt_committee.as_ref()
     }
 
     pub fn decrypt_address(&self) -> &net::Address {
@@ -119,6 +126,7 @@ impl SequencerConfig {
             .dkg_key(self.dkg_key.clone())
             .dkg_store(self.dkg_keystore.clone())
             .committee(self.decrypt_committee.clone())
+            .maybe_prev_committee(self.previous_decrypt_committee.clone())
             .retain(self.leash_len)
             .threshold_enc_key(self.threshold_enc_key.clone())
             .build()
@@ -133,6 +141,7 @@ pub struct DecrypterConfig {
     pub(crate) dkg_key: DkgDecKey,
     pub(crate) dkg_store: DkgKeyStore,
     pub(crate) committee: AddressableCommittee,
+    pub(crate) prev_committee: Option<AddressableCommittee>,
     pub(crate) threshold_enc_key: DecryptionKeyCell,
     pub(crate) retain: usize,
 }
