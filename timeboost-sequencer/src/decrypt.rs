@@ -658,7 +658,7 @@ impl Worker {
         self.net
             .unicast(
                 src,
-                0, // Minimal round number since API requires it
+                self.oldest_cached_round().u64(),
                 serialize(&Protocol::DkgResponse(response))?,
             )
             .await
