@@ -14,10 +14,10 @@ use tracing::{error, info, warn};
 use crate::queue::BundleQueue;
 
 // Polling interval to check for next delayed inbox index
-const INBOX_DELAY: Duration = Duration::from_secs(60);
+const INBOX_DELAY: Duration = Duration::from_secs(10);
 
 // Max lookback for `from_block` to `to_block` in our `Filter` request
-const MAX_BLOCK_LOOKBACK: u64 = 300;
+const MAX_BLOCK_LOOKBACK: u64 = 10000;
 
 sol! {
     event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
