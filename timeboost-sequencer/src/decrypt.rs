@@ -165,7 +165,7 @@ impl Decrypter {
             .dkg_stores(dkg_stores.clone())
             .current(committee.id())
             .net(Overlay::new(net))
-            .dkg_state(DkgState::default())
+            .dkg_state(WorkerState::default())
             .tx(dec_tx)
             .rx(cmd_rx)
             .enc_key(cfg.threshold_enc_key.clone())
@@ -382,22 +382,27 @@ impl Drop for Decrypter {
     }
 }
 
+/// Represents the operational state of the Worker.
 #[derive(Debug, Clone)]
-enum DkgState {
-    /// The node received inclusion lists with encrypted bundles but did not receive enough
-    /// DkgBundles to obtain the key. This suggests that the node is catching up.
-    ///
-    /// In this state, the node will broadcast a DKG subset request and will obtain the key
-    /// once sufficient subsets have been received from remote nodes over the network.
-    Pending(HashMap<PublicKey, Subset>),
-
-    /// The node has completed DKG and can now combine/produce threshold decryption shares.
-    Completed(DecryptionKey),
+enum WorkerState {
+    /// The Worker is awaiting resharing messages from the previous committee.
+    AwaitingHandover(HashMap<PublicKey, Subset>),
+    /// The Worker has received enough resharing messages to complete the handover.
+    HandoverComplete(DecryptionKey),
+    /// (Default State): The Worker expects to obtain the key through Dkg bundles.
+    /// In the scenario where the Worker is catching up, it will also request
+    /// bundles from remote nodes before proceeding.
+    DkgPending(HashMap<PublicKey, Subset>),
+    /// The Worker has already completed at least one instance of Dkg.
+    /// It is ready to receive new bundles to obtain the key for the next committee.
+    ResharingPending(DecryptionKey, HashMap<PublicKey, Subset>),
+    /// The Worker has obtained keys for both the current and next committee.
+    ResharingComplete(DecryptionKey, DecryptionKey),
 }
 
-impl Default for DkgState {
+impl Default for WorkerState {
     fn default() -> Self {
-        Self::Pending(HashMap::new())
+        Self::DkgPending(HashMap::new())
     }
 }
 
@@ -441,8 +446,8 @@ struct Worker {
     /// public key material encrypted DKG bundles (shared with Decrypter)
     dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
 
-    /// Dkg state of the node holding the obtained threshold decryption key.
-    dkg_state: DkgState,
+    /// the state of the node holding obtained threshold decryption key.
+    state: WorkerState,
 
     /// Number of rounds to retain.
     retain: usize,
@@ -495,7 +500,7 @@ impl Worker {
         loop {
             let mut cache_modified = false;
             // process any pending inclusion lists received during recovery
-            if !self.pending.is_empty() && matches!(self.dkg_state, DkgState::Completed(_)) {
+            if !self.pending.is_empty() && matches!(self.state, WorkerState::ResharingPending(_)) {
                 let pending_incls: Vec<_> =
                     std::mem::take(&mut self.pending).into_values().collect();
                 for incl in pending_incls {
@@ -613,7 +618,7 @@ impl Worker {
     async fn on_get_request(&mut self, src: PublicKey, committee_id: CommitteeId) -> Result<()> {
         trace!(node = %self.label, from=%src, %committee_id, "received get_request");
 
-        if !matches!(self.dkg_state, DkgState::Completed(_)) {
+        if !matches!(self.state, WorkerState::ResharingPending(..)) {
             return Err(DecrypterError::Dkg(
                 "received DKG get_request but DKG has not completed".to_string(),
             ));
@@ -660,7 +665,7 @@ impl Worker {
         } = res;
         trace!(node = %self.label, from=%src, %committee_id, "received get_response");
 
-        let DkgState::Pending(ref mut subsets) = self.dkg_state else {
+        let WorkerState::DkgPending(ref mut subsets) = self.state else {
             trace!("received get_response but not in a recovering state");
             return Ok(());
         };
@@ -715,7 +720,7 @@ impl Worker {
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
                 self.enc_key.set(dec_sk.clone());
-                self.dkg_state = DkgState::Completed(dec_sk);
+                self.state = WorkerState::ResharingPending(dec_sk, HashMap::default());
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished (node successfully recovered)");
             }
         }
@@ -822,7 +827,7 @@ impl Worker {
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
                 self.enc_key.set(dec_sk.clone());
-                self.dkg_state = DkgState::Completed(dec_sk);
+                self.state = WorkerState::ResharingPending(dec_sk);
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
             } else {
                 // TODO(resharing): these ciphertexts are for next committee
@@ -920,13 +925,13 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
-        let dec_sk = match &self.dkg_state {
-            DkgState::Pending(_) => {
+        let dec_sk = match &self.state {
+            WorkerState::DkgPending(_) => {
                 // we already initiated catchup; awaiting response from remote nodes.
                 self.pending.insert(incl.round(), incl.clone());
                 return Err(DecrypterError::DkgPending);
             }
-            DkgState::Completed(decryption_key) => decryption_key,
+            WorkerState::ResharingPending(decryption_key) => decryption_key,
         };
 
         let round = Round::new(incl.round(), self.current);
@@ -992,7 +997,7 @@ impl Worker {
     /// decrypted shares is possible due to out-of-order delivery).
     /// Local cache are garbage collected for hatched rounds.
     fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
-        let dec_sk = if let DkgState::Completed(ref dec_sk) = self.dkg_state {
+        let dec_sk = if let WorkerState::ResharingPending(ref dec_sk) = self.state {
             dec_sk
         } else {
             return Ok(None);
