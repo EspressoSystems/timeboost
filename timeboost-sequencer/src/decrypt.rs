@@ -620,7 +620,7 @@ impl Worker {
         Ok(false)
     }
 
-    /// A get request for DKG subset has been received.
+    /// A request for DKG subset has been received.
     async fn on_dkg_request_msg(
         &mut self,
         src: PublicKey,
@@ -667,7 +667,7 @@ impl Worker {
         Ok(())
     }
 
-    /// A get response for DKG subset has been received.
+    /// A response for DKG subset has been received.
     async fn on_dkg_response_msg(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
         let SubsetResponse {
             committee_id,
