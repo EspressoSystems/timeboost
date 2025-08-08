@@ -17,6 +17,10 @@ path = "src/binaries/sailfish.rs"
 name = "mkconfig"
 path = "src/binaries/mkconfig.rs"
 
+[[bin]]
+name = "contract_client"
+path = "src/binaries/contract_client.rs"
+
 [features]
 until = []
 
@@ -24,6 +28,7 @@ until = []
 alloy-chains = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
+alloy-node-bindings = { workspace = true }
 anyhow = { workspace = true }
 ark-std = { workspace = true }
 async-lock = { workspace = true }
@@ -56,9 +61,11 @@ timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
+timeboost-contracts = { path = "../timeboost-contracts/rust" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 vbs = { workspace = true }
+alloy-provider.workspace = true

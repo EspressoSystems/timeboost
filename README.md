@@ -40,6 +40,13 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
   ```sh
   cargo install cargo-nextest
   ```
+
+- **Foundry** (for Solidity development and testing): [Install Foundry](https://book.getfoundry.sh/getting-started/installation)
+  ```sh
+  curl -L https://foundry.paradigm.xyz | bash
+  foundryup
+  ```
+
 - **Docker** (for integration tests, if needed): [Install Docker](https://docs.docker.com/get-docker/)
 
 - **Initialize Submodules:**
@@ -57,6 +64,16 @@ just build
 Release build
 ```shell
 just build_release
+```
+
+## Contracts Build
+```sh
+just build-contracts
+```
+
+## Contract Bindings
+```sh
+just gen-contract-bindings
 ```
 
 ## Run

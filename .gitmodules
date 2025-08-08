@@ -1,3 +1,9 @@
 [submodule "timeboost-proto/protos"]
 	path = timeboost-proto/protos
 	url = https://github.com/EspressoSystems/timeboost-proto.git
+[submodule "timeboost-contracts/lib/openzeppelin-foundry-upgrades"]
+	path = timeboost-contracts/lib/openzeppelin-foundry-upgrades
+	url = https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades
+[submodule "timeboost-contracts/lib/openzeppelin-contracts-upgradeable"]
+	path = timeboost-contracts/lib/openzeppelin-contracts-upgradeable
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable

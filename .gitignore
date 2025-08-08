@@ -36,3 +36,4 @@ bacon.toml
 
 __pycache__/
 
+*.DS_Store
