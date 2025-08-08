@@ -13,9 +13,9 @@ use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, DkgKeyStore};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -25,7 +25,7 @@ use url::Url;
 fn make_configs<R>(
     size: NonZeroUsize,
     recover_index: R,
-) -> (ThresholdEncKeyCell, Vec<(SequencerConfig, CertifierConfig)>)
+) -> (DecryptionKeyCell, Vec<(SequencerConfig, CertifierConfig)>)
 where
     R: Into<Option<usize>>,
 {
@@ -88,7 +88,7 @@ where
     let mut cfgs = Vec::new();
     let recover_index = recover_index.into();
 
-    let enc_key = ThresholdEncKeyCell::new();
+    let enc_key = DecryptionKeyCell::new();
 
     for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
         let conf = SequencerConfig::builder()
@@ -127,9 +127,9 @@ where
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(enc_key: ThresholdEncKeyCell, tx: broadcast::Sender<BundleVariant>) {
+async fn gen_bundles(enc_key: DecryptionKeyCell, tx: broadcast::Sender<BundleVariant>) {
     loop {
-        let Ok(b) = make_bundle(&enc_key) else {
+        let Ok(b) = make_bundle(&enc_key.wait().await.pubkey()) else {
             warn!("Failed to generate bundle");
             continue;
         };

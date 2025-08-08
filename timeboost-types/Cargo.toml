@@ -22,12 +22,14 @@ bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
 multisig = { path = "../multisig" }
+parking_lot = { workspace = true }
 rayon = { workspace = true }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
+tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 

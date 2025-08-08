@@ -213,6 +213,10 @@ impl<C: CurveGroup> PublicKey<C> {
 }
 
 impl<C: CurveGroup> KeyShare<C> {
+    pub fn share(&self) -> &C::ScalarField {
+        &self.share
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing key share")

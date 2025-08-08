@@ -12,9 +12,9 @@ use sailfish::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost::{metrics_api, rpc_api};
+use timeboost_types::DecryptionKeyCell;
 use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
 
-use timeboost_crypto::prelude::ThresholdEncKeyCell;
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::signal;
 use tokio::sync::mpsc;
@@ -168,7 +168,7 @@ async fn main() -> Result<()> {
         KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
 
     let (app_tx, mut app_rx) = mpsc::channel(1024);
-    let enc_key = ThresholdEncKeyCell::new();
+    let enc_key = DecryptionKeyCell::new();
 
     // Spin app_rx in a background thread and just drop the messages using a tokio select.
     // Exiting when we get a ctrl-c.

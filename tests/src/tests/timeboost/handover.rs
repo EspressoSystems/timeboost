@@ -14,9 +14,9 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, DkgKeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -127,7 +127,7 @@ where
             .map(|(i, sk)| (i as u8, sk.into())),
     );
 
-    let enc_key = ThresholdEncKeyCell::new();
+    let enc_key = DecryptionKeyCell::new();
 
     sign_keys
         .into_iter()

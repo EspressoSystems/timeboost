@@ -1,9 +1,14 @@
 use anyhow::anyhow;
 use ark_ec::AffineRepr;
 use multisig::{Committee, CommitteeId, KeyId};
+use parking_lot::RwLock;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, btree_map};
+use std::ops::Deref;
+use std::{
+    collections::{BTreeMap, btree_map},
+    sync::Arc,
+};
 use timeboost_crypto::{
     DecryptionScheme,
     feldman::FeldmanVssPublicParam,
@@ -14,6 +19,7 @@ use timeboost_crypto::{
     },
     vess::VessError,
 };
+use tokio::sync::Notify;
 
 use crate::DkgBundle;
 
@@ -126,6 +132,46 @@ impl DecryptionKey {
 
     pub fn privkey(&self) -> &KeyShare {
         &self.privkey
+    }
+}
+
+/// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
+/// that allows asynchronous notification when the key is set.
+///
+/// Internally, it uses an `RwLock<Option<DecryptionKey>>` to guard the key,
+/// and a `Notify` to wake up tasks waiting for the key to become available.
+#[derive(Debug, Clone, Default)]
+pub struct DecryptionKeyCell {
+    key: Arc<RwLock<Option<DecryptionKey>>>,
+    notify: Arc<Notify>,
+}
+
+impl DecryptionKeyCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, key: DecryptionKey) {
+        *self.key.write() = Some(key);
+        self.notify.notify_waiters();
+    }
+
+    pub fn get(&self) -> Option<DecryptionKey> {
+        (*self.key.read()).clone()
+    }
+
+    pub fn get_ref(&self) -> impl Deref<Target = Option<DecryptionKey>> {
+        self.key.read()
+    }
+
+    pub async fn read(&self) -> DecryptionKey {
+        loop {
+            let fut = self.notify.notified();
+            if let Some(k) = self.get() {
+                return k;
+            }
+            fut.await;
+        }
     }
 }
 

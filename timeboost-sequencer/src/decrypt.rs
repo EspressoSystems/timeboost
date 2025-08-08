@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{
-    DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList, Subset,
+    DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList, Subset,
 };
 use timeboost_utils::ResultIter;
 use tokio::spawn;
@@ -99,8 +99,8 @@ pub struct Decrypter {
     submitted: BTreeSet<CommitteeId>,
     /// decryption committees
     committees: CommitteeVec<2>,
-    // pending encryption key
-    enc_key: ThresholdEncKeyCell,
+    /// pending threshold encryption key material
+    enc_key: DecryptionKeyCell,
     /// dkg stores (shared with Worker)
     dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
     /// Current committee.
@@ -269,6 +269,39 @@ impl Decrypter {
         Some(DkgBundle::new(committee_id, ct, cm))
     }
 
+    /// Generates and returns a new Resharing bundle for the given committee, if not already submitted.
+    ///
+    /// # Returns
+    /// - `Some(DkgBundle)` if a Resharing dealing was successfully created for the committee.
+    /// - `None` if already submitted or if encryption keys are missing.
+    pub fn gen_resharing_bundle<C>(&mut self, committee_id: C) -> Option<DkgBundle>
+    where
+        C: Into<CommitteeId> + Copy,
+    {
+        let committee_id = committee_id.into();
+        if self.submitted.contains(&committee_id) {
+            trace!(node = %self.label, committee = %committee_id, "dkg bundle already submitted");
+            return None;
+        }
+        let stores = self.dkg_stores.read();
+        let Some(store) = stores.iter().find(|s| s.committee().id() == committee_id) else {
+            warn!(node = %self.label, committee = %committee_id, "missing dkg store");
+            return None;
+        };
+        let vess = Vess::new_fast();
+        let Some(dec_sk) = self.enc_key.get() else {
+            warn!(node = %self.label, committee = %committee_id, "no existing key generated to reshare");
+            return None;
+        };
+        let share = dec_sk.privkey().share();
+        let secret = <Vss as VerifiableSecretSharing>::Secret::from(*share);
+        let (ct, cm) = vess
+            .encrypt_reshares(store.committee(), store.sorted_keys(), secret, b"dkg")
+            .ok()?;
+        self.submitted.insert(committee_id);
+        Some(DkgBundle::new(committee_id, ct, cm))
+    }
+
     /// Produces decrypted inclusion lists ordered by round number
     pub async fn next(&mut self) -> StdResult<InclusionList, DecrypterDown> {
         // first try to return the first inclusion list if it's already decrypted
@@ -390,7 +423,7 @@ struct Worker {
     rx: Receiver<Command>,
 
     /// pending encryption key that will be updated after DKG/resharing is done
-    enc_key: ThresholdEncKeyCell,
+    enc_key: DecryptionKeyCell,
 
     /// round number of the first decrypter request, used to ignore received decryption shares for
     /// eariler rounds
@@ -675,7 +708,7 @@ impl Worker {
                     .result()
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                self.enc_key.set(dec_sk.pubkey().clone());
+                self.enc_key.set(dec_sk.clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished (node successfully recovered)");
             }
@@ -782,7 +815,7 @@ impl Worker {
                     .result()
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                self.enc_key.set(dec_sk.pubkey().clone());
+                self.enc_key.set(dec_sk.clone());
                 self.dkg_state = DkgState::Completed(dec_sk);
                 info!(committee_id = %committee.id(), node = %self.label, "DKG finished");
             } else {
@@ -1278,12 +1311,12 @@ mod tests {
     use sailfish::types::{Evidence, Round, RoundNumber};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, ThresholdEncKeyCell, Vess, Vss},
+        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, Vess, Vss},
         traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
     };
     use timeboost_types::{
-        Address, Bundle, ChainId, DkgKeyStore, Epoch, InclusionList, PriorityBundle, SeqNo, Signer,
-        Timestamp,
+        Address, Bundle, ChainId, DecryptionKeyCell, DkgKeyStore, Epoch, InclusionList,
+        PriorityBundle, SeqNo, Signer, Timestamp,
     };
 
     use crate::{config::DecrypterConfig, decrypt::Decrypter, metrics::SequencerMetrics};
@@ -1816,18 +1849,29 @@ mod tests {
 
     /// Generate all DKG bundle (one per decrypter) then enqueue all bundles at all decrypters
     async fn enqueue_all_dkg_bundles(decrypters: &mut [Decrypter], committee_id: Option<u64>) {
-        let dkg_bundles = decrypters
-            .iter_mut()
-            .map(|decrypter| {
-                decrypter
-                    .gen_dkg_bundle(committee_id)
-                    .expect("DKG bundle should be generated")
-            })
-            .collect::<VecDeque<_>>();
+        let bundles = if let Some(committee_id) = committee_id {
+            decrypters
+                .iter_mut()
+                .map(|decrypter| {
+                    decrypter
+                        .gen_resharing_bundle(committee_id)
+                        .expect("DKG bundle should be generated")
+                })
+                .collect::<VecDeque<_>>()
+        } else {
+            decrypters
+                .iter_mut()
+                .map(|decrypter| {
+                    decrypter
+                        .gen_dkg_bundle()
+                        .expect("DKG bundle should be generated")
+                })
+                .collect::<VecDeque<_>>()
+        };
 
         // enqueuing them all to decrypters
         for decrypter in decrypters.iter_mut() {
-            for dkg in dkg_bundles.clone() {
+            for dkg in bundles.clone() {
                 decrypter
                     .enqueue_dkg(dkg)
                     .await
@@ -1955,7 +1999,7 @@ mod tests {
         dh_keys: &[&str],
         dkg_keys: &[&str],
     ) -> (
-        Vec<ThresholdEncKeyCell>,
+        Vec<DecryptionKeyCell>,
         AddressableCommittee,
         DkgKeyStore,
         Vec<Decrypter>,
@@ -2021,7 +2065,7 @@ mod tests {
             let signature_key = signature_keys[peer_index].clone();
             let dh_key = dh_keys[peer_index].clone();
             let (_, _, network_address) = network_peers[peer_index];
-            let encryption_key_cell = ThresholdEncKeyCell::new();
+            let encryption_key_cell = DecryptionKeyCell::new();
 
             let decrypter_config = DecrypterConfig::builder()
                 .label(signature_key.public_key())

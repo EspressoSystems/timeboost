@@ -2,7 +2,7 @@ use futures::future::join_all;
 use reqwest::{Client, Url};
 use std::{collections::HashMap, time::Duration};
 use timeboost::types::BundleVariant;
-use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
+use timeboost_crypto::prelude::ThresholdEncKey;
 use timeboost_utils::load_generation::{make_bundle, tps_to_millis};
 use tokio::time::interval;
 
@@ -86,38 +86,39 @@ async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<Thres
 }
 
 /// helper struct to keep track of sufficient quorum of DKG keys
-struct ThresholdEncKeyCellAccumulator {
+struct DecryptionKeyAccumulator {
     client: Client,
     // DKG results on individual node
     results: HashMap<Url, Option<ThresholdEncKey>>,
     // (t+1)-agreed upon encryption key
-    output: ThresholdEncKeyCell,
+    output: Option<ThresholdEncKey>,
     // threshold for the accumulator to be considered as matured / finalized
     threshold: usize,
 }
 
-impl ThresholdEncKeyCellAccumulator {
+impl DecryptionKeyAccumulator {
     /// give a list of TimeboostApi's endpoint to query `/enckey` status
     pub fn new(client: Client, urls: impl Iterator<Item = Url>) -> Self {
         let results: HashMap<Url, Option<ThresholdEncKey>> = urls.map(|url| (url, None)).collect();
-        let output = ThresholdEncKeyCell::new();
         let threshold = results.len().div_ceil(3);
         Self {
             client,
             results,
-            output,
+            output: None,
             threshold,
         }
     }
 
     /// try to get the threshold encryption key, only available after a threshold of nodes
-    /// finish their DKG processes.
-    pub async fn enc_key(&mut self) -> &ThresholdEncKeyCell {
-        // if result is already available, directly return
-        if self.output.get_ref().is_some() {
-            &self.output
-        } else {
-            // first update DKG status for yet-finished nodes
+    /// finish their DKG processes. This will await until a threshold is reached.
+    pub async fn enc_key(&mut self) -> &ThresholdEncKey {
+        loop {
+            // if result is already available, directly return it
+            if let Some(ref output) = self.output {
+                return output;
+            }
+
+            // update DKG status for yet-to-be-finished nodes
             for (url, res) in self.results.iter_mut() {
                 if res.is_none() {
                     *res = fetch_encryption_key(&self.client, url).await;
@@ -131,12 +132,14 @@ impl ThresholdEncKeyCellAccumulator {
             }
 
             // (t+1)-agreed enc_key is the output
-            for (v, c) in counts.iter() {
-                if *c >= self.threshold {
-                    self.output.set(v.to_owned());
-                }
+            if let Some((agreed_key, _)) =
+                counts.iter().find(|&(_, &count)| count >= self.threshold)
+            {
+                self.output = Some(agreed_key.clone());
+                return self.output.as_ref().expect("output always present");
             }
-            &self.output
+            // wait a bit before retrying
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
 }
@@ -148,8 +151,7 @@ pub async fn yap(addresses: Vec<Address>, tps: u32) -> Result<()> {
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut acc =
-        ThresholdEncKeyCellAccumulator::new(c.clone(), urls.iter().map(|url| url.2.clone()));
+    let mut acc = DecryptionKeyAccumulator::new(c.clone(), urls.iter().map(|url| url.2.clone()));
 
     loop {
         // create a bundle for next `interval.tick()`, then send this bundle to each node

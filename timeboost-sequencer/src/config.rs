@@ -4,8 +4,8 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
-use timeboost_types::{Address, ChainConfig, DelayedInboxIndex, DkgKeyStore};
+use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_types::{Address, ChainConfig, DecryptionKeyCell, DelayedInboxIndex, DkgKeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -52,7 +52,7 @@ pub struct SequencerConfig {
     pub(crate) leash_len: usize,
 
     /// Atomic cell holding the threshold encryption key post DKG.
-    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+    pub(crate) threshold_enc_key: DecryptionKeyCell,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -95,7 +95,7 @@ impl SequencerConfig {
         self.recover
     }
 
-    pub fn enc_key(&self) -> &ThresholdEncKeyCell {
+    pub fn enc_key(&self) -> &DecryptionKeyCell {
         &self.threshold_enc_key
     }
 
@@ -133,6 +133,6 @@ pub struct DecrypterConfig {
     pub(crate) dkg_key: DkgDecKey,
     pub(crate) dkg_store: DkgKeyStore,
     pub(crate) committee: AddressableCommittee,
-    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+    pub(crate) threshold_enc_key: DecryptionKeyCell,
     pub(crate) retain: usize,
 }

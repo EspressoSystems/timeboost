@@ -4,12 +4,12 @@ use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
 use timeboost_crypto::{
-    DecryptionScheme, Plaintext, prelude::ThresholdEncKeyCell,
+    DecryptionScheme, Plaintext, prelude::ThresholdEncKey,
     traits::threshold_enc::ThresholdEncScheme,
 };
 use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
 
-pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant> {
+pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
     rng.fill(&mut v);
@@ -18,13 +18,11 @@ pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant
     let max_seqno = 10;
     let mut bundle = Bundle::arbitrary(&mut u)?;
 
-    if let Some(pubkey) = &*pubkey.get_ref()
-        && rng.gen_bool(0.5)
-    {
+    if rng.gen_bool(0.5) {
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, key, &plaintext, &vec![])?;
         let encoded = serialize(&ciphertext)?;
         bundle.set_encrypted_data(encoded.into());
     }
