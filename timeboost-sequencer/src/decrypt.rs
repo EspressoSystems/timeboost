@@ -1275,7 +1275,7 @@ mod tests {
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
-    use sailfish::types::{Evidence, Round, RoundNumber, UNKNOWN_COMMITTEE_ID};
+    use sailfish::types::{Evidence, Round, RoundNumber};
     use timeboost_crypto::{
         DecryptionScheme, Plaintext,
         prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, ThresholdEncKeyCell, Vess, Vss},
@@ -1299,10 +1299,12 @@ mod tests {
     const NETWORK_SETUP_DELAY_SECS: u64 = 1;
     const DKG_TERMINATION_DELAY_SECS: f32 = 0.5;
     const RETAIN_ROUNDS: usize = 100;
+    const COM1: u64 = 1;
+    const COM2: u64 = 2;
 
     // Pre-generated deterministic keys for consistent testing
     // Generated via: `just mkconfig_local 5 --seed 42`
-    const SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+    const COM1_SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
         "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",
         "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr",
@@ -1310,7 +1312,15 @@ mod tests {
         "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
     ];
 
-    const DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+    const COM2_SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "6YJc9asDJQsFFHHg8iX23oL1sySx2EgTGM8CqDd71WMa",
+        "6NZdk8EGRSVS7sSjcjMiC8vL4KcSY41ELU6HaKyk1Drk",
+        "AMJEYXVhS4FfoqfD6VL5nZTNbzJQdtgdxBcVEAwZnLJ3",
+        "5mLCMSVT4f8HPqCqdKChxugpMcQ3x1C7hwfEnsTApFfp",
+        "4yhZYmNvAouKFpiYomrV9aH8kUZTLRH2hiCZtJzcAASa",
+    ];
+
+    const COM1_DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
         "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
         "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
         "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
@@ -1318,12 +1328,28 @@ mod tests {
         "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
     ];
 
-    const DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+    const COM2_DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "Ho9ZZCkP1i6f12fkWGUZucJxX2qbv9L3UbB56sqwjvkw",
+        "F5E9cp5qUe4z2wdaRYvEhFMYXaLy4sEX1rwCWRcTH69i",
+        "5zhwDWJ1ut6q871aHCHmH7QRCHDykXjUSEriGTLkwezL",
+        "2PojAT3g5iqGTrgLhTRKKHqwbeoFhRkzkYLM9AttFoKK",
+        "Bk2wY7o2YE9gpu6jxiRSbWiMU88H8s9D9MQGMaF2LJ7h",
+    ];
+
+    const COM1_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
         "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
         "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
         "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
         "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
         "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
+    ];
+
+    const COM2_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
+        "AYUPadq8BAQBV5RYNUuLQe4cXuWNhQzYLKDo7uEBJSzbt",
+        "Ag5Dn7DkMcxNLpbHBgrcWchmXx2GZmj9ZSwo7Fo8MyfkM",
+        "AcbRDbHhXpw3DsaxA3gWRTyw2W6FP9V2X1NNNwSvJkSwq",
+        "AjgeTwBByktco4Y5Y1k7oxofF1A7C8zRtiXnkCbpVKixH",
+        "AeJSq3Ef4BuC4CqwB6fKbKL77CeJNHFoHeMJ9hsK8ESo4",
     ];
 
     #[test]
@@ -1482,10 +1508,15 @@ mod tests {
     /// across all committee members in a networked environment.
     async fn test_dkg_termination() {
         logging::init_logging();
-        let (enc_key_cells, _committee, mut decrypters, _signature_keys) = setup().await;
-
+        let (enc_key_cells, _, _, mut decrypters, _) = setup(
+            COM1,
+            &COM1_SIGNATURE_PRIVATE_KEY_STRINGS,
+            &COM1_DH_PRIVATE_KEY_STRINGS,
+            &COM1_DKG_PRIVATE_KEY_STRINGS,
+        )
+        .await;
         // Enqueuing all DKG bundles
-        enqueue_all_dkg_bundles(&mut decrypters).await;
+        enqueue_all_dkg_bundles(&mut decrypters, None).await;
 
         // Allow time for DKG bundles to be processed
         tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
@@ -1499,10 +1530,11 @@ mod tests {
             })
             .collect();
 
-        let expected_public_key = &generated_keys[0];
+        let expected_public_key = generated_keys[0].pubkey();
         for (index, key) in generated_keys.iter().enumerate().skip(1) {
             assert_eq!(
-                key, expected_public_key,
+                key.pubkey(),
+                expected_public_key,
                 "Node {index} has mismatched public key"
             );
         }
@@ -1524,17 +1556,197 @@ mod tests {
         run_dkg_and_decryption_phase_e2e(true).await;
     }
 
+    #[tokio::test]
+    /// Tests the full spectrum of Decrypter states:
+    /// 1. Initial committee completes DKG and decrypts transactions.
+    /// 2. NextCommittee is scheduled and new nodes connect to the network.
+    /// 3. Handover takes effect and old nodes are removed from the network.
+    /// 4. Next committee continues to threshold decrypt transactions.
+    async fn run_dkg_handover_decryption_phase_e2e() {
+        logging::init_logging();
+
+        let (enc_key_cells, committee, _, mut decrypters, signature_keys) = setup(
+            COM1,
+            &COM1_SIGNATURE_PRIVATE_KEY_STRINGS,
+            &COM1_DH_PRIVATE_KEY_STRINGS,
+            &COM1_DKG_PRIVATE_KEY_STRINGS,
+        )
+        .await;
+
+        enqueue_all_dkg_bundles(&mut decrypters, None).await;
+
+        // Allow time for DKG bundle processing
+        tokio::time::sleep(Duration::from_secs_f32(DKG_TERMINATION_DELAY_SECS)).await;
+
+        let encryption_key = &enc_key_cells[0]
+            .get()
+            .expect("encryption key should be generated after DKG");
+
+        // Phase 2: Encrypted transaction testing
+        let priority_tx_message = b"The quick brown fox jumps over the lazy dog";
+        let regular_tx_message = b"The slow brown fox jumps over the lazy dog";
+
+        let decryption_round = RoundNumber::new(DECRYPTION_ROUND);
+        let encrypted_inclusion_list = create_encrypted_inclusion_list(
+            decryption_round,
+            committee.committee().clone(),
+            &signature_keys,
+            encryption_key.pubkey(),
+            priority_tx_message,
+            regular_tx_message,
+        );
+
+        // Enqueues the same inclusion list to all decrypters for processing.
+        for decrypter in decrypters.iter_mut() {
+            decrypter
+                .enqueue(encrypted_inclusion_list.clone())
+                .await
+                .expect("Inclusion list should be enqueued successfully");
+        }
+
+        let decrypted_inclusion_lists = collect_inclusion_lists(&mut decrypters).await;
+
+        // Verify that all decrypted inclusion lists are correct
+        for decrypted_list in decrypted_inclusion_lists {
+            assert_eq!(
+                decrypted_list.round(),
+                RoundNumber::new(DECRYPTION_ROUND),
+                "Decrypted list should have the expected round number"
+            );
+            assert_eq!(
+                decrypted_list.priority_bundles().len(),
+                1,
+                "Should have exactly one priority bundle"
+            );
+            assert_eq!(
+                decrypted_list.regular_bundles().len(),
+                1,
+                "Should have exactly one regular bundle"
+            );
+
+            let decrypted_priority_data = decrypted_list.priority_bundles()[0].bundle().data();
+            let decrypted_regular_data = decrypted_list.regular_bundles()[0].data();
+
+            assert_eq!(
+                decrypted_priority_data.to_vec(),
+                priority_tx_message.to_vec(),
+                "Decrypted priority transaction should match original"
+            );
+            assert_eq!(
+                decrypted_regular_data.to_vec(),
+                regular_tx_message.to_vec(),
+                "Decrypted regular transaction should match original"
+            );
+        }
+
+        // Simulate NextCommittee event
+        let (new_enc_key_cells, new_committee, dkg_store, mut new_decrypters, signature_keys) =
+            setup(
+                COM2,
+                &COM2_SIGNATURE_PRIVATE_KEY_STRINGS,
+                &COM2_DH_PRIVATE_KEY_STRINGS,
+                &COM2_DKG_PRIVATE_KEY_STRINGS,
+            )
+            .await;
+
+        // Trigger NextCommittee event at each existing decrypter
+        for decrypter in decrypters.iter_mut() {
+            decrypter
+                .next_committee(new_committee.clone())
+                .await
+                .expect("next committee event succeeds");
+        }
+
+        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
+
+        enqueue_all_dkg_bundles(&mut decrypters, Some(COM2)).await;
+
+        let change_round = RoundNumber::new(DECRYPTION_ROUND + 1);
+        // Trigger use committee event for both old and new decrypters
+        for decrypter in decrypters.iter_mut().chain(new_decrypters.iter_mut()) {
+            decrypter
+                .use_committee(Round::new(change_round, COM2))
+                .await
+                .expect("next committee event succeeds");
+        }
+
+        // Await all the new_enc_key_cells to ensure decryption key shares are generated
+        for cell in &new_enc_key_cells {
+            let _ = cell.wait().await;
+        }
+
+        let priority_tx_message = b"The new quick brown fox jumps over the lazy dog";
+        let regular_tx_message = b"The new slow brown fox jumps over the lazy dog";
+
+        let encrypted_inclusion_list = create_encrypted_inclusion_list(
+            change_round,
+            committee.committee().clone(),
+            &signature_keys,
+            encryption_key.pubkey(),
+            priority_tx_message,
+            regular_tx_message,
+        );
+
+        // Enqueues the same inclusion list to all new decrypters for processing.
+        for new_decrypter in new_decrypters.iter_mut() {
+            new_decrypter
+                .enqueue(encrypted_inclusion_list.clone())
+                .await
+                .expect("Inclusion list should be enqueued successfully");
+        }
+
+        let decrypted_inclusion_lists = collect_inclusion_lists(&mut new_decrypters).await;
+
+        // Verify that all decrypted inclusion lists are correct
+        for decrypted_list in decrypted_inclusion_lists {
+            assert_eq!(
+                decrypted_list.round(),
+                RoundNumber::new(DECRYPTION_ROUND + 1),
+                "Decrypted list should have the expected round number"
+            );
+            assert_eq!(
+                decrypted_list.priority_bundles().len(),
+                1,
+                "Should have exactly one priority bundle"
+            );
+            assert_eq!(
+                decrypted_list.regular_bundles().len(),
+                1,
+                "Should have exactly one regular bundle"
+            );
+
+            let decrypted_priority_data = decrypted_list.priority_bundles()[0].bundle().data();
+            let decrypted_regular_data = decrypted_list.regular_bundles()[0].data();
+
+            assert_eq!(
+                decrypted_priority_data.to_vec(),
+                priority_tx_message.to_vec(),
+                "Decrypted priority transaction should match original"
+            );
+            assert_eq!(
+                decrypted_regular_data.to_vec(),
+                regular_tx_message.to_vec(),
+                "Decrypted regular transaction should match original"
+            );
+        }
+    }
+
     /// Helper to run DKG and decryption phase E2E test.
     async fn run_dkg_and_decryption_phase_e2e(catchup: bool) {
         logging::init_logging();
 
-        let (enc_key_cells, committee, mut decrypters, signature_keys) = setup().await;
-
+        let (enc_key_cells, committee, _, mut decrypters, signature_keys) = setup(
+            COM1,
+            &COM1_SIGNATURE_PRIVATE_KEY_STRINGS,
+            &COM1_DH_PRIVATE_KEY_STRINGS,
+            &COM1_DKG_PRIVATE_KEY_STRINGS,
+        )
+        .await;
         if catchup {
             // Only use the first 4 decrypters for catchup scenario.
-            enqueue_all_dkg_bundles(&mut decrypters[..4]).await;
+            enqueue_all_dkg_bundles(&mut decrypters[..4], None).await;
         } else {
-            enqueue_all_dkg_bundles(&mut decrypters).await;
+            enqueue_all_dkg_bundles(&mut decrypters, None).await;
         }
 
         // Allow time for DKG bundle processing
@@ -1551,9 +1763,9 @@ mod tests {
         let decryption_round = RoundNumber::new(DECRYPTION_ROUND);
         let encrypted_inclusion_list = create_encrypted_inclusion_list(
             decryption_round,
-            committee,
+            committee.committee().clone(),
             &signature_keys,
-            encryption_key,
+            encryption_key.pubkey(),
             priority_tx_message,
             regular_tx_message,
         );
@@ -1603,12 +1815,12 @@ mod tests {
     }
 
     /// Generate all DKG bundle (one per decrypter) then enqueue all bundles at all decrypters
-    async fn enqueue_all_dkg_bundles(decrypters: &mut [Decrypter]) {
+    async fn enqueue_all_dkg_bundles(decrypters: &mut [Decrypter], committee_id: Option<u64>) {
         let dkg_bundles = decrypters
             .iter_mut()
             .map(|decrypter| {
                 decrypter
-                    .gen_dkg_bundle()
+                    .gen_dkg_bundle(committee_id)
                     .expect("DKG bundle should be generated")
             })
             .collect::<VecDeque<_>>();
@@ -1629,10 +1841,9 @@ mod tests {
     fn create_round_evidence(
         committee: Committee,
         signature_keys: &[SecretKey],
-        current_round: RoundNumber,
+        previous_round: Round,
     ) -> Evidence {
         let mut vote_accumulator = VoteAccumulator::new(committee);
-        let previous_round = Round::new(current_round - 1, UNKNOWN_COMMITTEE_ID);
 
         for secret_key in signature_keys {
             let keypair = Keypair::from(secret_key.clone());
@@ -1672,7 +1883,8 @@ mod tests {
         priority_message: &[u8],
         regular_message: &[u8],
     ) -> InclusionList {
-        let evidence = create_round_evidence(committee, signature_keys, round);
+        let previous_round = Round::new(round - 1, committee.id());
+        let evidence = create_round_evidence(committee, signature_keys, previous_round);
         let empty_aad = vec![];
 
         // Encrypt both message types
@@ -1737,31 +1949,37 @@ mod tests {
     /// Sets up a complete test environment with committee members, decrypters, and network
     /// connections. Returns encryption key cells, committee, decrypters, and signature keys for
     /// testing.
-    async fn setup() -> (
+    async fn setup(
+        committee_id: u64,
+        sig_keys: &[&str],
+        dh_keys: &[&str],
+        dkg_keys: &[&str],
+    ) -> (
         Vec<ThresholdEncKeyCell>,
-        Committee,
+        AddressableCommittee,
+        DkgKeyStore,
         Vec<Decrypter>,
         Vec<SecretKey>,
     ) {
         // Parse all key types from their string representations
-        let signature_keys: Vec<_> = SIGNATURE_PRIVATE_KEY_STRINGS
+        let signature_keys: Vec<_> = sig_keys
             .iter()
             .map(|key_str| SecretKey::try_from(*key_str).expect("Valid signature key string"))
             .collect();
 
-        let dh_keys: Vec<_> = DH_PRIVATE_KEY_STRINGS
+        let dh_keys: Vec<_> = dh_keys
             .iter()
             .map(|key_str| x25519::SecretKey::try_from(*key_str).expect("Valid DH key string"))
             .collect();
 
-        let dkg_keys: Vec<_> = DKG_PRIVATE_KEY_STRINGS
+        let dkg_keys: Vec<_> = dkg_keys
             .iter()
             .map(|key_str| DkgDecKey::try_from_str::<64>(key_str).expect("Valid DKG key string"))
             .collect();
 
         // Create committee from signature keys
         let committee = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
+            committee_id,
             signature_keys
                 .iter()
                 .enumerate()
@@ -1830,6 +2048,12 @@ mod tests {
         // Allow time for network setup
         tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
 
-        (encryption_key_cells, committee, decrypters, signature_keys)
+        (
+            encryption_key_cells,
+            addressable_committee,
+            dkg_store,
+            decrypters,
+            signature_keys,
+        )
     }
 }
