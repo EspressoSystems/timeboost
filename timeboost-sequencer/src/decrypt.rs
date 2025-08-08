@@ -275,7 +275,7 @@ impl Decrypter {
         Some(DkgBundle::new(committee_id, ct, cm))
     }
 
-    /// Generates and returns a new Resharing bundle for the given committee, if not already submitted.
+    /// Generates a new Resharing bundle for the given committee, if not already submitted.
     ///
     /// # Returns
     /// - `Some(DkgBundle)` if a Resharing dealing was successfully created for the committee.

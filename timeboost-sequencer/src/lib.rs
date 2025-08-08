@@ -269,7 +269,7 @@ impl Task {
             candidates = self.execute(actions).await?;
         }
 
-        // TODO: move/copy to main loop when resharing
+        // DKG bundle generation
         if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
             self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
         }
@@ -334,7 +334,10 @@ impl Task {
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
                     Some(Command::NextCommittee(t, a, b)) => {
-                        // TODO(alex): reshare dealing generation here
+                        // Resharing bundle generation
+                        if let Some(bundle) = self.decrypter.gen_resharing_bundle(a.committee().id()) {
+                            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+                        }
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
