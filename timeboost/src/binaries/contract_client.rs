@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Example: Get the chain ID
     let chain_id = provider.get_chain_id().await?;
-    println!("Chain ID: {}", chain_id);
+    println!("Chain ID: {chain_id}");
 
     // Deploy the `KeyManager` contract.
     let contract = key_manager::KeyManager::deploy(&provider).await?;
