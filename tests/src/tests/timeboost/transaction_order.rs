@@ -73,6 +73,10 @@ async fn transaction_order() {
         rxs.push(rx)
     }
 
+    // wait until DKG is done
+    enc_key.wait().await;
+    tracing::info!("DKG done");
+
     tasks.spawn(gen_bundles(enc_key, bcast.clone()));
 
     for _ in 0..NUM_OF_TRANSACTIONS {

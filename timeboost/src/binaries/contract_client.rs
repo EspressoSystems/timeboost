@@ -1,9 +1,10 @@
 // WIP contract client
 use timeboost_contracts::bindings::key_manager;
-use alloy_provider::Provider;
-use alloy_provider::ProviderBuilder;
-use alloy_node_bindings::Anvil;
-use alloy_signer_local::PrivateKeySigner;
+use alloy::{
+    node_bindings::Anvil,
+    providers::{Provider, ProviderBuilder},
+    signers::local::PrivateKeySigner,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

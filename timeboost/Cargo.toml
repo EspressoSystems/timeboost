@@ -25,12 +25,8 @@ path = "src/binaries/contract_client.rs"
 until = []
 
 [dependencies]
+alloy = { workspace = true }
 alloy-chains = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
-alloy-node-bindings = { workspace = true }
-alloy-signer-local = { workspace = true }
-alloy-provider.workspace = true
 anyhow = { workspace = true }
 ark-std = { workspace = true }
 async-lock = { workspace = true }
