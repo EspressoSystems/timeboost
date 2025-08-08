@@ -38,10 +38,10 @@ type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecSha
 #[derive(Debug, Serialize, Deserialize)]
 enum Protocol {
     /// A request to retrieve a subset identified by the committee id.
-    GetRequest(CommitteeId),
+    DkgRequest(CommitteeId),
 
     /// The direct reply to a get request.
-    GetResponse(SubsetResponse),
+    DkgResponse(SubsetResponse),
 
     /// A batch of decryption shares for a given round.
     Batch(DecShareBatch),
@@ -152,10 +152,16 @@ impl Decrypter {
             arr
         }));
         let committee = cfg.committee.committee();
-        let cv = if let Some(prev) = &cfg.prev_committee {
-            CommitteeVec::new(prev.committee().clone()).with(committee.clone())
+        let (state, cv) = if let Some(prev) = &cfg.prev_committee {
+            (
+                WorkerState::AwaitingHandover(HashMap::default()),
+                CommitteeVec::new(prev.committee().clone()).with(committee.clone()),
+            )
         } else {
-            CommitteeVec::new(committee.clone())
+            (
+                WorkerState::DkgPending(HashMap::default()),
+                CommitteeVec::new(committee.clone()),
+            )
         };
 
         let worker = Worker::builder()
@@ -165,7 +171,7 @@ impl Decrypter {
             .dkg_stores(dkg_stores.clone())
             .current(committee.id())
             .net(Overlay::new(net))
-            .dkg_state(WorkerState::default())
+            .state(state)
             .tx(dec_tx)
             .rx(cmd_rx)
             .enc_key(cfg.threshold_enc_key.clone())
@@ -446,7 +452,7 @@ struct Worker {
     /// public key material encrypted DKG bundles (shared with Decrypter)
     dkg_stores: Arc<RwLock<ArrayVec<DkgKeyStore, 2>>>,
 
-    /// the state of the node holding obtained threshold decryption key.
+    /// the state of the node holding obtained threshold decryption keys.
     state: WorkerState,
 
     /// Number of rounds to retain.
@@ -533,7 +539,7 @@ impl Worker {
                 // receiving a request from the decrypter
                 cmd = self.rx.recv() => match cmd {
                     Some(Command::Dkg(b)) => {
-                        match self.on_dkg_request(b).await {
+                        match self.on_dkg_request_msg(b).await {
                             Ok(()) => {}
                             Err(DecrypterError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on dkg request")
@@ -603,8 +609,8 @@ impl Worker {
         }
         let conf = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
         match bincode::serde::decode_from_slice(&bytes, conf)?.0 {
-            Protocol::GetRequest(cid) => self.on_get_request(src, cid).await?,
-            Protocol::GetResponse(res) => self.on_get_response(src, res).await?,
+            Protocol::DkgRequest(cid) => self.on_dkg_request_msg(src, cid).await?,
+            Protocol::DkgResponse(res) => self.on_dkg_response_msg(src, res).await?,
             Protocol::Batch(batch) => {
                 self.on_batch_msg(src, batch).await?;
                 return Ok(true);
@@ -615,7 +621,11 @@ impl Worker {
     }
 
     /// A get request for DKG subset has been received.
-    async fn on_get_request(&mut self, src: PublicKey, committee_id: CommitteeId) -> Result<()> {
+    async fn on_dkg_request_msg(
+        &mut self,
+        src: PublicKey,
+        committee_id: CommitteeId,
+    ) -> Result<()> {
         trace!(node = %self.label, from=%src, %committee_id, "received get_request");
 
         if !matches!(self.state, WorkerState::ResharingPending(..)) {
@@ -649,7 +659,7 @@ impl Worker {
             .unicast(
                 src,
                 0, // Minimal round number since API requires it
-                serialize(&Protocol::GetResponse(response))?,
+                serialize(&Protocol::DkgResponse(response))?,
             )
             .await
             .map_err(|e| DecrypterError::End(e.into()))?;
@@ -658,7 +668,7 @@ impl Worker {
     }
 
     /// A get response for DKG subset has been received.
-    async fn on_get_response(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
+    async fn on_dkg_response_msg(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
         let SubsetResponse {
             committee_id,
             subset,
@@ -871,7 +881,7 @@ impl Worker {
 
     /// The node will always try to catchup with the help of remote nodes first.
     async fn dkg_catchup(&mut self) -> Result<()> {
-        let req = Protocol::GetRequest(self.current);
+        let req = Protocol::DkgRequest(self.current);
         // the round number is ignored by the recieving party, but we don't want to give an
         // arbitrary value since `gc()` will probably clean it up too early. Thus, we put in
         // an estimated round number using the `.oldest_cached_round()`.
