@@ -118,6 +118,10 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 just test
 ```
 
+```shell
+just test-contracts
+```
+
 [noise]: https://noiseprotocol.org/
 [sailfish]: https://eprint.iacr.org/2024/472.pdf
 [timeboost]: https://github.com/OffchainLabs/decentralized-timeboost-spec

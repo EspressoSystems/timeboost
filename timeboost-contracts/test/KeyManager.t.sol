@@ -22,22 +22,23 @@ contract KeyManagerTest is Test {
     }
 
     function test_createEncryptionKeyset() public {
+        bytes memory thresholdEncKey = abi.encodePacked("1");
         vm.prank(manager);
         vm.expectEmit(true, true, true, true);
-        emit KeyManager.CreatedEncryptionKeyset(0, bytes32(0));
-        keyManagerProxy.createEncryptionKeyset(bytes32(0));
-        assertEq(keyManagerProxy.thresholdEncKey(), bytes32(0));
+        emit KeyManager.CreatedEncryptionKeyset(0, thresholdEncKey);
+        keyManagerProxy.createEncryptionKeyset(thresholdEncKey);
+        assertEq(keyManagerProxy.thresholdEncKey(), thresholdEncKey);
         assertEq(keyManagerProxy.nextKeysetId(), 1);
     }
 
     function test_scheduleCommittee() public {
         KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
 
-        bytes32 randomBytes = bytes32(uint256(1));
+        bytes memory randomBytes = abi.encodePacked("1");
         committeeMembers[0] = KeyManager.CommitteeMember({
             pubKey: randomBytes,
             secureChannelKey: randomBytes,
-            dkgEncKey: abi.encodePacked(randomBytes),
+            dkgEncKey: randomBytes,
             networkAddress: "0x0000000000000000000000000000000000000000"
         });
 
@@ -64,8 +65,9 @@ contract KeyManagerTest is Test {
     }
 
     function test_revertWhenNotOwnerOrManager_createEncryptionKeyset() public {
+        bytes memory thresholdEncKey = abi.encodePacked("1");
         vm.expectRevert(abi.encodeWithSelector(KeyManager.NotOwnerOrManager.selector));
-        keyManagerProxy.createEncryptionKeyset(bytes32(0));
+        keyManagerProxy.createEncryptionKeyset(thresholdEncKey);
     }
 
     function test_revertWhenNotManager_scheduleCommittee() public {

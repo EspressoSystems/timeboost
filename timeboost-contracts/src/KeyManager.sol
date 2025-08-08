@@ -7,8 +7,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     struct CommitteeMember {
-        bytes32 pubKey;
-        bytes32 secureChannelKey;
+        bytes pubKey;
+        bytes secureChannelKey;
         bytes dkgEncKey;
         string networkAddress;
     }
@@ -20,13 +20,13 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     event ScheduledCommittee(uint64 indexed id, Committee committee);
-    event CreatedEncryptionKeyset(uint64 indexed id, bytes32 thresholdEncKey);
+    event CreatedEncryptionKeyset(uint64 indexed id, bytes thresholdEncKey);
     event ChangedManager(address indexed manager);
 
     error NotOwnerOrManager();
     error InvalidAddress();
 
-    bytes32 public thresholdEncKey;
+    bytes public thresholdEncKey;
     uint64 public nextKeysetId;
     uint64 public nextCommitteeId;
     mapping(uint64 => Committee) public committees;
@@ -54,7 +54,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    function createEncryptionKeyset(bytes32 _thresholdEncKey) external onlyOwnerOrManager returns (uint64 keysetId) {
+    function createEncryptionKeyset(bytes memory _thresholdEncKey) external onlyOwnerOrManager returns (uint64 keysetId) {
         uint64 thisKeysetId = nextKeysetId;
         thresholdEncKey = _thresholdEncKey;
         emit CreatedEncryptionKeyset(nextKeysetId, _thresholdEncKey);
