@@ -148,6 +148,9 @@ where
                 .maybe_previous_sailfish_committee(
                     set_prev.then(|| prev[0].sailfish_committee().clone()),
                 )
+                .maybe_previous_decrypt_committee(
+                    set_prev.then(|| prev[0].decrypt_committee().clone()),
+                )
                 .recover(false)
                 .leash_len(100)
                 .threshold_enc_key(enc_key.clone())
