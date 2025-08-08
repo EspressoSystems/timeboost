@@ -8,7 +8,7 @@ use reqwest::{Client, Url};
 use std::{collections::HashMap, time::Duration};
 use timeboost::types::BundleVariant;
 use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
-use timeboost_utils::load_generation::{make_bundle, make_nitro_bundle, tps_to_millis};
+use timeboost_utils::load_generation::{make_bundle, make_dev_acct_bundle, tps_to_millis};
 use tokio::time::{interval, sleep};
 
 use anyhow::{Context, Result};
@@ -178,8 +178,7 @@ pub async fn yap_with_nitro(addresses: &[Address], txn_limit: u64) -> Result<()>
 
     let mut acc =
         ThresholdEncKeyCellAccumulator::new(c.clone(), urls.iter().map(|url| url.2.clone()));
-    let rpc_url = "http://localhost:8547";
-    let provider = RootProvider::<Ethereum>::connect(rpc_url)
+    let provider = RootProvider::<Ethereum>::connect("http://localhost:8547")
         .await
         .expect("to connect");
     let address = address!("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E");
@@ -187,7 +186,7 @@ pub async fn yap_with_nitro(addresses: &[Address], txn_limit: u64) -> Result<()>
     let mut txns_sent = 0;
     loop {
         let nonce = provider.get_transaction_count(address).await?;
-        let Ok(b) = make_nitro_bundle(acc.enc_key().await, nonce) else {
+        let Ok(b) = make_dev_acct_bundle(acc.enc_key().await, nonce) else {
             warn!("failed to generate bundle");
             continue;
         };
@@ -198,7 +197,7 @@ pub async fn yap_with_nitro(addresses: &[Address], txn_limit: u64) -> Result<()>
         .await;
         txns_sent += 1;
         if txns_sent == txn_limit {
-            tracing::error!("hit txn limit, terminating yapper");
+            warn!("hit txn limit, terminating yapper");
             return Ok(());
         }
         sleep(Duration::from_secs(1)).await;

@@ -43,7 +43,7 @@ pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant
     }
 }
 
-pub fn make_nitro_bundle(
+pub fn make_dev_acct_bundle(
     pubkey: &ThresholdEncKeyCell,
     nonce: u64,
 ) -> anyhow::Result<BundleVariant> {
@@ -53,7 +53,7 @@ pub fn make_nitro_bundle(
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let mut bundle = Bundle::create_testnode_transaction_bundle(nonce)?;
+    let mut bundle = Bundle::create_dev_acct_txn_bundle(nonce)?;
 
     if let Some(pubkey) = &*pubkey.get_ref()
         && rng.gen_bool(0.5)

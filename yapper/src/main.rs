@@ -70,10 +70,10 @@ async fn main() -> Result<()> {
     }
 
     let mut jh = tokio::spawn(async move {
-        if !cli.nitro_integration {
-            yap(&addresses, cli.tps).await
-        } else {
+        if cli.nitro_integration {
             yap_with_nitro(&addresses, cli.nitro_txn_limit).await
+        } else {
+            yap(&addresses, cli.tps).await
         }
     });
 

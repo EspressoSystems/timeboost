@@ -121,45 +121,35 @@ impl Bundle {
         Ok(b)
     }
 
-    pub fn create_testnode_transaction_bundle(nonce: u64) -> Result<Bundle, InvalidTransaction> {
-        // private key from pre funded dev account on test node
-        // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation
-        let private_key = "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659";
-        let to_address: alloy::primitives::Address =
-            address!("6A568afe0f82d34759347bb36F14A6bB171d2CBe");
+    pub fn create_dev_acct_txn_bundle(nonce: u64) -> anyhow::Result<Bundle> {
         let chain_id = 412346;
-        let value = U256::from(1);
-        let gas_limit = 21000;
-        let max_fee_per_gas = 1000000000;
-        let max_priority_fee_per_gas = 1000000000;
-
         let mut tx = TxEip1559 {
             chain_id,
             nonce,
-            max_priority_fee_per_gas,
-            max_fee_per_gas,
-            gas_limit,
-            to: TxKind::Call(to_address),
-            value,
+            max_priority_fee_per_gas: 1000000000,
+            max_fee_per_gas: 1000000000,
+            gas_limit: 21000,
+            to: TxKind::Call(address!("6A568afe0f82d34759347bb36F14A6bB171d2CBe")),
+            value: U256::from(1),
             input: alloy::primitives::Bytes::new(),
             access_list: AccessList::default(),
         };
 
-        let signer = PrivateKeySigner::from_str(private_key).expect("valid private key");
-        let signature = signer
-            .sign_transaction_sync(&mut tx)
-            .expect("valid signature");
-        let signed_tx = tx.into_signed(signature);
-        let tx_envelope = TxEnvelope::Eip1559(signed_tx);
+        // private key from pre funded dev account on test node
+        // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation
+        let signer = PrivateKeySigner::from_str(
+            "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
+        )?;
+        let sig = signer.sign_transaction_sync(&mut tx)?;
+        let signed_tx = tx.into_signed(sig);
+        let env = TxEnvelope::Eip1559(signed_tx);
+        let mut rlp = Vec::new();
+        env.encode(&mut rlp);
 
-        let mut rlp_encoded = Vec::new();
-        tx_envelope.encode(&mut rlp_encoded);
+        let encoded = ssz::ssz_encode(&vec![&rlp]);
+        let b = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
 
-        let encoded = ssz::ssz_encode(&vec![&rlp_encoded]);
-
-        let bundle = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
-
-        Ok(bundle)
+        Ok(b)
     }
 }
 
