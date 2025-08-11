@@ -17,10 +17,6 @@ path = "src/binaries/sailfish.rs"
 name = "mkconfig"
 path = "src/binaries/mkconfig.rs"
 
-[[bin]]
-name = "contract_client"
-path = "src/binaries/contract_client.rs"
-
 [features]
 until = []
 
@@ -54,7 +50,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
-timeboost-contract = { path = "../timeboost-contract" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }

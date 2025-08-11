@@ -35,5 +35,7 @@ timeboost-proto/src/*.rs
 bacon.toml
 
 __pycache__/
-
 *.DS_Store
+
+# Rust bindings for smart contracts
+timeboost-contract/src/bindings
