@@ -129,6 +129,14 @@ impl<C: CurveGroup> LabeledDecryptionKey<C> {
         let m = k.iter().zip(ct.ct.iter()).map(|(ki, c)| ki ^ c).collect();
         Ok(m)
     }
+
+    pub fn with_node_idx(&self, node_idx: usize) -> Self {
+        Self {
+            alpha: self.alpha,
+            u: self.u,
+            node_idx,
+        }
+    }
 }
 
 use crate::try_from_bytes;
