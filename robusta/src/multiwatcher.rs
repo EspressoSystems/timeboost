@@ -4,15 +4,18 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use crate::{Config, Height, Watcher};
+use either::Either;
 use espresso_types::{Header, NamespaceId};
 use futures::{StreamExt, stream::SelectAll};
 use tokio::{
     spawn,
     sync::{Barrier, mpsc},
     task::JoinHandle,
+    time::sleep,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
@@ -66,16 +69,47 @@ impl Multiwatcher {
             let lower_bound = lower_bound.clone();
             watchers.push(spawn(async move {
                 let i = Id(i);
-                let mut w = Watcher::new(c, height, nsid);
                 loop {
-                    let h = w.next().await;
-                    if h.height() <= lower_bound.load(Ordering::Relaxed) {
-                        continue;
+                    let height = lower_bound.load(Ordering::Relaxed);
+                    let mut w = Watcher::new(c.clone(), height, nsid);
+                    let mut expected = height + 1;
+                    loop {
+                        match w.next().await {
+                            Either::Right(hdr) => {
+                                if hdr.height() > expected {
+                                    warn!(
+                                        url      = %c.wss_base_url,
+                                        height   = %hdr.height(),
+                                        expected = %expected,
+                                        "unexpected block height"
+                                    );
+                                    break;
+                                }
+                                expected += 1;
+                                if hdr.height() <= lower_bound.load(Ordering::Relaxed) {
+                                    continue;
+                                }
+                                if tx.send((i, hdr)).await.is_err() {
+                                    return;
+                                }
+                            }
+                            Either::Left(height) => {
+                                if *height > expected {
+                                    warn!(
+                                        url      = %c.wss_base_url,
+                                        height   = %height,
+                                        expected = %expected,
+                                        "unexpected block height"
+                                    );
+                                    break;
+                                }
+                                expected += 1;
+                            }
+                        }
+                        barrier.wait().await;
                     }
-                    if tx.send((i, h)).await.is_err() {
-                        break;
-                    }
-                    barrier.wait().await;
+                    drop(w);
+                    sleep(Duration::from_secs(3)).await // wait a little before re-connecting
                 }
             }));
         }
