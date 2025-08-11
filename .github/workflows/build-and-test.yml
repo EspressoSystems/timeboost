@@ -31,6 +31,10 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -60,6 +64,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
       run: just test_ci
 
@@ -81,6 +87,8 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
     - name: Check packages individually
       run: just check-individually
     - name: Run lint
@@ -118,6 +126,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
       run: just run_demo -s /tmp/stamp --ignore-stamp --yapper -k test-configs/local-5.json
     - name: Run tests with late-start node
@@ -131,17 +141,12 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
-
       - name: Install Just
         run: |
           wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
           tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
           sudo cp just /usr/bin/just
-
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
       - name: Run contract tests
-        run: forge test
+        run: forge test -vvv

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -12,11 +13,19 @@ fn main() {
     println!("cargo:rerun-if-changed=../contracts/lib");
 
     if !contracts_out.exists() {
-        println!(
-            "cargo:warning=Contracts output directory not found at {}. Run 'forge build' first.",
-            contracts_out.display()
-        );
-        return;
+        match std::process::Command::new("forge").arg("build").output() {
+            Ok(res) if res.status.success() => {
+                println!("cargo:warning=Successfully built contracts")
+            }
+            Ok(res) => {
+                println!("cargo:error=Building contracts failed: {res:?}");
+                return;
+            }
+            Err(e) => {
+                println!("cargo:error=Failed to run `forge build` command: {e}");
+                return;
+            }
+        }
     }
 
     // Create bindings directory if it doesn't exist
@@ -46,28 +55,24 @@ fn main() {
     generate_bindings_module(&contract_artifacts, bindings_dir);
 
     // Format the generated bindings
-    let output = std::process::Command::new("just").args(["fmt"]).output();
-
-    match output {
+    match std::process::Command::new("just").arg("fmt").output() {
         Ok(result) if result.status.success() => {
             println!("cargo:warning=Successfully formatted generated bindings");
         }
         Ok(result) => {
             println!(
-                "cargo:warning=Format command failed with exit code: {:?}",
+                "cargo:error=Format command failed with exit code: {:?}",
                 result.status.code()
             );
         }
         Err(e) => {
-            println!("cargo:warning=Failed to run format command: {e}");
+            println!("cargo:error=Failed to run format command: {e}");
         }
     }
 }
 
 /// Find all contract JSON artifacts using a simple flattened walk
 fn find_contract_artifacts(contracts_out: &Path) -> Vec<(String, PathBuf)> {
-    use std::collections::HashSet;
-
     let mut artifacts = Vec::new();
     let mut seen_names = HashSet::new();
 
@@ -93,7 +98,6 @@ fn find_contract_artifacts(contracts_out: &Path) -> Vec<(String, PathBuf)> {
                 && !contract_name.starts_with("std")
                 && !contract_name.starts_with("Std")
                 && seen_names.insert(contract_name.clone())
-            // Only insert if not seen before
             {
                 artifacts.push((contract_name, path.to_path_buf()));
             }

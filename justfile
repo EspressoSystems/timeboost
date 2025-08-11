@@ -18,6 +18,8 @@ build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
 
+build-contracts:
+  forge build
 
 ####################
 ###CHECK COMMANDS###
@@ -117,6 +119,9 @@ test *ARGS:
   cargo nextest run {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
+test-contracts: build-contracts
+  forge test
+
 test_ci *ARGS:
   env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
@@ -126,13 +131,3 @@ test-individually:
     echo "Testing $pkg"; \
     cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
-
-####################
-####CONTRACT COMMANDS###
-####################
-
-build-contracts:
-  forge build
-
-test-contracts:
-  forge test
