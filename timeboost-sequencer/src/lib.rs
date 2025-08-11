@@ -20,7 +20,9 @@ use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::vess::VessError;
-use timeboost_types::{BundleVariant, DelayedInboxIndex, DkgBundle, Timestamp, Transaction};
+use timeboost_types::{
+    BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
+};
 use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -80,7 +82,7 @@ struct Task {
 }
 
 enum Command {
-    NextCommittee(ConsensusTime, AddressableCommittee, BundleQueue),
+    NextCommittee(ConsensusTime, AddressableCommittee, KeyStore, BundleQueue),
 }
 
 /// Mode of operation.
@@ -234,9 +236,10 @@ impl Sequencer {
         &mut self,
         t: ConsensusTime,
         a: AddressableCommittee,
+        k: KeyStore,
     ) -> Result<()> {
         self.commands
-            .send(Command::NextCommittee(t, a, self.bundles.clone()))
+            .send(Command::NextCommittee(t, a, k, self.bundles.clone()))
             .await
             .map_err(|_| TimeboostError::ChannelClosed)
     }
@@ -270,8 +273,10 @@ impl Task {
         }
 
         // DKG bundle generation
-        if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
-            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+        if !self.sailfish.is_handover() {
+            if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
+                self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
+            }
         }
 
         loop {
@@ -333,19 +338,19 @@ impl Task {
                     }
                 },
                 cmd = self.commands.recv(), if pending.is_none() => match cmd {
-                    Some(Command::NextCommittee(t, a, b)) => {
-                        // Resharing bundle generation
-                        if let Some(bundle) = self.decrypter.gen_resharing_bundle(a.committee().id()) {
-                            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
-                        }
+                    Some(Command::NextCommittee(t, a, k, b)) => {
                         self.sailfish.set_next_committee(t, a.committee().clone(), a.clone()).await?;
                         if a.committee().contains_key(&self.kpair.public_key()) {
                             let cons = Consensus::new(self.kpair.clone(), a.committee().clone(), b);
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts).await?
                         }
-                        if let Err(err) = self.decrypter.next_committee(a).await {
+                        if let Err(err) = self.decrypter.next_committee(a.clone(), k.clone()).await {
                             error!(node = %self.label, %err, "decrypt next committee error");
+                        }
+                        // Resharing bundle generation
+                        if let Some(bundle) = self.decrypter.gen_resharing_bundle(k) {
+                            self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
                         }
                     }
                     None => {

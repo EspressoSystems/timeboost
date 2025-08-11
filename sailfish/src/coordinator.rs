@@ -115,6 +115,11 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
         matches!(self.state, State::Running | State::AwaitHandover)
     }
 
+    /// Is this coordinator started in a handover state?
+    pub fn is_handover(&self) -> bool {
+        matches!(self.state, State::AwaitHandover)
+    }
+
     /// The public key of this coordinator.
     pub fn public_key(&self) -> PublicKey {
         self.key
