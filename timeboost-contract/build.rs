@@ -13,8 +13,8 @@ fn main() {
 
     if !contracts_out.exists() {
         println!(
-            "cargo:warning=Contracts output directory not found at {:?}. Run 'forge build' first.",
-            contracts_out
+            "cargo:warning=Contracts output directory not found at {}. Run 'forge build' first.",
+            contracts_out.display()
         );
         return;
     }
@@ -44,6 +44,24 @@ fn main() {
 
     // Generate the main bindings.rs module file
     generate_bindings_module(&contract_artifacts, bindings_dir);
+
+    // Format the generated bindings
+    let output = std::process::Command::new("just").args(["fmt"]).output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            println!("cargo:warning=Successfully formatted generated bindings");
+        }
+        Ok(result) => {
+            println!(
+                "cargo:warning=Format command failed with exit code: {:?}",
+                result.status.code()
+            );
+        }
+        Err(e) => {
+            println!("cargo:warning=Failed to run format command: {e}");
+        }
+    }
 }
 
 /// Find all contract JSON artifacts using a simple flattened walk

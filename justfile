@@ -131,15 +131,8 @@ test-individually:
 ####CONTRACT COMMANDS###
 ####################
 
-# generate rust bindings for contracts
-REGEXP := "^KeyManager(V\\d+)?$|^ERC1967Proxy$"
-gen-contract-bindings:
-   cd timeboost-contracts && forge bind --skip test --skip script --use "0.8.27" --alloy --alloy-version "1.0.24" --contracts ./src/ --select "{{REGEXP}}" --overwrite --force \
-    --module --bindings-path ./rust/src/bindings
-
 build-contracts:
-  cd timeboost-contracts && forge clean && forge build
-
+  forge build
 
 test-contracts:
-  cd timeboost-contracts && forge test
+  forge test
