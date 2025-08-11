@@ -54,12 +54,12 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tide-disco = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
+timeboost-contract = { path = "../timeboost-contract" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
-timeboost-contracts = { path = "../timeboost-contracts/rust" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
