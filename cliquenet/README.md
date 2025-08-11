@@ -25,7 +25,7 @@ undergo a series of stages.
 
 If the TCP listener accepts a new inbound connection it creates a handshake task which
 attempts to perform a Noise handshake which involves a Diffie-Hellman key exchange and
--- if successfull -- results in an authenticated and secure link with an identified
+-- if successful -- results in an authenticated and secure link with an identified
 peer.
 
 ### Connect task
@@ -53,7 +53,7 @@ peer a node drops the one whose associated public key is smaller than its own.
 
 ### I/O tasks
 
-After successful connection establishment, two tasks are created, one to continously
+After successful connection establishment, two tasks are created, one to continuously
 read incoming data and one to send application data. The data is split and encrypted
 into frames of 64 KiB (the maximum size of a Noise package) or less. Failure of either
 task results in the termination of both and a new connect task is created to
@@ -77,7 +77,7 @@ channel to the respective write task. The capacity of every channel is bounded.
 If the one the application uses is full, backpressure is exercised, i.e. the
 application has to wait. This can happen for example, if no connection is available
 for some time. The channel to an I/O write task is also bounded, but if full, the
-connection is considered slow and unhealty and will be dropped, resulting in a new
+connection is considered slow and unhealthy and will be dropped, resulting in a new
 connect task to re-establish the connection.
 
 ## Data frame
