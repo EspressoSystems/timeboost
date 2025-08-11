@@ -23,7 +23,7 @@ use timeboost_types::{
 use timeboost_utils::ResultIter;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::{JoinHandle, yield_now};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -84,7 +84,7 @@ pub struct Decrypter {
     /// Public key of the node.
     label: PublicKey,
     /// Buffer of increasing round numbers representing inclusion lists.
-    incls: VecDeque<RoundNumber>,
+    incls: VecDeque<(RoundNumber, bool)>,
     /// Sender end of the worker commands
     worker_tx: Sender<Command>,
     /// Receiver end of the Worker response
@@ -200,15 +200,17 @@ impl Decrypter {
     /// Send the inclusion list to the Worker for decryption.
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
+        let is_encrypted = incl.is_encrypted();
+        if is_encrypted {
+            self.metrics.queued_encrypted.update(1);
+        }
         debug!(node = %self.label, %round, "enqueuing inclusion list");
 
         self.worker_tx
             .send(Command::Decrypt(incl))
             .await
             .map_err(|_| DecrypterDown(()))?;
-        self.incls.push_front(round);
-        // TODO: adjust metrics semantics
-        self.metrics.queued_encrypted.update(1);
+        self.incls.push_back((round, is_encrypted));
 
         Ok(())
     }
@@ -297,33 +299,46 @@ impl Decrypter {
     /// Produces decrypted inclusion lists received from the Worker.
     pub async fn next(&mut self) -> StdResult<InclusionList, DecrypterDown> {
         loop {
-            if let Some(next_round) = self.incls.pop_back() {
-                while let Some(dec_incl) = self.worker_rx.recv().await {
-                    let round = dec_incl.round();
-                    if round != next_round {
-                        warn!(
-                            node  = %self.label,
-                            %round,
-                            %next_round,
-                            "inclusion list does not match next round"
-                        );
-                    } else {
-                        debug!(
-                            node  = %self.label,
-                            round = %round,
-                            epoch = %dec_incl.epoch(),
-                            "received inclusion list from Worker"
-                        );
-                        debug_assert!(
-                            !dec_incl.is_encrypted(),
-                            "decrypter Worker returned non-decrypted inclusion list"
-                        );
-                        self.metrics.output_decrypted.update(1);
-                        return Ok(dec_incl);
-                    }
+            // wait for next message
+            let dec_incl = self.worker_rx.recv().await.ok_or(DecrypterDown(()))?;
+            let round = dec_incl.round();
+
+            // get the expected round from the front of the queue
+            if let Some((expected_round, is_encrypted)) = self.incls.pop_front() {
+                if round != expected_round {
+                    warn!(
+                        node = %self.label,
+                        %round,
+                        %expected_round,
+                        "inclusion list does not match next round"
+                    );
+                    self.incls.push_front((expected_round, is_encrypted));
+                    continue;
                 }
+
+                debug!(
+                    node = %self.label,
+                    round = %round,
+                    epoch = %dec_incl.epoch(),
+                    "received inclusion list from Worker"
+                );
+
+                if is_encrypted {
+                    debug_assert!(
+                        !dec_incl.is_encrypted(),
+                        "decrypter Worker returned non-decrypted inclusion list"
+                    );
+                    self.metrics.output_decrypted.update(1);
+                }
+
+                return Ok(dec_incl);
             } else {
-                yield_now().await;
+                warn!(
+                    node = %self.label,
+                    %round,
+                    "received unexpected inclusion list (no rounds in queue)"
+                );
+                return Ok(dec_incl);
             }
         }
     }
@@ -590,7 +605,7 @@ impl Worker {
 
     /// Returns the smallest round number (with oldest shares) in the decryption cache.
     fn oldest_cached_round(&self) -> RoundNumber {
-        self.dec_shares
+        self.incls
             .keys()
             .next()
             .copied()
@@ -1053,9 +1068,9 @@ impl Worker {
     /// with incoming gc request, indicating more than just local gc, but also overlay
     /// network-wise gc.
     fn gc(&mut self, round: RoundNumber) {
-        self.dec_shares.retain(|r, _| *r != round);
-        self.incls.retain(|r, _| *r != round);
-        self.acks.retain(|r, _| *r != round);
+        self.dec_shares.retain(|r, _| *r > round);
+        self.incls.retain(|r, _| *r > round);
+        self.acks.retain(|r, _| *r > round);
     }
 
     /// Garbage collect a round (and all prior rounds).
