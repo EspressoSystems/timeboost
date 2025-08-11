@@ -974,7 +974,7 @@ where
                 }
                 actions.push(Action::Catchup(Round::new(r, self.committee.id())));
             }
-        } else if self.committed_round >= self.nodes.quorum() {
+        } else if self.committed_round >= *self.nodes.quorum() {
             for v in self.buffer.drain_round(r) {
                 self.dag.add(v)
             }
