@@ -23,7 +23,7 @@ use timeboost_types::{
 use timeboost_utils::ResultIter;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, yield_now};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -38,16 +38,16 @@ type DecSharesCache = BTreeMap<RoundNumber, HashMap<Round, Vec<Vec<Option<DecSha
 /// The message types exchanged during decryption phase.
 #[derive(Debug, Serialize, Deserialize)]
 enum Protocol {
-    /// A (broadcast) request to retrieve a subset identified by the committee id.
+    /// Broadcast a request to retrieve a subset identified by the committee id.
     DkgRequest(CommitteeId),
 
-    /// A (direct) reply to a get request.
+    /// Direct reply to a get request.
     DkgResponse(SubsetResponse),
 
-    /// A (multicast to new members) message with agreed-upon subset of DkgBundle for resharing.
+    /// Multicast (to new members) a message with agreed-upon subset of DkgBundle for resharing.
     Resharing(ReshareMessage),
 
-    /// A (broadcast) batch of decryption shares for a given round.
+    /// Bbroadcast a batch of decryption shares for a given round.
     Batch(DecShareBatch),
 }
 
@@ -63,12 +63,6 @@ enum Command {
     UseCommittee(Round),
     /// Garbage collect state related to a round (and previous rounds).
     Gc(RoundNumber),
-}
-
-/// Inclusion list with status
-enum Status {
-    Encrypted,
-    Decrypted(InclusionList),
 }
 
 /// A decrypter, indentified by its signing/consensus public key, connects to other decrypters to
@@ -89,9 +83,8 @@ enum Status {
 pub struct Decrypter {
     /// Public key of the node.
     label: PublicKey,
-    /// Locally stored incl lists: those still unencrypted and those yet fetched by the next phase
-    /// of timeboost
-    incls: BTreeMap<RoundNumber, Status>,
+    /// Buffer of increasing round numbers representing inclusion lists.
+    incls: VecDeque<RoundNumber>,
     /// Sender end of the worker commands
     worker_tx: Sender<Command>,
     /// Receiver end of the Worker response
@@ -176,7 +169,7 @@ impl Decrypter {
 
         Ok(Self {
             label: cfg.label,
-            incls: BTreeMap::new(),
+            incls: VecDeque::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
             submitted: BTreeSet::default(),
@@ -207,20 +200,15 @@ impl Decrypter {
     /// Send the inclusion list to the Worker for decryption.
     pub async fn enqueue(&mut self, incl: InclusionList) -> StdResult<(), DecrypterDown> {
         let round = incl.round();
+        debug!(node = %self.label, %round, "enqueuing inclusion list");
 
-        if incl.is_encrypted() {
-            self.worker_tx
-                .send(Command::Decrypt(incl))
-                .await
-                .map_err(|_| DecrypterDown(()))?;
-            self.incls.insert(round, Status::Encrypted);
-
-            debug!(node = %self.label, %round, "enqueued encrypted inclusion list");
-            self.metrics.queued_encrypted.update(1);
-        } else {
-            self.incls.insert(round, Status::Decrypted(incl));
-            debug!(node = %self.label, %round, "enqueued non-encrypted inclusion list");
-        }
+        self.worker_tx
+            .send(Command::Decrypt(incl))
+            .await
+            .map_err(|_| DecrypterDown(()))?;
+        self.incls.push_front(round);
+        // TODO: adjust metrics semantics
+        self.metrics.queued_encrypted.update(1);
 
         Ok(())
     }
@@ -306,48 +294,38 @@ impl Decrypter {
         Some(DkgBundle::new((node_idx, self.label), committee_id, ct, cm))
     }
 
-    /// Produces decrypted inclusion lists ordered by round number
+    /// Produces decrypted inclusion lists received from the Worker.
     pub async fn next(&mut self) -> StdResult<InclusionList, DecrypterDown> {
-        // first try to return the first inclusion list if it's already decrypted
-        if let Some(entry) = self.incls.first_entry() {
-            if matches!(entry.get(), Status::Decrypted(_)) {
-                if let Status::Decrypted(incl) = entry.remove() {
-                    return Ok(incl);
-                }
-            }
-        }
-
-        // normal loop: try to receive the next decrypted inclusion list
-        while let Some(dec_incl) = self.worker_rx.recv().await {
-            let round = dec_incl.round();
-            // update decrypter cache of inclusion list
-            debug!(
-                node  = %self.label,
-                round = %round,
-                epoch = %dec_incl.epoch(),
-                "inclusion list decrypted"
-            );
-            debug_assert!(
-                !dec_incl.is_encrypted(),
-                "decrypter worker returns non-decrypted inclusion list"
-            );
-            self.incls.insert(round, Status::Decrypted(dec_incl));
-            self.metrics.output_decrypted.update(1);
-
-            // since the newly finished/responded inclusion list might belong to a later round
-            // the first entry might still be unencrypted, in which case continue the loop and
-            // wait until the worker finishes decrypting it.
-            if let Some(entry) = self.incls.first_entry() {
-                if matches!(entry.get(), Status::Decrypted(_)) {
-                    if let Status::Decrypted(incl) = entry.remove() {
-                        return Ok(incl);
+        loop {
+            if let Some(next_round) = self.incls.pop_back() {
+                while let Some(dec_incl) = self.worker_rx.recv().await {
+                    let round = dec_incl.round();
+                    if round != next_round {
+                        warn!(
+                            node  = %self.label,
+                            %round,
+                            %next_round,
+                            "inclusion list does not match next round"
+                        );
+                    } else {
+                        debug!(
+                            node  = %self.label,
+                            round = %round,
+                            epoch = %dec_incl.epoch(),
+                            "received inclusion list from Worker"
+                        );
+                        debug_assert!(
+                            !dec_incl.is_encrypted(),
+                            "decrypter Worker returned non-decrypted inclusion list"
+                        );
+                        self.metrics.output_decrypted.update(1);
+                        return Ok(dec_incl);
                     }
-                } else {
-                    debug!(node = %self.label, round = %entry.key(), "awaiting decryption of")
                 }
+            } else {
+                yield_now().await;
             }
         }
-        Err(DecrypterDown(()))
     }
 
     /// Prepare for the next committee.
@@ -591,11 +569,21 @@ impl Worker {
                 continue;
             }
 
-            let round = self.oldest_cached_round();
+            let round: RoundNumber = self.oldest_cached_round();
             match self.hatch(round).await {
                 Ok(_) => {}
                 Err(DecrypterError::End(end)) => return end,
                 Err(err) => warn!(%node, %round, %err, "error on hatch"),
+            }
+
+            if matches!(self.state, WorkerState::ShuttingDown(_)) {
+                // graceful shut down
+                if let Some(next_committee) = self.next_committee {
+                    if next_committee.num() - 1 == self.last_hatched_round {
+                        info!(node = %self.label, "shutting down decrypter");
+                        return EndOfPlay::DecrypterDown;
+                    }
+                }
             }
         }
     }
@@ -748,7 +736,7 @@ impl Worker {
         let subsets = match &mut self.state {
             WorkerState::AwaitingHandover(subsets) => subsets,
             _ => {
-                info!(node = %self.label, current = %self.current, %committee_id, "received resharing message but not awaiting handover");
+                trace!(node = %self.label, current = %self.current, %committee_id, "received resharing message but not awaiting handover");
                 return Ok(());
             }
         };
@@ -797,9 +785,9 @@ impl Worker {
             )
             .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
+            info!(committee_id = %committee.id(), node = %self.label, "handover finished");
             self.state = WorkerState::HandoverComplete(next_dec_key.clone());
             self.enc_key.set(next_dec_key);
-            trace!(committee_id = %committee.id(), node = %self.label, "handover finished");
             self.dkg_completed.insert(committee.id());
         }
 
@@ -1014,23 +1002,26 @@ impl Worker {
 
     /// Process a decryption request.
     async fn on_decrypt_request(&mut self, incl: InclusionList) -> Result<()> {
-        let dec_shares = self.decrypt(&incl).await?;
-        if dec_shares.is_empty() {
-            return Err(DecrypterError::EmptyDecShares);
-        }
         let round: RoundNumber = incl.round();
-        self.clock = round;
 
+        self.clock = round;
         self.maybe_switch_committee().await?;
 
-        self.net
-            .broadcast(
-                round.u64(),
-                serialize(&Protocol::Batch(dec_shares.clone()))?,
-            )
-            .await
-            .map_err(|e| DecrypterError::End(e.into()))?;
-        self.insert_shares(dec_shares)?;
+        if incl.is_encrypted() {
+            let dec_shares = self.decrypt(&incl).await?;
+            if dec_shares.is_empty() {
+                return Err(DecrypterError::EmptyDecShares);
+            }
+            self.net
+                .broadcast(
+                    round.u64(),
+                    serialize(&Protocol::Batch(dec_shares.clone()))?,
+                )
+                .await
+                .map_err(|e| DecrypterError::End(e.into()))?;
+            self.insert_shares(dec_shares)?;
+        }
+
         self.incls.insert(round, incl);
 
         // edge case: when processing the first decrypt request, workers may have received
@@ -1062,9 +1053,9 @@ impl Worker {
     /// with incoming gc request, indicating more than just local gc, but also overlay
     /// network-wise gc.
     fn gc(&mut self, round: RoundNumber) {
-        self.dec_shares.retain(|r, _| *r > round);
-        self.incls.retain(|r, _| *r > round);
-        self.acks.retain(|r, _| *r > round);
+        self.dec_shares.retain(|r, _| *r != round);
+        self.incls.retain(|r, _| *r != round);
+        self.acks.retain(|r, _| *r != round);
     }
 
     /// Garbage collect a round (and all prior rounds).
@@ -1181,6 +1172,23 @@ impl Worker {
     /// decrypted shares is possible due to out-of-order delivery).
     /// Local cache are garbage collected for hatched rounds.
     async fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
+        let Some(incl) = self.incls.get(&round) else {
+            return Ok(None);
+        };
+        let mut incl = incl.clone();
+
+        // return immediately to parent if no encrypted transactions
+        if !incl.is_encrypted() {
+            self.gc(round);
+            self.last_hatched_round = round;
+
+            self.tx
+                .send(incl.clone())
+                .await
+                .map_err(|_| EndOfPlay::DecrypterDown)?;
+            return Ok(Some(incl));
+        }
+
         let dec_sk = match &self.state {
             WorkerState::ResharingPending(dec_key)
             | WorkerState::ResharingComplete(dec_key, _)
@@ -1191,23 +1199,13 @@ impl Worker {
                 ));
             }
         };
-        // retreive ciphertext from the original encrypted inclusion list
-        let Some(incl) = self.incls.get(&round) else {
-            trace!(
-                node = %self.label,
-                %round,
-                "out-of-order delivery: ready to hatch but inclusion list yet received"
-            );
-            return Ok(None);
-        };
-        let mut incl = incl.clone();
+
         let ciphertexts = Self::extract_ciphertexts(&incl);
 
-        // check if a round number is hatchable, if not, return Ok(None)
+        // find the first round (num, committee) with enough valid shares to hatch
         let Some(dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
         };
-        // find the first round (num, committee) with enough valid shares to hatch
         let Some((r, key_store)) = dec_shares.iter().find_map(|(r, shares)| {
             let guard = self.key_stores.read();
             let key_store = guard.get(r.committee())?;
@@ -1315,6 +1313,7 @@ impl Worker {
 
         // garbage collect hatched rounds
         self.last_hatched_round = round;
+
         self.gc(round);
 
         self.tx
@@ -1346,8 +1345,6 @@ impl Worker {
         {
             additional.push((k, x, a))
         }
-        warn!(node = %self.label, committee = %c.committee().id(), "adding {} new nodes from committee", additional.len());
-
         self.net
             .add(additional)
             .await
@@ -1378,32 +1375,30 @@ impl Worker {
         let key_store = {
             let guard = self.key_stores.read();
             let Some(key_store) = guard.get(self.current) else {
-                error!(node = %self.label, committee = %self.current, "current committee not found");
                 return Err(DecrypterError::NoCommittee(self.current));
             };
             key_store.clone()
         };
 
         // update network
-        if matches!(self.state, WorkerState::HandoverComplete(_)) {
-            let old = self
-                .net
-                .parties()
-                .map(|(p, _)| p)
-                .filter(|p| !key_store.committee().contains_key(p))
-                .copied();
-            self.net
-                .remove(old.collect())
-                .await
-                .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-            self.net
-                .assign(
-                    Role::Active,
-                    key_store.committee().parties().copied().collect(),
-                )
-                .await
-                .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        }
+        let old = self
+            .net
+            .parties()
+            .map(|(p, _)| p)
+            .filter(|p| !key_store.committee().contains_key(p))
+            .copied();
+
+        self.net
+            .remove(old.collect())
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
+        self.net
+            .assign(
+                Role::Active,
+                key_store.committee().parties().copied().collect(),
+            )
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
 
         // update state machine
         self.state = match &self.state {
@@ -1902,7 +1897,18 @@ mod tests {
         )
         .await;
 
+        let (mut com2_decrypters, com2_setup) = setup(
+            COM2,
+            &COM2_SIGNATURE_PRIVATE_KEY_STRINGS,
+            &COM2_DH_PRIVATE_KEY_STRINGS,
+            &COM2_DKG_PRIVATE_KEY_STRINGS,
+            Some(com1_setup.clone()),
+        )
+        .await;
         tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
+
+        let com1_round = RoundNumber::new(DECRYPTION_ROUND);
+        let com2_round = RoundNumber::new(DECRYPTION_ROUND + 1);
 
         enqueue_all_dkg_bundles(&mut com1_decrypters, None).await;
 
@@ -1914,12 +1920,40 @@ mod tests {
             .get()
             .expect("encryption key should be generated after DKG");
 
+        // trigger NextCommittee event at each decrypter in COM1
+        for decrypter in com1_decrypters.iter_mut() {
+            decrypter
+                .next_committee(
+                    com2_setup.addr_comm().clone(),
+                    com2_setup.key_store().clone(),
+                )
+                .await
+                .expect("next committee event succeeds");
+        }
+
+        // enqueue resharing bundles (for COM2) at each decrypter in COM1
+        enqueue_all_dkg_bundles(&mut com1_decrypters, Some(com2_setup.key_store().clone())).await;
+
+        // make sure that all nodes in COM2 consider resharing complete
+        for cell in com2_setup.enc_keys() {
+            cell.wait().await;
+        }
+
+        // trigger UseCommittee event for both COM1 and COM2
+        for decrypter in com1_decrypters.iter_mut().chain(com2_decrypters.iter_mut()) {
+            decrypter
+                .use_committee(Round::new(com2_round, COM2))
+                .await
+                .expect("use committee event succeeds");
+        }
+
+        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
+
         let priority_tx_message = b"Priority message for old committee";
         let regular_tx_message = b"Non-priority message for old committee";
 
-        let decryption_round = RoundNumber::new(DECRYPTION_ROUND);
         let encrypted_inclusion_list = create_encrypted_inclusion_list(
-            decryption_round,
+            com1_round,
             com1_setup.addr_comm().committee().clone(),
             com1_setup.sig_keys(),
             encryption_key.pubkey(),
@@ -1937,68 +1971,6 @@ mod tests {
 
         let _ = collect_inclusion_lists(&mut com1_decrypters).await;
 
-        let (mut com2_decrypters, com2_setup) = setup(
-            COM2,
-            &COM2_SIGNATURE_PRIVATE_KEY_STRINGS,
-            &COM2_DH_PRIVATE_KEY_STRINGS,
-            &COM2_DKG_PRIVATE_KEY_STRINGS,
-            Some(com1_setup.clone()),
-        )
-        .await;
-        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
-
-        // trigger NextCommittee event at each decrypter in COM1
-        for decrypter in com1_decrypters.iter_mut() {
-            decrypter
-                .next_committee(
-                    com2_setup.addr_comm().clone(),
-                    com2_setup.key_store().clone(),
-                )
-                .await
-                .expect("next committee event succeeds");
-        }
-
-        // enqueue dkg bundles (for COM2) at each decrypter in COM1
-        enqueue_all_dkg_bundles(&mut com1_decrypters, Some(com2_setup.key_store().clone())).await;
-
-        let switch_round = RoundNumber::new(DECRYPTION_ROUND + 1);
-
-        // trigger use committee event for both COM1 and COM2
-        for decrypter in com1_decrypters.iter_mut().chain(com2_decrypters.iter_mut()) {
-            decrypter
-                .use_committee(Round::new(switch_round, COM2))
-                .await
-                .expect("next committee event succeeds");
-        }
-
-        // make sure that all nodes in COM2 consider resharing complete
-        for cell in com2_setup.enc_keys() {
-            cell.wait().await;
-        }
-
-        // send inclusion list to trigger committee switch for COM1
-        // COM1 will still be decrypting this inclusion list before the switch
-        let encrypted_inclusion_list = create_encrypted_inclusion_list(
-            switch_round,
-            com1_setup.addr_comm().committee().clone(),
-            com1_setup.sig_keys(),
-            encryption_key.pubkey(),
-            priority_tx_message,
-            regular_tx_message,
-        );
-
-        for decrypter in com1_decrypters.iter_mut() {
-            decrypter
-                .enqueue(encrypted_inclusion_list.clone())
-                .await
-                .expect("Inclusion list should be enqueued successfully");
-        }
-        let _ = collect_inclusion_lists(&mut com1_decrypters).await;
-
-        // send inclusion list to trigger committee switch for COM2
-        // COM2 will decrypt this inclusion list as its first round
-        let com2_round = RoundNumber::new(DECRYPTION_ROUND + 2);
-
         let priority_tx_message = b"Priority message for new committee";
         let regular_tx_message = b"Non-priority message for new committee";
 
@@ -2006,7 +1978,7 @@ mod tests {
             com2_round,
             com2_setup.addr_comm().committee().clone(),
             com2_setup.sig_keys(),
-            encryption_key.pubkey(),
+            encryption_key.pubkey(), // same encryption key
             priority_tx_message,
             regular_tx_message,
         );
