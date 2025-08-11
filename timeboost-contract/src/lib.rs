@@ -5,6 +5,7 @@
 // Include the generated contract bindings
 // The build script auto-detects contracts and generates bindings in src/bindings/
 pub mod bindings;
+pub mod deployer;
 
 // We manually re-export the type here carefully due to alloy's lack of shared type:
 // tracking issue: https://github.com/foundry-rs/foundry/issues/10153
