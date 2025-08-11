@@ -15,7 +15,7 @@ use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -25,7 +25,10 @@ use url::Url;
 fn make_configs<R>(
     size: NonZeroUsize,
     recover_index: R,
-) -> (DecryptionKeyCell, Vec<(SequencerConfig, CertifierConfig)>)
+) -> (
+    Vec<DecryptionKeyCell>,
+    Vec<(SequencerConfig, CertifierConfig)>,
+)
 where
     R: Into<Option<usize>>,
 {
@@ -77,7 +80,7 @@ where
             .map(|(kp, xp, _, _, _, pa, ..)| (kp.public_key(), xp.public_key(), pa.clone())),
     );
 
-    let dkg_keystore = DkgKeyStore::new(
+    let key_store = KeyStore::new(
         committee.clone(),
         parts
             .iter()
@@ -86,20 +89,19 @@ where
     );
 
     let mut cfgs = Vec::new();
+    let mut enc_keys = Vec::new();
     let recover_index = recover_index.into();
 
-    let enc_key = DecryptionKeyCell::new();
-
     for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
+        let enc_key = DecryptionKeyCell::new();
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
             .dkg_key(dkg_sk)
-            .dkg_keystore(dkg_keystore.clone())
             .sailfish_addr(sa)
             .decrypt_addr(da)
             .sailfish_committee(sailfish_committee.clone())
-            .decrypt_committee(decrypt_committee.clone())
+            .decrypt_committee((decrypt_committee.clone(), key_store.clone()))
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .threshold_enc_key(enc_key.clone())
@@ -120,10 +122,11 @@ where
             .address(pa)
             .committee(produce_committee.clone())
             .build();
+        enc_keys.push(enc_key);
         cfgs.push((conf, pcf));
     }
 
-    (enc_key, cfgs)
+    (enc_keys, cfgs)
 }
 
 /// Generate random bundles at a fixed frequency.

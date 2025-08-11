@@ -16,7 +16,7 @@ use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -119,7 +119,7 @@ where
         .map(|_| DkgDecKey::generate())
         .collect::<Vec<_>>();
 
-    let dkg_keystore = DkgKeyStore::new(
+    let key_store = KeyStore::new(
         committee.clone(),
         dkg_keys
             .iter()
@@ -140,11 +140,10 @@ where
                 .sign_keypair(k)
                 .dh_keypair(x)
                 .dkg_key(dkg_key)
-                .dkg_keystore(dkg_keystore.clone())
                 .sailfish_addr(sa)
                 .decrypt_addr(da)
                 .sailfish_committee(sf_committee.clone())
-                .decrypt_committee(de_committee.clone())
+                .decrypt_committee((de_committee.clone(), key_store.clone()))
                 .maybe_previous_sailfish_committee(
                     set_prev.then(|| prev[0].sailfish_committee().clone()),
                 )
