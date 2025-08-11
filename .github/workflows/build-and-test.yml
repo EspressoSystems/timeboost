@@ -143,12 +143,5 @@ jobs:
           tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
           sudo cp just /usr/bin/just
 
-      - name: Build contracts
-        run: just build-contracts
-
-      - name: Generate bindings
-        run: just gen-contract-bindings
-
       - name: Run contract tests
-        run: just test-contracts
-
+        run: forge test
