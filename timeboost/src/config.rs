@@ -7,7 +7,7 @@ use timeboost_builder::{
 };
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -33,7 +33,7 @@ pub struct TimeboostConfig {
     pub(crate) dkg_key: DkgDecKey,
 
     /// Key store containing DKG public keys of all nodes.
-    pub(crate) dkg_keystore: DkgKeyStore,
+    pub(crate) key_store: KeyStore,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -77,11 +77,10 @@ impl TimeboostConfig {
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
             .dkg_key(self.dkg_key.clone())
-            .dkg_keystore(self.dkg_keystore.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())
-            .decrypt_committee(self.decrypt_committee.clone())
+            .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
             .leash_len(self.leash_len)
             .threshold_enc_key(self.threshold_enc_key.clone())
