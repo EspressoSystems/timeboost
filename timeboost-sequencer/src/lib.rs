@@ -273,7 +273,7 @@ impl Task {
         }
 
         // DKG bundle generation
-        if !self.sailfish.is_handover() {
+        if !self.sailfish.awaits_handover() {
             if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }

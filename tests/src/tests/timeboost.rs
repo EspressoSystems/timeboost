@@ -132,7 +132,7 @@ where
 /// Generate random bundles at a fixed frequency.
 async fn gen_bundles(enc_key: DecryptionKeyCell, tx: broadcast::Sender<BundleVariant>) {
     loop {
-        let Ok(b) = make_bundle(enc_key.wait().await.pubkey()) else {
+        let Ok(b) = make_bundle(enc_key.read().await.pubkey()) else {
             warn!("Failed to generate bundle");
             continue;
         };

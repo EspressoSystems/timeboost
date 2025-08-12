@@ -9,7 +9,7 @@ use multisig::{CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{LabeledDkgDecKey, Vess, Vss};
@@ -1862,7 +1862,7 @@ mod tests {
             setup
                 .enc_keys()
                 .iter()
-                .map(|cell| async { Ok::<_, ()>(cell.wait().await) }),
+                .map(|cell| async { Ok::<_, ()>(cell.read().await) }),
         )
         .await
         .expect("keys should be generated");
@@ -1928,7 +1928,7 @@ mod tests {
         enqueue_all_dkg_bundles(&mut com1_decrypters, None).await;
 
         for cell in com1_setup.enc_keys() {
-            cell.wait().await;
+            cell.read().await;
         }
 
         let encryption_key = com1_setup.enc_keys()[0]
@@ -1951,7 +1951,7 @@ mod tests {
 
         // make sure that all nodes in COM2 consider resharing complete
         for cell in com2_setup.enc_keys() {
-            cell.wait().await;
+            cell.read().await;
         }
 
         // trigger UseCommittee event for both COM1 and COM2
@@ -2061,7 +2061,7 @@ mod tests {
         }
 
         for cell in setup.enc_keys() {
-            cell.wait().await;
+            cell.read().await;
         }
 
         let encryption_key = setup.enc_keys()[0]
