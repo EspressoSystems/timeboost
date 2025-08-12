@@ -84,7 +84,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Assumes that the manager is valid.
      * @param newManager The new manager.
      */
-    function setManager(address newManager) external onlyOwner {
+    function setManager(address newManager) external virtual onlyOwner {
         if (newManager == address(0) || newManager == manager) {
             revert InvalidAddress(newManager);
         }
@@ -100,7 +100,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Assumes that the threshold encryption key is valid.
      * @param newThresholdEncryptionKey The threshold encryption key.
      */
-    function setThresholdEncryptionKey(bytes calldata newThresholdEncryptionKey) external onlyManager {
+    function setThresholdEncryptionKey(bytes calldata newThresholdEncryptionKey) external virtual onlyManager {
         if (thresholdEncryptionKey.length > 0) {
             revert ThresholdEncryptionKeyAlreadySet();
         }
@@ -121,6 +121,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function setNextCommittee(uint64 effectiveTimestamp, CommitteeMember[] calldata members)
         external
+        virtual
         onlyManager
         returns (uint64 committeeId)
     {
@@ -159,6 +160,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function getCommitteeById(uint64 id)
         external
+        virtual
         view
         returns (uint64 effectiveTimestamp, CommitteeMember[] memory committeeMembers)
     {
@@ -179,7 +181,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Assumes that committees are not deleted from the committee array.
      * @return committeeId The current committee id.
      */
-    function currentCommitteeId() public view returns (uint64 committeeId) {
+    function currentCommitteeId() public virtual view returns (uint64 committeeId) {
         if (committees.length == 0) {
             revert NoCommitteees();
         }
@@ -212,7 +214,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Assumes that committees are not deleted from the committee array.
      * @return committeeId The next committee id.
      */
-    function nextCommitteeId() public view returns (uint64 committeeId) {
+    function nextCommitteeId() public virtual view returns (uint64 committeeId) {
         uint64 currCommitteeId = currentCommitteeId();
         if (currCommitteeId == committees.length - 1) {
             revert NoCommitteeScheduled(committees[currCommitteeId].effectiveTimestamp);
