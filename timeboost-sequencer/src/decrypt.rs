@@ -30,6 +30,8 @@ use crate::config::DecrypterConfig;
 use crate::metrics::SequencerMetrics;
 
 const DKG_AAD: &[u8] = b"dkg";
+const THRES_AAD: &[u8] = b"threshold";
+
 type Result<T> = StdResult<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
@@ -53,7 +55,7 @@ enum Protocol {
 
 /// Command sent to Decrypter's background Worker
 enum Command {
-    /// Inform the Worker of a dkg bundle.
+    /// Inform the Worker of a DKG bundle.
     Dkg(DkgBundle),
     /// Decrypt all encrypted transactions in the inclusion list.
     Decrypt((InclusionList, bool)),
@@ -69,7 +71,7 @@ enum Command {
 /// collectively threshold-decrypt encrypted transactions in the inclusion list during the 2nd phase
 /// ("Decryption phase") of timeboost.
 ///
-/// The Decrypter also extracts dkg shares from inclusion lists and combines these to obtain keys.
+/// The Decrypter also extracts DKG shares from inclusion lists and combines these to obtain keys.
 ///
 /// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key
 /// share), and combiner's "hatching" (using the combiner key).
@@ -94,7 +96,7 @@ pub struct Decrypter {
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
-    /// Set of committees for which dkg bundles have already been submitted.
+    /// Set of committees for which DKG bundles have already been submitted.
     submitted: BTreeSet<CommitteeId>,
     /// Pending threshold encryption key material
     enc_key: DecryptionKeyCell,
@@ -228,7 +230,7 @@ impl Decrypter {
         Ok(())
     }
 
-    /// Generates and returns a Dkg bundle for the current committee, if not already submitted.
+    /// Generates and returns a DKG bundle for the current committee, if not already submitted.
     ///
     /// # Returns
     /// - `Some(DkgBundle)` if a new dealing was successfully created for the current committee.
@@ -385,12 +387,12 @@ enum WorkerState {
     AwaitingHandover(HashMap<PublicKey, ResharingSubset>),
     /// Received enough resharing messages to complete the handover.
     HandoverComplete(DecryptionKey),
-    /// Expects to obtain the initial dkg key through dkg bundles.
+    /// Expects to obtain the initial DKG key through DKG bundles.
     ///
-    /// Upon startup the Worker requests dkg messages from remote nodes
+    /// Upon startup the Worker requests DKG messages from remote nodes
     /// such that, if the local node is behind, it will catchup immediately.
     DkgPending(HashMap<PublicKey, DkgSubset>),
-    /// Already completed at least one instance of dkg. Ready for resharing.
+    /// Already completed at least one instance of DKG. Ready for resharing.
     ResharingPending(DecryptionKey),
     /// Obtained keys for both the current and next committee.
     ResharingComplete(DecryptionKey, DecryptionKey),
@@ -428,13 +430,13 @@ struct Worker {
     /// Channel for receiving commands from the parent.
     rx: Receiver<Command>,
 
-    /// Pending encryption key that will be updated after dkg/resharing is done.
+    /// Pending encryption key that will be updated after DKG/resharing is done.
     enc_key: DecryptionKeyCell,
 
     /// First round where an inclusion list was received (ignore shares for earlier rounds).
     first_requested_round: Option<RoundNumber>,
 
-    /// Decryption key used for communication between nodes for dkg and resharing.
+    /// Decryption key used for communication between nodes for DKG and resharing.
     dkg_sk: LabeledDkgDecKey,
 
     /// Key material for committee members (shared with Decrypter)
@@ -446,7 +448,7 @@ struct Worker {
     /// Number of rounds to retain.
     retain: usize,
 
-    /// Tracker for dkg bundles received through candidate lists.
+    /// Tracker for DKG bundles received through candidate lists.
     #[builder(default)]
     dkg_tracker: BTreeMap<CommitteeId, DkgAccumulator>,
 
@@ -637,7 +639,7 @@ impl Worker {
         Ok(false)
     }
 
-    /// A request for dkg subset has been received.
+    /// A request for DKG subset has been received.
     async fn on_dkg_request_msg(
         &mut self,
         src: PublicKey,
@@ -682,7 +684,7 @@ impl Worker {
         Ok(())
     }
 
-    /// A response for dkg subset has been received.
+    /// A response for DKG subset has been received.
     async fn on_dkg_response_msg(&mut self, src: PublicKey, res: SubsetResponse) -> Result<()> {
         trace!(node = %self.label, from=%src, %res.committee_id, "received dkg response");
         if res.committee_id != self.current {
@@ -1051,7 +1053,7 @@ impl Worker {
         Ok(())
     }
 
-    /// Catch up by requesting dkg subsets from remote nodes.
+    /// Catch up by requesting DKG subsets from remote nodes.
     async fn dkg_catchup(&mut self) -> Result<()> {
         let req = Protocol::DkgRequest(self.current);
         // the round number is ignored by the recieving party, but we don't want to give an
@@ -1131,7 +1133,7 @@ impl Worker {
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
                         dec_sk.privkey(),
                         &ct,
-                        &vec![],
+                        &THRES_AAD.to_vec(),
                     )
                     .ok() // decryption failure result in None
                 })
@@ -1270,13 +1272,12 @@ impl Worker {
             }
 
             if let Some(ct) = opt_ct {
-                let aad = vec![];
                 match DecryptionScheme::combine(
                     key_store.committee(),
                     dec_sk.combkey(),
                     dec_shares,
                     &ct,
-                    &aad,
+                    &THRES_AAD.to_vec(),
                 ) {
                     Ok(pt) => decrypted.push(Some(pt)),
                     // with f+1 decryption shares, which means ciphertext is valid, we just need to
@@ -1476,7 +1477,7 @@ impl DecShareBatch {
     }
 }
 
-/// A response with the agreed-upon subset of dkg bundles.
+/// A response with the agreed-upon subset of DKG bundles.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SubsetResponse {
     committee_id: CommitteeId,
@@ -1566,7 +1567,7 @@ pub enum DecrypterError {
     #[error("unknown key: {0}")]
     UnknownKey(PublicKey),
 
-    #[error("DKG/resharing not yet complete")]
+    #[error("dkg/resharing not yet complete")]
     DkgPending,
 
     #[error("dkg err: {0}")]
@@ -1615,12 +1616,14 @@ mod tests {
         PriorityBundle, SeqNo, Signer, Timestamp,
     };
 
-    use crate::{config::DecrypterConfig, decrypt::Decrypter, metrics::SequencerMetrics};
+    use crate::{
+        config::DecrypterConfig,
+        decrypt::{DKG_AAD, Decrypter, THRES_AAD},
+        metrics::SequencerMetrics,
+    };
 
     // Test constants
     const COMMITTEE_SIZE: usize = 5;
-    const DKG_AAD: &[u8] = b"dkg";
-    const THRESHOLD_AAD: &[u8] = b"threshold";
     const DECRYPTION_ROUND: u64 = 42;
     const TEST_EPOCH: u64 = 42;
     const TEST_CHAIN_ID: u64 = 0;
@@ -1800,7 +1803,7 @@ mod tests {
 
         // Test threshold encryption/decryption process
         let sample_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
-        let threshold_aad = THRESHOLD_AAD.to_vec();
+        let threshold_aad = THRES_AAD.to_vec();
         let ciphertext =
             DecryptionScheme::encrypt(&mut rng, expected_pubkey, &sample_plaintext, &threshold_aad)
                 .expect("encryption should succeed");
@@ -2198,7 +2201,6 @@ mod tests {
     ) -> InclusionList {
         let previous_round = Round::new(round - 1, committee.id());
         let evidence = create_round_evidence(committee, signature_keys, previous_round);
-        let empty_aad = vec![];
 
         // Encrypt both message types
         let priority_plaintext = Plaintext::new(priority_message.to_vec());
@@ -2208,7 +2210,7 @@ mod tests {
             &mut test_rng(),
             encryption_key,
             &priority_plaintext,
-            &empty_aad,
+            &THRES_AAD.to_vec(),
         )
         .expect("Priority transaction encryption should succeed");
 
@@ -2216,7 +2218,7 @@ mod tests {
             &mut test_rng(),
             encryption_key,
             &regular_plaintext,
-            &empty_aad,
+            &THRES_AAD.to_vec(),
         )
         .expect("Regular transaction encryption should succeed");
 

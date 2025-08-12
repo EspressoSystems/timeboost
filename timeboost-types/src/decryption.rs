@@ -166,10 +166,11 @@ impl DecryptionKeyCell {
 
     pub async fn read(&self) -> DecryptionKey {
         loop {
+            let fut = self.notify.notified();
             if let Some(k) = self.get() {
                 return k;
             }
-            self.notify.notified().await;
+            fut.await;
         }
     }
 }
