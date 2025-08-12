@@ -10,13 +10,12 @@ use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
-use timeboost_crypto::vess::ShoupVess;
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{
     DecryptionKey, DkgAccumulator, DkgBundle, DkgKeyStore, InclusionList, Subset,
@@ -232,18 +231,13 @@ impl Decrypter {
         Ok(())
     }
 
-    /// Send the received DKG bundles to worker
-    pub async fn enqueue_dkg(
-        &self,
-        pending_dkgs: &mut VecDeque<DkgBundle>,
-    ) -> StdResult<(), DecrypterDown> {
-        while let Some(b) = pending_dkgs.pop_front() {
-            self.worker_tx
-                .send(Command::Dkg(b))
-                .await
-                .map_err(|_| DecrypterDown(()))?;
-            debug!(node = %self.label, "enqueued one dkg bundle");
-        }
+    /// Send the received DKG bundle to worker
+    pub async fn enqueue_dkg(&self, dkg: DkgBundle) -> StdResult<(), DecrypterDown> {
+        self.worker_tx
+            .send(Command::Dkg(dkg))
+            .await
+            .map_err(|_| DecrypterDown(()))?;
+        debug!(node = %self.label, "enqueued one dkg bundle");
         Ok(())
     }
 
@@ -264,12 +258,12 @@ impl Decrypter {
             warn!(node = %self.label, committee = %committee_id, "missing dkg store");
             return None;
         };
-        let vess = Vess::new_fast_from(committee);
+        let vess = Vess::new_fast();
 
         let mut rng = thread_rng();
         let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
         let (ct, cm) = vess
-            .encrypted_shares(store.sorted_keys(), secret, b"dkg")
+            .encrypt_shares(committee, store.sorted_keys(), secret, b"dkg")
             .ok()?;
         self.submitted.insert(committee_id);
         Some(DkgBundle::new(committee_id, ct, cm))
@@ -663,9 +657,9 @@ impl Worker {
                 let committee = dkg_store.committee();
                 // TODO: centralize these constant, redeclared in DkgAccumulator.try_add()
                 let aad: &[u8; 3] = b"dkg";
-                let vess = ShoupVess::new_fast_from(committee);
+                let vess = Vess::new_fast();
                 let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
-                    vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
+                    vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
                         .map(|s| (s, b.comm().clone()))
                 }));
 
@@ -770,9 +764,9 @@ impl Worker {
                 let committee = acc.committee();
                 // TODO:(alex) centralize these constant, redeclared in DkgAccumulator.try_add()
                 let aad: &[u8; 3] = b"dkg";
-                let vess = ShoupVess::new_fast_from(committee);
+                let vess = Vess::new_fast();
                 let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
-                    vess.decrypt_share(&self.dkg_sk, b.vess_ct(), aad)
+                    vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), aad)
                         .map(|s| (s, b.comm().clone()))
                 }));
 
@@ -1354,14 +1348,14 @@ mod tests {
             .collect();
         let dkg_public_keys: Vec<_> = dkg_private_keys.iter().map(DkgEncKey::from).collect();
 
-        let vess = Vess::new_fast_from(&committee);
+        let vess = Vess::new_fast();
 
         // Generate dealings: each committee member contributes a random secret
         let start = Instant::now();
         let dealings: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|_| {
                 let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-                vess.encrypted_shares(&dkg_public_keys, secret, &dkg_aad)
+                vess.encrypt_shares(&committee, &dkg_public_keys, secret, &dkg_aad)
                     .unwrap()
             })
             .collect();
@@ -1373,7 +1367,7 @@ mod tests {
         // double check all dealings are correct
         let start = Instant::now();
         assert!(dealings.iter().all(|(ct, comm)| {
-            vess.verify(dkg_public_keys.iter(), ct, comm, &dkg_aad)
+            vess.verify_shares(&committee, dkg_public_keys.iter(), ct, comm, &dkg_aad)
                 .is_ok()
         }));
         tracing::info!(
@@ -1402,7 +1396,7 @@ mod tests {
                     .iter()
                     .map(|&dealing_idx| {
                         let (ref ciphertext, _) = dealings[dealing_idx];
-                        vess.decrypt_share(&labeled_secret_key, ciphertext, &dkg_aad)
+                        vess.decrypt_share(&committee, &labeled_secret_key, ciphertext, &dkg_aad)
                             .expect("DKG share decryption should succeed")
                     })
                     .collect()
@@ -1621,11 +1615,12 @@ mod tests {
 
         // enqueuing them all to decrypters
         for decrypter in decrypters.iter_mut() {
-            let mut pending_dkgs = dkg_bundles.clone();
-            decrypter
-                .enqueue_dkg(&mut pending_dkgs)
-                .await
-                .expect("DKG bundles should be enqueued successfully");
+            for dkg in dkg_bundles.clone() {
+                decrypter
+                    .enqueue_dkg(dkg)
+                    .await
+                    .expect("DKG bundles should be enqueued successfully");
+            }
         }
     }
 

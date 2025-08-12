@@ -303,7 +303,7 @@ mod tests {
         let clt = Client::new(cfg.clone());
         let height = clt.height().await.unwrap();
         let mut watcher = Watcher::new(cfg, height, None);
-        let header = watcher.next().await;
+        let header = watcher.next().await.unwrap_right();
         assert_eq!(u64::from(height), header.height());
     }
 }

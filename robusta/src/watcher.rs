@@ -1,6 +1,7 @@
 use std::str::from_utf8;
 
 use bytes::Bytes;
+use either::Either;
 use espresso_types::{Header, NamespaceId};
 use futures::{SinkExt, StreamExt};
 use reqwest::header::LOCATION;
@@ -37,7 +38,7 @@ impl Watcher {
         }
     }
 
-    pub async fn next(&mut self) -> Header {
+    pub async fn next(&mut self) -> Either<Height, Header> {
         'main: loop {
             let ws = if let Some(w) = &mut self.websocket {
                 w
@@ -74,16 +75,16 @@ impl Watcher {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<Header>(text.as_str()) {
                             Ok(hdr) => {
+                                self.height = hdr.height().into();
                                 if let Some(id) = &self.namespace {
                                     if hdr.ns_table().find_ns_id(id).is_some() {
-                                        self.height = hdr.height().into();
-                                        return hdr;
+                                        return Either::Right(hdr);
                                     } else {
                                         debug!(height = %hdr.height(), "namespace id not found");
+                                        return Either::Left(self.height);
                                     }
                                 } else {
-                                    self.height = hdr.height().into();
-                                    return hdr;
+                                    return Either::Right(hdr);
                                 }
                             }
                             Err(err) => {
