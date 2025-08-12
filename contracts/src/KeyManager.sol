@@ -36,6 +36,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     bytes public thresholdEncryptionKey;
     Committee[] public committees;
     address public manager;
+    uint256[49] private __gap;
 
     modifier onlyManager() {
         _onlyManager();
@@ -97,13 +98,13 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Reverts if the threshold encryption key is already set.
      * @dev Reverts if the caller is not the manager.
      * @dev Assumes that the threshold encryption key is valid.
-     * @param thresholdEncKey The threshold encryption key.
+     * @param newThresholdEncryptionKey The threshold encryption key.
      */
-    function setThresholdEncryptionKey(bytes calldata thresholdEncKey) external onlyManager {
+    function setThresholdEncryptionKey(bytes calldata newThresholdEncryptionKey) external onlyManager {
         if (thresholdEncryptionKey.length > 0) {
             revert ThresholdEncryptionKeyAlreadySet();
         }
-        thresholdEncryptionKey = thresholdEncKey;
+        thresholdEncryptionKey = newThresholdEncryptionKey;
         emit SetThresholdEncryptionKey(thresholdEncryptionKey, msg.sender);
     }
 
