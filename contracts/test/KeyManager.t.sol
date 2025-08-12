@@ -25,7 +25,7 @@ contract KeyManagerTest is Test {
         bytes memory thresholdEncKey = abi.encodePacked("1");
         vm.prank(manager);
         vm.expectEmit(true, true, true, true);
-        emit KeyManager.SetThresholdEncryptionKey(thresholdEncKey);
+        emit KeyManager.SetThresholdEncryptionKey(thresholdEncKey, manager);
         keyManagerProxy.setThresholdEncryptionKey(thresholdEncKey);
         assertEq(keyManagerProxy.thresholdEncryptionKey(), thresholdEncKey);
     }
@@ -44,7 +44,7 @@ contract KeyManagerTest is Test {
         vm.prank(manager);
         vm.expectEmit(true, true, true, true);
         emit KeyManager.ScheduledCommittee(
-            0, uint64(block.timestamp), committeeMembers.length, keccak256(abi.encode(committeeMembers))
+            0, uint64(block.timestamp), uint64(committeeMembers.length), keccak256(abi.encode(committeeMembers)), manager
         );
         keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
 
@@ -69,11 +69,31 @@ contract KeyManagerTest is Test {
     }
 
     function test_setManager() public {
+        address newManager = makeAddr("newManager");
         vm.prank(owner);
         vm.expectEmit(true, true, true, true);
-        emit KeyManager.ChangedManager(manager);
+        emit KeyManager.ChangedManager(manager, newManager, owner);
+        keyManagerProxy.setManager(newManager);
+        assertEq(keyManagerProxy.manager(), newManager);
+    }
+
+    function test_revertWhenInvalidAddress_setManager() public {
+        vm.startPrank(owner);
+        // revert for the zero address
+        vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidAddress.selector, address(0)));
+        keyManagerProxy.setManager(address(0));
+
+        // revert for the same manager
+        vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidAddress.selector, manager));
         keyManagerProxy.setManager(manager);
-        assertEq(keyManagerProxy.manager(), manager);
+        vm.stopPrank();
+    }
+
+    function test_revertWhenNotOwner_setManager() public {
+        vm.startPrank(manager);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, manager));
+        keyManagerProxy.setManager(manager);
+        vm.stopPrank();
     }
 
     function test_revertWhenNotManager_setThresholdEncryptionKey() public {
@@ -102,21 +122,11 @@ contract KeyManagerTest is Test {
         keyManagerProxy.setNextCommittee(uint64(block.timestamp), new KeyManager.CommitteeMember[](0));
     }
 
-    function test_revertWhenNotOwner_setManager() public {
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, manager));
-        keyManagerProxy.setManager(manager);
-    }
-
-    function test_revertWhenInvalidAddress_setManager() public {
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidAddress.selector, address(0)));
-        keyManagerProxy.setManager(address(0));
-    }
+   
 
     // Tests for currentCommitteeId function
     function test_revertWhenNoCommitteeScheduled_emptyCommittees() public {
-        vm.expectRevert(abi.encodeWithSelector(KeyManager.CommitteeIdDoesNotExist.selector, 0, 0));
+        vm.expectRevert(abi.encodeWithSelector(KeyManager.NoCommitteees.selector));
         keyManagerProxy.currentCommitteeId();
     }
 
@@ -156,7 +166,7 @@ contract KeyManagerTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                KeyManager.NoCommitteeScheduled.selector, uint64(block.timestamp), effectiveTimestamp
+                KeyManager.NoCommitteeScheduled.selector, effectiveTimestamp
             )
         );
         keyManagerProxy.currentCommitteeId();
@@ -223,4 +233,40 @@ contract KeyManagerTest is Test {
         currentCommitteeId = keyManagerProxy.currentCommitteeId();
         assertEq(currentCommitteeId, 2);
     }
+
+    function test_nextCommitteeId() public {
+        KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
+        bytes memory randomBytes = abi.encodePacked("1");
+        committeeMembers[0] = KeyManager.CommitteeMember({
+            pubKey: randomBytes,
+            secureChannelKey: randomBytes,
+            dkgEncKey: randomBytes,
+            networkAddress: "0x0000000000000000000000000000000000000000"
+        });
+
+        vm.startPrank(manager);
+        keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
+        keyManagerProxy.setNextCommittee(uint64(block.timestamp+100), committeeMembers);
+        vm.stopPrank();
+
+        uint64 nextCommitteeId = keyManagerProxy.nextCommitteeId();
+        assertEq(nextCommitteeId, 1);
+    }
+
+    function test_revertWhenNoNextCommittee_nextCommitteeId() public {
+        test_nextCommitteeId();
+        (uint64 lastEffectiveTimestamp,) = keyManagerProxy.getCommitteeById(0);
+        vm.warp(uint64(block.timestamp + 100));
+        (uint64 nextEffectiveTimestamp,) = keyManagerProxy.getCommitteeById(keyManagerProxy.currentCommitteeId());
+        assertNotEq(nextEffectiveTimestamp, lastEffectiveTimestamp);
+        vm.expectRevert(abi.encodeWithSelector(KeyManager.NoCommitteeScheduled.selector, nextEffectiveTimestamp));
+        keyManagerProxy.nextCommitteeId();
+
+        vm.warp(uint64(block.timestamp + 200));
+        // confirm that the next effective timestamp is the same as the last effective timestamp
+        (uint64 nextEffectiveTimestamp2,) = keyManagerProxy.getCommitteeById(keyManagerProxy.currentCommitteeId());
+        assertEq(nextEffectiveTimestamp2, nextEffectiveTimestamp);
+        vm.expectRevert(abi.encodeWithSelector(KeyManager.NoCommitteeScheduled.selector, nextEffectiveTimestamp2));
+        keyManagerProxy.nextCommitteeId();
+    }       
 }
