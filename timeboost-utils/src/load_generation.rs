@@ -1,3 +1,13 @@
+use std::str::FromStr;
+
+use alloy::{
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+    network::TxSignerSync,
+    primitives::{TxKind, U256},
+    rlp::Encodable,
+    rpc::types::AccessList,
+    signers::local::PrivateKeySigner,
+};
 use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
@@ -7,7 +17,7 @@ use timeboost_crypto::{
     DecryptionScheme, Plaintext, prelude::ThresholdEncKeyCell,
     traits::threshold_enc::ThresholdEncScheme,
 };
-use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
+use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, SeqNo, Signer};
 
 pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
@@ -46,6 +56,7 @@ pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant
 pub fn make_dev_acct_bundle(
     pubkey: &ThresholdEncKeyCell,
     nonce: u64,
+    to: alloy::primitives::Address,
 ) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
@@ -53,7 +64,7 @@ pub fn make_dev_acct_bundle(
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let mut bundle = Bundle::create_dev_acct_txn_bundle(nonce)?;
+    let mut bundle = create_dev_acct_txn_bundle(nonce, to)?;
 
     if let Some(pubkey) = &*pubkey.get_ref()
         && rng.gen_bool(0.5)
@@ -78,6 +89,42 @@ pub fn make_dev_acct_bundle(
         // non-priority
         Ok(BundleVariant::Regular(bundle))
     }
+}
+
+pub fn create_dev_acct_txn_bundle(
+    nonce: u64,
+    to: alloy::primitives::Address,
+) -> anyhow::Result<Bundle> {
+    // Chain id from l2 chain
+    // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+    let chain_id = 412346;
+    let mut tx = TxEip1559 {
+        chain_id,
+        nonce,
+        max_priority_fee_per_gas: 1000000000,
+        max_fee_per_gas: 1000000000,
+        gas_limit: 21000,
+        to: TxKind::Call(to),
+        value: U256::from(1),
+        input: alloy::primitives::Bytes::new(),
+        access_list: AccessList::default(),
+    };
+
+    // Private key from pre funded dev account on test node
+    // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+    let signer = PrivateKeySigner::from_str(
+        "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
+    )?;
+    let sig = signer.sign_transaction_sync(&mut tx)?;
+    let signed_tx = tx.into_signed(sig);
+    let env = TxEnvelope::Eip1559(signed_tx);
+    let mut rlp = Vec::new();
+    env.encode(&mut rlp);
+
+    let encoded = ssz::ssz_encode(&vec![&rlp]);
+    let b = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
+
+    Ok(b)
 }
 
 /// Transactions per second to milliseconds is 1000 / TPS

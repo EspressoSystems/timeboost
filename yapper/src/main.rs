@@ -17,11 +17,13 @@ use tokio::signal::{
     unix::{SignalKind, signal},
 };
 use tracing::{info, warn};
-use tx::yap;
 
-use crate::tx::yap_with_nitro;
+use crate::config::YapperConfig;
+use crate::yapper::Yapper;
 
-mod tx;
+mod config;
+mod enc_key;
+mod yapper;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -43,8 +45,13 @@ struct Cli {
     #[clap(long, default_value_t = false)]
     nitro_integration: bool,
 
+    /// How many txns to send before terminating yapper
     #[clap(long, default_value_t = 20)]
     nitro_txn_limit: u64,
+
+    /// How many txns to send before terminating yapper
+    #[clap(long, default_value = "http://localhost:8547")]
+    nitro_url: String,
 }
 
 #[tokio::main]
@@ -69,13 +76,16 @@ async fn main() -> Result<()> {
         addresses.push(addr);
     }
 
-    let mut jh = tokio::spawn(async move {
-        if cli.nitro_integration {
-            yap_with_nitro(&addresses, cli.nitro_txn_limit).await
-        } else {
-            yap(&addresses, cli.tps).await
-        }
-    });
+    let config = YapperConfig::builder()
+        .addresses(addresses)
+        .nitro_integration(cli.nitro_integration)
+        .tps(cli.tps)
+        .txn_limit(cli.nitro_txn_limit)
+        .nitro_url(cli.nitro_url)
+        .build();
+    let yapper = Yapper::new(config).await?;
+
+    let mut jh = tokio::spawn(async move { yapper.yap().await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {

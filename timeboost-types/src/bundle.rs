@@ -1,16 +1,12 @@
 use std::ops::{Deref, DerefMut};
-use std::str::FromStr;
 
 use alloy::consensus::transaction::SignerRecoverable;
-use alloy::consensus::{Sealed, SignableTransaction, TxEip1559, TxEnvelope};
+use alloy::consensus::{Sealed, TxEnvelope};
 use alloy::eips::{Encodable2718, Typed2718};
-use alloy::network::TxSignerSync;
-use alloy::primitives::{B256, TxKind, U256, address};
+use alloy::primitives::B256;
 use alloy::rlp::Decodable;
-use alloy::rpc::types::AccessList;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Error, SignerSync, k256::ecdsa::SigningKey};
-use alloy_rlp::Encodable;
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::CommitteeId;
@@ -117,37 +113,6 @@ impl Bundle {
         let e = Epoch::now() + bool::arbitrary(u)? as u64;
         let encoded = ssz::ssz_encode(&vec![&d]);
         let b = Bundle::new(c, e, encoded.into(), false);
-
-        Ok(b)
-    }
-
-    pub fn create_dev_acct_txn_bundle(nonce: u64) -> anyhow::Result<Bundle> {
-        let chain_id = 412346;
-        let mut tx = TxEip1559 {
-            chain_id,
-            nonce,
-            max_priority_fee_per_gas: 1000000000,
-            max_fee_per_gas: 1000000000,
-            gas_limit: 21000,
-            to: TxKind::Call(address!("6A568afe0f82d34759347bb36F14A6bB171d2CBe")),
-            value: U256::from(1),
-            input: alloy::primitives::Bytes::new(),
-            access_list: AccessList::default(),
-        };
-
-        // private key from pre funded dev account on test node
-        // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation
-        let signer = PrivateKeySigner::from_str(
-            "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
-        )?;
-        let sig = signer.sign_transaction_sync(&mut tx)?;
-        let signed_tx = tx.into_signed(sig);
-        let env = TxEnvelope::Eip1559(signed_tx);
-        let mut rlp = Vec::new();
-        env.encode(&mut rlp);
-
-        let encoded = ssz::ssz_encode(&vec![&rlp]);
-        let b = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
 
         Ok(b)
     }

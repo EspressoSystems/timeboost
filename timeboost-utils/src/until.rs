@@ -77,7 +77,6 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
                             tracing::info!("committed_round: {}", committed_round);
                             tracing::info!("enqueued encrypted: {}, output decrypted: {}", queued_encrypted, output_decrypted);
                             tracing::info!("watchdog completed successfully");
-                            sleep(Duration::from_secs(5)).await;
                             break;
                         }
                     }

@@ -1,4 +1,8 @@
-use std::{borrow::Cow, fmt};
+use std::{
+    borrow::Cow,
+    fmt,
+    ops::{Add, AddAssign, Deref},
+};
 
 use bon::Builder;
 use data_encoding::BASE64URL_NOPAD;
@@ -40,6 +44,42 @@ macro_rules! Primitive {
         impl core::fmt::Display for $name {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 self.0.fmt(f)
+            }
+        }
+
+        impl Deref for $name {
+            type Target = $t;
+
+            fn deref(&self) -> &$t {
+                &self.0
+            }
+        }
+
+        impl Add for $name {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl Add<$t> for $name {
+            type Output = Self;
+
+            fn add(self, rhs: $t) -> Self {
+                Self(self.0 + rhs)
+            }
+        }
+
+        impl AddAssign for $name {
+            fn add_assign(&mut self, rhs: Self) {
+                *self = *self + rhs
+            }
+        }
+
+        impl AddAssign<$t> for $name {
+            fn add_assign(&mut self, rhs: $t) {
+                *self = *self + rhs
             }
         }
     };

@@ -22,7 +22,6 @@ until = []
 
 [dependencies]
 alloy = { workspace = true }
-alloy-chains = { workspace = true }
 anyhow = { workspace = true }
 ark-std = { workspace = true }
 async-lock = { workspace = true }

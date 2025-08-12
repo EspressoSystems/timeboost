@@ -6,8 +6,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map};
 use timeboost_crypto::{
     DecryptionScheme,
+    feldman::FeldmanVssPublicParam,
     prelude::{DkgEncKey, Vess, Vss},
-    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
+    traits::{
+        dkg::{KeyResharing, VerifiableSecretSharing},
+        threshold_enc::ThresholdEncScheme,
+    },
     vess::VessError,
 };
 
@@ -63,6 +67,29 @@ impl DecryptionKey {
         Self::from_single_dkg(committee_size, node_idx, agg_key_share, &agg_comm)
     }
 
+    /// Construct all key material for the threshold decryption from Key resharing.
+    pub fn from_resharing<I>(
+        old_committee: &Committee,
+        new_committee: &Committee,
+        recv_node_idx: usize,
+        dealings: I,
+    ) -> anyhow::Result<Self>
+    where
+        I: ExactSizeIterator<
+                Item = (
+                    usize,
+                    <Vss as VerifiableSecretSharing>::SecretShare,
+                    <Vss as VerifiableSecretSharing>::Commitment,
+                ),
+            > + Clone,
+    {
+        let old_pp = FeldmanVssPublicParam::from(old_committee);
+        let new_pp = FeldmanVssPublicParam::from(new_committee);
+
+        let (new_share, new_comm) = Vss::combine(&old_pp, &new_pp, recv_node_idx, dealings)?;
+        Self::from_single_dkg(new_pp.num_nodes(), recv_node_idx, new_share, &new_comm)
+    }
+
     /// inner routine to construct from a single (aggregated or interpolated) DKG output,
     /// shared in both DKG and resharing logic.
     fn from_single_dkg(
@@ -87,10 +114,6 @@ impl DecryptionKey {
         let prikey: KeyShare = (key_share, node_idx as u32).into();
 
         Ok(Self::new(pk, combkey, prikey))
-    }
-
-    pub fn from_resharing() -> anyhow::Result<Self> {
-        todo!("after #406 merged, invoked FeldmanVss.combine(), then from_single_dkg()")
     }
 
     pub fn pubkey(&self) -> &PublicKey {
@@ -153,7 +176,7 @@ impl DkgKeyStore {
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
-    pub fn sorted_keys(&self) -> btree_map::Values<KeyId, DkgEncKey> {
+    pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyId, DkgEncKey> {
         self.keys.values()
     }
 }
@@ -203,8 +226,9 @@ impl DkgAccumulator {
         }
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
-        let vess = Vess::new_fast_from(committee);
-        vess.verify(
+        let vess = Vess::new_fast();
+        vess.verify_shares(
+            committee,
             self.store.sorted_keys(),
             bundle.vess_ct(),
             bundle.comm(),
