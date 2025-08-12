@@ -263,7 +263,7 @@ impl Task {
         let mut pending = None;
         let mut pending_dkgs = VecDeque::new();
         let mut candidates = Candidates::new();
-        let mut index: DelayedInboxIndex = 0.into();
+        let mut index = DelayedInboxIndex::default();
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
