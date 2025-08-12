@@ -116,7 +116,7 @@ impl<T: Committable, C: Comm<T> + Send> Coordinator<T, C> {
     }
 
     /// Is this coordinator started in a handover state?
-    pub fn is_handover(&self) -> bool {
+    pub fn awaits_handover(&self) -> bool {
         matches!(self.state, State::AwaitHandover)
     }
 
