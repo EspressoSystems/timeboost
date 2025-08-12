@@ -153,7 +153,7 @@ impl DkgKeyStore {
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
-    pub fn sorted_keys(&self) -> btree_map::Values<KeyId, DkgEncKey> {
+    pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyId, DkgEncKey> {
         self.keys.values()
     }
 }

@@ -10,7 +10,7 @@ use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{CommitteeVec, Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKeyCell, Vess, Vss};
@@ -232,18 +232,13 @@ impl Decrypter {
         Ok(())
     }
 
-    /// Send the received DKG bundles to worker
-    pub async fn enqueue_dkg(
-        &self,
-        pending_dkgs: &mut VecDeque<DkgBundle>,
-    ) -> StdResult<(), DecrypterDown> {
-        while let Some(b) = pending_dkgs.pop_front() {
-            self.worker_tx
-                .send(Command::Dkg(b))
-                .await
-                .map_err(|_| DecrypterDown(()))?;
-            debug!(node = %self.label, "enqueued one dkg bundle");
-        }
+    /// Send the received DKG bundle to worker
+    pub async fn enqueue_dkg(&self, dkg: DkgBundle) -> StdResult<(), DecrypterDown> {
+        self.worker_tx
+            .send(Command::Dkg(dkg))
+            .await
+            .map_err(|_| DecrypterDown(()))?;
+        debug!(node = %self.label, "enqueued one dkg bundle");
         Ok(())
     }
 
@@ -1621,11 +1616,12 @@ mod tests {
 
         // enqueuing them all to decrypters
         for decrypter in decrypters.iter_mut() {
-            let mut pending_dkgs = dkg_bundles.clone();
-            decrypter
-                .enqueue_dkg(&mut pending_dkgs)
-                .await
-                .expect("DKG bundles should be enqueued successfully");
+            for dkg in dkg_bundles.clone() {
+                decrypter
+                    .enqueue_dkg(dkg)
+                    .await
+                    .expect("DKG bundles should be enqueued successfully");
+            }
         }
     }
 

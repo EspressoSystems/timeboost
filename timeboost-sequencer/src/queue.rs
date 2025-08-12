@@ -191,17 +191,14 @@ impl DataSource for BundleQueue {
         inner.set_time(time);
 
         if r.is_genesis() || inner.mode.is_passive() {
-            // allow DKG in passive mode (first 8 rounds from genesis)
-            let candidate_list = CandidateList::builder(Timestamp::now(), inner.index)
-                .with_dkg(inner.dkg.clone())
+            return CandidateList::builder(Timestamp::now(), inner.index)
+                .with_dkg(inner.dkg.take())
                 .finish()
                 .try_into()
                 .unwrap_or_else(|err| {
                     error!(%err, "candidate list serialization error");
                     CandidateListBytes::default()
                 });
-            inner.dkg = None;
-            return candidate_list;
         }
 
         let mut size_budget = inner.max_len;
@@ -229,19 +226,16 @@ impl DataSource for BundleQueue {
             regular.push(b.clone())
         }
 
-        let candidate_list = CandidateList::builder(inner.time, inner.index)
+        CandidateList::builder(inner.time, inner.index)
             .with_priority_bundles(priority)
             .with_regular_bundles(regular)
-            .with_dkg(inner.dkg.clone())
+            .with_dkg(inner.dkg.take())
             .finish()
             .try_into()
             .unwrap_or_else(|err| {
                 error!(%err, "candidate list serialization error");
                 CandidateListBytes::default()
-            });
-
-        inner.dkg = None;
-        candidate_list
+            })
     }
 }
 
