@@ -71,11 +71,6 @@ just build_release
 just build-contracts
 ```
 
-## Contract Bindings
-```sh
-just gen-contract-bindings
-```
-
 ## Run
 
 Run in docker
@@ -114,6 +109,7 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 
 ## Test
 
+Contracts test
 ```shell
 just test
 ```
