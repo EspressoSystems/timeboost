@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use alloy::{
     consensus::{SignableTransaction, TxEip1559, TxEnvelope},
     network::TxSignerSync,
@@ -18,9 +16,14 @@ use timeboost_crypto::{
 };
 use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, SeqNo, Signer};
 
-// Private key from pre funded dev account on test node
-// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
-const DEV_ACCT_PRIV_KEY: &str = "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659";
+pub struct TxInfo {
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub to: alloy::primitives::Address,
+    pub base_fee: u128,
+    pub gas_limit: u64,
+    pub signer: PrivateKeySigner,
+}
 
 pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
@@ -58,11 +61,7 @@ pub fn make_bundle(pubkey: &ThresholdEncKeyCell) -> anyhow::Result<BundleVariant
 
 pub fn make_dev_acct_bundle(
     pubkey: &ThresholdEncKeyCell,
-    chain_id: u64,
-    nonce: u64,
-    to: alloy::primitives::Address,
-    gas_limit: u64,
-    max_base_fee: u128,
+    txn: TxInfo,
 ) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
@@ -70,7 +69,7 @@ pub fn make_dev_acct_bundle(
     let mut u = Unstructured::new(&v);
 
     let max_seqno = 10;
-    let mut bundle = create_dev_acct_txn_bundle(chain_id, nonce, to, gas_limit, max_base_fee)?;
+    let mut bundle = create_dev_acct_txn_bundle(txn)?;
 
     if let Some(pubkey) = &*pubkey.get_ref()
         && rng.gen_bool(0.5)
@@ -97,34 +96,25 @@ pub fn make_dev_acct_bundle(
     }
 }
 
-pub fn create_dev_acct_txn_bundle(
-    chain_id: u64,
-    nonce: u64,
-    to: alloy::primitives::Address,
-    gas_limit: u64,
-    max_fee_per_gas: u128,
-) -> anyhow::Result<Bundle> {
+pub fn create_dev_acct_txn_bundle(tx_info: TxInfo) -> anyhow::Result<Bundle> {
     let mut tx = TxEip1559 {
-        chain_id,
-        nonce,
-        max_fee_per_gas,
-        gas_limit,
-        to: TxKind::Call(to),
+        chain_id: tx_info.chain_id,
+        nonce: tx_info.nonce,
+        max_fee_per_gas: tx_info.base_fee,
+        gas_limit: tx_info.gas_limit,
+        to: TxKind::Call(tx_info.to),
         value: U256::from(1),
         ..Default::default()
     };
 
-    // Private key from pre funded dev account on test node
-    // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
-    let signer = PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?;
-    let sig = signer.sign_transaction_sync(&mut tx)?;
+    let sig = tx_info.signer.sign_transaction_sync(&mut tx)?;
     let signed_tx = tx.into_signed(sig);
     let env = TxEnvelope::Eip1559(signed_tx);
     let mut rlp = Vec::new();
     env.encode(&mut rlp);
 
     let encoded = ssz::ssz_encode(&vec![&rlp]);
-    let b = Bundle::new(chain_id.into(), Epoch::now(), encoded.into(), false);
+    let b = Bundle::new(tx_info.chain_id.into(), Epoch::now(), encoded.into(), false);
 
     Ok(b)
 }

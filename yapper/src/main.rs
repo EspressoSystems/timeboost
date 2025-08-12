@@ -49,6 +49,11 @@ struct Cli {
     #[clap(long, default_value_t = 20)]
     nitro_txn_limit: u64,
 
+    /// Chain id for l2 chain
+    /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+    #[clap(long, default_value_t = 412346)]
+    chain_id: u64,
+
     /// How many txns to send before terminating yapper
     #[clap(long, default_value = "http://localhost:8547")]
     nitro_url: String,
@@ -82,6 +87,7 @@ async fn main() -> Result<()> {
         .tps(cli.tps)
         .txn_limit(cli.nitro_txn_limit)
         .nitro_url(cli.nitro_url)
+        .chain_id(cli.chain_id)
         .build();
     let yapper = Yapper::new(config).await?;
 

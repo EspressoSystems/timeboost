@@ -1,16 +1,17 @@
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
 use alloy::{
     network::{Ethereum, TransactionBuilder},
     primitives::{Address, U256, address},
     providers::{Provider, RootProvider},
     rpc::types::TransactionRequest,
+    signers::local::PrivateKeySigner,
 };
 use anyhow::{Context, Result};
 use futures::future::join_all;
 use reqwest::{Client, Url};
 use timeboost::types::BundleVariant;
-use timeboost_utils::load_generation::{make_bundle, make_dev_acct_bundle, tps_to_millis};
+use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
 use tokio::time::interval;
 use tracing::warn;
 
@@ -19,6 +20,10 @@ use crate::{config::YapperConfig, enc_key::ThresholdEncKeyCellAccumulator};
 /// This is the address of the prefunded dev account for nitro chain
 /// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
 const DEV_ACCT_ADDRESS: Address = address!("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E");
+
+/// Private key from pre funded dev account on test node
+/// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+const DEV_ACCT_PRIV_KEY: &str = "b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659";
 
 /// This is the address of validator for the chain
 /// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
@@ -34,15 +39,16 @@ pub(crate) struct Yapper {
     urls: Vec<ApiUrls>,
     client: Client,
     interval: Duration,
+    chain_id: u64,
     provider: Option<RootProvider>,
     txn_limit: Option<u64>,
 }
 
 impl Yapper {
-    pub(crate) async fn new(config: YapperConfig) -> Result<Self> {
+    pub(crate) async fn new(cfg: YapperConfig) -> Result<Self> {
         let mut urls = Vec::new();
 
-        for addr in config.addresses {
+        for addr in cfg.addresses {
             let regular_url = Url::parse(&format!("http://{addr}/v0/submit-regular"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
             let priority_url = Url::parse(&format!("http://{addr}/v0/submit-priority"))
@@ -57,16 +63,16 @@ impl Yapper {
             });
         }
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let (provider, interval, txn_limit) = if config.nitro_integration {
+        let (provider, interval, txn_limit) = if cfg.nitro_integration {
             (
-                Some(RootProvider::<Ethereum>::connect(&config.nitro_url).await?),
+                Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?),
                 Duration::from_secs(1),
                 // For nitro running in ci, avoid race conditions with block height by setting txn
                 // limit
-                Some(config.txn_limit),
+                Some(cfg.txn_limit),
             )
         } else {
-            (None, Duration::from_millis(tps_to_millis(config.tps)), None)
+            (None, Duration::from_millis(tps_to_millis(cfg.tps)), None)
         };
         Ok(Self {
             urls,
@@ -74,6 +80,7 @@ impl Yapper {
             client,
             provider,
             txn_limit,
+            chain_id: cfg.chain_id,
         })
     }
 
@@ -89,40 +96,17 @@ impl Yapper {
         let mut txn_sent = 0;
         loop {
             let b = if let Some(ref p) = self.provider {
-                let nonce = p.get_transaction_count(DEV_ACCT_ADDRESS).await?;
-                // Chain id from l2 chain
-                // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
-                let chain_id = 412346;
-                let tx = TransactionRequest::default()
-                    .with_chain_id(chain_id)
-                    .with_nonce(nonce)
-                    .with_from(DEV_ACCT_ADDRESS)
-                    .with_to(VALIDATOR_ADDRESS)
-                    .with_value(U256::from(1));
-
-                let Ok(estimate) = p.estimate_gas(tx).await else {
-                    warn!("failed to get estimate");
-                    continue;
-                };
-                let Ok(price) = p.get_gas_price().await else {
-                    warn!("failed to get gas price");
-                    continue;
-                };
                 // For testing just send from the dev account to the validator address
-                let Ok(b) = make_dev_acct_bundle(
-                    acc.enc_key().await,
-                    chain_id,
-                    nonce,
-                    VALIDATOR_ADDRESS,
-                    estimate,
-                    price,
-                ) else {
+                let Ok(txn) = Self::prepare_txn(p, self.chain_id).await else {
+                    warn!("failed to prepare txn");
+                    continue;
+                };
+                let Ok(b) = make_dev_acct_bundle(acc.enc_key().await, txn) else {
                     warn!("failed to generate dev account bundle");
                     continue;
                 };
                 b
             } else {
-                // create a bundle for next `interval.tick()`, then send this bundle to each node
                 let Ok(b) = make_bundle(acc.enc_key().await) else {
                     warn!("failed to generate bundle");
                     continue;
@@ -143,6 +127,36 @@ impl Yapper {
 
             interval.tick().await;
         }
+    }
+
+    async fn prepare_txn(p: &RootProvider, chain_id: u64) -> Result<TxInfo> {
+        let nonce = p.get_transaction_count(DEV_ACCT_ADDRESS).await?;
+        let tx = TransactionRequest::default()
+            .with_chain_id(chain_id)
+            .with_nonce(nonce)
+            .with_from(DEV_ACCT_ADDRESS)
+            // Just choosing an address that already exists on the chain
+            .with_to(VALIDATOR_ADDRESS)
+            .with_value(U256::from(1));
+
+        let gas_limit = p
+            .estimate_gas(tx)
+            .await
+            .with_context(|| "failed to estimate gas")?;
+
+        let base_fee = p
+            .get_gas_price()
+            .await
+            .with_context(|| "failed to get gas price")?;
+
+        Ok(TxInfo {
+            chain_id,
+            nonce,
+            to: VALIDATOR_ADDRESS,
+            gas_limit,
+            base_fee,
+            signer: PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?,
+        })
     }
 
     async fn send_bundle_to_node(
