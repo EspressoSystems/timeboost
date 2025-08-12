@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use alloy::{
-    network::Ethereum,
-    primitives::{Address, address},
+    network::{Ethereum, TransactionBuilder},
+    primitives::{Address, U256, address},
     providers::{Provider, RootProvider},
+    rpc::types::TransactionRequest,
 };
 use anyhow::{Context, Result};
 use futures::future::join_all;
@@ -89,10 +90,34 @@ impl Yapper {
         loop {
             let b = if let Some(ref p) = self.provider {
                 let nonce = p.get_transaction_count(DEV_ACCT_ADDRESS).await?;
+                // Chain id from l2 chain
+                // https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+                let chain_id = 412346;
+                let tx = TransactionRequest::default()
+                    .with_chain_id(chain_id)
+                    .with_nonce(nonce)
+                    .with_from(DEV_ACCT_ADDRESS)
+                    .with_to(VALIDATOR_ADDRESS)
+                    .with_value(U256::from(1));
+
+                let Ok(estimate) = p.estimate_gas(tx).await else {
+                    warn!("failed to get estimate");
+                    continue;
+                };
+                let Ok(price) = p.get_gas_price().await else {
+                    warn!("failed to get gas price");
+                    continue;
+                };
                 // For testing just send from the dev account to the validator address
-                let Ok(b) = make_dev_acct_bundle(acc.enc_key().await, nonce, VALIDATOR_ADDRESS)
-                else {
-                    warn!("failed to dev account generate bundle");
+                let Ok(b) = make_dev_acct_bundle(
+                    acc.enc_key().await,
+                    chain_id,
+                    nonce,
+                    VALIDATOR_ADDRESS,
+                    estimate,
+                    price,
+                ) else {
+                    warn!("failed to generate dev account bundle");
                     continue;
                 };
                 b
