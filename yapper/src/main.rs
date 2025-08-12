@@ -54,7 +54,7 @@ struct Cli {
     #[clap(long, default_value_t = 412346)]
     chain_id: u64,
 
-    /// How many txns to send before terminating yapper
+    /// Nitro node url used for gas estimations and getting nonce when sending transactions
     #[clap(long, default_value = "http://localhost:8547")]
     nitro_url: String,
 }
