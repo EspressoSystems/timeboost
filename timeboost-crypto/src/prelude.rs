@@ -78,9 +78,6 @@ pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeySha
 
 /// `ThresholdEncKeyCell` is a thread-safe container for an optional `ThresholdEncKey`
 /// that allows asynchronous notification when the key is set.
-///
-/// Internally, it uses an `RwLock<Option<ThresholdEncKey>>` to guard the key,
-/// and a `Notify` to wake up tasks waiting for the key to become available.
 #[derive(Debug, Clone, Default)]
 pub struct ThresholdEncKeyCell {
     key: Arc<RwLock<Option<ThresholdEncKey>>>,
@@ -105,18 +102,13 @@ impl ThresholdEncKeyCell {
         self.key.read()
     }
 
-    /// Asynchronously waits for the key to become available, then returns it.
-    ///
-    /// If the key is already present, it is returned immediately.
-    /// Otherwise, the current task is suspended until `set()` is called.
-    ///
-    /// The returned key is a clone of the stored key.
-    pub async fn wait(&self) -> ThresholdEncKey {
+    pub async fn read(&self) -> ThresholdEncKey {
         loop {
+            let fut = self.notify.notified();
             if let Some(k) = self.get() {
                 return k;
             }
-            self.notify.notified().await;
+            fut.await;
         }
     }
 }

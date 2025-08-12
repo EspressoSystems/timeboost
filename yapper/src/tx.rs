@@ -141,9 +141,9 @@ impl ThresholdEncKeyCellAccumulator {
     }
 }
 
-pub async fn yap(addresses: &[Address], tps: u32) -> Result<()> {
+pub async fn yap(addresses: Vec<Address>, tps: u32) -> Result<()> {
     let c = Client::builder().timeout(Duration::from_secs(1)).build()?;
-    let urls = setup_urls(addresses)?;
+    let urls = setup_urls(&addresses)?;
 
     let mut interval = interval(Duration::from_millis(tps_to_millis(tps)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
