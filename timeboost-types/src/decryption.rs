@@ -140,9 +140,6 @@ impl DecryptionKey {
 
 /// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
 /// that allows asynchronous notification when the key is set.
-///
-/// Internally, it uses an `RwLock<Option<DecryptionKey>>` to guard the key,
-/// and a `Notify` to wake up tasks waiting for the key to become available.
 #[derive(Debug, Clone, Default)]
 pub struct DecryptionKeyCell {
     key: Arc<RwLock<Option<DecryptionKey>>>,
@@ -169,11 +166,10 @@ impl DecryptionKeyCell {
 
     pub async fn read(&self) -> DecryptionKey {
         loop {
-            let fut = self.notify.notified();
             if let Some(k) = self.get() {
                 return k;
             }
-            fut.await;
+            self.notify.notified().await;
         }
     }
 }
@@ -372,6 +368,9 @@ impl DkgAccumulator {
 
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         // caller should ensure that no bundles are added after finalization
+        if self.bundles().contains(&bundle) {
+            return Ok(());
+        }
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
         let vess = Vess::new_fast();
@@ -463,7 +462,6 @@ impl ResharingAccumulator {
         let Some(pub_share) = self.combkey.get_pub_share(bundle.origin().0.into()) else {
             return Err(VessError::FailedVerification);
         };
-
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
         let vess = Vess::new_fast();

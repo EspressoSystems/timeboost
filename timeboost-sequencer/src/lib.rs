@@ -345,7 +345,7 @@ impl Task {
                             let acts = self.sailfish.set_next_consensus(cons);
                             candidates = self.execute(acts).await?
                         }
-                        if let Err(err) = self.decrypter.next_committee(a.clone(), k.clone()).await {
+                        if let Err(err) = self.decrypter.next_committee(a, k.clone()).await {
                             error!(node = %self.label, %err, "decrypt next committee error");
                         }
                         // Resharing bundle generation

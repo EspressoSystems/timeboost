@@ -15,7 +15,6 @@ bon = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
-futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
@@ -31,4 +30,5 @@ tracing = { workspace = true }
 [dev-dependencies]
 ark-std = { workspace = true }
 bs58 = { workspace = true }
+futures = { workspace = true }
 portpicker = { workspace = true }

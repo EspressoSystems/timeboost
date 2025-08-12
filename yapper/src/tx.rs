@@ -135,8 +135,7 @@ impl DecryptionKeyAccumulator {
             if let Some((agreed_key, _)) =
                 counts.iter().find(|&(_, &count)| count >= self.threshold)
             {
-                self.output = Some(agreed_key.clone());
-                return self.output.as_ref().expect("output always present");
+                return self.output.insert(agreed_key.clone());
             }
             // wait a bit before retrying
             tokio::time::sleep(Duration::from_millis(200)).await;
