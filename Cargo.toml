@@ -45,6 +45,7 @@ ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
 async-lock = "3.3"
 async-trait = "0.1"
+axum = "0.8.4"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
@@ -66,6 +67,7 @@ either = "1.13.0"
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
+http = "1.3.1"
 multiaddr = "0.18.2"
 nohash-hasher = "0.2"
 parking_lot = "0.12.3"
@@ -89,15 +91,15 @@ spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f
     "arkworks-algebra",
 ] }
 thiserror = "2.0"
-tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = "0.7.15"
-toml = "0.8.19"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"

@@ -26,7 +26,7 @@ pub async fn run_until(until: u64, timeout: u64, host: reqwest::Url) -> Result<(
             }
             _ = &mut req_timer => {
                 req_timer = sleep(Duration::from_secs(1)).fuse().boxed();
-                if let Ok(resp) = reqwest::get(host.join("v0/status/metrics").expect("valid url")).await {
+                if let Ok(resp) = reqwest::get(host.join("i/metrics").expect("valid url")).await {
                     if let Ok(text) = resp.text().await {
                         let committed_round = text
                             .lines()

@@ -11,24 +11,13 @@ use sailfish::{
     types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::{metrics_api, rpc_api};
-use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
+use timeboost_utils::{keyset::KeysetConfig, select_peer_hosts};
 
-use timeboost_crypto::prelude::ThresholdEncKeyCell;
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
-use tokio::signal;
-use tokio::sync::mpsc;
-use tokio::task::spawn;
-use tracing::info;
+use tokio::{select, signal};
+use tracing::{error, info};
 
 use clap::Parser;
-
-#[cfg(feature = "until")]
-use anyhow::ensure;
-#[cfg(feature = "until")]
-use timeboost_utils::until::run_until;
-#[cfg(feature = "until")]
-use tokio::task::JoinHandle;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -36,29 +25,11 @@ struct Cli {
     #[clap(long)]
     id: u16,
 
-    /// The port of the RPC API.
-    #[clap(long)]
-    rpc_port: u16,
-
-    /// The port of the metrics server.
-    #[clap(long)]
-    metrics_port: u16,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
     keyset_file: PathBuf,
-
-    /// The until value to use for the committee config.
-    #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 1000)]
-    until: u64,
-
-    /// The watchdog timeout.
-    #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 30)]
-    watchdog_timeout: u64,
 
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
@@ -97,67 +68,6 @@ impl HasTime for Block {
     }
 }
 
-async fn run(
-    mut coordinator: Coordinator<Block, Rbc<Block>>,
-    #[cfg(feature = "until")] mut until_task: JoinHandle<()>,
-) -> Result<()> {
-    loop {
-        #[cfg(feature = "until")]
-        tokio::select! { biased;
-            result = coordinator.next() => {
-                match result {
-                    Ok(actions) => {
-                        for a in actions {
-                            if let Action::Deliver(payload) = a {
-                                info!(round_number = %payload.round().num(), "payload delivered");
-                            } else if let Err(e) = coordinator.execute(a).await {
-                                tracing::error!("Error receiving message: {}", e);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Error receiving message: {}", e);
-                    },
-                }
-            }
-            _ = &mut until_task => {
-                tracing::info!("watchdog completed");
-                return Ok(());
-            }
-            _ = signal::ctrl_c() => {
-                info!("received ctrl-c; shutting down");
-                break;
-            }
-        }
-
-        #[cfg(not(feature = "until"))]
-        tokio::select! { biased;
-            result = coordinator.next() => {
-                match result {
-                    Ok(actions) => {
-                        for a in actions {
-                            if let Action::Deliver(payload) = a {
-                                info!(round_number = %payload.round().num(), "payload delivered");
-                            } else if let Err(e) = coordinator.execute(a).await {
-                                tracing::error!("Error receiving message: {}", e);
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Error receiving message: {}", e);
-                    },
-                }
-            }
-            _ = signal::ctrl_c() => {
-                info!("received ctrl-c; shutting down");
-                break;
-            }
-        }
-    }
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::init_logging();
@@ -166,24 +76,6 @@ async fn main() -> Result<()> {
 
     let keyset =
         KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
-
-    let (app_tx, mut app_rx) = mpsc::channel(1024);
-    let enc_key = ThresholdEncKeyCell::new();
-
-    // Spin app_rx in a background thread and just drop the messages using a tokio select.
-    // Exiting when we get a ctrl-c.
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = app_rx.recv() => {}
-                _ = signal::ctrl_c() => {
-                    break;
-                }
-            }
-        }
-    });
-
-    let rpc = spawn(rpc_api(app_tx, enc_key, cli.rpc_port));
 
     let my_keyset = keyset
         .keyset
@@ -198,52 +90,9 @@ async fn main() -> Result<()> {
     let signing_keypair = Keypair::from(private.signing_key);
     let dh_keypair = x25519::Keypair::from(private.dh_key);
 
-    #[cfg(feature = "until")]
-    let peer_urls: Vec<reqwest::Url> = {
-        let mut urls = Vec::new();
-        for ph in keyset.keyset.iter() {
-            let url = format!("http://{}", ph.sailfish_address)
-                .parse()
-                .context(format!(
-                    "Failed to parse URL: http://{}",
-                    ph.sailfish_address
-                ))?;
-            urls.push(url);
-        }
-        urls
-    };
-
-    #[cfg(feature = "until")]
-    let until_task = {
-        ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
-        let mut host = peer_urls[usize::from(cli.id)].clone();
-
-        // Set the port (9000 + i in the local setup)
-        host.port().context("Invalid port in URL")?;
-        host.set_port(Some(host.port().unwrap() + 1000))
-            .map_err(|_| anyhow::anyhow!("Failed to set port in URL"))?;
-
-        // Map the Result<(), anyhow::Error> to () to match the expected JoinHandle<()> type
-        let task_handle = tokio::spawn(async move {
-            if let Err(e) = run_until(cli.until, cli.watchdog_timeout, host).await {
-                tracing::error!("Until task failed: {}", e);
-            }
-        });
-        task_handle
-    };
-
-    let peer_host_iter = timeboost_utils::select_peer_hosts(&keyset.keyset, cli.multi_region);
-
-    let mut peer_hosts_and_keys = Vec::new();
-
-    for peer_host in peer_host_iter {
-        wait_for_live_peer(peer_host.sailfish_address.clone()).await?;
-        peer_hosts_and_keys.push((
-            peer_host.signing_key,
-            peer_host.dh_key,
-            peer_host.sailfish_address.clone(),
-        ));
-    }
+    let peer_hosts_and_keys = select_peer_hosts(&keyset.keyset, cli.multi_region)
+        .map(|peer| (peer.signing_key, peer.dh_key, peer.sailfish_address.clone()))
+        .collect::<Vec<_>>();
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
@@ -262,8 +111,6 @@ async fn main() -> Result<()> {
         net_metrics,
     )
     .await?;
-
-    let metrics = spawn(metrics_api(prom.clone(), cli.metrics_port));
 
     let committee = Committee::new(
         UNKNOWN_COMMITTEE_ID,
@@ -297,22 +144,36 @@ async fn main() -> Result<()> {
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
 
-    // Kickstart the network.
     for a in coordinator.init() {
-        if let Err(e) = coordinator.execute(a).await {
-            tracing::error!("Error executing coordinator action: {}", e);
+        if let Err(err) = coordinator.execute(a).await {
+            error!(%err, "error executing coordinator action");
         }
     }
 
-    let result = run(
-        coordinator,
-        #[cfg(feature = "until")]
-        until_task,
-    )
-    .await;
+    loop {
+        select! { biased;
+            result = coordinator.next() => {
+                match result {
+                    Ok(actions) => {
+                        for a in actions {
+                            if let Action::Deliver(payload) = a {
+                                info!(round = %payload.round().num(), "payload delivered");
+                            } else if let Err(err) = coordinator.execute(a).await {
+                                error!(%err, "error executing action");
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        error!(%err, "error getting next actions");
+                    },
+                }
+            }
+            _ = signal::ctrl_c() => {
+                info!("received ctrl-c; shutting down");
+                break;
+            }
+        }
+    }
 
-    rpc.abort();
-    metrics.abort();
-
-    result
+    Ok(())
 }

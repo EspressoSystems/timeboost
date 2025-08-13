@@ -14,11 +14,11 @@ fn setup_urls(all_hosts_as_addresses: &[Address]) -> Result<Vec<(Url, Url, Url)>
     let mut urls = Vec::new();
 
     for addr in all_hosts_as_addresses {
-        let regular_url = Url::parse(&format!("http://{addr}/v0/submit-regular"))
+        let regular_url = Url::parse(&format!("http://{addr}/v1/submit/regular"))
             .with_context(|| format!("parsing {addr} into a url"))?;
-        let priority_url = Url::parse(&format!("http://{addr}/v0/submit-priority"))
+        let priority_url = Url::parse(&format!("http://{addr}/v1/submit/priority"))
             .with_context(|| format!("parsing {addr} into a url"))?;
-        let enckey_url = Url::parse(&format!("http://{addr}/v0/enckey"))
+        let enckey_url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
             .with_context(|| format!("parsing {addr} into a url"))?;
 
         urls.push((regular_url, priority_url, enckey_url));
@@ -63,7 +63,7 @@ async fn send_bundle_to_node(
 }
 
 async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<ThresholdEncKey> {
-    let response = match client.post(enckey_url.clone()).send().await {
+    let response = match client.get(enckey_url.clone()).send().await {
         Ok(response) => response,
         Err(err) => {
             warn!(%err, "failed to request encryption key");
