@@ -35,7 +35,7 @@ impl ApiServer {
             .route("/v1/encryption-key", get(Self::encryption_key));
 
         let internal = Router::new()
-            .route("/i/health", get(|| async { "OK" }))
+            .route("/i/health", get(Self::health))
             .route("/i/metrics", get(Self::metrics));
 
         Router::new()
@@ -69,6 +69,14 @@ impl ApiServer {
 
     pub fn serve(self, listener: TcpListener) -> impl Future<Output = io::Result<()>> {
         axum::serve(listener, self.router()).into_future()
+    }
+
+    async fn health(this: State<Self>) -> StatusCode {
+        if this.bundles.is_closed() {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::OK
+        }
     }
 
     async fn submit_priority(
