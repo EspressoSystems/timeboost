@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::State,
-    response::IntoResponse,
+    response::Result,
     routing::{get, post},
 };
 use bon::Builder;
@@ -33,11 +33,11 @@ pub struct ApiServer {
 impl ApiServer {
     pub fn router(&self) -> Router {
         Router::new()
-            .route("/v1/submit/priority", post(Self::submit_priority))
-            .route("/v1/submit/regular", post(Self::submit_regular))
-            .route("/v1/encryption-key", get(Self::encryption_key))
-            .route("/i/health", get(Self::health))
-            .route("/i/metrics", get(Self::metrics))
+            .route("/v1/submit/priority", post(submit_priority))
+            .route("/v1/submit/regular", post(submit_regular))
+            .route("/v1/encryption-key", get(encryption_key))
+            .route("/i/health", get(health))
+            .route("/i/metrics", get(metrics))
             .with_state(self.clone())
             .layer(
                 ServiceBuilder::new()
@@ -58,7 +58,7 @@ impl ApiServer {
                         .on_request(|_r: &Request<Body>, _s: &Span| {
                             debug!("request received")
                         })
-                        .on_response(|r: &Response<Body>, d: Duration, _span: &Span| {
+                        .on_response(|r: &Response<Body>, d: Duration, _s: &Span| {
                             debug!(status = %r.status().as_u16(), duration = ?d, "response created")
                         })
                 )
@@ -70,58 +70,41 @@ impl ApiServer {
         axum::serve(listener, self.router()).await
     }
 
-    async fn health(this: State<Self>) -> StatusCode {
-        if this.bundles.is_closed() {
-            StatusCode::INTERNAL_SERVER_ERROR
-        } else {
-            StatusCode::OK
+    async fn submit_bundle(&self, bundle: BundleVariant) -> Result<()> {
+        if self.bundles.send(bundle).await.is_err() {
+            error!("bundle channel is closed");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
+        }
+        Ok(())
+    }
+}
+
+async fn submit_priority(server: State<ApiServer>, json: Json<SignedPriorityBundle>) -> Result<()> {
+    server.submit_bundle(BundleVariant::Priority(json.0)).await
+}
+
+async fn submit_regular(server: State<ApiServer>, json: Json<Bundle>) -> Result<()> {
+    server.submit_bundle(BundleVariant::Regular(json.0)).await
+}
+
+async fn encryption_key(server: State<ApiServer>) -> Json<ThresholdEncKey> {
+    Json(server.enc_key.read().await)
+}
+
+async fn metrics(server: State<ApiServer>) -> Result<String> {
+    match server.metrics.export() {
+        Ok(output) => Ok(output),
+        Err(err) => {
+            error!(%err, "metrics export error");
+            Err(StatusCode::INTERNAL_SERVER_ERROR.into())
         }
     }
+}
 
-    async fn submit_priority(
-        this: State<Self>,
-        bundle: Json<SignedPriorityBundle>,
-    ) -> (StatusCode, &'static str) {
-        match this.bundles.send(BundleVariant::Priority(bundle.0)).await {
-            Ok(()) => (StatusCode::OK, "priority bundle enqueued"),
-            Err(_) => {
-                error!("bundle channel is closed");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to enqueue priority bundle",
-                )
-            }
-        }
+async fn health(server: State<ApiServer>) -> Result<()> {
+    if server.bundles.is_closed() {
+        error!("bundle channel is closed");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
     }
-
-    async fn submit_regular(this: State<Self>, bundle: Json<Bundle>) -> (StatusCode, &'static str) {
-        match this.bundles.send(BundleVariant::Regular(bundle.0)).await {
-            Ok(()) => (StatusCode::OK, "bundle enqueued"),
-            Err(_) => {
-                error!("bundle channel is closed");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to enqueue bundle",
-                )
-            }
-        }
-    }
-
-    async fn encryption_key(this: State<Self>) -> Json<ThresholdEncKey> {
-        Json(this.enc_key.read().await)
-    }
-
-    async fn metrics(this: State<Self>) -> impl IntoResponse {
-        match this.metrics.export() {
-            Ok(output) => (StatusCode::OK, output).into_response(),
-            Err(err) => {
-                error!(%err, "metrics export error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to export metrics",
-                )
-                    .into_response()
-            }
-        }
-    }
+    Ok(())
 }
