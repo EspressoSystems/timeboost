@@ -49,7 +49,7 @@ enum Protocol {
     /// Multicast (to new members) a message with agreed-upon subset of DkgBundle for resharing.
     Resharing(ReshareMessage),
 
-    /// Bbroadcast a batch of decryption shares for a given round.
+    /// Broadcast a batch of decryption shares for a given round.
     Batch(DecShareBatch),
 }
 
