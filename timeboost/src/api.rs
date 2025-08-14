@@ -56,7 +56,7 @@ impl ApiServer {
                             debug!("request received")
                         })
                         .on_response(|r: &Response<Body>, d: Duration, _span: &Span| {
-                            debug!(status = %r.status().as_u16(), duration = ?d, "response generated" )
+                            debug!(status = %r.status().as_u16(), duration = ?d, "response created")
                         })
                 )
             )
