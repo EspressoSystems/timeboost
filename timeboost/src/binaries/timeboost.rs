@@ -66,10 +66,6 @@ struct Cli {
     #[clap(long)]
     keyset_file: PathBuf,
 
-    /// The ip address of the nitro node for gas estimations.
-    #[clap(long)]
-    nitro_node_url: Option<reqwest::Url>,
-
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
     multi_region: bool,

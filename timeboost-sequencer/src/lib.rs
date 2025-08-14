@@ -263,6 +263,7 @@ impl Task {
         let mut pending = None;
         let mut dkg_bundles = VecDeque::new();
         let mut candidates = Candidates::new();
+        let mut index = DelayedInboxIndex::default();
 
         if !self.sailfish.is_init() {
             let actions = self.sailfish.init();
@@ -315,7 +316,8 @@ impl Task {
                         let timestamp = incl.timestamp();
                         let delayed_inbox_index = incl.delayed_inbox_index();
                         let transactions = self.sorter.sort(incl);
-                        if !transactions.is_empty() {
+                        if !transactions.is_empty() || index != delayed_inbox_index {
+                            index = delayed_inbox_index;
                             let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
