@@ -31,8 +31,8 @@ serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
 spongefish = { workspace = true }
-tokio = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]

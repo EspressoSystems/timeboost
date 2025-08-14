@@ -1,0 +1,14 @@
+[package]
+name = "timeboost-contract"
+description = "Adapters to bridge types and expose APIs for contract interactions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[build-dependencies]
+alloy = { workspace = true }

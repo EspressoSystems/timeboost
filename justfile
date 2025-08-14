@@ -18,6 +18,9 @@ build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
 
+build-contracts:
+  forge build
+
 ####################
 ###CHECK COMMANDS###
 ####################
@@ -115,6 +118,9 @@ mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARG
 test *ARGS:
   cargo nextest run {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
+
+test-contracts: build-contracts
+  forge test
 
 test_ci *ARGS:
   env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace {{ARGS}}
