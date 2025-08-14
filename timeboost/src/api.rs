@@ -12,7 +12,10 @@ use http::{Request, Response, StatusCode};
 use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
 use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
-use tokio::{net::TcpListener, sync::mpsc::Sender};
+use tokio::{
+    net::{TcpListener, ToSocketAddrs},
+    sync::mpsc::Sender,
+};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tower_http::{ServiceBuilderExt, request_id::MakeRequestUuid};
@@ -62,8 +65,9 @@ impl ApiServer {
             )
     }
 
-    pub fn serve(self, listener: TcpListener) -> impl Future<Output = io::Result<()>> {
-        axum::serve(listener, self.router()).into_future()
+    pub async fn serve<A: ToSocketAddrs>(self, addr: A) -> io::Result<()> {
+        let listener = TcpListener::bind(addr).await?;
+        axum::serve(listener, self.router()).await
     }
 
     async fn health(this: State<Self>) -> StatusCode {

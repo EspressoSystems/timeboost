@@ -1,8 +1,9 @@
-use std::{io, net::SocketAddr};
+use std::io;
 
 use proto::internal::internal_api_server::InternalApi;
 use timeboost_builder::{CertifierDown, Handle};
 use timeboost_types::Block;
+use tokio::net::{ToSocketAddrs, lookup_host};
 use tonic::{Request, Response, Status};
 
 use timeboost_proto::{self as proto, internal::internal_api_server::InternalApiServer};
@@ -18,7 +19,11 @@ impl GrpcServer {
         }
     }
 
-    pub async fn serve(self, addr: SocketAddr) -> io::Result<()> {
+    pub async fn serve<A: ToSocketAddrs>(self, addr: A) -> io::Result<()> {
+        let addr = lookup_host(addr)
+            .await?
+            .next()
+            .ok_or_else(|| io::Error::other("can not resolve grpc server address"))?;
         tonic::transport::Server::builder()
             .add_service(InternalApiServer::new(self.service))
             .serve(addr)

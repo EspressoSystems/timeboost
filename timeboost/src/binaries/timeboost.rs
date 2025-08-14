@@ -7,7 +7,6 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_crypto::prelude::ThresholdEncKeyCell;
 use timeboost_types::DkgKeyStore;
-use tokio::net::{TcpListener, lookup_host};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -231,18 +230,11 @@ async fn main() -> Result<()> {
     let timeboost = Timeboost::new(config).await?;
 
     let mut grpc = {
-        let addr = my_keyset.internal_address.clone();
-        let addr = lookup_host(addr.to_string())
-            .await?
-            .next()
-            .ok_or_else(|| anyhow!("{} does not resolve to a socket address", addr))?;
+        let addr = my_keyset.internal_address.to_string();
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 
-    let mut api = {
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", cli.http_port)).await?;
-        spawn(timeboost.api().serve(listener))
-    };
+    let mut api = spawn(timeboost.api().serve(format!("0.0.0.0:{}", cli.http_port)));
 
     for peer in sailfish_peer_hosts_and_keys {
         let p = peer.2.port();
