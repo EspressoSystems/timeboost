@@ -52,7 +52,6 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-vbs = { workspace = true }
 
 [dev-dependencies]
 portpicker = { workspace = true }
