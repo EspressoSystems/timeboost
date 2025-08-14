@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, Vess, Vss};
+use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
@@ -96,8 +96,6 @@ pub struct Decrypter {
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
-    /// Set of committees for which DKG bundles have already been submitted.
-    submitted: BTreeSet<CommitteeId>,
     /// Pending threshold encryption key material
     enc_key: DecryptionKeyCell,
     /// Key stores (shared with Worker)
@@ -150,7 +148,7 @@ impl Decrypter {
                 net.add(new_peers.collect()).await?;
                 (
                     Arc::new(RwLock::new(kv)),
-                    WorkerState::AwaitingHandover(HashMap::new()),
+                    WorkerState::HandoverPending(HashMap::new()),
                 )
             }
             None => {
@@ -177,7 +175,6 @@ impl Decrypter {
             incls: VecDeque::new(),
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
-            submitted: BTreeSet::default(),
             worker: spawn(worker.go()),
             enc_key: cfg.threshold_enc_key,
             key_stores: key_stores.clone(),
@@ -236,10 +233,6 @@ impl Decrypter {
     /// - `Some(DkgBundle)` if a new dealing was successfully created for the current committee.
     /// - `None` if already submitted or if encryption key is missing.
     pub fn gen_dkg_bundle(&mut self) -> Option<DkgBundle> {
-        if self.submitted.contains(&self.current) {
-            trace!(node = %self.label, committee = %self.current, "dkg bundle already submitted");
-            return None;
-        }
         let guard = self.key_stores.read();
         let Some(store) = guard.get(self.current) else {
             warn!(node = %self.label, committee = %self.current, "missing current key store");
@@ -256,7 +249,6 @@ impl Decrypter {
         let (ct, cm) = vess
             .encrypt_shares(store.committee(), store.sorted_keys(), secret, DKG_AAD)
             .ok()?;
-        self.submitted.insert(self.current);
         Some(DkgBundle::new((node_idx, self.label), self.current, ct, cm))
     }
 
@@ -267,10 +259,6 @@ impl Decrypter {
     /// - `None` if already submitted or if encryption key is missing.
     pub fn gen_resharing_bundle(&mut self, next_store: KeyStore) -> Option<DkgBundle> {
         let committee_id = next_store.committee().id();
-        if self.submitted.contains(&committee_id) {
-            trace!(node = %self.label, committee = %committee_id, "resharing bundle already submitted");
-            return None;
-        }
         let guard = self.key_stores.read();
         let Some(current_store) = guard.get(self.current) else {
             warn!(node = %self.label, committee = %self.current, "missing current key store");
@@ -287,17 +275,14 @@ impl Decrypter {
             return None;
         };
         let vess = Vess::new_fast();
-        let share = dec_sk.privkey().share();
-        let secret = <Vss as VerifiableSecretSharing>::Secret::from(*share);
         let (ct, cm) = vess
             .encrypt_reshares(
                 next_store.committee(),
                 next_store.sorted_keys(),
-                secret,
+                *dec_sk.privkey().share(),
                 DKG_AAD,
             )
             .ok()?;
-        self.submitted.insert(committee_id);
         Some(DkgBundle::new((node_idx, self.label), committee_id, ct, cm))
     }
 
@@ -338,12 +323,12 @@ impl Decrypter {
 
                 return Ok(dec_incl);
             } else {
-                warn!(
+                error!(
                     node = %self.label,
                     %round,
-                    "received unexpected inclusion list (no rounds in queue)"
+                    "received unexpected inclusion list"
                 );
-                return Ok(dec_incl);
+                return Err(DecrypterDown(()));
             }
         }
     }
@@ -380,11 +365,15 @@ impl Drop for Decrypter {
 }
 
 /// The operational state of the Worker.
+///
+/// State Machine Flow:
+/// - DkgPending -> Running <-> ResharingComplete -> ShuttingDown
+/// - HandoverPending -> HandoverComplete -> Running <-> ResharingComplete -> ShuttingDown
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum WorkerState {
     /// Awaiting resharing messages from the previous committee.
-    AwaitingHandover(HashMap<PublicKey, ResharingSubset>),
+    HandoverPending(HashMap<PublicKey, ResharingSubset>),
     /// Received enough resharing messages to complete the handover.
     HandoverComplete(DecryptionKey),
     /// Expects to obtain the initial DKG key through DKG bundles.
@@ -393,7 +382,7 @@ enum WorkerState {
     /// such that, if the local node is behind, it will catchup immediately.
     DkgPending(HashMap<PublicKey, DkgSubset>),
     /// Already completed at least one instance of DKG. Ready for resharing.
-    ResharingPending(DecryptionKey),
+    Running(DecryptionKey),
     /// Obtained keys for both the current and next committee.
     ResharingComplete(DecryptionKey, DecryptionKey),
     /// Completed resharing and handover but is not a member of next committee.
@@ -488,9 +477,11 @@ struct Worker {
 
 impl Worker {
     pub async fn go(mut self) -> EndOfPlay {
-        let node = self.label;
-
-        if !matches!(self.state, WorkerState::AwaitingHandover(_)) {
+        debug_assert!(matches!(
+            self.state,
+            WorkerState::HandoverPending(_) | WorkerState::DkgPending(_)
+        ));
+        if matches!(self.state, WorkerState::DkgPending(_)) {
             // immediately try to catchup first
             match self.dkg_catchup().await {
                 Ok(()) => {}
@@ -502,7 +493,7 @@ impl Worker {
         loop {
             let mut cache_modified = false;
             // process pending inclusion lists received during catchup
-            if !self.pending.is_empty() && matches!(self.state, WorkerState::ResharingPending(_)) {
+            if !self.pending.is_empty() && matches!(self.state, WorkerState::Running(_)) {
                 for incl in std::mem::take(&mut self.pending).into_values() {
                     match self.on_decrypt_request(incl, true).await {
                         Ok(()) => {}
@@ -550,7 +541,7 @@ impl Worker {
                     },
                     Some(Command::Decrypt((incl, is_encrypted))) => {
                         let round = incl.round();
-                        trace!(%node, %round, "decrypt request");
+                        trace!(node = %self.label, %round, "decrypt request");
                         match self.on_decrypt_request(incl, is_encrypted).await {
                             Ok(()) => { cache_modified = true }
                             Err(DecrypterError::End(end)) => return end,
@@ -592,7 +583,7 @@ impl Worker {
             match self.hatch(round).await {
                 Ok(_) => {}
                 Err(DecrypterError::End(end)) => return end,
-                Err(err) => warn!(%node, %round, %err, "error on hatch"),
+                Err(err) => warn!(node = %self.label, %round, %err, "error on hatch"),
             }
 
             if matches!(self.state, WorkerState::ShuttingDown(_)) {
@@ -735,7 +726,7 @@ impl Worker {
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.enc_key.set(dec_sk.clone());
-            self.state = WorkerState::ResharingPending(dec_sk);
+            self.state = WorkerState::Running(dec_sk);
             info!(node = %self.label, committee_id = %committee.id(), "dkg finished (catchup successful)");
         }
 
@@ -751,7 +742,7 @@ impl Worker {
         }
 
         let subsets = match &mut self.state {
-            WorkerState::AwaitingHandover(subsets) => subsets,
+            WorkerState::HandoverPending(subsets) => subsets,
             _ => {
                 trace!(node = %self.label, current = %self.current, %msg.committee_id, "not awaiting handover");
                 return Ok(());
@@ -885,7 +876,7 @@ impl Worker {
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.enc_key.set(dec_sk.clone());
-            self.state = WorkerState::ResharingPending(dec_sk);
+            self.state = WorkerState::Running(dec_sk);
             self.dkg_completed.insert(committee.id());
             info!(committee_id = %committee.id(), node = %self.label, "dkg finished");
         }
@@ -938,7 +929,7 @@ impl Worker {
             if let Some(next_node_idx) = committee.get_index(&self.label).map(|idx| idx.into()) {
                 // node is a member of the next committee; decrypting reshares immediately
                 let vess = Vess::new_fast();
-                self.dkg_sk = self.dkg_sk.with_node_idx(next_node_idx);
+                self.dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(next_node_idx);
                 let dealings: Vec<_> = subset
                     .bundles()
                     .iter()
@@ -1114,12 +1105,12 @@ impl Worker {
                 self.pending.insert(incl.round(), incl.clone());
                 return Err(DecrypterError::DkgPending);
             }
-            WorkerState::AwaitingHandover(_) => {
+            WorkerState::HandoverPending(_) => {
                 return Err(DecrypterError::Dkg(
                     "Worker state does not hold decryption key".to_string(),
                 ));
             }
-            WorkerState::ResharingPending(dec_key)
+            WorkerState::Running(dec_key)
             | WorkerState::ResharingComplete(dec_key, _)
             | WorkerState::HandoverComplete(dec_key)
             | WorkerState::ShuttingDown(dec_key) => dec_key,
@@ -1210,7 +1201,7 @@ impl Worker {
         }
 
         let dec_sk = match &self.state {
-            WorkerState::ResharingPending(dec_key)
+            WorkerState::Running(dec_key)
             | WorkerState::ResharingComplete(dec_key, _)
             | WorkerState::ShuttingDown(dec_key) => dec_key,
             _ => {
@@ -1423,11 +1414,11 @@ impl Worker {
         self.state = match &self.state {
             WorkerState::HandoverComplete(decryption_key) => {
                 info!(node = %self.label, committee = %self.current, "(new node) successful committee switch");
-                WorkerState::ResharingPending(decryption_key.clone())
+                WorkerState::Running(decryption_key.clone())
             }
             WorkerState::ResharingComplete(_, next_key) => {
                 info!(node = %self.label, committee = %self.current, "(old node) successful committee switch");
-                WorkerState::ResharingPending(next_key.clone())
+                WorkerState::Running(next_key.clone())
             }
             WorkerState::ShuttingDown(dec_key) => {
                 info!("(old node) not a member of new committee. ready for shut down");
@@ -1598,7 +1589,7 @@ mod tests {
         collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
         sync::Arc,
-        time::{Duration, Instant},
+        time::Instant,
     };
 
     use timeboost_utils::types::logging;
@@ -1628,7 +1619,6 @@ mod tests {
     const TEST_EPOCH: u64 = 42;
     const TEST_CHAIN_ID: u64 = 0;
     const TEST_SEQNO: u64 = 10;
-    const NETWORK_SETUP_DELAY_SECS: u64 = 1;
     const RETAIN_ROUNDS: usize = 100;
     const COM1: u64 = 1;
     const COM2: u64 = 2;
@@ -1913,7 +1903,6 @@ mod tests {
             Some(com1_setup.clone()),
         )
         .await;
-        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
 
         let com1_round = RoundNumber::new(DECRYPTION_ROUND);
         let com2_round = RoundNumber::new(DECRYPTION_ROUND + 1);
@@ -1954,8 +1943,6 @@ mod tests {
                 .await
                 .expect("use committee event succeeds");
         }
-
-        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
 
         let priority_tx_message = b"Priority message for old committee";
         let regular_tx_message = b"Non-priority message for old committee";
@@ -2396,9 +2383,6 @@ mod tests {
             decrypters.push(decrypter);
             encryption_key_cells.push(encryption_key_cell);
         }
-
-        // Allow time for network setup
-        tokio::time::sleep(Duration::from_secs(NETWORK_SETUP_DELAY_SECS)).await;
 
         (
             decrypters,
