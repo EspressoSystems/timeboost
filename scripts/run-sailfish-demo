@@ -18,7 +18,8 @@ for (( i=0; i<$nodes; i++ )); do
         --id $i
         --keyset-file "$keyset_file"
         --stamp "${TMPDIR:-/tmp}/stamp-$i.sf"
-        --ignore-stamp)
+        --ignore-stamp
+        --until 300)
 
     "${cmd[@]}" &
 done

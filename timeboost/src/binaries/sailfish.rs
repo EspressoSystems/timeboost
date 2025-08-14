@@ -1,4 +1,4 @@
-use std::{iter::repeat_with, path::PathBuf, sync::Arc};
+use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use cliquenet::{Network, NetworkMetrics, Overlay};
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use timeboost_utils::{keyset::KeysetConfig, select_peer_hosts};
 
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
-use tokio::{select, signal};
+use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
 
 use clap::Parser;
@@ -30,6 +30,14 @@ struct Cli {
     /// The file contains backend urls and public key material.
     #[clap(long)]
     keyset_file: PathBuf,
+
+    /// How many rounds to run.
+    #[clap(long, default_value_t = 1000)]
+    until: u64,
+
+    /// Max. number of seconds to run.
+    #[clap(long, default_value_t = 30)]
+    timeout: u64,
 
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
@@ -150,13 +158,18 @@ async fn main() -> Result<()> {
         }
     }
 
-    loop {
-        select! { biased;
+    let mut timeout = Box::pin(sleep(Duration::from_secs(cli.timeout)));
+
+    'main: loop {
+        select! {
             result = coordinator.next() => {
                 match result {
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
+                                if *payload.round().num() >= cli.until {
+                                    break 'main
+                                }
                                 info!(round = %payload.round().num(), "payload delivered");
                             } else if let Err(err) = coordinator.execute(a).await {
                                 error!(%err, "error executing action");
@@ -167,6 +180,10 @@ async fn main() -> Result<()> {
                         error!(%err, "error getting next actions");
                     },
                 }
+            }
+            _ = &mut timeout => {
+                error!("timeout");
+                break;
             }
             _ = signal::ctrl_c() => {
                 info!("received ctrl-c; shutting down");

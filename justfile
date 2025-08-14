@@ -72,6 +72,9 @@ run_integration_local *ARGS:
 run_demo *ARGS:
   ./scripts/run-timeboost-demo {{ARGS}}
 
+run_sailfish_demo *ARGS:
+  ./scripts/run-sailfish-demo {{ARGS}}
+
 run *ARGS:
   cargo run {{ARGS}}
 

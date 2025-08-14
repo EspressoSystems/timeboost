@@ -122,3 +122,5 @@ jobs:
       run: just run_demo -s /tmp/stamp --ignore-stamp --yapper -k test-configs/local-5.json
     - name: Run tests with late-start node
       run: just run_demo -l -s /tmp/stamp --ignore-stamp --yapper -k test-configs/local-5.json
+    - name: Run sailfish demo
+      run: just run_sailfish_demo
