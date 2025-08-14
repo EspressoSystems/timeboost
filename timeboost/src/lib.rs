@@ -7,7 +7,6 @@ use anyhow::Result;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, Submitter};
-use timeboost_proto::internal::internal_api_server::InternalApiServer;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
 use timeboost_utils::types::prometheus::PrometheusMetrics;
@@ -23,7 +22,7 @@ pub use timeboost_sequencer as sequencer;
 pub use timeboost_types as types;
 
 use crate::api::ApiServer;
-use crate::api::internal::InternalApiService;
+use crate::api::internal::GrpcServer;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
@@ -82,9 +81,8 @@ impl Timeboost {
             .build()
     }
 
-    pub fn internal_grpc_api(&self) -> tonic::transport::server::Router {
-        let svc = InternalApiService::new(self.certifier.handle());
-        tonic::transport::Server::builder().add_service(InternalApiServer::new(svc))
+    pub fn internal_grpc_api(&self) -> GrpcServer {
+        GrpcServer::new(self.certifier.handle())
     }
 
     pub async fn go(mut self) -> Result<()> {

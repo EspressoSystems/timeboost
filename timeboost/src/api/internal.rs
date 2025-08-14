@@ -1,18 +1,34 @@
+use std::{io, net::SocketAddr};
+
 use proto::internal::internal_api_server::InternalApi;
 use timeboost_builder::{CertifierDown, Handle};
 use timeboost_types::Block;
 use tonic::{Request, Response, Status};
 
-use timeboost_proto as proto;
+use timeboost_proto::{self as proto, internal::internal_api_server::InternalApiServer};
 
-pub struct InternalApiService {
-    block_handler: Handle,
+pub struct GrpcServer {
+    service: InternalApiService,
 }
 
-impl InternalApiService {
+impl GrpcServer {
     pub fn new(block_handler: Handle) -> Self {
-        Self { block_handler }
+        Self {
+            service: InternalApiService { block_handler },
+        }
     }
+
+    pub async fn serve(self, addr: SocketAddr) -> io::Result<()> {
+        tonic::transport::Server::builder()
+            .add_service(InternalApiServer::new(self.service))
+            .serve(addr)
+            .await
+            .map_err(io::Error::other)
+    }
+}
+
+struct InternalApiService {
+    block_handler: Handle,
 }
 
 #[tonic::async_trait]
