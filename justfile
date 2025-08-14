@@ -45,7 +45,7 @@ fix:
   cargo fix --allow-dirty --allow-staged
 
 ci_local:
-  just build && just lint && just test_ci --release && just run_demo && just build_docker
+  just build && just lint && just test_ci --release && just run_demo && just run_sailfish_demo && just build_docker
 
 bacon: clippy check fmt
 
