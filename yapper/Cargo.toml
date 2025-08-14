@@ -5,8 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
+bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 futures = { workspace = true }

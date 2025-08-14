@@ -9,6 +9,8 @@ rust-version.workspace = true
 test = ["committable", "crossbeam-queue", "sailfish-types"]
 
 [dependencies]
+alloy = { workspace = true }
+alloy-signer = { workspace = true }
 anyhow = { workspace = true }
 arbitrary = { workspace = true }
 ark-std = { workspace = true }

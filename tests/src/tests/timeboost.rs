@@ -108,9 +108,7 @@ where
                 "https://theserversroom.com/ethereum/54cmzzhcj1o/"
                     .parse::<Url>()
                     .expect("valid url"),
-                "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-                    .parse::<alloy::primitives::Address>()
-                    .expect("valid contract"),
+                alloy::primitives::Address::default(),
                 BlockNumberOrTag::Finalized,
             ))
             .build();
