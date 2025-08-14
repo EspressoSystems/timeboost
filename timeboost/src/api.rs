@@ -28,19 +28,14 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
-    pub fn router(self) -> Router {
-        let public = Router::new()
+    pub fn router(&self) -> Router {
+        Router::new()
             .route("/v1/submit/priority", post(Self::submit_priority))
             .route("/v1/submit/regular", post(Self::submit_regular))
-            .route("/v1/encryption-key", get(Self::encryption_key));
-
-        let internal = Router::new()
+            .route("/v1/encryption-key", get(Self::encryption_key))
             .route("/i/health", get(Self::health))
-            .route("/i/metrics", get(Self::metrics));
-
-        Router::new()
-            .merge(public.with_state(self.clone()))
-            .merge(internal.with_state(self.clone()))
+            .route("/i/metrics", get(Self::metrics))
+            .with_state(self.clone())
             .layer(
                 ServiceBuilder::new()
                     .set_x_request_id(MakeRequestUuid)
