@@ -287,7 +287,7 @@ impl<const N: usize> From<KeyStore> for KeyStoreVec<N> {
 #[derive(Debug, Clone)]
 pub struct KeyStore {
     committee: Committee,
-    keys: BTreeMap<KeyId, DkgEncKey>,
+    keys: Arc<BTreeMap<KeyId, DkgEncKey>>,
 }
 
 impl KeyStore {
@@ -298,10 +298,11 @@ impl KeyStore {
     {
         let this = Self {
             committee: c,
-            keys: keys
-                .into_iter()
-                .map(|(i, k)| (i.into(), k))
-                .collect::<BTreeMap<_, _>>(),
+            keys: Arc::new(
+                keys.into_iter()
+                    .map(|(i, k)| (i.into(), k))
+                    .collect::<BTreeMap<_, _>>(),
+            ),
         };
 
         // basic sanity check
