@@ -1,9 +1,9 @@
     // SPDX-License-Identifier: UNLICENSED
     pragma solidity ^0.8.13;
 
-    import {Test} from "forge-std/Test.sol";
-    import {KeyManager} from "../src/KeyManager.sol";
-    import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+    import {Test, console} from "forge-std/Test.sol";
+import {KeyManager} from "../src/KeyManager.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
     import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
     contract KeyManagerTest is Test {
@@ -21,6 +21,18 @@
             keyManagerProxy = KeyManager(address(proxy));
         }
 
+        function createTestMembers() internal pure returns (KeyManager.CommitteeMember[] memory) {
+            KeyManager.CommitteeMember[] memory members = new KeyManager.CommitteeMember[](1);
+            bytes memory randomBytes = abi.encodePacked("1");
+            members[0] = KeyManager.CommitteeMember({
+                sigKey: randomBytes,
+                dhKey: randomBytes,
+                dkgKey: randomBytes,
+                networkAddress: "127.0.0.1:8080"
+            });
+            return members;
+        }
+
         function test_setThresholdEncryptionKey() public {
             bytes memory thresholdEncKey = abi.encodePacked("1");
             vm.prank(manager);
@@ -31,15 +43,7 @@
         }
 
         function test_setNextCommittee() public {
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             vm.prank(manager);
             vm.expectEmit(true, true, true, true);
@@ -52,9 +56,9 @@
             KeyManager.Committee memory retrievedCommittee = keyManagerProxy.getCommitteeById(0);
             assertEq(retrievedCommittee.effectiveTimestamp, uint64(block.timestamp));
             assertEq(retrievedCommittee.members.length, 1);
-            assertEq(retrievedCommittee.members[0].pubKey, committeeMembers[0].pubKey);
-            assertEq(retrievedCommittee.members[0].secureChannelKey, committeeMembers[0].secureChannelKey);
-            assertEq(retrievedCommittee.members[0].dkgEncKey, committeeMembers[0].dkgEncKey);
+            assertEq(retrievedCommittee.members[0].sigKey, committeeMembers[0].sigKey);
+            assertEq(retrievedCommittee.members[0].dhKey, committeeMembers[0].dhKey);
+            assertEq(retrievedCommittee.members[0].dkgKey, committeeMembers[0].dkgKey);
             assertEq(retrievedCommittee.members[0].networkAddress, committeeMembers[0].networkAddress);
 
             // Test accessing the current committee
@@ -63,15 +67,34 @@
             retrievedCommittee = keyManagerProxy.getCommitteeById(currentCommitteeId);
             assertEq(retrievedCommittee.effectiveTimestamp, uint64(block.timestamp));
             assertEq(retrievedCommittee.members.length, 1);
-            assertEq(retrievedCommittee.members[0].pubKey, committeeMembers[0].pubKey);
-            assertEq(retrievedCommittee.members[0].secureChannelKey, committeeMembers[0].secureChannelKey);
+            assertEq(retrievedCommittee.members[0].sigKey, committeeMembers[0].sigKey);
+            assertEq(retrievedCommittee.members[0].dhKey, committeeMembers[0].dhKey);
+            assertEq(retrievedCommittee.members[0].dkgKey, committeeMembers[0].dkgKey);
         }
 
+
         function test_revertWhenEmptyCommittee_setNextCommittee() public {
-            vm.prank(manager);
-            vm.expectRevert(abi.encodeWithSelector(KeyManager.EmptyCommittee.selector));
+            vm.startPrank(manager);
+            vm.expectRevert(abi.encodeWithSelector(KeyManager.EmptyCommitteeMembers.selector));
             keyManagerProxy.setNextCommittee(uint64(block.timestamp), new KeyManager.CommitteeMember[](0));
-        }   
+            vm.stopPrank();
+        }
+
+        function test_revertWhenInvalidEffectiveTimestamp_setNextCommittee() public {
+            KeyManager.CommitteeMember[] memory members = createTestMembers();
+            
+            vm.startPrank(manager);
+            keyManagerProxy.setNextCommittee(uint64(block.timestamp), members);
+            
+            // Try to create committee with earlier timestamp
+            vm.expectRevert(abi.encodeWithSelector(
+                KeyManager.InvalidEffectiveTimestamp.selector, 
+                uint64(block.timestamp - 1), 
+                uint64(block.timestamp)
+            ));
+            keyManagerProxy.setNextCommittee(uint64(block.timestamp - 1), members);
+            vm.stopPrank();
+        }
 
         function test_setManager() public {
             address newManager = makeAddr("newManager");
@@ -137,14 +160,7 @@
 
         function test_currentCommitteeId_oneCommitteeScheduled_effectiveNow() public {
             // Create a committee that's effective now
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             uint64 effectiveTimestamp = uint64(block.timestamp);
             vm.prank(manager);
@@ -156,14 +172,7 @@
 
         function test_revertWhenNoCommitteeScheduled_currentCommitteeId() public {
             // Create a committee that's effective in the future
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             uint64 effectiveTimestamp = uint64(block.timestamp + 100);
             vm.prank(manager);
@@ -171,7 +180,7 @@
 
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    KeyManager.NoCommitteeScheduled.selector, effectiveTimestamp
+                    KeyManager.NoCommitteeScheduled.selector, block.timestamp
                 )
             );
             keyManagerProxy.currentCommitteeId();
@@ -179,14 +188,7 @@
 
         function test_currentCommitteeId_singleCommittee_effectiveInThePast() public {
             // Create a committee that was effective in the past
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             uint64 effectiveTimestamp = 100;
             vm.prank(manager);
@@ -199,14 +201,7 @@
 
         function test_currentCommitteeId_multipleCommittees() public {
             // Create multiple committees with different timestamps
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             vm.startPrank(manager);
 
@@ -240,14 +235,7 @@
         }
 
         function test_nextCommitteeId() public {
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             vm.startPrank(manager);
             keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
@@ -257,49 +245,31 @@
             uint64 nextCommitteeId = keyManagerProxy.nextCommitteeId();
             assertEq(nextCommitteeId, 2);
         }
-
-        function test_removeCommittee() public {
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
-
+        
+        function test_pruneUntil() public {
+            KeyManager.CommitteeMember[] memory members = createTestMembers();
+            
             vm.startPrank(manager);
-            keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
-            keyManagerProxy.setNextCommittee(uint64(block.timestamp+ 10 minutes), committeeMembers);
-            keyManagerProxy.setNextCommittee(uint64(block.timestamp+ 20 minutes), committeeMembers);
-
-            vm.warp(uint64(block.timestamp+ 21 minutes));
-            keyManagerProxy.removeCommittee(1);
+            keyManagerProxy.setNextCommittee(uint64(block.timestamp), members);
+            keyManagerProxy.setNextCommittee(uint64(block.timestamp + 10 minutes), members);
+            
+            vm.warp(uint64(block.timestamp + 20 minutes));
+            
+            // Remove first committee
+            keyManagerProxy.pruneUntil(0);
+            
+            // Verify first committee is deleted
+            vm.expectRevert();
+            keyManagerProxy.getCommitteeById(0);
+            
+            // Verify second committee still exists
+            KeyManager.Committee memory committee1 = keyManagerProxy.getCommitteeById(1);
+            assertEq(committee1.id, 1);
             vm.stopPrank();
-
-            assertEq(keyManagerProxy.nextCommitteeId(), 3);
-            assertEq(keyManagerProxy.currentCommitteeId(), 2);
-            KeyManager.Committee memory retrievedCommittee1 = keyManagerProxy.getCommitteeById(0);
-            KeyManager.Committee memory retrievedCommittee2 = keyManagerProxy.getCommitteeById(2);
-            assertEq(retrievedCommittee1.prevCommitteeId, 0);
-            assertEq(retrievedCommittee1.nextCommitteeId, 2);
-            assertEq(retrievedCommittee2.prevCommitteeId, 0);
-            assertEq(retrievedCommittee2.nextCommitteeId, 0);
-            assertEq(keyManagerProxy.headCommitteeId(), 0);
-
-            vm.expectRevert(abi.encodeWithSelector(KeyManager.CommitteeIdDoesNotExist.selector, 1, 3));
-            keyManagerProxy.getCommitteeById(1);
         }
 
-        function test_revertWhenCannotRemoveRecentCommittees_removeCommittee() public {
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+        function test_revertWhenCannotRemoveRecentCommittees_pruneUntil() public {
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             vm.startPrank(manager);
             keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
@@ -307,28 +277,21 @@
             keyManagerProxy.setNextCommittee(uint64(block.timestamp+ 20 minutes), committeeMembers);
             vm.warp(uint64(block.timestamp+ 10 minutes));
             vm.expectRevert(abi.encodeWithSelector(KeyManager.CannotRemoveRecentCommittees.selector));
-            keyManagerProxy.removeCommittee(0);
+            keyManagerProxy.pruneUntil(0);
             vm.expectRevert(abi.encodeWithSelector(KeyManager.CannotRemoveRecentCommittees.selector));
-            keyManagerProxy.removeCommittee(1);
+            keyManagerProxy.pruneUntil(1);
         }
 
-        function test_revertWhenCommitteeIdDoesNotExist_removeCommittee() public {
+        function test_revertWhenCommitteeIdDoesNotExist_pruneUntil() public {
             vm.startPrank(manager);
-            vm.expectRevert(abi.encodeWithSelector(KeyManager.CommitteeIdDoesNotExist.selector, 0, 0));
-            keyManagerProxy.removeCommittee(0);
+            vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidPruneRange.selector, 0, 0, 0));
+            keyManagerProxy.pruneUntil(0);
 
-            KeyManager.CommitteeMember[] memory committeeMembers = new KeyManager.CommitteeMember[](1);
-            bytes memory randomBytes = abi.encodePacked("1");
-            committeeMembers[0] = KeyManager.CommitteeMember({
-                pubKey: randomBytes,
-                secureChannelKey: randomBytes,
-                dkgEncKey: randomBytes,
-                networkAddress: "0x0000000000000000000000000000000000000000"
-            });
+            KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
             keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
-            vm.expectRevert(abi.encodeWithSelector(KeyManager.CommitteeIdDoesNotExist.selector, 1, 1));
-            keyManagerProxy.removeCommittee(1);
+            vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidPruneRange.selector, 1, 0, 1));
+            keyManagerProxy.pruneUntil(1);
             vm.stopPrank();
         }
 

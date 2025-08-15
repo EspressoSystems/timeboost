@@ -7,48 +7,104 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     struct CommitteeMember {
-        bytes pubKey;
-        bytes secureChannelKey;
-        bytes dkgEncKey;
+        /// @notice public key for consensus votes, also used as the primary label for a node
+        bytes sigKey;
+        /// @notice DH public key used for authenticated network messages
+        bytes dhKey;
+        /// @notice public key for encrypting DKG-specific payloads
+        bytes dkgKey;
+        /// @notice a network address: `ip:port` or `hostname:port`
         string networkAddress;
     }
 
+    /// @notice The consensus committee rotates with each epoch, registered by contract `manager`.
+    /// @notice Timeboost makes the simplifying decision that this committee is exactly the keyset 
     struct Committee {
+        /// @notice unique identifier for the committee, assigned by this contract
         uint64 id;
+        /// @notice wall clock time since unix epoch for this committee to be active
         uint64 effectiveTimestamp;
+        /// @notice constituting members and their key materials
         CommitteeMember[] members;
-        uint64 prevCommitteeId;
-        uint64 nextCommitteeId;
     }
 
+    /// @notice Emitted when a committee is scheduled.
+    /// @param id The id of the committee.
+    /// @param effectiveTimestamp The effective timestamp of the committee.
+    /// @param membersCount The number of members in the committee.
+    /// @param membersHash The hash of the committee members.
+    /// @param scheduledBy The address that scheduled the committee.
     event ScheduledCommittee(uint64 indexed id, uint64 effectiveTimestamp, uint64 membersCount, bytes32 membersHash, address indexed scheduledBy);
+    
+    /// @notice Emitted when the threshold encryption key is set.
+    /// @param thresholdEncryptionKey The threshold encryption key.
+    /// @param setBy The address that set the threshold encryption key.
     event SetThresholdEncryptionKey(bytes thresholdEncryptionKey, address indexed setBy);
+    
+    /// @notice Emitted when the manager is changed.
+    /// @param oldManager The old manager.
+    /// @param newManager The new manager.
+    /// @param changedBy The address that changed the manager.
     event ChangedManager(address indexed oldManager, address indexed newManager, address indexed changedBy);
 
-    error NotManager(address caller);
-    error InvalidAddress();
-    error ThresholdEncryptionKeyAlreadySet();
-    error CommitteeIdDoesNotExist(uint64 committeeId, uint64 committeesLength);
-    error EmptyCommittee();
-    error InvalidEffectiveTimestamp(uint64 effectiveTimestamp, uint64 lastEffectiveTimestamp);
-    error NoCommitteeScheduled(uint64 lastEffectiveTimestamp);
-    error CommitteeIdOverflow();
-    error NoCommitteees();
-    error CannotRemoveRecentCommittees();
-    error CannotRemoveHeadCommittee();
+    /// @notice Emitted when a committee is removed.
+    /// @param fromId The id of the first committee to prun e.
+    /// @param toId The id of the last committee to prune.
+    /// @param newOldestStored The new oldest stored committee id.
+    event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId, uint64 newOldestStored);    
 
+    /// @notice Thrown when the caller is not the manager.
+    /// @param caller The address that called the function.
+    error NotManager(address caller);
+
+    /// @notice Thrown when the address is invalid.
+    error InvalidAddress();
+
+    /// @notice Thrown when the threshold encryption key is already set.
+    error ThresholdEncryptionKeyAlreadySet();
+
+    /// @notice Thrown when the committee id does not exist.
+    /// @param committeeId The id of the committee.
+    /// @param committeesLength The length of the committees mapping.
+    error CommitteeIdDoesNotExist(uint64 committeeId, uint64 committeesLength);
+    
+    /// @notice Thrown when the committee is empty.
+    error EmptyCommitteeMembers();
+    /// @notice Thrown when the effective timestamp is invalid.
+    error InvalidEffectiveTimestamp(uint64 effectiveTimestamp, uint64 lastEffectiveTimestamp);
+    /// @notice Thrown when there is no committee scheduled.
+    error NoCommitteeScheduled(uint64 lastEffectiveTimestamp);
+    /// @notice Thrown when the committee id overflows.
+    error CommitteeIdOverflow();
+    /// @notice Thrown when there are no committees.
+    error NoCommitteees();
+    /// @notice Thrown when the committee is too recent to remove.
+    error CannotRemoveRecentCommittees();
+    /// @notice Thrown when the head committee is being removed.
+    error CannotRemoveHeadCommittee();
+    /// @notice Thrown when pruning with invalid range.
+    error InvalidPruneRange(uint64 upToCommitteeId, uint64 oldestStored, uint64 nextCommitteeId);
+
+    /// @notice The threshold encryption key for the committee.
     bytes public thresholdEncryptionKey;
+    /// @notice The mapping of committee ids to committees.
     mapping(uint64 => Committee) public committees;
-    uint64 public headCommitteeId;
-    uint64 private _nextCommitteeId;
+    /// @notice The manager of the contract.
     address public manager;
+    /// @notice The next committee id.
+    uint64 private _nextCommitteeId;
+    /// @notice The oldest committee id still stored in the mapping
+    uint64 private _oldestStoredCommitteeId;
+    /// @notice The gap for future upgrades.
     uint256[48] private __gap;
 
+    /// @notice Modifier to check if the caller is the manager.
     modifier onlyManager() {
         _onlyManager();
         _;
     }
 
+    /// @notice Internal function to check if the caller is the manager.
     function _onlyManager() internal view {
         if (msg.sender != manager) {
             revert NotManager(msg.sender);
@@ -118,8 +174,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @notice This function is used to set the next committee.
      * @dev Reverts if the members array is empty.
      * @dev Reverts if the effective timestamp is less than the last effective timestamp.
-     * @dev Reverts if the committees array is at uint64.max.
-     * @dev Assumes that committee members are not deleted from the committee array.
+     * @dev Reverts if the committees mapping is at uint64.max.
      * @dev Assumes that the committee members are valid.
      * @param effectiveTimestamp The effective timestamp of the committee.
      * @param members The committee members.
@@ -132,44 +187,35 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         returns (uint64 committeeId)
     {
         if (members.length == 0) {
-            revert EmptyCommittee();
+            revert EmptyCommitteeMembers();
         }
 
         // ensure the effective timestamp is greater than the last effective timestamp
         if (_nextCommitteeId > 0) {
             uint64 lastTimestamp = committees[_nextCommitteeId - 1].effectiveTimestamp;
-            if (effectiveTimestamp <= lastTimestamp) {
+            if (effectiveTimestamp <= lastTimestamp || effectiveTimestamp > lastTimestamp + 10 minutes) {
                 revert InvalidEffectiveTimestamp(effectiveTimestamp, lastTimestamp);
             }
         }
 
         if (_nextCommitteeId == type(uint64).max) revert CommitteeIdOverflow();
 
-        uint64 prevCommitteeId = _nextCommitteeId == 0 ? 0 : _nextCommitteeId - 1;
         committees[_nextCommitteeId] = Committee({
             id: _nextCommitteeId,
             effectiveTimestamp: effectiveTimestamp,
-            members: members,
-            prevCommitteeId: prevCommitteeId,
-            nextCommitteeId: 0
+            members: members
         });
-
-        // Update previous committee's nextCommitteeId
-        if (_nextCommitteeId > 0) {
-            committees[_nextCommitteeId - 1].nextCommitteeId = _nextCommitteeId;
-        }
 
         _nextCommitteeId++;
 
         emit ScheduledCommittee(_nextCommitteeId-1, effectiveTimestamp, uint64(members.length), keccak256(abi.encode(members)), msg.sender);
-        return committeeId;
+        return _nextCommitteeId-1;
     }
 
     /**
      * @notice This function is used to get the committee by id.
-     * @dev Reverts if the id is greater than the length of the committees array.
-     * @dev Reverts if the committees array is empty.
-     * @dev Assumes that committees are not deleted from the committee array.
+     * @dev Reverts if the id is greater than the length of the committees mapping.
+     * @dev Reverts if the id is less than the head committee id.
      * @param id The id of the committee.
      * @return committee The committee.
      */
@@ -179,11 +225,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         view
         returns (Committee memory committee)
     {
-        if (_nextCommitteeId == 0) {
-            revert NoCommitteees();
-        }
-        
-        if (committees[id].id != id || id < headCommitteeId) {
+        if (committees[id].id != id || id < _oldestStoredCommitteeId) {
             revert CommitteeIdDoesNotExist(id, _nextCommitteeId);
         }
         
@@ -192,61 +234,63 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @notice This function is used to get the current committee id.
-     * @dev Reverts if the committees array is empty.
+     * @dev Reverts if the committees mapping is empty.
      * @dev Reverts if there is no committee scheduled.
-     * @dev Assumes that committees are stored in ascending order of effective timestamp.
-     * @dev Assumes that committees are not deleted from the committee array.
+     * @dev Searches backwards through existing committees to find the active one.
      * @return committeeId The current committee id.
      */
     function currentCommitteeId() public virtual view returns (uint64 committeeId) {
-        if (_nextCommitteeId == 0) {
+        if (_nextCommitteeId == 0 || _nextCommitteeId <= _oldestStoredCommitteeId) {
             revert NoCommitteees();
         }
 
         uint64 currentTimestamp = uint64(block.timestamp);
-        if (currentTimestamp < committees[headCommitteeId].effectiveTimestamp) {
-            revert NoCommitteeScheduled(committees[headCommitteeId].effectiveTimestamp);
-        }
-
-        // search backwards for the current committee id
-        uint64 currCommitteeId = _nextCommitteeId - 1;
-        while (currCommitteeId >= headCommitteeId) {
+        
+        // Search backwards from most recent committee to oldest stored
+        for (uint64 currCommitteeId = _nextCommitteeId - 1; currCommitteeId >= _oldestStoredCommitteeId; currCommitteeId--) {
             if (currentTimestamp >= committees[currCommitteeId].effectiveTimestamp) {
                 return currCommitteeId;
             }
-            currCommitteeId = committees[currCommitteeId].prevCommitteeId;
+            
+            // Prevent underflow at 0
+            if (currCommitteeId == 0) {
+                break;
+            }
         }
+        
+        revert NoCommitteeScheduled(currentTimestamp);
     }
 
     /**
-     * @notice This function is used to remove a committee by id.
-     * @dev Reverts if the committee ID does not exist.
-     * @dev Reverts if the committee ID is 0 (first committee) or the head committee.
-     * @dev Reverts if the committee became effective within the last 10 minutes.
-     * @dev Updates the list pointers to maintain chain integrity.
-     * @param id The id of the committee to remove.
+     * @notice Prunes all committees from _oldestStoredCommitteeId up to and including upToCommitteeId.
+     * @dev This matches timeboost's garbage collection behavior of removing old committees in bulk.
+     * @dev Reverts if upToCommitteeId is not in a valid range for pruning.
+     * @dev Reverts if any committee in the range became effective within the last 10 minutes.
+     * @param upToCommitteeId The highest committee ID to prune (inclusive).
      */
-    function removeCommittee(uint64 id) external virtual onlyManager {
-        if (id >= _nextCommitteeId || id < headCommitteeId) {
-            revert CommitteeIdDoesNotExist(id, _nextCommitteeId);
-        }
-
-        // Can't remove committees with a timestamp in the last 10 minutes
-        if(committees[id].effectiveTimestamp >= block.timestamp - 10 minutes){
-            revert CannotRemoveRecentCommittees();
+    function pruneUntil(uint64 upToCommitteeId) external virtual onlyManager {
+        // Validate range
+        if (upToCommitteeId < _oldestStoredCommitteeId || upToCommitteeId >= _nextCommitteeId) {
+            revert InvalidPruneRange(upToCommitteeId, _oldestStoredCommitteeId, _nextCommitteeId);
         }
         
-        uint64 prevId = committees[id].prevCommitteeId;
-        uint64 nextId = committees[id].nextCommitteeId;
-        
-        committees[prevId].nextCommitteeId = nextId;
-        committees[nextId].prevCommitteeId = prevId;
-        
-        if (id == headCommitteeId) {
-            headCommitteeId = nextId;
+        // Check that all committees in range can be safely removed (10+ minutes old)
+        for (uint64 id = _oldestStoredCommitteeId; id <= upToCommitteeId; id++) {
+            if (committees[id].effectiveTimestamp >= block.timestamp - 10 minutes) {
+                revert CannotRemoveRecentCommittees();
+            }
         }
         
-        delete committees[id];
+        // Delete all committees in range
+        uint64 oldOldestStored = _oldestStoredCommitteeId;
+        for (uint64 id = _oldestStoredCommitteeId; id <= upToCommitteeId; id++) {
+            delete committees[id];
+        }
+        
+        // Update the oldest stored committee ID
+        _oldestStoredCommitteeId = upToCommitteeId + 1;
+        
+        emit CommitteesPruned(oldOldestStored, upToCommitteeId, _oldestStoredCommitteeId);
     }
 
     /**
