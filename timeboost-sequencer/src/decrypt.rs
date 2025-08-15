@@ -97,7 +97,7 @@ pub struct Decrypter {
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
     /// Pending threshold encryption key material
-    enc_key: DecryptionKeyCell,
+    dec_key: DecryptionKeyCell,
     /// Key stores (shared with Worker)
     key_stores: Arc<RwLock<KeyStoreVec<2>>>,
     /// Current committee.
@@ -169,7 +169,7 @@ impl Decrypter {
             .state(state)
             .tx(dec_tx)
             .rx(cmd_rx)
-            .enc_key(cfg.threshold_enc_key.clone())
+            .dec_key(cfg.threshold_dec_key.clone())
             .retain(cfg.retain)
             .build();
 
@@ -179,7 +179,7 @@ impl Decrypter {
             worker_tx: cmd_tx,
             worker_rx: dec_rx,
             worker: spawn(worker.go()),
-            enc_key: cfg.threshold_enc_key,
+            dec_key: cfg.threshold_dec_key,
             key_stores: key_stores.clone(),
             current,
             metrics: seq_metrics,
@@ -193,7 +193,7 @@ impl Decrypter {
 
     /// Garbage collect cached state of `r` and prior rounds.
     pub async fn gc(&mut self, r: RoundNumber) -> StdResult<(), DecrypterDown> {
-        if self.enc_key.get_ref().is_some() {
+        if self.dec_key.get_ref().is_some() {
             self.worker_tx
                 .send(Command::Gc(r))
                 .await
@@ -273,7 +273,7 @@ impl Decrypter {
             return None;
         };
 
-        let Some(dec_sk) = self.enc_key.get() else {
+        let Some(dec_sk) = self.dec_key.get() else {
             warn!(node = %self.label, committee = %committee_id, "no existing key to reshare");
             return None;
         };
@@ -429,8 +429,8 @@ struct Worker {
     /// Channel for receiving commands from the parent.
     rx: Receiver<Command>,
 
-    /// Pending encryption key that will be updated after DKG/resharing is done.
-    enc_key: DecryptionKeyCell,
+    /// Pending decryption key that will be updated after DKG/resharing is done.
+    dec_key: DecryptionKeyCell,
 
     /// First round where an inclusion list was received (ignore shares for earlier rounds).
     first_requested_round: Option<RoundNumber>,
@@ -735,7 +735,7 @@ impl Worker {
                 .result()
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-            self.enc_key.set(dec_sk.clone());
+            self.dec_key.set(dec_sk.clone());
             self.state = WorkerState::Running;
             info!(node = %self.label, committee_id = %committee.id(), "dkg finished (catchup successful)");
         }
@@ -805,7 +805,7 @@ impl Worker {
 
             info!(committee_id = %committee.id(), node = %self.label, "handover finished");
             self.state = WorkerState::HandoverComplete;
-            self.enc_key.set(next_dec_key);
+            self.dec_key.set(next_dec_key);
             self.dkg_completed.insert(committee.id());
         }
 
@@ -885,7 +885,7 @@ impl Worker {
                 .result()
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-            self.enc_key.set(dec_sk);
+            self.dec_key.set(dec_sk);
             self.state = WorkerState::Running;
             self.dkg_completed.insert(committee.id());
             info!(committee_id = %committee.id(), node = %self.label, "dkg finished");
@@ -904,7 +904,7 @@ impl Worker {
             );
             return Ok(());
         }
-        let Some(dec_key) = self.enc_key.get() else {
+        let Some(dec_key) = self.dec_key.get() else {
             warn!(
                 node = %self.label,
                 committee_id = %cid,
@@ -1127,7 +1127,7 @@ impl Worker {
                     incl.round()
                 )));
             }
-            _ => self.enc_key.get().ok_or_else(|| {
+            _ => self.dec_key.get().ok_or_else(|| {
                 DecrypterError::Internal("Worker running without dec key".to_string())
             })?,
         };
@@ -1219,7 +1219,7 @@ impl Worker {
         let dec_sk = match &self.state {
             WorkerState::Running
             | WorkerState::ResharingComplete(_)
-            | WorkerState::ShuttingDown => self.enc_key.get().ok_or_else(|| {
+            | WorkerState::ShuttingDown => self.dec_key.get().ok_or_else(|| {
                 DecrypterError::Internal("Worker running without dec key".to_string())
             })?,
             _ => {
@@ -1436,7 +1436,7 @@ impl Worker {
             }
             WorkerState::ResharingComplete(next_key) => {
                 info!(node = %self.label, committee = %self.current, "(old node) successful committee switch");
-                self.enc_key.set(next_key.clone());
+                self.dec_key.set(next_key.clone());
                 WorkerState::Running
             }
             WorkerState::ShuttingDown => {
@@ -1862,7 +1862,7 @@ mod tests {
         // Verify all committee members derive the same public encryption keys
         let generated_keys = try_join_all(
             setup
-                .enc_keys()
+                .dec_keys()
                 .iter()
                 .map(|cell| async { Ok::<_, ()>(cell.read().await) }),
         )
@@ -1928,11 +1928,11 @@ mod tests {
 
         enqueue_all_dkg_bundles(&mut com1_decrypters, None).await;
 
-        for cell in com1_setup.enc_keys() {
+        for cell in com1_setup.dec_keys() {
             cell.read().await;
         }
 
-        let encryption_key = com1_setup.enc_keys()[0]
+        let encryption_key = com1_setup.dec_keys()[0]
             .get()
             .expect("encryption key should be generated after DKG");
 
@@ -1951,7 +1951,7 @@ mod tests {
         enqueue_all_dkg_bundles(&mut com1_decrypters, Some(com2_setup.key_store().clone())).await;
 
         // make sure that all nodes in COM2 consider resharing complete
-        for cell in com2_setup.enc_keys() {
+        for cell in com2_setup.dec_keys() {
             cell.read().await;
         }
 
@@ -2059,11 +2059,11 @@ mod tests {
             enqueue_all_dkg_bundles(&mut decrypters, None).await;
         }
 
-        for cell in setup.enc_keys() {
+        for cell in setup.dec_keys() {
             cell.read().await;
         }
 
-        let encryption_key = setup.enc_keys()[0]
+        let encryption_key = setup.dec_keys()[0]
             .get()
             .expect("encryption key should be generated after DKG");
 
@@ -2269,7 +2269,7 @@ mod tests {
 
     #[derive(Clone)]
     struct DecrypterSetup {
-        enc_keys: Vec<DecryptionKeyCell>,
+        dec_keys: Vec<DecryptionKeyCell>,
         addr_comm: AddressableCommittee,
         key_store: KeyStore,
         sig_keys: Vec<SecretKey>,
@@ -2277,21 +2277,21 @@ mod tests {
 
     impl DecrypterSetup {
         pub fn new(
-            enc_keys: Vec<DecryptionKeyCell>,
+            dec_keys: Vec<DecryptionKeyCell>,
             addr_comm: AddressableCommittee,
             key_store: KeyStore,
             sig_keys: Vec<SecretKey>,
         ) -> Self {
             Self {
-                enc_keys,
+                dec_keys,
                 addr_comm,
                 key_store,
                 sig_keys,
             }
         }
 
-        pub fn enc_keys(&self) -> &Vec<DecryptionKeyCell> {
-            &self.enc_keys
+        pub fn dec_keys(&self) -> &Vec<DecryptionKeyCell> {
+            &self.dec_keys
         }
 
         pub fn addr_comm(&self) -> &AddressableCommittee {
@@ -2389,7 +2389,7 @@ mod tests {
                         .map(|s| (s.addr_comm().clone(), s.key_store().clone())),
                 )
                 .retain(RETAIN_ROUNDS)
-                .threshold_enc_key(encryption_key_cell.clone())
+                .threshold_dec_key(encryption_key_cell.clone())
                 .build();
 
             let decrypter = Decrypter::new(

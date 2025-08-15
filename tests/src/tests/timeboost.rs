@@ -104,7 +104,7 @@ where
             .decrypt_committee((decrypt_committee.clone(), key_store.clone()))
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
-            .threshold_enc_key(enc_key.clone())
+            .threshold_dec_key(enc_key.clone())
             .chain_config(ChainConfig::new(
                 1,
                 "https://theserversroom.com/ethereum/54cmzzhcj1o/"

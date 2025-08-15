@@ -52,7 +52,7 @@ pub struct SequencerConfig {
     pub(crate) leash_len: usize,
 
     /// Atomic cell holding the threshold encryption key post DKG.
-    pub(crate) threshold_enc_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -99,8 +99,8 @@ impl SequencerConfig {
         self.recover
     }
 
-    pub fn enc_key(&self) -> &DecryptionKeyCell {
-        &self.threshold_enc_key
+    pub fn dec_key(&self) -> &DecryptionKeyCell {
+        &self.threshold_dec_key
     }
 
     /// Derive an RBC config from this sequencer config.
@@ -124,7 +124,7 @@ impl SequencerConfig {
             .committee(self.decrypt_committee.clone())
             .maybe_prev_committee(self.previous_decrypt_committee.clone())
             .retain(self.leash_len)
-            .threshold_enc_key(self.threshold_enc_key.clone())
+            .threshold_dec_key(self.threshold_dec_key.clone())
             .build()
     }
 }
@@ -137,6 +137,6 @@ pub struct DecrypterConfig {
     pub(crate) dkg_key: DkgDecKey,
     pub(crate) committee: (AddressableCommittee, KeyStore),
     pub(crate) prev_committee: Option<(AddressableCommittee, KeyStore)>,
-    pub(crate) threshold_enc_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
     pub(crate) retain: usize,
 }

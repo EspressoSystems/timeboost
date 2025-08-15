@@ -59,7 +59,7 @@ pub struct TimeboostConfig {
     pub(crate) leash_len: usize,
 
     /// Pending threshold encryption key that will be updated after DKG/resharing.
-    pub(crate) threshold_enc_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
 
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
@@ -83,7 +83,7 @@ impl TimeboostConfig {
             .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
             .leash_len(self.leash_len)
-            .threshold_enc_key(self.threshold_enc_key.clone())
+            .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())
             .build()
     }

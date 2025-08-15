@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
         .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
-        .threshold_enc_key(enc_key.clone())
+        .threshold_dec_key(enc_key.clone())
         .robusta((
             robusta::Config::builder()
                 .base_url(cli.espresso_base_url)
