@@ -59,13 +59,13 @@ just run_integration_local
 
 ### Accessing Metrics
 
-Metrics are exposed on port 9000 + `i` for each node. Once the nodes are up and running, you
+Metrics are exposed on port 8000 + `i` for each node. Once the nodes are up and running, you
 can execute the following command to access the metrics for the first node. The system is working
 if you see output and the round number is gradually increasing.
 
 ```shell
 curl --request GET \
-  --url http://localhost:9000/status/metrics \
+  --url http://localhost:8000/status/metrics \
   --header 'User-Agent: insomnia/10.1.1'
 ```
 
