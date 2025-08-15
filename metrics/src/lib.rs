@@ -16,10 +16,8 @@
 
 use std::fmt::Debug;
 
-use dyn_clone::DynClone;
-
 /// The metrics type.
-pub trait Metrics: Send + Sync + DynClone + Debug {
+pub trait Metrics: Send + Sync + Debug {
     /// Create a [`Counter`] with an optional `unit_label`.
     ///
     /// The `unit_label` can be used to indicate what the unit of the value is, e.g. "kb" or
@@ -115,7 +113,7 @@ pub trait Metrics: Send + Sync + DynClone + Debug {
 /// ```text
 /// version{semver="0.1.0", rev="891c5baa5"} 1
 /// ```
-pub trait MetricsFamily<M>: Send + Sync + DynClone + Debug {
+pub trait MetricsFamily<M>: Send + Sync + Debug {
     /// Instantiate a metric in this family with a specific label vector.
     ///
     /// The given values of `labels` are used to identify this metric within its family. It must
@@ -224,13 +222,13 @@ impl MetricsFamily<()> for NoMetrics {
 }
 
 /// An ever-incrementing counter
-pub trait Counter: Send + Sync + Debug + DynClone {
+pub trait Counter: Send + Sync + Debug {
     /// Add a value to the counter
     fn add(&self, amount: usize);
 }
 
 /// A gauge that stores the latest value.
-pub trait Gauge: Send + Sync + Debug + DynClone {
+pub trait Gauge: Send + Sync + Debug {
     /// Set the gauge value
     fn set(&self, amount: usize);
 
@@ -239,15 +237,10 @@ pub trait Gauge: Send + Sync + Debug + DynClone {
 }
 
 /// A histogram which will record a series of points.
-pub trait Histogram: Send + Sync + Debug + DynClone {
+pub trait Histogram: Send + Sync + Debug {
     /// Add a point to this histogram.
     fn add_point(&self, point: f64);
 }
-
-dyn_clone::clone_trait_object!(Metrics);
-dyn_clone::clone_trait_object!(Gauge);
-dyn_clone::clone_trait_object!(Counter);
-dyn_clone::clone_trait_object!(Histogram);
 
 #[cfg(test)]
 mod test {

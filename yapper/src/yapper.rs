@@ -49,11 +49,11 @@ impl Yapper {
         let mut urls = Vec::new();
 
         for addr in cfg.addresses {
-            let regular_url = Url::parse(&format!("http://{addr}/v0/submit-regular"))
+            let regular_url = Url::parse(&format!("http://{addr}/v1/submit/regular"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
-            let priority_url = Url::parse(&format!("http://{addr}/v0/submit-priority"))
+            let priority_url = Url::parse(&format!("http://{addr}/v1/submit/priority"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
-            let enckey_url = Url::parse(&format!("http://{addr}/v0/enckey"))
+            let enckey_url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
 
             urls.push(ApiUrls {
