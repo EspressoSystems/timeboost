@@ -42,7 +42,6 @@ async fn main() -> Result<()> {
     let min_block = join_all(providers.iter().map(|p| async {
         p.get_block_number()
             .await
-            .map(|b| b)
             .context("provider request failed")
     }))
     .await
@@ -57,7 +56,6 @@ async fn main() -> Result<()> {
         let blocks = join_all(providers.iter().map(|p| async {
             p.get_block_by_number(BlockNumberOrTag::Number(i))
                 .await
-                .map(|b| b)
                 .context("provider request failed")
         }))
         .await
@@ -66,9 +64,8 @@ async fn main() -> Result<()> {
         let first_block = blocks
             .first()
             .and_then(|b| b.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("No blocks received from any provider"))?;
-        info!(hash = %first_block.hash(), "verifying against block hash");
-        for block in blocks.iter().skip(1) {
+            .ok_or_else(|| anyhow::anyhow!("no blocks received from any provider"))?;
+        for (i, block) in blocks.iter().enumerate().skip(1) {
             let b = block
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("provider returned no block"))?;
@@ -76,13 +73,16 @@ async fn main() -> Result<()> {
                 error!(
                     block_a = ?b,
                     block_b = ?first_block,
-                    "block mismatch between block state"
+                    "❌ block mismatch between state"
                 );
                 anyhow::bail!(
                     "block mismatch between blocks: left: {:?}, right: {:?}",
                     b,
                     first_block
                 );
+            }
+            if i == blocks.len() - 1 {
+                info!(block_hash = %b.hash(), txns = ?b.transactions, "✅ verified block");
             }
         }
     }
