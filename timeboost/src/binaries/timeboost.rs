@@ -5,8 +5,7 @@ use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig, rpc_api};
 use timeboost_builder::robusta;
-use timeboost_crypto::prelude::ThresholdEncKeyCell;
-use timeboost_types::DkgKeyStore;
+use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::signal;
 use tokio::sync::mpsc::channel;
 use tokio::task::spawn;
@@ -121,7 +120,7 @@ async fn main() -> Result<()> {
     let (tb_app_tx, tb_app_rx) = channel(100);
     // this is a shared PendingThresholdEncKey between TimeboostApi server and Decrypter's worker
     // thread
-    let enc_key = ThresholdEncKeyCell::new();
+    let enc_key = DecryptionKeyCell::new();
 
     // The RPC api needs to be started first before everything else so that way we can verify the
     // health check.
@@ -195,7 +194,7 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, certifier_peer_hosts_and_keys.iter().cloned())
     };
 
-    let dkg_keystore = DkgKeyStore::new(
+    let key_store = KeyStore::new(
         sailfish_committee.committee().clone(),
         dkg_enc_keys
             .into_iter()
@@ -237,14 +236,14 @@ async fn main() -> Result<()> {
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
         .dkg_key(private.dec_key.clone())
-        .dkg_keystore(dkg_keystore)
+        .key_store(key_store)
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .certifier_addr(my_keyset.certifier_address.clone())
         .internal_api(my_keyset.internal_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
-        .threshold_enc_key(enc_key.clone())
+        .threshold_dec_key(enc_key.clone())
         .robusta((
             robusta::Config::builder()
                 .base_url(cli.espresso_base_url)

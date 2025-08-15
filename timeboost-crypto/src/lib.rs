@@ -113,7 +113,7 @@ impl Keyset {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
 pub struct CombKey<C: CurveGroup> {
     #[serde_as(as = "Vec<crate::SerdeAs>")]
     pub key: Vec<C>,
@@ -183,6 +183,10 @@ impl From<Nonce> for GenericArray<u8, typenum::U12> {
 }
 
 impl<C: CurveGroup> CombKey<C> {
+    pub fn get_pub_share(&self, idx: usize) -> Option<&C> {
+        self.key.get(idx)
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing combkey")
@@ -213,6 +217,10 @@ impl<C: CurveGroup> PublicKey<C> {
 }
 
 impl<C: CurveGroup> KeyShare<C> {
+    pub fn share(&self) -> &C::ScalarField {
+        &self.share
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing key share")

@@ -5,14 +5,13 @@ use async_lock::RwLock;
 use async_trait::async_trait;
 use futures::FutureExt;
 use tide_disco::{Api, App, StatusCode, Url, error::ServerError};
-use timeboost_crypto::prelude::ThresholdEncKeyCell;
-use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
+use timeboost_types::{Bundle, BundleVariant, DecryptionKeyCell, SignedPriorityBundle};
 use tokio::sync::mpsc::Sender;
 use vbs::version::{StaticVersion, StaticVersionType};
 
 pub struct TimeboostApiState {
     app_tx: Sender<BundleVariant>,
-    enc_key: ThresholdEncKeyCell,
+    enc_key: DecryptionKeyCell,
 }
 
 #[async_trait]
@@ -22,7 +21,7 @@ pub trait TimeboostApi {
 }
 
 impl TimeboostApiState {
-    pub fn new(app_tx: Sender<BundleVariant>, enc_key: ThresholdEncKeyCell) -> Self {
+    pub fn new(app_tx: Sender<BundleVariant>, enc_key: DecryptionKeyCell) -> Self {
         Self { app_tx, enc_key }
     }
 
@@ -95,7 +94,7 @@ fn define_api<ApiVer: StaticVersionType + 'static>()
     })?;
 
     api.post("enckey", |_, state| {
-        async move { Ok(state.enc_key.get()) }.boxed()
+        async move { Ok(state.enc_key.get().map(|k| k.pubkey().clone())) }.boxed()
     })?;
 
     api.get("healthz", |_, _| async move { Ok("running") }.boxed())?;

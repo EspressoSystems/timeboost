@@ -7,7 +7,6 @@ rust-version.workspace = true
 
 [dependencies]
 prost = { workspace = true }
-thiserror = { workspace = true }
 tonic = { workspace = true }
 tonic-prost = { workspace = true }
 

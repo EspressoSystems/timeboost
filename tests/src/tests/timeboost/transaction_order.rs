@@ -28,7 +28,7 @@ async fn transaction_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
-    let (enc_key, cfg) = make_configs(num, RECOVER_INDEX);
+    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
     let mut tasks = JoinSet::new();
@@ -73,10 +73,11 @@ async fn transaction_order() {
         rxs.push(rx)
     }
 
-    enc_key.read().await;
-    tracing::info!("DKG done");
+    for enc_key in &enc_keys {
+        enc_key.read().await;
+    }
 
-    tasks.spawn(gen_bundles(enc_key, bcast.clone()));
+    tasks.spawn(gen_bundles(enc_keys[0].clone(), bcast.clone()));
 
     for _ in 0..NUM_OF_TRANSACTIONS {
         let first = rxs[0].recv().await.unwrap();

@@ -4,8 +4,8 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
-use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
-use timeboost_types::{Address, ChainConfig, DelayedInboxIndex, DkgKeyStore};
+use timeboost_crypto::prelude::DkgDecKey;
+use timeboost_types::{Address, ChainConfig, DecryptionKeyCell, DelayedInboxIndex, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -18,9 +18,6 @@ pub struct SequencerConfig {
     /// The encryption/decryption key used in the DKG or key resharing for secure communication.
     pub(crate) dkg_key: DkgDecKey,
 
-    /// Key store containing DKG public keys of all nodes.
-    pub(crate) dkg_keystore: DkgKeyStore,
-
     /// The address the Sailfish TCP listener binds to.
     pub(crate) sailfish_addr: net::Address,
 
@@ -30,8 +27,8 @@ pub struct SequencerConfig {
     /// The peers that Sailfish will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
-    /// The peers that the decryption network will connect to.
-    pub(crate) decrypt_committee: AddressableCommittee,
+    /// The peers that Decrypter will connect to (network and key info).
+    pub(crate) decrypt_committee: (AddressableCommittee, KeyStore),
 
     /// The priority lane controller address.
     #[builder(default)]
@@ -48,11 +45,14 @@ pub struct SequencerConfig {
     /// The previous Sailfish committee.
     pub(crate) previous_sailfish_committee: Option<AddressableCommittee>,
 
+    /// The previous Decrypter committee.
+    pub(crate) previous_decrypt_committee: Option<(AddressableCommittee, KeyStore)>,
+
     /// Length of the leash between Sailfish and other phases.
     pub(crate) leash_len: usize,
 
     /// Atomic cell holding the threshold encryption key post DKG.
-    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -83,11 +83,15 @@ impl SequencerConfig {
         self.previous_sailfish_committee.as_ref()
     }
 
+    pub fn previous_decrypt_committee(&self) -> Option<&(AddressableCommittee, KeyStore)> {
+        self.previous_decrypt_committee.as_ref()
+    }
+
     pub fn decrypt_address(&self) -> &net::Address {
         &self.decrypt_addr
     }
 
-    pub fn decrypt_committee(&self) -> &AddressableCommittee {
+    pub fn decrypt_committee(&self) -> &(AddressableCommittee, KeyStore) {
         &self.decrypt_committee
     }
 
@@ -95,8 +99,8 @@ impl SequencerConfig {
         self.recover
     }
 
-    pub fn enc_key(&self) -> &ThresholdEncKeyCell {
-        &self.threshold_enc_key
+    pub fn dec_key(&self) -> &DecryptionKeyCell {
+        &self.threshold_dec_key
     }
 
     /// Derive an RBC config from this sequencer config.
@@ -117,10 +121,10 @@ impl SequencerConfig {
             .address(self.decrypt_addr.clone())
             .dh_keypair(self.dh_keypair.clone())
             .dkg_key(self.dkg_key.clone())
-            .dkg_store(self.dkg_keystore.clone())
             .committee(self.decrypt_committee.clone())
+            .maybe_prev_committee(self.previous_decrypt_committee.clone())
             .retain(self.leash_len)
-            .threshold_enc_key(self.threshold_enc_key.clone())
+            .threshold_dec_key(self.threshold_dec_key.clone())
             .build()
     }
 }
@@ -131,8 +135,8 @@ pub struct DecrypterConfig {
     pub(crate) address: net::Address,
     pub(crate) dh_keypair: x25519::Keypair,
     pub(crate) dkg_key: DkgDecKey,
-    pub(crate) dkg_store: DkgKeyStore,
-    pub(crate) committee: AddressableCommittee,
-    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+    pub(crate) committee: (AddressableCommittee, KeyStore),
+    pub(crate) prev_committee: Option<(AddressableCommittee, KeyStore)>,
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
     pub(crate) retain: usize,
 }
