@@ -50,8 +50,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice Emitted when a committee is removed.
     /// @param fromId The id of the first committee to prun e.
     /// @param toId The id of the last committee to prune.
-    /// @param newOldestStored The new oldest stored committee id.
-    event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId, uint64 newOldestStored);    
+    event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId);    
 
     /// @notice Thrown when the caller is not the manager.
     /// @param caller The address that called the function.
@@ -65,23 +64,17 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /// @notice Thrown when the committee id does not exist.
     /// @param committeeId The id of the committee.
-    /// @param committeesLength The length of the committees mapping.
-    error CommitteeIdDoesNotExist(uint64 committeeId, uint64 committeesLength);
-    
+    error CommitteeIdDoesNotExist(uint64 committeeId);
     /// @notice Thrown when the committee is empty.
     error EmptyCommitteeMembers();
     /// @notice Thrown when the effective timestamp is invalid.
     error InvalidEffectiveTimestamp(uint64 effectiveTimestamp, uint64 lastEffectiveTimestamp);
     /// @notice Thrown when there is no committee scheduled.
-    error NoCommitteeScheduled(uint64 lastEffectiveTimestamp);
+    error NoCommitteeScheduled();
     /// @notice Thrown when the committee id overflows.
     error CommitteeIdOverflow();
-    /// @notice Thrown when there are no committees.
-    error NoCommitteees();
     /// @notice Thrown when the committee is too recent to remove.
     error CannotRemoveRecentCommittees();
-    /// @notice Thrown when the head committee is being removed.
-    error CannotRemoveHeadCommittee();
     /// @notice Thrown when pruning with invalid range.
     error InvalidPruneRange(uint64 upToCommitteeId, uint64 oldestStored, uint64 nextCommitteeId);
 
@@ -92,7 +85,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice The manager of the contract.
     address public manager;
     /// @notice The next committee id.
-    uint64 private _nextCommitteeId;
+    uint64 public nextCommitteeId;
     /// @notice The oldest committee id still stored in the mapping
     uint64 private _oldestStoredCommitteeId;
     /// @notice The gap for future upgrades.
@@ -191,25 +184,25 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         // ensure the effective timestamp is greater than the last effective timestamp
-        if (_nextCommitteeId > 0) {
-            uint64 lastTimestamp = committees[_nextCommitteeId - 1].effectiveTimestamp;
+        if (nextCommitteeId > 0) {
+            uint64 lastTimestamp = committees[nextCommitteeId - 1].effectiveTimestamp;
             if (effectiveTimestamp <= lastTimestamp || effectiveTimestamp > lastTimestamp + 10 minutes) {
                 revert InvalidEffectiveTimestamp(effectiveTimestamp, lastTimestamp);
             }
         }
 
-        if (_nextCommitteeId == type(uint64).max) revert CommitteeIdOverflow();
+        if (nextCommitteeId == type(uint64).max) revert CommitteeIdOverflow();
 
-        committees[_nextCommitteeId] = Committee({
-            id: _nextCommitteeId,
+        committees[nextCommitteeId] = Committee({
+            id: nextCommitteeId,
             effectiveTimestamp: effectiveTimestamp,
             members: members
         });
 
-        _nextCommitteeId++;
+        nextCommitteeId++;
 
-        emit ScheduledCommittee(_nextCommitteeId-1, effectiveTimestamp, uint64(members.length), keccak256(abi.encode(members)), msg.sender);
-        return _nextCommitteeId-1;
+        emit ScheduledCommittee(nextCommitteeId-1, effectiveTimestamp, uint64(members.length), keccak256(abi.encode(members)), msg.sender);
+        return nextCommitteeId-1;
     }
 
     /**
@@ -225,8 +218,8 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         view
         returns (Committee memory committee)
     {
-        if (committees[id].id != id || id < _oldestStoredCommitteeId) {
-            revert CommitteeIdDoesNotExist(id, _nextCommitteeId);
+        if (id < _oldestStoredCommitteeId || committees[id].id != id) {
+            revert CommitteeIdDoesNotExist(id);
         }
         
         return committees[id];
@@ -234,31 +227,32 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @notice This function is used to get the current committee id.
-     * @dev Reverts if the committees mapping is empty.
-     * @dev Reverts if there is no committee scheduled.
+     * @dev Reverts if there is no committee scheduled at the current timestamp.
      * @dev Searches backwards through existing committees to find the active one.
      * @return committeeId The current committee id.
      */
     function currentCommitteeId() public virtual view returns (uint64 committeeId) {
-        if (_nextCommitteeId == 0 || _nextCommitteeId <= _oldestStoredCommitteeId) {
-            revert NoCommitteees();
-        }
-
         uint64 currentTimestamp = uint64(block.timestamp);
         
+        if (nextCommitteeId == 0 || _oldestStoredCommitteeId >= nextCommitteeId) {
+            revert NoCommitteeScheduled();
+        }
+        
         // Search backwards from most recent committee to oldest stored
-        for (uint64 currCommitteeId = _nextCommitteeId - 1; currCommitteeId >= _oldestStoredCommitteeId; currCommitteeId--) {
+        uint64 currCommitteeId = nextCommitteeId - 1;
+        while (currCommitteeId >= _oldestStoredCommitteeId) {
             if (currentTimestamp >= committees[currCommitteeId].effectiveTimestamp) {
                 return currCommitteeId;
             }
-            
-            // Prevent underflow at 0
+
             if (currCommitteeId == 0) {
                 break;
             }
+
+            currCommitteeId--;
         }
         
-        revert NoCommitteeScheduled(currentTimestamp);
+        revert NoCommitteeScheduled();
     }
 
     /**
@@ -269,37 +263,22 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param upToCommitteeId The highest committee ID to prune (inclusive).
      */
     function pruneUntil(uint64 upToCommitteeId) external virtual onlyManager {
-        // Validate range
-        if (upToCommitteeId < _oldestStoredCommitteeId || upToCommitteeId >= _nextCommitteeId) {
-            revert InvalidPruneRange(upToCommitteeId, _oldestStoredCommitteeId, _nextCommitteeId);
-        }
-        
-        // Check that all committees in range can be safely removed (10+ minutes old)
-        for (uint64 id = _oldestStoredCommitteeId; id <= upToCommitteeId; id++) {
-            if (committees[id].effectiveTimestamp >= block.timestamp - 10 minutes) {
-                revert CannotRemoveRecentCommittees();
-            }
+        if (upToCommitteeId < _oldestStoredCommitteeId || upToCommitteeId >= nextCommitteeId) {
+            revert InvalidPruneRange(upToCommitteeId, _oldestStoredCommitteeId, nextCommitteeId);
         }
         
         // Delete all committees in range
+        uint64 cutOffTime = uint64(block.timestamp - 10 minutes);
         uint64 oldOldestStored = _oldestStoredCommitteeId;
         for (uint64 id = _oldestStoredCommitteeId; id <= upToCommitteeId; id++) {
+            if (committees[id].effectiveTimestamp >= cutOffTime) {
+                revert CannotRemoveRecentCommittees();
+            }
             delete committees[id];
         }
         
-        // Update the oldest stored committee ID
         _oldestStoredCommitteeId = upToCommitteeId + 1;
         
-        emit CommitteesPruned(oldOldestStored, upToCommitteeId, _oldestStoredCommitteeId);
-    }
-
-    /**
-     * @notice This function is used to get the next committee id.
-     * @dev It returns the next committee id that will be scheduled even if there is no next committee.
-     * @dev Assumes that committees are stored in ascending order of effective timestamp.
-     * @return committeeId The next committee id.
-     */
-    function nextCommitteeId() public virtual view returns (uint64 committeeId) {
-       return _nextCommitteeId;
+        emit CommitteesPruned(oldOldestStored, upToCommitteeId);
     }
 }

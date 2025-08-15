@@ -153,8 +153,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
     
 
         // Tests for currentCommitteeId function
-        function test_revertWhenNoCommitteeScheduled_emptyCommittees() public {
-            vm.expectRevert(abi.encodeWithSelector(KeyManager.NoCommitteees.selector));
+        function test_revertWhenEmptyCommittees_currentCommitteeId() public {
+            vm.expectRevert(abi.encodeWithSelector(KeyManager.NoCommitteeScheduled.selector));
             keyManagerProxy.currentCommitteeId();
         }
 
@@ -170,7 +170,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
             assertEq(currentCommitteeId, 0);
         }
 
-        function test_revertWhenNoCommitteeScheduled_currentCommitteeId() public {
+        function test_revertWhenNoCommitteeScheduledAtCurrentTimestamp_currentCommitteeId() public {
             // Create a committee that's effective in the future
             KeyManager.CommitteeMember[] memory committeeMembers = createTestMembers();
 
@@ -180,7 +180,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    KeyManager.NoCommitteeScheduled.selector, block.timestamp
+                    KeyManager.NoCommitteeScheduled.selector
                 )
             );
             keyManagerProxy.currentCommitteeId();
@@ -282,7 +282,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
             keyManagerProxy.pruneUntil(1);
         }
 
-        function test_revertWhenCommitteeIdDoesNotExist_pruneUntil() public {
+        function test_revertWhenInvalidPruneRange_pruneUntil() public {
             vm.startPrank(manager);
             vm.expectRevert(abi.encodeWithSelector(KeyManager.InvalidPruneRange.selector, 0, 0, 0));
             keyManagerProxy.pruneUntil(0);
