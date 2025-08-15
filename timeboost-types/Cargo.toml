@@ -12,7 +12,7 @@ arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
 alloy = { workspace = true }
 alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
-arbitrary = { workspace = true, optional = true }
+arbitrary = { workspace = true, optional = true, features = ["derive"] }
 ark-ec = { workspace = true }
 ark-std = { workspace = true }
 arrayvec = { workspace = true }
@@ -29,7 +29,6 @@ sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
-timeboost-proto = { path = "../timeboost-proto" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
