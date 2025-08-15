@@ -19,9 +19,9 @@ struct Cli {
     /// Nitro node URLs use to check state for different sequencers to ensure consistency
     #[clap(
         long,
-        default_value = "http://localhost:8547;http://localhost:8647",
+        default_value = "http://localhost:8547,http://localhost:8647",
         use_value_delimiter = true,
-        value_delimiter = ';'
+        value_delimiter = ','
     )]
     nitro_urls: Vec<String>,
 }
