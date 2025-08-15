@@ -37,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             rounds="$2"
             shift 2
             ;;
+        -t|--tps)
+            tps="$2"
+            shift 2
+            ;;
         --nitro)
             nitro_enabled=true
             shift
