@@ -153,7 +153,10 @@ impl Decrypter {
             }
             None => {
                 let kv = KeyStoreVec::new(key_store);
-                (Arc::new(RwLock::new(kv)), WorkerState::default())
+                (
+                    Arc::new(RwLock::new(kv)),
+                    WorkerState::DkgPending(HashMap::new()),
+                )
             }
         };
 
@@ -366,33 +369,40 @@ impl Drop for Decrypter {
 
 /// The operational state of the Worker.
 ///
-/// State Machine Flow:
-/// - DkgPending -> Running <-> ResharingComplete -> ShuttingDown
-/// - HandoverPending -> HandoverComplete -> Running <-> ResharingComplete -> ShuttingDown
+/// # State Machine Flow: (epoch e1 is special, e2 onwards are the same)
+///
+/// note: ShuttingDown and ResharingComplete will trigger send_handover_msg,
+/// Running is triggered by maybe_switch_committee except in epoch 1
+///
+/// #1: "e1 -> e2, in C1, but not C2"
+/// DkgPending -> Running -> ShuttingDown
+///
+/// #2: "e1 -> e2, in C1 and C2"
+/// DkgPending -> Running -> ResharingComplete -> Running (in e2)
+///
+/// #3: "ex -> ex+1, in Cx, but not Cx+1"
+/// HandoverPending -> HandoverComplete -> Running (in ex) -> ShuttingDown
+///
+/// #4: "ex -> ex+1, in Cx and Cx+1"
+/// HandoverPending -> HandoverComplete -> Running (in ex) -> ResharingComplete -> Running (in ex+1)
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum WorkerState {
     /// Awaiting resharing messages from the previous committee.
     HandoverPending(HashMap<PublicKey, ResharingSubset>),
-    /// Received enough resharing messages to complete the handover.
-    HandoverComplete(DecryptionKey),
+    /// Received enough resharing messages to complete the handover, but yet actively running.
+    HandoverComplete,
     /// Expects to obtain the initial DKG key through DKG bundles.
     ///
     /// Upon startup the Worker requests DKG messages from remote nodes
     /// such that, if the local node is behind, it will catchup immediately.
     DkgPending(HashMap<PublicKey, DkgSubset>),
-    /// Already completed at least one instance of DKG. Ready for resharing.
-    Running(DecryptionKey),
-    /// Obtained keys for both the current and next committee.
-    ResharingComplete(DecryptionKey, DecryptionKey),
+    /// Active mode with decryption key ready.
+    Running,
+    /// Obtained decryption key for the next committee also as a member (see case #2 and #4)
+    ResharingComplete(DecryptionKey),
     /// Completed resharing and handover but is not a member of next committee.
-    ShuttingDown(DecryptionKey),
-}
-
-impl Default for WorkerState {
-    fn default() -> Self {
-        Self::DkgPending(HashMap::new())
-    }
+    ShuttingDown,
 }
 
 /// Worker is responsible for "hatching" ciphertexts.
@@ -493,7 +503,7 @@ impl Worker {
         loop {
             let mut cache_modified = false;
             // process pending inclusion lists received during catchup
-            if !self.pending.is_empty() && matches!(self.state, WorkerState::Running(_)) {
+            if !self.pending.is_empty() && matches!(self.state, WorkerState::Running) {
                 for incl in std::mem::take(&mut self.pending).into_values() {
                     match self.on_decrypt_request(incl, true).await {
                         Ok(()) => {}
@@ -586,7 +596,7 @@ impl Worker {
                 Err(err) => warn!(node = %self.label, %round, %err, "error on hatch"),
             }
 
-            if matches!(self.state, WorkerState::ShuttingDown(_)) {
+            if matches!(self.state, WorkerState::ShuttingDown) {
                 // graceful shut down
                 if let Some(next_committee) = self.next_committee {
                     if next_committee.num() - 1 == self.last_hatched_round {
@@ -726,7 +736,7 @@ impl Worker {
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.enc_key.set(dec_sk.clone());
-            self.state = WorkerState::Running(dec_sk);
+            self.state = WorkerState::Running;
             info!(node = %self.label, committee_id = %committee.id(), "dkg finished (catchup successful)");
         }
 
@@ -794,7 +804,7 @@ impl Worker {
             .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             info!(committee_id = %committee.id(), node = %self.label, "handover finished");
-            self.state = WorkerState::HandoverComplete(next_dec_key.clone());
+            self.state = WorkerState::HandoverComplete;
             self.enc_key.set(next_dec_key);
             self.dkg_completed.insert(committee.id());
         }
@@ -875,8 +885,8 @@ impl Worker {
                 .result()
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-            self.enc_key.set(dec_sk.clone());
-            self.state = WorkerState::Running(dec_sk);
+            self.enc_key.set(dec_sk);
+            self.state = WorkerState::Running;
             self.dkg_completed.insert(committee.id());
             info!(committee_id = %committee.id(), node = %self.label, "dkg finished");
         }
@@ -961,10 +971,10 @@ impl Worker {
                 )
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
-                self.state = WorkerState::ResharingComplete(dec_key.clone(), next_dec_key.clone());
+                self.state = WorkerState::ResharingComplete(next_dec_key);
             } else {
                 // resharing complete; node will shut down at next committee switch
-                self.state = WorkerState::ShuttingDown(dec_key.clone());
+                self.state = WorkerState::ShuttingDown;
             }
 
             trace!(committee_id = %committee.id(), node = %self.label, "resharing complete; handing over");
@@ -1100,7 +1110,7 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
-        let dec_sk = match &self.state {
+        let dec_sk: DecryptionKey = match &self.state {
             WorkerState::DkgPending(_) => {
                 self.pending.insert(incl.round(), incl.clone());
                 return Err(DecrypterError::DkgPending);
@@ -1110,10 +1120,16 @@ impl Worker {
                     "Worker state does not hold decryption key".to_string(),
                 ));
             }
-            WorkerState::Running(dec_key)
-            | WorkerState::ResharingComplete(dec_key, _)
-            | WorkerState::HandoverComplete(dec_key)
-            | WorkerState::ShuttingDown(dec_key) => dec_key,
+            WorkerState::ResharingComplete(_) => {
+                return Err(DecrypterError::Dkg(format!(
+                    "resharing completed, but Worker not active: label={}, round={}",
+                    self.label,
+                    incl.round()
+                )));
+            }
+            _ => self.enc_key.get().ok_or_else(|| {
+                DecrypterError::Internal("Worker running without dec key".to_string())
+            })?,
         };
 
         let round = Round::new(incl.round(), self.current);
@@ -1201,9 +1217,11 @@ impl Worker {
         }
 
         let dec_sk = match &self.state {
-            WorkerState::Running(dec_key)
-            | WorkerState::ResharingComplete(dec_key, _)
-            | WorkerState::ShuttingDown(dec_key) => dec_key,
+            WorkerState::Running
+            | WorkerState::ResharingComplete(_)
+            | WorkerState::ShuttingDown => self.enc_key.get().ok_or_else(|| {
+                DecrypterError::Internal("Worker running without dec key".to_string())
+            })?,
             _ => {
                 return Err(DecrypterError::Dkg(
                     "(hatching) worker state does not hold decryption key".to_string(),
@@ -1412,17 +1430,18 @@ impl Worker {
 
         // update state machine
         self.state = match &self.state {
-            WorkerState::HandoverComplete(decryption_key) => {
+            WorkerState::HandoverComplete => {
                 info!(node = %self.label, committee = %self.current, "(new node) successful committee switch");
-                WorkerState::Running(decryption_key.clone())
+                WorkerState::Running
             }
-            WorkerState::ResharingComplete(_, next_key) => {
+            WorkerState::ResharingComplete(next_key) => {
                 info!(node = %self.label, committee = %self.current, "(old node) successful committee switch");
-                WorkerState::Running(next_key.clone())
+                self.enc_key.set(next_key.clone());
+                WorkerState::Running
             }
-            WorkerState::ShuttingDown(dec_key) => {
+            WorkerState::ShuttingDown => {
                 info!("(old node) not a member of new committee. ready for shut down");
-                WorkerState::ShuttingDown(dec_key.clone())
+                WorkerState::ShuttingDown
             }
             _ => {
                 return Err(DecrypterError::Internal(
