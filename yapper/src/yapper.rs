@@ -41,7 +41,6 @@ pub(crate) struct Yapper {
     interval: Duration,
     chain_id: u64,
     provider: Option<RootProvider>,
-    txn_limit: Option<u64>,
 }
 
 impl Yapper {
@@ -63,23 +62,16 @@ impl Yapper {
             });
         }
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let (provider, interval, txn_limit) = if cfg.nitro_integration {
-            (
-                Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?),
-                Duration::from_secs(1),
-                // For nitro running in ci, avoid race conditions with block height by setting txn
-                // limit
-                Some(cfg.txn_limit),
-            )
+        let provider = if cfg.nitro_integration {
+            Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?)
         } else {
-            (None, Duration::from_millis(tps_to_millis(cfg.tps)), None)
+            None
         };
         Ok(Self {
             urls,
-            interval,
+            interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
             provider,
-            txn_limit,
             chain_id: cfg.chain_id,
         })
     }
@@ -93,7 +85,6 @@ impl Yapper {
             self.urls.iter().map(|url| url.enckey_url.clone()),
         );
 
-        let mut txn_sent = 0;
         loop {
             let b = if let Some(ref p) = self.provider {
                 // For testing just send from the dev account to the validator address
@@ -119,11 +110,6 @@ impl Yapper {
                     .await
             }))
             .await;
-            txn_sent += 1;
-            if self.txn_limit == Some(txn_sent) {
-                warn!("hit txn limit, terminating yapper");
-                return Ok(());
-            }
 
             interval.tick().await;
         }
