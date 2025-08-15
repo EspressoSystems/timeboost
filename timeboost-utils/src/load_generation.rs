@@ -1,3 +1,10 @@
+use alloy::{
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+    network::TxSignerSync,
+    primitives::{TxKind, U256},
+    rlp::Encodable,
+    signers::local::PrivateKeySigner,
+};
 use arbitrary::Unstructured;
 use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
@@ -7,7 +14,16 @@ use timeboost_crypto::{
     DecryptionScheme, Plaintext, prelude::ThresholdEncKey,
     traits::threshold_enc::ThresholdEncScheme,
 };
-use timeboost_types::{Address, Bundle, BundleVariant, PriorityBundle, SeqNo, Signer};
+use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, SeqNo, Signer};
+
+pub struct TxInfo {
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub to: alloy::primitives::Address,
+    pub base_fee: u128,
+    pub gas_limit: u64,
+    pub signer: PrivateKeySigner,
+}
 
 pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
@@ -40,6 +56,65 @@ pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
         // non-priority
         Ok(BundleVariant::Regular(bundle))
     }
+}
+
+/// Helper function for when we only have a ThresholdEncKey directly
+pub fn make_dev_acct_bundle(
+    pubkey: &ThresholdEncKey,
+    txn: TxInfo,
+) -> anyhow::Result<BundleVariant> {
+    let mut rng = rand::thread_rng();
+    let mut v = [0; 256];
+    rng.fill(&mut v);
+    let mut u = Unstructured::new(&v);
+
+    let max_seqno = 10;
+    let mut bundle = create_dev_acct_txn_bundle(txn)?;
+
+    if rng.gen_bool(0.5) {
+        // encrypt bundle
+        let data = bundle.data();
+        let plaintext = Plaintext::new(data.to_vec());
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
+        let encoded = serialize(&ciphertext)?;
+        bundle.set_encrypted_data(encoded.into());
+    }
+
+    if rng.gen_bool(0.5) {
+        // priority
+        let auction = Address::default();
+        let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
+        let signer = Signer::default();
+        let priority = PriorityBundle::new(bundle, auction, seqno);
+        let signed_priority = priority.sign(signer)?;
+        Ok(BundleVariant::Priority(signed_priority))
+    } else {
+        // non-priority
+        Ok(BundleVariant::Regular(bundle))
+    }
+}
+
+pub fn create_dev_acct_txn_bundle(tx_info: TxInfo) -> anyhow::Result<Bundle> {
+    let mut tx = TxEip1559 {
+        chain_id: tx_info.chain_id,
+        nonce: tx_info.nonce,
+        max_fee_per_gas: tx_info.base_fee,
+        gas_limit: tx_info.gas_limit,
+        to: TxKind::Call(tx_info.to),
+        value: U256::from(1),
+        ..Default::default()
+    };
+
+    let sig = tx_info.signer.sign_transaction_sync(&mut tx)?;
+    let signed_tx = tx.into_signed(sig);
+    let env = TxEnvelope::Eip1559(signed_tx);
+    let mut rlp = Vec::new();
+    env.encode(&mut rlp);
+
+    let encoded = ssz::ssz_encode(&vec![&rlp]);
+    let b = Bundle::new(tx_info.chain_id.into(), Epoch::now(), encoded.into(), false);
+
+    Ok(b)
 }
 
 /// Transactions per second to milliseconds is 1000 / TPS

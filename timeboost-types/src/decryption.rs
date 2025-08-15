@@ -11,7 +11,7 @@ use std::{
     collections::{BTreeMap, btree_map},
     sync::Arc,
 };
-use timeboost_crypto::prelude::ThresholdCombKey;
+use timeboost_crypto::prelude::{ThresholdCombKey, ThresholdEncKey};
 use timeboost_crypto::{
     DecryptionScheme,
     feldman::FeldmanVssPublicParam,
@@ -158,6 +158,10 @@ impl DecryptionKeyCell {
 
     pub fn get(&self) -> Option<DecryptionKey> {
         (*self.key.read()).clone()
+    }
+
+    pub fn enc_key(&self) -> Option<ThresholdEncKey> {
+        self.get().map(|sk| sk.pubkey)
     }
 
     pub fn get_ref(&self) -> impl Deref<Target = Option<DecryptionKey>> {
