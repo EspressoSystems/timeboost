@@ -22,6 +22,13 @@ impl<D: Committable> Certificate<D> {
         }
     }
 
+    pub fn from_parts<I>(data: D, commit: Commitment<D>, sigs: I) -> Self
+    where
+        I: IntoIterator<Item = (KeyId, Signature)>,
+    {
+        Self::new(data, commit, sigs.into_iter().collect())
+    }
+
     pub fn data(&self) -> &D {
         &self.data
     }
@@ -39,6 +46,10 @@ impl<D: Committable> Certificate<D> {
             .keys()
             .copied()
             .filter_map(|i| comm.get_key(i))
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = (KeyId, &Signature)> {
+        self.signatures.iter().map(|(k, s)| (*k, s))
     }
 
     pub fn is_valid(&self, committee: &Committee) -> bool {

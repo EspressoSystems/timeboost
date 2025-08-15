@@ -12,6 +12,7 @@ use multisig::{Unchecked, Validated};
 use reqwest::{StatusCode, Url};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
+use timeboost_proto::certified_block as proto;
 use timeboost_types::sailfish::CommitteeVec;
 use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
@@ -58,10 +59,13 @@ impl Client {
     where
         N: Into<NamespaceId>,
     {
-        let trx = Transaction::new(nsid.into(), serialize(cb)?);
+        use prost::Message;
+
+        let trx = Transaction::new(nsid.into(), cb.to_protobuf().encode_to_vec());
         let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
+
         Ok(())
     }
 
@@ -99,7 +103,22 @@ impl Client {
             return Either::Left(empty());
         }
         Either::Right(trxs.into_iter().filter_map(move |t| {
-            match deserialize::<CertifiedBlock<Unchecked>>(t.payload()) {
+            use prost::Message;
+
+            let proto = match proto::CertifiedBlock::decode(t.payload()) {
+                Ok(block) => block,
+                Err(err) => {
+                    warn!(
+                        node   = %self.config.label,
+                        height = %hdr.height(),
+                        err    = %err,
+                        "invalid protobuf"
+                    );
+                    return None;
+                }
+            };
+
+            match <CertifiedBlock<Unchecked>>::try_from(proto) {
                 Ok(b) => {
                     let Some(c) = cvec.get(b.committee()) else {
                         warn!(
@@ -123,7 +142,7 @@ impl Client {
                         nsid   = %nsid,
                         height = %hdr.height(),
                         err    = %err,
-                        "could not deserialize block"
+                        "could not convert protobuf to certified block"
                     );
                     None
                 }
@@ -224,12 +243,6 @@ pub enum Error {
     #[error("json error: {0}")]
     Json(#[from] json::Error),
 
-    #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
-
-    #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
-
     #[error("url error: {0}")]
     Url(#[from] url::ParseError),
 
@@ -263,17 +276,6 @@ enum InternalError {
 
     #[error("api status: {0}")]
     Status(StatusCode),
-}
-
-fn serialize<T: Serialize>(d: &T) -> Result<Vec<u8>, Error> {
-    let v = bincode::serde::encode_to_vec(d, bincode::config::standard())?;
-    Ok(v)
-}
-
-fn deserialize<T: DeserializeOwned>(d: &[u8]) -> Result<T, Error> {
-    bincode::serde::decode_from_slice(d, bincode::config::standard())
-        .map(|(msg, _)| msg)
-        .map_err(Into::into)
 }
 
 #[cfg(test)]
