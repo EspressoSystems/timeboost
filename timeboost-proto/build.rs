@@ -6,12 +6,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .out_dir("src")
         .bytes(".block.Block.payload")
         .bytes(".inclusion.Transaction.encoded_txn")
+        .bytes(".certified_block.Block.payload")
         .compile_protos(
             &[
                 "protos/inclusion_list.proto",
                 "protos/block.proto",
                 "protos/internal.proto",
                 "protos/forward.proto",
+                "protos/certified_block.proto",
             ],
             &["protos/"],
         )?;

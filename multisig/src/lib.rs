@@ -47,6 +47,12 @@ impl From<KeyId> for u64 {
     }
 }
 
+impl From<KeyId> for u32 {
+    fn from(val: KeyId) -> Self {
+        val.0.into()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Keypair {
     sk: SecretKey,

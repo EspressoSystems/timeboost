@@ -9479,7 +9479,6 @@ dependencies = [
 name = "robusta"
 version = "0.1.0"
 dependencies = [
- "bincode 2.0.1",
  "bon",
  "bytes 1.10.1",
  "data-encoding",
@@ -9489,10 +9488,12 @@ dependencies = [
  "hotshot-query-service",
  "hotshot-types",
  "multisig",
+ "prost 0.14.1",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.14",
+ "timeboost-proto",
  "timeboost-types",
  "tokio",
  "tokio-stream",

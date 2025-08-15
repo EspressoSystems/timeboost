@@ -1,15 +1,17 @@
 use core::fmt;
 use std::{
+    collections::HashMap,
     marker::PhantomData,
     ops::{Add, Deref, Sub},
 };
 
-use alloy::primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
+use multisig::{KeyId, Signature};
 use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
+use timeboost_proto::certified_block as proto;
 
 /// The genesis timeboost block number.
 pub const GENESIS_BLOCK: BlockNumber = BlockNumber::new(0);
@@ -94,16 +96,16 @@ impl fmt::Display for BlockNumber {
 #[derive(
     Debug, Default, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd, PartialEq, Eq, Hash,
 )]
-pub struct BlockHash(B256);
+pub struct BlockHash([u8; 32]);
 
 impl From<[u8; 32]> for BlockHash {
     fn from(bytes: [u8; 32]) -> Self {
-        Self(B256::from(bytes))
+        Self(bytes)
     }
 }
 
 impl Deref for BlockHash {
-    type Target = B256;
+    type Target = [u8; 32];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -230,6 +232,99 @@ impl CertifiedBlock<Validated> {
 
     pub fn data(&self) -> &Block {
         &self.data
+    }
+
+    pub fn to_protobuf(&self) -> proto::CertifiedBlock {
+        proto::CertifiedBlock {
+            block: Some(proto::Block {
+                round: self.data.round.into(),
+                payload: self.data.payload.clone(),
+            }),
+            cert: Some(proto::Certificate {
+                info: Some(proto::BlockInfo {
+                    block_number: self.cert.data().num.into(),
+                    round_number: self.cert.data().round.num().into(),
+                    committee_id: self.cert.data().round.committee().into(),
+                    block_hash: self.cert.data().hash.to_vec(),
+                }),
+                commitment: Vec::from(<[u8; 32]>::from(*self.cert.commitment())),
+                signatures: self
+                    .cert
+                    .entries()
+                    .map(|(k, s)| (u32::from(k), s.to_bytes().to_vec()))
+                    .collect(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{ctx}: failed to convert from protobuf: {err}")]
+pub struct ProtobufError {
+    ctx: &'static str,
+    err: Box<dyn std::error::Error + Send + Sync>,
+}
+
+impl TryFrom<proto::CertifiedBlock> for CertifiedBlock<Unchecked> {
+    type Error = ProtobufError;
+
+    fn try_from(p: proto::CertifiedBlock) -> Result<Self, Self::Error> {
+        let block = p.block.ok_or_else(|| ProtobufError {
+            ctx: "block",
+            err: "missing".into(),
+        })?;
+
+        let cert = p.cert.ok_or_else(|| ProtobufError {
+            ctx: "cert",
+            err: "missing".into(),
+        })?;
+
+        let info = cert.info.ok_or_else(|| ProtobufError {
+            ctx: "info",
+            err: "missing".into(),
+        })?;
+
+        let block_info = BlockInfo {
+            num: info.block_number.into(),
+            round: Round::new(info.round_number, info.committee_id),
+            hash: BlockHash(info.block_hash.try_into().map_err(|_| ProtobufError {
+                ctx: "block hash",
+                err: "invalid len".into(),
+            })?),
+        };
+
+        let signatures: HashMap<KeyId, Signature> = cert
+            .signatures
+            .into_iter()
+            .map(|(k, s)| {
+                let s = Signature::try_from(&s[..]).map_err(|e| ProtobufError {
+                    ctx: "signature",
+                    err: e.into(),
+                })?;
+                let k = u8::try_from(k).map_err(|e| ProtobufError {
+                    ctx: "key id",
+                    err: e.into(),
+                })?;
+                Ok((k.into(), s))
+            })
+            .collect::<Result<_, ProtobufError>>()?;
+
+        let commitment: Commitment<BlockInfo> = <[u8; 32]>::try_from(&*cert.commitment)
+            .map(Commitment::from_raw)
+            .map_err(|e| ProtobufError {
+                ctx: "commitment",
+                err: Box::new(e),
+            })?;
+
+        Ok(Self {
+            data: Block {
+                round: block.round.into(),
+                payload: block.payload,
+            },
+            cert: Certificate::from_parts(block_info, commitment, signatures),
+            leader: false,
+            _marker: PhantomData,
+        })
     }
 }
 
