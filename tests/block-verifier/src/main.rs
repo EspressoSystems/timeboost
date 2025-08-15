@@ -55,6 +55,13 @@ async fn main() -> Result<()> {
     let diff = max - min;
 
     // ensure the max - min is within MAX_BLOCK_HEIGHT_DIFF
+    info!(
+        max_height = %max,
+        min_height = %min,
+        height_diff = %diff,
+        provider_count = %providers.len(),
+        "block height verification"
+    );
     if diff > MAX_BLOCK_HEIGHT_DIFF {
         error!(%max, %min, %diff, max_diff = %MAX_BLOCK_HEIGHT_DIFF, "❌ block numbers too far apart");
         anyhow::bail!(
