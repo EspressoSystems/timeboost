@@ -45,10 +45,6 @@ struct Cli {
     #[clap(long, default_value_t = false)]
     nitro_integration: bool,
 
-    /// How many txns to send before terminating yapper
-    #[clap(long, default_value_t = 20)]
-    nitro_txn_limit: u64,
-
     /// Chain id for l2 chain
     /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
     #[clap(long, default_value_t = 412346)]
@@ -85,7 +81,6 @@ async fn main() -> Result<()> {
         .addresses(addresses)
         .nitro_integration(cli.nitro_integration)
         .tps(cli.tps)
-        .txn_limit(cli.nitro_txn_limit)
         .nitro_url(cli.nitro_url)
         .chain_id(cli.chain_id)
         .build();

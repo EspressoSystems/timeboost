@@ -109,8 +109,8 @@ mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARG
     --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
     --mode "increment-address" {{ARGS}} | jq
 
-verify_blocks:
-  ./scripts/verify-blocks
+verify_blocks *ARGS:
+  cargo run --release --bin block_verifier {{ARGS}}
 
 ####################
 ####TEST COMMANDS###

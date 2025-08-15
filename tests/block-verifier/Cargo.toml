@@ -1,0 +1,14 @@
+[package]
+name = "block_verifier"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+timeboost-utils = { path = "../../timeboost-utils" }
+tokio = { workspace = true }
+tracing = { workspace = true }

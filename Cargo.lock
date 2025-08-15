@@ -2866,6 +2866,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "block_verifier"
+version = "0.1.0"
+dependencies = [
+ "alloy 1.0.24",
+ "anyhow",
+ "clap",
+ "futures",
+ "timeboost-utils",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "blocking"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
