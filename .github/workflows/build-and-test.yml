@@ -94,7 +94,6 @@ jobs:
     - name: Run lint
       run: just lint
   build-docker:
-    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -150,3 +149,40 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
       - name: Run contract tests
         run: forge test -vvv
+  nitro-timeboost-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    - name: Install Just
+      run: |
+        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
+        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
+        sudo cp just /usr/bin/just
+    - name: Clone Espresso Testnode Repository
+      run: |
+        git clone --recursive https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
+    - name: Run Test Node with Timeboost
+      run: |
+        cd decentralized-timeboost-nitro-testnode
+        chmod +x test-node.bash
+        ./test-node.bash \
+          --build-dev-nitro \
+          --batchposters 0 \
+          --redundantsequencers 1 \
+          --decentralized-timeboost \
+          --init &
+        cd ..
+    - name: Run test timeboost with nitro sequencer
+      run: just run_demo -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 10000 --yapper --nitro
+    - name: Verify sequencer blocks
+      run: |
+        RUST_LOG=info just verify_blocks
+

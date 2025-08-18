@@ -31,4 +31,5 @@ tracing = { workspace = true }
 [dev-dependencies]
 ark-std = { workspace = true }
 bs58 = { workspace = true }
+futures = { workspace = true }
 portpicker = { workspace = true }

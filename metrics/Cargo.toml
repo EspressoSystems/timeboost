@@ -4,6 +4,3 @@ description = "Metrics API types"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-
-[dependencies]
-dyn-clone = { workspace = true }

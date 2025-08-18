@@ -17,9 +17,13 @@ use tokio::signal::{
     unix::{SignalKind, signal},
 };
 use tracing::{info, warn};
-use tx::yap;
 
-mod tx;
+use crate::config::YapperConfig;
+use crate::yapper::Yapper;
+
+mod config;
+mod enc_key;
+mod yapper;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -36,6 +40,19 @@ struct Cli {
     /// Specify how to read the configuration file.
     #[clap(long, default_value_t = false)]
     multi_region: bool,
+
+    /// Is there a nitro setup?
+    #[clap(long, default_value_t = false)]
+    nitro_integration: bool,
+
+    /// Chain id for l2 chain
+    /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
+    #[clap(long, default_value_t = 412346)]
+    chain_id: u64,
+
+    /// Nitro node url used for gas estimations and getting nonce when sending transactions
+    #[clap(long, default_value = "http://localhost:8547")]
+    nitro_url: String,
 }
 
 #[tokio::main]
@@ -54,13 +71,22 @@ async fn main() -> Result<()> {
     let mut addresses = Vec::new();
     for node in nodes {
         info!("waiting for peer: {}", node.sailfish_address);
-        let mut addr = node.sailfish_address.clone();
-        wait_for_live_peer(addr.clone()).await?;
-        addr.set_port(800 + addr.port());
+        let port = node.sailfish_address.port();
+        let addr = node.sailfish_address.clone().with_port(port + 800); // TODO: remove port magic
+        wait_for_live_peer(&addr).await?;
         addresses.push(addr);
     }
 
-    let mut jh = tokio::spawn(yap(addresses, cli.tps));
+    let config = YapperConfig::builder()
+        .addresses(addresses)
+        .nitro_integration(cli.nitro_integration)
+        .tps(cli.tps)
+        .nitro_url(cli.nitro_url)
+        .chain_id(cli.chain_id)
+        .build();
+    let yapper = Yapper::new(config).await?;
+
+    let mut jh = tokio::spawn(async move { yapper.yap().await });
 
     let mut signal = signal(SignalKind::terminate()).expect("failed to create sigterm handler");
     tokio::select! {
