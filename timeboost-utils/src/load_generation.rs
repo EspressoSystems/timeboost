@@ -75,7 +75,8 @@ pub fn make_dev_acct_bundle(
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &vec![])?;
+        let aad = b"threshold".to_vec();
+        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
         let encoded = serialize(&ciphertext)?;
         bundle.set_encrypted_data(encoded.into());
     }
