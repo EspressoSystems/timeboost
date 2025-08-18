@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-just build_release --features until
+just build_release
 
 # Set default RUST_LOG if not already defined
 if [ -z "${RUST_LOG:-}" ]; then
@@ -16,8 +16,6 @@ nodes=$(jq '.keyset | length' $keyset_file)
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/sailfish
         --id $i
-        --rpc-port $((8800 + $i))
-        --metrics-port $((9000 + $i))
         --keyset-file "$keyset_file"
         --stamp "${TMPDIR:-/tmp}/stamp-$i.sf"
         --ignore-stamp

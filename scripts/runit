@@ -96,8 +96,7 @@ pids=()
 for (( i=0; i<$nodes; i++ )); do
     cmd=(target/release/timeboost
         --id $i
-        --rpc-port $((8800 + $i))
-        --metrics-port $((9000 + $i))
+        --http-port $((8800 + $i))
         --until $rounds
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"

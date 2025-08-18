@@ -11,9 +11,6 @@ use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
-    /// The port to bind the metrics API server to.
-    pub(crate) metrics_port: u16,
-
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
@@ -43,9 +40,6 @@ pub struct TimeboostConfig {
 
     /// The bind address for the block certifier node.
     pub(crate) certifier_addr: Address,
-
-    /// The bind address of the internal API.
-    pub(crate) internal_api: Address,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     pub(crate) nitro_addr: Option<Address>,
