@@ -86,7 +86,6 @@ jobs:
     - name: Run lint
       run: just lint
   build-docker:
-    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
