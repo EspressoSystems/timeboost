@@ -28,27 +28,21 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         CommitteeMember[] members;
     }
 
-    /// @notice Emitted when a committee is scheduled.
+    /// @notice Emitted when a committee is created.
     /// @param id The id of the committee.
-    /// @param effectiveTimestamp The effective timestamp of the committee.
-    /// @param membersCount The number of members in the committee.
-    /// @param membersHash The hash of the committee members.
-    /// @param scheduledBy The address that scheduled the committee.
-    event ScheduledCommittee(uint64 indexed id, uint64 effectiveTimestamp, uint64 membersCount, bytes32 membersHash, address indexed scheduledBy);
+    event CommitteeCreated(uint64 indexed id);
     
     /// @notice Emitted when the threshold encryption key is set.
     /// @param thresholdEncryptionKey The threshold encryption key.
-    /// @param setBy The address that set the threshold encryption key.
-    event SetThresholdEncryptionKey(bytes thresholdEncryptionKey, address indexed setBy);
+    event ThresholdEncryptionKeyUpdated(bytes thresholdEncryptionKey);
     
     /// @notice Emitted when the manager is changed.
     /// @param oldManager The old manager.
     /// @param newManager The new manager.
-    /// @param changedBy The address that changed the manager.
-    event ChangedManager(address indexed oldManager, address indexed newManager, address indexed changedBy);
+    event ManagerChanged(address indexed oldManager, address indexed newManager);
 
     /// @notice Emitted when a committee is removed.
-    /// @param fromId The id of the first committee to prun e.
+    /// @param fromId The id of the first committee to prune.
     /// @param toId The id of the last committee to prune.
     event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId);    
 
@@ -145,7 +139,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
         address oldManager = manager;
         manager = newManager;
-        emit ChangedManager(oldManager, newManager, msg.sender);
+        emit ManagerChanged(oldManager, newManager);
     }
 
     /**
@@ -160,7 +154,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             revert ThresholdEncryptionKeyAlreadySet();
         }
         thresholdEncryptionKey = newThresholdEncryptionKey;
-        emit SetThresholdEncryptionKey(thresholdEncryptionKey, msg.sender);
+        emit ThresholdEncryptionKeyUpdated(newThresholdEncryptionKey);
     }
 
     /**
@@ -201,7 +195,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         nextCommitteeId++;
 
-        emit ScheduledCommittee(nextCommitteeId-1, effectiveTimestamp, uint64(members.length), keccak256(abi.encode(members)), msg.sender);
+        emit CommitteeCreated(nextCommitteeId-1);
         return nextCommitteeId-1;
     }
 

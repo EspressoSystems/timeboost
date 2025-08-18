@@ -109,11 +109,11 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 
 ## Test
 
-Contracts test
 ```shell
 just test
 ```
 
+Contracts test
 ```shell
 just test-contracts
 ```

@@ -37,7 +37,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
             bytes memory thresholdEncKey = abi.encodePacked("1");
             vm.prank(manager);
             vm.expectEmit(true, true, true, true);
-            emit KeyManager.SetThresholdEncryptionKey(thresholdEncKey, manager);
+            emit KeyManager.ThresholdEncryptionKeyUpdated(thresholdEncKey);
             keyManagerProxy.setThresholdEncryptionKey(thresholdEncKey);
             assertEq(keyManagerProxy.thresholdEncryptionKey(), thresholdEncKey);
         }
@@ -47,9 +47,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
             vm.prank(manager);
             vm.expectEmit(true, true, true, true);
-            emit KeyManager.ScheduledCommittee(
-                0, uint64(block.timestamp), uint64(committeeMembers.length), keccak256(abi.encode(committeeMembers)), manager
-            );
+            emit KeyManager.CommitteeCreated(0);
             keyManagerProxy.setNextCommittee(uint64(block.timestamp), committeeMembers);
 
             // Test accessing the committee data
@@ -100,7 +98,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
             address newManager = makeAddr("newManager");
             vm.prank(owner);
             vm.expectEmit(true, true, true, true);
-            emit KeyManager.ChangedManager(manager, newManager, owner);
+            emit KeyManager.ManagerChanged(manager, newManager);
             keyManagerProxy.setManager(newManager);
             assertEq(keyManagerProxy.manager(), newManager);
         }
@@ -256,6 +254,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
             vm.warp(uint64(block.timestamp + 20 minutes));
             
             // Remove first committee
+            vm.expectEmit(true, true, true, true);
+            emit KeyManager.CommitteesPruned(0, 0);
             keyManagerProxy.pruneUntil(0);
             
             // Verify first committee is deleted
