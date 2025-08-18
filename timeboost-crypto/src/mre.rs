@@ -130,6 +130,13 @@ impl<C: CurveGroup> LabeledDecryptionKey<C> {
         Ok(m)
     }
 }
+impl<C: CurveGroup> From<LabeledDecryptionKey<C>> for DecryptionKey<C> {
+    fn from(lab_key: LabeledDecryptionKey<C>) -> Self {
+        DecryptionKey {
+            alpha: lab_key.alpha,
+        }
+    }
+}
 
 use crate::try_from_bytes;
 

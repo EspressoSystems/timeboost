@@ -76,7 +76,7 @@ impl Timeboost {
     pub fn api(&self) -> ApiServer {
         ApiServer::builder()
             .bundles(self.sender.clone())
-            .enc_key(self.config.threshold_enc_key.clone())
+            .enc_key(self.config.threshold_dec_key.clone())
             .metrics(self.prometheus.clone())
             .build()
     }

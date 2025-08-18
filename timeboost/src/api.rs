@@ -9,8 +9,8 @@ use axum::{
 };
 use bon::Builder;
 use http::{Request, Response, StatusCode};
-use timeboost_crypto::prelude::{ThresholdEncKey, ThresholdEncKeyCell};
-use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle};
+use timeboost_crypto::prelude::ThresholdEncKey;
+use timeboost_types::{Bundle, BundleVariant, DecryptionKeyCell, SignedPriorityBundle};
 use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::{
     net::{TcpListener, ToSocketAddrs},
@@ -26,7 +26,7 @@ pub mod internal;
 #[derive(Debug, Clone, Builder)]
 pub struct ApiServer {
     bundles: Sender<BundleVariant>,
-    enc_key: ThresholdEncKeyCell,
+    enc_key: DecryptionKeyCell,
     metrics: Arc<PrometheusMetrics>,
 }
 
@@ -88,7 +88,7 @@ async fn submit_regular(server: State<ApiServer>, json: Json<Bundle>) -> Result<
 }
 
 async fn encryption_key(server: State<ApiServer>) -> Json<ThresholdEncKey> {
-    Json(server.enc_key.read().await)
+    Json(server.enc_key.read().await.pubkey().clone())
 }
 
 async fn metrics(server: State<ApiServer>) -> Result<String> {
