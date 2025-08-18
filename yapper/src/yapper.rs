@@ -92,13 +92,27 @@ impl Yapper {
                     warn!("failed to prepare txn");
                     continue;
                 };
-                let Ok(b) = make_dev_acct_bundle(acc.enc_key().await, txn) else {
+                let enc_key = match acc.enc_key().await {
+                    Some(key) => key,
+                    None => {
+                        warn!("encryption key not available yet");
+                        continue;
+                    }
+                };
+                let Ok(b) = make_dev_acct_bundle(enc_key, txn) else {
                     warn!("failed to generate dev account bundle");
                     continue;
                 };
                 b
             } else {
-                let Ok(b) = make_bundle(acc.enc_key().await) else {
+                let enc_key = match acc.enc_key().await {
+                    Some(key) => key,
+                    None => {
+                        warn!("encryption key not available yet");
+                        continue;
+                    }
+                };
+                let Ok(b) = make_bundle(enc_key) else {
                     warn!("failed to generate bundle");
                     continue;
                 };

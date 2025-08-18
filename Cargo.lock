@@ -7646,7 +7646,6 @@ dependencies = [
  "bs58",
  "committable",
  "constant_time_eq 0.4.2",
- "data-encoding",
  "ed25519-compact",
  "either",
  "rayon",
@@ -9869,7 +9868,6 @@ dependencies = [
  "arrayvec",
  "async-trait",
  "bincode 2.0.1",
- "bytes 1.10.1",
  "committable",
  "multisig",
  "serde",
@@ -11505,7 +11503,6 @@ dependencies = [
  "serde",
  "smallvec",
  "thiserror 2.0.14",
- "timeboost-proto",
  "timeboost-types",
  "tokio",
  "tokio-util",
@@ -11529,7 +11526,6 @@ dependencies = [
  "ark-std 0.5.0",
  "bincode 2.0.1",
  "bs58",
- "bytes 1.10.1",
  "committable",
  "criterion",
  "derive_more 2.0.1",
@@ -11537,7 +11533,6 @@ dependencies = [
  "generic-array",
  "multisig",
  "num-integer",
- "parking_lot",
  "rand_chacha 0.3.1",
  "rayon",
  "serde",
@@ -11545,7 +11540,6 @@ dependencies = [
  "sha2 0.10.9",
  "spongefish",
  "thiserror 2.0.14",
- "tokio",
  "zeroize",
 ]
 
@@ -11554,7 +11548,6 @@ name = "timeboost-proto"
 version = "0.1.0"
 dependencies = [
  "prost 0.14.1",
- "thiserror 2.0.14",
  "tonic 0.14.1",
  "tonic-prost",
  "tonic-prost-build",
@@ -11566,7 +11559,6 @@ version = "0.1.0"
 dependencies = [
  "alloy 1.0.24",
  "ark-std 0.5.0",
- "arrayvec",
  "bimap",
  "bincode 2.0.1",
  "blake3",
@@ -11575,6 +11567,7 @@ dependencies = [
  "bytes 1.10.1",
  "cliquenet",
  "ethereum_ssz",
+ "futures",
  "metrics",
  "multisig",
  "parking_lot",
@@ -11599,6 +11592,7 @@ dependencies = [
  "arbitrary",
  "ark-ec 0.5.0",
  "ark-std 0.5.0",
+ "arrayvec",
  "async-trait",
  "bincode 2.0.1",
  "blake3",
@@ -11606,13 +11600,14 @@ dependencies = [
  "committable",
  "ethereum_ssz",
  "multisig",
+ "parking_lot",
  "quickcheck",
  "rayon",
  "sailfish-types",
  "serde",
  "thiserror 2.0.14",
  "timeboost-crypto",
- "timeboost-proto",
+ "tokio",
  "tracing",
  "url",
 ]
@@ -11622,7 +11617,6 @@ name = "timeboost-utils"
 version = "0.1.0"
 dependencies = [
  "alloy 1.0.24",
- "alloy-signer 1.0.24",
  "anyhow",
  "arbitrary",
  "ark-std 0.5.0",

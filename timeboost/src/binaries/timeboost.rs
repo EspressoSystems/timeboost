@@ -5,8 +5,7 @@ use cliquenet::AddressableCommittee;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_crypto::prelude::ThresholdEncKeyCell;
-use timeboost_types::DkgKeyStore;
+use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -178,7 +177,7 @@ async fn main() -> Result<()> {
         AddressableCommittee::new(c, certifier_peer_hosts_and_keys.iter().cloned())
     };
 
-    let dkg_keystore = DkgKeyStore::new(
+    let key_store = KeyStore::new(
         sailfish_committee.committee().clone(),
         dkg_enc_keys
             .into_iter()
@@ -204,13 +203,13 @@ async fn main() -> Result<()> {
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
         .dkg_key(private.dec_key.clone())
-        .dkg_keystore(dkg_keystore)
+        .key_store(key_store)
         .sailfish_addr(my_keyset.sailfish_address.clone())
         .decrypt_addr(my_keyset.decrypt_address.clone())
         .certifier_addr(my_keyset.certifier_address.clone())
         .maybe_nitro_addr(my_keyset.nitro_addr.clone())
         .recover(is_recover)
-        .threshold_enc_key(ThresholdEncKeyCell::new())
+        .threshold_dec_key(DecryptionKeyCell::new())
         .robusta((
             robusta::Config::builder()
                 .base_url(cli.espresso_base_url)

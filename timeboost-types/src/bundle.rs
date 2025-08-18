@@ -9,7 +9,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Error, SignerSync, k256::ecdsa::SigningKey};
 use bytes::BufMut;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::CommitteeId;
+use multisig::{CommitteeId, KeyId, PublicKey};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "arbitrary")]
@@ -299,6 +299,8 @@ impl Committable for SignedPriorityBundle {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DkgBundle {
+    /// origin of the dkg bundle
+    origin: (KeyId, PublicKey),
     /// target committee for the dkg bundle
     committee_id: CommitteeId,
     /// encrypted secret shares in a dealing
@@ -308,12 +310,22 @@ pub struct DkgBundle {
 }
 
 impl DkgBundle {
-    pub fn new(committee_id: CommitteeId, vess_ct: VessCiphertext, comm: VssCommitment) -> Self {
+    pub fn new(
+        origin: (KeyId, PublicKey),
+        committee_id: CommitteeId,
+        vess_ct: VessCiphertext,
+        comm: VssCommitment,
+    ) -> Self {
         Self {
+            origin,
             committee_id,
             vess_ct,
             comm,
         }
+    }
+
+    pub fn origin(&self) -> &(KeyId, PublicKey) {
+        &self.origin
     }
 
     pub fn committee_id(&self) -> &CommitteeId {
