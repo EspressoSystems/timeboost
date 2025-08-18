@@ -8,4 +8,4 @@ pub use robusta;
 pub use certifier::{Certifier, CertifierDown, CertifierError, Handle};
 pub use config::{CertifierConfig, CertifierConfigBuilder};
 pub use config::{SubmitterConfig, SubmitterConfigBuilder};
-pub use submit::Submitter;
+pub use submit::{ReceiveError, Receiver, Submitter, Subscriber};

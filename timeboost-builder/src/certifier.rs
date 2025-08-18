@@ -175,14 +175,14 @@ impl Drop for Certifier {
 
 impl Handle {
     /// Enqueue the given block for certification.
-    pub async fn enqueue(&self, b: Block) -> StdResult<(), CertifierDown> {
+    pub async fn enqueue(&self, b: Block) -> StdResult<BlockNumber, CertifierDown> {
         debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
-        let num = self.counter.fetch_add(1, Ordering::Relaxed);
+        let num: BlockNumber = self.counter.fetch_add(1, Ordering::Relaxed).into();
         self.worker_tx
-            .send(Command::Certify(num.into(), b))
+            .send(Command::Certify(num, b))
             .await
             .map_err(|_| CertifierDown(()))?;
-        Ok(())
+        Ok(num)
     }
 }
 

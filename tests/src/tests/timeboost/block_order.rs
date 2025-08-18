@@ -57,7 +57,7 @@ async fn block_order() {
                             continue
                         };
                         let b = Block::new(*round, Bytes::new());
-                        p.handle().enqueue(b).await.unwrap()
+                        p.handle().enqueue(b).await.unwrap();
                     }
                     b = p.next_block() => {
                         let b = b.expect("block");

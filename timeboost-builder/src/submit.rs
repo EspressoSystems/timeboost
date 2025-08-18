@@ -7,9 +7,10 @@ use timeboost_types::{
     BlockNumber, CertifiedBlock,
     sailfish::{CommitteeVec, Empty},
 };
+use tokio::sync::broadcast::error::RecvError;
 use tokio::{
     spawn,
-    sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore},
+    sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore, broadcast},
     task::JoinHandle,
     time::{Instant, error::Elapsed, sleep, timeout},
 };
@@ -29,6 +30,7 @@ pub struct Submitter {
     committees: Arc<AsyncMutex<CommitteeVec<2>>>,
     task_permits: Arc<Semaphore>,
     metrics: BuilderMetrics,
+    confirmations: broadcast::Sender<BlockNumber>,
 }
 
 impl Drop for Submitter {
@@ -45,11 +47,13 @@ impl Submitter {
         let client = robusta::Client::new(cfg.robusta.0.clone());
         let verified = Arc::new(Mutex::new(BTreeSet::new()));
         let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
+        let confirmations = broadcast::channel(MAX_TASKS).0;
         let handler = Handler {
             label: cfg.pubkey,
             nsid: cfg.namespace,
             client: client.clone(),
             verified: verified.clone(),
+            confirmations: confirmations.clone(),
         };
         let verifier = Verifier {
             label: cfg.pubkey,
@@ -68,6 +72,7 @@ impl Submitter {
             committees,
             task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
             metrics: BuilderMetrics::new(metrics),
+            confirmations,
         }
     }
 
@@ -77,6 +82,10 @@ impl Submitter {
 
     pub async fn add_committe(&mut self, c: Committee) {
         self.committees.lock().await.add(c);
+    }
+
+    pub fn subscriber(&self) -> Subscriber<BlockNumber> {
+        Subscriber(self.confirmations.clone())
     }
 
     pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
@@ -144,6 +153,7 @@ struct Handler {
     nsid: NamespaceId,
     client: robusta::Client,
     verified: Arc<Mutex<BTreeSet<BlockNumber>>>,
+    confirmations: broadcast::Sender<BlockNumber>,
 }
 
 impl Handler {
@@ -159,6 +169,7 @@ impl Handler {
         // Maybe the block has already been verified?
         if self.verified.lock().remove(&num) {
             debug!(node = %self.label, %num, "block submission verified");
+            let _ = self.confirmations.send(num);
             return;
         }
 
@@ -186,6 +197,7 @@ impl Handler {
                 State::Verify(delay) => {
                     if self.verified.lock().remove(&num) {
                         debug!(node = %self.label, %num, "block submission verified");
+                        let _ = self.confirmations.send(num);
                         return;
                     } else {
                         state = if delay.is_zero() {
@@ -218,6 +230,41 @@ impl Handler {
             let d = delays.next().expect("delay iterator repeats");
             sleep(d).await
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Subscriber<T>(broadcast::Sender<T>);
+
+impl<T> Subscriber<T> {
+    pub fn subscribe(&self) -> Receiver<T> {
+        Receiver(self.0.subscribe())
+    }
+}
+
+#[derive(Debug)]
+pub struct Receiver<T>(broadcast::Receiver<T>);
+
+impl<T: Clone> Receiver<T> {
+    pub async fn receive(&mut self) -> Result<T, ReceiveError> {
+        self.0.recv().await.map_err(|e| match e {
+            RecvError::Closed => ReceiveError::Closed,
+            RecvError::Lagged(_) => ReceiveError::Lagging,
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReceiveError {
+    #[error("closed")]
+    Closed,
+    #[error("lagging behind")]
+    Lagging,
+}
+
+impl ReceiveError {
+    pub fn is_closed(&self) -> bool {
+        matches!(self, Self::Closed)
     }
 }
 

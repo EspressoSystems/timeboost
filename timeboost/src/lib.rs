@@ -82,7 +82,7 @@ impl Timeboost {
     }
 
     pub fn internal_grpc_api(&self) -> GrpcServer {
-        GrpcServer::new(self.certifier.handle())
+        GrpcServer::new(self.certifier.handle(), self.submitter.subscriber())
     }
 
     pub async fn go(mut self) -> Result<()> {
