@@ -698,16 +698,18 @@ impl Worker {
         };
 
         let guard = self.key_stores.read();
-        let Some(key_store) = guard.get(res.committee_id) else {
-            return Err(DecrypterError::NoCommittee(res.committee_id));
-        };
-        key_store
+        let current = guard
+            .get(res.committee_id)
+            .ok_or(DecrypterError::NoCommittee(res.committee_id))?;
+
+        let prev = (guard.len() == 2).then(|| guard.last().clone());
+        current
             .committee()
             .get_index(&src)
             .ok_or_else(|| DecrypterError::UnknownKey(src))?;
 
         subsets.insert(src, res.subset.to_owned());
-        let committee = key_store.committee();
+        let committee = current.committee();
         let threshold: usize = committee.one_honest_threshold().into();
 
         let mut counts = HashMap::new();
@@ -716,9 +718,9 @@ impl Worker {
         }
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let acc = DkgAccumulator::from_subset(key_store.to_owned(), subset.to_owned());
+            let acc = DkgAccumulator::from_subset(current.to_owned(), subset.to_owned());
             let dec_key = acc
-                .extract_key(&self.dkg_sk, None)
+                .extract_key(&self.dkg_sk, prev)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
             self.tracker.insert(committee.id(), acc);
 
