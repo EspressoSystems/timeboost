@@ -9,18 +9,17 @@ use multisig::{CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
 use timeboost_types::{
-    DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgSubset, InclusionList,
-    KeyStore, KeyStoreVec, ResharingAccumulator, ResharingSubset,
+    AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgSubset,
+    InclusionList, KeyStore, KeyStoreVec,
 };
-use timeboost_utils::ResultIter;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
@@ -388,9 +387,9 @@ impl Drop for Decrypter {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum WorkerState {
-    /// Awaiting resharing messages from the previous committee.
-    HandoverPending(HashMap<PublicKey, ResharingSubset>),
-    /// Received enough resharing messages to complete the handover, but yet actively running.
+    /// Awaiting resharing subsets from previous committee (current committee, if catching up).
+    HandoverPending(HashMap<PublicKey, DkgSubset>),
+    /// Received enough resharing messages to complete the handover, but not yet actively running.
     HandoverComplete,
     /// Expects to obtain the initial DKG key through DKG bundles.
     ///
@@ -447,17 +446,9 @@ struct Worker {
     /// Number of rounds to retain.
     retain: usize,
 
-    /// Tracker for DKG bundles received through candidate lists.
+    /// Tracker for DKG bundles received from other nodes.
     #[builder(default)]
-    dkg_tracker: BTreeMap<CommitteeId, DkgAccumulator>,
-
-    /// Tracker for resharing bundles received through candidate lists.
-    #[builder(default)]
-    resharing_tracker: BTreeMap<CommitteeId, ResharingAccumulator>,
-
-    /// Set of committee ids where the accumulation of DkgBundles is completed.
-    #[builder(default)]
-    dkg_completed: BTreeSet<CommitteeId>,
+    tracker: BTreeMap<CommitteeId, DkgAccumulator>,
 
     /// Cache of decryption shares received from remote nodes or produced from local ciphertexts.
     #[builder(default)]
@@ -491,13 +482,11 @@ impl Worker {
             self.state,
             WorkerState::HandoverPending(_) | WorkerState::DkgPending(_)
         ));
-        if matches!(self.state, WorkerState::DkgPending(_)) {
-            // immediately try to catchup first
-            match self.dkg_catchup().await {
-                Ok(()) => {}
-                Err(DecrypterError::End(end)) => return end,
-                Err(err) => warn!(node = %self.label, %err, "error on catchup"),
-            }
+        // immediately try to catchup first
+        match self.dkg_catchup().await {
+            Ok(()) => {}
+            Err(DecrypterError::End(end)) => return end,
+            Err(err) => warn!(node = %self.label, %err, "error on catchup"),
         }
 
         loop {
@@ -617,6 +606,15 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
+    /// Returns true if completed, false otherwise (ongoing or no pending DKG found)
+    fn dkg_completed(&self, committee_id: &CommitteeId) -> bool {
+        if let Some(acc) = self.tracker.get(committee_id) {
+            acc.completed()
+        } else {
+            false
+        }
+    }
+
     /// A message from another node has been received.
     /// Returns true if decryption shares have been updated.
     async fn on_inbound(&mut self, src: PublicKey, bytes: Bytes) -> Result<bool> {
@@ -648,10 +646,13 @@ impl Worker {
     ) -> Result<()> {
         trace!(node = %self.label, from=%src, %committee_id, "received dkg request");
 
-        if !self.dkg_completed.contains(&committee_id) {
-            trace!(node = %self.label, %committee_id, "local dkg incomplete");
-            return Ok(());
-        }
+        let (bundles, mode) = match self.tracker.get(&committee_id) {
+            Some(acc) if acc.completed() => (acc.bundles(), acc.mode()),
+            _ => {
+                trace!(node = %self.label, from=%src, %committee_id, "local dkg incomplete");
+                return Ok(());
+            }
+        };
 
         self.key_stores
             .read()
@@ -661,16 +662,12 @@ impl Worker {
             .get_index(&src)
             .ok_or(DecrypterError::UnknownKey(src))?;
 
-        let subset = match self.dkg_tracker.get(&committee_id) {
-            Some(acc) => acc.bundles(),
-            _ => {
-                return Err(DecrypterError::Dkg(format!(
-                    "no subset available for committee: {committee_id}",
-                )));
+        let subset = match mode {
+            AccumulatorMode::Dkg => DkgSubset::new_dkg(committee_id, bundles.to_vec()),
+            AccumulatorMode::Resharing(combkey) => {
+                DkgSubset::new_resharing(committee_id, bundles.to_vec(), combkey.to_owned())
             }
         };
-
-        let subset = DkgSubset::new(committee_id, subset.to_vec());
         let response = SubsetResponse::new(committee_id, subset);
 
         self.net
@@ -692,10 +689,12 @@ impl Worker {
             trace!(node = %self.label, from=%src, %res.committee_id, "not current committee");
             return Ok(());
         }
-
-        let WorkerState::DkgPending(ref mut subsets) = self.state else {
-            trace!(node = %self.label, from=%src, %res.committee_id, "not in a pending state");
-            return Ok(());
+        let subsets = match &mut self.state {
+            WorkerState::DkgPending(subsets) | WorkerState::HandoverPending(subsets) => subsets,
+            _ => {
+                trace!(node = %self.label, from=%src, %res.committee_id, "not in a pending state");
+                return Ok(());
+            }
         };
 
         let guard = self.key_stores.read();
@@ -708,8 +707,8 @@ impl Worker {
             .ok_or_else(|| DecrypterError::UnknownKey(src))?;
 
         subsets.insert(src, res.subset.to_owned());
-
-        let threshold: usize = key_store.committee().one_honest_threshold().into();
+        let committee = key_store.committee();
+        let threshold: usize = committee.one_honest_threshold().into();
 
         let mut counts = HashMap::new();
         for subset in subsets.values() {
@@ -717,25 +716,13 @@ impl Worker {
         }
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let committee = key_store.committee();
-            let vess = Vess::new_fast();
-            let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
-                vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), DKG_AAD)
-                    .map(|s| (s, b.comm().clone()))
-            }));
-
-            let dec_sk = DecryptionKey::from_dkg(
-                committee.size().into(),
-                self.dkg_sk.node_idx(),
-                &mut dealings_iter,
-            )
-            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
-            dealings_iter
-                .result()
+            let acc = DkgAccumulator::from_subset(key_store.to_owned(), subset.to_owned());
+            let dec_sk = acc
+                .extract_key(&self.dkg_sk, None)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            self.tracker.insert(committee.id(), acc);
 
-            self.dec_key.set(dec_sk.clone());
+            self.dec_key.set(dec_sk);
             self.state = WorkerState::Running;
             info!(node = %self.label, committee_id = %committee.id(), "dkg finished (catchup successful)");
         }
@@ -776,37 +763,15 @@ impl Worker {
         }
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let committee = current.committee();
-            let vess = Vess::new_fast();
-            let dealings: Vec<_> = subset
-                .bundles()
-                .iter()
-                .enumerate()
-                .map(|(i, b)| {
-                    let node_idx = b.origin().0.into();
-                    let pub_share = subset.combkey().get_pub_share(node_idx).ok_or_else(|| {
-                        DecrypterError::Internal(format!(
-                            "missing pub share for node idx: {node_idx}",
-                        ))
-                    })?;
-                    vess.decrypt_reshare(committee, &self.dkg_sk, b.vess_ct(), DKG_AAD, *pub_share)
-                        .map(|s| (i, s, b.comm().clone()))
-                        .map_err(|e| DecrypterError::Dkg(format!("unable to decrypt reshare: {e}")))
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let acc = DkgAccumulator::from_subset(current.to_owned(), subset.to_owned());
+            let next_dec_key = acc
+                .extract_key(&self.dkg_sk, Some(prev.to_owned()))
+                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            self.tracker.insert(current.committee().id(), acc);
 
-            let next_dec_key = DecryptionKey::from_resharing(
-                prev.committee(),
-                committee,
-                self.dkg_sk.node_idx(),
-                dealings.into_iter(),
-            )
-            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
-            info!(committee_id = %committee.id(), node = %self.label, "handover finished");
+            info!(committee_id = %current.committee().id(), node = %self.label, "handover finished");
             self.state = WorkerState::HandoverComplete;
             self.dec_key.set(next_dec_key);
-            self.dkg_completed.insert(committee.id());
         }
 
         Ok(())
@@ -843,63 +808,47 @@ impl Worker {
 
     /// Received a DkgBundle for the current committee (not resharing).
     async fn on_dkg_request(&mut self, bundle: DkgBundle) -> Result<()> {
-        let cid = bundle.committee_id();
-        if self.dkg_completed.contains(cid) {
+        let committee_id = bundle.committee_id();
+        if self.dkg_completed(committee_id) {
             trace!(
                 node = %self.label,
-                committee_id = %cid,
+                %committee_id,
                 "received bundle but dkg already completed"
             );
             return Ok(());
         }
 
         let guard = self.key_stores.read();
-        let Some(key_store) = guard.get(*cid) else {
-            return Err(DecrypterError::NoCommittee(*cid));
+        let Some(key_store) = guard.get(*committee_id) else {
+            return Err(DecrypterError::NoCommittee(*committee_id));
         };
 
         let acc = self
-            .dkg_tracker
-            .entry(*cid)
-            .or_insert_with(|| DkgAccumulator::new(key_store.to_owned()));
+            .tracker
+            .entry(*committee_id)
+            .or_insert_with(|| DkgAccumulator::new_dkg(key_store.to_owned()));
 
         acc.try_add(bundle)
             .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
-        if let Some(subset) = acc.try_finalize() {
-            let committee = acc.committee();
-            let vess = Vess::new_fast();
-            let mut dealings_iter = ResultIter::new(subset.bundles().iter().map(|b| {
-                vess.decrypt_share(committee, &self.dkg_sk, b.vess_ct(), DKG_AAD)
-                    .map(|s| (s, b.comm().clone()))
-            }));
-
-            let dec_sk = DecryptionKey::from_dkg(
-                committee.size().into(),
-                self.dkg_sk.node_idx(),
-                &mut dealings_iter,
-            )
-            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
-            dealings_iter
-                .result()
+        if acc.try_finalize().is_some() {
+            let dec_key = acc
+                .extract_key(&self.dkg_sk, None)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
-            self.dec_key.set(dec_sk);
+            self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
-            self.dkg_completed.insert(committee.id());
-            info!(committee_id = %committee.id(), node = %self.label, "dkg finished");
+            info!(committee_id = %key_store.committee().id(), node = %self.label, "dkg finished");
         }
         Ok(())
     }
 
     /// Received a DkgBundle but not for current committee (resharing).
     async fn on_resharing_request(&mut self, bundle: DkgBundle) -> Result<()> {
-        let cid = bundle.committee_id();
-        if self.dkg_completed.contains(cid) {
+        let committee_id = bundle.committee_id();
+        if self.dkg_completed(committee_id) {
             trace!(
                 node = %self.label,
-                committee_id = %cid,
+                %committee_id,
                 "received bundle but resharing already completed"
             );
             return Ok(());
@@ -907,7 +856,7 @@ impl Worker {
         let Some(dec_key) = self.dec_key.get() else {
             warn!(
                 node = %self.label,
-                committee_id = %cid,
+                %committee_id,
                 "received resharing bundle but initial DKG has not finished"
             );
             return Ok(());
@@ -916,19 +865,18 @@ impl Worker {
         let (current, next) = {
             let guard = self.key_stores.read();
             let Some(current_key_store) = guard.get(self.current) else {
-                return Err(DecrypterError::NoCommittee(*cid));
+                return Err(DecrypterError::NoCommittee(*committee_id));
             };
 
-            let Some(next_key_store) = guard.get(*cid) else {
-                return Err(DecrypterError::NoCommittee(*cid));
+            let Some(next_key_store) = guard.get(*committee_id) else {
+                return Err(DecrypterError::NoCommittee(*committee_id));
             };
             (current_key_store.to_owned(), next_key_store.to_owned())
         };
 
-        let acc = self
-            .resharing_tracker
-            .entry(*cid)
-            .or_insert_with(|| ResharingAccumulator::new(next.clone(), dec_key.combkey().clone()));
+        let acc = self.tracker.entry(*committee_id).or_insert_with(|| {
+            DkgAccumulator::new_resharing(next.clone(), dec_key.combkey().clone())
+        });
 
         acc.try_add(bundle)
             .map_err(|e| DecrypterError::Dkg(format!("unable to add resharing bundle: {e}")))?;
@@ -936,41 +884,11 @@ impl Worker {
         if let Some(subset) = acc.try_finalize() {
             let committee = acc.committee();
 
-            if let Some(next_node_idx) = committee.get_index(&self.label).map(|idx| idx.into()) {
+            if committee.contains_key(&self.label) {
                 // node is a member of the next committee; decrypting reshares immediately
-                let vess = Vess::new_fast();
-                self.dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(next_node_idx);
-                let dealings: Vec<_> = subset
-                    .bundles()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, b)| {
-                        let prev_node_idx = b.origin().0.into();
-                        let Some(combkey) = subset.combkey().get_pub_share(prev_node_idx) else {
-                            return Err(DecrypterError::Internal(format!(
-                                "unable to obtain pub share at node idx: {prev_node_idx} from combkey",                                
-                            )));
-                        };
-                        vess.decrypt_reshare(
-                            committee,
-                            &self.dkg_sk,
-                            b.vess_ct(),
-                            DKG_AAD,
-                            *combkey,
-                        )
-                        .map(|s| (i, s, b.comm().clone()))
-                        .map_err(|e| DecrypterError::Dkg(format!("unable to decrypt reshare: {e}")))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                let next_dec_key = DecryptionKey::from_resharing(
-                    current.committee(),
-                    committee,
-                    self.dkg_sk.node_idx(),
-                    dealings.into_iter(),
-                )
-                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-
+                let next_dec_key = acc
+                    .extract_key(&self.dkg_sk, Some(current))
+                    .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
                 self.state = WorkerState::ResharingComplete(next_dec_key);
             } else {
                 // resharing complete; node will shut down at next committee switch
@@ -978,14 +896,13 @@ impl Worker {
             }
 
             trace!(committee_id = %committee.id(), node = %self.label, "resharing complete; handing over");
-            self.dkg_completed.insert(committee.id());
             self.send_handover_msg(subset).await?;
         }
         Ok(())
     }
 
     /// Send ResharingSubsets to nodes in next committee but not in current (handover).
-    async fn send_handover_msg(&mut self, subset: ResharingSubset) -> Result<()> {
+    async fn send_handover_msg(&mut self, subset: DkgSubset) -> Result<()> {
         let (current, next) = {
             let guard = self.key_stores.read();
             let Some(current) = guard.get(self.current) else {
@@ -1399,11 +1316,11 @@ impl Worker {
         if self.clock < start.num() {
             return Ok(());
         }
-        self.current = start.committee();
+        let next = start.committee();
         let key_store = {
             let guard = self.key_stores.read();
-            let Some(key_store) = guard.get(self.current) else {
-                return Err(DecrypterError::NoCommittee(self.current));
+            let Some(key_store) = guard.get(next) else {
+                return Err(DecrypterError::NoCommittee(next));
             };
             key_store.clone()
         };
@@ -1449,9 +1366,9 @@ impl Worker {
                 ));
             }
         };
-
-        self.resharing_tracker.clear();
-        self.dkg_completed.clear();
+        // clean up
+        self.tracker.remove(&self.current);
+        self.current = next;
 
         Ok(())
     }
@@ -1507,11 +1424,11 @@ impl SubsetResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ReshareMessage {
     committee_id: CommitteeId,
-    subset: ResharingSubset,
+    subset: DkgSubset,
 }
 
 impl ReshareMessage {
-    pub fn new(committee_id: CommitteeId, subset: ResharingSubset) -> Self {
+    pub fn new(committee_id: CommitteeId, subset: DkgSubset) -> Self {
         Self {
             committee_id,
             subset,
