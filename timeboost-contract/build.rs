@@ -7,11 +7,6 @@ fn main() {
     let contracts_out = Path::new("../contracts/out");
     let bindings_dir = Path::new("src/bindings");
 
-    // Watch for changes in relevant directories
-    println!("cargo:rerun-if-changed=../contracts/src");
-    println!("cargo:rerun-if-changed=../contracts/foundry.toml");
-    println!("cargo:rerun-if-changed=../contracts/lib");
-
     if !contracts_out.exists() {
         match std::process::Command::new("forge").arg("build").output() {
             Ok(res) if res.status.success() => {

@@ -18,7 +18,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /// @notice The consensus committee rotates with each epoch, registered by contract `manager`.
-    /// @notice Timeboost makes the simplifying decision that this committee is exactly the keyset 
+    /// @notice Timeboost makes the simplifying decision that this committee is exactly the keyset
     struct Committee {
         /// @notice unique identifier for the committee, assigned by this contract
         uint64 id;
@@ -31,11 +31,11 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice Emitted when a committee is created.
     /// @param id The id of the committee.
     event CommitteeCreated(uint64 indexed id);
-    
+
     /// @notice Emitted when the threshold encryption key is set.
     /// @param thresholdEncryptionKey The threshold encryption key.
     event ThresholdEncryptionKeyUpdated(bytes thresholdEncryptionKey);
-    
+
     /// @notice Emitted when the manager is changed.
     /// @param oldManager The old manager.
     /// @param newManager The new manager.
@@ -44,7 +44,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice Emitted when a committee is removed.
     /// @param fromId The id of the first committee to prune.
     /// @param toId The id of the last committee to prune.
-    event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId);    
+    event CommitteesPruned(uint64 indexed fromId, uint64 indexed toId);
 
     /// @notice Thrown when the caller is not the manager.
     /// @param caller The address that called the function.
@@ -180,23 +180,20 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // ensure the effective timestamp is greater than the last effective timestamp
         if (nextCommitteeId > 0) {
             uint64 lastTimestamp = committees[nextCommitteeId - 1].effectiveTimestamp;
-            if (effectiveTimestamp <= lastTimestamp || effectiveTimestamp > lastTimestamp + 10 minutes) {
+            if (effectiveTimestamp <= lastTimestamp) {
                 revert InvalidEffectiveTimestamp(effectiveTimestamp, lastTimestamp);
             }
         }
 
         if (nextCommitteeId == type(uint64).max) revert CommitteeIdOverflow();
 
-        committees[nextCommitteeId] = Committee({
-            id: nextCommitteeId,
-            effectiveTimestamp: effectiveTimestamp,
-            members: members
-        });
+        committees[nextCommitteeId] =
+            Committee({id: nextCommitteeId, effectiveTimestamp: effectiveTimestamp, members: members});
 
         nextCommitteeId++;
 
-        emit CommitteeCreated(nextCommitteeId-1);
-        return nextCommitteeId-1;
+        emit CommitteeCreated(nextCommitteeId - 1);
+        return nextCommitteeId - 1;
     }
 
     /**
@@ -206,16 +203,11 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param id The id of the committee.
      * @return committee The committee.
      */
-    function getCommitteeById(uint64 id)
-        external
-        virtual
-        view
-        returns (Committee memory committee)
-    {
+    function getCommitteeById(uint64 id) external view virtual returns (Committee memory committee) {
         if (id < _oldestStoredCommitteeId || committees[id].id != id) {
             revert CommitteeIdDoesNotExist(id);
         }
-        
+
         return committees[id];
     }
 
@@ -225,13 +217,13 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @dev Searches backwards through existing committees to find the active one.
      * @return committeeId The current committee id.
      */
-    function currentCommitteeId() public virtual view returns (uint64 committeeId) {
+    function currentCommitteeId() public view virtual returns (uint64 committeeId) {
         uint64 currentTimestamp = uint64(block.timestamp);
-        
+
         if (nextCommitteeId == 0 || _oldestStoredCommitteeId >= nextCommitteeId) {
             revert NoCommitteeScheduled();
         }
-        
+
         // Search backwards from most recent committee to oldest stored
         uint64 currCommitteeId = nextCommitteeId - 1;
         while (currCommitteeId >= _oldestStoredCommitteeId) {
@@ -245,7 +237,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
             currCommitteeId--;
         }
-        
+
         revert NoCommitteeScheduled();
     }
 
@@ -260,7 +252,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (upToCommitteeId < _oldestStoredCommitteeId || upToCommitteeId >= nextCommitteeId) {
             revert InvalidPruneRange(upToCommitteeId, _oldestStoredCommitteeId, nextCommitteeId);
         }
-        
+
         // Delete all committees in range
         uint64 cutOffTime = uint64(block.timestamp - 10 minutes);
         uint64 oldOldestStored = _oldestStoredCommitteeId;
@@ -270,9 +262,9 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             }
             delete committees[id];
         }
-        
+
         _oldestStoredCommitteeId = upToCommitteeId + 1;
-        
+
         emit CommitteesPruned(oldOldestStored, upToCommitteeId);
     }
 }
