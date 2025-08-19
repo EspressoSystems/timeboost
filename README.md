@@ -30,8 +30,29 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-proto`: Contains protobuf schema and protobuf generated code for inlusion list
 - `yapper`: Transaction submission test tool.
 
-## MSRV (minimum supported Rust version)
-The MSRV of this repository is 1.85.
+## Pre-requisites
+- **Rust toolchain** (Minimum supported rust version (MSRV): 1.88): [Install via rustup](https://rustup.rs/)
+- **just** (for command aliases):
+  ```sh
+  cargo install just
+  ```
+- **cargo-nextest** (for running tests):
+  ```sh
+  cargo install cargo-nextest
+  ```
+
+- **Foundry** (for Solidity development and testing): [Install Foundry](https://book.getfoundry.sh/getting-started/installation)
+  ```sh
+  curl -L https://foundry.paradigm.xyz | bash
+  foundryup
+  ```
+
+- **Docker** (for integration tests, if needed): [Install Docker](https://docs.docker.com/get-docker/)
+
+- **Initialize Submodules:**
+   ```sh
+   git submodule update --init --recursive
+   ```
 
 ## Build
 
@@ -43,6 +64,11 @@ just build
 Release build
 ```shell
 just build_release
+```
+
+## Contracts Build
+```sh
+just build-contracts
 ```
 
 ## Run
@@ -85,6 +111,11 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 
 ```shell
 just test
+```
+
+Contracts test
+```shell
+just test-contracts
 ```
 
 [noise]: https://noiseprotocol.org/
