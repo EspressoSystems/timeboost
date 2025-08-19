@@ -31,6 +31,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install rustfmt for nightly
+      run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Install protobuf compiler
@@ -62,6 +64,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install rustfmt for nightly
+      run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
@@ -125,6 +129,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install rustfmt for nightly
+      run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
@@ -137,19 +143,21 @@ jobs:
   contracts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-      - name: Install Just
-        run: |
-          wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-          tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-          sudo cp just /usr/bin/just
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-      - name: Run contract tests
-        run: forge test -vvv
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - name: Install Just
+      run: |
+        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
+        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
+        sudo cp just /usr/bin/just
+    - name: Install rustfmt for nightly
+      run: rustup component add --toolchain nightly rustfmt
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+    - name: Run contract tests
+      run: forge test -vvv
 
   nitro-timeboost-integration:
     runs-on: ubuntu-latest
@@ -168,6 +176,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install rustfmt for nightly
+      run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Clone Espresso Testnode Repository

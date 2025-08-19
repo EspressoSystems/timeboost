@@ -10,14 +10,14 @@ fn main() {
     if !contracts_out.exists() {
         match std::process::Command::new("forge").arg("build").output() {
             Ok(res) if res.status.success() => {
-                println!("cargo:warning=Successfully built contracts")
+                println!("cargo::warning=Successfully built contracts")
             }
             Ok(res) => {
-                println!("cargo:error=Building contracts failed: {res:?}");
+                println!("cargo::error=Building contracts failed: {res:?}");
                 return;
             }
             Err(e) => {
-                println!("cargo:error=Failed to run `forge build` command: {e}");
+                println!("cargo::error=Failed to run `forge build` command: {e}");
                 return;
             }
         }
@@ -31,13 +31,13 @@ fn main() {
 
     if contract_artifacts.is_empty() {
         println!(
-            "cargo:warning=No contract JSON artifacts found in contracts/out. Run 'forge build' first."
+            "cargo::warning=No contract JSON artifacts found in contracts/out. Run 'forge build' first."
         );
         return;
     }
 
     println!(
-        "cargo:warning=Found {} contract artifacts",
+        "cargo::warning=Found {} contract artifacts",
         contract_artifacts.len()
     );
 
@@ -52,16 +52,16 @@ fn main() {
     // Format the generated bindings
     match std::process::Command::new("just").arg("fmt").output() {
         Ok(result) if result.status.success() => {
-            println!("cargo:warning=Successfully formatted generated bindings");
+            println!("cargo::warning=Successfully formatted generated bindings");
         }
         Ok(result) => {
             println!(
-                "cargo:error=Format command failed with exit code: {:?}",
+                "cargo::error=Format command failed with exit code: {:?}",
                 result.status.code()
             );
         }
         Err(e) => {
-            println!("cargo:error=Failed to run format command: {e}");
+            println!("cargo::error=Failed to run format command: {e}");
         }
     }
 }
@@ -117,7 +117,7 @@ fn walk_directory(dir: &Path, callback: &mut dyn FnMut(&Path)) {
 }
 
 fn generate_contract_binding(contract_name: &str, json_path: &Path, bindings_dir: &Path) {
-    println!("cargo:warning=Generating bindings for {contract_name} from JSON artifact");
+    println!("cargo::warning=Generating bindings for {contract_name} from JSON artifact");
 
     // Create the relative path from the binding file to the JSON artifact
     let json_path_str = json_path.display().to_string().replace('\\', "/");
@@ -130,7 +130,7 @@ fn generate_contract_binding(contract_name: &str, json_path: &Path, bindings_dir
     fs::write(&output_path, bindings)
         .unwrap_or_else(|_| panic!("Failed to write {contract_name} bindings"));
 
-    println!("cargo:warning={contract_name} bindings written to {output_path:?}");
+    println!("cargo::warning={contract_name} bindings written to {output_path:?}");
 }
 
 fn generate_bindings_module(contract_artifacts: &[(String, PathBuf)], bindings_dir: &Path) {
@@ -152,5 +152,5 @@ fn generate_bindings_module(contract_artifacts: &[(String, PathBuf)], bindings_d
     let bindings_module_path = bindings_dir.join("mod.rs");
     fs::write(&bindings_module_path, module_content).expect("Failed to write bindings module");
 
-    println!("cargo:warning=Bindings module written to {bindings_module_path:?}");
+    println!("cargo::warning=Bindings module written to {bindings_module_path:?}");
 }
