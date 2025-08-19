@@ -272,7 +272,7 @@ impl Decrypter {
             return None;
         };
 
-        let Some(dec_sk) = self.dec_key.get() else {
+        let Some(dec_key) = self.dec_key.get() else {
             warn!(node = %self.label, committee = %committee_id, "no existing key to reshare");
             return None;
         };
@@ -281,7 +281,7 @@ impl Decrypter {
             .encrypt_reshares(
                 next_store.committee(),
                 next_store.sorted_keys(),
-                *dec_sk.privkey().share(),
+                *dec_key.privkey().share(),
                 DKG_AAD,
             )
             .ok()?;
@@ -717,12 +717,12 @@ impl Worker {
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
             let acc = DkgAccumulator::from_subset(key_store.to_owned(), subset.to_owned());
-            let dec_sk = acc
+            let dec_key = acc
                 .extract_key(&self.dkg_sk, None)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
             self.tracker.insert(committee.id(), acc);
 
-            self.dec_key.set(dec_sk);
+            self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
             info!(node = %self.label, committee_id = %committee.id(), "dkg finished (catchup successful)");
         }
@@ -1027,7 +1027,7 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
-        let dec_sk: DecryptionKey = match &self.state {
+        let dec_key: DecryptionKey = match &self.state {
             WorkerState::DkgPending(_) => {
                 self.pending.insert(incl.round(), incl.clone());
                 return Err(DecrypterError::DkgPending);
@@ -1055,7 +1055,7 @@ impl Worker {
                 optional_ct.and_then(|ct| {
                     // TODO: (anders) consider using committee_id as part of `aad`.
                     <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        dec_sk.privkey(),
+                        dec_key.privkey(),
                         &ct,
                         &THRES_AAD.to_vec(),
                     )
@@ -1133,7 +1133,7 @@ impl Worker {
             return Ok(Some(incl));
         }
 
-        let dec_sk = match &self.state {
+        let dec_key = match &self.state {
             WorkerState::Running
             | WorkerState::ResharingComplete(_)
             | WorkerState::ShuttingDown => self.dec_key.get().ok_or_else(|| {
@@ -1200,7 +1200,7 @@ impl Worker {
             if let Some(ct) = opt_ct {
                 match DecryptionScheme::combine(
                     key_store.committee(),
-                    dec_sk.combkey(),
+                    dec_key.combkey(),
                     dec_shares,
                     &ct,
                     &THRES_AAD.to_vec(),

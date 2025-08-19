@@ -505,7 +505,7 @@ impl DkgAccumulator {
                         .map(|s| (s, b.comm().clone()))
                 }));
 
-                let dec_sk = DecryptionKey::from_dkg(
+                let dec_key = DecryptionKey::from_dkg(
                     self.committee().size().into(),
                     dkg_sk.node_idx(),
                     &mut dealings_iter,
@@ -513,7 +513,7 @@ impl DkgAccumulator {
 
                 dealings_iter.result()?;
 
-                Ok(dec_sk)
+                Ok(dec_key)
             }
             AccumulatorMode::Resharing(combkey) => {
                 let Some(prev) = prev else {
