@@ -86,7 +86,6 @@ jobs:
     - name: Run lint
       run: just lint
   build-docker:
-    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -159,5 +158,5 @@ jobs:
       run: just run_demo -s /tmp/stamp --ignore-stamp -k test-configs/local-2.json --rounds 10000 --yapper --nitro
     - name: Verify sequencer blocks
       run: |
-        just verify_blocks
+        RUST_LOG=info just verify_blocks
 
