@@ -31,10 +31,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
-
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
@@ -93,6 +91,7 @@ jobs:
       run: just check-individually
     - name: Run lint
       run: just lint
+
   build-docker:
     runs-on: ubuntu-latest
     steps:
@@ -108,6 +107,7 @@ jobs:
         sudo cp just /usr/bin/just
     - name: Build Docker
       run: just build_docker
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -133,6 +133,7 @@ jobs:
       run: just run_demo -l -s /tmp/stamp --ignore-stamp --yapper -k test-configs/local-5.json
     - name: Run sailfish demo
       run: just run_sailfish_demo
+
   contracts:
     runs-on: ubuntu-latest
     steps:
@@ -149,6 +150,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
       - name: Run contract tests
         run: forge test -vvv
+
   nitro-timeboost-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -166,6 +168,8 @@ jobs:
         wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
         tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
         sudo cp just /usr/bin/just
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
     - name: Clone Espresso Testnode Repository
       run: |
         git clone --recursive https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
