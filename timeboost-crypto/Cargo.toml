@@ -40,3 +40,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "decryption"
 harness = false
+
+[[bench]]
+name = "vess"
+harness = false
