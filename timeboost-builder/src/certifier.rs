@@ -1,7 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::result::Result as StdResult;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -22,7 +20,7 @@ use tokio::select;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::CertifierConfig;
 
@@ -39,21 +37,18 @@ pub struct Certifier {
     worker_rx: Receiver<CertifiedBlock<Validated>>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
-    /// Block number counter.
-    counter: Arc<AtomicU64>,
 }
 
 #[derive(Clone)]
 pub struct Handle {
     label: PublicKey,
     worker_tx: Sender<Command>,
-    counter: Arc<AtomicU64>,
 }
 
 /// Worker commands.
 enum Command {
     /// Certify the given block.
-    Certify(BlockNumber, Block),
+    Certify(Block),
     /// Prepare for the next committee.
     NextCommittee(AddressableCommittee),
     /// Use a committee starting at the given round.
@@ -88,10 +83,12 @@ impl Certifier {
             .net(Overlay::new(net))
             .tx(crt_tx)
             .rx(cmd_rx)
-            .tracking(Default::default())
-            .maybe_next_block((!cfg.recover).then(BlockNumber::genesis))
-            .info(NodeInfo::new(cfg.committee.committee()))
+            .info({
+                let c = cfg.committee.committee();
+                NodeInfo::new(c, c.one_honest_threshold())
+            })
             .history(cfg.committee.committee().quorum_size().get() as u64)
+            .recover(cfg.recover)
             .build();
 
         Ok(Self {
@@ -99,7 +96,6 @@ impl Certifier {
             worker_tx: cmd_tx,
             worker_rx: crt_rx,
             worker: spawn(worker.go()),
-            counter: Arc::new(AtomicU64::new(BlockNumber::genesis().into())),
         })
     }
 
@@ -107,7 +103,6 @@ impl Certifier {
         Handle {
             label: self.label,
             worker_tx: self.worker_tx.clone(),
-            counter: self.counter.clone(),
         }
     }
 
@@ -131,8 +126,9 @@ impl Certifier {
                 if let Some(b) = blk {
                     info!(
                         node  = %self.label,
+                        num   = %b.data().num(),
                         round = %b.data().round(),
-                        hash  = ?b.data().hash(),
+                        hash  = %b.data().hash(),
                         "certified block"
                     );
                     return Ok(b)
@@ -176,10 +172,15 @@ impl Drop for Certifier {
 impl Handle {
     /// Enqueue the given block for certification.
     pub async fn enqueue(&self, b: Block) -> StdResult<(), CertifierDown> {
-        debug!(node = %self.label, round = %b.round(), hash = ?b.hash(), "enqueuing block");
-        let num = self.counter.fetch_add(1, Ordering::Relaxed);
+        debug!(
+            node  = %self.label,
+            num   = %b.num(),
+            round = %b.round(),
+            hash  = %b.hash(),
+            "enqueuing block"
+        );
         self.worker_tx
-            .send(Command::Certify(num.into(), b))
+            .send(Command::Certify(b))
             .await
             .map_err(|_| CertifierDown(()))?;
         Ok(())
@@ -213,11 +214,18 @@ struct Worker {
     tx: Sender<CertifiedBlock<Validated>>,
 
     /// Track votes for block signatures.
+    #[builder(default)]
     tracking: BTreeMap<BlockNumber, Tracking>,
 
-    /// Blocks to certify that wait for `Evidence` of previous rounds.
+    /// Blocks to certify that wait for `Evidence` of a previous block.
     #[builder(default)]
     pending: HashMap<BlockNumber, (Block, BlockInfo)>,
+
+    /// Here we record every party when we receive its first message.
+    ///
+    /// Unknown parties are allowed to send one message without evidence.
+    #[builder(default)]
+    known: HashSet<PublicKey>,
 
     /// The next expected block to deliver.
     next_block: Option<BlockNumber>,
@@ -225,6 +233,9 @@ struct Worker {
     /// The local clock, driven by round number.
     #[builder(default = RoundNumber::genesis())]
     clock: RoundNumber,
+
+    /// Are we recovering from a crash?
+    recover: bool,
 
     /// Quorum of block numbers to use with garbage collection.
     info: NodeInfo<BlockNumber>,
@@ -235,7 +246,14 @@ struct Worker {
 
 #[derive(Default)]
 struct Tracking {
+    /// We keep one tracker per block info.
+    ///
+    /// The reason for that is that a `VoteAccumulator` corresponds to one
+    /// committee and the block info contains a committee ID that is used
+    /// to select the committee. The committee can therefore not be subject
+    /// to voting.
     trackers: HashMap<BlockInfo, Tracker>,
+    /// We remember the voters and only allow one vote per party and block hash.
     voters: SmallVec<[KeyId; 16]>,
 }
 
@@ -266,8 +284,8 @@ impl Worker {
                     }
                 },
                 cmd = self.rx.recv() => match cmd {
-                    Some(Command::Certify(n, b)) =>
-                        match self.on_certify_request(n, b).await {
+                    Some(Command::Certify(b)) =>
+                        match self.on_certify_request(b).await {
                             Ok(()) => {}
                             Err(CertifierError::End(end)) => return end,
                             Err(err) => warn!(node = %self.label, %err, "error on certify request")
@@ -299,38 +317,58 @@ impl Worker {
     }
 
     /// The application asked to certify the given block.
-    async fn on_certify_request(&mut self, num: BlockNumber, block: Block) -> Result<()> {
-        debug!(node = %self.label, round = %block.round(), %num, hash = ?block.hash(), "certify request");
+    async fn on_certify_request(&mut self, block: Block) -> Result<()> {
+        debug!(
+            node  = %self.label,
+            round = %block.round(),
+            num   = %block.num(),
+            hash  = %block.hash(),
+            "certify request"
+        );
 
         debug_assert!(self.clock.is_genesis() || self.clock < block.round());
         self.clock = block.round();
         self.maybe_switch_committee().await?;
 
         let round = Round::new(block.round(), self.current);
-        let info = BlockInfo::new(num, round, block.hash());
+        let info = BlockInfo::new(block.num(), round, block.hash());
+        let evidence = self.evidence(block.num());
 
-        let Some(evi) = self.evidence(num) else {
+        if self.next_block.is_none() {
+            self.next_block = Some(block.num());
+            if self.recover {
+                debug!(
+                    node  = %self.label,
+                    round = %block.round(),
+                    num   = %block.num(),
+                    hash  = %block.hash(),
+                    "recovering: stashing block until evidence is available"
+                );
+                self.pending.insert(block.num(), (block, info));
+                return Ok(());
+            }
+        } else if evidence.is_none() {
             debug!(
                 node  = %self.label,
-                round = %round,
-                num   = %num,
-                hash  = ?block.hash(),
+                round = %block.round(),
+                num   = %block.num(),
+                hash  = %block.hash(),
                 "stashing block until evidence is available"
             );
-            self.pending.insert(info.num(), (block, info));
+            self.pending.insert(block.num(), (block, info));
             return Ok(());
-        };
+        }
 
-        self.send(block, info, evi).await
+        self.send(block, info, evidence).await
     }
 
     /// Broadcast the certification message to everyone.
-    async fn send(&mut self, block: Block, info: BlockInfo, evi: Evidence) -> Result<()> {
+    async fn send(&mut self, block: Block, info: BlockInfo, evi: Option<Evidence>) -> Result<()> {
         debug!(
             node  = %self.label,
             round = %block.round(),
             num   = %info.num(),
-            hash  = ?block.hash(),
+            hash  = %block.hash(),
             "propose block hash"
         );
 
@@ -374,7 +412,7 @@ impl Worker {
 
     /// A message from another block signer has been received.
     async fn on_message(&mut self, src: PublicKey, data: Bytes) -> Result<()> {
-        debug!(node = %self.label, %src, "incoming message");
+        trace!(node = %self.label, %src, "incoming message");
 
         let msg: Message<Unchecked> = deserialize(&data)?;
 
@@ -393,16 +431,37 @@ impl Worker {
             return Ok(());
         };
 
-        if !msg.evidence.is_valid(info.data(), &self.committees) {
+        if let Some(evi) = msg.evidence {
+            if !evi.is_valid(info.data(), &self.committees) {
+                warn!(
+                    node = %self.label,
+                    src  = %src,
+                    num  = %info.data().num(),
+                    evi  = %evi.num(),
+                    "invalid message evidence"
+                );
+                return Ok(());
+            }
+        } else if self.known.contains(&src) {
             warn!(
                 node = %self.label,
                 src  = %src,
                 num  = %info.data().num(),
-                evi  = %msg.evidence.num(),
-                "invalid message evidence"
+                "missing message evidence"
             );
             return Ok(());
+        } else {
+            self.known.insert(src);
         }
+
+        debug!(
+            node  = %self.label,
+            src   = %src,
+            num   = %info.data().num(),
+            round = %info.data().round(),
+            hash  = %info.data().hash(),
+            "message received"
+        );
 
         self.info.record(&src, msg.next);
 
@@ -435,8 +494,8 @@ impl Worker {
                 tracking.voters.push(kid);
                 // Check if a waiting block can be broadcasted, now that new evidence exists.
                 if let Some((b, i)) = self.pending.remove(&(num + 1)) {
-                    let e = Evidence::Previous(cert.clone());
-                    self.send(b, i, e).await?
+                    let e = Evidence(cert.clone());
+                    self.send(b, i, Some(e)).await?
                 }
             }
             Ok(None) => {
@@ -455,11 +514,7 @@ impl Worker {
         let lower_bound: BlockNumber = self.info.quorum().saturating_sub(self.history).into();
 
         // Check if we need to catch up to the others.
-        if self
-            .next_block
-            .map(|n| n + self.history < lower_bound)
-            .unwrap_or(false)
-        {
+        if self.next_block.unwrap_or_default() < lower_bound {
             debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
             // To catch up we first discard everything too old.
             self.next_block = Some(lower_bound);
@@ -511,20 +566,15 @@ impl Worker {
     }
 
     fn gc(&mut self, lower_bound: BlockNumber) {
-        if !lower_bound.is_genesis() {
-            self.net.gc(*lower_bound);
-            self.tracking.retain(|n, _| *n >= lower_bound);
-        }
+        self.net.gc(*lower_bound);
+        self.tracking.retain(|n, _| *n >= lower_bound);
     }
 
     fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
-        if num.is_genesis() {
-            return Some(Evidence::Genesis);
-        }
-        let t = self.tracking.get(&(num - 1))?;
+        let t = self.tracking.get(&num.saturating_sub(1).into())?;
         for t in t.trackers.values() {
             if let Some(cert) = t.votes.certificate().cloned() {
-                return Some(Evidence::Previous(cert));
+                return Some(Evidence(cert));
             }
         }
         None
@@ -578,9 +628,13 @@ impl Worker {
             .parties()
             .map(|(p, _)| p)
             .filter(|p| !committee.contains_key(p))
-            .copied();
+            .copied()
+            .collect::<Vec<_>>();
+        for party in &old {
+            self.known.remove(party);
+        }
         self.net
-            .remove(old.collect())
+            .remove(old)
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
         self.net
@@ -619,8 +673,8 @@ impl Tracker {
 #[derive(Serialize, Deserialize)]
 struct Message<S> {
     info: Envelope<BlockInfo, S>,
-    evidence: Evidence,
     next: BlockNumber,
+    evidence: Option<Evidence>,
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Data> {
@@ -683,42 +737,26 @@ impl From<NetworkDown> for EndOfPlay {
 
 /// Evidence to include in certify messages.
 #[derive(Serialize, Deserialize)]
-enum Evidence {
-    /// For block number 0.
-    Genesis,
-    /// For any block number > 0, the certificate of the previous block.
-    Previous(Certificate<BlockInfo>),
-}
+struct Evidence(Certificate<BlockInfo>);
 
 impl Evidence {
     fn num(&self) -> BlockNumber {
-        match self {
-            Self::Genesis => BlockNumber::genesis(),
-            Self::Previous(crt) => crt.data().num(),
-        }
+        self.0.data().num()
     }
 
     fn is_valid(&self, i: &BlockInfo, v: &CommitteeVec<2>) -> bool {
-        match self {
-            Self::Genesis => i.num().is_genesis(),
-            Self::Previous(cert) => {
-                let Some(c) = v.get(i.round().committee()) else {
-                    return false;
-                };
-                let t = c.one_honest_threshold();
-                cert.data().num() + 1 == i.num() && cert.is_valid_with_threshold_par(c, t)
-            }
-        }
+        let Some(c) = v.get(i.round().committee()) else {
+            return false;
+        };
+        let t = c.one_honest_threshold();
+        self.0.data().num() + 1 == i.num() && self.0.is_valid_with_threshold_par(c, t)
     }
 }
 
 impl Committable for Evidence {
     fn commit(&self) -> Commitment<Self> {
-        match self {
-            Self::Genesis => RawCommitmentBuilder::new("CertifierEvidence::Genesis").finalize(),
-            Self::Previous(crt) => RawCommitmentBuilder::new("CertifierEvidence::Previous")
-                .field("cert", crt.commit())
-                .finalize(),
-        }
+        RawCommitmentBuilder::new("CertifierEvidence")
+            .field("cert", self.0.commit())
+            .finalize()
     }
 }
