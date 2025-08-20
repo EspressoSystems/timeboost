@@ -538,6 +538,7 @@ impl<C: CurveGroup> ShoupVess<C> {
                 if subset_set.contains(&i) {
                     // k in S, shift the commitment
                     // Find the position of i in subset_indices to get the correct poly/ct
+                    // note(alex): binary search will be slower in benchmark
                     let subset_pos = subset_indices
                         .iter()
                         .position(|&x| x == i)
