@@ -176,7 +176,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         aad: &[u8],
     ) -> Result<(), VessError>
     where
-        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone + Sync,
         I::IntoIter: ExactSizeIterator,
     {
         self.verify_internal(committee, recipients, ct, comm, aad, Mode::Dkg)
@@ -194,7 +194,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         pub_share: C,
     ) -> Result<(), VessError>
     where
-        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone + Sync,
         I::IntoIter: ExactSizeIterator,
     {
         self.verify_internal(
@@ -490,7 +490,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         mode: Mode<C>,
     ) -> Result<(), VessError>
     where
-        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
+        I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone + Sync,
         I::IntoIter: ExactSizeIterator,
     {
         let vss_pp = FeldmanVssPublicParam::from(committee).with_lookup_table();
@@ -499,7 +499,7 @@ impl<C: CurveGroup> ShoupVess<C> {
             .to_verifier_state(&ct.transcript);
 
         // verifier logic
-        let (expected_comm, h, subset_seed, mut shifted_polys, mut mre_cts, mut seeds) =
+        let (expected_comm, h, subset_seed, shifted_polys, mre_cts, seeds) =
             self.verify_core(&vss_pp, &mut verifier_state, &mode)?;
         if &expected_comm != comm {
             return Err(VessError::WrongCommitment);
@@ -511,17 +511,39 @@ impl<C: CurveGroup> ShoupVess<C> {
 
         // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
         let subset_indices = self.map_subset_seed(subset_seed);
-        let mut subset_iter = subset_indices.iter().peekable();
-        let mut next_subset_idx = subset_iter.next();
-        for i in 0..self.num_repetition {
-            match next_subset_idx {
-                Some(j) if i == *j => {
+
+        // Convert subset_indices to a HashSet for O(1) lookup
+        let subset_set: std::collections::HashSet<usize> = subset_indices.iter().copied().collect();
+
+        // Create vectors to store the shifted polys and mre_cts data in the correct order
+        let mut shifted_polys_vec = Vec::new();
+        let mut mre_cts_vec = Vec::new();
+        let mut seeds_vec = Vec::new();
+
+        // Convert VecDeque to Vec to preserve order for subset items
+        for poly in shifted_polys.iter() {
+            shifted_polys_vec.push(poly.clone());
+        }
+        for ct in mre_cts.iter() {
+            mre_cts_vec.push(ct.clone());
+        }
+        for seed in seeds.iter() {
+            seeds_vec.push(*seed);
+        }
+
+        // Compute all hash data in parallel
+        let hash_data = (0..self.num_repetition)
+            .into_par_iter()
+            .map(|i| {
+                if subset_set.contains(&i) {
                     // k in S, shift the commitment
-                    let shifted_comm = vss_pp.commit(
-                        &shifted_polys
-                            .pop_front()
-                            .expect("subset_size > 0, so is shifted_polys.len()"),
-                    );
+                    // Find the position of i in subset_indices to get the correct poly/ct
+                    let subset_pos = subset_indices
+                        .iter()
+                        .position(|&x| x == i)
+                        .expect("i should be in subset_indices");
+
+                    let shifted_comm = vss_pp.commit(&shifted_polys_vec[subset_pos]);
 
                     let mut unshifted_comm = vec![];
                     for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
@@ -529,31 +551,32 @@ impl<C: CurveGroup> ShoupVess<C> {
                         unshifted_comm.push(shifted - delta);
                     }
                     let unshifted_comm = C::normalize_batch(&unshifted_comm);
-                    hasher.update(serialize_to_vec![unshifted_comm]?);
+                    let unshifted_comm_bytes = serialize_to_vec![unshifted_comm]?;
+                    let mre_ct_bytes = mre_cts_vec[subset_pos].to_bytes();
 
-                    let mre_ct = mre_cts
-                        .pop_front()
-                        .expect("subset_size > 0, so is mre_cts.len()");
-                    hasher.update(mre_ct.to_bytes());
-
-                    next_subset_idx = subset_iter.next();
-                }
-                _ => {
+                    Ok((unshifted_comm_bytes, mre_ct_bytes))
+                } else {
                     // k notin S, reproduce the dealing deterministically from seed
-                    let seed = seeds
-                        .pop_front()
-                        .expect("subset_size < num_repetitions, so seeds.len() > 0");
+                    // Find the position of i among non-subset indices
+                    let non_subset_pos = (0..i).filter(|&j| !subset_set.contains(&j)).count();
+                    let seed = seeds_vec[non_subset_pos];
+
                     let (_poly, cm, mre_ct) =
                         self.new_dealing(&vss_pp, i, &seed, recipients.clone(), aad)?;
 
-                    hasher.update(serialize_to_vec![cm]?);
-                    hasher.update(mre_ct.to_bytes());
+                    let cm_bytes = serialize_to_vec![cm]?;
+                    let mre_ct_bytes = mre_ct.to_bytes();
+
+                    Ok((cm_bytes, mre_ct_bytes))
                 }
-            }
+            })
+            .collect::<Result<Vec<_>, VessError>>()?;
+
+        // Apply all hash updates in the correct sequential order
+        for (cm_bytes, mre_ct_bytes) in hash_data {
+            hasher.update(&cm_bytes);
+            hasher.update(&mre_ct_bytes);
         }
-        debug_assert!(shifted_polys.is_empty());
-        debug_assert!(mre_cts.is_empty());
-        debug_assert!(seeds.is_empty());
 
         if h == hasher.finalize().as_slice() {
             Ok(())
