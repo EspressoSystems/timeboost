@@ -240,7 +240,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     /// IOPattern binds all public parameters including N, M, t, n, aad, to avoid weak FS attack.
     fn io_pattern(
         &self,
-        vss_pp: &FeldmanVssPublicParam,
+        vss_pp: &FeldmanVssPublicParam<C>,
         aad: &[u8],
         mode: &Mode<C>,
     ) -> spongefish::DomainSeparator {
@@ -341,7 +341,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     // each dealing contains (Shamir poly + Feldman commitment + MRE ciphertext)
     fn new_dealing<'a, I>(
         &self,
-        vss_pp: &FeldmanVssPublicParam,
+        vss_pp: &FeldmanVssPublicParam<C>,
         ith: usize,
         seed: &[u8; 32],
         recipients: I,
@@ -395,7 +395,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     {
         // input validation - check length without consuming the iterator
         let recipients_iter = recipients.into_iter();
-        let vss_pp = FeldmanVssPublicParam::from(committee);
+        let vss_pp = FeldmanVssPublicParam::from(committee).with_lookup_table();
         let n = vss_pp.num_nodes();
         if recipients_iter.len() != n {
             return Err(VessError::WrongRecipientsLength(n, recipients_iter.len()));
@@ -493,7 +493,7 @@ impl<C: CurveGroup> ShoupVess<C> {
         I: IntoIterator<Item = &'a mre::EncryptionKey<C>> + Clone,
         I::IntoIter: ExactSizeIterator,
     {
-        let vss_pp = FeldmanVssPublicParam::from(committee);
+        let vss_pp = FeldmanVssPublicParam::from(committee).with_lookup_table();
         let mut verifier_state = self
             .io_pattern(&vss_pp, aad, &mode)
             .to_verifier_state(&ct.transcript);
@@ -517,11 +517,10 @@ impl<C: CurveGroup> ShoupVess<C> {
             match next_subset_idx {
                 Some(j) if i == *j => {
                     // k in S, shift the commitment
-                    let shifted_comm = C::generator().batch_mul(
-                        shifted_polys
+                    let shifted_comm = vss_pp.commit(
+                        &shifted_polys
                             .pop_front()
-                            .expect("subset_size > 0, so is shifted_polys.len()")
-                            .as_ref(),
+                            .expect("subset_size > 0, so is shifted_polys.len()"),
                     );
 
                     let mut unshifted_comm = vec![];
@@ -566,7 +565,7 @@ impl<C: CurveGroup> ShoupVess<C> {
     // Verifier's core logic, shared between `verify()` and `decrypt()`.
     fn verify_core(
         &self,
-        vss_pp: &FeldmanVssPublicParam,
+        vss_pp: &FeldmanVssPublicParam<C>,
         verifier_state: &mut VerifierState,
         mode: &Mode<C>,
     ) -> Result<ProverMessage<C>, VessError> {
