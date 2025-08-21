@@ -18,6 +18,9 @@ build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
 
+build-contracts:
+  forge build
+
 ####################
 ###CHECK COMMANDS###
 ####################
@@ -109,8 +112,8 @@ mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARG
     --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
     --mode "increment-address" {{ARGS}} | jq
 
-verify_blocks:
-  ./scripts/verify-blocks
+verify_blocks *ARGS:
+  cargo run --release --bin block_verifier {{ARGS}}
 
 ####################
 ####TEST COMMANDS###
@@ -118,6 +121,9 @@ verify_blocks:
 test *ARGS:
   cargo nextest run {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
+
+test-contracts: build-contracts
+  forge test
 
 test_ci *ARGS:
   env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace {{ARGS}}

@@ -41,7 +41,6 @@ pub(crate) struct Yapper {
     interval: Duration,
     chain_id: u64,
     provider: Option<RootProvider>,
-    txn_limit: Option<u64>,
 }
 
 impl Yapper {
@@ -49,11 +48,11 @@ impl Yapper {
         let mut urls = Vec::new();
 
         for addr in cfg.addresses {
-            let regular_url = Url::parse(&format!("http://{addr}/v0/submit-regular"))
+            let regular_url = Url::parse(&format!("http://{addr}/v1/submit/regular"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
-            let priority_url = Url::parse(&format!("http://{addr}/v0/submit-priority"))
+            let priority_url = Url::parse(&format!("http://{addr}/v1/submit/priority"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
-            let enckey_url = Url::parse(&format!("http://{addr}/v0/enckey"))
+            let enckey_url = Url::parse(&format!("http://{addr}/v1/encryption-key"))
                 .with_context(|| format!("parsing {addr} into a url"))?;
 
             urls.push(ApiUrls {
@@ -63,23 +62,16 @@ impl Yapper {
             });
         }
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let (provider, interval, txn_limit) = if cfg.nitro_integration {
-            (
-                Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?),
-                Duration::from_secs(1),
-                // For nitro running in ci, avoid race conditions with block height by setting txn
-                // limit
-                Some(cfg.txn_limit),
-            )
+        let provider = if cfg.nitro_integration {
+            Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?)
         } else {
-            (None, Duration::from_millis(tps_to_millis(cfg.tps)), None)
+            None
         };
         Ok(Self {
             urls,
-            interval,
+            interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
             provider,
-            txn_limit,
             chain_id: cfg.chain_id,
         })
     }
@@ -93,7 +85,6 @@ impl Yapper {
             self.urls.iter().map(|url| url.enckey_url.clone()),
         );
 
-        let mut txn_sent = 0;
         loop {
             let b = if let Some(ref p) = self.provider {
                 // For testing just send from the dev account to the validator address
@@ -101,13 +92,27 @@ impl Yapper {
                     warn!("failed to prepare txn");
                     continue;
                 };
-                let Ok(b) = make_dev_acct_bundle(acc.enc_key().await, txn) else {
+                let enc_key = match acc.enc_key().await {
+                    Some(key) => key,
+                    None => {
+                        warn!("encryption key not available yet");
+                        continue;
+                    }
+                };
+                let Ok(b) = make_dev_acct_bundle(enc_key, txn) else {
                     warn!("failed to generate dev account bundle");
                     continue;
                 };
                 b
             } else {
-                let Ok(b) = make_bundle(acc.enc_key().await) else {
+                let enc_key = match acc.enc_key().await {
+                    Some(key) => key,
+                    None => {
+                        warn!("encryption key not available yet");
+                        continue;
+                    }
+                };
+                let Ok(b) = make_bundle(enc_key) else {
                     warn!("failed to generate bundle");
                     continue;
                 };
@@ -119,11 +124,6 @@ impl Yapper {
                     .await
             }))
             .await;
-            txn_sent += 1;
-            if self.txn_limit == Some(txn_sent) {
-                warn!("hit txn limit, terminating yapper");
-                return Ok(());
-            }
 
             interval.tick().await;
         }

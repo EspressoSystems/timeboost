@@ -45,10 +45,6 @@ struct Cli {
     #[clap(long, default_value_t = false)]
     nitro_integration: bool,
 
-    /// How many txns to send before terminating yapper
-    #[clap(long, default_value_t = 20)]
-    nitro_txn_limit: u64,
-
     /// Chain id for l2 chain
     /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
     #[clap(long, default_value_t = 412346)]
@@ -75,9 +71,9 @@ async fn main() -> Result<()> {
     let mut addresses = Vec::new();
     for node in nodes {
         info!("waiting for peer: {}", node.sailfish_address);
-        let mut addr = node.sailfish_address.clone();
-        wait_for_live_peer(addr.clone()).await?;
-        addr.set_port(800 + addr.port());
+        let port = node.sailfish_address.port();
+        let addr = node.sailfish_address.clone().with_port(port + 800); // TODO: remove port magic
+        wait_for_live_peer(&addr).await?;
         addresses.push(addr);
     }
 
@@ -85,7 +81,6 @@ async fn main() -> Result<()> {
         .addresses(addresses)
         .nitro_integration(cli.nitro_integration)
         .tps(cli.tps)
-        .txn_limit(cli.nitro_txn_limit)
         .nitro_url(cli.nitro_url)
         .chain_id(cli.chain_id)
         .build();

@@ -5,15 +5,12 @@ use timeboost_builder::{
     CertifierConfig, SubmitterConfig,
     robusta::{self, espresso_types::NamespaceId},
 };
-use timeboost_crypto::prelude::{DkgDecKey, ThresholdEncKeyCell};
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DkgKeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
-    /// The port to bind the metrics API server to.
-    pub(crate) metrics_port: u16,
-
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
@@ -33,7 +30,7 @@ pub struct TimeboostConfig {
     pub(crate) dkg_key: DkgDecKey,
 
     /// Key store containing DKG public keys of all nodes.
-    pub(crate) dkg_keystore: DkgKeyStore,
+    pub(crate) key_store: KeyStore,
 
     /// The bind address for the sailfish node.
     pub(crate) sailfish_addr: Address,
@@ -43,9 +40,6 @@ pub struct TimeboostConfig {
 
     /// The bind address for the block certifier node.
     pub(crate) certifier_addr: Address,
-
-    /// The bind address of the internal API.
-    pub(crate) internal_api: Address,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     pub(crate) nitro_addr: Option<Address>,
@@ -58,8 +52,8 @@ pub struct TimeboostConfig {
     #[builder(default = 100)]
     pub(crate) leash_len: usize,
 
-    /// Pending encryption key that will be updated after DKG/resharing.
-    pub(crate) threshold_enc_key: ThresholdEncKeyCell,
+    /// Pending threshold encryption key that will be updated after DKG/resharing.
+    pub(crate) threshold_dec_key: DecryptionKeyCell,
 
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
@@ -77,14 +71,13 @@ impl TimeboostConfig {
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
             .dkg_key(self.dkg_key.clone())
-            .dkg_keystore(self.dkg_keystore.clone())
             .sailfish_addr(self.sailfish_addr.clone())
             .decrypt_addr(self.decrypt_addr.clone())
             .sailfish_committee(self.sailfish_committee.clone())
-            .decrypt_committee(self.decrypt_committee.clone())
+            .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
             .leash_len(self.leash_len)
-            .threshold_enc_key(self.threshold_enc_key.clone())
+            .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())
             .build()
     }

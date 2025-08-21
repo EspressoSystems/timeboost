@@ -6,6 +6,8 @@ use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::ChainConfig;
+use tokio::time::sleep;
+use tracing::{error, info};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeysetConfig {
@@ -93,10 +95,10 @@ mk_serde_mod!(dkgenckey, DkgEncKey);
 mk_serde_mod!(dkgdeckey, DkgDecKey);
 
 /// NON PRODUCTION
-/// This function takes the provided host and hits the healthz endpoint. This to ensure that when
+/// This function takes the provided host and hits the health endpoint. This to ensure that when
 /// initiating the network TCP stream that we do not try to hit a dead host, causing issues with
 /// network startup.
-pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
+pub async fn wait_for_live_peer(host: &Address) -> Result<()> {
     if host.is_ip() {
         return Ok(());
     }
@@ -105,27 +107,22 @@ pub async fn wait_for_live_peer(mut host: Address) -> Result<()> {
         .timeout(Duration::from_secs(1))
         .build()?;
 
-    // The port is always 8800 + node index. We need to increment the port by one because we are
-    // using the cli port for sailfish in our default config.
-    host.set_port(800 + host.port());
+    let url = format!("http://{host}/i/health");
 
     loop {
-        let url = format!("http://{host}/v0/healthz");
-        tracing::info!(%host, %url, "establishing connection to load balancer");
-
-        // Check if the healthz endpoint returns a 200 on the new host, looping forever until it
-        // does
+        info!(%host, %url, "establishing connection to load balancer");
         match client.get(&url).send().await {
             Ok(resp) => {
-                tracing::info!("got response {resp:?}, status {}", resp.status());
+                info!(response = ?resp, "got response");
                 if resp.status() == 200 {
                     return Ok(());
                 }
             }
-            Err(e) => tracing::error!("failed to send request: {}", e),
+            Err(err) => {
+                error!(%err, "failed to send request")
+            }
         }
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        sleep(Duration::from_secs(3)).await;
     }
 }
 

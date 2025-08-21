@@ -1,6 +1,6 @@
 use std::{env, sync::Once};
 
-use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
+use tracing_subscriber::EnvFilter;
 
 static LOG_INIT: Once = Once::new();
 
@@ -9,13 +9,11 @@ pub fn init_logging() {
         if env::var("RUST_LOG_FORMAT") == Ok("json".to_string()) {
             tracing_subscriber::fmt()
                 .with_env_filter(EnvFilter::from_default_env())
-                .with_span_events(FmtSpan::NEW)
                 .json()
                 .init();
         } else {
             tracing_subscriber::fmt()
                 .with_env_filter(EnvFilter::from_default_env())
-                .with_span_events(FmtSpan::NEW)
                 .with_ansi(use_color())
                 .init();
         }

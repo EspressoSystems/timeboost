@@ -1,0 +1,156 @@
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn main() {
+    // Set up paths
+    let contracts_out = Path::new("../contracts/out");
+    let bindings_dir = Path::new("src/bindings");
+
+    if !contracts_out.exists() {
+        match std::process::Command::new("forge").arg("build").output() {
+            Ok(res) if res.status.success() => {
+                println!("cargo::warning=Successfully built contracts")
+            }
+            Ok(res) => {
+                println!("cargo::error=Building contracts failed: {res:?}");
+                return;
+            }
+            Err(e) => {
+                println!("cargo::error=Failed to run `forge build` command: {e}");
+                return;
+            }
+        }
+    }
+
+    // Create bindings directory if it doesn't exist
+    fs::create_dir_all(bindings_dir).expect("Failed to create bindings directory");
+
+    // Find all contract JSON artifacts
+    let contract_artifacts = find_contract_artifacts(contracts_out);
+
+    if contract_artifacts.is_empty() {
+        println!(
+            "cargo::warning=No contract JSON artifacts found in contracts/out. Run 'forge build' first."
+        );
+        return;
+    }
+
+    println!(
+        "cargo::warning=Found {} contract artifacts",
+        contract_artifacts.len()
+    );
+
+    // Generate bindings for each contract
+    for (contract_name, json_path) in &contract_artifacts {
+        generate_contract_binding(contract_name, json_path, bindings_dir);
+    }
+
+    // Generate the main bindings.rs module file
+    generate_bindings_module(&contract_artifacts, bindings_dir);
+
+    // Format the generated bindings
+    match std::process::Command::new("just").arg("fmt").output() {
+        Ok(result) if result.status.success() => {
+            println!("cargo::warning=Successfully formatted generated bindings");
+        }
+        Ok(result) => {
+            println!(
+                "cargo::error=Format command failed with exit code: {:?}",
+                result.status.code()
+            );
+        }
+        Err(e) => {
+            println!("cargo::error=Failed to run format command: {e}");
+        }
+    }
+}
+
+/// Find all contract JSON artifacts using a simple flattened walk
+fn find_contract_artifacts(contracts_out: &Path) -> Vec<(String, PathBuf)> {
+    let mut artifacts = Vec::new();
+    let mut seen_names = HashSet::new();
+
+    // Walk through all files in contracts/out recursively
+    walk_directory(contracts_out, &mut |path| {
+        // Skip build-info directories
+        if path.to_string_lossy().contains("build-info") {
+            return;
+        }
+
+        // Only process .json files
+        if path.extension() != Some(std::ffi::OsStr::new("json")) {
+            return;
+        }
+
+        if let Some(stem) = path.file_stem() {
+            let contract_name = stem.to_string_lossy().to_string();
+
+            // Skip test contracts, utility contracts, and contracts with invalid names
+            if !contract_name.ends_with("Test")
+                && !contract_name.ends_with("Script")
+                && !contract_name.ends_with("Mock")
+                && !contract_name.starts_with("std")
+                && !contract_name.starts_with("Std")
+                && seen_names.insert(contract_name.clone())
+            {
+                artifacts.push((contract_name, path.to_path_buf()));
+            }
+        }
+    });
+
+    artifacts
+}
+
+/// Simple recursive directory walker
+fn walk_directory(dir: &Path, callback: &mut dyn FnMut(&Path)) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_directory(&path, callback);
+            } else {
+                callback(&path);
+            }
+        }
+    }
+}
+
+fn generate_contract_binding(contract_name: &str, json_path: &Path, bindings_dir: &Path) {
+    println!("cargo::warning=Generating bindings for {contract_name} from JSON artifact");
+
+    // Create the relative path from the binding file to the JSON artifact
+    let json_path_str = json_path.display().to_string().replace('\\', "/");
+
+    let bindings = format!(
+        "use alloy::sol;\n\nsol!(\n    #[sol(rpc, abi, all_derives)]\n    {contract_name},\n    \"{json_path_str}\"\n);"
+    );
+
+    let output_path = bindings_dir.join(format!("{}.rs", contract_name.to_lowercase()));
+    fs::write(&output_path, bindings)
+        .unwrap_or_else(|_| panic!("Failed to write {contract_name} bindings"));
+
+    println!("cargo::warning={contract_name} bindings written to {output_path:?}");
+}
+
+fn generate_bindings_module(contract_artifacts: &[(String, PathBuf)], bindings_dir: &Path) {
+    let mut module_content = String::from(
+        r#"#![allow(unused_imports, clippy::all, rustdoc::all)]
+//! This module contains the sol! generated bindings for solidity contracts.
+//! This is autogenerated code.
+//! Do not manually edit these files.
+//! These files may be overwritten by the codegen system at any time.
+"#,
+    );
+
+    // Add module declarations
+    for (contract_name, _) in contract_artifacts {
+        module_content.push_str(&format!("pub mod r#{};\n", contract_name.to_lowercase()));
+    }
+    module_content.push('\n');
+
+    let bindings_module_path = bindings_dir.join("mod.rs");
+    fs::write(&bindings_module_path, module_content).expect("Failed to write bindings module");
+
+    println!("cargo::warning=Bindings module written to {bindings_module_path:?}");
+}
