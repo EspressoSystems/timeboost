@@ -10,6 +10,7 @@ pub mod x25519;
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use secp256k1::rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +20,10 @@ pub use envelope::{Envelope, Unchecked, Validated};
 pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(transparent)]
 #[serde(transparent)]
 pub struct KeyId(u8);
 
@@ -53,25 +57,43 @@ pub struct Keypair {
     pk: PublicKey,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(transparent)]
 #[serde(transparent)]
 pub struct PublicKey {
-    #[serde(serialize_with = "util::encode_secp256k1_pk")]
-    #[serde(deserialize_with = "util::decode_secp256k1_pk")]
+    #[cbor(
+        encode_with = "util::encode_secp256k1_pk",
+        decode_with = "util::decode_secp256k1_pk"
+    )]
+    #[serde(
+        serialize_with = "util::serialize_secp256k1_pk",
+        deserialize_with = "util::deserialize_secp256k1_pk"
+    )]
     key: secp256k1::PublicKey,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SecretKey {
-    #[serde(serialize_with = "util::encode_secp256k1_sk")]
-    #[serde(deserialize_with = "util::decode_secp256k1_sk")]
+    #[serde(
+        serialize_with = "util::serialize_secp256k1_sk",
+        deserialize_with = "util::deserialize_secp256k1_sk"
+    )]
     key: secp256k1::SecretKey,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(transparent)]
 #[serde(transparent)]
 pub struct Signature {
+    #[cbor(
+        encode_with = "util::encode_secp256k1_sig",
+        decode_with = "util::decode_secp256k1_sig"
+    )]
     sig: secp256k1::ecdsa::Signature,
 }
 

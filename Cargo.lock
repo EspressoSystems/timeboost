@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "adapters"
+version = "0.1.0"
+dependencies = [
+ "bytes 1.10.1",
+ "committable",
+ "minicbor",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7612,6 +7621,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "minicbor"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f182275033b808ede9427884caa8e05fa7db930801759524ca7925bd8aa7a82"
+dependencies = [
+ "half",
+ "minicbor-derive",
+]
+
+[[package]]
+name = "minicbor-derive"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b17290c95158a760027059fe3f511970d6857e47ff5008f9e09bffe3d3e1c6af"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.105",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7694,6 +7724,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 name = "multisig"
 version = "0.1.0"
 dependencies = [
+ "adapters",
  "bimap",
  "bincode 2.0.1",
  "bs58",
@@ -7701,6 +7732,7 @@ dependencies = [
  "constant_time_eq 0.4.2",
  "ed25519-compact",
  "either",
+ "minicbor",
  "rayon",
  "secp256k1 0.31.1",
  "serde",
@@ -9544,7 +9576,6 @@ dependencies = [
 name = "robusta"
 version = "0.1.0"
 dependencies = [
- "bincode 2.0.1",
  "bon",
  "bytes 1.10.1",
  "data-encoding",
@@ -9553,6 +9584,7 @@ dependencies = [
  "futures",
  "hotshot-query-service",
  "hotshot-types",
+ "minicbor",
  "multisig",
  "reqwest",
  "serde",
@@ -9922,6 +9954,7 @@ dependencies = [
  "async-trait",
  "bincode 2.0.1",
  "committable",
+ "minicbor",
  "multisig",
  "serde",
  "thiserror 2.0.15",
@@ -11544,6 +11577,7 @@ dependencies = [
 name = "timeboost-builder"
 version = "0.1.0"
 dependencies = [
+ "adapters",
  "bincode 2.0.1",
  "bon",
  "bytes 1.10.1",
@@ -11551,6 +11585,7 @@ dependencies = [
  "committable",
  "futures",
  "metrics",
+ "minicbor",
  "multisig",
  "parking_lot",
  "rand 0.9.2",
@@ -11659,6 +11694,7 @@ dependencies = [
 name = "timeboost-types"
 version = "0.1.0"
 dependencies = [
+ "adapters",
  "alloy 1.0.24",
  "alloy-rlp",
  "anyhow",
@@ -11672,6 +11708,7 @@ dependencies = [
  "bytes 1.10.1",
  "committable",
  "ethereum_ssz",
+ "minicbor",
  "multisig",
  "parking_lot",
  "quickcheck",

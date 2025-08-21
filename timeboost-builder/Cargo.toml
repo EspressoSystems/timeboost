@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+adapters = { path = "../adapters" }
 bincode = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
@@ -13,6 +14,7 @@ cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
+minicbor = { workspace = true }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 robusta = { path = "../robusta" }

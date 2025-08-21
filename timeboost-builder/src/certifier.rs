@@ -1,18 +1,18 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::convert::Infallible;
 use std::result::Result as StdResult;
 
+use adapters::bytes::BytesWriter;
 use bon::Builder;
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
-use cliquenet::{
-    AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
-};
+use cliquenet::{AddressableCommittee, Network, NetworkError, NetworkMetrics, Role};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use multisig::{
     Certificate, CommitteeId, Envelope, KeyId, Keypair, PublicKey, Unchecked, Validated,
     VoteAccumulator,
 };
-use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use timeboost_types::sailfish::{CommitteeVec, NodeInfo, Round, RoundNumber};
 use timeboost_types::{Block, BlockInfo, BlockNumber, CertifiedBlock};
@@ -401,7 +401,12 @@ impl Worker {
             tracker.block = Some(block)
         }
 
-        let data = serialize(&msg)?;
+        let data = {
+            let mut w = BytesWriter::default();
+            minicbor::encode(&msg, &mut w)?;
+            Data::try_from(BytesMut::from(w))?
+        };
+
         self.net
             .broadcast(*info.num(), data)
             .await
@@ -414,7 +419,7 @@ impl Worker {
     async fn on_message(&mut self, src: PublicKey, data: Bytes) -> Result<()> {
         trace!(node = %self.label, %src, "incoming message");
 
-        let msg: Message<Unchecked> = deserialize(&data)?;
+        let msg: Message<Unchecked> = minicbor::decode(&data)?;
 
         let Some(committee) = self
             .committees
@@ -670,28 +675,16 @@ impl Tracker {
 }
 
 /// The certify message broadcasted to every block signer.
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 struct Message<S> {
+    #[cbor(n(0))]
     info: Envelope<BlockInfo, S>,
+
+    #[cbor(n(1))]
     next: BlockNumber,
+
+    #[cbor(n(2))]
     evidence: Option<Evidence>,
-}
-
-fn serialize<T: Serialize>(d: &T) -> Result<Data> {
-    let mut b = BytesMut::new().writer();
-    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    let bytes = b.into_inner();
-    Ok(Data::try_from(bytes)?)
-}
-
-fn deserialize<T>(d: &bytes::Bytes) -> Result<T>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    let cfg = bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>();
-    bincode::serde::decode_from_slice(d, cfg)
-        .map(|(msg, _)| msg)
-        .map_err(Into::into)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -707,11 +700,11 @@ pub enum CertifierError {
     #[error("terminal error: {0}")]
     End(#[from] EndOfPlay),
 
-    #[error("bincode encode error: {0}")]
-    Encode(#[from] bincode::error::EncodeError),
+    #[error("encode error: {0}")]
+    Encode(#[from] minicbor::encode::Error<Infallible>),
 
-    #[error("bincode decode error: {0}")]
-    Decode(#[from] bincode::error::DecodeError),
+    #[error("decode error: {0}")]
+    Decode(#[from] minicbor::decode::Error),
 
     #[error("data error: {0}")]
     DataError(#[from] DataError),
@@ -736,8 +729,8 @@ impl From<NetworkDown> for EndOfPlay {
 }
 
 /// Evidence to include in certify messages.
-#[derive(Serialize, Deserialize)]
-struct Evidence(Certificate<BlockInfo>);
+#[derive(Encode, Decode)]
+struct Evidence(#[n(0)] Certificate<BlockInfo>);
 
 impl Evidence {
     fn num(&self) -> BlockNumber {

@@ -7,14 +7,13 @@ use std::{
 use alloy::primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
 use sailfish_types::{Round, RoundNumber};
-use serde::{Deserialize, Serialize};
 
 /// A timeboost block number.
-#[derive(
-    Copy, Clone, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[cbor(transparent)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
@@ -82,10 +81,9 @@ impl fmt::Display for BlockNumber {
     }
 }
 
-#[derive(
-    Debug, Default, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd, PartialEq, Eq, Hash,
-)]
-pub struct BlockHash([u8; 32]);
+#[derive(Debug, Default, Clone, Copy, Ord, PartialOrd, PartialEq, Eq, Hash, Encode, Decode)]
+#[cbor(transparent)]
+pub struct BlockHash(#[cbor(with = "minicbor::bytes")] [u8; 32]);
 
 impl From<[u8; 32]> for BlockHash {
     fn from(bytes: [u8; 32]) -> Self {
@@ -115,10 +113,16 @@ impl Committable for BlockHash {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
+#[cbor(map)]
 pub struct Block {
+    #[cbor(n(0))]
     number: BlockNumber,
+
+    #[cbor(n(1))]
     round: RoundNumber,
+
+    #[cbor(n(2), with = "adapters::bytes")]
     payload: Bytes,
 }
 
@@ -155,10 +159,16 @@ impl Block {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[cbor(map)]
 pub struct BlockInfo {
+    #[cbor(n(0))]
     num: BlockNumber,
+
+    #[cbor(n(1))]
     round: Round,
+
+    #[cbor(n(2))]
     hash: BlockHash,
 }
 
@@ -197,15 +207,20 @@ impl Committable for BlockInfo {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(bound(deserialize = "S: Deserialize<'de>"))]
+#[derive(Debug, Encode, Decode)]
+#[cbor(map)]
 pub struct CertifiedBlock<S> {
+    #[cbor(n(0))]
     data: Block,
+
+    #[cbor(n(1))]
     cert: Certificate<BlockInfo>,
-    #[serde(skip)]
+
+    #[cbor(skip)]
     leader: bool,
-    #[serde(skip)]
-    _marker: PhantomData<fn(S)>,
+
+    #[cbor(skip)]
+    _marker: PhantomData<fn(&S)>,
 }
 
 impl<S> CertifiedBlock<S> {
