@@ -36,8 +36,8 @@ check-individually:
     cargo check -p $pkg || exit 1; \
   done
 
-fmt:
-  cargo +nightly fmt --all
+fmt *ARGS='--all':
+  cargo +nightly fmt {{ARGS}}
 
 fmt_check:
   cargo +nightly fmt --check
