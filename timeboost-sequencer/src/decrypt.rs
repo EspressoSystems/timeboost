@@ -718,11 +718,11 @@ impl Worker {
         }
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let acc = DkgAccumulator::from_subset(current.to_owned(), subset.to_owned());
-            let dec_key = acc
-                .extract_key(&self.dkg_sk, prev)
-                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            let acc = DkgAccumulator::from_subset(current.clone(), subset.to_owned());
             self.tracker.insert(committee.id(), acc);
+            let dec_key = subset
+                .extract_key(current.to_owned(), &self.dkg_sk, prev)
+                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
@@ -765,11 +765,11 @@ impl Worker {
         }
 
         if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let acc = DkgAccumulator::from_subset(current.to_owned(), subset.to_owned());
-            let next_dec_key = acc
-                .extract_key(&self.dkg_sk, Some(prev.to_owned()))
-                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+            let acc = DkgAccumulator::from_subset(current.clone(), subset.to_owned());
             self.tracker.insert(current.committee().id(), acc);
+            let next_dec_key = subset
+                .extract_key(current.clone(), &self.dkg_sk, Some(prev.to_owned()))
+                .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             info!(committee_id = %current.committee().id(), node = %self.label, "handover finished");
             self.state = WorkerState::HandoverComplete;
@@ -828,14 +828,14 @@ impl Worker {
         let acc = self
             .tracker
             .entry(*committee_id)
-            .or_insert_with(|| DkgAccumulator::new_dkg(key_store.to_owned()));
+            .or_insert_with(|| DkgAccumulator::new_dkg(key_store.clone()));
 
         acc.try_add(bundle)
             .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
-        if acc.try_finalize().is_some() {
-            let dec_key = acc
-                .extract_key(&self.dkg_sk, None)
+        if let Some(subset) = acc.try_finalize() {
+            let dec_key = subset
+                .extract_key(key_store.to_owned(), &self.dkg_sk, None)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
             self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
@@ -888,8 +888,8 @@ impl Worker {
 
             if committee.contains_key(&self.label) {
                 // node is a member of the next committee; decrypting reshares immediately
-                let next_dec_key = acc
-                    .extract_key(&self.dkg_sk, Some(current))
+                let next_dec_key = subset
+                    .extract_key(next, &self.dkg_sk, Some(current))
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
                 self.state = WorkerState::ResharingComplete(next_dec_key);
             } else {

@@ -484,70 +484,6 @@ impl DkgAccumulator {
             complete: true,
         }
     }
-
-    /// Extract the new threshold decryption key from the accumulator.
-    pub fn extract_key(
-        &self,
-        dkg_sk: &LabeledDkgDecKey,
-        prev: Option<KeyStore>,
-    ) -> anyhow::Result<DecryptionKey> {
-        if !self.completed() {
-            return Err(anyhow!(
-                "attempt to extract key from incomplete accumulator"
-            ));
-        };
-        let vess = Vess::new_fast();
-
-        match &self.mode {
-            AccumulatorMode::Dkg => {
-                let mut dealings_iter = ResultIter::new(self.bundles().iter().map(|b| {
-                    vess.decrypt_share(self.committee(), dkg_sk, b.vess_ct(), DKG_AAD)
-                        .map(|s| (s, b.comm().clone()))
-                }));
-
-                let dec_key = DecryptionKey::from_dkg(
-                    self.committee().size().into(),
-                    dkg_sk.node_idx(),
-                    &mut dealings_iter,
-                )?;
-
-                dealings_iter.result()?;
-
-                Ok(dec_key)
-            }
-            AccumulatorMode::Resharing(combkey) => {
-                let Some(prev) = prev else {
-                    return Err(anyhow!("previous key store missing"));
-                };
-                let dealings: Vec<_> = self
-                    .bundles()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, b)| {
-                        let node_idx = b.origin().0.into();
-                        let pub_share = combkey
-                            .get_pub_share(node_idx)
-                            .ok_or(VessError::FailedVerification)?;
-                        let s = vess.decrypt_reshare(
-                            self.committee(),
-                            dkg_sk,
-                            b.vess_ct(),
-                            DKG_AAD,
-                            *pub_share,
-                        )?;
-                        Ok((i, s, b.comm().clone()))
-                    })
-                    .collect::<Result<Vec<_>, VessError>>()?;
-
-                DecryptionKey::from_resharing(
-                    prev.committee(),
-                    self.committee(),
-                    dkg_sk.node_idx(),
-                    dealings.into_iter(),
-                )
-            }
-        }
-    }
 }
 
 /// A unified subset that can represent both DKG and Resharing results.
@@ -604,6 +540,66 @@ impl DkgSubset {
     /// Check if this is a resharing subset.
     pub fn is_resharing(&self) -> bool {
         self.combkey.is_some()
+    }
+
+    /// Extract the new threshold decryption key from the subset.
+    pub fn extract_key(
+        &self,
+        curr: KeyStore,
+        dkg_sk: &LabeledDkgDecKey,
+        prev: Option<KeyStore>,
+    ) -> anyhow::Result<DecryptionKey> {
+        let vess = Vess::new_fast();
+
+        match &self.combkey {
+            None => {
+                let mut dealings_iter = ResultIter::new(self.bundles().iter().map(|b| {
+                    vess.decrypt_share(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD)
+                        .map(|s| (s, b.comm().clone()))
+                }));
+
+                let dec_key = DecryptionKey::from_dkg(
+                    curr.committee().size().into(),
+                    dkg_sk.node_idx(),
+                    &mut dealings_iter,
+                )?;
+
+                dealings_iter.result()?;
+
+                Ok(dec_key)
+            }
+            Some(combkey) => {
+                let Some(prev) = prev else {
+                    return Err(anyhow!("previous key store missing"));
+                };
+                let dealings: Vec<_> = self
+                    .bundles()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let node_idx = b.origin().0.into();
+                        let pub_share = combkey
+                            .get_pub_share(node_idx)
+                            .ok_or(VessError::FailedVerification)?;
+                        let s = vess.decrypt_reshare(
+                            curr.committee(),
+                            dkg_sk,
+                            b.vess_ct(),
+                            DKG_AAD,
+                            *pub_share,
+                        )?;
+                        Ok((i, s, b.comm().clone()))
+                    })
+                    .collect::<Result<Vec<_>, VessError>>()?;
+
+                DecryptionKey::from_resharing(
+                    prev.committee(),
+                    curr.committee(),
+                    dkg_sk.node_idx(),
+                    dealings.into_iter(),
+                )
+            }
+        }
     }
 }
 
