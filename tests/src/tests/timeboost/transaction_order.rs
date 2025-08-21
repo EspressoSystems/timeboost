@@ -1,17 +1,20 @@
+use std::collections::HashMap;
 use std::iter::once;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use alloy::primitives::B256;
 use metrics::NoMetrics;
+use sailfish_types::RoundNumber;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
-use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tokio_util::task::TaskTracker;
+use tracing::{debug, info};
 
 use super::{gen_bundles, make_configs};
 
@@ -28,10 +31,11 @@ async fn transaction_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
+    let quorum = 4;
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
-    let mut tasks = JoinSet::new();
+    let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
 
@@ -42,6 +46,7 @@ async fn transaction_order() {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
+        let label = c.sign_keypair().public_key();
         tasks.spawn(async move {
             if c.is_recover() {
                 // delay start of a recovering node:
@@ -56,12 +61,11 @@ async fn transaction_order() {
                         Err(err) => panic!("{err}")
                     },
                     out = s.next() => {
-                        let Output::Transactions { transactions, .. } = out.unwrap() else {
+                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
                             continue
                         };
-                        for t in transactions {
-                            tx.send(t).unwrap()
-                        }
+                        let transactions = transactions.into_iter().map(|t| *t.hash()).collect();
+                        tx.send((round, transactions)).unwrap()
                     }
                     _ = finish.cancelled() => {
                         info!(node = %s.public_key(), "done");
@@ -70,7 +74,7 @@ async fn transaction_order() {
                 }
             }
         });
-        rxs.push(rx)
+        rxs.push((label, rx))
     }
 
     for enc_key in &enc_keys {
@@ -79,19 +83,29 @@ async fn transaction_order() {
 
     tasks.spawn(gen_bundles(enc_keys[0].clone(), bcast.clone()));
 
-    for _ in 0..NUM_OF_TRANSACTIONS {
-        let first = rxs[0].recv().await.unwrap();
-        for rx in &mut rxs[1..] {
-            let t = rx.recv().await.unwrap();
-            assert_eq!(first.hash(), t.hash())
+    let mut map: HashMap<(RoundNumber, Vec<B256>), usize> = HashMap::new();
+    let mut transactions = 0;
+
+    while transactions < NUM_OF_TRANSACTIONS {
+        map.clear();
+        info!("{transactions}/{NUM_OF_TRANSACTIONS}");
+        for (node, r) in &mut rxs {
+            debug!(%node, "awaiting ...");
+            let value = r.recv().await.unwrap();
+            *map.entry(value).or_default() += 1
         }
+        if let Some(((_, trxs), _)) = map.iter().find(|(_, n)| **n >= quorum && **n <= num.get()) {
+            transactions += trxs.len();
+            continue;
+        }
+        for ((r, trxs), k) in map {
+            eprintln!(
+                "{r}: {:?} = {k}",
+                trxs.into_iter().map(|t| t.to_string()).collect::<Vec<_>>()
+            )
+        }
+        panic!("outputs do not match")
     }
 
     finish.cancel();
-
-    while let Some(result) = tasks.join_next().await {
-        if let Err(err) = result {
-            panic!("task panic: {err}")
-        }
-    }
 }
