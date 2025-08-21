@@ -1,16 +1,16 @@
 //! Implementation of Feldman VSS
 
-use ark_ec::CurveGroup;
+use ark_ec::{CurveGroup, scalar_mul::BatchMulPreprocessing};
 use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
 use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
-use derive_more::{Deref, From, IntoIterator};
+use derive_more::{Debug, Deref, From, IntoIterator};
 use multisig::Committee;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::{iter::successors, num::NonZeroUsize, ops::Add};
+use std::{iter::successors, num::NonZeroUsize, ops::Add, sync::Arc};
 
 use crate::{
     interpolation::{interpolate, interpolate_in_exponent},
@@ -21,21 +21,46 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct FeldmanVss<C: CurveGroup>(PhantomData<C>);
 
-#[derive(Debug, Clone, Copy)]
-pub struct FeldmanVssPublicParam {
+#[derive(Debug, Clone)]
+pub struct FeldmanVssPublicParam<C: CurveGroup> {
     // reconstruction threshold t
     pub t: NonZeroUsize,
     // total number of nodes
     pub n: NonZeroUsize,
+
+    // preprocessing lookup table to accelerate batch_mul
+    #[debug(skip)]
+    table: Option<Arc<BatchMulPreprocessing<C>>>,
 }
 
-impl FeldmanVssPublicParam {
+impl<C: CurveGroup> FeldmanVssPublicParam<C> {
     pub fn new(t: NonZeroUsize, n: NonZeroUsize) -> Self {
-        Self { t, n }
+        Self { t, n, table: None }
     }
 
     pub fn from(c: &Committee) -> Self {
         Self::new(c.one_honest_threshold(), c.size())
+    }
+
+    /// `Self::from().with_lookup_table()`: this precompute a lookup table for faster commit
+    pub fn with_lookup_table(self) -> Self {
+        let table = BatchMulPreprocessing::new(C::generator(), self.t.get());
+        Self {
+            t: self.t,
+            n: self.n,
+            table: Some(Arc::new(table)),
+        }
+    }
+
+    /// compute Feldman commit (potentially with accelerated lookup table)
+    /// ASSUME: coeffs has length t, we skip checks and avoid returning Result, not publicly visble
+    pub(crate) fn commit(&self, coeffs: &[C::ScalarField]) -> FeldmanCommitment<C> {
+        if let Some(table) = self.table.as_ref() {
+            table.batch_mul(coeffs).into()
+        } else {
+            let base = C::generator();
+            FeldmanCommitment::new(coeffs.par_iter().map(|s| base * s).collect::<Vec<_>>())
+        }
     }
 
     pub fn threshold(&self) -> usize {
@@ -50,7 +75,7 @@ impl FeldmanVssPublicParam {
 impl<C: CurveGroup> FeldmanVss<C> {
     /// sample a random polynomial for VSS `secret`, returns the poly and its feldman commitment
     pub(crate) fn rand_poly_and_commit<R: Rng>(
-        pp: &FeldmanVssPublicParam,
+        pp: &FeldmanVssPublicParam<C>,
         secret: C::ScalarField,
         rng: &mut R,
     ) -> (DensePolynomial<C::ScalarField>, FeldmanCommitment<C>) {
@@ -61,15 +86,15 @@ impl<C: CurveGroup> FeldmanVss<C> {
         poly.coeffs[0] = secret;
 
         // prepare commitment, u = (g^a_0, g^a_1, ..., g^a_t-1)
-        let commitment = C::generator().batch_mul(&poly.coeffs);
+        let commitment = pp.commit(&poly.coeffs);
 
-        (poly, commitment.into())
+        (poly, commitment)
     }
 
     /// given a secret-embedded polynomial, compute the Shamir secret shares
     /// node i \in {0,.. ,n-1} get f(i+1)
     pub(crate) fn compute_shares(
-        pp: &FeldmanVssPublicParam,
+        pp: &FeldmanVssPublicParam<C>,
         poly: &DensePolynomial<C::ScalarField>,
     ) -> impl Iterator<Item = C::ScalarField> {
         (0..pp.n.get()).map(|node_idx| poly.evaluate(&((node_idx + 1) as u64).into()))
@@ -77,7 +102,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
 
     /// same as [`Self::compute_shares()`], but output an iterator of bytes
     pub(crate) fn compute_serialized_shares(
-        pp: &FeldmanVssPublicParam,
+        pp: &FeldmanVssPublicParam<C>,
         poly: &DensePolynomial<C::ScalarField>,
     ) -> impl Iterator<Item = Vec<u8>> {
         Self::compute_shares(pp, poly)
@@ -87,7 +112,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
     /// given the Feldman commitment (\vec{u} in paper), compute the `i`-th node's public share,
     /// which is g^alpha_i where alpha_i is `i`-th secret share.
     pub(crate) fn derive_public_share(
-        pp: &FeldmanVssPublicParam,
+        pp: &FeldmanVssPublicParam<C>,
         node_idx: usize,
         commitment: &[C::Affine],
     ) -> Result<C, VssError> {
@@ -127,7 +152,7 @@ impl<C: CurveGroup> FeldmanVss<C> {
 }
 
 impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
-    type PublicParam = FeldmanVssPublicParam;
+    type PublicParam = FeldmanVssPublicParam<C>;
     type Secret = C::ScalarField;
     type SecretShare = C::ScalarField;
     type Commitment = FeldmanCommitment<C>;
@@ -203,6 +228,12 @@ pub struct FeldmanCommitment<C: CurveGroup> {
 }
 
 impl<C: CurveGroup> FeldmanCommitment<C> {
+    /// If you already have value in affine form, use `.into()`
+    pub fn new(v: Vec<C>) -> Self {
+        let comm = C::normalize_batch(&v);
+        Self { comm }
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serde::encode_to_vec(self, bincode::config::standard())
             .expect("serializing feldman commitment")
@@ -248,7 +279,7 @@ impl<C: CurveGroup> Add<&FeldmanCommitment<C>> for &FeldmanCommitment<C> {
 
 impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
     fn reshare<R: Rng>(
-        new_pp: &FeldmanVssPublicParam,
+        new_pp: &FeldmanVssPublicParam<C>,
         old_share: &C::ScalarField,
         rng: &mut R,
     ) -> (Vec<C::ScalarField>, FeldmanCommitment<C>) {
@@ -258,8 +289,8 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
     }
 
     fn verify_reshare(
-        old_pp: &FeldmanVssPublicParam,
-        new_pp: &FeldmanVssPublicParam,
+        old_pp: &FeldmanVssPublicParam<C>,
+        new_pp: &FeldmanVssPublicParam<C>,
         send_node_idx: usize,
         recv_node_idx: usize,
         old_commitment: &FeldmanCommitment<C>,
@@ -279,8 +310,8 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
     }
 
     fn combine(
-        old_pp: &FeldmanVssPublicParam,
-        new_pp: &FeldmanVssPublicParam,
+        old_pp: &FeldmanVssPublicParam<C>,
+        new_pp: &FeldmanVssPublicParam<C>,
         recv_node_idx: usize,
         reshares: impl ExactSizeIterator<Item = (usize, C::ScalarField, FeldmanCommitment<C>)> + Clone,
     ) -> Result<(C::ScalarField, FeldmanCommitment<C>), VssError> {
