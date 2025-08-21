@@ -21,7 +21,7 @@ use spongefish::{
         GroupDomainSeparator, GroupToUnit,
     },
 };
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use thiserror::Error;
 
 use crate::{
@@ -512,39 +512,32 @@ impl<C: CurveGroup> ShoupVess<C> {
         // k in S, then homomorphically shift commitment; k notin S, reproduce dealing from seed
         let subset_indices = self.map_subset_seed(subset_seed);
 
-        // Convert subset_indices to a HashSet for O(1) lookup
-        let subset_set: std::collections::HashSet<usize> = subset_indices.iter().copied().collect();
+        // subset_map tracks the sample i \in S \subseteq [N] and its position in `shifted_polys`
+        // and `mre_cts`;
+        // non_subset_map tracks the sample j \notin S \subseteq [N] and its position in `seeds`
+        let (subset_map, non_subset_map) = {
+            let mut sm = HashMap::with_capacity(self.subset_size);
+            let mut nm = HashMap::with_capacity(self.num_repetition - self.subset_size);
 
-        // Create vectors to store the shifted polys and mre_cts data in the correct order
-        let mut shifted_polys_vec = Vec::new();
-        let mut mre_cts_vec = Vec::new();
-        let mut seeds_vec = Vec::new();
-
-        // Convert VecDeque to Vec to preserve order for subset items
-        for poly in shifted_polys.iter() {
-            shifted_polys_vec.push(poly.clone());
-        }
-        for ct in mre_cts.iter() {
-            mre_cts_vec.push(ct.clone());
-        }
-        for seed in seeds.iter() {
-            seeds_vec.push(*seed);
-        }
+            let mut non_subset_pos = 0usize;
+            for i in 0..self.num_repetition {
+                if let Some(pos) = subset_indices.iter().position(|&x| x == i) {
+                    sm.insert(i, pos);
+                } else {
+                    nm.insert(i, non_subset_pos);
+                    non_subset_pos += 1;
+                }
+            }
+            (sm, nm)
+        };
 
         // Compute all hash data in parallel
         let hash_data = (0..self.num_repetition)
             .into_par_iter()
             .map(|i| {
-                if subset_set.contains(&i) {
+                if let Some(pos) = subset_map.get(&i) {
                     // k in S, shift the commitment
-                    // Find the position of i in subset_indices to get the correct poly/ct
-                    // note(alex): binary search will be slower in benchmark
-                    let subset_pos = subset_indices
-                        .iter()
-                        .position(|&x| x == i)
-                        .expect("i should be in subset_indices");
-
-                    let shifted_comm = vss_pp.commit(&shifted_polys_vec[subset_pos]);
+                    let shifted_comm = vss_pp.commit(shifted_polys[*pos].as_ref());
 
                     let mut unshifted_comm = vec![];
                     for (shifted, delta) in shifted_comm.into_iter().zip(comm.iter()) {
@@ -553,14 +546,12 @@ impl<C: CurveGroup> ShoupVess<C> {
                     }
                     let unshifted_comm = C::normalize_batch(&unshifted_comm);
                     let unshifted_comm_bytes = serialize_to_vec![unshifted_comm]?;
-                    let mre_ct_bytes = mre_cts_vec[subset_pos].to_bytes();
+                    let mre_ct_bytes = mre_cts[*pos].to_bytes();
 
                     Ok((unshifted_comm_bytes, mre_ct_bytes))
-                } else {
+                } else if let Some(pos) = non_subset_map.get(&i) {
                     // k notin S, reproduce the dealing deterministically from seed
-                    // Find the position of i among non-subset indices
-                    let non_subset_pos = (0..i).filter(|&j| !subset_set.contains(&j)).count();
-                    let seed = seeds_vec[non_subset_pos];
+                    let seed = seeds[*pos];
 
                     let (_poly, cm, mre_ct) =
                         self.new_dealing(&vss_pp, i, &seed, recipients.clone(), aad)?;
@@ -569,6 +560,8 @@ impl<C: CurveGroup> ShoupVess<C> {
                     let mre_ct_bytes = mre_ct.to_bytes();
 
                     Ok((cm_bytes, mre_ct_bytes))
+                } else {
+                    Err(VessError::Unreachable)
                 }
             })
             .collect::<Result<Vec<_>, VessError>>()?;
@@ -869,6 +862,8 @@ pub enum VessError {
     FailedVerification,
     #[error("decryption fail")]
     DecryptionFailed,
+    #[error("impossible happens, some function contracts violated")]
+    Unreachable,
 }
 
 impl From<ark_serialize::SerializationError> for VessError {
