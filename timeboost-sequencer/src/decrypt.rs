@@ -638,7 +638,7 @@ impl Worker {
         Ok(false)
     }
 
-    /// A request for DKG subset has been received.
+    /// A DKG subset request (for standard DKG or resharing) has been received.
     async fn on_dkg_request_msg(
         &mut self,
         src: PublicKey,
