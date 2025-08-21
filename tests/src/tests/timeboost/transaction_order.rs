@@ -94,8 +94,8 @@ async fn transaction_order() {
             let value = r.recv().await.unwrap();
             *map.entry(value).or_default() += 1
         }
-        if let Some(trxs) = map.values().find(|n| **n >= quorum && **n <= num.get()) {
-            transactions += trxs;
+        if let Some(((_, trxs), _)) = map.iter().find(|(_, n)| **n >= quorum && **n <= num.get()) {
+            transactions += trxs.len();
             continue;
         }
         for ((r, trxs), k) in map {
