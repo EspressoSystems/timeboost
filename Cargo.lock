@@ -11251,6 +11251,7 @@ version = "0.1.0"
 dependencies = [
  "alloy 1.0.24",
  "async-trait",
+ "blake3",
  "bytes 1.10.1",
  "cliquenet",
  "committable",
@@ -11258,6 +11259,7 @@ dependencies = [
  "futures",
  "metrics",
  "multisig",
+ "parking_lot",
  "portpicker",
  "rand 0.9.2",
  "sailfish",

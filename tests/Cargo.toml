@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 alloy = { workspace = true }
 async-trait = { workspace = true }
+blake3 = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet", features = ["turmoil"] }
 committable = { workspace = true }
@@ -15,6 +16,7 @@ crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
+parking_lot = { workspace = true }
 portpicker = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }

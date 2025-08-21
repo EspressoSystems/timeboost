@@ -118,6 +118,7 @@ where
             .sign_keypair(kpair)
             .dh_keypair(xpair)
             .address(pa)
+            .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .committee(produce_committee.clone())
             .build();
         enc_keys.push(enc_key);

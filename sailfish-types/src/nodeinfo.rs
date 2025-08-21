@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use multisig::{Committee, PublicKey};
 
 #[derive(Debug)]
@@ -7,10 +9,10 @@ pub struct NodeInfo<T> {
 }
 
 impl<T: Default + PartialOrd> NodeInfo<T> {
-    pub fn new(c: &Committee) -> Self {
+    pub fn new(c: &Committee, q: NonZeroUsize) -> Self {
         Self {
             nodes: c.parties().map(|k| (*k, T::default())).collect(),
-            quorum: c.quorum_size().get(),
+            quorum: q.get(),
         }
     }
 
