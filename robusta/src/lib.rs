@@ -35,7 +35,7 @@ pub struct Client {
 impl Client {
     pub fn new(c: Config) -> Self {
         let r = reqwest::Client::builder()
-            .https_only(true)
+            .https_only(c.https_only)
             .timeout(Duration::from_secs(30))
             .build()
             .expect("TLS and DNS resolver work");
@@ -298,6 +298,7 @@ mod tests {
                     .unwrap(),
             )
             .label("decaf_smoke")
+            .https_only(true)
             .build();
 
         let clt = Client::new(cfg.clone());

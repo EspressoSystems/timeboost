@@ -64,8 +64,13 @@ struct Cli {
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: Url,
 
+    /// Hotshot namespace for a chain
     #[clap(long)]
     namespace: u64,
+
+    /// Submitter should connect only with https?
+    #[clap(long, default_value_t = true)]
+    https_only: bool,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -215,6 +220,7 @@ async fn main() -> Result<()> {
                 .base_url(cli.espresso_base_url)
                 .wss_base_url(cli.espresso_websocket_url)
                 .label(pubkey.to_string())
+                .https_only(cli.https_only)
                 .build(),
             Vec::new(),
         ))

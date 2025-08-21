@@ -22,6 +22,9 @@ pub struct Config {
     /// The last value is repeated forever.
     #[builder(default = [1, 3, 5, 10, 15])]
     pub(crate) delays: [u8; NUM_DELAYS.get()],
+
+    /// Submitter should connect only with https?
+    pub(crate) https_only: bool,
 }
 
 impl Config {
