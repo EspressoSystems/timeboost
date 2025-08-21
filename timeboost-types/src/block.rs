@@ -241,7 +241,9 @@ impl CertifiedBlock<Unchecked> {
     pub fn validated(self, c: &Committee) -> Option<CertifiedBlock<Validated>> {
         if self.data.round == self.cert.data().round.num()
             && self.data.hash() == self.cert.data().hash
-            && self.cert.is_valid_par(c)
+            && self
+                .cert
+                .is_valid_with_threshold_par(c, c.one_honest_threshold())
         {
             Some(CertifiedBlock {
                 data: self.data,
