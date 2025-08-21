@@ -157,7 +157,7 @@ where
             keypair,
             state: State::Startup,
             clock: ConsensusTime(Default::default()),
-            nodes: NodeInfo::new(&committee),
+            nodes: NodeInfo::new(&committee, committee.quorum_size()),
             dag: Dag::new(committee.size()),
             round: RoundNumber::genesis(),
             committed_round: RoundNumber::genesis(),

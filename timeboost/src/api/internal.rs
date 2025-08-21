@@ -40,7 +40,7 @@ struct InternalApiService {
 impl InternalApi for InternalApiService {
     async fn submit_block(&self, r: Request<proto::block::Block>) -> Result<Response<()>, Status> {
         let p = r.into_inner();
-        let b = Block::new(p.round, p.payload);
+        let b = Block::new(p.number, p.round, p.payload);
         if let Err(err) = self.block_handler.enqueue(b).await {
             let _: CertifierDown = err;
             return Err(Status::internal("timeboost is shutting down"));

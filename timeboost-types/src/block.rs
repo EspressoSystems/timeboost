@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{
     marker::PhantomData,
-    ops::{Add, Deref, Sub},
+    ops::{Add, AddAssign, Deref, Sub},
 };
 
 use alloy::primitives::B256;
@@ -11,11 +11,10 @@ use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
 use sailfish_types::{Round, RoundNumber};
 use serde::{Deserialize, Serialize};
 
-/// The genesis timeboost block number.
-pub const GENESIS_BLOCK: BlockNumber = BlockNumber::new(0);
-
 /// A timeboost block number.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct BlockNumber(u64);
 
 impl BlockNumber {
@@ -25,20 +24,6 @@ impl BlockNumber {
 
     pub fn u64(&self) -> u64 {
         self.0
-    }
-
-    pub fn genesis() -> Self {
-        GENESIS_BLOCK
-    }
-
-    pub fn is_genesis(self) -> bool {
-        self == GENESIS_BLOCK
-    }
-}
-
-impl Default for BlockNumber {
-    fn default() -> Self {
-        GENESIS_BLOCK
     }
 }
 
@@ -59,6 +44,12 @@ impl Add<u64> for BlockNumber {
 
     fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
+    }
+}
+
+impl AddAssign<u64> for BlockNumber {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0 += rhs
     }
 }
 
@@ -94,19 +85,25 @@ impl fmt::Display for BlockNumber {
 #[derive(
     Debug, Default, Clone, Copy, Serialize, Deserialize, Ord, PartialOrd, PartialEq, Eq, Hash,
 )]
-pub struct BlockHash(B256);
+pub struct BlockHash([u8; 32]);
 
 impl From<[u8; 32]> for BlockHash {
     fn from(bytes: [u8; 32]) -> Self {
-        Self(B256::from(bytes))
+        Self(bytes)
     }
 }
 
 impl Deref for BlockHash {
-    type Target = B256;
+    type Target = [u8; 32];
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        B256::from(self.0).fmt(f)
     }
 }
 
@@ -120,19 +117,26 @@ impl Committable for BlockHash {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
+    number: BlockNumber,
     round: RoundNumber,
     payload: Bytes,
 }
 
 impl Block {
-    pub fn new<N>(r: N, p: Bytes) -> Self
+    pub fn new<B, N>(n: B, r: N, p: Bytes) -> Self
     where
+        B: Into<BlockNumber>,
         N: Into<RoundNumber>,
     {
         Self {
+            number: n.into(),
             round: r.into(),
             payload: p,
         }
+    }
+
+    pub fn num(&self) -> BlockNumber {
+        self.number
     }
 
     pub fn round(&self) -> RoundNumber {
@@ -237,7 +241,9 @@ impl CertifiedBlock<Unchecked> {
     pub fn validated(self, c: &Committee) -> Option<CertifiedBlock<Validated>> {
         if self.data.round == self.cert.data().round.num()
             && self.data.hash() == self.cert.data().hash
-            && self.cert.is_valid_par(c)
+            && self
+                .cert
+                .is_valid_with_threshold_par(c, c.one_honest_threshold())
         {
             Some(CertifiedBlock {
                 data: self.data,
