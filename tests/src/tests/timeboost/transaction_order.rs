@@ -3,10 +3,10 @@ use std::iter::once;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use alloy::primitives::B256;
 use metrics::NoMetrics;
 use sailfish_types::RoundNumber;
 use timeboost_sequencer::{Output, Sequencer};
-use timeboost_types::Transaction;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -64,6 +64,7 @@ async fn transaction_order() {
                         let Output::Transactions { round, transactions, .. } = out.unwrap() else {
                             continue
                         };
+                        let transactions = transactions.into_iter().map(|t| *t.hash()).collect();
                         tx.send((round, transactions)).unwrap()
                     }
                     _ = finish.cancelled() => {
@@ -82,7 +83,7 @@ async fn transaction_order() {
 
     tasks.spawn(gen_bundles(enc_keys[0].clone(), bcast.clone()));
 
-    let mut map: HashMap<(RoundNumber, Vec<Transaction>), usize> = HashMap::new();
+    let mut map: HashMap<(RoundNumber, Vec<B256>), usize> = HashMap::new();
     let mut transactions = 0;
 
     while transactions < NUM_OF_TRANSACTIONS {
@@ -97,12 +98,10 @@ async fn transaction_order() {
             transactions += trxs;
             continue;
         }
-        for ((round, trxs), k) in map {
+        for ((r, trxs), k) in map {
             eprintln!(
-                "{round}: {:?} = {k}",
-                trxs.into_iter()
-                    .map(|t| t.hash().to_string())
-                    .collect::<Vec<_>>()
+                "{r}: {:?} = {k}",
+                trxs.into_iter().map(|t| t.to_string()).collect::<Vec<_>>()
             )
         }
         panic!("outputs do not match")
