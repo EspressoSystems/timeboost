@@ -11,12 +11,14 @@ members = [
     "tests",
     "timeboost",
     "timeboost-builder",
+    "timeboost-contract",
     "timeboost-crypto",
     "timeboost-proto",
     "timeboost-sequencer",
     "timeboost-types",
     "timeboost-utils",
     "yapper",
+    "tests/block-verifier"
 ]
 resolver = "2"
 
@@ -27,12 +29,12 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp"] }
+alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom"] }
 alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
 anyhow = "1.0.89"
-arbitrary = "1.4.1"
+arbitrary = { version = "1", features = ["derive"] }
 arbtest = "0.3.2"
 ark-bls12-381 = "0.5"
 ark-bn254 = "0.5"
@@ -43,8 +45,8 @@ ark-secp256k1 = "0.5"
 ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
-async-lock = "3.3"
 async-trait = "0.1"
+axum = "0.8.4"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
@@ -57,16 +59,14 @@ constant_time_eq = "0.4"
 criterion = "0.7"
 crossbeam-queue = "0.3.11"
 data-encoding = "2.6.0"
-derive_builder = "0.20"
 derive_more = { version = "2.0", features = ["full"] }
 digest = "0.10"
-dyn-clone = "1.0.17"
 ed25519-compact = "2.1.1"
 either = "1.13.0"
 ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
-multiaddr = "0.18.2"
+http = "1.3.1"
 nohash-hasher = "0.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
@@ -82,27 +82,25 @@ serde_bytes = "0.11.15"
 serde_json = { version = "1.0" }
 serde_with = "3.12.0"
 sha2 = { version = "0.10", default-features = false }
-sha3 = "0.10.8"
 smallvec = "1.15.1"
 snow = "0.10.0"
 spongefish = { git = "https://github.com/arkworks-rs/spongefish.git", rev = "e9f7031", features = [
     "arkworks-algebra",
 ] }
 thiserror = "2.0"
-tide-disco = "0.9.3"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = "0.7.15"
-toml = "0.8.19"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
 url = "2.5.4"
-vbs = "0.1"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }

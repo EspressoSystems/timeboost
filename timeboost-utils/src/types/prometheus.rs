@@ -1,13 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use async_trait::async_trait;
-use futures::future::BoxFuture;
 use metrics::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
 use parking_lot::RwLock;
-use prometheus::{Encoder, HistogramOpts, TextEncoder};
-use tide_disco::method::ReadState;
+use prometheus::{HistogramOpts, TextEncoder};
 
 pub type Result<T> = std::result::Result<T, PrometheusError>;
 
@@ -100,35 +97,11 @@ impl PrometheusMetrics {
         let help = unit_label.unwrap_or(name);
         prometheus::Opts::new(name, help)
     }
-}
 
-impl tide_disco::metrics::Metrics for PrometheusMetrics {
-    type Error = PrometheusError;
-
-    fn export(&self) -> Result<String> {
-        let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
-        let mut buffer = vec![];
-        encoder.encode(&metric_families, &mut buffer)?;
-        String::from_utf8(buffer).map_err(|err| {
-            PrometheusError(anyhow::anyhow!(
-                "could not convert Prometheus output to UTF-8: {}",
-                err
-            ))
-        })
-    }
-}
-
-#[async_trait]
-impl ReadState for PrometheusMetrics {
-    /// The type of state which this type allows a caller to read.
-    type State = Self;
-
-    async fn read<T>(
-        &self,
-        op: impl Send + for<'a> FnOnce(&'a Self::State) -> BoxFuture<'a, T> + 'async_trait,
-    ) -> T {
-        op(self).await
+    pub fn export(&self) -> Result<String> {
+        let metrics = self.registry.gather();
+        let text = TextEncoder::new().encode_to_string(&metrics)?;
+        Ok(text)
     }
 }
 

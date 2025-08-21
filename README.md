@@ -30,8 +30,29 @@ of the protocol in Rust, as well as exhaustive testing. The layout of the reposi
 - `timeboost-proto`: Contains protobuf schema and protobuf generated code for inlusion list
 - `yapper`: Transaction submission test tool.
 
-## MSRV (minimum supported Rust version)
-The MSRV of this repository is 1.85.
+## Pre-requisites
+- **Rust toolchain** (Minimum supported rust version (MSRV): 1.88): [Install via rustup](https://rustup.rs/)
+- **just** (for command aliases):
+  ```sh
+  cargo install just
+  ```
+- **cargo-nextest** (for running tests):
+  ```sh
+  cargo install cargo-nextest
+  ```
+
+- **Foundry** (for Solidity development and testing): [Install Foundry](https://book.getfoundry.sh/getting-started/installation)
+  ```sh
+  curl -L https://foundry.paradigm.xyz | bash
+  foundryup
+  ```
+
+- **Docker** (for integration tests, if needed): [Install Docker](https://docs.docker.com/get-docker/)
+
+- **Initialize Submodules:**
+   ```sh
+   git submodule update --init --recursive
+   ```
 
 ## Build
 
@@ -43,6 +64,11 @@ just build
 Release build
 ```shell
 just build_release
+```
+
+## Contracts Build
+```sh
+just build-contracts
 ```
 
 ## Run
@@ -59,13 +85,13 @@ just run_integration_local
 
 ### Accessing Metrics
 
-Metrics are exposed on port 9000 + `i` for each node. Once the nodes are up and running, you
+Metrics are exposed on port 8000 + `i` for each node. Once the nodes are up and running, you
 can execute the following command to access the metrics for the first node. The system is working
 if you see output and the round number is gradually increasing.
 
 ```shell
 curl --request GET \
-  --url http://localhost:9000/status/metrics \
+  --url http://localhost:8000/status/metrics \
   --header 'User-Agent: insomnia/10.1.1'
 ```
 
@@ -85,6 +111,11 @@ ln -s ../../scripts/pre-commit .git/hooks/pre-commit
 
 ```shell
 just test
+```
+
+Contracts test
+```shell
+just test-contracts
 ```
 
 [noise]: https://noiseprotocol.org/

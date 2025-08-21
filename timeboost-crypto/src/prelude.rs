@@ -38,9 +38,6 @@ use crate::{
     vess::{self, ShoupVess},
 };
 use ark_bls12_381::G1Projective;
-use parking_lot::RwLock;
-use std::{ops::Deref, sync::Arc};
-use tokio::sync::Notify;
 pub use vess::VessCiphertext;
 
 /// Encryption key used in the DKG and key resharing for secure communication
@@ -75,40 +72,3 @@ pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
 
 /// Decryption key share in the threshold decryption scheme
 pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
-
-/// `ThresholdEncKeyCell` is a thread-safe container for an optional `ThresholdEncKey`
-/// that allows asynchronous notification when the key is set.
-#[derive(Debug, Clone, Default)]
-pub struct ThresholdEncKeyCell {
-    key: Arc<RwLock<Option<ThresholdEncKey>>>,
-    notify: Arc<Notify>,
-}
-
-impl ThresholdEncKeyCell {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set(&self, key: ThresholdEncKey) {
-        *self.key.write() = Some(key);
-        self.notify.notify_waiters();
-    }
-
-    pub fn get(&self) -> Option<ThresholdEncKey> {
-        (*self.key.read()).clone()
-    }
-
-    pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdEncKey>> {
-        self.key.read()
-    }
-
-    pub async fn read(&self) -> ThresholdEncKey {
-        loop {
-            let fut = self.notify.notified();
-            if let Some(k) = self.get() {
-                return k;
-            }
-            fut.await;
-        }
-    }
-}

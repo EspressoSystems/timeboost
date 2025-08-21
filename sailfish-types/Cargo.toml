@@ -6,11 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-arbitrary = { workspace = true, optional = true }
+arbitrary = { workspace = true, optional = true, features = ["derive"] }
 arrayvec = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-bytes = { workspace = true }
 committable = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
