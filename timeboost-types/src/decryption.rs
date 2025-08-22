@@ -11,7 +11,7 @@ use std::{
     collections::{BTreeMap, btree_map},
     sync::Arc,
 };
-use timeboost_crypto::prelude::{ThresholdCombKey, ThresholdEncKey};
+use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKey};
 use timeboost_crypto::{
     DecryptionScheme,
     feldman::FeldmanVssPublicParam,
@@ -25,6 +25,8 @@ use timeboost_crypto::{
 use tokio::sync::Notify;
 
 use crate::DkgBundle;
+
+const DKG_AAD: &[u8; 3] = b"dkg";
 
 type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
 type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
@@ -339,6 +341,15 @@ impl KeyStore {
     }
 }
 
+/// The mode of operation for the accumulator.
+#[derive(Debug, Clone)]
+pub enum AccumulatorMode {
+    /// Standard DKG mode
+    Dkg,
+    /// Resharing mode with the previous committee's combined key
+    Resharing(CombKey),
+}
+
 /// Accumulates DKG bundles for a given committee and finalizes when enough have been collected.
 ///
 /// DkgAccumulator tracks received bundles and determines when the threshold for finalizing
@@ -347,182 +358,313 @@ impl KeyStore {
 #[derive(Debug, Clone)]
 pub struct DkgAccumulator {
     store: KeyStore,
-    threshold: usize,
     bundles: Vec<DkgBundle>,
+    mode: AccumulatorMode,
+    complete: bool,
 }
 
 impl DkgAccumulator {
-    pub fn new(store: KeyStore) -> Self {
+    /// Create a new accumulator for DKG operations.
+    pub fn new_dkg(store: KeyStore) -> Self {
         Self {
-            threshold: store.committee().one_honest_threshold().get(),
             store,
             bundles: Vec::new(),
+            mode: AccumulatorMode::Dkg,
+            complete: false,
         }
     }
 
+    /// Create a new accumulator for resharing operations.
+    pub fn new_resharing(store: KeyStore, combkey: CombKey) -> Self {
+        Self {
+            store,
+            bundles: Vec::new(),
+            mode: AccumulatorMode::Resharing(combkey),
+            complete: false,
+        }
+    }
+
+    /// Get a reference to the committee.
     pub fn committee(&self) -> &Committee {
         &self.store.committee
     }
 
+    /// Get the bundles collected so far.
     pub fn bundles(&self) -> &[DkgBundle] {
         &self.bundles
     }
 
+    /// Get the mode of the accumulator.
+    pub fn mode(&self) -> &AccumulatorMode {
+        &self.mode
+    }
+
+    /// Get the completed state of the accumulator
+    pub fn completed(&self) -> bool {
+        self.complete
+    }
+
+    /// Check if the accumulator is empty.
     pub fn is_empty(&self) -> bool {
         self.bundles.is_empty()
     }
 
+    /// Try to add a bundle to the accumulator.
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         // caller should ensure that no bundles are added after finalization
         if self.bundles().contains(&bundle) {
             return Ok(());
         }
+
         let aad: &[u8; 3] = b"dkg";
         let committee = self.store.committee();
         let vess = Vess::new_fast();
-        vess.verify_shares(
-            committee,
-            self.store.sorted_keys(),
-            bundle.vess_ct(),
-            bundle.comm(),
-            aad,
-        )?;
+
+        // verify the bundle based on the mode
+        match &self.mode {
+            AccumulatorMode::Dkg => {
+                vess.verify_shares(
+                    committee,
+                    self.store.sorted_keys(),
+                    bundle.vess_ct(),
+                    bundle.comm(),
+                    aad,
+                )?;
+            }
+            AccumulatorMode::Resharing(combkey) => {
+                let Some(pub_share) = combkey.get_pub_share(bundle.origin().0.into()) else {
+                    return Err(VessError::FailedVerification);
+                };
+                vess.verify_reshares(
+                    committee,
+                    self.store.sorted_keys(),
+                    bundle.vess_ct(),
+                    bundle.comm(),
+                    aad,
+                    *pub_share,
+                )?;
+            }
+        }
+
         self.bundles.push(bundle);
         Ok(())
     }
 
+    /// Try to finalize the accumulator into a subset if enough bundles are collected.
     pub fn try_finalize(&mut self) -> Option<DkgSubset> {
-        if self.bundles.len() >= self.threshold {
-            let subset = DkgSubset::new(
-                self.committee().id(),
-                self.bundles.clone().into_iter().collect(),
-            );
+        if self.bundles.len() >= self.store.committee().one_honest_threshold().into() {
+            let combkey = match &self.mode {
+                AccumulatorMode::Dkg => None,
+                AccumulatorMode::Resharing(combkey) => Some(combkey.clone()),
+            };
+
+            let subset = DkgSubset {
+                committee_id: self.committee().id(),
+                bundles: self.bundles.clone(),
+                combkey,
+            };
+            self.complete = true;
+
             Some(subset)
         } else {
             None
         }
     }
+
+    /// Create a new finalized accumulator directly from key store and subset.
+    pub fn from_subset(key_store: KeyStore, subset: DkgSubset) -> Self {
+        let mode = match &subset.combkey {
+            None => AccumulatorMode::Dkg,
+            Some(combkey) => AccumulatorMode::Resharing(combkey.clone()),
+        };
+        Self {
+            store: key_store,
+            bundles: subset.bundles().to_vec(),
+            mode,
+            complete: true,
+        }
+    }
 }
 
-/// Represents a finalized subset of DKG bundles sufficient to combine.
+/// A unified subset that can represent both DKG and Resharing results.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DkgSubset {
-    committe_id: CommitteeId,
+    committee_id: CommitteeId,
     bundles: Vec<DkgBundle>,
+    combkey: Option<CombKey>,
 }
 
 impl DkgSubset {
-    pub fn new(committe_id: CommitteeId, bundles: Vec<DkgBundle>) -> Self {
-        Self {
-            committe_id,
-            bundles,
-        }
-    }
-
-    pub fn committe_id(&self) -> &CommitteeId {
-        &self.committe_id
-    }
-
-    pub fn bundles(&self) -> &[DkgBundle] {
-        &self.bundles
-    }
-}
-
-/// Accumulates resharing bundles (see `DkgAccumulator`).
-#[derive(Debug, Clone)]
-pub struct ResharingAccumulator {
-    store: KeyStore,
-    threshold: usize,
-    combkey: CombKey,
-    bundles: Vec<DkgBundle>,
-}
-
-impl ResharingAccumulator {
-    pub fn new(store: KeyStore, combkey: CombKey) -> Self {
-        Self {
-            threshold: store.committee().one_honest_threshold().get(),
-            store,
-            combkey,
-            bundles: Vec::new(),
-        }
-    }
-
-    pub fn committee(&self) -> &Committee {
-        &self.store.committee
-    }
-
-    pub fn bundles(&self) -> &[DkgBundle] {
-        &self.bundles
-    }
-
-    pub fn combkey(&self) -> &ThresholdCombKey {
-        &self.combkey
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.bundles.is_empty()
-    }
-
-    pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
-        // caller should ensure that no bundles are added after finalization
-        let Some(pub_share) = self.combkey.get_pub_share(bundle.origin().0.into()) else {
-            return Err(VessError::FailedVerification);
-        };
-        let aad: &[u8; 3] = b"dkg";
-        let committee = self.store.committee();
-        let vess = Vess::new_fast();
-        vess.verify_reshares(
-            committee,
-            self.store.sorted_keys(),
-            bundle.vess_ct(),
-            bundle.comm(),
-            aad,
-            *pub_share,
-        )?;
-        self.bundles.push(bundle);
-        Ok(())
-    }
-
-    pub fn try_finalize(&mut self) -> Option<ResharingSubset> {
-        if self.bundles.len() >= self.threshold {
-            let subset = ResharingSubset::new(
-                self.committee().id(),
-                self.bundles.clone().into_iter().collect(),
-                self.combkey().clone(),
-            );
-            Some(subset)
-        } else {
-            None
-        }
-    }
-}
-
-/// Represents a finalized subset of resharing bundles sufficient to combine.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ResharingSubset {
-    committee_id: CommitteeId,
-    bundles: Vec<DkgBundle>,
-    combkey: CombKey,
-}
-
-impl ResharingSubset {
-    pub fn new(committee_id: CommitteeId, bundles: Vec<DkgBundle>, combkey: CombKey) -> Self {
+    /// Create a new subset with DKG bundles.
+    pub fn new_dkg(committee_id: CommitteeId, bundles: Vec<DkgBundle>) -> Self {
         Self {
             committee_id,
             bundles,
-            combkey,
+            combkey: None,
         }
     }
 
+    /// Create a new subset with resharing bundles.
+    pub fn new_resharing(
+        committee_id: CommitteeId,
+        bundles: Vec<DkgBundle>,
+        combkey: CombKey,
+    ) -> Self {
+        Self {
+            committee_id,
+            bundles,
+            combkey: Some(combkey),
+        }
+    }
+
+    /// Get the committee ID.
     pub fn committee_id(&self) -> &CommitteeId {
         &self.committee_id
     }
 
+    /// Get the bundles in this subset.
     pub fn bundles(&self) -> &[DkgBundle] {
         &self.bundles
     }
 
-    pub fn combkey(&self) -> &CombKey {
-        &self.combkey
+    /// Get the combiner key if this is a resharing subset.
+    pub fn combkey(&self) -> Option<&CombKey> {
+        self.combkey.as_ref()
+    }
+
+    /// Check if this is a DKG subset.
+    pub fn is_dkg(&self) -> bool {
+        self.combkey.is_none()
+    }
+
+    /// Check if this is a resharing subset.
+    pub fn is_resharing(&self) -> bool {
+        self.combkey.is_some()
+    }
+
+    /// Extract the new threshold decryption key from the subset.
+    pub fn extract_key(
+        &self,
+        curr: KeyStore,
+        dkg_sk: &LabeledDkgDecKey,
+        prev: Option<KeyStore>,
+    ) -> anyhow::Result<DecryptionKey> {
+        let vess = Vess::new_fast();
+
+        match &self.combkey {
+            None => {
+                let mut dealings_iter = ResultIter::new(self.bundles().iter().map(|b| {
+                    vess.decrypt_share(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD)
+                        .map(|s| (s, b.comm().clone()))
+                }));
+
+                let dec_key = DecryptionKey::from_dkg(
+                    curr.committee().size().into(),
+                    dkg_sk.node_idx(),
+                    &mut dealings_iter,
+                )?;
+
+                dealings_iter.result()?;
+
+                Ok(dec_key)
+            }
+            Some(combkey) => {
+                let Some(prev) = prev else {
+                    return Err(anyhow!("previous key store missing"));
+                };
+                let dealings: Vec<_> = self
+                    .bundles()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let node_idx = b.origin().0.into();
+                        let pub_share = combkey
+                            .get_pub_share(node_idx)
+                            .ok_or(VessError::FailedVerification)?;
+                        let s = vess.decrypt_reshare(
+                            curr.committee(),
+                            dkg_sk,
+                            b.vess_ct(),
+                            DKG_AAD,
+                            *pub_share,
+                        )?;
+                        Ok((i, s, b.comm().clone()))
+                    })
+                    .collect::<Result<Vec<_>, VessError>>()?;
+
+                DecryptionKey::from_resharing(
+                    prev.committee(),
+                    curr.committee(),
+                    dkg_sk.node_idx(),
+                    dealings.into_iter(),
+                )
+            }
+        }
+    }
+}
+
+/// Wrapper iterator that bridges type conversion
+/// from Iterator<Item = Result<T, E>> to Iterator<Item = T>
+/// while early-returning an Err(E) if any item is an Err, without collecting or allocating memory.
+///
+/// # Usage
+/// ```no_run
+/// use timeboost_types::ResultIter;
+///
+/// fn use_result_iter<I, T, E>(iter: I) -> Result<(), E>
+/// where
+///     I: Iterator<Item = Result<T, E>>,
+/// {
+///     let mut result_iter = ResultIter::new(iter);
+///     for _ in &mut result_iter {
+///         // use item
+///     }
+///     result_iter.result()
+/// }
+/// ```
+pub struct ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    iter: I,
+    error: Option<E>,
+}
+
+impl<I, T, E> ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    /// construct a new ResultIter
+    pub fn new(iter: I) -> Self {
+        Self { iter, error: None }
+    }
+
+    /// Get the early-return result
+    pub fn result(self) -> Result<(), E> {
+        match self.error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<I, T, E> Iterator for ResultIter<I, T, E>
+where
+    I: Iterator<Item = Result<T, E>>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.error.is_some() {
+            return None;
+        }
+        match self.iter.next() {
+            Some(Ok(v)) => Some(v),
+            Some(Err(e)) => {
+                self.error = Some(e);
+                None
+            }
+            None => None,
+        }
     }
 }

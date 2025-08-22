@@ -1,21 +1,27 @@
+use std::collections::HashMap;
 use std::iter::once;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use alloy::eips::Encodable2718;
 use bytes::Bytes;
 use metrics::NoMetrics;
 use multisig::Certificate;
-use timeboost_builder::Certifier;
-use timeboost_sequencer::{Output, Sequencer};
-use timeboost_types::{Block, BlockInfo};
+use parking_lot::Mutex;
+use timeboost::builder::Certifier;
+use timeboost::sequencer::{Output, Sequencer};
+use timeboost::types::sailfish::RoundNumber;
+use timeboost::types::{Block, BlockInfo, BlockNumber, Transaction};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
-use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tokio_util::task::TaskTracker;
+use tracing::{debug, error, info};
 
 use super::{gen_bundles, make_configs};
 
@@ -27,17 +33,21 @@ async fn block_order() {
     init_logging();
 
     let num = NonZeroUsize::new(5).unwrap();
+    let quorum = 4;
     let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX);
 
     let mut rxs = Vec::new();
-    let mut tasks = JoinSet::new();
+    let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(3);
     let finish = CancellationToken::new();
+    let round2block = Arc::new(Round2Block::new());
 
     for (c, b) in cfg {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut brx = bcast.subscribe();
         let finish = finish.clone();
+        let label = c.sign_keypair().public_key();
+        let r2b = round2block.clone();
         tasks.spawn(async move {
             if c.is_recover() {
                 // delay start of a recovering node:
@@ -45,22 +55,35 @@ async fn block_order() {
             }
             let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
             let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
+            let mut r = None;
+            let handle = p.handle();
             loop {
                 select! {
                     t = brx.recv() => match t {
                         Ok(trx) => s.add_bundles(once(trx)),
-                        Err(RecvError::Lagged(_)) => continue,
+                        Err(RecvError::Lagged(_)) => {
+                            error!(node = %s.public_key(), "lagging behind");
+                            continue
+                        }
                         Err(err) => panic!("{err}")
                     },
                     o = s.next() => {
-                        let Output::Transactions { round, .. } = o.unwrap() else {
+                        let Output::Transactions { round, transactions, .. } = o.unwrap() else {
+                            error!(node = %s.public_key(), "no sequencer output");
                             continue
                         };
-                        let b = Block::new(*round, Bytes::new());
-                        p.handle().enqueue(b).await.unwrap()
+                        // We require unique round numbers.
+                        if Some(round) == r {
+                            continue
+                        }
+                        r = Some(round);
+                        let i = r2b.get(round);
+                        let b = Block::new(i, *round, hash(&transactions));
+                        handle.enqueue(b).await.unwrap()
                     }
                     b = p.next_block() => {
                         let b = b.expect("block");
+                        debug!(node = %s.public_key(), hash = %b.data().hash(), "block received");
                         let c: Certificate<BlockInfo> = b.into();
                         tx.send(c.into_data()).unwrap()
                     }
@@ -71,7 +94,7 @@ async fn block_order() {
                 }
             }
         });
-        rxs.push(rx)
+        rxs.push((label, rx))
     }
 
     for enc_key in &enc_keys {
@@ -80,28 +103,59 @@ async fn block_order() {
 
     tasks.spawn(gen_bundles(enc_keys[0].clone(), bcast.clone()));
 
-    // Collect all outputs:
-    let mut outputs: Vec<Vec<BlockInfo>> = vec![Vec::new(); num.get()];
-    for _ in 0..NUM_OF_BLOCKS {
-        for (i, o) in outputs.iter_mut().enumerate() {
-            let x = rxs[i].recv().await.unwrap();
-            o.push(x);
+    let mut map: HashMap<BlockInfo, usize> = HashMap::new();
+
+    for b in 0..NUM_OF_BLOCKS {
+        map.clear();
+        info!(block = %b);
+        for (node, r) in &mut rxs {
+            debug!(%node, block = %b, "awaiting ...");
+            let info = r.recv().await.unwrap();
+            *map.entry(info).or_default() += 1
         }
+        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
+            continue;
+        }
+        for (info, n) in map {
+            eprintln!("{}: {} = {n}", info.hash(), info.round().num())
+        }
+        panic!("outputs do not match")
     }
 
     finish.cancel();
+}
 
-    // Compare outputs:
-    for (a, b) in outputs.iter().zip(outputs.iter().skip(1)) {
-        if a != b {
-            for infos in &outputs {
-                let xy = infos
-                    .iter()
-                    .map(|i| (*i.num(), *i.round()))
-                    .collect::<Vec<_>>();
-                eprintln!("{xy:?}")
-            }
-            panic!("outputs do not match")
+fn hash(tx: &[Transaction]) -> Bytes {
+    let mut h = blake3::Hasher::new();
+    for t in tx {
+        h.update(&t.encoded_2718());
+    }
+    Bytes::copy_from_slice(h.finalize().as_bytes())
+}
+
+/// Map round numbers to block numbers.
+///
+/// Block numbers need to be consistent, consecutive and strictly monotonic.
+/// The round numbers of our sequencer output may contain gaps. To provide
+/// block numbers with the required properties we have here one monotonic
+/// counter and record which block number is used for a round number.
+/// Subsequent lookups will then get a consistent result.
+struct Round2Block {
+    counter: AtomicU64,
+    block_numbers: Mutex<HashMap<RoundNumber, BlockNumber>>,
+}
+
+impl Round2Block {
+    fn new() -> Self {
+        Self {
+            counter: AtomicU64::new(0),
+            block_numbers: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn get(&self, r: RoundNumber) -> BlockNumber {
+        let mut map = self.block_numbers.lock();
+        *map.entry(r)
+            .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
     }
 }

@@ -23,8 +23,8 @@ pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
 pub use chain_config::ChainConfig;
 pub use decryption::{
-    DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgSubset, KeyStore, KeyStoreVec,
-    ResharingAccumulator, ResharingSubset,
+    AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgSubset, KeyStore,
+    KeyStoreVec, ResultIter,
 };
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;

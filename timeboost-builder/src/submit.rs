@@ -241,9 +241,9 @@ mod tests {
 
     impl BlockGen {
         fn next(&mut self) -> CertifiedBlock<Validated> {
-            let b = Block::new(self.r.num(), Bytes::new());
+            let b = Block::new(self.i, self.r.num(), Bytes::new());
             let i = BlockInfo::new(self.i, self.r, b.hash());
-            self.i = self.i + 1;
+            self.i += 1;
             self.r.set_num(self.r.num() + 1);
             let mut a = VoteAccumulator::new(self.c.clone());
             for k in &self.k {
