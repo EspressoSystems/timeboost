@@ -298,7 +298,6 @@ mod tests {
                     .unwrap(),
             )
             .label("decaf_smoke")
-            .https_only(true)
             .build();
 
         let clt = Client::new(cfg.clone());
