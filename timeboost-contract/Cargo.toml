@@ -9,6 +9,7 @@ rust-version.workspace = true
 alloy = { workspace = true }
 anyhow = { workspace = true }
 dotenvy = "0.15"
+rand = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 

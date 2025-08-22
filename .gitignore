@@ -35,3 +35,7 @@ __pycache__/
 
 # Rust bindings for smart contracts
 timeboost-contract/src/bindings
+
+# env var files that may contains secrets
+.env*
+!.env*.example

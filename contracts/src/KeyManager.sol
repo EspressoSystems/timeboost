@@ -197,6 +197,21 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     /**
+     * @notice This function is used to get the committee members.
+     * @dev We need this because alloy binding for `.committees(id)` getter doesn't include dynamic array pointer
+     * @dev Reverts if the id is greater than the length of the committees mapping.
+     * @dev Reverts if the id is less than the head committee id.
+     * @param id The id of the committee.
+     * @return members The committee members.
+     */
+    function getMembersById(uint64 id) external view virtual returns (CommitteeMember[] memory members) {
+        if (id < _oldestStoredCommitteeId || committees[id].id != id) {
+            revert CommitteeIdDoesNotExist(id);
+        }
+        return committees[id].members;
+    }
+
+    /**
      * @notice This function is used to get the committee by id.
      * @dev Reverts if the id is greater than the length of the committees mapping.
      * @dev Reverts if the id is less than the head committee id.
