@@ -296,7 +296,6 @@ mod tests {
                         .unwrap(),
                 )
                 .label(k.public_key().to_string())
-                .https_only(true)
                 .build();
 
             let scfg = SubmitterConfig::builder()
