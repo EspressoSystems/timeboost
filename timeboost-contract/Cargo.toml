@@ -7,6 +7,8 @@ rust-version.workspace = true
 
 [dependencies]
 alloy = { workspace = true }
+anyhow = { workspace = true }
+dotenvy = "0.15"
 tracing = { workspace = true }
 tokio = { workspace = true }
 

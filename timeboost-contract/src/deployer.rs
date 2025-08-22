@@ -45,16 +45,14 @@ pub async fn deploy_key_manager_contract(
 
 #[cfg(test)]
 mod tests {
-    use crate::{KeyManager, deployer::deploy_key_manager_contract};
-    use alloy::{primitives::Address, providers::ProviderBuilder};
+    use alloy::providers::WalletProvider;
+
+    use crate::KeyManager;
 
     #[tokio::test]
     async fn test_key_manager_deployment() {
-        let provider = ProviderBuilder::new().connect_anvil_with_wallet();
-        let manager = Address::random();
-        let addr = deploy_key_manager_contract(&provider, manager)
-            .await
-            .unwrap();
+        let (provider, addr) = crate::init_test_chain().await.unwrap();
+        let manager = provider.default_signer_address();
         let contract = KeyManager::new(addr, provider);
 
         // try read from the contract storage
