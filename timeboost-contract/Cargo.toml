@@ -8,10 +8,11 @@ rust-version.workspace = true
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
-dotenvy = "0.15"
 rand = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 
 [build-dependencies]
 alloy = { workspace = true }

@@ -11571,9 +11571,10 @@ version = "0.1.0"
 dependencies = [
  "alloy 1.0.24",
  "anyhow",
- "dotenvy",
  "rand 0.9.2",
+ "serde",
  "tokio",
+ "toml",
  "tracing",
 ]
 
