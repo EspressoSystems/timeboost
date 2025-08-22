@@ -24,6 +24,7 @@ pub struct Config {
     pub(crate) delays: [u8; NUM_DELAYS.get()],
 
     /// Submitter should connect only with https?
+    #[builder(default = true)]
     pub(crate) https_only: bool,
 }
 
