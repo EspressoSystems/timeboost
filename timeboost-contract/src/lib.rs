@@ -5,10 +5,8 @@
 use alloy::{
     primitives::Address,
     providers::{ProviderBuilder, WalletProvider},
-    transports::http::reqwest::Url,
 };
 use anyhow::Result;
-use serde::Deserialize;
 
 // Include the generated contract bindings
 // The build script auto-detects contracts and generates bindings in src/bindings/
@@ -17,38 +15,8 @@ pub mod deployer;
 pub mod provider;
 mod sol_types;
 
-use provider::{HttpProviderWithWallet, TestProviderWithWallet, build_provider};
+use provider::TestProviderWithWallet;
 pub use sol_types::*;
-
-/// Config type for the key manager who has the permission to update the KeyManager contract
-/// See `test-configs/keymanager.toml` for an example
-#[derive(Deserialize)]
-struct KeyManagerConfig {
-    wallet: LocalWalletConfig,
-}
-
-#[derive(Deserialize)]
-struct LocalWalletConfig {
-    mnemonic: String,
-    index: u32,
-}
-
-/// Connect to a real blockchain, deploy the KeyManager contract, set the
-/// `TIMEBOOST_KEY_MANAGER_MNEMONIC` as the manager.
-/// Returns the (wallet provider, KeyManager address).
-pub async fn init_chain(chain: Url) -> Result<(HttpProviderWithWallet, Address)> {
-    let config =
-        toml::from_str::<KeyManagerConfig>(include_str!("../../test-configs/keymanager.toml"))?;
-
-    let mnemonic = config.wallet.mnemonic;
-    let account_idx = config.wallet.index;
-    let provider = build_provider(mnemonic, account_idx, chain);
-
-    let km_addr =
-        deployer::deploy_key_manager_contract(&provider, provider.default_signer_address()).await?;
-
-    Ok((provider, km_addr))
-}
 
 /// Similar to [`init_chain()`] but spawn a local test chain and deploy contracts there instead.
 pub async fn init_test_chain() -> Result<(TestProviderWithWallet, Address)> {

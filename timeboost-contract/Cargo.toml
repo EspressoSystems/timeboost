@@ -8,11 +8,20 @@ rust-version.workspace = true
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 toml = { workspace = true }
+toml_edit = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
 
 [build-dependencies]
 alloy = { workspace = true }
+
+[[bin]]
+name = "deploy"
+path = "src/binaries/deploy.rs"
