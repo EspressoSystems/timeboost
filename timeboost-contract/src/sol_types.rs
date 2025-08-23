@@ -1,8 +1,5 @@
 //! Solidity types for contract interaction
 
-use alloy::primitives::Bytes;
-use rand::prelude::*;
-
 // We manually re-export the type here carefully due to alloy's lack of shared type:
 // tracking issue: https://github.com/foundry-rs/foundry/issues/10153
 pub use crate::bindings::{
@@ -12,7 +9,11 @@ pub use crate::bindings::{
 };
 
 impl CommitteeMemberSol {
+    #[cfg(test)]
     pub fn random() -> Self {
+        use alloy::primitives::Bytes;
+        use rand::prelude::*;
+
         let mut rng = rand::rng();
         CommitteeMemberSol {
             sigKey: Bytes::from(rng.random::<[u8; 32]>()),

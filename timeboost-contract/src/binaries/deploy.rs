@@ -1,39 +1,57 @@
 //! CLI for contract deployment
 //!
+//! # Usage
+//!
+//! ```
+//! # Write config to stdout
+//! cargo run --bin deploy -- -m "your mnemonic here" -i 0 -u http://localhost:8545
+//!
+//! # Write config to a file
+//! cargo run --bin deploy -- -m "your mnemonic here" -i 0 -u http://localhost:8545 -o output.toml
+//! ```
+//!
 //! # Local test
 //! Run `just test-contract-deploy`
 use alloy::{primitives::Address, providers::WalletProvider};
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use timeboost_contract::provider::build_provider;
 use timeboost_utils::types::logging;
-use toml_edit::{DocumentMut, value};
+use tracing::info;
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    /// Config file storing `KeyManagerConfig`
-    #[clap(short, long, default_value = "./test-configs/keymanager.toml")]
-    config: PathBuf,
+    #[clap(short, long)]
+    mnemonic: String,
+
+    #[clap(short, long)]
+    index: u32,
+
+    #[clap(short, long)]
+    url: Url,
+
+    #[clap(short, long)]
+    output: Option<PathBuf>,
 }
 
 /// Config type for the key manager who has the permission to update the KeyManager contract
 /// See `test-configs/keymanager.toml` for an example
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct KeyManagerConfig {
     wallet: LocalWalletConfig,
     deployments: Deployments,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct LocalWalletConfig {
     mnemonic: String,
     account_index: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[allow(dead_code)]
 struct Deployments {
     /// RPC endpoint of the target chain
@@ -47,49 +65,48 @@ async fn main() -> Result<()> {
     logging::init_logging();
 
     let args = Args::parse();
-    let config_path = args.config;
 
-    tracing::info!(
-        "Starting contract deployment with config: {:?}",
-        config_path
-    );
+    info!("Starting contract deployment");
 
-    // Read and parse config file
-    let config_content = fs::read_to_string(&config_path)
-        .with_context(|| format!("Failed to read config file: {config_path:?}"))?;
-    let config: KeyManagerConfig = toml::from_str(&config_content)
-        .with_context(|| format!("Failed to parse config file: {config_path:?}"))?;
-    tracing::info!("Config loaded successfully");
+    // Construct the config from command-line arguments
+    let mut cfg = KeyManagerConfig {
+        wallet: LocalWalletConfig {
+            mnemonic: args.mnemonic,
+            account_index: args.index,
+        },
+        deployments: Deployments {
+            chain_url: args.url,
+            key_manager: None,
+        },
+    };
 
     // Build provider
     let provider = build_provider(
-        config.wallet.mnemonic,
-        config.wallet.account_index,
-        config.deployments.chain_url,
+        cfg.wallet.mnemonic.clone(),
+        cfg.wallet.account_index,
+        cfg.deployments.chain_url.clone(),
     );
 
     let manager = provider.default_signer_address();
-    tracing::info!("Deploying with maanger address: {manager:#x}");
+    info!("Deploying with manager address: {manager:#x}");
 
     // Deploy the KeyManager contract
     let km_addr = timeboost_contract::deployer::deploy_key_manager_contract(&provider, manager)
         .await
         .context("Failed to deploy KeyManager contract")?;
-    tracing::info!("KeyManager deployed successfully at: {km_addr:#x}");
+    info!("KeyManager deployed successfully at: {km_addr:#x}");
 
-    // Update the config file with the deployed address
-    let mut doc = config_content
-        .parse::<DocumentMut>()
-        .with_context(|| format!("Failed to parse TOML in config file: {config_path:?}"))?;
+    // Update the address and deliver the final config
+    cfg.deployments.key_manager = Some(km_addr);
+    let toml = toml::to_string_pretty(&cfg)?;
 
-    // Set the key_manager address in the deployments section
-    doc["deployments"]["key_manager"] = value(format!("{km_addr:#x}"));
-
-    // Write back to file
-    fs::write(&config_path, doc.to_string())
-        .with_context(|| format!("Failed to write updated config file: {config_path:?}"))?;
-
-    tracing::info!("Config file updated with KeyManager address: {km_addr:#x}");
+    if let Some(out) = &args.output {
+        fs::write(out, &toml)?;
+        info!(file=?out, "Config written to file");
+    } else {
+        println!("===== OUTPUT ======");
+        println!("{toml}");
+    }
 
     Ok(())
 }

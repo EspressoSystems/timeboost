@@ -136,31 +136,4 @@ test-individually:
   done
 
 test-contract-deploy:
-  #!/bin/bash
-  set -exo pipefail
-
-  # Kill any existing anvil processes to avoid port conflicts
-  pkill anvil || true
-  sleep 1
-
-  # Start anvil in background
-  anvil --port 8545 > anvil.log 2>&1 &
-  ANVIL_PID=$!
-  echo $ANVIL_PID > .anvil.pid
-
-  # Set up cleanup function
-  cleanup() {
-    if [ -n "$ANVIL_PID" ]; then
-      kill $ANVIL_PID 2>/dev/null || true
-    fi
-    rm -f .anvil.pid anvil.log
-  }
-
-  # Ensure cleanup happens on exit
-  trap cleanup EXIT
-
-  # Wait for anvil to start
-  sleep 1
-
-  # Run the deploy command
-  RUST_LOG=info cargo run --bin deploy --config ./test-configs/keymanager.toml
+  ./scripts/test-contract-deploy

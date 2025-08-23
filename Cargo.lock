@@ -11577,9 +11577,7 @@ dependencies = [
  "timeboost-utils",
  "tokio",
  "toml",
- "toml_edit",
  "tracing",
- "tracing-subscriber 0.3.19",
  "url",
 ]
 

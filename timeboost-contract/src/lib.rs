@@ -18,7 +18,8 @@ mod sol_types;
 use provider::TestProviderWithWallet;
 pub use sol_types::*;
 
-/// Similar to [`init_chain()`] but spawn a local test chain and deploy contracts there instead.
+/// Spawn a local test blockchain and deploy KeyManager contract.
+/// Returns a WalletProvider to the chain and the deployed contract address.
 pub async fn init_test_chain() -> Result<(TestProviderWithWallet, Address)> {
     // this provider wraps both the test chain instance (exit on drop), and the wallet provider
     let provider = ProviderBuilder::new().connect_anvil_with_wallet();
