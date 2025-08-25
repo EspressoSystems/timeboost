@@ -3,6 +3,7 @@ mod multiwatcher;
 mod types;
 mod watcher;
 
+use std::convert::Infallible;
 use std::iter::empty;
 use std::time::Duration;
 
@@ -58,7 +59,7 @@ impl Client {
     where
         N: Into<NamespaceId>,
     {
-        let trx = Transaction::new(nsid.into(), serialize(cb)?);
+        let trx = Transaction::new(nsid.into(), minicbor::to_vec(cb)?);
         let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
@@ -99,7 +100,7 @@ impl Client {
             return Either::Left(empty());
         }
         Either::Right(trxs.into_iter().filter_map(move |t| {
-            match deserialize::<CertifiedBlock<Unchecked>>(t.payload()) {
+            match minicbor::decode::<CertifiedBlock<Unchecked>>(t.payload()) {
                 Ok(b) => {
                     let Some(c) = cvec.get(b.committee()) else {
                         warn!(
@@ -224,11 +225,8 @@ pub enum Error {
     #[error("json error: {0}")]
     Json(#[from] json::Error),
 
-    #[error("bincode encode error: {0}")]
-    BincodeEncode(#[from] bincode::error::EncodeError),
-
-    #[error("bincode decode error: {0}")]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    #[error("encode error: {0}")]
+    Encode(#[from] minicbor::encode::Error<Infallible>),
 
     #[error("url error: {0}")]
     Url(#[from] url::ParseError),
@@ -263,17 +261,6 @@ enum InternalError {
 
     #[error("api status: {0}")]
     Status(StatusCode),
-}
-
-fn serialize<T: Serialize>(d: &T) -> Result<Vec<u8>, Error> {
-    let v = bincode::serde::encode_to_vec(d, bincode::config::standard())?;
-    Ok(v)
-}
-
-fn deserialize<T: DeserializeOwned>(d: &[u8]) -> Result<T, Error> {
-    bincode::serde::decode_from_slice(d, bincode::config::standard())
-        .map(|(msg, _)| msg)
-        .map_err(Into::into)
 }
 
 #[cfg(test)]

@@ -1,14 +1,25 @@
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use constant_time_eq::constant_time_eq;
+use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::{Committee, Keypair, PublicKey, Signature};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(map)]
 pub struct Signed<D: Committable> {
+    #[cbor(n(0))]
     data: D,
+
+    #[cbor(n(1), with = "adapters::commitment")]
     commitment: Commitment<D>,
+
+    #[cbor(n(2))]
     signature: Signature,
+
+    #[cbor(n(3))]
     signing_key: PublicKey,
 }
 

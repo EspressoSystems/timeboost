@@ -9,6 +9,7 @@ rust-version.workspace = true
 benchmark = []
 
 [dependencies]
+adapters = { path = "../adapters" }
 bimap = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
@@ -16,6 +17,7 @@ committable = { workspace = true }
 constant_time_eq = { workspace = true }
 ed25519-compact = { workspace = true }
 either = { workspace = true }
+minicbor = { workspace = true }
 rayon = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use bimap::BiBTreeMap;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{KeyId, PublicKey};
@@ -103,7 +104,10 @@ impl Committee {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(transparent)]
 #[serde(transparent)]
 pub struct CommitteeId(u64);
 
