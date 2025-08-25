@@ -1,0 +1,8 @@
+effective_timestamp = ""
+
+# Append by each member, flatten to match Solidity's input signature
+# [[members]]
+# sig_ver_key = ""
+# dh_pub_key = ""
+# dkg_enc_key = ""
+# sailfish_net_addr = ""

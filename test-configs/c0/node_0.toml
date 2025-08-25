@@ -1,0 +1,31 @@
+committee_size = 13
+# determined by the lexicological order of all members's sig_ver_key
+# not immediately available, only computed after syncing from contract
+key_id = ""
+
+[public.keys]
+sig_ver_key = ""
+dh_pub_key = ""
+dkg_enc_key = ""
+
+[public.net]
+sailfish = ""
+decrypter = ""
+certifier = ""
+internal = ""
+
+[public.chain_config]
+parent_chain_id = 1
+parent_chain_rpc_url = ""
+parent_ibox_contr_addr = ""
+parent_block_tag = ""
+key_manager_contr_addr = ""
+
+# optional
+[public.nitro]
+node_net_addr= ""
+
+[private]
+signing_key = ""
+dh_key = ""
+dkg_dec_key = ""
