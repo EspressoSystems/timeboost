@@ -16,9 +16,10 @@ use alloy::{primitives::Address, providers::WalletProvider};
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Serialize;
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 use timeboost_contract::provider::build_provider;
 use timeboost_utils::types::logging;
+use tokio::fs;
 use tracing::info;
 use url::Url;
 
@@ -100,7 +101,7 @@ async fn main() -> Result<()> {
     let toml = toml::to_string_pretty(&cfg)?;
 
     if let Some(out) = &args.output {
-        fs::write(out, &toml)?;
+        fs::write(out, &toml).await?;
         info!(file=?out, "Config written to file");
     } else {
         println!("{toml}");
