@@ -23,6 +23,7 @@ use spongefish::{
 };
 use std::collections::{HashMap, VecDeque};
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::{
     feldman::{FeldmanCommitment, FeldmanVss, FeldmanVssPublicParam},
@@ -864,6 +865,8 @@ pub enum VessError {
     DecryptionFailed,
     #[error("impossible happens, some function contracts violated")]
     Unreachable,
+    #[error("join error: {0}")]
+    Join(#[from] JoinError),
 }
 
 impl From<ark_serialize::SerializationError> for VessError {
