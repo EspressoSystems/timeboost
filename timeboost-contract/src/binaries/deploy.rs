@@ -15,7 +15,7 @@
 use alloy::{primitives::Address, providers::WalletProvider};
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{fs, path::PathBuf};
 use timeboost_contract::provider::build_provider;
 use timeboost_utils::types::logging;
@@ -39,20 +39,19 @@ struct Args {
 
 /// Config type for the key manager who has the permission to update the KeyManager contract
 /// See `test-configs/keymanager.toml` for an example
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 struct KeyManagerConfig {
     wallet: LocalWalletConfig,
     deployments: Deployments,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 struct LocalWalletConfig {
     mnemonic: String,
     account_index: u32,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[allow(dead_code)]
+#[derive(Debug, Serialize)]
 struct Deployments {
     /// RPC endpoint of the target chain
     chain_url: Url,
@@ -85,7 +84,7 @@ async fn main() -> Result<()> {
         cfg.wallet.mnemonic.clone(),
         cfg.wallet.account_index,
         cfg.deployments.chain_url.clone(),
-    );
+    )?;
 
     let manager = provider.default_signer_address();
     info!("Deploying with manager address: {manager:#x}");
@@ -104,7 +103,6 @@ async fn main() -> Result<()> {
         fs::write(out, &toml)?;
         info!(file=?out, "Config written to file");
     } else {
-        println!("===== OUTPUT ======");
         println!("{toml}");
     }
 
