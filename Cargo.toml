@@ -29,7 +29,7 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom"] }
+alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom", "signer-mnemonic"] }
 alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
@@ -92,6 +92,8 @@ tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = "0.7.15"
+toml = "0.8"
+toml_edit = "0.22"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
@@ -100,7 +102,7 @@ tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
-url = "2.5.4"
+url = { version = "2.5.4", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }

@@ -45,19 +45,50 @@ pub async fn deploy_key_manager_contract(
 
 #[cfg(test)]
 mod tests {
-    use crate::{KeyManager, deployer::deploy_key_manager_contract};
-    use alloy::{primitives::Address, providers::ProviderBuilder};
+    use alloy::{providers::WalletProvider, sol_types::SolValue};
+    use rand::prelude::*;
+
+    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager};
 
     #[tokio::test]
     async fn test_key_manager_deployment() {
-        let provider = ProviderBuilder::new().connect_anvil_with_wallet();
-        let manager = Address::random();
-        let addr = deploy_key_manager_contract(&provider, manager)
-            .await
-            .unwrap();
+        let (provider, addr) = crate::init_test_chain().await.unwrap();
+        let manager = provider.default_signer_address();
         let contract = KeyManager::new(addr, provider);
 
         // try read from the contract storage
         assert_eq!(contract.manager().call().await.unwrap(), manager);
+
+        // try write to the contract storage
+        let rng = &mut rand::rng();
+        let members = (0..5)
+            .map(|_| CommitteeMemberSol::random())
+            .collect::<Vec<_>>();
+        let timestamp = rng.random::<u64>();
+
+        let _tx_receipt = contract
+            .setNextCommittee(timestamp, members.clone())
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+
+        // make sure next committee is correctly registered
+        assert_eq!(
+            contract
+                .getCommitteeById(0)
+                .call()
+                .await
+                .unwrap()
+                .abi_encode_sequence(),
+            CommitteeSol {
+                id: 0,
+                effectiveTimestamp: timestamp,
+                members,
+            }
+            .abi_encode_sequence()
+        );
     }
 }

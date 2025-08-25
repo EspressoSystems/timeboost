@@ -2,11 +2,29 @@
 //!
 //! This crate provides Rust bindings and API to interact with smart contracts,
 
+use alloy::{
+    primitives::Address,
+    providers::{ProviderBuilder, WalletProvider},
+};
+use anyhow::Result;
+
 // Include the generated contract bindings
 // The build script auto-detects contracts and generates bindings in src/bindings/
-pub mod bindings;
+mod bindings;
 pub mod deployer;
+pub mod provider;
+mod sol_types;
 
-// We manually re-export the type here carefully due to alloy's lack of shared type:
-// tracking issue: https://github.com/foundry-rs/foundry/issues/10153
-pub use bindings::{erc1967proxy::ERC1967Proxy, keymanager::KeyManager};
+use provider::TestProviderWithWallet;
+pub use sol_types::*;
+
+/// Spawn a local test blockchain and deploy KeyManager contract.
+/// Returns a WalletProvider to the chain and the deployed contract address.
+pub async fn init_test_chain() -> Result<(TestProviderWithWallet, Address)> {
+    // this provider wraps both the test chain instance (exit on drop), and the wallet provider
+    let provider = ProviderBuilder::new().connect_anvil_with_wallet();
+    let km_addr =
+        deployer::deploy_key_manager_contract(&provider, provider.default_signer_address()).await?;
+
+    Ok((provider, km_addr))
+}

@@ -134,3 +134,6 @@ test-individually:
     echo "Testing $pkg"; \
     cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
+
+test-contract-deploy:
+  ./scripts/test-contract-deploy
