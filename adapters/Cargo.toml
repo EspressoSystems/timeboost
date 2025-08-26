@@ -1,0 +1,10 @@
+[package]
+name = "adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+committable = { workspace = true }
+minicbor = { workspace = true }

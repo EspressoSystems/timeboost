@@ -17,8 +17,8 @@ pub struct Keypair {
 #[serde(transparent)]
 pub struct PublicKey {
     #[serde(
-        serialize_with = "util::encode",
-        deserialize_with = "util::decode_x25519_pk"
+        serialize_with = "util::serialize",
+        deserialize_with = "util::deserialize_x25519_pk"
     )]
     key: x25519::PublicKey,
 }
@@ -27,8 +27,8 @@ pub struct PublicKey {
 #[serde(transparent)]
 pub struct SecretKey {
     #[serde(
-        serialize_with = "util::encode",
-        deserialize_with = "util::decode_x25519_sk"
+        serialize_with = "util::serialize",
+        deserialize_with = "util::deserialize_x25519_sk"
     )]
     key: x25519::SecretKey,
 }

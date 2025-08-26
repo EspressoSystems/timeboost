@@ -11,6 +11,7 @@ arrayvec = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 committable = { workspace = true }
+minicbor = { workspace = true }
 multisig = { path = "../multisig" }
 serde = { workspace = true }
 thiserror = { workspace = true }
