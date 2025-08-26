@@ -69,7 +69,7 @@ struct Cli {
     namespace: u64,
 
     /// Submitter should connect only with https?
-    #[clap(long, default_value_t = true)]
+    #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
 
     /// The until value to use for the committee config.
