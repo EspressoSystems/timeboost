@@ -9,6 +9,8 @@ RUN apt update && apt-get install -y protobuf-compiler libssl-dev
 RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 ENV PATH="/root/.foundry/bin:${PATH}"
 RUN forge --version
+RUN rustup component add rustfmt --toolchain nightly
+RUN cargo install just
 
 RUN cargo build --release --bin timeboost
 
