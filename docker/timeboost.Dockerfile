@@ -1,5 +1,5 @@
 # Builder stage
-FROM rust:bullseye AS builder
+FROM rust:bookworm AS builder
 SHELL ["/bin/bash", "-c"]
 
 WORKDIR /app
