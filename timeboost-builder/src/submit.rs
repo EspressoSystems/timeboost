@@ -252,7 +252,7 @@ mod tests {
                 }
             }
             let l = self.c.leader(*i.round().num() as usize) == self.p;
-            CertifiedBlock::new(a.certificate().cloned().unwrap(), b, l)
+            CertifiedBlock::v1(a.certificate().cloned().unwrap(), b, l)
         }
     }
 

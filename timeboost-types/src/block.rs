@@ -211,9 +211,12 @@ impl Committable for BlockInfo {
 #[cbor(map)]
 pub struct CertifiedBlock<S> {
     #[cbor(n(0))]
-    data: Block,
+    version: u8,
 
     #[cbor(n(1))]
+    data: Block,
+
+    #[cbor(n(2))]
     cert: Certificate<BlockInfo>,
 
     #[cbor(skip)]
@@ -224,13 +227,18 @@ pub struct CertifiedBlock<S> {
 }
 
 impl<S> CertifiedBlock<S> {
-    pub fn new(cert: Certificate<BlockInfo>, data: Block, leader: bool) -> Self {
+    pub fn v1(cert: Certificate<BlockInfo>, data: Block, leader: bool) -> Self {
         Self {
+            version: 1,
             cert,
             data,
             leader,
             _marker: PhantomData,
         }
+    }
+
+    pub fn version(&self) -> u8 {
+        self.version
     }
 
     pub fn committee(&self) -> CommitteeId {
@@ -261,6 +269,7 @@ impl CertifiedBlock<Unchecked> {
                 .is_valid_with_threshold_par(c, c.one_honest_threshold())
         {
             Some(CertifiedBlock {
+                version: self.version,
                 data: self.data,
                 cert: self.cert,
                 leader: self.leader,

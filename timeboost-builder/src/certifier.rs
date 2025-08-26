@@ -665,7 +665,7 @@ impl Tracker {
     async fn deliver(&self, leader: bool, tx: &Sender<CertifiedBlock<Validated>>) -> Result<bool> {
         if let Some(cert) = self.votes.certificate() {
             if let Some(block) = &self.block {
-                let cb = CertifiedBlock::new(cert.clone(), block.clone(), leader);
+                let cb = CertifiedBlock::v1(cert.clone(), block.clone(), leader);
                 tx.send(cb).await.map_err(|_| EndOfPlay::CertifierDown)?;
                 return Ok(true);
             }
