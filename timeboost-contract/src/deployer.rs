@@ -48,7 +48,7 @@ mod tests {
     use alloy::{providers::WalletProvider, sol_types::SolValue};
     use rand::prelude::*;
 
-    use crate::{CommitteeMemberSol, KeyManager};
+    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager};
 
     #[tokio::test]
     async fn test_key_manager_deployment() {
@@ -76,24 +76,19 @@ mod tests {
             .unwrap();
 
         // make sure next committee is correctly registered
-        assert_eq!(contract.nextCommitteeId().call().await.unwrap(), 1);
         assert_eq!(
             contract
-                .committees(0)
-                .call()
-                .await
-                .unwrap()
-                .effectiveTimestamp,
-            timestamp
-        );
-        assert_eq!(
-            contract
-                .getMembersById(0)
+                .getCommitteeById(0)
                 .call()
                 .await
                 .unwrap()
                 .abi_encode_sequence(),
-            members.abi_encode_sequence()
+            CommitteeSol {
+                id: 0,
+                effectiveTimestamp: timestamp,
+                members,
+            }
+            .abi_encode_sequence()
         );
     }
 }

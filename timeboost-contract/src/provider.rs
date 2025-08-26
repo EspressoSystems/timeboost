@@ -4,25 +4,30 @@
 use alloy::{
     network::EthereumWallet,
     providers::ProviderBuilder,
-    signers::local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
+    signers::local::{LocalSignerError, MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
     transports::http::reqwest::Url,
 };
 use timeboost_types::HttpProviderWithWallet;
 
 /// Build a local signer from wallet mnemonic and account index
-pub fn build_signer(mnemonic: String, account_index: u32) -> PrivateKeySigner {
+pub fn build_signer(
+    mnemonic: String,
+    account_index: u32,
+) -> Result<PrivateKeySigner, LocalSignerError> {
     MnemonicBuilder::<English>::default()
         .phrase(mnemonic)
-        .index(account_index)
-        .expect("wrong mnemonic or index")
+        .index(account_index)?
         .build()
-        .expect("fail to build signer")
 }
 
 /// a handy thin wrapper around wallet builder and provider builder that directly
 /// returns an instantiated `Provider` with default fillers with wallet, ready to send tx
-pub fn build_provider(mnemonic: String, account_index: u32, url: Url) -> HttpProviderWithWallet {
-    let signer = build_signer(mnemonic, account_index);
+pub fn build_provider(
+    mnemonic: String,
+    account_index: u32,
+    url: Url,
+) -> Result<HttpProviderWithWallet, LocalSignerError> {
+    let signer = build_signer(mnemonic, account_index)?;
     let wallet = EthereumWallet::from(signer);
-    ProviderBuilder::new().wallet(wallet).connect_http(url)
+    Ok(ProviderBuilder::new().wallet(wallet).connect_http(url))
 }
