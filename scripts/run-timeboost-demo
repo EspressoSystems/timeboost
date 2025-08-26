@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -emuo pipefail
+set -muo pipefail
 
 cleanup() {
     trap - EXIT TERM
@@ -129,6 +129,7 @@ just test-contract-deploy --keep-anvil
 echo "=== Contract deployment completed ==="
 
 pids=()
+i=0
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
@@ -151,6 +152,7 @@ for f in "$config_dir"/node_*.toml; do
     RUST_LOG=$RUST_LOG "${cmd[@]}" &
 
     pids+=($!)
+    ((i++))
 done
 
 if $yapper; then

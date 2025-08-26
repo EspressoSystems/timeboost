@@ -5,6 +5,10 @@ WORKDIR /app
 
 COPY . .
 RUN apt update && apt-get install -y protobuf-compiler libssl-dev
+RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN forge --version
+
 RUN cargo build --release --bin timeboost
 
 # Non-root app container stage
