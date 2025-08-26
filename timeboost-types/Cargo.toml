@@ -9,6 +9,7 @@ rust-version.workspace = true
 arbitrary = ["dep:arbitrary", "sailfish-types/arbitrary"]
 
 [dependencies]
+adapters = { path = "../adapters" }
 alloy = { workspace = true }
 alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
@@ -22,6 +23,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }
+minicbor = { workspace = true }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
