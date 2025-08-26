@@ -1,9 +1,10 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
+use alloy::providers::Provider;
 use anyhow::{Context, Result, anyhow};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Committee, Keypair, x25519};
+use multisig::{Committee, CommitteeId, Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
@@ -11,8 +12,8 @@ use sailfish::{
     types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
-use timeboost_utils::{keyset::KeysetConfig, select_peer_hosts};
-
+use timeboost_contract::{CommitteeMemberSol, KeyManager};
+use timeboost_utils::keyset::NodeConfig;
 use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
@@ -21,15 +22,14 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The ID of the node to build.
-    #[clap(long)]
-    id: u16,
-
+    /// CommitteeId for the committee in which this member belongs to
+    #[clap(long, short)]
+    committee_id: CommitteeId,
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
-    keyset_file: PathBuf,
+    config_file: PathBuf,
 
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
@@ -82,24 +82,40 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let keyset =
-        KeysetConfig::read_keyset(&cli.keyset_file).context("Failed to read keyset file")?;
+    let config = NodeConfig::read(&cli.config_file).context("Failed to read node config")?;
 
-    let my_keyset = keyset
-        .keyset
-        .get(cli.id as usize)
-        .context("Keyset for this node does not exist")?;
-
-    let private = my_keyset
+    let private = config
         .private
-        .clone()
+        .as_ref()
         .ok_or_else(|| anyhow!("missing private keys for node"))?;
 
-    let signing_keypair = Keypair::from(private.signing_key);
-    let dh_keypair = x25519::Keypair::from(private.dh_key);
+    let signing_keypair = Keypair::from(private.signing_key().clone());
+    let dh_keypair = x25519::Keypair::from(private.dh_key().clone());
 
-    let peer_hosts_and_keys = select_peer_hosts(&keyset.keyset, cli.multi_region)
-        .map(|peer| (peer.signing_key, peer.dh_key, peer.sailfish_address.clone()))
+    // syncing with contract to get peers keys and network addresses
+    let provider = config.chain_config.provider();
+    assert_eq!(
+        provider.get_chain_id().await?,
+        config.chain_config.parent_chain_id(),
+        "Parent chain RPC has mismatched chain_id"
+    );
+    let contract = KeyManager::new(config.chain_config.key_manager_contr_addr(), &provider);
+    let members: Vec<CommitteeMemberSol> = contract
+        .getCommitteeById(cli.committee_id.into())
+        .call()
+        .await?
+        .members;
+    let peer_hosts_and_keys = members
+        .iter()
+        .map(|peer| {
+            let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
+                .expect("Failed to parse sigKey");
+            let dh_key =
+                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
+            let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
+                .expect("Failed to parse networkAddress");
+            (sig_key, dh_key, sailfish_address)
+        })
         .collect::<Vec<_>>();
 
     let prom = Arc::new(PrometheusMetrics::default());
@@ -112,7 +128,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        my_keyset.sailfish_address.clone(),
+        config.net.sailfish_address.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         peer_hosts_and_keys.clone(),

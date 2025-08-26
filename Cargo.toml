@@ -9,6 +9,7 @@ members = [
     "sailfish-rbc",
     "sailfish-types",
     "tests",
+    "tests/block-verifier",
     "timeboost",
     "timeboost-builder",
     "timeboost-contract",
@@ -18,7 +19,6 @@ members = [
     "timeboost-types",
     "timeboost-utils",
     "yapper",
-    "tests/block-verifier"
 ]
 resolver = "2"
 

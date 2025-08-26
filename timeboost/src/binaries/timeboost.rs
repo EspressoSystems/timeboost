@@ -1,10 +1,14 @@
 use std::path::PathBuf;
 
+use alloy::providers::Provider;
 use anyhow::{Context, Result, anyhow, bail};
 use cliquenet::AddressableCommittee;
+use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
+use timeboost_contract::{CommitteeMemberSol, KeyManager};
+use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
 use tokio::signal;
@@ -18,7 +22,7 @@ use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
+use timeboost_utils::keyset::{NodeConfig, wait_for_live_peer};
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -27,9 +31,9 @@ const LATE_START_DELAY_SECS: u64 = 15;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The ID of the node to build.
-    #[clap(long)]
-    id: u16,
+    /// CommitteeId for the committee in which this member belongs to
+    #[clap(long, short)]
+    committee_id: CommitteeId,
 
     /// API service port.
     #[clap(long)]
@@ -39,7 +43,7 @@ struct Cli {
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
-    keyset_file: PathBuf,
+    config_file: PathBuf,
 
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
@@ -94,54 +98,75 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let keyset = KeysetConfig::read_keyset(&cli.keyset_file)
-        .with_context(|| format!("could not read keyset file {:?}", cli.keyset_file))?;
+    let node_config = NodeConfig::read(&cli.config_file)
+        .with_context(|| format!("could not read node config {:?}", cli.config_file))?;
 
-    // Ensure the config exists for this keyset
-    let my_keyset = keyset
-        .keyset
-        .get(cli.id as usize)
-        .expect("keyset for this node to exist");
-
-    let private = my_keyset
+    let private = node_config
         .private
-        .clone()
+        .as_ref()
         .ok_or_else(|| anyhow!("missing private keys for node"))?;
 
-    let sign_keypair = Keypair::from(private.signing_key);
-    let dh_keypair = x25519::Keypair::from(private.dh_key);
+    let sign_keypair = Keypair::from(private.signing_key().clone());
+    let dh_keypair = x25519::Keypair::from(private.dh_key().clone());
+
+    // syncing with contract to get peers keys and network addresses
+    let provider = node_config.chain_config.provider();
+    assert_eq!(
+        provider.get_chain_id().await?,
+        node_config.chain_config.parent_chain_id(),
+        "Parent chain RPC has mismatched chain_id"
+    );
+    let contract = KeyManager::new(node_config.chain_config.key_manager_contr_addr(), &provider);
+    let members: Vec<CommitteeMemberSol> = contract
+        .getCommitteeById(cli.committee_id.into())
+        .call()
+        .await?
+        .members;
+    let peer_hosts_and_keys = members
+        .iter()
+        .map(|peer| {
+            let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
+                .expect("Failed to parse sigKey");
+            let dh_key =
+                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
+            let dkg_dec_key = DkgEncKey::try_from_bytes::<1024>(peer.dkgKey.as_ref())
+                .expect("Failed to parse dkgKey");
+            let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
+                .expect("Failed to parse networkAddress");
+            (sig_key, dh_key, dkg_dec_key, sailfish_address)
+        })
+        .collect::<Vec<_>>();
 
     #[cfg(feature = "until")]
-    let peer_urls: Vec<Url> = keyset
-        .keyset
+    let peer_urls: Vec<Url> = peer_hosts_and_keys
         .iter()
-        .map(|ph| format!("http://{}", ph.sailfish_address).parse().unwrap())
+        .map(|peer| format!("http://{}", peer.2).parse().unwrap())
         .collect();
-
-    let peer_host_iter = timeboost_utils::select_peer_hosts(&keyset.keyset, cli.multi_region);
+    #[cfg(feature = "until")]
+    let mut node_idx = 0;
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut certifier_peer_hosts_and_keys = Vec::new();
     let mut dkg_enc_keys = Vec::new();
 
-    for peer_host in peer_host_iter {
-        sailfish_peer_hosts_and_keys.push((
-            peer_host.signing_key,
-            peer_host.dh_key,
-            peer_host.sailfish_address.clone(),
-        ));
-        decrypt_peer_hosts_and_keys.push((
-            peer_host.signing_key,
-            peer_host.dh_key,
-            peer_host.decrypt_address.clone(),
-        ));
-        certifier_peer_hosts_and_keys.push((
-            peer_host.signing_key,
-            peer_host.dh_key,
-            peer_host.certifier_address.clone(),
-        ));
-        dkg_enc_keys.push(peer_host.enc_key.clone());
+    #[allow(unused_variables)]
+    for (i, (signing_key, dh_key, dkg_enc_key, sailfish_addr)) in
+        peer_hosts_and_keys.into_iter().enumerate()
+    {
+        // port magic consistent with `derive_net_addr()` in `mkconfig.rs`
+        let decrypt_addr = sailfish_addr.clone().with_port(sailfish_addr.port() + 1000);
+        let certifier_addr = sailfish_addr.clone().with_port(sailfish_addr.port() + 2000);
+
+        sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr));
+        decrypt_peer_hosts_and_keys.push((signing_key, dh_key, decrypt_addr));
+        certifier_peer_hosts_and_keys.push((signing_key, dh_key, certifier_addr));
+        dkg_enc_keys.push(dkg_enc_key.clone());
+
+        #[cfg(feature = "until")]
+        if signing_key == node_config.signing_key {
+            node_idx = i;
+        }
     }
 
     let sailfish_committee = {
@@ -202,12 +227,12 @@ async fn main() -> Result<()> {
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .dkg_key(private.dec_key.clone())
+        .dkg_key(private.dkg_dec_key().clone())
         .key_store(key_store)
-        .sailfish_addr(my_keyset.sailfish_address.clone())
-        .decrypt_addr(my_keyset.decrypt_address.clone())
-        .certifier_addr(my_keyset.certifier_address.clone())
-        .maybe_nitro_addr(my_keyset.nitro_addr.clone())
+        .sailfish_addr(node_config.net.sailfish_address.clone())
+        .decrypt_addr(node_config.net.decrypt_address.clone())
+        .certifier_addr(node_config.net.certifier_address.clone())
+        .maybe_nitro_addr(node_config.nitro_addr.clone())
         .recover(is_recover)
         .threshold_dec_key(DecryptionKeyCell::new())
         .robusta((
@@ -219,13 +244,13 @@ async fn main() -> Result<()> {
             Vec::new(),
         ))
         .namespace(cli.namespace)
-        .chain_config(my_keyset.chain_config.clone())
+        .chain_config(node_config.chain_config.clone())
         .build();
 
     let timeboost = Timeboost::new(config).await?;
 
     let mut grpc = {
-        let addr = my_keyset.internal_address.to_string();
+        let addr = node_config.net.internal_address.to_string();
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 
@@ -238,14 +263,14 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "until")]
     let handle = {
-        ensure!(peer_urls.len() >= usize::from(cli.id), "Not enough peers");
-        let mut host = peer_urls[usize::from(cli.id)].clone();
+        ensure!(peer_urls.len() >= node_idx, "Not enough peers");
+        let mut host = peer_urls[node_idx].clone();
 
         host.set_port(Some(host.port().unwrap() + 800)).unwrap(); // TODO: remove port magic
 
         let task_handle = spawn(run_until(cli.until, cli.watchdog_timeout, host));
-        if cli.late_start && cli.id == cli.late_start_node_id {
-            warn!("Adding delay before starting node: id: {}", cli.id);
+        if cli.late_start && node_idx == cli.late_start_node_id {
+            warn!("Adding delay before starting node: id: {}", node_idx);
             tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
         }
         task_handle

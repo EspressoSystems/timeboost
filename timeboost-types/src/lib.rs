@@ -6,6 +6,7 @@ mod chain_config;
 mod decryption;
 mod delayed_inbox;
 mod inclusion_list;
+mod provider;
 mod retry_list;
 mod seqno;
 mod time;
@@ -28,6 +29,7 @@ pub use decryption::{
 };
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
+pub use provider::{HttpProvider, HttpProviderWithWallet, TestProviderWithWallet};
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
 pub use time::{ConsensusTime, Epoch, HasTime, Timestamp};

@@ -112,6 +112,7 @@ where
                     .expect("valid url"),
                 alloy::primitives::Address::default(),
                 BlockNumberOrTag::Finalized,
+                alloy::primitives::Address::default(),
             ))
             .build();
         let pcf = CertifierConfig::builder()

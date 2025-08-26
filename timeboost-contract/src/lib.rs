@@ -15,8 +15,8 @@ pub mod deployer;
 pub mod provider;
 mod sol_types;
 
-use provider::TestProviderWithWallet;
 pub use sol_types::*;
+use timeboost_types::TestProviderWithWallet;
 
 /// Spawn a local test blockchain and deploy KeyManager contract.
 /// Returns a WalletProvider to the chain and the deployed contract address.

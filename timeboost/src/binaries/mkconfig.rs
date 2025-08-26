@@ -1,52 +1,40 @@
-use std::net::IpAddr;
-use std::num::NonZeroU8;
-use std::{io, iter};
+use std::fs;
+use std::path::PathBuf;
 
 use alloy::eips::BlockNumberOrTag;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use ark_std::rand::SeedableRng as _;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::ChainConfig;
-use timeboost_utils::keyset::{KeysetConfig, NodeInfo, PrivateKeys};
+use timeboost_utils::keyset::{
+    CommitteeConfig, CommitteeMember, NodeConfig, NodeKeyConfig, NodeNetConfig, PrivateKeys,
+};
 use timeboost_utils::types::logging;
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    /// How many nodes should configuration contain?
+    /// The sailfish network address. Decrypter, certifier, and internal address are derived:
+    /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
     #[clap(long, short)]
-    num: NonZeroU8,
-
-    /// The first sailfish address.
-    #[clap(long, short)]
-    sailfish_base_addr: Address,
-
-    /// The first decrypter address.
-    #[clap(long, short)]
-    decrypt_base_addr: Address,
-
-    /// The first certifier address.
-    #[clap(long, short)]
-    certifier_base_addr: Address,
-
-    /// The internal API address.
-    #[clap(long, short)]
-    internal_base_addr: Address,
+    sailfish: Address,
 
     /// RNG seed for deterministic key generation
     #[clap(long)]
     seed: Option<u64>,
 
-    /// Address modification mode.
-    #[clap(long, short, default_value = "increment-port")]
-    mode: Mode,
-
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
+
+    /// Contract address of the deployed KeyManager (or its proxy if upgradable)
+    /// You should get this info from `init_chain()` in test.
+    #[clap(long)]
+    key_manager_addr: alloy::primitives::Address,
 
     /// Parent chain rpc url
     #[clap(long)]
@@ -63,93 +51,79 @@ struct Args {
     /// Parent chain inbox block tag
     #[clap(long, default_value = "finalized")]
     parent_block_tag: BlockNumberOrTag,
-}
 
-/// How should addresses be updated?
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-enum Mode {
-    /// Increment the port number of addresses.
-    #[default]
-    IncrementPort,
-    /// Increment the IP address.
-    IncrementAddress,
+    /// Path to stored the generated `NodeConfig`, if None, print to stdout
+    #[clap(long, short)]
+    output: Option<PathBuf>,
 }
 
 impl Args {
-    fn mk_config(&self, seed: Option<u64>) -> Result<KeysetConfig> {
-        let num_nodes: u8 = self.num.into();
+    fn mk_config(&self) -> Result<NodeConfig> {
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
-            seed.map(|s| s.wrapping_pow(2)).unwrap_or_else(rand::random),
+            self.seed
+                .map(|s| s.wrapping_pow(2))
+                .unwrap_or_else(rand::random),
         );
         let mut d_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
-            seed.map(|s| s.wrapping_pow(3)).unwrap_or_else(rand::random),
+            self.seed
+                .map(|s| s.wrapping_pow(3))
+                .unwrap_or_else(rand::random),
         );
         let mut p_rng = ark_std::rand::rngs::StdRng::seed_from_u64(
-            seed.map(|s| s.wrapping_pow(4)).unwrap_or_else(rand::random),
+            self.seed
+                .map(|s| s.wrapping_pow(4))
+                .unwrap_or_else(rand::random),
         );
 
         // Generate multisig keypair
-        let signing_keys: Vec<_> =
-            iter::repeat_with(move || multisig::Keypair::generate_with_rng(&mut s_rng))
-                .take(num_nodes as usize)
-                .collect();
+        let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
         // Generate x25519 keypair
-        let auth_keys: Vec<_> =
-            iter::repeat_with(move || x25519::Keypair::generate_with_rng(&mut d_rng).unwrap())
-                .take(num_nodes as usize)
-                .collect();
+        let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng).unwrap();
         // Generate DKG keypair for this node using p_rng
-        let encryption_keys: Vec<_> =
-            iter::repeat_with(move || timeboost_crypto::prelude::DkgDecKey::rand(&mut p_rng))
-                .take(num_nodes as usize)
-                .collect();
+        let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
-        let configs: Vec<_> = signing_keys
-            .into_iter()
-            .enumerate()
-            .zip(auth_keys)
-            .zip(encryption_keys)
-            .map(|(((i, kp), xp), dkg_sk)| NodeInfo {
-                sailfish_address: self.adjust_addr(i as u8, &self.sailfish_base_addr).unwrap(),
-                decrypt_address: self.adjust_addr(i as u8, &self.decrypt_base_addr).unwrap(),
-                certifier_address: self
-                    .adjust_addr(i as u8, &self.certifier_base_addr)
-                    .unwrap(),
-                internal_address: self.adjust_addr(i as u8, &self.internal_base_addr).unwrap(),
-                signing_key: kp.public_key(),
-                dh_key: xp.public_key(),
-                enc_key: timeboost_crypto::prelude::DkgEncKey::from(&dkg_sk),
-                private: Some(PrivateKeys {
-                    signing_key: kp.secret_key(),
-                    dh_key: xp.secret_key(),
-                    dec_key: dkg_sk,
-                }),
-                nitro_addr: self.nitro_addr.clone(),
-                chain_config: ChainConfig::new(
-                    self.parent_chain_id,
-                    self.parent_rpc_url.clone(),
-                    self.parent_ibox_contr_addr,
-                    self.parent_block_tag,
-                ),
-            })
-            .collect();
-        Ok(KeysetConfig { keyset: configs })
+        // Prepare network addresses
+        let (decrypt_address, certifier_address, internal_address) = self.derive_net_addr();
+
+        let chain_config = ChainConfig::new(
+            self.parent_chain_id,
+            self.parent_rpc_url.clone(),
+            self.parent_ibox_contr_addr,
+            self.parent_block_tag,
+            self.key_manager_addr,
+        );
+
+        let config = NodeConfig {
+            net: NodeNetConfig {
+                sailfish_address: self.sailfish.clone(),
+                decrypt_address,
+                certifier_address,
+                internal_address,
+            },
+            keys: NodeKeyConfig {
+                signing_key: signing_keypair.public_key(),
+                dh_key: dh_keypair.public_key(),
+                dkg_enc_key: DkgEncKey::from(&dkg_dec_key),
+            },
+            chain_config,
+            nitro_addr: self.nitro_addr.clone(),
+            private: Some(PrivateKeys::new(
+                signing_keypair.secret_key(),
+                dh_keypair.secret_key(),
+                dkg_dec_key,
+            )),
+        };
+
+        Ok(config)
     }
 
-    fn adjust_addr(&self, i: u8, a: &Address) -> Result<Address> {
-        match self.mode {
-            Mode::IncrementPort => Ok(a.clone().with_port(a.port() + u16::from(i))),
-            Mode::IncrementAddress => {
-                let Address::Inet(ip, port) = a else {
-                    bail!("increment-address requires IP addresses")
-                };
-                let ip = match ip {
-                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip) + u32::from(i)).into()),
-                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
-                };
-                Ok(Address::Inet(ip, *port))
-            }
-        }
+    // based on the primary `sailfish_address`, derive the rest: decrypter, certifier, and internal
+    fn derive_net_addr(&self) -> (Address, Address, Address) {
+        let sailfish = &self.sailfish;
+        let decrypter = sailfish.clone().with_port(sailfish.port() + 1000);
+        let certifier = sailfish.clone().with_port(sailfish.port() + 2000);
+        let internal = sailfish.clone().with_port(sailfish.port() + 3000);
+        (decrypter, certifier, internal)
     }
 }
 
@@ -157,8 +131,34 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     logging::init_logging();
-    let cfg = args.mk_config(args.seed)?;
-    serde_json::to_writer(io::stdout(), &cfg)?;
+
+    let cfg = args.mk_config()?;
+    let toml = toml::to_string_pretty(&cfg)?;
+
+    if let Some(out) = &args.output {
+        // first write the per node config
+        fs::write(out, &toml)?;
+
+        // second append this node's public info to a centralized committee.toml
+        // for key manager to register them in the contract
+        let committee_file = out.with_file_name("committee.toml");
+        let mut committee_config: CommitteeConfig =
+            toml::from_str(&fs::read_to_string(&committee_file)?)?;
+
+        let new_member = CommitteeMember {
+            signing_key: cfg.keys.signing_key,
+            dh_key: cfg.keys.dh_key,
+            dkg_enc_key: cfg.keys.dkg_enc_key.clone(),
+            sailfish_address: cfg.net.sailfish_address.clone(),
+        };
+        if !committee_config.members.contains(&new_member) {
+            committee_config.members.push(new_member);
+        }
+
+        fs::write(committee_file, toml::to_string_pretty(&committee_config)?)?;
+    } else {
+        println!("{toml}");
+    }
 
     Ok(())
 }

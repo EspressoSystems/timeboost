@@ -2,32 +2,12 @@
 //! Partial Credit: <https://github.com/EspressoSystems/espresso-network/tree/main/contracts/rust/deployer>
 
 use alloy::{
-    network::{Ethereum, EthereumWallet},
-    providers::{
-        ProviderBuilder, RootProvider,
-        fillers::{FillProvider, JoinFill, WalletFiller},
-        layers::AnvilProvider,
-        utils::JoinedRecommendedFillers,
-    },
+    network::EthereumWallet,
+    providers::ProviderBuilder,
     signers::local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
     transports::http::reqwest::Url,
 };
-
-/// Type alias that connects to providers with recommended fillers and wallet
-/// use `<HttpProviderWithWallet as WalletProvider>::wallet()` to access internal wallet
-/// use `<HttpProviderWithWallet as WalletProvider>::default_signer_address(&provider)` to get
-/// wallet address
-pub type HttpProviderWithWallet = FillProvider<
-    JoinFill<JoinedRecommendedFillers, WalletFiller<EthereumWallet>>,
-    RootProvider,
-    Ethereum,
->;
-
-pub type TestProviderWithWallet = FillProvider<
-    JoinFill<JoinedRecommendedFillers, WalletFiller<EthereumWallet>>,
-    AnvilProvider<RootProvider>,
-    Ethereum,
->;
+use timeboost_types::HttpProviderWithWallet;
 
 /// Build a local signer from wallet mnemonic and account index
 pub fn build_signer(mnemonic: String, account_index: u32) -> PrivateKeySigner {

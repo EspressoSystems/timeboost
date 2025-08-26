@@ -128,6 +128,11 @@ where
     );
 
     let enc_key = DecryptionKeyCell::new();
+    let km_addr = prev
+        .first()
+        .unwrap()
+        .chain_config()
+        .key_manager_contr_addr();
 
     sign_keys
         .into_iter()
@@ -160,6 +165,7 @@ where
                         .expect("valid url"),
                     alloy::primitives::Address::default(),
                     BlockNumberOrTag::Finalized,
+                    km_addr,
                 ))
                 .build()
         })
