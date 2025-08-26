@@ -99,12 +99,15 @@ async fn main() -> Result<()> {
         config.chain_config.parent_chain_id(),
         "Parent chain RPC has mismatched chain_id"
     );
+
     let contract = KeyManager::new(config.chain_config.key_manager_contr_addr(), &provider);
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
         .await?
         .members;
+    info!(label = %config.keys.signing_key, committee_id = %cli.committee_id, "committee info synced");
+
     let peer_hosts_and_keys = members
         .iter()
         .map(|peer| {

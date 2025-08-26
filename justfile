@@ -125,5 +125,5 @@ test-individually:
     cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
 
-test-contract-deploy:
-  ./scripts/test-contract-deploy
+test-contract-deploy *ARGS:
+  ./scripts/test-contract-deploy {{ARGS}}

@@ -23,10 +23,10 @@ for i in {0..4}; do
     TIMEBOOST_SIGNATURE_PRIVATE_KEY=${!SIGNATURE_PRIVATE_KEY} \
     TIMEBOOST_DECRYPTION_PRIVATE_KEY=${!DECRYPTION_PRIVATE_KEY} \
     ./target/${1:-debug}/timeboost \
-        --id $i \
+        --committee-id 0 \
+        --config-file "test-configs/c0/node_$i.toml" \
         --http-port $((8800 + i)) \
-        --nitro-node-url http://localhost:8547 \
-        --keyset-file test-configs/local.json &
+        --nitro-node-url http://localhost:8547 &
 done
 
 wait

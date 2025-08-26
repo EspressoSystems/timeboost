@@ -2,30 +2,69 @@
 
 set -emuo pipefail
 
+# Check if --keep-anvil flag was passed
+KEEP_ANVIL=false
+for arg in "$@"; do
+    if [[ "$arg" == "--keep-anvil" ]]; then
+        KEEP_ANVIL=true
+        break
+    fi
+done
+
 cleanup() {
     trap - EXIT TERM
-    if [ -n "$ANVIL_PID" ]; then
+    if [[ "$KEEP_ANVIL" == "false" ]] && [ -n "$ANVIL_PID" ]; then
+        echo "Stopping anvil (PID: $ANVIL_PID)..."
         kill "$ANVIL_PID" 2>/dev/null || true
+        rm -f .anvil.pid anvil.log
+    else
+        echo "Keeping anvil running (PID: $ANVIL_PID)..."
     fi
-    rm -f .anvil.pid anvil.log
 }
 
 trap cleanup EXIT TERM INT
+
+MANAGER_MNEMONIC="test test test test test test test test test test test junk"
+MANAGER_ACCOUNT_INDEX=0
+URL="http://localhost:8545"
+DEPLOYMENT_FILE=".tmp.deploy.toml"
+COMMITTEE_ID=0
+
+# Make sure foundry toolchain is installed locally
+if ! command -v anvil &>/dev/null; then
+    echo "Error: commands (anvil) not installed (see https://getfoundry.sh/)." >&2
+    exit 1
+fi
+
+# We need yq for toml parsing
+if ! command -v yq &>/dev/null; then
+    echo "Error: commands (yq) not installed (see https://github.com/mikefarah/yq)." >&2
+    exit 1
+fi
 
 # Kill any existing anvil processes to avoid port conflicts
 pkill anvil || true
 sleep 1
 
-# Start anvil in background
+# Start anvil in background with proper output redirection
+echo "Starting anvil..."
 anvil --port 8545 >anvil.log 2>&1 &
 ANVIL_PID=$!
 echo $ANVIL_PID >.anvil.pid
+echo "Anvil started (PID: $ANVIL_PID)"
 
 # Wait for anvil to start
 sleep 1
 
 # Run the deploy command
-MANAGER_MNEMONIC="test test test test test test test test test test test junk"
-MANAGER_ACCOUNT_INDEX=0
-URL="http://localhost:8545"
-RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL"
+RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -o "$DEPLOYMENT_FILE"
+
+# Extract the deployed KeyManager address
+km_addr=$(yq -r ".deployments.key_manager" "$DEPLOYMENT_FILE")
+
+# Update the contract
+committee_config="test-configs/c$COMMITTEE_ID/committee.toml"
+RUST_LOG=info cargo run --bin register -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -k "$km_addr" -c "$committee_config"
+
+# Finally, clean up the temporary deployment file
+rm -f "$DEPLOYMENT_FILE"

@@ -127,6 +127,8 @@ async fn main() -> Result<()> {
         .call()
         .await?
         .members;
+    tracing::info!(label = %node_config.keys.signing_key, committee_id = %cli.committee_id, "committee info synced");
+
     let peer_hosts_and_keys = members
         .iter()
         .map(|peer| {
