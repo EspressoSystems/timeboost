@@ -19,7 +19,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
 # Copy binary
 COPY --from=builder /app/target/release/timeboost .
-COPY --from=builder /app/test-configs .
+COPY --from=builder /app/test-configs/docker .
 
 # Set ownership of application files and make binary executable
 RUN chown -R timeboostuser:appgroup /app && chmod +x /app/timeboost

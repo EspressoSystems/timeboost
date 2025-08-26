@@ -102,6 +102,16 @@ mkconfig_full RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
     --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
     {{ARGS}}
 
+mkconfig_docker:
+  #!/bin/bash
+  for i in $(seq 0 4); do \
+    echo "mkconfig for docker node$i"; \
+    just mkconfig_full "http://127.0.0.1:8545" 31337 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+      --sailfish "172.20.0.$((i + 2)):8000" \
+      -o "test-configs/docker/node_$i.toml" \
+      --seed $((42+i)); \
+  done
+
 verify_blocks *ARGS:
   cargo run --release --bin block_verifier {{ARGS}}
 

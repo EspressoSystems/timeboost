@@ -19,7 +19,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup yapperuser
 
 # Copy binary and just
 COPY --from=builder /app/target/release/yapper .
-COPY --from=builder /app/test-configs .
+COPY --from=builder /app/test-configs/docker .
 
 # Set ownership of application files and make binary executable
 RUN chown -R yapperuser:appgroup /app && chmod +x /app/yapper

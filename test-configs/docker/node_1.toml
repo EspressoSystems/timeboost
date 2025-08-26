@@ -1,0 +1,22 @@
+[net]
+sailfish_address = "172.20.0.3:8000"
+decrypt_address = "172.20.0.3:9000"
+certifier_address = "172.20.0.3:10000"
+internal_address = "172.20.0.3:11000"
+
+[keys]
+signing_key = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+dh_key = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
+dkg_enc_key = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
+
+[chain_config]
+parent_chain_id = 31337
+parent_chain_rpc_url = "http://127.0.0.1:8545/"
+parent_ibox_contr_addr = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+parent_block_tag = "finalized"
+key_manager_contr_addr = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+
+[private]
+signing_key = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
+dh_key = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
+dkg_dec_key = "AmgWFmLHk3m1C5mfZnhToYDj2azuyh8d7GiEB3w3s8EBP"

@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "until")]
     let peer_urls: Vec<Url> = peer_hosts_and_keys
         .iter()
-        .map(|peer| format!("http://{}", peer.2).parse().unwrap())
+        .map(|peer| format!("http://{}", peer.3).parse().unwrap())
         .collect();
     #[cfg(feature = "until")]
     let mut node_idx = 0;
@@ -171,7 +171,7 @@ async fn main() -> Result<()> {
         dkg_enc_keys.push(dkg_enc_key.clone());
 
         #[cfg(feature = "until")]
-        if signing_key == node_config.signing_key {
+        if signing_key == node_config.keys.signing_key {
             node_idx = i;
         }
     }
@@ -277,7 +277,7 @@ async fn main() -> Result<()> {
         host.set_port(Some(host.port().unwrap() + 800)).unwrap(); // TODO: remove port magic
 
         let task_handle = spawn(run_until(cli.until, cli.watchdog_timeout, host));
-        if cli.late_start && node_idx == cli.late_start_node_id {
+        if cli.late_start && node_idx as u16 == cli.late_start_node_id {
             warn!("Adding delay before starting node: id: {}", node_idx);
             tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
         }

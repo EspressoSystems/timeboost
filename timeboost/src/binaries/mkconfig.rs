@@ -137,13 +137,22 @@ fn main() -> Result<()> {
 
     if let Some(out) = &args.output {
         // first write the per node config
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::write(out, &toml)?;
 
         // second append this node's public info to a centralized committee.toml
         // for key manager to register them in the contract
         let committee_file = out.with_file_name("committee.toml");
-        let mut committee_config: CommitteeConfig =
-            toml::from_str(&fs::read_to_string(&committee_file)?)?;
+        let mut committee_config: CommitteeConfig = if committee_file.exists() {
+            toml::from_str(&fs::read_to_string(&committee_file)?)?
+        } else {
+            CommitteeConfig {
+                effective_timestamp: 1756181061.into(),
+                members: Vec::new(),
+            }
+        };
 
         let new_member = CommitteeMember {
             signing_key: cfg.keys.signing_key,
