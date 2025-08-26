@@ -29,9 +29,3 @@ signing_key = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
 dh_key = "6czLW5NW4C74eQUBdzwHGmUzA5B8vbWpuH6amZHXtPnq"
 dkg_enc_key = "8t7p3VfTCMXxEAPrcLzMHiANGmEd2Y5aLkKAgrpe5ZyEmgGm2MR1ypweLbCw5RdXySe"
 sailfish_address = "127.0.0.1:8004"
-
-[[members]]
-signing_key = "h7qA6fzJMhYLotwxNRGGBEDqUkaNpCJ8cBeCGQuAumTq"
-dh_key = "HXD3TRTQ2cK8oGbEWmhnRdwFa96wBPc1mntVt7wt98mK"
-dkg_enc_key = "8st388WiwVuCY1gNjSRY44BcPJnV3VBcU94ZMYdnpdANXEYzBYLKZKtVjjTfUBD2RF2"
-sailfish_address = "127.0.0.1:8005"
