@@ -1,5 +1,6 @@
 # Builder stage
 FROM rust:bullseye AS builder
+SHELL ["/bin/bash", "-c"]
 
 WORKDIR /app
 
