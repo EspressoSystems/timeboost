@@ -9,6 +9,10 @@ rust-version.workspace = true
 name = "deploy"
 path = "src/binaries/deploy.rs"
 
+[[bin]]
+name = "register"
+path = "src/binaries/register.rs"
+
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
