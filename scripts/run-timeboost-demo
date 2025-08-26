@@ -128,7 +128,8 @@ for (( i=0; i<$nodes; i++ )); do
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
         --watchdog-timeout 120
-        --namespace $namespace)
+        --namespace $namespace
+        --https-only "false")
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)

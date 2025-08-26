@@ -69,8 +69,8 @@ struct Cli {
     namespace: u64,
 
     /// Submitter should connect only with https?
-    #[clap(long, default_value_t = false)]
-    no_https: bool,
+    #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
+    https_only: bool,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -220,7 +220,7 @@ async fn main() -> Result<()> {
                 .base_url(cli.espresso_base_url)
                 .wss_base_url(cli.espresso_websocket_url)
                 .label(pubkey.to_string())
-                .https_only(!cli.no_https)
+                .https_only(cli.https_only)
                 .build(),
             Vec::new(),
         ))
