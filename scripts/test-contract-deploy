@@ -4,16 +4,26 @@ set -emuo pipefail
 
 # Check if --keep-anvil flag was passed
 KEEP_ANVIL=false
-for arg in "$@"; do
-    if [[ "$arg" == "--keep-anvil" ]]; then
+NITRO_ENABLED=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --keep-anvil)
         KEEP_ANVIL=true
-        break
-    fi
+        shift
+        ;;
+    --nitro-enabled)
+        NITRO_ENABLED=true
+        shift
+        ;;
+    *)
+    esac
 done
 
 cleanup() {
     trap - EXIT TERM
-    if [[ "$KEEP_ANVIL" == "false" ]] && [ -n "$ANVIL_PID" ]; then
+    if $NITRO_ENABLED; then
+        echo "Anvil not running"
+    elif [[ "$KEEP_ANVIL" == "false" ]] && [ -n "$ANVIL_PID" ]; then
         echo "Stopping anvil (PID: $ANVIL_PID)..."
         kill "$ANVIL_PID" 2>/dev/null || true
         rm -f .anvil.pid anvil.log
@@ -28,7 +38,10 @@ MANAGER_MNEMONIC="test test test test test test test test test test test junk"
 MANAGER_ACCOUNT_INDEX=0
 URL="http://localhost:8545"
 DEPLOYMENT_FILE=".tmp.deploy.toml"
-COMMITTEE_ID=0
+COMMITTEE_PATH=c0
+if $NITRO_ENABLED; then
+    COMMITTEE_PATH=nitro-ci-committee
+fi
 
 # Make sure foundry toolchain is installed locally
 if ! command -v anvil &>/dev/null; then
@@ -47,11 +60,13 @@ pkill anvil || true
 sleep 1
 
 # Start anvil in background with proper output redirection
-echo "Starting anvil..."
-anvil --port 8545 >anvil.log 2>&1 &
-ANVIL_PID=$!
-echo $ANVIL_PID >.anvil.pid
-echo "Anvil started (PID: $ANVIL_PID)"
+if [[ "$NITRO_ENABLED" == false ]]; then
+    echo "Starting anvil..."
+    anvil --port 8545 >anvil.log 2>&1 &
+    ANVIL_PID=$!
+    echo $ANVIL_PID >.anvil.pid
+    echo "Anvil started (PID: $ANVIL_PID)"
+fi
 
 # Wait for anvil to start
 sleep 1
@@ -63,7 +78,7 @@ RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCO
 km_addr=$(yq -r ".deployments.key_manager" "$DEPLOYMENT_FILE")
 
 # Update the contract
-committee_config="test-configs/c$COMMITTEE_ID/committee.toml"
+committee_config="test-configs/$COMMITTEE_PATH/committee.toml"
 RUST_LOG=info cargo run --bin register -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -k "$km_addr" -c "$committee_config"
 
 # Finally, clean up the temporary deployment file

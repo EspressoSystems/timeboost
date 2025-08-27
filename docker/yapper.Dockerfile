@@ -1,10 +1,15 @@
 # Builder stage
-FROM rust:bullseye AS builder
+FROM rust:bookworm AS builder
 
 WORKDIR /app
 
 COPY . .
 RUN apt update && apt-get install -y protobuf-compiler
+RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN forge --version
+RUN rustup component add rustfmt --toolchain nightly
+RUN cargo install just
 RUN cargo build --release --bin yapper
 
 # Non-root app container stage

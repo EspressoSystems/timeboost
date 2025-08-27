@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euo pipefail
+set -muo pipefail
 
 # Set default RUST_LOG if not already defined
 if [ -z "${RUST_LOG:-}" ]; then

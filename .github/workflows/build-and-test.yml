@@ -195,7 +195,7 @@ jobs:
           --init &
         cd ..
     - name: Run test timeboost with nitro sequencer
-      run: just run_demo -s /tmp/stamp --ignore-stamp -c test-configs/c0 --rounds 10000 --yapper --nitro
+      run: just run_demo -s /tmp/stamp --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro
     - name: Verify sequencer blocks
       run: |
         RUST_LOG=info just verify_blocks
