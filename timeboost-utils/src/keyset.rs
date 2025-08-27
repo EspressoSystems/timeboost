@@ -170,27 +170,27 @@ mod tests {
     // generated via `just mkconfig 1`
     const CONFIG: &str = r#"
 [net]
-sailfish_address = '127.0.0.1:8000'
-decrypt_address = '127.0.0.1:9000'
-certifier_address = '127.0.0.1:10000'
-internal_address = '127.0.0.1:11000'
+sailfish = "127.0.0.1:8001"
+internal = "127.0.0.1:11001"
 
-[keys]
-signing_key = 'eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX'
-dh_key = 'AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY'
-dkg_enc_key = '8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK'
+[keys.signing]
+secret = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
+public = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+
+[keys.dh]
+secret = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
+public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
+
+[keys.dkg]
+secret = "AmgWFmLHk3m1C5mfZnhToYDj2azuyh8d7GiEB3w3s8EBP"
+public = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
 
 [chain_config]
 parent_chain_id = 31337
-parent_chain_rpc_url = 'http://127.0.0.1:8545/'
-parent_ibox_contr_addr = '0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f'
-parent_block_tag = 'finalized'
-key_manager_contr_addr = '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512'
-
-[private]
-signing_key = '3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp'
-dh_key = 'BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ'
-dkg_dec_key = 'AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1'
+parent_chain_rpc_url = "http://127.0.0.1:8545/"
+parent_ibox_contr_addr = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+parent_block_tag = "finalized"
+key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
     "#;
 
     use super::NodeConfig;

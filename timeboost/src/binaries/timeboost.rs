@@ -177,7 +177,7 @@ async fn main() -> Result<()> {
         dkg_enc_keys.push(dkg_enc_key.clone());
 
         #[cfg(feature = "until")]
-        if signing_key == node_config.keys.signing_key {
+        if signing_key == node_config.keys.signing.public {
             node_idx = i;
         }
     }
