@@ -11755,7 +11755,7 @@ dependencies = [
  "timeboost-types",
  "timeboost-utils",
  "tokio",
- "toml",
+ "toml 0.9.5",
  "tonic 0.14.1",
  "tower 0.5.2",
  "tower-http",
@@ -11943,7 +11943,7 @@ dependencies = [
  "timeboost-crypto",
  "timeboost-types",
  "tokio",
- "toml",
+ "toml 0.9.5",
  "tracing",
  "tracing-subscriber 0.3.19",
 ]
