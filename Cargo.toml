@@ -18,8 +18,7 @@ members = [
     "timeboost-sequencer",
     "timeboost-types",
     "timeboost-utils",
-    "yapper",
-    "tests/block-verifier"
+    "yapper"
 ]
 resolver = "2"
 

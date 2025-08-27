@@ -113,7 +113,7 @@ mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARG
     --mode "increment-address" {{ARGS}} | jq
 
 verify_blocks *ARGS:
-  cargo run --release --bin block_verifier {{ARGS}}
+  cargo run --release --bin block-verifier --features bin {{ARGS}}
 
 ####################
 ####TEST COMMANDS###
