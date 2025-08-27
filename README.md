@@ -78,11 +78,6 @@ Run in docker
 just run_integration
 ```
 
-Run locally
-```shell
-just run_integration_local
-```
-
 ### Accessing Metrics
 
 Metrics are exposed on port 8000 + `i` for each node. Once the nodes are up and running, you

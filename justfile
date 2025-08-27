@@ -69,9 +69,6 @@ run_monitoring:
 stop_monitoring:
   docker compose -f docker-compose.metrics.yml down
 
-run_integration_local *ARGS:
-  ./scripts/run-local-integration {{ARGS}}
-
 run_demo *ARGS:
   ./scripts/run-timeboost-demo {{ARGS}}
 
