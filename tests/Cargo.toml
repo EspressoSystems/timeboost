@@ -34,3 +34,14 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true }
 url = { workspace = true }
+# optional:
+anyhow = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+
+[features]
+bin = ["dep:anyhow", "dep:clap"]
+
+[[bin]]
+name = "block-verifier"
+path = "src/binaries/block-verifier.rs"
+required-features = ["bin"]
