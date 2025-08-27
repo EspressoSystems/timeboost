@@ -1,15 +1,19 @@
-nitro_addr = "localhost:55000"
-
 [net]
-sailfish_address = "127.0.0.1:8000"
-decrypt_address = "127.0.0.1:9000"
-certifier_address = "127.0.0.1:10000"
-internal_address = "127.0.0.1:11000"
+sailfish = "127.0.0.1:8000"
+internal = "127.0.0.1:11000"
+nitro = "localhost:55000"
 
-[keys]
-signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
-dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
-dkg_enc_key = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK"
+[keys.signing]
+secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
+public = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+
+[keys.dh]
+secret = "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ"
+public = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
+
+[keys.dkg]
+secret = "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1"
+public = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK"
 
 [chain_config]
 parent_chain_id = 1337
@@ -17,8 +21,3 @@ parent_chain_rpc_url = "http://127.0.0.1:8545/"
 parent_ibox_contr_addr = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 parent_block_tag = "finalized"
 key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
-
-[private]
-signing_key = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
-dh_key = "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ"
-dkg_dec_key = "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1"
