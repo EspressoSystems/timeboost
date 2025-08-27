@@ -29,7 +29,7 @@ struct Cli {
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
-    config_file: PathBuf,
+    config: PathBuf,
 
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
         .call()
         .await?
         .members;
-    info!(label = %config.keys.signing_key, committee_id = %cli.committee_id, "committee info synced");
+    info!(label = %config.keys.signing.public, committee_id = %cli.committee_id, "committee info synced");
 
     let peer_hosts_and_keys = members
         .iter()

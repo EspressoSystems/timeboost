@@ -43,7 +43,7 @@ struct Cli {
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
-    config_file: PathBuf,
+    config: PathBuf,
 
     /// Backwards compatibility. This allows for a single region to run (i.e. local)
     #[clap(long, default_value_t = false)]
@@ -103,8 +103,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let node_config = NodeConfig::read(&cli.config_file)
-        .with_context(|| format!("could not read node config {:?}", cli.config_file))?;
+    let node_config = NodeConfig::read(&cli.config)
+        .with_context(|| format!("could not read node config {:?}", cli.config))?;
 
     let private = node_config
         .private
@@ -127,7 +127,11 @@ async fn main() -> Result<()> {
         .call()
         .await?
         .members;
-    tracing::info!(label = %node_config.keys.signing_key, committee_id = %cli.committee_id, "committee info synced");
+    tracing::info!(
+        label = %sign_keypair.public_key(),
+        committee_id = %cli.committee_id,
+        "committee info synced"
+    );
 
     let peer_hosts_and_keys = members
         .iter()

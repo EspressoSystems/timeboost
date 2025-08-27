@@ -29,7 +29,7 @@ struct Args {
 
     /// Path to the committee.toml config for the next committee
     #[clap(short, long)]
-    config_file: PathBuf,
+    config: PathBuf,
 }
 
 #[tokio::main]
@@ -37,10 +37,8 @@ async fn main() -> Result<()> {
     logging::init_logging();
     let args = Args::parse();
 
-    let config = CommitteeConfig::read(&args.config_file).context(format!(
-        "Failed to read config file: {:?}",
-        &args.config_file
-    ))?;
+    let config = CommitteeConfig::read(&args.config)
+        .context(format!("Failed to read config file: {:?}", &args.config))?;
 
     info!("Start committee registration");
 
