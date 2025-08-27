@@ -116,7 +116,7 @@ mkconfig_nitro:
       --sailfish "127.0.0.1:8001" --nitro-addr "localhost:55001" -o "test-configs/nitro-ci-committee/node_1.toml" --seed 43
 
 verify_blocks *ARGS:
-  cargo run --release --bin block_verifier {{ARGS}}
+  cargo run --release --bin block-verifier --features bin {{ARGS}}
 
 ####################
 ####TEST COMMANDS###
