@@ -1,22 +1,26 @@
 mod block_order;
 mod handover;
 mod test_timeboost_startup;
+mod timeboost_handover;
 mod transaction_order;
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use alloy::eips::BlockNumberOrTag;
+use alloy::eips::{BlockNumberOrTag, Encodable2718};
+use bytes::Bytes;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::Keypair;
 use multisig::{Committee, x25519};
-use sailfish_types::UNKNOWN_COMMITTEE_ID;
+use parking_lot::Mutex;
+use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
 use timeboost::builder::CertifierConfig;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
-use timeboost::types::BundleVariant;
-use timeboost::types::{DecryptionKeyCell, KeyStore};
+use timeboost::types::{BlockNumber, BundleVariant, DecryptionKeyCell, KeyStore, Transaction};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -151,5 +155,40 @@ async fn gen_bundles(enc_key: DecryptionKeyCell, tx: broadcast::Sender<BundleVar
             return;
         }
         sleep(Duration::from_millis(10)).await
+    }
+}
+
+fn hash(tx: &[Transaction]) -> Bytes {
+    let mut h = blake3::Hasher::new();
+    for t in tx {
+        h.update(&t.encoded_2718());
+    }
+    Bytes::copy_from_slice(h.finalize().as_bytes())
+}
+
+/// Map round numbers to block numbers.
+///
+/// Block numbers need to be consistent, consecutive and strictly monotonic.
+/// The round numbers of our sequencer output may contain gaps. To provide
+/// block numbers with the required properties we have here one monotonic
+/// counter and record which block number is used for a round number.
+/// Subsequent lookups will then get a consistent result.
+struct Round2Block {
+    counter: AtomicU64,
+    block_numbers: Mutex<HashMap<RoundNumber, BlockNumber>>,
+}
+
+impl Round2Block {
+    fn new() -> Self {
+        Self {
+            counter: AtomicU64::new(0),
+            block_numbers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, r: RoundNumber) -> BlockNumber {
+        let mut map = self.block_numbers.lock();
+        *map.entry(r)
+            .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
     }
 }
