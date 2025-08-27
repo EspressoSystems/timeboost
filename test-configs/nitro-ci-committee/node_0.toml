@@ -1,4 +1,5 @@
 nitro_addr = "localhost:55000"
+
 [net]
 sailfish_address = "127.0.0.1:8000"
 decrypt_address = "127.0.0.1:9000"
@@ -13,9 +14,9 @@ dkg_enc_key = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9
 [chain_config]
 parent_chain_id = 1337
 parent_chain_rpc_url = "http://127.0.0.1:8545/"
-parent_ibox_contr_addr = "0xA0f3A1a4E2B2Bcb7b48C8527C28098f207572EC1"
+parent_ibox_contr_addr = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 parent_block_tag = "finalized"
-key_manager_contr_addr = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [private]
 signing_key = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"

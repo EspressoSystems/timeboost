@@ -93,7 +93,7 @@ mkconfig NUM_NODES *ARGS:
 
 mkconfig_full RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
   cargo run --bin mkconfig -- \
-    --key-manager-addr "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512" \
+    --key-manager-addr "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --parent-rpc-url {{RPC_URL}} \
     --parent-chain-id {{PARENT_CHAIN_ID}} \
     --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
@@ -108,6 +108,12 @@ mkconfig_docker:
       -o "test-configs/docker/node_$i.toml" \
       --seed $((42+i)); \
   done
+
+mkconfig_nitro:
+  just mkconfig_full "http://127.0.0.1:8545" 1337 "0xA0f3A1a4E2B2Bcb7b48C8527C28098f207572EC1" \
+      --sailfish "127.0.0.1:8000" --nitro-addr "localhost:55000" -o "test-configs/nitro-ci-committee/node_0.toml" --seed 42
+  just mkconfig_full "http://127.0.0.1:8545" 1337 "0xA0f3A1a4E2B2Bcb7b48C8527C28098f207572EC1" \
+      --sailfish "127.0.0.1:8001" --nitro-addr "localhost:55001" -o "test-configs/nitro-ci-committee/node_1.toml" --seed 43
 
 verify_blocks *ARGS:
   cargo run --release --bin block_verifier {{ARGS}}

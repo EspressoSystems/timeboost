@@ -14,8 +14,30 @@ To generate configs for all nodes in a new committee:
 ``` sh
 # see mkconfig.rs Args or `mkconfig --help` for more options
 just mkconfig 5
-just mkconfig 13 --nitro-addr "0xabc"
+just mkconfig 13 --nitro-addr "localhost:55000"
 
-# current just recipe for docker env is fixed at 5 nodes
+# recipe for docker env is fixed at 5 nodes
 just mkconfig_docker
+
+# recipe for nitro CI test, fixed at 2 nodes with nitro chain config
+just mkconfig_nitro
+```
+
+### On test wallet mnemonic 
+
+The official test wallet is using `test ... test junk` as its mnemonic and most testnet will pre-fund accounts under this wallet. But the nonce of these wallet, especially the public testnets, is unpredictable making the deployed contract address unpredictable. 
+Even though in test environments, we spawn off test blockchain from a fresh state, thus deployed KeyManager contract will always live in `0xe7f1725e7734ce288f8367e1bb143e90bb3f0512`, when we integrate with live Arbitrum testnet, this won't be the case.
+To avoid future confusion, we choose a newly generated mnemonic phrase `"attend year erase basket blind adapt stove broccoli isolate unveil acquire category"`, not preoccupied w.h.p. and our deployed contract address should be the same across testnet (local or live). The only additional work is to fund this wallet using the default faucet which is step in [`test-contract-deploy` script](../../scripts/test-contract-deploy).
+Now you can see in `--key-manager-addr "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"` in `justfile`, which can verified by running `just test-contract-deploy`.
+
+```
+$ cast wallet new-mnemonic
+
+Phrase:
+attend year erase basket blind adapt stove broccoli isolate unveil acquire category
+
+Accounts:
+- Account 0:
+Address:     0x36561082951eed7ffD59cFD82D70570C57072d02
+Private key: 0x4a7347a749f03f485414757fce2ee0c77a76ee0a019c8af32b034b3b240a3136
 ```

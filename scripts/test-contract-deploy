@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
         NITRO_ENABLED=true
         shift
         ;;
-    *)
+    *) ;;
     esac
 done
 
@@ -34,8 +34,10 @@ cleanup() {
 
 trap cleanup EXIT TERM INT
 
-MANAGER_MNEMONIC="test test test test test test test test test test test junk"
+MANAGER_MNEMONIC="attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 MANAGER_ACCOUNT_INDEX=0
+MANAGER_ADDRESS="0x36561082951eed7ffD59cFD82D70570C57072d02"
+FAUCET_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 URL="http://localhost:8545"
 DEPLOYMENT_FILE=".tmp.deploy.toml"
 COMMITTEE_PATH=c0
@@ -45,7 +47,7 @@ fi
 
 # Make sure foundry toolchain is installed locally
 if ! command -v anvil &>/dev/null; then
-    echo "Error: commands (anvil) not installed (see https://getfoundry.sh/)." >&2
+    echo "Error: commands (anvil, cast) not installed (see https://getfoundry.sh/)." >&2
     exit 1
 fi
 
@@ -70,6 +72,9 @@ fi
 
 # Wait for anvil to start
 sleep 1
+
+# Fund the manager account
+cast send --value 1ether --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
 
 # Run the deploy command
 RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -o "$DEPLOYMENT_FILE"
