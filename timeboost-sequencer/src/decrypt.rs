@@ -1530,7 +1530,7 @@ mod tests {
         time::Instant,
     };
 
-    use timeboost_utils::types::logging;
+    use timeboost_utils::{Blackbox, types::logging};
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
@@ -2246,7 +2246,11 @@ mod tests {
 
         let dkg_keys: Vec<_> = dkg_keys
             .iter()
-            .map(|key_str| DkgDecKey::try_from(*key_str).expect("Valid DKG key string"))
+            .map(|key_str| {
+                Blackbox::new(key_str.to_string())
+                    .decode::<DkgDecKey>()
+                    .expect("Valid DKG key string")
+            })
             .collect();
 
         // Create committee from signature keys

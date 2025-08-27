@@ -5,6 +5,7 @@ pub mod until;
 
 use crate::keyset::NodeConfig;
 use multisig::x25519;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
@@ -60,4 +61,68 @@ pub fn select_peer_hosts(
     } else {
         Box::new(keyset.iter().take(keyset.len())) as Box<dyn Iterator<Item = _>>
     }
+}
+
+/// Sometimes we don't want to reveal the struct inner fields when serializing.
+/// This intermediate type holds the bs58::encode(bincode::encode(T)) string that treats
+/// the type `T` as a `Serialize + Deserialize` blackbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Blackbox(String);
+
+impl Blackbox {
+    pub fn new(s: String) -> Self {
+        Self(s)
+    }
+
+    /// encode a value into a blackbox representation
+    pub fn encode<T: Serialize>(v: T) -> anyhow::Result<Self> {
+        let bytes = bincode::serde::encode_to_vec(v, bincode::config::standard())?;
+        Ok(Self(bs58::encode(bytes).into_string()))
+    }
+
+    /// decode to the original value
+    pub fn decode<T: DeserializeOwned>(&self) -> anyhow::Result<T> {
+        let bytes = bs58::decode(&self.0).into_vec()?;
+        let (val, _) = bincode::serde::decode_from_slice(
+            &bytes,
+            bincode::config::standard().with_limit::<8192>(),
+        )?;
+        Ok(val)
+    }
+
+    pub fn into_bytes(&self) -> Vec<u8> {
+        self.0.clone().into_bytes()
+    }
+
+    pub fn from_bytes(v: Vec<u8>) -> anyhow::Result<Self> {
+        let s = String::from_utf8(v)?;
+        Ok(Self(s))
+    }
+}
+
+#[test]
+fn test_blackbox() {
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TestData {
+        id: u64,
+        name: String,
+        values: Vec<i32>,
+        flag: bool,
+    }
+
+    let original = TestData {
+        id: 42,
+        name: "test_struct".to_string(),
+        values: vec![1, 2, 3, 4, 5],
+        flag: true,
+    };
+
+    let blackbox = Blackbox::encode(&original).expect("Failed to create blackbox");
+    let decoded: TestData = blackbox.decode().expect("Failed to decode blackbox");
+    assert_eq!(original, decoded);
+
+    assert_eq!(
+        Blackbox::from_bytes(blackbox.into_bytes()).unwrap(),
+        blackbox
+    );
 }

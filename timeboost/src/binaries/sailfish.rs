@@ -1,7 +1,7 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
 use alloy::providers::Provider;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use multisig::{Committee, CommitteeId, Keypair, x25519};
@@ -82,15 +82,10 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.config_file).context("Failed to read node config")?;
+    let config = NodeConfig::read(&cli.config).context("Failed to read node config")?;
 
-    let private = config
-        .private
-        .as_ref()
-        .ok_or_else(|| anyhow!("missing private keys for node"))?;
-
-    let signing_keypair = Keypair::from(private.signing_key().clone());
-    let dh_keypair = x25519::Keypair::from(private.dh_key().clone());
+    let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
+    let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
     let provider = config.chain_config.provider();
@@ -131,7 +126,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        config.net.sailfish_address.clone(),
+        config.net.sailfish.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         peer_hosts_and_keys.clone(),

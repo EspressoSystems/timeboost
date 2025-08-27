@@ -10,8 +10,10 @@ use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::ChainConfig;
+use timeboost_utils::Blackbox;
 use timeboost_utils::keyset::{
-    CommitteeConfig, CommitteeMember, NodeConfig, NodeKeyConfig, NodeNetConfig, PrivateKeys,
+    CommitteeConfig, CommitteeMember, NodeConfig, NodeEncodedKeypairConfig, NodeKeyConfig,
+    NodeKeypairConfig, NodeNetConfig,
 };
 use timeboost_utils::types::logging;
 use url::Url;
@@ -26,6 +28,10 @@ struct Args {
     /// RNG seed for deterministic key generation
     #[clap(long)]
     seed: Option<u64>,
+
+    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3000
+    #[clap(long)]
+    internal_addr: Option<Address>,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
@@ -82,48 +88,36 @@ impl Args {
         // Generate DKG keypair for this node using p_rng
         let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
-        // Prepare network addresses
-        let (decrypt_address, certifier_address, internal_address) = self.derive_net_addr();
-
-        let chain_config = ChainConfig::new(
-            self.parent_chain_id,
-            self.parent_rpc_url.clone(),
-            self.parent_ibox_contr_addr,
-            self.parent_block_tag,
-            self.key_manager_addr,
-        );
-
         let config = NodeConfig {
-            net: NodeNetConfig {
-                sailfish_address: self.sailfish.clone(),
-                decrypt_address,
-                certifier_address,
-                internal_address,
-            },
+            net: NodeNetConfig::new(
+                self.sailfish.clone(),
+                self.internal_addr.clone(),
+                self.nitro_addr.clone(),
+            ),
             keys: NodeKeyConfig {
-                signing_key: signing_keypair.public_key(),
-                dh_key: dh_keypair.public_key(),
-                dkg_enc_key: DkgEncKey::from(&dkg_dec_key),
+                signing: NodeKeypairConfig {
+                    secret: signing_keypair.secret_key(),
+                    public: signing_keypair.public_key(),
+                },
+                dh: NodeKeypairConfig {
+                    secret: dh_keypair.secret_key(),
+                    public: dh_keypair.public_key(),
+                },
+                dkg: NodeEncodedKeypairConfig {
+                    secret: Blackbox::encode(dkg_dec_key.clone())?,
+                    public: Blackbox::encode(DkgEncKey::from(&dkg_dec_key))?,
+                },
             },
-            chain_config,
-            nitro_addr: self.nitro_addr.clone(),
-            private: Some(PrivateKeys::new(
-                signing_keypair.secret_key(),
-                dh_keypair.secret_key(),
-                dkg_dec_key,
-            )),
+            chain_config: ChainConfig::new(
+                self.parent_chain_id,
+                self.parent_rpc_url.clone(),
+                self.parent_ibox_contr_addr,
+                self.parent_block_tag,
+                self.key_manager_addr,
+            ),
         };
 
         Ok(config)
-    }
-
-    // based on the primary `sailfish_address`, derive the rest: decrypter, certifier, and internal
-    fn derive_net_addr(&self) -> (Address, Address, Address) {
-        let sailfish = &self.sailfish;
-        let decrypter = sailfish.clone().with_port(sailfish.port() + 1000);
-        let certifier = sailfish.clone().with_port(sailfish.port() + 2000);
-        let internal = sailfish.clone().with_port(sailfish.port() + 3000);
-        (decrypter, certifier, internal)
     }
 }
 
@@ -155,10 +149,10 @@ fn main() -> Result<()> {
         };
 
         let new_member = CommitteeMember {
-            signing_key: cfg.keys.signing_key,
-            dh_key: cfg.keys.dh_key,
-            dkg_enc_key: cfg.keys.dkg_enc_key.clone(),
-            sailfish_address: cfg.net.sailfish_address.clone(),
+            signing_key: cfg.keys.signing.public,
+            dh_key: cfg.keys.dh.public,
+            dkg_enc_key: cfg.keys.dkg.public.clone(),
+            sailfish_address: cfg.net.sailfish.clone(),
         };
         if !committee_config.members.contains(&new_member) {
             committee_config.members.push(new_member);
