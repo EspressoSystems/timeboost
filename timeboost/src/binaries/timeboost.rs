@@ -136,11 +136,15 @@ async fn main() -> Result<()> {
                 .expect("Failed to parse sigKey");
             let dh_key =
                 x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_dec_key = DkgEncKey::try_from_bytes::<1024>(peer.dkgKey.as_ref())
-                .expect("Failed to parse dkgKey");
+            let dkg_enc_key: DkgEncKey = bincode::serde::decode_from_slice(
+                peer.dkgKey.as_ref(),
+                bincode::config::standard(),
+            )
+            .expect("Failed to parse dkgKey")
+            .0;
             let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
                 .expect("Failed to parse networkAddress");
-            (sig_key, dh_key, dkg_dec_key, sailfish_address)
+            (sig_key, dh_key, dkg_enc_key, sailfish_address)
         })
         .collect::<Vec<_>>();
 

@@ -66,7 +66,9 @@ async fn main() -> Result<()> {
         .map(|m| CommitteeMemberSol {
             sigKey: m.signing_key.to_bytes().into(),
             dhKey: m.dh_key.as_bytes().into(),
-            dkgKey: m.dkg_enc_key.to_bytes().into(),
+            dkgKey: bincode::serde::encode_to_vec(&m.dkg_enc_key, bincode::config::standard())
+                .expect("encode dkg key should succeed")
+                .into(),
             networkAddress: m.sailfish_address.to_string(),
         })
         .collect::<Vec<_>>();

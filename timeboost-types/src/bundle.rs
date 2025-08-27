@@ -352,7 +352,11 @@ impl Committable for DkgBundle {
         RawCommitmentBuilder::new("DkgBundle")
             .field("committee", self.committee_id.commit())
             .var_size_field("ciphertexts", self.vess_ct.as_bytes())
-            .var_size_field("commitment", &self.comm.to_bytes())
+            .var_size_field(
+                "commitment",
+                &bincode::serde::encode_to_vec(&self.comm, bincode::config::standard())
+                    .expect("bincode encdoe comm should succeed"),
+            )
             .finalize()
     }
 }

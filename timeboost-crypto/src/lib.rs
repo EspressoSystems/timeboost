@@ -3,6 +3,7 @@ pub mod feldman;
 mod interpolation;
 pub mod mre;
 pub mod prelude;
+pub(crate) mod serde_bridge;
 pub mod sg_encryption;
 pub mod traits;
 pub mod vess;
@@ -11,14 +12,13 @@ use ark_ec::CurveGroup;
 use ark_ec::hashing::curve_maps::wb::WBMap;
 use ark_ec::hashing::map_to_curve_hasher::MapToCurveBasedHasher;
 use ark_ff::field_hashers::DefaultFieldHasher;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use cp_proof::Proof;
 use derive_more::From;
 use digest::{generic_array::GenericArray, typenum};
 use multisig::Committee;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_bridge::SerdeAs;
 use serde_with::serde_as;
 use sg_encryption::ShoupGennaro;
 use sha2::Sha256;
@@ -115,21 +115,21 @@ impl Keyset {
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
 pub struct CombKey<C: CurveGroup> {
-    #[serde_as(as = "Vec<crate::SerdeAs>")]
+    #[serde_as(as = "Vec<SerdeAs>")]
     pub key: Vec<C>,
 }
 
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
 pub struct PublicKey<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     key: C,
 }
 
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop, From)]
 pub struct KeyShare<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     share: C::ScalarField,
     index: u32,
 }
@@ -140,9 +140,9 @@ pub struct Plaintext(Vec<u8>);
 #[serde_as]
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Ciphertext<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     v: C,
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     w_hat: C,
     e: Vec<u8>,
     nonce: Nonce,
@@ -152,7 +152,7 @@ pub struct Ciphertext<C: CurveGroup> {
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DecShare<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     w: C,
     index: u32,
     phi: Proof,
@@ -186,73 +186,12 @@ impl<C: CurveGroup> CombKey<C> {
     pub fn get_pub_share(&self, idx: usize) -> Option<&C> {
         self.key.get(idx)
     }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing combkey")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        try_from_bytes::<Self, N>(value)
-    }
-
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        try_from_str::<Self, N>(value)
-    }
-}
-
-impl<C: CurveGroup> PublicKey<C> {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing public key")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        try_from_bytes::<Self, N>(value)
-    }
-
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        try_from_str::<Self, N>(value)
-    }
 }
 
 impl<C: CurveGroup> KeyShare<C> {
     pub fn share(&self) -> &C::ScalarField {
         &self.share
     }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing key share")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        try_from_bytes::<Self, N>(value)
-    }
-
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        try_from_str::<Self, N>(value)
-    }
-}
-
-pub(crate) fn try_from_bytes<T, const N: usize>(value: &[u8]) -> Result<T, SerializationError>
-where
-    T: DeserializeOwned,
-{
-    let conf = bincode::config::standard().with_limit::<N>();
-    bincode::serde::decode_from_slice(value, conf)
-        .map(|(val, _)| val)
-        .map_err(|_| SerializationError::InvalidData)
-}
-
-pub(crate) fn try_from_str<T, const N: usize>(value: &str) -> Result<T, SerializationError>
-where
-    T: DeserializeOwned,
-{
-    let v = bs58::decode(value)
-        .into_vec()
-        .map_err(|_| SerializationError::InvalidData)?;
-    try_from_bytes::<T, N>(&v)
 }
 
 impl Plaintext {
@@ -353,37 +292,6 @@ impl ThresholdEncScheme for DecryptionScheme {
         <ShoupGennaro<G, H, D, H2C> as ThresholdEncScheme>::combine(
             committee, comb_key, dec_shares, ciphertext, aad,
         )
-    }
-}
-
-pub struct SerdeAs;
-
-impl<T> serde_with::SerializeAs<T> for SerdeAs
-where
-    T: CanonicalSerialize,
-{
-    fn serialize_as<S>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut bytes = vec![];
-        val.serialize_compressed(&mut bytes)
-            .map_err(serde::ser::Error::custom)?;
-
-        serde_with::Bytes::serialize_as(&bytes, serializer)
-    }
-}
-
-impl<'de, T> serde_with::DeserializeAs<'de, T> for SerdeAs
-where
-    T: CanonicalDeserialize,
-{
-    fn deserialize_as<D>(deserializer: D) -> Result<T, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let bytes: Vec<u8> = serde_with::Bytes::deserialize_as(deserializer)?;
-        T::deserialize_compressed(&mut &bytes[..]).map_err(serde::de::Error::custom)
     }
 }
 

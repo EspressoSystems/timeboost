@@ -2246,7 +2246,7 @@ mod tests {
 
         let dkg_keys: Vec<_> = dkg_keys
             .iter()
-            .map(|key_str| DkgDecKey::try_from_str::<64>(key_str).expect("Valid DKG key string"))
+            .map(|key_str| DkgDecKey::try_from(*key_str).expect("Valid DKG key string"))
             .collect();
 
         // Create committee from signature keys

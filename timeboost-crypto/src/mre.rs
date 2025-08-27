@@ -2,8 +2,9 @@
 //! Proposed as MEGa in <https://eprint.iacr.org/2022/506>, this code implements the simplified
 //! variant in <https://eprint.iacr.org/2025/1175>.
 
+use crate::serde_bridge::SerdeAs;
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_serialize::{SerializationError, serialize_to_vec};
+use ark_serialize::serialize_to_vec;
 use ark_std::{
     UniformRand,
     rand::{CryptoRng, Rng},
@@ -17,10 +18,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Encryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptionKey<C: CurveGroup> {
     // u = g^alpha where alpha is the secret key
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     pub(crate) u: C::Affine,
 }
 
@@ -39,26 +40,11 @@ impl<C: CurveGroup> From<&DecryptionKey<C>> for EncryptionKey<C> {
     }
 }
 
-impl<C: CurveGroup> EncryptionKey<C> {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing enc key")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        crate::try_from_bytes::<Self, N>(value)
-    }
-
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        crate::try_from_str::<Self, N>(value)
-    }
-}
-
 /// Decryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct DecryptionKey<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     pub(crate) alpha: C::ScalarField,
 }
 
@@ -81,20 +67,6 @@ impl<C: CurveGroup> DecryptionKey<C> {
             u: pk.u,
             node_idx,
         }
-    }
-
-    // FIXME(alex): these boilerplate are annoying, we should dedup these logic later
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing dec key")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        crate::try_from_bytes::<Self, N>(value)
-    }
-
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        crate::try_from_str::<Self, N>(value)
     }
 }
 
@@ -138,8 +110,6 @@ impl<C: CurveGroup> From<LabeledDecryptionKey<C>> for DecryptionKey<C> {
     }
 }
 
-use crate::try_from_bytes;
-
 /// Ciphertext for multiple recipients in MRE scheme
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,15 +129,6 @@ impl<C: CurveGroup, H: Digest> MultiRecvCiphertext<C, H> {
             epk: self.epk,
             ct: ct.clone(),
         })
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing mre ciphertext")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        try_from_bytes::<Self, N>(value)
     }
 }
 
@@ -288,6 +249,12 @@ impl From<ark_serialize::SerializationError> for MultiRecvEncError {
     }
 }
 
+impl From<bs58::decode::Error> for MultiRecvEncError {
+    fn from(e: bs58::decode::Error) -> Self {
+        Self::SerdeError(e.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, iter::repeat_with};
@@ -354,5 +321,46 @@ mod tests {
             // Test with wrong associated data
             assert_ne!(labeled_sks[i].decrypt::<H>(&ct, b"Bob").unwrap(), msgs[i]);
         }
+    }
+
+    #[test]
+    fn test_serde() {
+        let rng = &mut rand::thread_rng();
+        let sk = DecryptionKey::<G1Projective>::rand(rng);
+        let pk = EncryptionKey::from(&sk);
+
+        let bytes = bincode::serde::encode_to_vec(&sk, bincode::config::standard()).unwrap();
+        assert_eq!(
+            bincode::serde::decode_from_slice::<DecryptionKey::<G1Projective>, _>(
+                &bytes,
+                bincode::config::standard()
+            )
+            .unwrap()
+            .0,
+            sk
+        );
+
+        let bytes = bincode::serde::encode_to_vec(&pk, bincode::config::standard()).unwrap();
+        assert_eq!(
+            bincode::serde::decode_from_slice::<EncryptionKey::<G1Projective>, _>(
+                &bytes,
+                bincode::config::standard()
+            )
+            .unwrap()
+            .0,
+            pk
+        );
+
+        let s = toml::to_string(&sk).unwrap();
+        assert_eq!(
+            toml::from_str::<DecryptionKey::<G1Projective>>(&s).unwrap(),
+            sk
+        );
+
+        let s = toml::to_string(&pk).unwrap();
+        assert_eq!(
+            toml::from_str::<EncryptionKey::<G1Projective>>(&s).unwrap(),
+            pk
+        );
     }
 }
