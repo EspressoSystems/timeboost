@@ -35,7 +35,7 @@ pids=()
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/sailfish
         --committee-id 0
-        --config-file "$f"
+        --config "$f"
         --stamp "${TMPDIR:-/tmp}/stamp-$i.sf"
         --ignore-stamp
         --until 300)

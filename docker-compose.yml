@@ -6,7 +6,7 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--http-port", "8800",
-        "--config-file", "docker/node_0.toml",
+        "--config", "docker/node_0.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -33,7 +33,7 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--http-port", "8800",
-        "--config-file", "docker/node_1.toml",
+        "--config", "docker/node_1.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -60,7 +60,7 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--http-port", "8800",
-        "--config-file", "docker/node_2.toml",
+        "--config", "docker/node_2.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -87,7 +87,7 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--http-port", "8800",
-        "--config-file", "docker/node_3.toml",
+        "--config", "docker/node_3.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -115,7 +115,7 @@ services:
         "--committee-id", "0",
         "--http-port", "8800",
         "--keyset-file", "docker.json",
-        "--config-file", "docker/node_4.toml",
+        "--config", "docker/node_4.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]

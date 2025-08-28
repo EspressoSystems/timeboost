@@ -137,7 +137,7 @@ i=0
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
-        --config-file "$f"
+        --config "$f"
         --http-port $((8800 + $i))
         --until $rounds
         --stamp "${stamp}-$i.sf"
