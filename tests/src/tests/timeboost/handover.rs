@@ -70,24 +70,19 @@ where
         .map(|c| c.sailfish_address().clone())
         .chain(
             repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
+                loop {
+                    if let Some(port) = portpicker::pick_unused_port() {
+                        break Address::from((Ipv4Addr::LOCALHOST, port));
+                    }
+                }
             })
             .take(add.get()),
         )
         .collect::<Vec<_>>();
 
-    let de_addrs = prev
+    let de_addrs = sf_addrs
         .iter()
-        .take(keep)
-        .map(|c| c.decrypt_address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
+        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + 1000)))
         .collect::<Vec<_>>();
 
     let committee = Committee::new(

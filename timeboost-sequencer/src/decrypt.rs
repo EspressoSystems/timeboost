@@ -334,8 +334,10 @@ impl Decrypter {
         k: KeyStore,
     ) -> StdResult<(), DecrypterDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
+        // map to Decrypter network by shifting ports
+        let d = translate_addr(c);
         self.worker_tx
-            .send(Command::NextCommittee(c, k))
+            .send(Command::NextCommittee(d, k))
             .await
             .map_err(|_| DecrypterDown(()))?;
         Ok(())
@@ -350,6 +352,19 @@ impl Decrypter {
             .map_err(|_| DecrypterDown(()))?;
         Ok(())
     }
+}
+
+fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
+    let committee = c.committee().clone();
+    let shifted_entries = c
+        .entries()
+        .map(|(pk, dh, addr)| {
+            let dec_port = addr.port().saturating_add(1000);
+            let new_addr = addr.with_port(dec_port);
+            (pk, dh, new_addr)
+        })
+        .collect::<Vec<_>>();
+    AddressableCommittee::new(committee, shifted_entries)
 }
 
 impl Drop for Decrypter {
