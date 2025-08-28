@@ -1,5 +1,5 @@
 [net]
-sailfish = "172.20.0.6:8000"
+pubilc = "172.20.0.6:8000"
 internal = "172.20.0.6:11000"
 
 [keys.signing]

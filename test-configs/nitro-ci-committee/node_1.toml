@@ -1,5 +1,5 @@
 [net]
-sailfish = "127.0.0.1:8001"
+pubilc = "127.0.0.1:8001"
 internal = "127.0.0.1:11001"
 nitro = "localhost:55001"
 
