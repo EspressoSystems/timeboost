@@ -125,9 +125,14 @@ impl Args {
             } else {
                 None
             };
+            let nitro_addr = if let Some(addr) = &self.nitro_addr {
+                Some(self.adjust_addr(i, addr)?)
+            } else {
+                None
+            };
 
             let config = NodeConfig {
-                net: NodeNetConfig::new(public_addr, internal_addr, self.nitro_addr.clone()),
+                net: NodeNetConfig::new(public_addr, internal_addr, nitro_addr),
                 keys: NodeKeyConfig {
                     signing: NodeKeypairConfig {
                         secret: signing_keypair.secret_key(),

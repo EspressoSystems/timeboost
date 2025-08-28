@@ -1,7 +1,7 @@
 [net]
 public = "127.0.0.1:8001"
 internal = "127.0.0.1:11001"
-nitro = "localhost:55000"
+nitro = "localhost:55001"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
