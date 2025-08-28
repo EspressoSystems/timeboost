@@ -171,7 +171,7 @@ mod tests {
     // generated via `just mkconfig 1`
     const CONFIG: &str = r#"
 [net]
-sailfish = "127.0.0.1:8001"
+public = "127.0.0.1:8001"
 internal = "127.0.0.1:11001"
 
 [keys.signing]

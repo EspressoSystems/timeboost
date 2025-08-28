@@ -66,6 +66,31 @@ pub fn select_peer_hosts(
 /// Sometimes we don't want to reveal the struct inner fields when serializing.
 /// This intermediate type holds the bs58::encode(bincode::encode(T)) string that treats
 /// the type `T` as a `Serialize + Deserialize` blackbox.
+///
+/// # Rationale
+///
+/// A concrete motivating example is: if we serialize some config struct in toml format,
+/// containing the public key `crypto::mre::EncryptionKey`, it will reveal the inner fields:
+///
+/// ```no_run
+/// [keys.dkg.pubilc]
+/// u = "..."
+///
+/// # what we want:
+/// [keys.dkg]
+/// public = "..."
+/// ```
+///
+/// One solution is to write customized serde function then use `serde(with="")` on the field
+/// whose internals need to be masked in serialized output. This approach is ergonomic but slightly
+/// error prone if that particular field's serialized value is taken out-of-context, and
+/// the deserializer may forget to use the aforementioned custom deserializer.
+///
+/// Here we take another approach, being explicit about the expectation to use non-serde-default
+/// `decode()` method to deserialize through the type system. The reason why we hold a String rather
+/// than Bytes is the intended usage of this helper struct is human readable de/serializer where
+/// the serialized values can have structured semantic. For bytes-orientated de/serializer,
+/// revealing the internal structure is never a problem to begin with since they are just raw bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Blackbox(String);
 
