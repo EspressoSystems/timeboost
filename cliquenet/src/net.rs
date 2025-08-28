@@ -872,6 +872,8 @@ where
         let h = Builder::new(NOISE_PARAMS.parse().expect("valid noise params"))
             .local_private_key(&self.keypair.secret_key().as_bytes())
             .expect("valid private key")
+            .prologue(self.name.as_bytes())
+            .expect("1st time we set the prologue")
             .build_responder()
             .expect("valid noise params yield valid handshake state");
         self.handshake_tasks.spawn(async move {
@@ -967,6 +969,8 @@ async fn connect<T: tcp::Stream + Unpin>(
             .expect("valid private key")
             .remote_public_key(to.1.as_slice())
             .expect("valid remote pub key")
+            .prologue(name.as_bytes())
+            .expect("1st time we set the prologue")
             .build_initiator()
             .expect("valid noise params yield valid handshake state")
     };
