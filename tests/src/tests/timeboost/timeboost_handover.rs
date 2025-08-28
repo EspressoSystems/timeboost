@@ -31,6 +31,220 @@ enum Cmd {
     Bundle(BundleVariant),
 }
 
+/// Run a handover test between a current and a next set of nodes.
+async fn run_handover(
+    curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+) {
+    const NEXT_COMMITTEE_DELAY: u64 = 15;
+    const NUM_OF_BLOCKS: usize = 50;
+
+    let num = NonZeroUsize::new(5).unwrap();
+    let quorum = 4;
+
+    let mut out1 = Vec::new();
+    let tasks = TaskTracker::new();
+    let (bcast, _) = broadcast::channel(100);
+    let finish = CancellationToken::new();
+    let round2block = Arc::new(Round2Block::new());
+
+    let a1 = curr[0].1.sailfish_committee().clone();
+    let a2 = next[0].1.sailfish_committee().clone();
+    let c1 = a1.committee().id();
+    let c2 = a2.committee().id();
+    let d2 = next[0].1.decrypt_committee().clone();
+
+    assert_ne!(c1, c2);
+
+    // Run committee 1:
+    for (_, seq_conf, cert_conf) in &curr {
+        // Clone the configs so they are owned and can be moved into the async block
+        let seq_conf = seq_conf.clone();
+        let cert_conf = cert_conf.clone();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let finish = finish.clone();
+        let mut cmd = bcast.subscribe();
+        let label = seq_conf.sign_keypair().public_key();
+        let r2b = round2block.clone();
+
+        tasks.spawn(async move {
+            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
+            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
+            let mut r: Option<sailfish_types::RoundNumber> = None;
+            let handle = c.handle();
+
+            loop {
+                select! {
+                    cmd = cmd.recv() => match cmd {
+                        Ok(Cmd::NextCommittee(t, a, k)) => {
+                            s.set_next_committee(t, a, k).await.unwrap();
+                        }
+                        Ok(Cmd::Bundle(bundle)) => {
+                            s.add_bundles(once(bundle));
+                        }
+                        Err(err) => panic!("Command channel error: {err}")
+                    },
+                    out = s.next() => {
+                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
+                            error!(node = %s.public_key(), "no sequencer output");
+                            continue
+                        };
+                        // We require unique round numbers.
+                        if Some(round) == r {
+                            continue
+                        }
+                        r = Some(round);
+                        let i = r2b.get(round);
+                        let b = Block::new(i, *round, hash(&transactions));
+                        handle.enqueue(b).await.unwrap()
+                    },
+                    blk = c.next_block() => {
+                        let b = blk.expect("block");
+                        debug!(node = %s.public_key(), hash = %b.data().hash(), "block received");
+                        let c: Certificate<BlockInfo> = b.into();
+                        tx.send(c.into_data()).unwrap()
+                    },
+                    _ = finish.cancelled() => {
+                        info!(node = %s.public_key(), "done");
+                        return
+                    }
+                }
+            }
+        });
+        out1.push((label, rx))
+    }
+
+    // Start transaction generation
+    // Wait for all decryption keys in curr_enc_keys to be ready
+    for (key, _, _) in &curr {
+        key.read().await;
+    }
+
+    tasks.spawn({
+        let (key, _, _) = &curr[0];
+        let key = key.clone();
+        let bcast = bcast.clone();
+        async move {
+            let (tx, mut rx) = tokio::sync::broadcast::channel(200);
+            tokio::spawn(gen_bundles(key, tx));
+            while let Ok(bundle) = rx.recv().await {
+                if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
+                    warn!("Failed to send bundle: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
+    // Inform about upcoming committee change:
+    let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
+    bcast.send(Cmd::NextCommittee(t, a2, d2.1)).unwrap();
+
+    let mut out2 = Vec::new();
+
+    // Run committee 2:
+    for (_, seq_conf, cert_conf) in &next {
+        let ours = seq_conf.sign_keypair().public_key();
+
+        if curr
+            .iter()
+            .any(|(_, s, _)| s.sign_keypair().public_key() == ours)
+        {
+            continue;
+        }
+        let (tx, rx) = mpsc::unbounded_channel();
+        let seq_conf = seq_conf.clone();
+        let cert_conf = cert_conf.clone();
+        let finish = finish.clone();
+        let mut cmd = bcast.subscribe();
+        let label = seq_conf.sign_keypair().public_key();
+        let r2b = round2block.clone();
+
+        tasks.spawn(async move {
+            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
+            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
+            let mut r: Option<sailfish_types::RoundNumber> = None;
+            let handle = c.handle();
+
+            loop {
+                select! {
+                    cmd = cmd.recv() => match cmd {
+                        Ok(Cmd::NextCommittee(t, a, k)) => {
+                            s.set_next_committee(t, a, k).await.unwrap();
+                        }
+                        Ok(Cmd::Bundle(bundle)) => {
+                            s.add_bundles(once(bundle));
+                        }
+                        Err(err) => panic!("Command channel error: {err}")
+                    },
+                    out = s.next() => {
+                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
+                            error!(node = %s.public_key(), "no sequencer output");
+                            continue
+                        };
+                        if Some(round) == r {
+                            continue
+                        }
+                        r = Some(round);
+                        let i = r2b.get(round);
+                        let b = Block::new(i, *round, hash(&transactions));
+                        handle.enqueue(b).await.unwrap()
+                    },
+                    blk = c.next_block() => {
+                        let b = blk.expect("block");
+                        debug!(node = %s.public_key(), hash = %b.data().hash(), "block received");
+                        let c: Certificate<BlockInfo> = b.into();
+                        tx.send(c.into_data()).unwrap()
+                    },
+                    _ = finish.cancelled() => {
+                        info!(node = %s.public_key(), "done");
+                        return
+                    }
+                }
+            }
+        });
+        out2.push((label, rx))
+    }
+
+    let mut map: HashMap<BlockInfo, usize> = HashMap::new();
+
+    for b in 0..NUM_OF_BLOCKS {
+        map.clear();
+        info!(block = %b);
+        for (node, r) in &mut out1 {
+            debug!(%node, block = %b, "awaiting ...");
+            let info = r.recv().await.unwrap();
+            *map.entry(info).or_default() += 1
+        }
+        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
+            continue;
+        }
+        for (info, n) in map {
+            eprintln!("{}: {} = {n}", info.hash(), info.round().num())
+        }
+        panic!("outputs do not match")
+    }
+
+    for b in 0..NUM_OF_BLOCKS {
+        map.clear();
+        info!(block = %b);
+        for (node, r) in &mut out2 {
+            debug!(%node, block = %b, "awaiting ...");
+            let info = r.recv().await.unwrap();
+            *map.entry(info).or_default() += 1
+        }
+        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
+            continue;
+        }
+        for (info, n) in map {
+            eprintln!("{}: {} = {n}", info.hash(), info.round().num())
+        }
+        panic!("outputs do not match")
+    }
+
+    finish.cancel();
+}
+
 /// Create sequencer configs.
 ///
 /// A (possible empty) slice of previous configs can be given, of which some
@@ -210,238 +424,100 @@ fn mk_configs(
     (enc_keys, cfgs)
 }
 
-/// Run a handover test between a current and a next set of nodes.
-async fn run_handover(
-    curr: (
-        Vec<DecryptionKeyCell>,
-        Vec<(SequencerConfig, CertifierConfig)>,
-    ),
-    next: (
-        Vec<DecryptionKeyCell>,
-        Vec<(SequencerConfig, CertifierConfig)>,
-    ),
-) {
-    const NEXT_COMMITTEE_DELAY: u64 = 15;
-    const NUM_OF_BLOCKS: usize = 50;
+struct TestConfig {
+    committee_id: CommitteeId,
+    prev_configs: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    keep: usize,
+    add: NonZeroUsize,
+    set_prev: bool,
+}
 
-    let num = NonZeroUsize::new(5).unwrap();
-    let quorum = 4;
-
-    let mut out1 = Vec::new();
-    let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(100);
-    let finish = CancellationToken::new();
-    let round2block = Arc::new(Round2Block::new());
-
-    let a1 = curr.1[0].0.sailfish_committee().clone();
-    let a2 = next.1[0].0.sailfish_committee().clone();
-    let c1 = a1.committee().id();
-    let c2 = a2.committee().id();
-    let d2 = next.1[0].0.decrypt_committee().clone();
-
-    assert_ne!(c1, c2);
-
-    // Run committee 1:
-    for (seq_conf, cert_conf) in &curr.1 {
-        // Clone the configs so they are owned and can be moved into the async block
-        let seq_conf = seq_conf.clone();
-        let cert_conf = cert_conf.clone();
-        let (tx, rx) = mpsc::unbounded_channel();
-        let finish = finish.clone();
-        let mut cmd = bcast.subscribe();
-        let label = seq_conf.sign_keypair().public_key();
-        let r2b = round2block.clone();
-
-        tasks.spawn(async move {
-            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
-            let mut r: Option<sailfish_types::RoundNumber> = None;
-            let handle = c.handle();
-
-            loop {
-                select! {
-                    cmd = cmd.recv() => match cmd {
-                        Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a, k).await.unwrap();
-                        }
-                        Ok(Cmd::Bundle(bundle)) => {
-                            s.add_bundles(once(bundle));
-                        }
-                        Err(err) => panic!("Command channel error: {err}")
-                    },
-                    out = s.next() => {
-                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
-                            error!(node = %s.public_key(), "no sequencer output");
-                            continue
-                        };
-                        // We require unique round numbers.
-                        if Some(round) == r {
-                            continue
-                        }
-                        r = Some(round);
-                        let i = r2b.get(round);
-                        let b = Block::new(i, *round, hash(&transactions));
-                        handle.enqueue(b).await.unwrap()
-                    },
-                    blk = c.next_block() => {
-                        let b = blk.expect("block");
-                        debug!(node = %s.public_key(), hash = %b.data().hash(), "block received");
-                        let c: Certificate<BlockInfo> = b.into();
-                        tx.send(c.into_data()).unwrap()
-                    },
-                    _ = finish.cancelled() => {
-                        info!(node = %s.public_key(), "done");
-                        return
-                    }
-                }
-            }
-        });
-        out1.push((label, rx))
+impl TestConfig {
+    fn new(committee_id: u64) -> Self {
+        Self {
+            committee_id: committee_id.into(),
+            prev_configs: Vec::new(),
+            keep: 0,
+            add: NonZeroUsize::new(5).unwrap(),
+            set_prev: false,
+        }
     }
 
-    // Start transaction generation
-    // Wait for all decryption keys in curr_enc_keys to be ready
-    for key in &curr.0 {
-        key.read().await;
+    fn with_prev_configs(
+        mut self,
+        prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
+    ) -> Self {
+        self.prev_configs = prev.to_vec();
+        self
     }
 
-    tasks.spawn({
-        let key = curr.0[0].clone();
-        let bcast = bcast.clone();
-        async move {
-            let (tx, mut rx) = tokio::sync::broadcast::channel(200);
-            tokio::spawn(gen_bundles(key, tx));
-            while let Ok(bundle) = rx.recv().await {
-                if let Err(e) = bcast.send(Cmd::Bundle(bundle)) {
-                    warn!("Failed to send bundle: {}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    // Inform about upcoming committee change:
-    let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
-    bcast.send(Cmd::NextCommittee(t, a2, d2.1)).unwrap();
-
-    let mut out2 = Vec::new();
-
-    // Run committee 2:
-    for (seq_conf, cert_conf) in &next.1 {
-        let ours = seq_conf.sign_keypair().public_key();
-
-        if curr
-            .1
-            .iter()
-            .any(|(s, _)| s.sign_keypair().public_key() == ours)
-        {
-            continue;
-        }
-        let (tx, rx) = mpsc::unbounded_channel();
-        let seq_conf = seq_conf.clone();
-        let cert_conf = cert_conf.clone();
-        let finish = finish.clone();
-        let mut cmd = bcast.subscribe();
-        let label = seq_conf.sign_keypair().public_key();
-        let r2b = round2block.clone();
-
-        tasks.spawn(async move {
-            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
-            let mut r: Option<sailfish_types::RoundNumber> = None;
-            let handle = c.handle();
-
-            loop {
-                select! {
-                    cmd = cmd.recv() => match cmd {
-                        Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a, k).await.unwrap();
-                        }
-                        Ok(Cmd::Bundle(bundle)) => {
-                            s.add_bundles(once(bundle));
-                        }
-                        Err(err) => panic!("Command channel error: {err}")
-                    },
-                    out = s.next() => {
-                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
-                            error!(node = %s.public_key(), "no sequencer output");
-                            continue
-                        };
-                        if Some(round) == r {
-                            continue
-                        }
-                        r = Some(round);
-                        let i = r2b.get(round);
-                        let b = Block::new(i, *round, hash(&transactions));
-                        handle.enqueue(b).await.unwrap()
-                    },
-                    blk = c.next_block() => {
-                        let b = blk.expect("block");
-                        debug!(node = %s.public_key(), hash = %b.data().hash(), "block received");
-                        let c: Certificate<BlockInfo> = b.into();
-                        tx.send(c.into_data()).unwrap()
-                    },
-                    _ = finish.cancelled() => {
-                        info!(node = %s.public_key(), "done");
-                        return
-                    }
-                }
-            }
-        });
-        out2.push((label, rx))
+    fn keep_nodes(mut self, keep: usize) -> Self {
+        self.keep = keep;
+        self
     }
 
-    let mut map: HashMap<BlockInfo, usize> = HashMap::new();
-
-    for b in 0..NUM_OF_BLOCKS {
-        map.clear();
-        info!(block = %b);
-        for (node, r) in &mut out1 {
-            debug!(%node, block = %b, "awaiting ...");
-            let info = r.recv().await.unwrap();
-            *map.entry(info).or_default() += 1
-        }
-        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
-            continue;
-        }
-        for (info, n) in map {
-            eprintln!("{}: {} = {n}", info.hash(), info.round().num())
-        }
-        panic!("outputs do not match")
+    fn add_nodes(mut self, add: NonZeroUsize) -> Self {
+        self.add = add;
+        self
     }
 
-    for b in 0..NUM_OF_BLOCKS {
-        map.clear();
-        info!(block = %b);
-        for (node, r) in &mut out2 {
-            debug!(%node, block = %b, "awaiting ...");
-            let info = r.recv().await.unwrap();
-            *map.entry(info).or_default() += 1
-        }
-        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
-            continue;
-        }
-        for (info, n) in map {
-            eprintln!("{}: {} = {n}", info.hash(), info.round().num())
-        }
-        panic!("outputs do not match")
+    fn set_previous_committee(mut self, set: bool) -> Self {
+        self.set_prev = set;
+        self
     }
 
-    finish.cancel();
+    fn build(self) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+        mk_configs(
+            self.committee_id,
+            &self.prev_configs,
+            self.keep,
+            self.add,
+            self.set_prev,
+        )
+    }
 }
 
 #[tokio::test]
 async fn handover_0_to_5() {
     init_logging();
 
-    let c1 = mk_configs(0.into(), &[], 0, NonZeroUsize::new(5).unwrap(), false);
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(0)
+        .add_nodes(NonZeroUsize::new(5).unwrap())
+        .set_previous_committee(true)
+        .build();
 
-    let c2 = mk_configs(
-        1.into(),
-        c1.1.as_slice(),
-        0,
-        NonZeroUsize::new(5).unwrap(),
-        true,
-    );
+    run_handover(c1, c2).await;
+}
+
+#[tokio::test]
+async fn handover_1_to_4() {
+    init_logging();
+
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(1)
+        .add_nodes(NonZeroUsize::new(4).unwrap())
+        .set_previous_committee(true)
+        .build();
+
+    run_handover(c1, c2).await;
+}
+
+#[tokio::test]
+async fn handover_2_to_3() {
+    init_logging();
+
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(2)
+        .add_nodes(NonZeroUsize::new(3).unwrap())
+        .set_previous_committee(true)
+        .build();
+
     run_handover(c1, c2).await;
 }
