@@ -30,185 +30,10 @@ enum Cmd {
     Bundle(BundleVariant),
 }
 
-/// Create sequencer configs.
-///
-/// A (possible empty) slice of previous configs can be given, of which some
-/// subset can be kept. A given number of additional configs are created.
-/// Finally, the `set_prev` flag indicates if the previous committee should be
-/// set on the configs.
-fn mk_configs(
-    id: CommitteeId,
-    prev: &[(SequencerConfig, CertifierConfig)],
-    keep: usize,
-    add: NonZeroUsize,
-    set_prev: bool,
-) -> (
-    Vec<DecryptionKeyCell>,
-    Vec<(SequencerConfig, CertifierConfig)>,
-) {
-    let sign_keys = prev
-        .iter()
-        .take(keep)
-        .map(|c| c.0.sign_keypair().clone())
-        .chain(repeat_with(Keypair::generate).take(add.get()))
-        .collect::<Vec<_>>();
-
-    let dh_keys = prev
-        .iter()
-        .take(keep)
-        .map(|c| c.0.dh_keypair().clone())
-        .chain(repeat_with(|| x25519::Keypair::generate().unwrap()).take(add.get()))
-        .collect::<Vec<_>>();
-
-    let dkg_keys = prev
-        .iter()
-        .take(keep)
-        .map(|d| d.0.dkg_key().clone())
-        .chain(repeat_with(DkgDecKey::generate).take(add.get()))
-        .collect::<Vec<_>>();
-
-    let sf_addrs = prev
-        .iter()
-        .take(keep)
-        .map(|c| c.0.sailfish_address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
-        .collect::<Vec<_>>();
-
-    let de_addrs = prev
-        .iter()
-        .take(keep)
-        .map(|c| c.0.decrypt_address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
-        .collect::<Vec<_>>();
-
-    let cert_addrs = prev
-        .iter()
-        .take(keep)
-        .map(|c| c.1.address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
-        .collect::<Vec<_>>();
-
-    let committee = Committee::new(
-        id,
-        sign_keys
-            .iter()
-            .enumerate()
-            .map(|(i, kp)| (i as u8, kp.public_key())),
-    );
-
-    let sf_committee = AddressableCommittee::new(
-        committee.clone(),
-        sign_keys
-            .iter()
-            .zip(&dh_keys)
-            .zip(&sf_addrs)
-            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
-    );
-
-    let de_committee = AddressableCommittee::new(
-        committee.clone(),
-        sign_keys
-            .iter()
-            .zip(&dh_keys)
-            .zip(&de_addrs)
-            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
-    );
-
-    let prod_committee = AddressableCommittee::new(
-        committee.clone(),
-        sign_keys
-            .iter()
-            .zip(&dh_keys)
-            .zip(&cert_addrs)
-            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
-    );
-
-    let key_store = KeyStore::new(
-        committee.clone(),
-        dkg_keys
-            .iter()
-            .enumerate()
-            .map(|(i, sk)| (i as u8, sk.into())),
-    );
-
-    let mut cfgs = Vec::new();
-    let mut enc_keys = Vec::new();
-
-    for (i, kpair) in sign_keys.into_iter().enumerate() {
-        let xpair = &dh_keys[i];
-        let dkg_sk = &dkg_keys[i];
-        let sa = &sf_addrs[i];
-        let da = &de_addrs[i];
-        let pa = &cert_addrs[i];
-        let enc_key = DecryptionKeyCell::new();
-        let conf = SequencerConfig::builder()
-            .sign_keypair(kpair.clone())
-            .dh_keypair(xpair.clone())
-            .dkg_key(dkg_sk.clone())
-            .sailfish_addr(sa.clone())
-            .decrypt_addr(da.clone())
-            .sailfish_committee(sf_committee.clone())
-            .decrypt_committee((de_committee.clone(), key_store.clone()))
-            .maybe_previous_sailfish_committee(
-                set_prev.then(|| prev[0].0.sailfish_committee().clone()),
-            )
-            .maybe_previous_decrypt_committee(
-                set_prev.then(|| prev[0].0.decrypt_committee().clone()),
-            )
-            .recover(false)
-            .leash_len(1000)
-            .threshold_dec_key(enc_key.clone())
-            .chain_config(ChainConfig::new(
-                1,
-                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                    .parse::<Url>()
-                    .expect("valid url"),
-                alloy::primitives::Address::default(),
-                BlockNumberOrTag::Finalized,
-            ))
-            .build();
-        let pcf = CertifierConfig::builder()
-            .sign_keypair(kpair)
-            .dh_keypair(xpair.clone())
-            .address(pa.clone())
-            .recover(false)
-            .committee(prod_committee.clone())
-            .build();
-        enc_keys.push(enc_key);
-        cfgs.push((conf, pcf));
-    }
-
-    (enc_keys, cfgs)
-}
-
 /// Run a handover test between a current and a next set of nodes.
 async fn run_handover(
-    curr: (
-        Vec<DecryptionKeyCell>,
-        Vec<(SequencerConfig, CertifierConfig)>,
-    ),
-    next: (
-        Vec<DecryptionKeyCell>,
-        Vec<(SequencerConfig, CertifierConfig)>,
-    ),
+    curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
     const NEXT_COMMITTEE_DELAY: u64 = 15;
     const NUM_OF_BLOCKS: usize = 50;
@@ -222,16 +47,16 @@ async fn run_handover(
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
-    let a1 = curr.1[0].0.sailfish_committee().clone();
-    let a2 = next.1[0].0.sailfish_committee().clone();
+    let a1 = curr[0].1.sailfish_committee().clone();
+    let a2 = next[0].1.sailfish_committee().clone();
     let c1 = a1.committee().id();
     let c2 = a2.committee().id();
-    let d2 = next.1[0].0.decrypt_committee().clone();
+    let d2 = next[0].1.decrypt_committee().clone();
 
     assert_ne!(c1, c2);
 
     // Run committee 1:
-    for (seq_conf, cert_conf) in &curr.1 {
+    for (_, seq_conf, cert_conf) in &curr {
         // Clone the configs so they are owned and can be moved into the async block
         let seq_conf = seq_conf.clone();
         let cert_conf = cert_conf.clone();
@@ -290,12 +115,13 @@ async fn run_handover(
 
     // Start transaction generation
     // Wait for all decryption keys in curr_enc_keys to be ready
-    for key in &curr.0 {
+    for (key, _, _) in &curr {
         key.read().await;
     }
 
     tasks.spawn({
-        let key = curr.0[0].clone();
+        let (key, _, _) = &curr[0];
+        let key = key.clone();
         let bcast = bcast.clone();
         async move {
             let (tx, mut rx) = tokio::sync::broadcast::channel(200);
@@ -316,13 +142,12 @@ async fn run_handover(
     let mut out2 = Vec::new();
 
     // Run committee 2:
-    for (seq_conf, cert_conf) in &next.1 {
+    for (_, seq_conf, cert_conf) in &next {
         let ours = seq_conf.sign_keypair().public_key();
 
         if curr
-            .1
             .iter()
-            .any(|(s, _)| s.sign_keypair().public_key() == ours)
+            .any(|(_, s, _)| s.sign_keypair().public_key() == ours)
         {
             continue;
         }
@@ -419,18 +244,264 @@ async fn run_handover(
     finish.cancel();
 }
 
+/// Create sequencer configs.
+///
+/// A (possible empty) slice of previous configs can be given, of which some
+/// subset can be kept. A given number of additional configs are created.
+/// Finally, the `set_prev` flag indicates if the previous committee should be
+/// set on the configs.
+fn mk_configs(
+    id: CommitteeId,
+    prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
+    keep: usize,
+    add: NonZeroUsize,
+    set_prev: bool,
+) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+    let sign_keys = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.1.sign_keypair().clone())
+        .chain(repeat_with(Keypair::generate).take(add.get()))
+        .collect::<Vec<_>>();
+
+    let dh_keys = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.1.dh_keypair().clone())
+        .chain(repeat_with(|| x25519::Keypair::generate().unwrap()).take(add.get()))
+        .collect::<Vec<_>>();
+
+    let dkg_keys = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.1.dkg_key().clone())
+        .chain(repeat_with(DkgDecKey::generate).take(add.get()))
+        .collect::<Vec<_>>();
+
+    let sf_addrs = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.1.sailfish_address().clone())
+        .chain(
+            repeat_with(|| {
+                let p = portpicker::pick_unused_port().unwrap();
+                Address::from((Ipv4Addr::LOCALHOST, p))
+            })
+            .take(add.get()),
+        )
+        .collect::<Vec<_>>();
+
+    let de_addrs = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.1.decrypt_address().clone())
+        .chain(
+            repeat_with(|| {
+                let p = portpicker::pick_unused_port().unwrap();
+                Address::from((Ipv4Addr::LOCALHOST, p))
+            })
+            .take(add.get()),
+        )
+        .collect::<Vec<_>>();
+
+    let cert_addrs = prev
+        .iter()
+        .take(keep)
+        .map(|c| c.2.address().clone())
+        .chain(
+            repeat_with(|| {
+                let p = portpicker::pick_unused_port().unwrap();
+                Address::from((Ipv4Addr::LOCALHOST, p))
+            })
+            .take(add.get()),
+        )
+        .collect::<Vec<_>>();
+
+    let committee = Committee::new(
+        id,
+        sign_keys
+            .iter()
+            .enumerate()
+            .map(|(i, kp)| (i as u8, kp.public_key())),
+    );
+
+    let sf_committee = AddressableCommittee::new(
+        committee.clone(),
+        sign_keys
+            .iter()
+            .zip(&dh_keys)
+            .zip(&sf_addrs)
+            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
+    );
+
+    let de_committee = AddressableCommittee::new(
+        committee.clone(),
+        sign_keys
+            .iter()
+            .zip(&dh_keys)
+            .zip(&de_addrs)
+            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
+    );
+
+    let prod_committee = AddressableCommittee::new(
+        committee.clone(),
+        sign_keys
+            .iter()
+            .zip(&dh_keys)
+            .zip(&cert_addrs)
+            .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
+    );
+
+    let key_store = KeyStore::new(
+        committee.clone(),
+        dkg_keys
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| (i as u8, sk.into())),
+    );
+
+    let mut nodes = Vec::new();
+
+    for (i, kpair) in sign_keys.into_iter().enumerate() {
+        let xpair = &dh_keys[i];
+        let dkg_sk = &dkg_keys[i];
+        let sa = &sf_addrs[i];
+        let da = &de_addrs[i];
+        let pa = &cert_addrs[i];
+        let enc_key = DecryptionKeyCell::new();
+        let conf = SequencerConfig::builder()
+            .sign_keypair(kpair.clone())
+            .dh_keypair(xpair.clone())
+            .dkg_key(dkg_sk.clone())
+            .sailfish_addr(sa.clone())
+            .decrypt_addr(da.clone())
+            .sailfish_committee(sf_committee.clone())
+            .decrypt_committee((de_committee.clone(), key_store.clone()))
+            .maybe_previous_sailfish_committee(
+                set_prev.then(|| prev[0].1.sailfish_committee().clone()),
+            )
+            .maybe_previous_decrypt_committee(
+                set_prev.then(|| prev[0].1.decrypt_committee().clone()),
+            )
+            .recover(false)
+            .leash_len(1000)
+            .threshold_dec_key(enc_key.clone())
+            .chain_config(ChainConfig::new(
+                1,
+                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                    .parse::<Url>()
+                    .expect("valid url"),
+                alloy::primitives::Address::default(),
+                BlockNumberOrTag::Finalized,
+            ))
+            .build();
+        let pcf = CertifierConfig::builder()
+            .sign_keypair(kpair)
+            .dh_keypair(xpair.clone())
+            .address(pa.clone())
+            .recover(false)
+            .committee(prod_committee.clone())
+            .build();
+        nodes.push((enc_key, conf, pcf));
+    }
+
+    nodes
+}
+
+struct TestConfig {
+    committee_id: CommitteeId,
+    prev_configs: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    keep: usize,
+    add: NonZeroUsize,
+    set_prev: bool,
+}
+
+impl TestConfig {
+    fn new(committee_id: u64) -> Self {
+        Self {
+            committee_id: committee_id.into(),
+            prev_configs: Vec::new(),
+            keep: 0,
+            add: NonZeroUsize::new(5).unwrap(),
+            set_prev: false,
+        }
+    }
+
+    fn with_prev_configs(
+        mut self,
+        prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
+    ) -> Self {
+        self.prev_configs = prev.to_vec();
+        self
+    }
+
+    fn keep_nodes(mut self, keep: usize) -> Self {
+        self.keep = keep;
+        self
+    }
+
+    fn add_nodes(mut self, add: NonZeroUsize) -> Self {
+        self.add = add;
+        self
+    }
+
+    fn set_previous_committee(mut self, set: bool) -> Self {
+        self.set_prev = set;
+        self
+    }
+
+    fn build(self) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+        mk_configs(
+            self.committee_id,
+            &self.prev_configs,
+            self.keep,
+            self.add,
+            self.set_prev,
+        )
+    }
+}
+
 #[tokio::test]
 async fn handover_0_to_5() {
     init_logging();
 
-    let c1 = mk_configs(0.into(), &[], 0, NonZeroUsize::new(5).unwrap(), false);
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(0)
+        .add_nodes(NonZeroUsize::new(5).unwrap())
+        .set_previous_committee(true)
+        .build();
 
-    let c2 = mk_configs(
-        1.into(),
-        c1.1.as_slice(),
-        0,
-        NonZeroUsize::new(5).unwrap(),
-        true,
-    );
+    run_handover(c1, c2).await;
+}
+
+#[tokio::test]
+async fn handover_1_to_4() {
+    init_logging();
+
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(1)
+        .add_nodes(NonZeroUsize::new(4).unwrap())
+        .set_previous_committee(true)
+        .build();
+
+    run_handover(c1, c2).await;
+}
+
+#[tokio::test]
+async fn handover_2_to_3() {
+    init_logging();
+
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(2)
+        .add_nodes(NonZeroUsize::new(3).unwrap())
+        .set_previous_committee(true)
+        .build();
+
     run_handover(c1, c2).await;
 }
