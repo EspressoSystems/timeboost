@@ -61,6 +61,13 @@ fn mk_configs(
         .chain(repeat_with(|| x25519::Keypair::generate().unwrap()).take(add.get()))
         .collect::<Vec<_>>();
 
+    let dkg_keys = prev
+        .iter()
+        .take(keep)
+        .map(|d| d.0.dkg_key().clone())
+        .chain(repeat_with(DkgDecKey::generate).take(add.get()))
+        .collect::<Vec<_>>();
+
     let sf_addrs = prev
         .iter()
         .take(keep)
@@ -134,10 +141,6 @@ fn mk_configs(
             .zip(&cert_addrs)
             .map(|((k, x), a)| (k.public_key(), x.public_key(), a.clone())),
     );
-
-    let dkg_keys = (0..sign_keys.len())
-        .map(|_| DkgDecKey::generate())
-        .collect::<Vec<_>>();
 
     let key_store = KeyStore::new(
         committee.clone(),
