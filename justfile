@@ -86,7 +86,7 @@ mkconfig NUM_NODES *ARGS:
     --public-addr "127.0.0.1:8000" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 31337 \
-    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --output "test-configs/c0" {{ARGS}}
 
@@ -96,7 +96,7 @@ mkconfig_docker *ARGS:
     --mode "increment-address" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 31337 \
-    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --output "test-configs/docker" {{ARGS}}
 
@@ -106,7 +106,7 @@ mkconfig_nitro *ARGS:
     --nitro-addr "localhost:55000" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 1337 \
-    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --output "test-configs/nitro-ci-committee" {{ARGS}}
 

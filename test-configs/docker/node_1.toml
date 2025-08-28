@@ -17,6 +17,6 @@ public = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
 [chain_config]
 parent_chain_id = 31337
 parent_chain_rpc_url = "http://127.0.0.1:8545/"
-parent_ibox_contr_addr = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+parent_ibox_contr_addr = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 parent_block_tag = "finalized"
 key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
