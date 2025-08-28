@@ -1,5 +1,5 @@
 [net]
-pubilc = "127.0.0.1:8004"
+public = "127.0.0.1:8004"
 internal = "127.0.0.1:11004"
 
 [keys.signing]

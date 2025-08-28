@@ -21,7 +21,7 @@ pub struct NodeConfig {
 /// Network addresses in [`NodeConfig`]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeNetConfig {
-    #[serde(rename = "pubilc")]
+    #[serde(rename = "public")]
     pub sailfish: Address,
     pub internal: Address,
     #[serde(skip_serializing_if = "Option::is_none")]

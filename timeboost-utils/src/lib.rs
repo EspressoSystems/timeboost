@@ -72,7 +72,7 @@ pub fn select_peer_hosts(
 /// A concrete motivating example is: if we serialize some config struct in toml format,
 /// containing the public key `crypto::mre::EncryptionKey`, it will reveal the inner fields:
 ///
-/// ```no_run
+/// ```toml,no_run
 /// [keys.dkg.pubilc]
 /// u = "..."
 ///

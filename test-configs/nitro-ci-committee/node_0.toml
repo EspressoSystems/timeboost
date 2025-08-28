@@ -1,5 +1,5 @@
 [net]
-pubilc = "127.0.0.1:8000"
+public = "127.0.0.1:8000"
 internal = "127.0.0.1:11000"
 nitro = "localhost:55000"
 
