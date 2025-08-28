@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
-use timeboost_crypto::prelude::{LabeledDkgDecKey, Vess, Vss};
+use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
 use timeboost_crypto::{DecryptionScheme, Plaintext};
@@ -1135,7 +1135,7 @@ impl Worker {
         info!(node = %self.label, %round, "use committee");
         let committee_id = round.committee();
 
-        let (old, _new) = {
+        let (old, new) = {
             let guard = self.key_stores.read();
             if guard.len() < 2 {
                 return Err(DecrypterError::Dkg(
@@ -1147,20 +1147,21 @@ impl Worker {
 
         if old.committee().contains_key(&self.label) {
             // member of both old and new committee
-            todo!("Support membership of both old and new committee");
+            if let Some(acc) = self.tracker.get_mut(&committee_id) {
+                if let Some(subset) = acc.try_finalize() {
+                    if let Some(new_pos) = new.committee().get_index(&self.label) {
+                        let dkg_sk = DkgDecKey::from(self.dkg_sk.clone());
+                        let labeled_dkg_sk = dkg_sk.label(new_pos.into());
 
-            // if let Some(acc) = self.tracker.get_mut(&committee_id) {
-            //     if let Some(subset) = acc.try_finalize() {
-            //         if let Some(new_pos) = new.committee().get_index(&self.label) {
-            //             let dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(new_pos.into());
-
-            //             let new_key = subset
-            //                 .extract_key(&new, &dkg_sk, Some(old))
-            //                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-            //             self.next_committee = NextCommittee::Use(round, Some((dkg_sk, new_key)));
-            //         }
-            //     }
-            // }
+                        let new_key = subset
+                            .extract_key(&new, &labeled_dkg_sk, Some(&old))
+                            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
+                        self.next_committee =
+                            NextCommittee::Use(round, Box::new(Some((labeled_dkg_sk, new_key))));
+                    }
+                }
+            }
+            info!(node = %self.label, %round, "completed key extraction");
         } else {
             let dest: Vec<_> = old.committee().parties().copied().collect();
             let serialized = serialize(&Protocol::DkgRequest(committee_id))?;
@@ -1181,6 +1182,8 @@ impl Worker {
         if self.clock < start.num() {
             return Ok(());
         }
+        info!(node = %self.label, %start, "switching committee");
+
         let key_store = {
             let guard = self.key_stores.read();
             let Some(key_store) = guard.get(start.committee()) else {
@@ -1484,7 +1487,7 @@ mod tests {
         let committee_keys: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
             .collect();
-        let committee = Committee::new(COMMITTEE_SIZE as u64, committee_keys);
+        let committee = Committee::new(1_u64, committee_keys);
         let threshold = committee.one_honest_threshold().get();
 
         // Generate DKG keypairs for secure communication between committee members
@@ -1566,7 +1569,7 @@ mod tests {
             })
             .collect();
         tracing::info!(
-            "Post-ACS processing takes {} ms",
+            "DKG post-processing takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
 
@@ -1610,6 +1613,179 @@ mod tests {
         let recovered_plaintext = DecryptionScheme::combine(
             &committee,
             expected_combkey,
+            selected_shares,
+            &ciphertext,
+            &threshold_aad,
+        )
+        .expect("threshold decryption combination should succeed");
+
+        assert_eq!(
+            recovered_plaintext, sample_plaintext,
+            "Recovered plaintext must match the original plaintext"
+        );
+        // Setup second committee with generated keypairs
+        let second_committee_keys: Vec<_> = (0..COMMITTEE_SIZE)
+            .map(|i| (i as u8, multisig::Keypair::generate().public_key()))
+            .collect();
+        let second_committee = Committee::new(2_u64, second_committee_keys.clone());
+
+        // Generate DKG keypairs for secure communication between committee members
+        let second_dkg_private_keys: Vec<_> = (0..COMMITTEE_SIZE)
+            .map(|_| DkgDecKey::rand(&mut rng))
+            .collect();
+        let second_dkg_public_keys: Vec<_> = second_dkg_private_keys
+            .iter()
+            .map(DkgEncKey::from)
+            .collect();
+
+        // Generate dealings: each committee member contributes a resharing
+        let start = Instant::now();
+        let dealings: Vec<_> = threshold_decryption_keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let share = vess
+                    .encrypt_reshares(
+                        &second_committee,
+                        &second_dkg_public_keys,
+                        *k.privkey().share(),
+                        &dkg_aad,
+                    )
+                    .unwrap();
+                (i, share)
+            })
+            .collect();
+        tracing::info!(
+            "VESS::encrypt_reshares takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
+
+        // double check all dealings are correct
+        let start = Instant::now();
+
+        assert!(dealings.iter().all(|(i, (ct, comm))| {
+            vess.verify_reshares(
+                &second_committee,
+                second_dkg_public_keys.iter(),
+                ct,
+                comm,
+                &dkg_aad,
+                *expected_combkey.get_pub_share(*i).unwrap(),
+            )
+            .is_ok()
+        }));
+        tracing::info!(
+            "VESS::verify_reshares takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
+
+        // Simulate ACS (Asynchronous Common Subset): randomly select subset of dealings for
+        // aggregation
+        let mut dealing_indices: Vec<_> = (0..COMMITTEE_SIZE).collect();
+        dealing_indices.shuffle(&mut rng);
+        let selected_dealing_indices = &dealing_indices[..threshold];
+
+        // Extract commitments from selected dealings
+        let commitments: Vec<_> = selected_dealing_indices
+            .iter()
+            .map(|&idx| dealings[idx].1.clone())
+            .collect();
+
+        // Decrypt shares for each node from selected dealings
+        let start = Instant::now();
+        let decrypted_reshares_per_node: Vec<Vec<_>> = (0..COMMITTEE_SIZE)
+            .map(|node_idx| {
+                let labeled_secret_key = second_dkg_private_keys[node_idx].clone().label(node_idx);
+                selected_dealing_indices
+                    .iter()
+                    .map(|&dealing_idx| {
+                        let (i, (ref ciphertext, _)) = dealings[dealing_idx];
+                        let pub_share = *expected_combkey.get_pub_share(i).unwrap();
+
+                        vess.decrypt_reshare(
+                            &committee,
+                            &labeled_secret_key,
+                            ciphertext,
+                            &dkg_aad,
+                            pub_share,
+                        )
+                        .expect("DKG share decryption should succeed")
+                    })
+                    .collect()
+            })
+            .collect();
+        tracing::info!(
+            "VESS::decrypt_reshare takes {} ms",
+            start.elapsed().as_millis() / (COMMITTEE_SIZE * threshold) as u128
+        );
+
+        let second_decryption_keys: Vec<_> = decrypted_reshares_per_node
+            .iter()
+            .enumerate()
+            .map(|(node_idx, shares)| {
+                super::DecryptionKey::from_resharing(
+                    &committee,
+                    &second_committee,
+                    node_idx,
+                    selected_dealing_indices
+                        .iter()
+                        .cloned()
+                        .zip(shares.iter().cloned().zip(commitments.iter().cloned()))
+                        .map(|(idx, (share, (_ct, comm)))| (idx, share, comm)),
+                )
+                .expect("threshold key derivation should succeed")
+            })
+            .collect();
+        tracing::info!(
+            "Resharing post-processing takes {} ms",
+            start.elapsed().as_millis() / COMMITTEE_SIZE as u128
+        );
+
+        // Verify that all nodes derive the same public and combiner keys
+        let (second_pubkey, second_combkey) = {
+            let first_key = &second_decryption_keys[0];
+            (first_key.pubkey(), first_key.combkey())
+        };
+
+        for (index, key) in second_decryption_keys.iter().enumerate().skip(1) {
+            assert_eq!(
+                key.pubkey(),
+                second_pubkey,
+                "Mismatched public key for node {index}"
+            );
+            assert_eq!(
+                key.combkey(),
+                second_combkey,
+                "Mismatched combiner key for node {index}"
+            );
+        }
+
+        // Verify that the threshold encryption keys are identical
+        assert_eq!(
+            expected_pubkey, second_pubkey,
+            "Mismatched public key for c1 and c2"
+        );
+
+        // Test threshold encryption/decryption process
+        let ciphertext =
+            DecryptionScheme::encrypt(&mut rng, second_pubkey, &sample_plaintext, &threshold_aad)
+                .expect("encryption should succeed");
+
+        // Generate decryption shares from all nodes
+        let mut decryption_shares: Vec<_> = second_decryption_keys
+            .iter()
+            .map(|key| {
+                DecryptionScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                    .expect("decryption share generation should succeed")
+            })
+            .collect();
+
+        // Combine threshold number of shares to recover the original plaintext
+        decryption_shares.shuffle(&mut rng);
+        let selected_shares: Vec<_> = decryption_shares.iter().take(threshold).collect();
+        let recovered_plaintext = DecryptionScheme::combine(
+            &second_committee,
+            second_combkey,
             selected_shares,
             &ciphertext,
             &threshold_aad,
