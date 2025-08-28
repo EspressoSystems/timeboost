@@ -1,10 +1,13 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
+use std::net::IpAddr;
+use std::num::NonZeroU8;
 use std::path::PathBuf;
 
 use alloy::eips::BlockNumberOrTag;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
@@ -20,14 +23,26 @@ use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    /// The sailfish network address. Decrypter, certifier, and internal address are derived:
-    /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
+    /// How many nodes should configuration contain?
     #[clap(long, short)]
-    sailfish: Address,
+    num: NonZeroU8,
+
+    /// Address modification mode.
+    #[clap(long, short, default_value = "increment-port")]
+    mode: Mode,
 
     /// RNG seed for deterministic key generation
     #[clap(long)]
     seed: Option<u64>,
+
+    /// The effective timestamp for this new committee
+    #[clap(long, default_value = "1756181061")]
+    timestamp: u64,
+
+    /// The sailfish network address. Decrypter, certifier, and internal address are derived:
+    /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
+    #[clap(long, short)]
+    public_addr: Address,
 
     /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3000
     #[clap(long)]
@@ -36,11 +51,6 @@ struct Args {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
-
-    /// Contract address of the deployed KeyManager (or its proxy if upgradable)
-    /// You should get this info from `init_chain()` in test.
-    #[clap(long)]
-    key_manager_addr: alloy::primitives::Address,
 
     /// Parent chain rpc url
     #[clap(long)]
@@ -52,19 +62,34 @@ struct Args {
 
     /// Parent chain inbox contract adddress
     #[clap(long)]
-    parent_ibox_contr_addr: alloy::primitives::Address,
+    parent_ibox_contract: alloy::primitives::Address,
+
+    /// Contract address of the deployed KeyManager (or its proxy if upgradable)
+    /// You should get this info from `init_chain()` in test.
+    #[clap(long)]
+    key_manager_contract: alloy::primitives::Address,
 
     /// Parent chain inbox block tag
     #[clap(long, default_value = "finalized")]
     parent_block_tag: BlockNumberOrTag,
 
-    /// Path to stored the generated `NodeConfig`, if None, print to stdout
+    /// The directory to stored all generated `NodeConfig` files for all committee members
     #[clap(long, short)]
-    output: Option<PathBuf>,
+    output: PathBuf,
+}
+
+/// How should addresses be updated?
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum Mode {
+    /// Increment the port number of addresses.
+    #[default]
+    IncrementPort,
+    /// Increment the IP address.
+    IncrementAddress,
 }
 
 impl Args {
-    fn mk_config(&self) -> Result<NodeConfig> {
+    fn mk_config(&self) -> Result<()> {
         let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(
             self.seed
                 .map(|s| s.wrapping_pow(2))
@@ -81,87 +106,93 @@ impl Args {
                 .unwrap_or_else(rand::random),
         );
 
-        // Generate multisig keypair
-        let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
-        // Generate x25519 keypair
-        let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng).unwrap();
-        // Generate DKG keypair for this node using p_rng
-        let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
+        if !self.output.is_dir() {
+            bail!("--output only accepts valid directory path");
+        }
+        fs::create_dir_all(&self.output).expect("create output dir should succeed");
 
-        let config = NodeConfig {
-            net: NodeNetConfig::new(
-                self.sailfish.clone(),
-                self.internal_addr.clone(),
-                self.nitro_addr.clone(),
-            ),
-            keys: NodeKeyConfig {
-                signing: NodeKeypairConfig {
-                    secret: signing_keypair.secret_key(),
-                    public: signing_keypair.public_key(),
+        let mut committee_config_file = File::create(self.output.join("committee.toml"))?;
+        let mut members = vec![];
+
+        for i in 0..self.num.get() {
+            let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
+            let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng).unwrap();
+            let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
+
+            let public_addr = self.adjust_addr(i, &self.public_addr)?;
+            let internal_addr = if let Some(addr) = &self.internal_addr {
+                Some(self.adjust_addr(i, addr)?)
+            } else {
+                None
+            };
+
+            let config = NodeConfig {
+                net: NodeNetConfig::new(public_addr, internal_addr, self.nitro_addr.clone()),
+                keys: NodeKeyConfig {
+                    signing: NodeKeypairConfig {
+                        secret: signing_keypair.secret_key(),
+                        public: signing_keypair.public_key(),
+                    },
+                    dh: NodeKeypairConfig {
+                        secret: dh_keypair.secret_key(),
+                        public: dh_keypair.public_key(),
+                    },
+                    dkg: NodeEncodedKeypairConfig {
+                        secret: Blackbox::encode(dkg_dec_key.clone())?,
+                        public: Blackbox::encode(DkgEncKey::from(&dkg_dec_key))?,
+                    },
                 },
-                dh: NodeKeypairConfig {
-                    secret: dh_keypair.secret_key(),
-                    public: dh_keypair.public_key(),
-                },
-                dkg: NodeEncodedKeypairConfig {
-                    secret: Blackbox::encode(dkg_dec_key.clone())?,
-                    public: Blackbox::encode(DkgEncKey::from(&dkg_dec_key))?,
-                },
-            },
-            chain_config: ChainConfig::new(
-                self.parent_chain_id,
-                self.parent_rpc_url.clone(),
-                self.parent_ibox_contr_addr,
-                self.parent_block_tag,
-                self.key_manager_addr,
-            ),
+                chain_config: ChainConfig::new(
+                    self.parent_chain_id,
+                    self.parent_rpc_url.clone(),
+                    self.parent_ibox_contract,
+                    self.parent_block_tag,
+                    self.key_manager_contract,
+                ),
+            };
+
+            members.push(CommitteeMember {
+                signing_key: config.keys.signing.public,
+                dh_key: config.keys.dh.public,
+                dkg_enc_key: config.keys.dkg.public.clone(),
+                sailfish_address: config.net.sailfish.clone(),
+            });
+
+            let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;
+            node_config_file.write_all(toml::to_string_pretty(&config)?.as_bytes())?;
+        }
+
+        let committee_config = CommitteeConfig {
+            effective_timestamp: self.timestamp.into(),
+            members,
         };
+        committee_config_file.write_all(toml::to_string_pretty(&committee_config)?.as_bytes())?;
 
-        Ok(config)
+        Ok(())
+    }
+
+    fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
+        match self.mode {
+            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + u16::from(i))),
+            Mode::IncrementAddress => {
+                let Address::Inet(ip, port) = base else {
+                    bail!("increment-address requires IP addresses")
+                };
+                let ip = match ip {
+                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip) + u32::from(i)).into()),
+                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
+                };
+                Ok(Address::Inet(ip, *port))
+            }
+        }
     }
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
     logging::init_logging();
 
-    let cfg = args.mk_config()?;
-    let toml = toml::to_string_pretty(&cfg)?;
-
-    if let Some(out) = &args.output {
-        // first write the per node config
-        if let Some(parent) = out.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(out, &toml)?;
-
-        // second append this node's public info to a centralized committee.toml
-        // for key manager to register them in the contract
-        let committee_file = out.with_file_name("committee.toml");
-        let mut committee_config: CommitteeConfig = if committee_file.exists() {
-            toml::from_str(&fs::read_to_string(&committee_file)?)?
-        } else {
-            CommitteeConfig {
-                effective_timestamp: 1756181061.into(),
-                members: Vec::new(),
-            }
-        };
-
-        let new_member = CommitteeMember {
-            signing_key: cfg.keys.signing.public,
-            dh_key: cfg.keys.dh.public,
-            dkg_enc_key: cfg.keys.dkg.public.clone(),
-            sailfish_address: cfg.net.sailfish.clone(),
-        };
-        if !committee_config.members.contains(&new_member) {
-            committee_config.members.push(new_member);
-        }
-
-        fs::write(committee_file, toml::to_string_pretty(&committee_config)?)?;
-    } else {
-        println!("{toml}");
-    }
+    let args = Args::parse();
+    args.mk_config()?;
 
     Ok(())
 }

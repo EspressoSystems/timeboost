@@ -13,14 +13,14 @@ To generate configs for all nodes in a new committee:
 
 ``` sh
 # see mkconfig.rs Args or `mkconfig --help` for more options
-just mkconfig 5
+just mkconfig 5 --seed 42
 just mkconfig 13 --nitro-addr "localhost:55000"
 
 # recipe for docker env is fixed at 5 nodes
-just mkconfig_docker
+just mkconfig_docker --seed 42
 
 # recipe for nitro CI test, fixed at 2 nodes with nitro chain config
-just mkconfig_nitro
+just mkconfig_nitro --seed 42
 ```
 
 ### On test wallet mnemonic 

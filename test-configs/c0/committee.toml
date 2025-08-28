@@ -7,25 +7,25 @@ dkg_enc_key = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9
 sailfish_address = "127.0.0.1:8000"
 
 [[members]]
-signing_key = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
-dh_key = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
-dkg_enc_key = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
+signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+dkg_enc_key = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
 sailfish_address = "127.0.0.1:8001"
 
 [[members]]
-signing_key = "21R4uDwS7fdxsNPWy92DArC575sYiQdEasFBVEpH8m53e"
-dh_key = "DRYKr9pHPf6i6QmQiAihrQnEqEYXg96fe5kyMiCrBUJP"
-dkg_enc_key = "8sEkWbQe2Ndh79D4Q2ZZALzLXoVSkBpSuwKof8JBtwMBeZVm6ZGd21VrbDP8wAbVkKe"
+signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+dkg_enc_key = "8rnMdtoAnvm7e8WZjERVtgnHQSiSRe4nbvHijE9RozRBJczci1J7amqR8G4EArDtVDd"
 sailfish_address = "127.0.0.1:8002"
 
 [[members]]
-signing_key = "qh3tJ83Ko7f6B9ksPj8PPwTshFmToj9zbjcgPCegar7m"
-dh_key = "CetqwdEDC8BkBXB9wpTmuumCsj2kRPcq9hbJVEdaQ7r9"
-dkg_enc_key = "8sy6StkPxaNZ7qdUQESbAdZamPC4uERddXfHXaLoyagpmjrnafnQhF4r1Gh5ThzsNhX"
+signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+dkg_enc_key = "8tLK2zC3ZTA5Kw3jbXar4PxrS22SvFxu3o2xEoGfRjD81jsFb6Xc1G8GXjP79CKntmg"
 sailfish_address = "127.0.0.1:8003"
 
 [[members]]
-signing_key = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
-dh_key = "6czLW5NW4C74eQUBdzwHGmUzA5B8vbWpuH6amZHXtPnq"
-dkg_enc_key = "8t7p3VfTCMXxEAPrcLzMHiANGmEd2Y5aLkKAgrpe5ZyEmgGm2MR1ypweLbCw5RdXySe"
+signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
+dkg_enc_key = "8sAr1CcnzuMv61MwqQm6EGNPG4ajT6VssCC2ZndZUDjnyq6TngHcB6g8bnesCZ9FG7X"
 sailfish_address = "127.0.0.1:8004"

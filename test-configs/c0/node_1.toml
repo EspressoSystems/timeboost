@@ -3,16 +3,16 @@ public = "127.0.0.1:8001"
 internal = "127.0.0.1:11001"
 
 [keys.signing]
-secret = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
-public = "23as9Uo6W2AeGronB6nMpcbs8Nxo6CoJ769uePw9sf6Ud"
+secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
+public = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
 
 [keys.dh]
-secret = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
-public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
+secret = "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP"
+public = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 
 [keys.dkg]
-secret = "AmgWFmLHk3m1C5mfZnhToYDj2azuyh8d7GiEB3w3s8EBP"
-public = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
+secret = "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt"
+public = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
 
 [chain_config]
 parent_chain_id = 31337

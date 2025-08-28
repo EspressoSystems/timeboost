@@ -3,16 +3,16 @@ public = "172.20.0.6:8000"
 internal = "172.20.0.6:11000"
 
 [keys.signing]
-secret = "AjaQA4tfSzm8mz7crQNZLzAsa99FXLnLarUX8p65PCUf"
-public = "i5ccK9sZFtdWpB6rp4deJKvb8UNMCYhxj7G2sGBAsdam"
+secret = "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE"
+public = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
 
 [keys.dh]
-secret = "F4TUCvytZyTPVk2qvZAXp9MwWKBEwFMxDeNrTusoTgN1"
-public = "6czLW5NW4C74eQUBdzwHGmUzA5B8vbWpuH6amZHXtPnq"
+secret = "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz"
+public = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
 
 [keys.dkg]
-secret = "AfrceEeA9DcLh3NYjAk8vrLMdnAA3PbP4Hdr31gW5noan"
-public = "8t7p3VfTCMXxEAPrcLzMHiANGmEd2Y5aLkKAgrpe5ZyEmgGm2MR1ypweLbCw5RdXySe"
+secret = "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76"
+public = "8sAr1CcnzuMv61MwqQm6EGNPG4ajT6VssCC2ZndZUDjnyq6TngHcB6g8bnesCZ9FG7X"
 
 [chain_config]
 parent_chain_id = 31337

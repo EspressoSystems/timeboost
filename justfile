@@ -82,38 +82,33 @@ bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
 mkconfig NUM_NODES *ARGS:
-  #!/bin/bash
-  for i in $(seq 0 $(({{NUM_NODES}} - 1))); do \
-    echo "mkconfig for node $i"; \
-    just mkconfig_full "http://127.0.0.1:8545" 31337 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
-      --sailfish "127.0.0.1:$((8000 + i))" \
-      -o "test-configs/c0/node_$i.toml" \
-      --seed $((42+i)) {{ARGS}}; \
-  done
+  cargo run --bin mkconfig -- -n {{NUM_NODES}} \
+    --public-addr "127.0.0.1:8000" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/c0" {{ARGS}}
 
-mkconfig_full RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
-  cargo run --bin mkconfig -- \
-    --key-manager-addr "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
-    --parent-rpc-url {{RPC_URL}} \
-    --parent-chain-id {{PARENT_CHAIN_ID}} \
-    --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
-    {{ARGS}}
+mkconfig_docker *ARGS:
+  cargo run --bin mkconfig -- -n 5 \
+    --public-addr "172.20.0.2:8000" \
+    --mode "increment-address" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/docker" {{ARGS}}
 
-mkconfig_docker:
-  #!/bin/bash
-  for i in $(seq 0 4); do \
-    echo "mkconfig for docker node$i"; \
-    just mkconfig_full "http://127.0.0.1:8545" 31337 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
-      --sailfish "172.20.0.$((i + 2)):8000" \
-      -o "test-configs/docker/node_$i.toml" \
-      --seed $((42+i)); \
-  done
-
-mkconfig_nitro:
-  just mkconfig_full "http://127.0.0.1:8545" 1337 "0xA0f3A1a4E2B2Bcb7b48C8527C28098f207572EC1" \
-      --sailfish "127.0.0.1:8000" --nitro-addr "localhost:55000" -o "test-configs/nitro-ci-committee/node_0.toml" --seed 42
-  just mkconfig_full "http://127.0.0.1:8545" 1337 "0xA0f3A1a4E2B2Bcb7b48C8527C28098f207572EC1" \
-      --sailfish "127.0.0.1:8001" --nitro-addr "localhost:55001" -o "test-configs/nitro-ci-committee/node_1.toml" --seed 43
+mkconfig_nitro *ARGS:
+  cargo run --bin mkconfig -- -n 2 \
+    --public-addr "127.0.0.1:8000" \
+    --nitro-addr "localhost:55000" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 1337 \
+    --parent-ibox-contract "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/nitro-ci-committee" {{ARGS}}
 
 verify_blocks *ARGS:
   cargo run --release --bin block-verifier --features bin {{ARGS}}
