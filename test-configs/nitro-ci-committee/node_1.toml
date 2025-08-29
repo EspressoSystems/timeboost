@@ -3,7 +3,7 @@ address = "127.0.0.1:8010"
 
 [net.internal]
 address = "127.0.0.1:8013"
-nitro = "localhost:55010"
+nitro = "localhost:55001"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
