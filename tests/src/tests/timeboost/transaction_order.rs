@@ -4,9 +4,8 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use alloy::primitives::B256;
-use metrics::NoMetrics;
 use sailfish_types::RoundNumber;
-use timeboost::sequencer::{Output, Sequencer};
+use timeboost::sequencer::Output;
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -15,6 +14,8 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, info};
+
+use crate::tests::timeboost::start_sequencer_with_retry;
 
 use super::{gen_bundles, make_configs};
 
@@ -52,7 +53,7 @@ async fn transaction_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
+            let mut s = start_sequencer_with_retry(c).await;
             loop {
                 select! {
                     trx = brx.recv() => match trx {

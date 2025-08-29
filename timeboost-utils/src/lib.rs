@@ -7,7 +7,7 @@ use std::time::Duration;
 use cliquenet::Address;
 use multisig::x25519;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
@@ -66,5 +66,26 @@ pub async fn wait_for_live_peer(host: &Address) -> anyhow::Result<()> {
             }
         }
         sleep(Duration::from_secs(3)).await;
+    }
+}
+
+pub async fn with_retry<T, E, F, Fut>(operation: F, error_message: impl Fn(&E) -> String) -> T
+where
+    E: std::fmt::Display,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+{
+    let mut delay = Duration::from_millis(100);
+    const MAX_DELAY: Duration = Duration::from_secs(5);
+
+    loop {
+        match operation().await {
+            Ok(result) => return result,
+            Err(e) => {
+                warn!("{}: {e}, retrying in {:?}...", error_message(&e), delay);
+                sleep(delay).await;
+                delay = (delay * 2).min(MAX_DELAY);
+            }
+        }
     }
 }

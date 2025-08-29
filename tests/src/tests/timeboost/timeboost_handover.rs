@@ -36,12 +36,12 @@ async fn run_handover(
     curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
     next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
-    const NEXT_COMMITTEE_DELAY: u64 = 10;
+    const NEXT_COMMITTEE_DELAY: u64 = 15;
     const NUM_OF_BLOCKS: usize = 50;
 
     let mut out1 = Vec::new();
     let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(200);
+    let (bcast, _) = broadcast::channel(500);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
@@ -129,6 +129,8 @@ async fn run_handover(
     for (key, _, _) in &curr {
         key.read().await;
     }
+
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     tasks.spawn({
         let (key, _, _) = &curr[0];

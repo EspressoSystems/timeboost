@@ -23,6 +23,7 @@ use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
 use timeboost::types::{BlockNumber, BundleVariant, DecryptionKeyCell, KeyStore, Transaction};
 use timeboost_utils::load_generation::make_bundle;
+use timeboost_utils::with_retry;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
@@ -191,27 +192,6 @@ impl Round2Block {
         let mut map = self.block_numbers.lock();
         *map.entry(r)
             .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
-    }
-}
-
-async fn with_retry<T, E, F, Fut>(operation: F, error_message: impl Fn(&E) -> String) -> T
-where
-    E: std::fmt::Display,
-    F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<T, E>>,
-{
-    let mut delay = Duration::from_millis(100);
-    const MAX_DELAY: Duration = Duration::from_secs(5);
-
-    loop {
-        match operation().await {
-            Ok(result) => return result,
-            Err(e) => {
-                warn!("{}: {e}, retrying in {:?}...", error_message(&e), delay);
-                sleep(delay).await;
-                delay = (delay * 2).min(MAX_DELAY);
-            }
-        }
     }
 }
 
