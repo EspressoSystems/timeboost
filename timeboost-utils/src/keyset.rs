@@ -56,7 +56,7 @@ impl NodeNetConfig {
 pub struct NodeKeyConfig {
     pub signing: NodeKeypairConfig<multisig::SecretKey, multisig::PublicKey>,
     pub dh: NodeKeypairConfig<x25519::SecretKey, x25519::PublicKey>,
-    pub dkg: NodeEncodedKeypairConfig,
+    pub dkg: NodeKeypairConfig<DkgDecKey, DkgEncKey>,
 }
 
 /// A keypair
@@ -64,13 +64,6 @@ pub struct NodeKeyConfig {
 pub struct NodeKeypairConfig<SK, PK> {
     pub secret: SK,
     pub public: PK,
-}
-
-/// An encoded keypair
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeEncodedKeypairConfig {
-    pub secret: DkgDecKey,
-    pub public: DkgEncKey,
 }
 
 impl NodeConfig {

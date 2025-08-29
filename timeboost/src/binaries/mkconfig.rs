@@ -14,8 +14,7 @@ use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::{ChainConfig, ParentChain};
 use timeboost_utils::keyset::{
-    CommitteeConfig, CommitteeMember, NodeConfig, NodeEncodedKeypairConfig, NodeKeyConfig,
-    NodeKeypairConfig, NodeNetConfig,
+    CommitteeConfig, CommitteeMember, NodeConfig, NodeKeyConfig, NodeKeypairConfig, NodeNetConfig,
 };
 use timeboost_utils::types::logging;
 use url::Url;
@@ -137,7 +136,7 @@ impl Args {
                         secret: dh_keypair.secret_key(),
                         public: dh_keypair.public_key(),
                     },
-                    dkg: NodeEncodedKeypairConfig {
+                    dkg: NodeKeypairConfig {
                         secret: dkg_dec_key.clone(),
                         public: DkgEncKey::from(&dkg_dec_key),
                     },
