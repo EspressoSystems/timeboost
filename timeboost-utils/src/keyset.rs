@@ -11,8 +11,8 @@ use tracing::{error, info};
 
 use crate::Bs58Bincode;
 
-pub const DECRYPTER_PORT_OFFSET: u16 = 1;
-pub const CERTIFIER_PORT_OFFSET: u16 = 2;
+pub const DECRYPTER_PORT_OFFSET: u16 = 1000;
+pub const CERTIFIER_PORT_OFFSET: u16 = 2000;
 
 /// Config for each node, containing private keys, public keys, chain_config, network addresses etc
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

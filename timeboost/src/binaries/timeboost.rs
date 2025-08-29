@@ -151,12 +151,16 @@ async fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     #[cfg(feature = "until")]
+    let node_idx = peer_hosts_and_keys
+        .iter()
+        .position(|p| p.0 == node_config.keys.signing.public)
+        .expect("node's sigKey should be a member of Committee");
+
+    #[cfg(feature = "until")]
     let peer_urls: Vec<Url> = peer_hosts_and_keys
         .iter()
         .map(|peer| format!("http://{}", peer.3).parse().unwrap())
         .collect();
-    #[cfg(feature = "until")]
-    let mut node_idx = 0;
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
@@ -176,11 +180,6 @@ async fn main() -> Result<()> {
             sailfish_addr.clone().with_offset(CERTIFIER_PORT_OFFSET),
         ));
         dkg_enc_keys.push(dkg_enc_key.clone());
-
-        #[cfg(feature = "until")]
-        if signing_key == node_config.keys.signing.public {
-            node_idx = i;
-        }
     }
 
     let sailfish_committee = {

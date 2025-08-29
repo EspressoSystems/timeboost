@@ -106,10 +106,10 @@ impl Args {
                 .unwrap_or_else(rand::random),
         );
 
+        fs::create_dir_all(&self.output).expect("create output dir should succeed");
         if !self.output.is_dir() {
             bail!("--output only accepts valid directory path");
         }
-        fs::create_dir_all(&self.output).expect("create output dir should succeed");
 
         let mut committee_config_file = File::create(self.output.join("committee.toml"))?;
         let mut members = vec![];
