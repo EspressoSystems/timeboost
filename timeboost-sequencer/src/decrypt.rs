@@ -334,7 +334,7 @@ impl Decrypter {
         k: KeyStore,
     ) -> StdResult<(), DecrypterDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
-        // map to Decrypter network by shifting ports
+        // map to Decrypter network
         let d = translate_addr(c);
         self.worker_tx
             .send(Command::NextCommittee(d, k))
@@ -614,7 +614,7 @@ impl Worker {
         trace!(node = %self.label, from=%src, %committee_id, "received dkg request");
 
         if !matches!(self.state, WorkerState::Running) {
-            trace!(node = %self.label, %committee_id, "in a pending state");
+            trace!(node = %self.label, %committee_id, "request not matching current epoch");
             return Ok(());
         }
 
@@ -745,7 +745,7 @@ impl Worker {
         );
 
         if self.dkg_completed(committee_id) {
-            trace!(node = %self.label, %committee_id, "bundle already processed");
+            trace!(node = %self.label, %committee_id, "accumulator already complete");
             return Ok(());
         }
 
