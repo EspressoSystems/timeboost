@@ -138,7 +138,7 @@ for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
         --config "$f"
-        --http-port $((8800 + $i))
+        --http-port $((8800 + 10 * $i))
         --until $rounds
         --stamp "${stamp}-$i.sf"
         --watchdog-timeout 120

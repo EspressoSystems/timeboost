@@ -1,8 +1,8 @@
 [net.public]
-address = "127.0.0.1:8001"
+address = "127.0.0.1:8010"
 
 [net.internal]
-address = "127.0.0.1:11001"
+address = "127.0.0.1:8013"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"

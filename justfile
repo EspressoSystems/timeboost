@@ -86,7 +86,7 @@ bench *ARGS:
 mkconfig NUM_NODES *ARGS:
   cargo run --bin mkconfig -- -n {{NUM_NODES}} \
     --public-addr "127.0.0.1:8000" \
-    --internal-addr "127.0.0.1:11000" \
+    --internal-addr "127.0.0.1:8003" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
@@ -96,7 +96,7 @@ mkconfig NUM_NODES *ARGS:
 mkconfig_docker *ARGS:
   cargo run --bin mkconfig -- -n 5 \
     --public-addr "172.20.0.2:8000" \
-    --internal-addr "172.20.0.2:11000" \
+    --internal-addr "172.20.0.2:8003" \
     --mode "increment-address" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 31337 \
@@ -106,8 +106,8 @@ mkconfig_docker *ARGS:
 
 mkconfig_nitro *ARGS:
   cargo run --bin mkconfig -- -n 2 \
-    --internal-addr "127.0.0.1:11000" \
     --public-addr "127.0.0.1:8000" \
+    --internal-addr "127.0.0.1:8003" \
     --nitro-addr "localhost:55000" \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 1337 \

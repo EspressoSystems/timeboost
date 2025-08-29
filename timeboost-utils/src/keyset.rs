@@ -9,8 +9,8 @@ use timeboost_types::{ChainConfig, Timestamp};
 use tokio::time::sleep;
 use tracing::{error, info};
 
-pub const DECRYPTER_PORT_OFFSET: u16 = 1000;
-pub const CERTIFIER_PORT_OFFSET: u16 = 2000;
+pub const DECRYPTER_PORT_OFFSET: u16 = 1;
+pub const CERTIFIER_PORT_OFFSET: u16 = 2;
 
 /// Config for each node, containing private keys, public keys, chain_config, network addresses etc
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

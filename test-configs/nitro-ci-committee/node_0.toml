@@ -2,7 +2,7 @@
 address = "127.0.0.1:8000"
 
 [net.internal]
-address = "127.0.0.1:11000"
+address = "127.0.0.1:8003"
 nitro = "localhost:55000"
 
 [keys.signing]

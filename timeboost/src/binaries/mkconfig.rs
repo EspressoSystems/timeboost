@@ -176,7 +176,7 @@ impl Args {
 
     fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
         match self.mode {
-            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + u16::from(i))),
+            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + 10 * u16::from(i))),
             Mode::IncrementAddress => {
                 let Address::Inet(ip, port) = base else {
                     bail!("increment-address requires IP addresses")

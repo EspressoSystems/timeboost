@@ -2,7 +2,7 @@
 address = "172.20.0.4:8000"
 
 [net.internal]
-address = "172.20.0.4:11000"
+address = "172.20.0.4:8003"
 
 [keys.signing]
 secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
