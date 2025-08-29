@@ -35,12 +35,12 @@ async fn run_handover(
     curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
     next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
-    const NEXT_COMMITTEE_DELAY: u64 = 10;
+    const NEXT_COMMITTEE_DELAY: u64 = 15;
     const NUM_OF_BLOCKS: usize = 50;
 
     let mut out1 = Vec::new();
     let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(200);
+    let (bcast, _) = broadcast::channel(500);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
@@ -128,6 +128,8 @@ async fn run_handover(
     for (key, _, _) in &curr {
         key.read().await;
     }
+
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     tasks.spawn({
         let (key, _, _) = &curr[0];
@@ -397,14 +399,23 @@ fn mk_configs(
             .recover(false)
             .leash_len(1000)
             .threshold_dec_key(enc_key.clone())
-            .chain_config(ChainConfig::new(
-                1,
-                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                    .parse::<Url>()
-                    .expect("valid url"),
-                alloy::primitives::Address::default(),
-                BlockNumberOrTag::Finalized,
-            ))
+            .chain_config(
+                ChainConfig::builder()
+                    .parent(
+                        ParentChain::builder()
+                            .id(1)
+                            .rpc_url(
+                                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                    .parse::<Url>()
+                                    .expect("valid url"),
+                            )
+                            .ibox_contract(alloy::primitives::Address::default())
+                            .key_manager_contract(alloy::primitives::Address::default())
+                            .block_tag(BlockNumberOrTag::Finalized)
+                            .build(),
+                    )
+                    .build(),
+            )
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)
