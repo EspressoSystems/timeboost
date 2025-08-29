@@ -1,6 +1,5 @@
 use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee};
-use metrics::NoMetrics;
 use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
 use sailfish::types::{ConsensusTime, Timestamp};
 use std::cmp::min;
@@ -9,10 +8,10 @@ use std::iter::{once, repeat_with};
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use timeboost::builder::{Certifier, CertifierConfig};
+use timeboost::builder::CertifierConfig;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, ChainConfig, DECRYPTER_PORT_OFFSET, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
-use timeboost::sequencer::{Output, Sequencer, SequencerConfig};
+use timeboost::sequencer::{Output, SequencerConfig};
 use timeboost::types::{Block, BlockInfo, BundleVariant, DecryptionKeyCell, KeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
@@ -24,7 +23,7 @@ use url::Url;
 
 use crate::tests::timeboost::{Round2Block, hash};
 
-use super::gen_bundles;
+use super::*;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -32,17 +31,17 @@ enum Cmd {
     Bundle(BundleVariant),
 }
 
-/// Run a handover test between a current and a next set of nodes.
+/// Run a handover test between the current and the next set of nodes.
 async fn run_handover(
     curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
     next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
-    const NEXT_COMMITTEE_DELAY: u64 = 15;
+    const NEXT_COMMITTEE_DELAY: u64 = 10;
     const NUM_OF_BLOCKS: usize = 50;
 
     let mut out1 = Vec::new();
     let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(100);
+    let (bcast, _) = broadcast::channel(200);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
@@ -59,7 +58,7 @@ async fn run_handover(
     assert!(diff > 0);
     assert_ne!(c1, c2);
 
-    // Run committee 1:
+    // run committee 1:
     for (_, seq_conf, cert_conf) in &curr {
         // Clone the configs so they are owned and can be moved into the async block
         let seq_conf = seq_conf.clone();
@@ -71,8 +70,8 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
+            let mut s = start_sequencer_with_retry(seq_conf).await;
+            let mut c = start_certifier_with_retry(cert_conf).await;
             let mut r: Option<sailfish_types::RoundNumber> = None;
             let handle = c.handle();
 
@@ -126,8 +125,7 @@ async fn run_handover(
         out1.push((label, rx))
     }
 
-    // Start transaction generation
-    // Wait for all decryption keys in curr_enc_keys to be ready
+    // wait for all decryption keys in current to be ready
     for (key, _, _) in &curr {
         key.read().await;
     }
@@ -148,13 +146,13 @@ async fn run_handover(
         }
     });
 
-    // Inform about upcoming committee change:
+    // inform about upcoming committee change
     let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
     bcast.send(Cmd::NextCommittee(t, a2, d2.1)).unwrap();
 
     let mut out2 = Vec::new();
 
-    // Run committee 2:
+    // run committee 2:
     for (_, seq_conf, cert_conf) in &next {
         let ours = seq_conf.sign_keypair().public_key();
 
@@ -173,8 +171,8 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = Sequencer::new(seq_conf, &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cert_conf, &NoMetrics).await.unwrap();
+            let mut s = start_sequencer_with_retry(seq_conf).await;
+            let mut c = start_certifier_with_retry(cert_conf).await;
             let mut r: Option<sailfish_types::RoundNumber> = None;
             let handle = c.handle();
 

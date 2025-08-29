@@ -1,19 +1,17 @@
-use std::future::pending;
-use std::iter::repeat_with;
-use std::net::Ipv4Addr;
-use std::num::NonZeroUsize;
-use std::time::Duration;
-
 use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
+use cliquenet::{Address, AddressableCommittee, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
-use metrics::NoMetrics;
 use multisig::{Committee, CommitteeId, Keypair, x25519};
 use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
+use std::future::pending;
+use std::iter::repeat_with;
+use std::net::Ipv4Addr;
+use std::num::NonZeroUsize;
+use std::time::Duration;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
@@ -26,6 +24,8 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 use url::Url;
+
+use super::create_network_with_retry;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -70,11 +70,7 @@ where
         .map(|c| c.sailfish_address().clone())
         .chain(
             repeat_with(|| {
-                loop {
-                    if let Some(port) = portpicker::pick_unused_port() {
-                        break Address::from((Ipv4Addr::LOCALHOST, port));
-                    }
-                }
+                Address::from((Ipv4Addr::LOCALHOST, portpicker::pick_unused_port().unwrap()))
             })
             .take(add.get()),
         )
@@ -175,22 +171,7 @@ where
 ///
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
-    let met = NetworkMetrics::new(
-        "sailfish",
-        &NoMetrics,
-        cfg.sailfish_committee().parties().copied(),
-    );
-
-    let mut net = Network::create(
-        "sailfish",
-        cfg.sailfish_address().clone(),
-        cfg.sign_keypair().public_key(),
-        cfg.dh_keypair().clone(),
-        cfg.sailfish_committee().entries(),
-        met,
-    )
-    .await
-    .unwrap();
+    let mut net = create_network_with_retry(cfg).await;
 
     if let Some(prev) = &cfg.previous_sailfish_committee() {
         let old = prev.diff(cfg.sailfish_committee());

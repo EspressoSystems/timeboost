@@ -11,15 +11,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
-use cliquenet::{Address, AddressableCommittee};
+use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics};
+use metrics::NoMetrics;
 use multisig::Keypair;
 use multisig::{Committee, x25519};
 use parking_lot::Mutex;
 use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
-use timeboost::builder::CertifierConfig;
+use timeboost::builder::{Certifier, CertifierConfig};
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
-use timeboost::sequencer::SequencerConfig;
+use timeboost::sequencer::{Sequencer, SequencerConfig};
 use timeboost::types::{BlockNumber, BundleVariant, DecryptionKeyCell, KeyStore, Transaction};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
@@ -191,4 +192,63 @@ impl Round2Block {
         *map.entry(r)
             .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
     }
+}
+
+async fn with_retry<T, E, F, Fut>(operation: F, error_message: impl Fn(&E) -> String) -> T
+where
+    E: std::fmt::Display,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+{
+    let mut delay = Duration::from_millis(100);
+    const MAX_DELAY: Duration = Duration::from_secs(5);
+
+    loop {
+        match operation().await {
+            Ok(result) => return result,
+            Err(e) => {
+                warn!("{}: {e}, retrying in {:?}...", error_message(&e), delay);
+                sleep(delay).await;
+                delay = (delay * 2).min(MAX_DELAY);
+            }
+        }
+    }
+}
+
+async fn start_sequencer_with_retry(seq_conf: SequencerConfig) -> Sequencer {
+    with_retry(
+        || async { Sequencer::new(seq_conf.clone(), &NoMetrics).await },
+        |e| format!("failed to create sequencer: {e}"),
+    )
+    .await
+}
+
+async fn start_certifier_with_retry(cert_conf: CertifierConfig) -> Certifier {
+    with_retry(
+        || async { Certifier::new(cert_conf.clone(), &NoMetrics).await },
+        |e| format!("failed to create certifer: {e}"),
+    )
+    .await
+}
+
+async fn create_network_with_retry(cfg: &SequencerConfig) -> Network {
+    with_retry(
+        || async {
+            Network::create(
+                "sailfish",
+                cfg.sailfish_address().clone(),
+                cfg.sign_keypair().public_key(),
+                cfg.dh_keypair().clone(),
+                cfg.sailfish_committee().entries(),
+                NetworkMetrics::new(
+                    "sailfish",
+                    &NoMetrics,
+                    cfg.sailfish_committee().parties().copied(),
+                ),
+            )
+            .await
+        },
+        |e| format!("Network::create failed: {e}"),
+    )
+    .await
 }
