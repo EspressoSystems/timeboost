@@ -5,8 +5,6 @@ use anyhow::{Context, Result, bail};
 use cliquenet::AddressableCommittee;
 use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
-use serde::Deserialize;
-use serde::de::value::BytesDeserializer;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
@@ -142,10 +140,8 @@ async fn main() -> Result<()> {
                 .expect("Failed to parse sigKey");
             let dh_key =
                 x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_enc_key = DkgEncKey::deserialize(
-                BytesDeserializer::<serde::de::value::Error>::new(&peer.dkgKey),
-            )
-            .expect("Blackbox from_bytes should work");
+            let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())
+                .expect("Blackbox from_bytes should work");
             let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
                 .expect("Failed to parse networkAddress");
             (sig_key, dh_key, dkg_enc_key, sailfish_address)
