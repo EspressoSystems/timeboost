@@ -140,11 +140,13 @@ impl Certifier {
     }
 
     /// Prepare for the next committee.
-    pub async fn next_committee(
+    pub async fn set_next_committee(
         &mut self,
         c: AddressableCommittee,
     ) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
+        // map to Certifier network
+        let c = translate_addr(c);
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
@@ -161,6 +163,19 @@ impl Certifier {
             .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
+}
+
+fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
+    let committee = c.committee().clone();
+    let shifted_entries = c
+        .entries()
+        .map(|(pk, dh, addr)| {
+            let dec_port = addr.port().saturating_add(2000);
+            let new_addr = addr.with_port(dec_port);
+            (pk, dh, new_addr)
+        })
+        .collect::<Vec<_>>();
+    AddressableCommittee::new(committee, shifted_entries)
 }
 
 impl Drop for Certifier {
@@ -638,9 +653,9 @@ impl Worker {
         if self.clock < start.num() {
             return Ok(());
         }
-        let Some(committee) = self.committees.get(self.current) else {
+        let Some(committee) = self.committees.get(start.committee()) else {
             error!(node = %self.label, committee = %self.current, "current committee not found");
-            return Err(CertifierError::NoCommittee(self.current));
+            return Err(CertifierError::NoCommittee(start.committee()));
         };
         let old = self
             .net

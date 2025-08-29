@@ -3,6 +3,7 @@ use cliquenet::{Address, AddressableCommittee};
 use metrics::NoMetrics;
 use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
 use sailfish::types::{ConsensusTime, Timestamp};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::iter::{once, repeat_with};
 use std::net::Ipv4Addr;
@@ -39,9 +40,6 @@ async fn run_handover(
     const NEXT_COMMITTEE_DELAY: u64 = 15;
     const NUM_OF_BLOCKS: usize = 50;
 
-    let num = NonZeroUsize::new(5).unwrap();
-    let quorum = 4;
-
     let mut out1 = Vec::new();
     let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(100);
@@ -52,8 +50,13 @@ async fn run_handover(
     let a2 = next[0].1.sailfish_committee().clone();
     let c1 = a1.committee().id();
     let c2 = a2.committee().id();
+    let num = a1.committee().size();
+    let quorum = a1.committee().one_honest_threshold();
+
     let d2 = next[0].1.decrypt_committee().clone();
 
+    let diff = a1.diff(&a2).count();
+    assert!(diff > 0);
     assert_ne!(c1, c2);
 
     // Run committee 1:
@@ -77,26 +80,35 @@ async fn run_handover(
                 select! {
                     cmd = cmd.recv() => match cmd {
                         Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a, k).await.unwrap();
+                            s.set_next_committee(t, a.clone(), k).await.unwrap();
+                            c.set_next_committee(a.clone()).await.unwrap();
                         }
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
                         }
                         Err(err) => panic!("Command channel error: {err}")
                     },
-                    out = s.next() => {
-                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
-                            error!(node = %s.public_key(), "no sequencer output");
-                            continue
-                        };
-                        // We require unique round numbers.
-                        if Some(round) == r {
-                            continue
-                        }
-                        r = Some(round);
-                        let i = r2b.get(round);
-                        let b = Block::new(i, *round, hash(&transactions));
-                        handle.enqueue(b).await.unwrap()
+                    out = s.next() => match out {
+                            Ok(o) => {
+                                match o {
+                                    Output::Transactions { round, timestamp: _, transactions, delayed_inbox_index: _ } => {
+                                        if Some(round) == r {
+                                            continue
+                                        }
+                                        r = Some(round);
+                                        let i = r2b.get(round);
+                                        let b = Block::new(i, *round, hash(&transactions));
+                                        handle.enqueue(b).await.unwrap()
+                                    }
+                                    Output::UseCommittee(round) => {
+                                        c.use_committee(round).await.unwrap();
+                                    },
+                                }
+                            }
+                            Err(_) => {
+                                error!(node = %s.public_key(), "no sequencer output");
+                                continue;
+                            },
                     },
                     blk = c.next_block() => {
                         let b = blk.expect("block");
@@ -170,25 +182,35 @@ async fn run_handover(
                 select! {
                     cmd = cmd.recv() => match cmd {
                         Ok(Cmd::NextCommittee(t, a, k)) => {
-                            s.set_next_committee(t, a, k).await.unwrap();
+                            s.set_next_committee(t, a.clone(), k).await.unwrap();
+                            c.set_next_committee(a.clone()).await.unwrap();
                         }
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
                         }
                         Err(err) => panic!("Command channel error: {err}")
                     },
-                    out = s.next() => {
-                        let Output::Transactions { round, transactions, .. } = out.unwrap() else {
-                            error!(node = %s.public_key(), "no sequencer output");
-                            continue
-                        };
-                        if Some(round) == r {
-                            continue
-                        }
-                        r = Some(round);
-                        let i = r2b.get(round);
-                        let b = Block::new(i, *round, hash(&transactions));
-                        handle.enqueue(b).await.unwrap()
+                    out = s.next() => match out {
+                            Ok(o) => {
+                                match o {
+                                    Output::Transactions { round, timestamp: _, transactions, delayed_inbox_index: _ } => {
+                                        if Some(round) == r {
+                                            continue
+                                        }
+                                        r = Some(round);
+                                        let i = r2b.get(round);
+                                        let b = Block::new(i, *round, hash(&transactions));
+                                        handle.enqueue(b).await.unwrap()
+                                    }
+                                    Output::UseCommittee(round) => {
+                                        c.use_committee(round).await.unwrap();
+                                    },
+                                }
+                            }
+                            Err(_) => {
+                                error!(node = %s.public_key(), "no sequencer output");
+                                continue;
+                            },
                     },
                     blk = c.next_block() => {
                         let b = blk.expect("block");
@@ -216,7 +238,7 @@ async fn run_handover(
             let info = r.recv().await.unwrap();
             *map.entry(info).or_default() += 1
         }
-        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
+        if map.values().any(|n| *n >= quorum.get() && *n <= num.get()) {
             continue;
         }
         for (info, n) in map {
@@ -233,7 +255,11 @@ async fn run_handover(
             let info = r.recv().await.unwrap();
             *map.entry(info).or_default() += 1
         }
-        if map.values().any(|n| *n >= quorum && *n <= num.get()) {
+        if map
+            .values()
+            .any(|n| *n >= min(diff, quorum.get()) && *n <= num.get())
+        {
+            // votes only collected for new nodes
             continue;
         }
         for (info, n) in map {
@@ -484,58 +510,58 @@ async fn handover_1_to_4() {
     run_handover(c1, c2).await;
 }
 
-// #[tokio::test]
-// async fn handover_2_to_3() {
-//     init_logging();
+#[tokio::test]
+async fn handover_2_to_3() {
+    init_logging();
 
-//     let c1 = TestConfig::new(0).build();
-//     let c2 = TestConfig::new(1)
-//         .with_prev_configs(&c1)
-//         .keep_nodes(2)
-//         .add_nodes(NonZeroUsize::new(3).unwrap())
-//         .set_previous_committee(true)
-//         .build();
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(2)
+        .add_nodes(NonZeroUsize::new(3).unwrap())
+        .set_previous_committee(true)
+        .build();
 
-//     run_handover(c1, c2).await;
-// }
+    run_handover(c1, c2).await;
+}
 
-// #[tokio::test]
-// async fn handover_3_to_2() {
-//     init_logging();
+#[tokio::test]
+async fn handover_3_to_2() {
+    init_logging();
 
-//     let c1 = TestConfig::new(0).build();
-//     let c2 = TestConfig::new(1)
-//         .with_prev_configs(&c1)
-//         .keep_nodes(3)
-//         .add_nodes(NonZeroUsize::new(2).unwrap())
-//         .set_previous_committee(true)
-//         .build();
-//     run_handover(c1, c2).await;
-// }
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(3)
+        .add_nodes(NonZeroUsize::new(2).unwrap())
+        .set_previous_committee(true)
+        .build();
+    run_handover(c1, c2).await;
+}
 
-// #[tokio::test]
-// async fn handover_4_to_1() {
-//     init_logging();
+#[tokio::test]
+async fn handover_4_to_1() {
+    init_logging();
 
-//     let c1 = TestConfig::new(0).build();
-//     let c2 = TestConfig::new(1)
-//         .with_prev_configs(&c1)
-//         .keep_nodes(4)
-//         .add_nodes(NonZeroUsize::new(1).unwrap())
-//         .set_previous_committee(true)
-//         .build();
-//     run_handover(c1, c2).await;
-// }
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(4)
+        .add_nodes(NonZeroUsize::new(1).unwrap())
+        .set_previous_committee(true)
+        .build();
+    run_handover(c1, c2).await;
+}
 
-// #[tokio::test]
-// async fn handover_3_to_5() {
-//     init_logging();
-//     let c1 = TestConfig::new(0).build();
-//     let c2 = TestConfig::new(1)
-//         .with_prev_configs(&c1)
-//         .keep_nodes(3)
-//         .add_nodes(NonZeroUsize::new(5).unwrap())
-//         .set_previous_committee(true)
-//         .build();
-//     run_handover(c1, c2).await;
-// }
+#[tokio::test]
+async fn handover_3_to_5() {
+    init_logging();
+    let c1 = TestConfig::new(0).build();
+    let c2 = TestConfig::new(1)
+        .with_prev_configs(&c1)
+        .keep_nodes(3)
+        .add_nodes(NonZeroUsize::new(5).unwrap())
+        .set_previous_committee(true)
+        .build();
+    run_handover(c1, c2).await;
+}
