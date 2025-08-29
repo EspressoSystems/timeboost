@@ -4,10 +4,10 @@ effective_timestamp = 1756181061
 signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
 dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
 dkg_enc_key = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK"
-sailfish_address = "127.0.0.1:8000"
+public_address = "127.0.0.1:8000"
 
 [[members]]
 signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
 dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 dkg_enc_key = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
-sailfish_address = "127.0.0.1:8001"
+public_address = "127.0.0.1:8001"

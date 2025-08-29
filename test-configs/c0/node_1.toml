@@ -1,6 +1,8 @@
-[net]
-public = "127.0.0.1:8001"
-internal = "127.0.0.1:11001"
+[net.public]
+address = "127.0.0.1:8001"
+
+[net.internal]
+address = "127.0.0.1:11001"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
@@ -14,9 +16,9 @@ public = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 secret = "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt"
 public = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
 
-[chain_config]
-parent_chain_id = 31337
-parent_chain_rpc_url = "http://127.0.0.1:8545/"
-parent_ibox_contr_addr = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
-parent_block_tag = "finalized"
-key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+[chain.parent]
+id = 31337
+rpc_url = "http://127.0.0.1:8545/"
+ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+block_tag = "finalized"
+key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"

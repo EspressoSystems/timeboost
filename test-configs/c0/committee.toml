@@ -4,28 +4,28 @@ effective_timestamp = 1756181061
 signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
 dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
 dkg_enc_key = "8t9PdQ61NwF9n7RU1du43C95ndSs6jn2EM7gRCfutVo2YXh6dyXAJiEWhpfYtPUv9gK"
-sailfish_address = "127.0.0.1:8000"
+public_address = "127.0.0.1:8000"
 
 [[members]]
 signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
 dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 dkg_enc_key = "8tZm3csZSNQNSXzajHQicr1Yh9Xn66eurdDCqVJGTszebCVA7o8s9LQ1PfNVQLrPrHb"
-sailfish_address = "127.0.0.1:8001"
+public_address = "127.0.0.1:8001"
 
 [[members]]
 signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
 dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
 dkg_enc_key = "8rnMdtoAnvm7e8WZjERVtgnHQSiSRe4nbvHijE9RozRBJczci1J7amqR8G4EArDtVDd"
-sailfish_address = "127.0.0.1:8002"
+public_address = "127.0.0.1:8002"
 
 [[members]]
 signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
 dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
 dkg_enc_key = "8tLK2zC3ZTA5Kw3jbXar4PxrS22SvFxu3o2xEoGfRjD81jsFb6Xc1G8GXjP79CKntmg"
-sailfish_address = "127.0.0.1:8003"
+public_address = "127.0.0.1:8003"
 
 [[members]]
 signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
 dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
 dkg_enc_key = "8sAr1CcnzuMv61MwqQm6EGNPG4ajT6VssCC2ZndZUDjnyq6TngHcB6g8bnesCZ9FG7X"
-sailfish_address = "127.0.0.1:8004"
+public_address = "127.0.0.1:8004"
