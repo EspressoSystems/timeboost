@@ -38,7 +38,7 @@ pub struct Includer {
 }
 
 impl Includer {
-    pub fn new(c: Committee, i: DelayedInboxIndex) -> Self {
+    pub fn new(c: Committee) -> Self {
         let now = Timestamp::default();
         Self {
             committee: c,
@@ -47,7 +47,7 @@ impl Includer {
             time: now,
             epoch: now.into(),
             seqno: SeqNo::zero(),
-            index: i,
+            index: 0.into(),
             cache: BTreeMap::new(),
         }
     }

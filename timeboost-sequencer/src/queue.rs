@@ -47,11 +47,11 @@ impl Inner {
 }
 
 impl BundleQueue {
-    pub fn new(prio: Address, idx: DelayedInboxIndex, metrics: Arc<SequencerMetrics>) -> Self {
+    pub fn new(prio: Address, metrics: Arc<SequencerMetrics>) -> Self {
         Self(Arc::new(Mutex::new(Inner {
             priority_addr: prio,
             time: Timestamp::now(),
-            index: idx,
+            index: 0.into(),
             priority: BTreeMap::new(),
             regular: VecDeque::new(),
             dkg: None,

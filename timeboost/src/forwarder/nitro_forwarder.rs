@@ -8,10 +8,11 @@ use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use timeboost_proto::forward::forward_api_client::ForwardApiClient;
 use timeboost_proto::inclusion::InclusionList;
-use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
+use timeboost_types::{Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
+use tracing::error;
 use worker::Worker;
 
 pub struct NitroForwarder {
@@ -29,7 +30,10 @@ impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.connect().await?;
+        let chan = endpoint.connect().await.map_err(|err| {
+            error!(%err, %addr, "failed to connect to nitro node");
+            err
+        })?;
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
@@ -44,7 +48,7 @@ impl NitroForwarder {
         round: RoundNumber,
         timestamp: Timestamp,
         txns: &[Transaction],
-        index: DelayedInboxIndex,
+        index: u64,
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
@@ -57,7 +61,8 @@ impl NitroForwarder {
                 })
                 .collect(),
             consensus_timestamp: timestamp.into(),
-            delayed_messages_read: index.into(),
+            // we need to add 1 to the index, since we start at 0
+            delayed_messages_read: index + 1,
         };
         self.incls_tx
             .send(incl)
