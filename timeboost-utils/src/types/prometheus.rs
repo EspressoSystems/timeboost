@@ -87,7 +87,7 @@ impl From<prometheus::Error> for PrometheusError {
 #[derive(Clone, Debug, Default)]
 pub struct PrometheusMetrics {
     registry: prometheus::Registry,
-    historgrams: Arc<RwLock<HashMap<String, TimeboostHistogram>>>,
+    histograms: Arc<RwLock<HashMap<String, TimeboostHistogram>>>,
     gauges: Arc<RwLock<HashMap<String, TimeboostGauge>>>,
     counters: Arc<RwLock<HashMap<String, TimeboostCounter>>>,
 }
@@ -152,7 +152,7 @@ impl Metrics for PrometheusMetrics {
                 panic!("Failed to create histogram \"{name}\": {e}")
             }
         };
-        self.historgrams
+        self.histograms
             .write()
             .insert(name.to_string(), histogram.clone());
         Box::new(histogram)
