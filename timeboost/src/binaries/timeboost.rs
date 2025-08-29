@@ -5,12 +5,13 @@ use anyhow::{Context, Result, bail};
 use cliquenet::AddressableCommittee;
 use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
+use serde::Deserialize;
+use serde::de::value::BytesDeserializer;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{DecryptionKeyCell, KeyStore};
-use timeboost_utils::Bs58Bincode;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -141,9 +142,10 @@ async fn main() -> Result<()> {
                 .expect("Failed to parse sigKey");
             let dh_key =
                 x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_enc_key = Bs58Bincode::<DkgEncKey>::try_from_bytes(&peer.dkgKey)
-                .expect("Blackbox from_bytes should work")
-                .into_inner();
+            let dkg_enc_key = DkgEncKey::deserialize(
+                BytesDeserializer::<serde::de::value::Error>::new(&peer.dkgKey),
+            )
+            .expect("Blackbox from_bytes should work");
             let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
                 .expect("Failed to parse networkAddress");
             (sig_key, dh_key, dkg_enc_key, sailfish_address)
@@ -240,7 +242,7 @@ async fn main() -> Result<()> {
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .dkg_key(node_config.keys.dkg.secret.into_inner())
+        .dkg_key(node_config.keys.dkg.secret)
         .key_store(key_store)
         .sailfish_addr(node_config.net.public.address.clone())
         .decrypt_addr(

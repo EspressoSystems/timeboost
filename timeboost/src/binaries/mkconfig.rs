@@ -13,7 +13,6 @@ use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::{ChainConfig, ParentChain};
-use timeboost_utils::Bs58Bincode;
 use timeboost_utils::keyset::{
     CommitteeConfig, CommitteeMember, NodeConfig, NodeEncodedKeypairConfig, NodeKeyConfig,
     NodeKeypairConfig, NodeNetConfig,
@@ -139,8 +138,8 @@ impl Args {
                         public: dh_keypair.public_key(),
                     },
                     dkg: NodeEncodedKeypairConfig {
-                        secret: Bs58Bincode::from(dkg_dec_key.clone()),
-                        public: Bs58Bincode::from(DkgEncKey::from(&dkg_dec_key)),
+                        secret: dkg_dec_key.clone(),
+                        public: DkgEncKey::from(&dkg_dec_key),
                     },
                 },
                 chain: ChainConfig::builder()

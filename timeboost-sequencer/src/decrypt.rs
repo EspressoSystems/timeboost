@@ -1523,6 +1523,7 @@ mod tests {
     use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use futures::future::try_join_all;
     use metrics::NoMetrics;
+    use serde::{Deserialize, de::value::StrDeserializer};
     use std::{
         collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
@@ -1530,7 +1531,7 @@ mod tests {
         time::Instant,
     };
 
-    use timeboost_utils::{Bs58Bincode, types::logging};
+    use timeboost_utils::types::logging;
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
@@ -2247,10 +2248,8 @@ mod tests {
         let dkg_keys: Vec<_> = dkg_keys
             .iter()
             .map(|key_str| {
-                key_str
-                    .parse::<Bs58Bincode<DkgDecKey>>()
+                DkgDecKey::deserialize(StrDeserializer::<serde::de::value::Error>::new(key_str))
                     .expect("Valid DKG key string")
-                    .into_inner()
             })
             .collect();
 

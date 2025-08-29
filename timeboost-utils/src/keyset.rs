@@ -9,8 +9,6 @@ use timeboost_types::{ChainConfig, Timestamp};
 use tokio::time::sleep;
 use tracing::{error, info};
 
-use crate::Bs58Bincode;
-
 pub const DECRYPTER_PORT_OFFSET: u16 = 1000;
 pub const CERTIFIER_PORT_OFFSET: u16 = 2000;
 
@@ -71,8 +69,8 @@ pub struct NodeKeypairConfig<SK, PK> {
 /// An encoded keypair
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeEncodedKeypairConfig {
-    pub secret: Bs58Bincode<DkgDecKey>,
-    pub public: Bs58Bincode<DkgEncKey>,
+    pub secret: DkgDecKey,
+    pub public: DkgEncKey,
 }
 
 impl NodeConfig {
@@ -108,7 +106,7 @@ pub struct CommitteeConfig {
 pub struct CommitteeMember {
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
-    pub dkg_enc_key: Bs58Bincode<DkgEncKey>,
+    pub dkg_enc_key: DkgEncKey,
     pub public_address: Address,
 }
 
@@ -183,8 +181,8 @@ secret = "HeTQaTvq1337kSEd5jt4cdF35Touns1WB7xfs24sKxqM"
 public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
 
 [keys.dkg]
-secret = "AmgWFmLHk3m1C5mfZnhToYDj2azuyh8d7GiEB3w3s8EBP"
-public = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
+secret = "Cab231aFJTQYmZV7Qw4qa2x49K58fbyTEsM4Tz2CKi1"
+public = "7jdMG9MUWoN4avAc3mbf2tTTGdKSmmGZWTgR3NJ9hJPn6dHj9Vdqspcs3j6zTThfjC"
 
 [chain.parent]
 id = 31337

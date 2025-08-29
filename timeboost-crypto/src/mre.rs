@@ -4,7 +4,9 @@
 
 use crate::serde_bridge::SerdeAs;
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_serialize::serialize_to_vec;
+use ark_serialize::{
+    CanonicalDeserialize, CanonicalSerialize, SerializationError, serialize_to_vec,
+};
 use ark_std::{
     UniformRand,
     rand::{CryptoRng, Rng},
@@ -19,10 +21,24 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// Encryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct EncryptionKey<C: CurveGroup> {
     // u = g^alpha where alpha is the secret key
     #[serde_as(as = "SerdeAs")]
     pub(crate) u: C::Affine,
+}
+
+impl<C: CurveGroup> EncryptionKey<C> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, SerializationError> {
+        let mut v = Vec::new();
+        self.u.serialize_compressed(&mut v)?;
+        Ok(v)
+    }
+
+    pub fn from_bytes(value: &[u8]) -> Result<Self, SerializationError> {
+        let u = C::Affine::deserialize_compressed(value)?;
+        Ok(Self { u })
+    }
 }
 
 impl<C: CurveGroup> From<C> for EncryptionKey<C> {
@@ -43,6 +59,7 @@ impl<C: CurveGroup> From<&DecryptionKey<C>> for EncryptionKey<C> {
 /// Decryption key for an AD-only CCA-secure Public Key Encryption (PKE) scheme
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
+#[serde(transparent)]
 pub struct DecryptionKey<C: CurveGroup> {
     #[serde_as(as = "SerdeAs")]
     pub(crate) alpha: C::ScalarField,
@@ -75,7 +92,7 @@ impl<C: CurveGroup> DecryptionKey<C> {
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct LabeledDecryptionKey<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     pub(crate) alpha: C::ScalarField,
     pub(crate) u: C::Affine,
     pub(crate) node_idx: usize,
@@ -116,7 +133,7 @@ impl<C: CurveGroup> From<LabeledDecryptionKey<C>> for DecryptionKey<C> {
 #[serde(bound = "H: Digest")]
 pub struct MultiRecvCiphertext<C: CurveGroup, H: Digest = sha2::Sha256> {
     // the shared ephemeral public key (v:=g^beta in the paper)
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     pub(crate) epk: C::Affine,
     // individual ciphertexts (e_i in the paper)
     pub(crate) cts: Vec<Output<H>>,
@@ -351,16 +368,10 @@ mod tests {
             pk
         );
 
-        let s = toml::to_string(&sk).unwrap();
-        assert_eq!(
-            toml::from_str::<DecryptionKey::<G1Projective>>(&s).unwrap(),
-            sk
-        );
+        let json = serde_json::to_string(&sk).unwrap();
+        assert_eq!(sk, serde_json::from_str(&json).unwrap());
 
-        let s = toml::to_string(&pk).unwrap();
-        assert_eq!(
-            toml::from_str::<EncryptionKey::<G1Projective>>(&s).unwrap(),
-            pk
-        );
+        let json = serde_json::to_string(&pk).unwrap();
+        assert_eq!(pk, serde_json::from_str(&json).unwrap());
     }
 }
