@@ -3,9 +3,15 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
+use std::{borrow::Cow, fmt, ops::Deref, str::FromStr};
+
 use crate::keyset::NodeConfig;
 use multisig::x25519;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{DeserializeOwned, value::StrDeserializer},
+    ser::Error,
+};
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
@@ -63,91 +69,75 @@ pub fn select_peer_hosts(
     }
 }
 
-/// Sometimes we don't want to reveal the struct inner fields when serializing.
-/// This intermediate type holds the bs58::encode(bincode::encode(T)) string that treats
-/// the type `T` as a `Serialize + Deserialize` blackbox.
-///
-/// # Rationale
-///
-/// A concrete motivating example is: if we serialize some config struct in toml format,
-/// containing the public key `crypto::mre::EncryptionKey`, it will reveal the inner fields:
-///
-/// ```toml,no_run
-/// [keys.dkg.pubilc]
-/// u = "..."
-///
-/// # what we want:
-/// [keys.dkg]
-/// public = "..."
-/// ```
-///
-/// One solution is to write customized serde function then use `serde(with="")` on the field
-/// whose internals need to be masked in serialized output. This approach is ergonomic but slightly
-/// error prone if that particular field's serialized value is taken out-of-context, and
-/// the deserializer may forget to use the aforementioned custom deserializer.
-///
-/// Here we take another approach, being explicit about the expectation to use non-serde-default
-/// `decode()` method to deserialize through the type system. The reason why we hold a String rather
-/// than Bytes is the intended usage of this helper struct is human readable de/serializer where
-/// the serialized values can have structured semantic. For bytes-orientated de/serializer,
-/// revealing the internal structure is never a problem to begin with since they are just raw bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Blackbox(String);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bs58Bincode<T>(T);
 
-impl Blackbox {
-    pub fn new(s: String) -> Self {
-        Self(s)
-    }
-
-    /// encode a value into a blackbox representation
-    pub fn encode<T: Serialize>(v: T) -> anyhow::Result<Self> {
-        let bytes = bincode::serde::encode_to_vec(v, bincode::config::standard())?;
-        Ok(Self(bs58::encode(bytes).into_string()))
-    }
-
-    /// decode to the original value
-    pub fn decode<T: DeserializeOwned>(&self) -> anyhow::Result<T> {
-        let bytes = bs58::decode(&self.0).into_vec()?;
-        let (val, _) = bincode::serde::decode_from_slice(
-            &bytes,
-            bincode::config::standard().with_limit::<8192>(),
-        )?;
-        Ok(val)
-    }
-
-    pub fn into_bytes(&self) -> Vec<u8> {
-        self.0.clone().into_bytes()
-    }
-
-    pub fn from_bytes(v: Vec<u8>) -> anyhow::Result<Self> {
-        let s = String::from_utf8(v)?;
-        Ok(Self(s))
+impl<T> Bs58Bincode<T> {
+    pub fn into_inner(self) -> T {
+        self.0
     }
 }
 
-#[test]
-fn test_blackbox() {
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    struct TestData {
-        id: u64,
-        name: String,
-        values: Vec<i32>,
-        flag: bool,
+impl<T> Deref for Bs58Bincode<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    let original = TestData {
-        id: 42,
-        name: "test_struct".to_string(),
-        values: vec![1, 2, 3, 4, 5],
-        flag: true,
-    };
+impl<T: DeserializeOwned> Bs58Bincode<T> {
+    pub fn try_from_bytes(value: &[u8]) -> Result<Self, serde::de::value::Error> {
+        let s = std::str::from_utf8(value).map_err(serde::de::value::Error::custom)?;
+        s.parse()
+    }
+}
 
-    let blackbox = Blackbox::encode(&original).expect("Failed to create blackbox");
-    let decoded: TestData = blackbox.decode().expect("Failed to decode blackbox");
-    assert_eq!(original, decoded);
+impl<T> From<T> for Bs58Bincode<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
 
-    assert_eq!(
-        Blackbox::from_bytes(blackbox.into_bytes()).unwrap(),
-        blackbox
-    );
+impl<T: DeserializeOwned> FromStr for Bs58Bincode<T> {
+    type Err = serde::de::value::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::deserialize(StrDeserializer::new(s))
+    }
+}
+
+impl<T: Serialize> Serialize for Bs58Bincode<T> {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = bincode::serde::encode_to_vec(&self.0, bincode::config::standard())
+            .map_err(serde::ser::Error::custom)?;
+        bs58::encode(bytes).into_string().serialize(s)
+    }
+}
+
+impl<T: Serialize> fmt::Display for Bs58Bincode<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.serialize(f)
+    }
+}
+
+impl<'de, T: DeserializeOwned> Deserialize<'de> for Bs58Bincode<T> {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str = <Cow<'de, str>>::deserialize(d)?;
+        let bytes = bs58::decode(&*str)
+            .into_vec()
+            .map_err(serde::de::Error::custom)?;
+        let (val, _) = bincode::serde::decode_from_slice(
+            &bytes,
+            bincode::config::standard().with_limit::<8192>(),
+        )
+        .map_err(serde::de::Error::custom)?;
+        Ok(Self(val))
+    }
 }

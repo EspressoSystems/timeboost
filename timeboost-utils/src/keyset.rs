@@ -4,54 +4,52 @@ use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::{ChainConfig, Timestamp};
 use tokio::time::sleep;
 use tracing::{error, info};
 
-use crate::Blackbox;
+use crate::Bs58Bincode;
+
+pub const DECRYPTER_PORT_OFFSET: u16 = 1;
+pub const CERTIFIER_PORT_OFFSET: u16 = 2;
 
 /// Config for each node, containing private keys, public keys, chain_config, network addresses etc
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub net: NodeNetConfig,
     pub keys: NodeKeyConfig,
-    pub chain_config: ChainConfig,
+    pub chain: ChainConfig,
 }
 
 /// Network addresses in [`NodeConfig`]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeNetConfig {
-    #[serde(rename = "public")]
-    pub sailfish: Address,
-    pub internal: Address,
+    pub public: PublicNet,
+    pub internal: InternalNet,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicNet {
+    pub address: Address,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InternalNet {
+    pub address: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nitro: Option<Address>,
 }
 
 impl NodeNetConfig {
-    pub fn new(sailfish: Address, internal: Option<Address>, nitro: Option<Address>) -> Self {
-        let internal = internal.unwrap_or(sailfish.clone().with_port(sailfish.port() + 3000));
+    pub fn new(public: Address, internal: Address, nitro: Option<Address>) -> Self {
         Self {
-            sailfish,
-            internal,
-            nitro,
+            public: PublicNet { address: public },
+            internal: InternalNet {
+                address: internal,
+                nitro,
+            },
         }
-    }
-
-    pub fn decrypter(&self) -> Address {
-        Self::decrypt_address_from(&self.sailfish)
-    }
-
-    pub fn decrypt_address_from(sailfish: &Address) -> Address {
-        sailfish.clone().with_port(sailfish.port() + 1000)
-    }
-
-    pub fn certifier(&self) -> Address {
-        Self::certifier_address_from(&self.sailfish)
-    }
-
-    pub fn certifier_address_from(sailfish: &Address) -> Address {
-        sailfish.clone().with_port(sailfish.port() + 2000)
     }
 }
 
@@ -73,8 +71,8 @@ pub struct NodeKeypairConfig<SK, PK> {
 /// An encoded keypair
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeEncodedKeypairConfig {
-    pub secret: Blackbox,
-    pub public: Blackbox,
+    pub secret: Bs58Bincode<DkgDecKey>,
+    pub public: Bs58Bincode<DkgEncKey>,
 }
 
 impl NodeConfig {
@@ -110,8 +108,8 @@ pub struct CommitteeConfig {
 pub struct CommitteeMember {
     pub signing_key: multisig::PublicKey,
     pub dh_key: x25519::PublicKey,
-    pub dkg_enc_key: Blackbox,
-    pub sailfish_address: Address,
+    pub dkg_enc_key: Bs58Bincode<DkgEncKey>,
+    pub public_address: Address,
 }
 
 impl CommitteeConfig {
@@ -170,9 +168,11 @@ pub async fn wait_for_live_peer(host: &Address) -> Result<()> {
 mod tests {
     // generated via `just mkconfig 1`
     const CONFIG: &str = r#"
-[net]
-public = "127.0.0.1:8001"
-internal = "127.0.0.1:11001"
+[net.public]
+address = "127.0.0.1:8001"
+
+[net.internal]
+address = "127.0.0.1:11001"
 
 [keys.signing]
 secret = "AS9HxHVwMNyAYsdGntcD56iBbobBn7RPBi32qEBGDSSb"
@@ -186,12 +186,12 @@ public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
 secret = "AmgWFmLHk3m1C5mfZnhToYDj2azuyh8d7GiEB3w3s8EBP"
 public = "8rokdkmSKkupd7C9oPd3MBPuBANq6ZaQ7hA1uvoFeLmXanMK7ndXwVCy5vUTPkULA7G"
 
-[chain_config]
-parent_chain_id = 31337
-parent_chain_rpc_url = "http://127.0.0.1:8545/"
-parent_ibox_contr_addr = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-parent_block_tag = "finalized"
-key_manager_contr_addr = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+[chain.parent]
+id = 31337
+rpc_url = "http://127.0.0.1:8545/"
+ibox_contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+block_tag = "finalized"
+key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
     "#;
 
     use super::NodeConfig;

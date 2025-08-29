@@ -15,7 +15,7 @@ use timeboost::types::BundleVariant;
 use timeboost_builder::CertifierConfig;
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -105,15 +105,23 @@ where
             .recover(recover_index.map(|r| r == i).unwrap_or(false))
             .leash_len(100)
             .threshold_dec_key(enc_key.clone())
-            .chain_config(ChainConfig::new(
-                1,
-                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                    .parse::<Url>()
-                    .expect("valid url"),
-                alloy::primitives::Address::default(),
-                BlockNumberOrTag::Finalized,
-                alloy::primitives::Address::default(),
-            ))
+            .chain_config(
+                ChainConfig::builder()
+                    .parent(
+                        ParentChain::builder()
+                            .id(1)
+                            .rpc_url(
+                                "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                    .parse::<Url>()
+                                    .expect("valid url"),
+                            )
+                            .ibox_contract(alloy::primitives::Address::default())
+                            .key_manager_contract(alloy::primitives::Address::default())
+                            .block_tag(BlockNumberOrTag::Finalized)
+                            .build(),
+                    )
+                    .build(),
+            )
             .build();
         let pcf = CertifierConfig::builder()
             .sign_keypair(kpair)

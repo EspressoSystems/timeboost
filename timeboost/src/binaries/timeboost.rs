@@ -8,9 +8,9 @@ use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
+use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{DecryptionKeyCell, KeyStore};
-use timeboost_utils::Blackbox;
+use timeboost_utils::Bs58Bincode;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -23,7 +23,9 @@ use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{NodeConfig, NodeNetConfig, wait_for_live_peer};
+use timeboost_utils::keyset::{
+    CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig, wait_for_live_peer,
+};
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -111,13 +113,16 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = node_config.chain_config.provider();
+    let provider = node_config.chain.parent().provider();
     assert_eq!(
         provider.get_chain_id().await?,
-        node_config.chain_config.parent_chain_id(),
+        node_config.chain.parent().chain_id(),
         "Parent chain RPC has mismatched chain_id"
     );
-    let contract = KeyManager::new(node_config.chain_config.key_manager_contr_addr(), &provider);
+    let contract = KeyManager::new(
+        *node_config.chain.parent().key_manager_contract(),
+        &provider,
+    );
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
@@ -136,10 +141,9 @@ async fn main() -> Result<()> {
                 .expect("Failed to parse sigKey");
             let dh_key =
                 x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_enc_key: DkgEncKey = Blackbox::from_bytes(peer.dkgKey.to_vec())
+            let dkg_enc_key = Bs58Bincode::<DkgEncKey>::try_from_bytes(&peer.dkgKey)
                 .expect("Blackbox from_bytes should work")
-                .decode()
-                .expect("Failed to decode dkgKey");
+                .into_inner();
             let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
                 .expect("Failed to parse networkAddress");
             (sig_key, dh_key, dkg_enc_key, sailfish_address)
@@ -159,20 +163,17 @@ async fn main() -> Result<()> {
     let mut certifier_peer_hosts_and_keys = Vec::new();
     let mut dkg_enc_keys = Vec::new();
 
-    #[allow(unused_variables)]
-    for (i, (signing_key, dh_key, dkg_enc_key, sailfish_addr)) in
-        peer_hosts_and_keys.into_iter().enumerate()
-    {
+    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys {
         sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr.clone()));
         decrypt_peer_hosts_and_keys.push((
             signing_key,
             dh_key,
-            NodeNetConfig::decrypt_address_from(&sailfish_addr),
+            sailfish_addr.clone().with_offset(DECRYPTER_PORT_OFFSET),
         ));
         certifier_peer_hosts_and_keys.push((
             signing_key,
             dh_key,
-            NodeNetConfig::certifier_address_from(&sailfish_addr),
+            sailfish_addr.clone().with_offset(CERTIFIER_PORT_OFFSET),
         ));
         dkg_enc_keys.push(dkg_enc_key.clone());
 
@@ -240,12 +241,26 @@ async fn main() -> Result<()> {
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
         .dh_keypair(dh_keypair)
-        .dkg_key(node_config.keys.dkg.secret.decode::<DkgDecKey>()?)
+        .dkg_key(node_config.keys.dkg.secret.into_inner())
         .key_store(key_store)
-        .sailfish_addr(node_config.net.sailfish.clone())
-        .decrypt_addr(node_config.net.decrypter())
-        .certifier_addr(node_config.net.certifier())
-        .maybe_nitro_addr(node_config.net.nitro.clone())
+        .sailfish_addr(node_config.net.public.address.clone())
+        .decrypt_addr(
+            node_config
+                .net
+                .public
+                .address
+                .clone()
+                .with_offset(DECRYPTER_PORT_OFFSET),
+        )
+        .certifier_addr(
+            node_config
+                .net
+                .public
+                .address
+                .clone()
+                .with_offset(CERTIFIER_PORT_OFFSET),
+        )
+        .maybe_nitro_addr(node_config.net.internal.nitro.clone())
         .recover(is_recover)
         .threshold_dec_key(DecryptionKeyCell::new())
         .robusta((
@@ -258,13 +273,13 @@ async fn main() -> Result<()> {
             Vec::new(),
         ))
         .namespace(cli.namespace)
-        .chain_config(node_config.chain_config.clone())
+        .chain_config(node_config.chain.clone())
         .build();
 
     let timeboost = Timeboost::new(config).await?;
 
     let mut grpc = {
-        let addr = node_config.net.internal.to_string();
+        let addr = node_config.net.internal.address.to_string();
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 

@@ -12,8 +12,8 @@ use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
-use timeboost_types::ChainConfig;
-use timeboost_utils::Blackbox;
+use timeboost_types::{ChainConfig, ParentChain};
+use timeboost_utils::Bs58Bincode;
 use timeboost_utils::keyset::{
     CommitteeConfig, CommitteeMember, NodeConfig, NodeEncodedKeypairConfig, NodeKeyConfig,
     NodeKeypairConfig, NodeNetConfig,
@@ -46,7 +46,7 @@ struct Args {
 
     /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3000
     #[clap(long)]
-    internal_addr: Option<Address>,
+    internal_addr: Address,
 
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
@@ -120,11 +120,7 @@ impl Args {
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
             let public_addr = self.adjust_addr(i, &self.public_addr)?;
-            let internal_addr = if let Some(addr) = &self.internal_addr {
-                Some(self.adjust_addr(i, addr)?)
-            } else {
-                None
-            };
+            let internal_addr = self.adjust_addr(i, &self.internal_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
                 Some(self.adjust_addr(i, addr)?)
             } else {
@@ -143,24 +139,28 @@ impl Args {
                         public: dh_keypair.public_key(),
                     },
                     dkg: NodeEncodedKeypairConfig {
-                        secret: Blackbox::encode(dkg_dec_key.clone())?,
-                        public: Blackbox::encode(DkgEncKey::from(&dkg_dec_key))?,
+                        secret: Bs58Bincode::from(dkg_dec_key.clone()),
+                        public: Bs58Bincode::from(DkgEncKey::from(&dkg_dec_key)),
                     },
                 },
-                chain_config: ChainConfig::new(
-                    self.parent_chain_id,
-                    self.parent_rpc_url.clone(),
-                    self.parent_ibox_contract,
-                    self.parent_block_tag,
-                    self.key_manager_contract,
-                ),
+                chain: ChainConfig::builder()
+                    .parent(
+                        ParentChain::builder()
+                            .id(self.parent_chain_id)
+                            .rpc_url(self.parent_rpc_url.clone())
+                            .ibox_contract(self.parent_ibox_contract)
+                            .key_manager_contract(self.key_manager_contract)
+                            .block_tag(self.parent_block_tag)
+                            .build(),
+                    )
+                    .build(),
             };
 
             members.push(CommitteeMember {
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
-                sailfish_address: config.net.sailfish.clone(),
+                public_address: config.net.public.address.clone(),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;

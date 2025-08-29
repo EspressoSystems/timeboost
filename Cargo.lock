@@ -11888,6 +11888,7 @@ dependencies = [
  "async-trait",
  "bincode 2.0.1",
  "blake3",
+ "bon",
  "bytes 1.10.1",
  "committable",
  "ethereum_ssz",

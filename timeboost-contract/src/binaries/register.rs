@@ -1,7 +1,7 @@
 //! CLI for registering next committee to KeyManager contract
 
 use alloy::{
-    primitives::Address,
+    primitives::{Address, Bytes},
     providers::{Provider, WalletProvider},
 };
 use anyhow::{Context, Result, bail};
@@ -64,8 +64,8 @@ async fn main() -> Result<()> {
         .map(|m| CommitteeMemberSol {
             sigKey: m.signing_key.to_bytes().into(),
             dhKey: m.dh_key.as_bytes().into(),
-            dkgKey: m.dkg_enc_key.into_bytes().into(),
-            networkAddress: m.sailfish_address.to_string(),
+            dkgKey: Bytes::copy_from_slice(m.dkg_enc_key.to_string().as_bytes()),
+            networkAddress: m.public_address.to_string(),
         })
         .collect::<Vec<_>>();
     let timestamp: u64 = config.effective_timestamp.into();

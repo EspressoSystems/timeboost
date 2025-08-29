@@ -67,9 +67,9 @@ async fn main() -> Result<()> {
 
     let mut addresses = Vec::new();
     for node in keyset.members {
-        info!("waiting for peer: {}", node.sailfish_address);
-        let port = node.sailfish_address.port();
-        let addr = node.sailfish_address.clone().with_port(port + 800); // TODO: remove port magic
+        info!("waiting for peer: {}", node.public_address);
+        let port = node.public_address.port();
+        let addr = node.public_address.clone().with_port(port + 800); // TODO: remove port magic
         wait_for_live_peer(&addr).await?;
         addresses.push(addr);
     }

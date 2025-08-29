@@ -88,14 +88,14 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = config.chain_config.provider();
+    let provider = config.chain.parent().provider();
     assert_eq!(
         provider.get_chain_id().await?,
-        config.chain_config.parent_chain_id(),
+        config.chain.parent().chain_id(),
         "Parent chain RPC has mismatched chain_id"
     );
 
-    let contract = KeyManager::new(config.chain_config.key_manager_contr_addr(), &provider);
+    let contract = KeyManager::new(*config.chain.parent().key_manager_contract(), &provider);
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
         "sailfish",
-        config.net.sailfish.clone(),
+        config.net.public.address.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
         peer_hosts_and_keys.clone(),

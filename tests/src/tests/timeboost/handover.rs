@@ -16,7 +16,7 @@ use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
+use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -153,15 +153,23 @@ where
                 .recover(false)
                 .leash_len(100)
                 .threshold_dec_key(enc_key.clone())
-                .chain_config(ChainConfig::new(
-                    1,
-                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
-                        .parse::<Url>()
-                        .expect("valid url"),
-                    alloy::primitives::Address::default(),
-                    BlockNumberOrTag::Finalized,
-                    alloy::primitives::Address::default(),
-                ))
+                .chain_config(
+                    ChainConfig::builder()
+                        .parent(
+                            ParentChain::builder()
+                                .id(1)
+                                .rpc_url(
+                                    "https://theserversroom.com/ethereum/54cmzzhcj1o/"
+                                        .parse::<Url>()
+                                        .expect("valid url"),
+                                )
+                                .ibox_contract(alloy::primitives::Address::default())
+                                .key_manager_contract(alloy::primitives::Address::default())
+                                .block_tag(BlockNumberOrTag::Finalized)
+                                .build(),
+                        )
+                        .build(),
+                )
                 .build()
         })
 }

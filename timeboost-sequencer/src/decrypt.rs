@@ -1530,7 +1530,7 @@ mod tests {
         time::Instant,
     };
 
-    use timeboost_utils::{Blackbox, types::logging};
+    use timeboost_utils::{Bs58Bincode, types::logging};
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
@@ -2247,9 +2247,10 @@ mod tests {
         let dkg_keys: Vec<_> = dkg_keys
             .iter()
             .map(|key_str| {
-                Blackbox::new(key_str.to_string())
-                    .decode::<DkgDecKey>()
+                key_str
+                    .parse::<Bs58Bincode<DkgDecKey>>()
                     .expect("Valid DKG key string")
+                    .into_inner()
             })
             .collect();
 
