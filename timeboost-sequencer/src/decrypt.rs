@@ -22,7 +22,7 @@ use timeboost_types::{
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle, spawn_blocking};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -820,8 +820,7 @@ impl Worker {
             return Ok(());
         }
 
-        let guard = self.key_stores.read();
-        let Some(key_store) = guard.get(*committee_id) else {
+        let Some(key_store) = self.key_stores.read().get(*committee_id).cloned() else {
             return Err(DecrypterError::NoCommittee(*committee_id));
         };
 
@@ -831,11 +830,12 @@ impl Worker {
             .or_insert_with(|| DkgAccumulator::new_dkg(key_store.clone()));
 
         acc.try_add(bundle)
+            .await
             .map_err(|e| DecrypterError::Dkg(format!("unable to add dkg bundle: {e}")))?;
 
         if let Some(subset) = acc.try_finalize() {
             let dec_key = subset
-                .extract_key(key_store.to_owned(), &self.dkg_sk, None)
+                .extract_key(key_store.clone(), &self.dkg_sk, None)
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
             self.dec_key.set(dec_key);
             self.state = WorkerState::Running;
@@ -881,6 +881,7 @@ impl Worker {
         });
 
         acc.try_add(bundle)
+            .await
             .map_err(|e| DecrypterError::Dkg(format!("unable to add resharing bundle: {e}")))?;
 
         if let Some(subset) = acc.try_finalize() {
@@ -1006,24 +1007,6 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the ciphertexts from encrypted
-    /// bundle/tx while preserving the order.
-    ///
-    /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
-        incl.priority_bundles()
-            .iter()
-            .filter(move |pb| pb.bundle().is_encrypted())
-            .map(|pb| pb.bundle().data())
-            .chain(
-                incl.regular_bundles()
-                    .iter()
-                    .filter(move |b| b.is_encrypted())
-                    .map(|b| b.data()),
-            )
-            .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
-    }
-
     /// Produce decryption shares for each encrypted bundles inside the inclusion list,
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
@@ -1052,19 +1035,25 @@ impl Worker {
         };
 
         let round = Round::new(incl.round(), self.current);
-        let dec_shares = Self::extract_ciphertexts(incl)
-            .map(|optional_ct| {
-                optional_ct.and_then(|ct| {
-                    // TODO: (anders) consider using committee_id as part of `aad`.
-                    <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        dec_key.privkey(),
-                        &ct,
-                        &THRES_AAD.to_vec(),
-                    )
-                    .ok() // decryption failure result in None
+        let ciphertexts = incl.filter_ciphertexts().cloned().collect::<Vec<_>>();
+        let dec_shares = spawn_blocking(move || {
+            ciphertexts
+                .into_iter()
+                .map(|bytes| deserialize::<_, Ciphertext>(bytes).ok())
+                .map(|ctx| {
+                    ctx.and_then(|ct| {
+                        // TODO: (anders) consider using committee_id as part of `aad`.
+                        <DecryptionScheme as ThresholdEncScheme>::decrypt(
+                            dec_key.privkey(),
+                            &ct,
+                            &THRES_AAD.to_vec(),
+                        )
+                        .ok() // decryption failure result in None
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+        })
+        .await?;
 
         Ok(DecShareBatch {
             round,
@@ -1148,7 +1137,7 @@ impl Worker {
             }
         };
 
-        let ciphertexts = Self::extract_ciphertexts(&incl);
+        let ciphertexts = incl.filter_ciphertexts().map(|b| deserialize(b).ok());
 
         // find the first round (num, committee) with enough valid shares to hatch
         let Some(dec_shares) = self.dec_shares.get(&round) else {
@@ -1444,9 +1433,12 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     Ok(Data::try_from(b.into_inner())?)
 }
 
-fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
+fn deserialize<B, T: for<'de> serde::Deserialize<'de>>(d: B) -> Result<T>
+where
+    B: AsRef<[u8]>,
+{
     bincode::serde::decode_from_slice(
-        d,
+        d.as_ref(),
         bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
     )
     .map(|(msg, _)| msg)
@@ -1480,6 +1472,9 @@ pub enum DecrypterError {
 
     #[error("unexpected internal err: {0}")]
     Internal(String),
+
+    #[error("failed to join task: {0}")]
+    JoinErr(#[from] JoinError),
 
     #[error("empty set of valid decryption shares")]
     EmptyDecShares,
