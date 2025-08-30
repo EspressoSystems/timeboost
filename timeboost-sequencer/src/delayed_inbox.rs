@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use alloy::consensus::BlockHeader;
 use alloy::primitives::{Address, U256};
-use alloy::providers::{Network, Provider, RootProvider, network::BlockResponse};
+use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, network::BlockResponse};
 use alloy::rpc::types::{BlockId, BlockNumberOrTag, Filter};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
-use timeboost_types::ChainConfig;
+use timeboost_types::{ChainConfig, HttpProvider};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -24,41 +25,39 @@ sol! {
     event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
 
-pub struct DelayedInbox<N: Network> {
+pub struct DelayedInbox {
     node: PublicKey,
     ibox_addr: Address,
-    provider: RootProvider<N>,
+    provider: HttpProvider,
     queue: BundleQueue,
     url: String,
     tag: BlockNumberOrTag,
 }
 
-impl<N: Network> DelayedInbox<N> {
+impl DelayedInbox {
     pub async fn connect(
         node: PublicKey,
         cfg: &ChainConfig,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let url = cfg.parent_chain_rpc_url();
-        let parent_chain_id = cfg.parent_chain_id();
-        let provider = RootProvider::<N>::connect(url)
-            .await
-            .map_err(|e| Error::RpcError(e.to_string()))?;
+        let url = cfg.parent().rpc_url();
+        let parent_chain_id = cfg.parent().chain_id();
+        let provider = ProviderBuilder::new().connect_http(url.clone());
         let rpc_chain_id = provider
             .get_chain_id()
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
-        if cfg.parent_chain_id() != rpc_chain_id {
+        if cfg.parent().chain_id() != rpc_chain_id {
             error!(%parent_chain_id, %rpc_chain_id, "mismatching chain id");
             return Err(Error::MismatchingChainID(parent_chain_id, rpc_chain_id));
         }
         Ok(Self {
             node,
-            ibox_addr: cfg.parent_ibox_contr_addr(),
+            ibox_addr: *cfg.parent().ibox_contract(),
             provider,
             queue,
             url: url.to_string(),
-            tag: cfg.parent_block_tag(),
+            tag: cfg.parent().block_tag(),
         })
     }
 

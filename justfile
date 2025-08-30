@@ -48,7 +48,9 @@ fix:
   cargo fix --allow-dirty --allow-staged
 
 ci_local:
-  just build && just lint && just test_ci --release && just run_demo && just run_sailfish_demo && just build_docker
+  just build && just lint && just test_ci --release && \
+  just run_demo -s /tmp/stamp --ignore-stamp --yapper -c test-configs/c0 && \
+  just run_sailfish_demo && just build_docker
 
 bacon: clippy check fmt
 
@@ -69,9 +71,6 @@ run_monitoring:
 stop_monitoring:
   docker compose -f docker-compose.metrics.yml down
 
-run_integration_local *ARGS:
-  ./scripts/run-local-integration {{ARGS}}
-
 run_demo *ARGS:
   ./scripts/run-timeboost-demo {{ARGS}}
 
@@ -84,33 +83,37 @@ run *ARGS:
 bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
-mkconfig_local NUM_NODES *ARGS:
-  just mkconfig_local_full {{NUM_NODES}} "https://theserversroom.com/ethereum/54cmzzhcj1o/" 1 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" {{ARGS}}
-
-mkconfig_local_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
+mkconfig NUM_NODES *ARGS:
   cargo run --bin mkconfig -- -n {{NUM_NODES}} \
-    --sailfish-base-addr "127.0.0.1:8000" \
-    --decrypt-base-addr "127.0.0.1:10000" \
-    --certifier-base-addr "127.0.0.1:11000" \
-    --internal-base-addr "127.0.0.1:5000" \
-    --parent-rpc-url {{RPC_URL}} \
-    --parent-chain-id {{PARENT_CHAIN_ID}} \
-    --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
-    --mode "increment-port" {{ARGS}} | jq
+    --public-addr "127.0.0.1:8000" \
+    --internal-addr "127.0.0.1:8003" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/c0" {{ARGS}}
 
-mkconfig_docker NUM_NODES *ARGS:
-  just mkconfig_docker_full {{NUM_NODES}} "https://theserversroom.com/ethereum/54cmzzhcj1o/" 1 "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f" {{ARGS}}
+mkconfig_docker *ARGS:
+  cargo run --bin mkconfig -- -n 5 \
+    --public-addr "172.20.0.2:8000" \
+    --internal-addr "172.20.0.2:8003" \
+    --mode "increment-address" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/docker" {{ARGS}}
 
-mkconfig_docker_full NUM_NODES RPC_URL PARENT_CHAIN_ID PARENT_INBOX_ADDRESS *ARGS:
-  cargo run --bin mkconfig -- -n {{NUM_NODES}} \
-    --sailfish-base-addr "172.20.0.2:8000" \
-    --decrypt-base-addr "172.20.0.2:8001" \
-    --certifier-base-addr "172.20.0.2:8002" \
-    --internal-base-addr "172.20.0.2:5000" \
-    --parent-rpc-url {{RPC_URL}} \
-    --parent-chain-id {{PARENT_CHAIN_ID}} \
-    --parent-ibox-contr-addr {{PARENT_INBOX_ADDRESS}} \
-    --mode "increment-address" {{ARGS}} | jq
+mkconfig_nitro *ARGS:
+  cargo run --bin mkconfig -- -n 2 \
+    --public-addr "127.0.0.1:8000" \
+    --internal-addr "127.0.0.1:8003" \
+    --nitro-addr "localhost:55000" \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-chain-id 1337 \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --output "test-configs/nitro-ci-committee" {{ARGS}}
 
 verify_blocks *ARGS:
   cargo run --release --bin block-verifier --features bin {{ARGS}}
@@ -135,5 +138,5 @@ test-individually:
     cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
 
-test-contract-deploy:
-  ./scripts/test-contract-deploy
+test-contract-deploy *ARGS:
+  ./scripts/test-contract-deploy {{ARGS}}

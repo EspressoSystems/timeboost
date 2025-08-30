@@ -1,0 +1,24 @@
+[net.public]
+address = "172.20.0.5:8000"
+
+[net.internal]
+address = "172.20.0.5:8003"
+
+[keys.signing]
+secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
+public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+
+[keys.dh]
+secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
+public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+
+[keys.dkg]
+secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
+public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+
+[chain.parent]
+id = 31337
+rpc_url = "http://127.0.0.1:8545/"
+ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+block_tag = "finalized"
+key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"

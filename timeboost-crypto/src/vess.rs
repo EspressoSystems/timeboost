@@ -430,7 +430,10 @@ impl<C: CurveGroup> ShoupVess<C> {
         hasher.update(aad);
         for theta in dealings.iter() {
             hasher.update(serialize_to_vec![theta.1]?);
-            hasher.update(theta.2.to_bytes());
+            hasher.update(bincode::serde::encode_to_vec(
+                &theta.2,
+                bincode::config::standard(),
+            )?);
         }
         let h = hasher.finalize();
 
@@ -546,7 +549,8 @@ impl<C: CurveGroup> ShoupVess<C> {
                     }
                     let unshifted_comm = C::normalize_batch(&unshifted_comm);
                     let unshifted_comm_bytes = serialize_to_vec![unshifted_comm]?;
-                    let mre_ct_bytes = mre_cts[*pos].to_bytes();
+                    let mre_ct_bytes =
+                        bincode::serde::encode_to_vec(&mre_cts[*pos], bincode::config::standard())?;
 
                     Ok((unshifted_comm_bytes, mre_ct_bytes))
                 } else if let Some(pos) = non_subset_map.get(&i) {
@@ -557,7 +561,8 @@ impl<C: CurveGroup> ShoupVess<C> {
                         self.new_dealing(&vss_pp, i, &seed, recipients.clone(), aad)?;
 
                     let cm_bytes = serialize_to_vec![cm]?;
-                    let mre_ct_bytes = mre_ct.to_bytes();
+                    let mre_ct_bytes =
+                        bincode::serde::encode_to_vec(&mre_ct, bincode::config::standard())?;
 
                     Ok((cm_bytes, mre_ct_bytes))
                 } else {
@@ -868,6 +873,12 @@ pub enum VessError {
 
 impl From<ark_serialize::SerializationError> for VessError {
     fn from(e: ark_serialize::SerializationError) -> Self {
+        Self::SerdeError(e.to_string())
+    }
+}
+
+impl From<bincode::error::EncodeError> for VessError {
+    fn from(e: bincode::error::EncodeError) -> Self {
         Self::SerdeError(e.to_string())
     }
 }

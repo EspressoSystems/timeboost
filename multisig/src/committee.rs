@@ -1,5 +1,5 @@
-use std::fmt;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, ParseIntError};
+use std::{fmt, str::FromStr};
 
 use std::sync::Arc;
 
@@ -132,6 +132,15 @@ impl From<CommitteeId> for u64 {
 impl fmt::Display for CommitteeId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl FromStr for CommitteeId {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v = s.parse::<u64>()?;
+        Ok(Self(v))
     }
 }
 

@@ -2,7 +2,7 @@
 
 use ark_ec::{CurveGroup, scalar_mul::BatchMulPreprocessing};
 use ark_poly::{DenseUVPolynomial, Polynomial, univariate::DensePolynomial};
-use ark_serialize::{CanonicalSerialize, SerializationError, serialize_to_vec};
+use ark_serialize::{CanonicalSerialize, serialize_to_vec};
 use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
 use derive_more::{Debug, Deref, From, IntoIterator};
@@ -14,6 +14,7 @@ use std::{iter::successors, num::NonZeroUsize, ops::Add, sync::Arc};
 
 use crate::{
     interpolation::{interpolate, interpolate_in_exponent},
+    serde_bridge::SerdeAs,
     traits::dkg::{KeyResharing, VerifiableSecretSharing, VssError},
 };
 
@@ -223,7 +224,7 @@ impl<C: CurveGroup> VerifiableSecretSharing for FeldmanVss<C> {
     IntoIterator,
 )]
 pub struct FeldmanCommitment<C: CurveGroup> {
-    #[serde_as(as = "crate::SerdeAs")]
+    #[serde_as(as = "SerdeAs")]
     comm: Vec<C::Affine>,
 }
 
@@ -232,18 +233,6 @@ impl<C: CurveGroup> FeldmanCommitment<C> {
     pub fn new(v: Vec<C>) -> Self {
         let comm = C::normalize_batch(&v);
         Self { comm }
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serializing feldman commitment")
-    }
-
-    pub fn try_from_bytes<const N: usize>(value: &[u8]) -> Result<Self, SerializationError> {
-        crate::try_from_bytes::<Self, N>(value)
-    }
-    pub fn try_from_str<const N: usize>(value: &str) -> Result<Self, SerializationError> {
-        crate::try_from_str::<Self, N>(value)
     }
 }
 
