@@ -1,43 +1,61 @@
 use alloy::eips::BlockNumberOrTag;
+use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
+use alloy::providers::ProviderBuilder;
+use bon::Builder;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use crate::{HttpProvider, HttpProviderWithWallet};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct ChainConfig {
-    parent_chain_id: u64,
-    parent_chain_rpc_url: String,
-    parent_ibox_contr_addr: Address,
-    parent_block_tag: BlockNumberOrTag,
+    parent: ParentChain,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
+pub struct ParentChain {
+    id: u64,
+    rpc_url: Url,
+    ibox_contract: Address,
+    block_tag: BlockNumberOrTag,
+    key_manager_contract: Address,
 }
 
 impl ChainConfig {
-    pub fn new(
-        chain_id: u64,
-        rpc_url: Url,
-        ibox_addr: Address,
-        parent_block_tag: BlockNumberOrTag,
-    ) -> Self {
-        Self {
-            parent_chain_id: chain_id,
-            parent_chain_rpc_url: rpc_url.to_string(),
-            parent_ibox_contr_addr: ibox_addr,
-            parent_block_tag,
-        }
+    pub fn parent(&self) -> &ParentChain {
+        &self.parent
     }
-    pub fn parent_chain_id(&self) -> u64 {
-        self.parent_chain_id
+}
+
+impl ParentChain {
+    pub fn chain_id(&self) -> u64 {
+        self.id
     }
 
-    pub fn parent_chain_rpc_url(&self) -> &str {
-        &self.parent_chain_rpc_url
+    pub fn rpc_url(&self) -> &Url {
+        &self.rpc_url
     }
 
-    pub fn parent_ibox_contr_addr(&self) -> Address {
-        self.parent_ibox_contr_addr
+    pub fn ibox_contract(&self) -> &Address {
+        &self.ibox_contract
     }
 
-    pub fn parent_block_tag(&self) -> BlockNumberOrTag {
-        self.parent_block_tag
+    pub fn block_tag(&self) -> BlockNumberOrTag {
+        self.block_tag
+    }
+
+    pub fn key_manager_contract(&self) -> &Address {
+        &self.key_manager_contract
+    }
+
+    pub fn provider(&self) -> HttpProvider {
+        ProviderBuilder::new().connect_http(self.rpc_url.clone())
+    }
+
+    pub fn provider_with_wallet(&self, wallet: EthereumWallet) -> HttpProviderWithWallet {
+        ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_http(self.rpc_url.clone())
     }
 }

@@ -20,6 +20,7 @@ arrayvec = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
+bon = { workspace = true }
 bytes = { workspace = true }
 committable = { workspace = true }
 ethereum_ssz = { workspace = true }

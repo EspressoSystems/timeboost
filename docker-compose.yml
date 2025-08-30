@@ -4,9 +4,9 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id", "0",
+        "--committee-id", "0",
         "--http-port", "8800",
-        "--keyset-file", "docker.json",
+        "--config", "docker/node_0.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -31,9 +31,9 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id", "1",
+        "--committee-id", "0",
         "--http-port", "8800",
-        "--keyset-file", "docker.json",
+        "--config", "docker/node_1.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -58,9 +58,9 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id", "2",
+        "--committee-id", "0",
         "--http-port", "8800",
-        "--keyset-file", "docker.json",
+        "--config", "docker/node_2.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -85,9 +85,9 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id", "3",
+        "--committee-id", "0",
         "--http-port", "8800",
-        "--keyset-file", "docker.json",
+        "--config", "docker/node_3.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -112,9 +112,10 @@ services:
     command:
       [
         "/app/timeboost",
-        "--id", "4",
+        "--committee-id", "0",
         "--http-port", "8800",
         "--keyset-file", "docker.json",
+        "--config", "docker/node_4.toml",
         "--stamp", "/tmp/timeboost.stamp",
         "--namespace", "10101",
       ]
@@ -150,7 +151,7 @@ services:
         "--tps",
         "1",
         "--keyset-file",
-        "docker.json",
+        "committee.json",
       ]
     networks:
       timeboost:

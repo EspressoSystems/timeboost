@@ -1523,6 +1523,7 @@ mod tests {
     use ark_std::{UniformRand, rand::seq::SliceRandom, rand::thread_rng, test_rng};
     use futures::future::try_join_all;
     use metrics::NoMetrics;
+    use serde::{Deserialize, de::value::StrDeserializer};
     use std::{
         collections::VecDeque,
         net::{Ipv4Addr, SocketAddr},
@@ -1596,19 +1597,19 @@ mod tests {
     ];
 
     const COM1_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
-        "AgrGYiNQMqPpLgwPTuCV5aww6kpcoAQnf4xuFukTEtkL1",
-        "Afn2hPWpcvMnRp7uRdPPpmTMgjgJfejjULpg7wr5v62qt",
-        "AcTyyLHHyWsy1B4DVGsmBXkxu3JR8ZLZfE2LC4XTjTzdM",
-        "AdGeUNYGN7B3X2XpNbj147rsqaVYSYeEAjYgWdSBPGSBw",
-        "Amc4mvBfcBDsQziud5cvm1i9RnJ5KQRXNdNetq4fsJb76",
+        "BW8gq8MARtDkSJL6daobPtGQm22TKkXdbLNrNGngNGTB",
+        "ARtqWGmRWrBqZUr4MmiLaPgzjsiKp5USsC9iQNRMZYy4",
+        "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX",
+        "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7",
+        "GFvv2wcQmiGpk5rFp1FGpeUjnVUyZmGM9k8VHb1Jn7EG",
     ];
 
     const COM2_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
-        "AYUPadq8BAQBV5RYNUuLQe4cXuWNhQzYLKDo7uEBJSzbt",
-        "Ag5Dn7DkMcxNLpbHBgrcWchmXx2GZmj9ZSwo7Fo8MyfkM",
-        "AcbRDbHhXpw3DsaxA3gWRTyw2W6FP9V2X1NNNwSvJkSwq",
-        "AjgeTwBByktco4Y5Y1k7oxofF1A7C8zRtiXnkCbpVKixH",
-        "AeJSq3Ef4BuC4CqwB6fKbKL77CeJNHFoHeMJ9hsK8ESo4",
+        "GLNPt6EYeFQbq8cCX5nKMA4LbCKdrUN5o5hmWTPJbkJZ",
+        "2n3Pz5NeUAVu5YaWgXN9CCrS6rC7NZwVZ48AG8m7JRqF",
+        "AGxRDhGvgovb1DZMjL3Y6Q4hF6UUpFCtpPD6sTJd827U",
+        "A3GUHxG3cPKvCch6XowztrHrrvaGS5JH3CuXQKCxQEnv",
+        "216zC1MgfV54cJJtt3AKdjJHhqfgZLZCmEyCkFN1bPoF",
     ];
 
     #[test]
@@ -2246,7 +2247,10 @@ mod tests {
 
         let dkg_keys: Vec<_> = dkg_keys
             .iter()
-            .map(|key_str| DkgDecKey::try_from_str::<64>(key_str).expect("Valid DKG key string"))
+            .map(|key_str| {
+                DkgDecKey::deserialize(StrDeserializer::<serde::de::value::Error>::new(key_str))
+                    .expect("Valid DKG key string")
+            })
             .collect();
 
         // Create committee from signature keys

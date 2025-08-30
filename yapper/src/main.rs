@@ -9,8 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use clap::Parser;
-use timeboost_utils::keyset::{KeysetConfig, wait_for_live_peer};
-use timeboost_utils::select_peer_hosts;
+use timeboost_utils::keyset::{CommitteeConfig, wait_for_live_peer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::signal::{
     ctrl_c,
@@ -27,7 +26,7 @@ mod yapper;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Path to file containing the keyset description.
+    /// Path to file containing the committee member's public info.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
@@ -63,16 +62,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
-    let keyset = KeysetConfig::read_keyset(&cli.keyset_file)
-        .with_context(|| format!("opening the keyfile at path {:?}", cli.keyset_file,))?;
-
-    let nodes = select_peer_hosts(&keyset.keyset, cli.multi_region);
+    let keyset = CommitteeConfig::read(&cli.keyset_file)
+        .with_context(|| format!("opening the keyfile at path {:?}", cli.keyset_file))?;
 
     let mut addresses = Vec::new();
-    for node in nodes {
-        info!("waiting for peer: {}", node.sailfish_address);
-        let port = node.sailfish_address.port();
-        let addr = node.sailfish_address.clone().with_port(port + 800); // TODO: remove port magic
+    for node in keyset.members {
+        info!("waiting for peer: {}", node.public_address);
+        let port = node.public_address.port();
+        let addr = node.public_address.clone().with_port(port + 800); // TODO: remove port magic
         wait_for_live_peer(&addr).await?;
         addresses.push(addr);
     }

@@ -44,8 +44,8 @@ fn main() {
     generate_bindings_module(&contract_artifacts, bindings_dir);
 
     // Format the generated bindings
-    match std::process::Command::new("just")
-        .args(["fmt", "-p", env!("CARGO_PKG_NAME")])
+    match std::process::Command::new("cargo")
+        .args(["+nightly", "fmt", "-p", env!("CARGO_PKG_NAME")])
         .output()
     {
         Ok(result) => {

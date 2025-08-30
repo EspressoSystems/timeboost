@@ -3,7 +3,7 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-use crate::keyset::NodeInfo;
+use crate::keyset::NodeConfig;
 use multisig::x25519;
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
@@ -47,9 +47,9 @@ pub fn bs58_encode(b: &[u8]) -> String {
 ///
 /// Returns a boxed iterator over the selected PublicNodeInfo references.
 pub fn select_peer_hosts(
-    keyset: &[NodeInfo],
+    keyset: &[NodeConfig],
     multi_region: bool,
-) -> impl Iterator<Item = &NodeInfo> {
+) -> impl Iterator<Item = &NodeConfig> {
     if multi_region {
         let take_from_group = keyset.len() / 4;
         Box::new(

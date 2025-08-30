@@ -99,6 +99,10 @@ impl SequencerConfig {
         &self.threshold_dec_key
     }
 
+    pub fn chain_config(&self) -> &ChainConfig {
+        &self.chain_config
+    }
+
     /// Derive an RBC config from this sequencer config.
     pub fn rbc_config(&self) -> RbcConfig {
         let cv = if let Some(prev) = &self.previous_sailfish_committee {
