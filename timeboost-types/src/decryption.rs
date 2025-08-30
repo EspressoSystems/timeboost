@@ -412,7 +412,7 @@ impl DkgAccumulator {
     /// Try to add a bundle to the accumulator.
     pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
         // caller should ensure that no bundles are added after finalization
-        if self.bundles().contains(&bundle) {
+        if self.bundles().contains(&bundle) || self.complete {
             return Ok(());
         }
 
@@ -447,12 +447,16 @@ impl DkgAccumulator {
         }
 
         self.bundles.push(bundle);
+        // only store the necessary amount of bundles in the accumulator
+        if self.bundles.len() >= self.store.committee().one_honest_threshold().into() {
+            self.complete = true;
+        }
         Ok(())
     }
 
     /// Try to finalize the accumulator into a subset if enough bundles are collected.
     pub fn try_finalize(&mut self) -> Option<DkgSubset> {
-        if self.bundles.len() >= self.store.committee().one_honest_threshold().into() {
+        if self.complete {
             let combkey = match &self.mode {
                 AccumulatorMode::Dkg => None,
                 AccumulatorMode::Resharing(combkey) => Some(combkey.clone()),
@@ -463,7 +467,6 @@ impl DkgAccumulator {
                 bundles: self.bundles.clone(),
                 combkey,
             };
-            self.complete = true;
 
             Some(subset)
         } else {
@@ -545,9 +548,9 @@ impl DkgSubset {
     /// Extract the new threshold decryption key from the subset.
     pub fn extract_key(
         &self,
-        curr: KeyStore,
+        curr: &KeyStore,
         dkg_sk: &LabeledDkgDecKey,
-        prev: Option<KeyStore>,
+        prev: Option<&KeyStore>,
     ) -> anyhow::Result<DecryptionKey> {
         let vess = Vess::new_fast();
 
@@ -572,11 +575,11 @@ impl DkgSubset {
                 let Some(prev) = prev else {
                     return Err(anyhow!("previous key store missing"));
                 };
+
                 let dealings: Vec<_> = self
                     .bundles()
                     .iter()
-                    .enumerate()
-                    .map(|(i, b)| {
+                    .map(|b| {
                         let node_idx = b.origin().0.into();
                         let pub_share = combkey
                             .get_pub_share(node_idx)
@@ -588,10 +591,9 @@ impl DkgSubset {
                             DKG_AAD,
                             *pub_share,
                         )?;
-                        Ok((i, s, b.comm().clone()))
+                        Ok((node_idx, s, b.comm().clone()))
                     })
                     .collect::<Result<Vec<_>, VessError>>()?;
-
                 DecryptionKey::from_resharing(
                     prev.committee(),
                     curr.committee(),

@@ -140,11 +140,13 @@ impl Certifier {
     }
 
     /// Prepare for the next committee.
-    pub async fn next_committee(
+    pub async fn set_next_committee(
         &mut self,
         c: AddressableCommittee,
     ) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
+        // map to Certifier network
+        let c = translate_addr(c);
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
@@ -161,6 +163,19 @@ impl Certifier {
             .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
+}
+
+fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
+    let committee = c.committee().clone();
+    let shifted_entries = c
+        .entries()
+        .map(|(pk, dh, addr)| {
+            let dec_port = addr.port().saturating_add(2000);
+            let new_addr = addr.with_port(dec_port);
+            (pk, dh, new_addr)
+        })
+        .collect::<Vec<_>>();
+    AddressableCommittee::new(committee, shifted_entries)
 }
 
 impl Drop for Certifier {
@@ -187,6 +202,18 @@ impl Handle {
     }
 }
 
+/// Next committee state.
+#[derive(Default)]
+enum NextCommittee {
+    /// No next committee is scheduled.
+    #[default]
+    None,
+    /// The next committee should become effective at the given round.
+    Use(Round),
+    /// The old committee should be removed when the given round is garbage collected.
+    Del(Round),
+}
+
 #[derive(Builder)]
 struct Worker {
     /// Our signing keypair.
@@ -205,7 +232,8 @@ struct Worker {
     current: CommitteeId,
 
     /// The next committee ID and its round number (if any).
-    next_committee: Option<Round>,
+    #[builder(default)]
+    next_committee: NextCommittee,
 
     /// Command channel receiver.
     rx: Receiver<Command>,
@@ -523,7 +551,7 @@ impl Worker {
             debug!(node = %self.label, next = ?self.next_block, %lower_bound, "catching up");
             // To catch up we first discard everything too old.
             self.next_block = Some(lower_bound);
-            self.gc(lower_bound);
+            self.gc(lower_bound).await?;
             // Now we look for the first block number which has a certificate
             // available and continue from there.
             for (i, t) in self.tracking.values().flat_map(|t| t.trackers.iter()) {
@@ -564,15 +592,16 @@ impl Worker {
         }
 
         if start != self.next_block {
-            self.gc(lower_bound);
+            self.gc(lower_bound).await?;
         }
 
         Ok(())
     }
 
-    fn gc(&mut self, lower_bound: BlockNumber) {
+    async fn gc(&mut self, lower_bound: BlockNumber) -> Result<()> {
         self.net.gc(*lower_bound);
         self.tracking.retain(|n, _| *n >= lower_bound);
+        self.remove_old_committee().await
     }
 
     fn evidence(&self, num: BlockNumber) -> Option<Evidence> {
@@ -613,15 +642,50 @@ impl Worker {
             error!(node = %self.label, committee = %round.committee(), "committee to use does not exist");
             return Err(CertifierError::NoCommittee(round.committee()));
         };
-        self.next_committee = Some(round);
+        self.next_committee = NextCommittee::Use(round);
         Ok(())
     }
 
     async fn maybe_switch_committee(&mut self) -> Result<()> {
-        let Some(start) = self.next_committee else {
+        let NextCommittee::Use(start) = self.next_committee else {
             return Ok(());
         };
         if self.clock < start.num() {
+            return Ok(());
+        }
+        let Some(committee) = self.committees.get(start.committee()) else {
+            error!(node = %self.label, committee = %self.current, "current committee not found");
+            return Err(CertifierError::NoCommittee(start.committee()));
+        };
+        let old = self
+            .net
+            .parties()
+            .map(|(p, _)| p)
+            .filter(|p| !committee.contains_key(p))
+            .copied()
+            .collect::<Vec<_>>();
+        self.net
+            .assign(Role::Passive, old)
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
+        self.net
+            .assign(Role::Active, committee.parties().copied().collect())
+            .await
+            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
+        self.current = start.committee();
+        self.history = committee.quorum_size().get() as u64;
+        self.next_committee = NextCommittee::Del(start);
+        Ok(())
+    }
+
+    async fn remove_old_committee(&mut self) -> Result<()> {
+        let NextCommittee::Del(round) = self.next_committee else {
+            return Ok(());
+        };
+        let Some(block) = self.oldest_block() else {
+            return Ok(());
+        };
+        if block.round() <= round.num() {
             return Ok(());
         }
         let Some(committee) = self.committees.get(self.current) else {
@@ -642,12 +706,7 @@ impl Worker {
             .remove(old)
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        self.net
-            .assign(Role::Active, committee.parties().copied().collect())
-            .await
-            .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
-        self.current = start.committee();
-        self.history = committee.quorum_size().get() as u64;
+        self.next_committee = NextCommittee::None;
         Ok(())
     }
 
@@ -658,6 +717,15 @@ impl Worker {
             return false;
         };
         self.label == c.leader(*i.num() as usize)
+    }
+
+    fn oldest_block(&self) -> Option<&Block> {
+        self.tracking
+            .first_key_value()?
+            .1
+            .trackers
+            .values()
+            .find_map(|t| t.block.as_ref())
     }
 }
 

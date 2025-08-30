@@ -5,6 +5,9 @@ pub mod until;
 
 use crate::keyset::NodeConfig;
 use multisig::x25519;
+use std::time::Duration;
+use tokio::time::sleep;
+use tracing::warn;
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
@@ -59,5 +62,26 @@ pub fn select_peer_hosts(
         )
     } else {
         Box::new(keyset.iter().take(keyset.len())) as Box<dyn Iterator<Item = _>>
+    }
+}
+
+pub async fn with_retry<T, E, F, Fut>(operation: F, error_message: impl Fn(&E) -> String) -> T
+where
+    E: std::fmt::Display,
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+{
+    let mut delay = Duration::from_millis(100);
+    const MAX_DELAY: Duration = Duration::from_secs(5);
+
+    loop {
+        match operation().await {
+            Ok(result) => return result,
+            Err(e) => {
+                warn!("{}: {e}, retrying in {:?}...", error_message(&e), delay);
+                sleep(delay).await;
+                delay = (delay * 2).min(MAX_DELAY);
+            }
+        }
     }
 }

@@ -1,22 +1,31 @@
 mod block_order;
 mod handover;
 mod test_timeboost_startup;
+mod timeboost_handover;
 mod transaction_order;
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee};
+use alloy::eips::{BlockNumberOrTag, Encodable2718};
+use bytes::Bytes;
+use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics};
+use metrics::NoMetrics;
 use multisig::Keypair;
 use multisig::{Committee, x25519};
-use sailfish_types::UNKNOWN_COMMITTEE_ID;
+use parking_lot::Mutex;
+use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
 use timeboost::types::BundleVariant;
-use timeboost_builder::CertifierConfig;
+use timeboost_builder::{Certifier, CertifierConfig};
 use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
+use timeboost_sequencer::{Sequencer, SequencerConfig};
+use timeboost_types::{
+    BlockNumber, ChainConfig, DecryptionKeyCell, KeyStore, ParentChain, Transaction,
+};
 use timeboost_utils::load_generation::make_bundle;
+use timeboost_utils::with_retry;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
@@ -150,4 +159,77 @@ async fn gen_bundles(enc_key: DecryptionKeyCell, tx: broadcast::Sender<BundleVar
         }
         sleep(Duration::from_millis(10)).await
     }
+}
+
+fn hash(tx: &[Transaction]) -> Bytes {
+    let mut h = blake3::Hasher::new();
+    for t in tx {
+        h.update(&t.encoded_2718());
+    }
+    Bytes::copy_from_slice(h.finalize().as_bytes())
+}
+
+/// Map round numbers to block numbers.
+///
+/// Block numbers need to be consistent, consecutive and strictly monotonic.
+/// The round numbers of our sequencer output may contain gaps. To provide
+/// block numbers with the required properties we have here one monotonic
+/// counter and record which block number is used for a round number.
+/// Subsequent lookups will then get a consistent result.
+struct Round2Block {
+    counter: AtomicU64,
+    block_numbers: Mutex<HashMap<RoundNumber, BlockNumber>>,
+}
+
+impl Round2Block {
+    fn new() -> Self {
+        Self {
+            counter: AtomicU64::new(0),
+            block_numbers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, r: RoundNumber) -> BlockNumber {
+        let mut map = self.block_numbers.lock();
+        *map.entry(r)
+            .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
+    }
+}
+
+async fn start_sequencer_with_retry(seq_conf: SequencerConfig) -> Sequencer {
+    with_retry(
+        || async { Sequencer::new(seq_conf.clone(), &NoMetrics).await },
+        |e| format!("failed to create sequencer: {e}"),
+    )
+    .await
+}
+
+async fn start_certifier_with_retry(cert_conf: CertifierConfig) -> Certifier {
+    with_retry(
+        || async { Certifier::new(cert_conf.clone(), &NoMetrics).await },
+        |e| format!("failed to create certifer: {e}"),
+    )
+    .await
+}
+
+async fn create_network_with_retry(cfg: &SequencerConfig) -> Network {
+    with_retry(
+        || async {
+            Network::create(
+                "sailfish",
+                cfg.sailfish_address().clone(),
+                cfg.sign_keypair().public_key(),
+                cfg.dh_keypair().clone(),
+                cfg.sailfish_committee().entries(),
+                NetworkMetrics::new(
+                    "sailfish",
+                    &NoMetrics,
+                    cfg.sailfish_committee().parties().copied(),
+                ),
+            )
+            .await
+        },
+        |e| format!("Network::create failed: {e}"),
+    )
+    .await
 }

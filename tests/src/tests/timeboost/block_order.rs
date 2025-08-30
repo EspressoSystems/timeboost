@@ -1,19 +1,11 @@
+use multisig::Certificate;
 use std::collections::HashMap;
 use std::iter::once;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-
-use alloy::eips::Encodable2718;
-use bytes::Bytes;
-use metrics::NoMetrics;
-use multisig::Certificate;
-use parking_lot::Mutex;
-use timeboost::builder::Certifier;
-use timeboost::sequencer::{Output, Sequencer};
-use timeboost::types::sailfish::RoundNumber;
-use timeboost::types::{Block, BlockInfo, BlockNumber, Transaction};
+use timeboost::sequencer::Output;
+use timeboost::types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -22,6 +14,10 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info};
+
+use crate::tests::timeboost::{
+    Round2Block, hash, start_certifier_with_retry, start_sequencer_with_retry,
+};
 
 use super::{gen_bundles, make_configs};
 
@@ -53,8 +49,8 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
-            let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
+            let mut s = start_sequencer_with_retry(c).await;
+            let mut p = start_certifier_with_retry(b).await;
             let mut r = None;
             let handle = p.handle();
             loop {
@@ -123,39 +119,4 @@ async fn block_order() {
     }
 
     finish.cancel();
-}
-
-fn hash(tx: &[Transaction]) -> Bytes {
-    let mut h = blake3::Hasher::new();
-    for t in tx {
-        h.update(&t.encoded_2718());
-    }
-    Bytes::copy_from_slice(h.finalize().as_bytes())
-}
-
-/// Map round numbers to block numbers.
-///
-/// Block numbers need to be consistent, consecutive and strictly monotonic.
-/// The round numbers of our sequencer output may contain gaps. To provide
-/// block numbers with the required properties we have here one monotonic
-/// counter and record which block number is used for a round number.
-/// Subsequent lookups will then get a consistent result.
-struct Round2Block {
-    counter: AtomicU64,
-    block_numbers: Mutex<HashMap<RoundNumber, BlockNumber>>,
-}
-
-impl Round2Block {
-    fn new() -> Self {
-        Self {
-            counter: AtomicU64::new(0),
-            block_numbers: Mutex::new(HashMap::new()),
-        }
-    }
-
-    fn get(&self, r: RoundNumber) -> BlockNumber {
-        let mut map = self.block_numbers.lock();
-        *map.entry(r)
-            .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
-    }
 }
