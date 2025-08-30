@@ -102,7 +102,7 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
+                            f.enqueue(round, timestamp, &transactions, delayed_inbox_index.into()).await?;
                         } else {
                             warn!(node = %self.label, %round, "no forwarder => dropping output")
                         }

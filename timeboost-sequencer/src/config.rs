@@ -5,7 +5,7 @@ use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
 use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_types::{Address, ChainConfig, DecryptionKeyCell, DelayedInboxIndex, KeyStore};
+use timeboost_types::{Address, ChainConfig, DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
@@ -33,10 +33,6 @@ pub struct SequencerConfig {
     /// The priority lane controller address.
     #[builder(default)]
     pub(crate) priority_addr: Address,
-
-    /// The delayed inbox index.
-    #[builder(default)]
-    pub(crate) delayed_inbox_index: DelayedInboxIndex,
 
     /// Is this sequencer recovering from a crash?
     #[builder(default = true)]
