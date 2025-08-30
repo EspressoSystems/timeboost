@@ -37,9 +37,8 @@ async fn run_handover(
     next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
     const NEXT_COMMITTEE_DELAY: u64 = 15;
-    const NUM_OF_BLOCKS: usize = 50;
+    const NUM_OF_BLOCKS_PER_EPOCH: usize = 50;
 
-    let mut out1 = Vec::new();
     let tasks = TaskTracker::new();
     let (bcast, _) = broadcast::channel(500);
     let finish = CancellationToken::new();
@@ -49,18 +48,19 @@ async fn run_handover(
     let a2 = next[0].1.sailfish_committee().clone();
     let c1 = a1.committee().id();
     let c2 = a2.committee().id();
-    let num = a1.committee().size();
-    let quorum = a1.committee().one_honest_threshold();
-
     let d2 = next[0].1.decrypt_committee().clone();
 
+    let num = a1.committee().size();
+    let quorum = a1.committee().one_honest_threshold();
     let diff = a1.diff(&a2).count();
+
     assert!(diff > 0);
     assert_ne!(c1, c2);
 
-    // run committee 1:
+    let mut out1 = Vec::new();
+
+    // run committee 1 (current):
     for (_, seq_conf, cert_conf) in &curr {
-        // Clone the configs so they are owned and can be moved into the async block
         let seq_conf = seq_conf.clone();
         let cert_conf = cert_conf.clone();
         let (tx, rx) = mpsc::unbounded_channel();
@@ -72,8 +72,8 @@ async fn run_handover(
         tasks.spawn(async move {
             let mut s = start_sequencer_with_retry(seq_conf).await;
             let mut c = start_certifier_with_retry(cert_conf).await;
-            let mut r: Option<sailfish_types::RoundNumber> = None;
-            let handle = c.handle();
+            let mut r: Option<RoundNumber> = None;
+            let c_handle = c.handle();
 
             loop {
                 select! {
@@ -85,7 +85,7 @@ async fn run_handover(
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
                         }
-                        Err(err) => panic!("Command channel error: {err}")
+                        Err(err) => panic!("command channel error: {err}")
                     },
                     out = s.next() => match out {
                             Ok(o) => {
@@ -97,7 +97,7 @@ async fn run_handover(
                                         r = Some(round);
                                         let i = r2b.get(round);
                                         let b = Block::new(i, *round, hash(&transactions));
-                                        handle.enqueue(b).await.unwrap()
+                                        c_handle.enqueue(b).await.unwrap()
                                     }
                                     Output::UseCommittee(round) => {
                                         c.use_committee(round).await.unwrap();
@@ -130,8 +130,7 @@ async fn run_handover(
         key.read().await;
     }
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
+    // generate bundles
     tasks.spawn({
         let (key, _, _) = &curr[0];
         let key = key.clone();
@@ -148,13 +147,16 @@ async fn run_handover(
         }
     });
 
+    // wait for the current to become active
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
     // inform about upcoming committee change
     let t = ConsensusTime(Timestamp::now() + NEXT_COMMITTEE_DELAY);
     bcast.send(Cmd::NextCommittee(t, a2, d2.1)).unwrap();
 
     let mut out2 = Vec::new();
 
-    // run committee 2:
+    // run committee 2 (next):
     for (_, seq_conf, cert_conf) in &next {
         let ours = seq_conf.sign_keypair().public_key();
 
@@ -176,7 +178,7 @@ async fn run_handover(
             let mut s = start_sequencer_with_retry(seq_conf).await;
             let mut c = start_certifier_with_retry(cert_conf).await;
             let mut r: Option<sailfish_types::RoundNumber> = None;
-            let handle = c.handle();
+            let c_handle = c.handle();
 
             loop {
                 select! {
@@ -188,7 +190,7 @@ async fn run_handover(
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
                         }
-                        Err(err) => panic!("Command channel error: {err}")
+                        Err(err) => panic!("command channel error: {err}")
                     },
                     out = s.next() => match out {
                             Ok(o) => {
@@ -200,7 +202,7 @@ async fn run_handover(
                                         r = Some(round);
                                         let i = r2b.get(round);
                                         let b = Block::new(i, *round, hash(&transactions));
-                                        handle.enqueue(b).await.unwrap()
+                                        c_handle.enqueue(b).await.unwrap()
                                     }
                                     Output::UseCommittee(round) => {
                                         c.use_committee(round).await.unwrap();
@@ -230,7 +232,7 @@ async fn run_handover(
 
     let mut map: HashMap<BlockInfo, usize> = HashMap::new();
 
-    for b in 0..NUM_OF_BLOCKS {
+    for b in 0..NUM_OF_BLOCKS_PER_EPOCH {
         map.clear();
         info!(block = %b);
         for (node, r) in &mut out1 {
@@ -247,7 +249,7 @@ async fn run_handover(
         panic!("outputs do not match")
     }
 
-    for b in 0..NUM_OF_BLOCKS {
+    for b in 0..NUM_OF_BLOCKS_PER_EPOCH {
         map.clear();
         info!(block = %b);
         for (node, r) in &mut out2 {
@@ -259,7 +261,7 @@ async fn run_handover(
             .values()
             .any(|n| *n >= min(diff, quorum.get()) && *n <= num.get())
         {
-            // votes only collected for new nodes
+            // votes only collected from new nodes in next
             continue;
         }
         for (info, n) in map {

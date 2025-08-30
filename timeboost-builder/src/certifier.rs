@@ -170,8 +170,8 @@ fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
     let shifted_entries = c
         .entries()
         .map(|(pk, dh, addr)| {
-            let dec_port = addr.port().saturating_add(2000);
-            let new_addr = addr.with_port(dec_port);
+            let cert_port = addr.port().saturating_add(2000);
+            let new_addr = addr.with_port(cert_port);
             (pk, dh, new_addr)
         })
         .collect::<Vec<_>>();

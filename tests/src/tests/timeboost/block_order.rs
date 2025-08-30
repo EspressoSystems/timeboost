@@ -1,9 +1,10 @@
-use multisig::Certificate;
 use std::collections::HashMap;
 use std::iter::once;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
+
+use multisig::Certificate;
 use timeboost::sequencer::Output;
 use timeboost::types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;

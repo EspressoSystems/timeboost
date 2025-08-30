@@ -1,3 +1,9 @@
+use std::future::pending;
+use std::iter::repeat_with;
+use std::net::Ipv4Addr;
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use alloy::eips::BlockNumberOrTag;
 use cliquenet::{Address, AddressableCommittee, Overlay};
 use futures::FutureExt;
@@ -7,11 +13,6 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use std::future::pending;
-use std::iter::repeat_with;
-use std::net::Ipv4Addr;
-use std::num::NonZeroUsize;
-use std::time::Duration;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
@@ -25,7 +26,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 use url::Url;
 
-use super::create_network_with_retry;
+use super::start_network_with_retry;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -70,7 +71,8 @@ where
         .map(|c| c.sailfish_address().clone())
         .chain(
             repeat_with(|| {
-                Address::from((Ipv4Addr::LOCALHOST, portpicker::pick_unused_port().unwrap()))
+                let p = portpicker::pick_unused_port().unwrap();
+                Address::from((Ipv4Addr::LOCALHOST, p))
             })
             .take(add.get()),
         )
@@ -171,7 +173,7 @@ where
 ///
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
-    let mut net = create_network_with_retry(cfg).await;
+    let mut net = start_network_with_retry(cfg).await;
 
     if let Some(prev) = &cfg.previous_sailfish_committee() {
         let old = prev.diff(cfg.sailfish_committee());

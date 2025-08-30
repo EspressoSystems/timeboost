@@ -1,12 +1,11 @@
 mod conf;
 
-use std::iter::once;
-use std::sync::Arc;
-
 use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::Result;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
+use std::iter::once;
+use std::sync::Arc;
 use timeboost_builder::{Certifier, CertifierDown, Submitter};
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;

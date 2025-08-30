@@ -2,7 +2,7 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use cliquenet::Address;
 use multisig::x25519;
@@ -69,20 +69,21 @@ pub async fn wait_for_live_peer(host: &Address) -> anyhow::Result<()> {
     }
 }
 
-pub async fn with_retry<T, E, F, Fut>(operation: F, error_message: impl Fn(&E) -> String) -> T
+/// Retries an async operation with exponential backoff until it succeeds.
+pub async fn with_retry<T, E, F, Fut>(op: F, err: impl Fn(&E) -> String) -> T
 where
-    E: std::fmt::Display,
+    E: Display,
     F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<T, E>>,
+    Fut: Future<Output = Result<T, E>>,
 {
     let mut delay = Duration::from_millis(100);
     const MAX_DELAY: Duration = Duration::from_secs(5);
 
     loop {
-        match operation().await {
+        match op().await {
             Ok(result) => return result,
             Err(e) => {
-                warn!("{}: {e}, retrying in {:?}...", error_message(&e), delay);
+                warn!("{}: {e}, retrying in {:?}...", err(&e), delay);
                 sleep(delay).await;
                 delay = (delay * 2).min(MAX_DELAY);
             }

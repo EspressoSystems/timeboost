@@ -211,7 +211,7 @@ async fn start_certifier_with_retry(cert_conf: CertifierConfig) -> Certifier {
     .await
 }
 
-async fn create_network_with_retry(cfg: &SequencerConfig) -> Network {
+async fn start_network_with_retry(cfg: &SequencerConfig) -> Network {
     with_retry(
         || async {
             Network::create(

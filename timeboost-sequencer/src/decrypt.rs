@@ -42,7 +42,7 @@ enum Protocol {
     /// Broadcast a request to retrieve a subset identified by the committee id.
     DkgRequest(CommitteeId),
 
-    /// Direct reply to a get request.
+    /// Direct reply to a subset request.
     DkgResponse(SubsetResponse),
 
     /// Broadcast a batch of decryption shares for a given round.
@@ -63,26 +63,44 @@ enum Command {
     Gc(RoundNumber),
 }
 
+/// Holds key material for the next committee
+struct NextKey {
+    next_dkg_key: LabeledDkgDecKey,
+    next_dec_key: DecryptionKey,
+}
+
+impl NextKey {
+    pub fn new(next_dkg_key: LabeledDkgDecKey, next_dec_key: DecryptionKey) -> Self {
+        Self {
+            next_dkg_key,
+            next_dec_key,
+        }
+    }
+}
+
 /// Next committee state.
 #[derive(Default)]
+#[allow(clippy::large_enum_variant)]
 enum NextCommittee {
     /// No next committee is scheduled.
     #[default]
     None,
     /// The next committee should become effective at the given round.
     ///
-    /// Key material is present if member of both current and next.
-    Use(Round, Box<Option<(LabeledDkgDecKey, DecryptionKey)>>),
+    /// Key material is supplied if member of both current and next.
+    Use(Round, Option<NextKey>),
     /// The old committee should be removed when the given round is garbage collected.
     Del(Round),
 }
 
-/// A Decrypter connects to other Decrypters to collectively decrypt encrypted transactions.
+/// A `Decrypter` connects to its peers to collaboratively decrypt ciphertexts contained in bundles.
 ///
-/// The Decrypter also extracts DKG shares from inclusion lists and combines these to obtain keys.
+/// As part of the Timeboost protocol, it produces decryption shares by threshold-decrypting these
+/// ciphertexts. The shares are exchanged with other decrypters, and once a sufficient number are
+/// collected, shares can be combined ("hatching") to obtain the plaintext.
 ///
-/// In timeboost protocol, a decrypter does both the share "decryption" (using its decryption key
-/// share), and combiner's "hatching" (using the combiner key).
+/// In addition, the `Decrypter` extracts DKG bundles from inclusion lists and combines them to derive
+/// the keys used for threshold decryption/combining.
 pub struct Decrypter {
     /// Public key of the node.
     label: PublicKey,
@@ -232,7 +250,7 @@ impl Decrypter {
             return None;
         };
         let Some(node_idx) = store.committee().get_index(&self.label) else {
-            warn!(node = %self.label, committee = %self.current, "local key not in store for dkg");
+            warn!(node = %self.label, committee = %self.current, "local key not in store");
             return None;
         };
 
@@ -377,10 +395,18 @@ impl Drop for Decrypter {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum WorkerState {
-    /// Expects to obtain the DKG key through DKG bundles.
+    /// Obtains the threshold decryption key from DKG bundles.
     ///
-    /// Upon startup the Worker also requests DKG messages from remote nodes
-    /// such that, if the local node is behind, it will catchup immediately.
+    /// A node can recover its threshold decryption key in two ways:  
+    /// 1. **Consensus**: by combining DKG bundles extracted directly from candidate lists  
+    ///    produced by peers.  
+    /// 2. **Network**: by receiving and combining an agreed-upon subset of DKG bundles from a  
+    ///    designated set of peers.  
+    ///
+    /// For the initial DKG, method (1) is used.  
+    /// For resharing, method (2) is used, with the source peers being the previous committee.  
+    /// When catching up—whether during the initial DKG or after resharing—the node also uses  
+    /// method (2), but obtains the bundles from the current committee.
     DkgPending(HashMap<PublicKey, DkgSubset>),
     /// Active mode with decryption key ready.
     Running,
@@ -392,10 +418,8 @@ impl Default for WorkerState {
     }
 }
 
-/// Worker is responsible for "hatching" ciphertexts.
-///
-/// When ciphertexts in a round have received t+1 decryption shares
-/// the shares can be combined to decrypt the ciphertext (hatching).
+/// A `Worker` handles the production, exchange, and combination of decryption shares  
+/// in coordination with other peers. See [`Decrypter`] for details.
 #[derive(Builder)]
 struct Worker {
     /// Labeling of the node (consensus signing key).
@@ -453,7 +477,7 @@ struct Worker {
     #[builder(default)]
     incls: BTreeMap<RoundNumber, (InclusionList, bool)>,
 
-    /// Pending inclusion lists not yet decrypted due to missing decryption key.
+    /// Pending inclusion lists not yet processed due to missing decryption key.
     #[builder(default)]
     pending: BTreeMap<RoundNumber, (InclusionList, bool)>,
 
@@ -614,7 +638,7 @@ impl Worker {
         trace!(node = %self.label, from=%src, %committee_id, "received dkg request");
 
         if !matches!(self.state, WorkerState::Running) {
-            trace!(node = %self.label, %committee_id, "request not matching current epoch");
+            trace!(node = %self.label, %committee_id, "not in a running state");
             return Ok(());
         }
 
@@ -637,7 +661,7 @@ impl Worker {
         let subset = match mode {
             AccumulatorMode::Dkg => DkgSubset::new_dkg(committee_id, bundles.to_vec()),
             AccumulatorMode::Resharing(combkey) => {
-                DkgSubset::new_resharing(committee_id, bundles.to_vec(), combkey.to_owned())
+                DkgSubset::new_resharing(committee_id, bundles.to_vec(), combkey.clone())
             }
         };
         let response = SubsetResponse::new(committee_id, subset);
@@ -689,7 +713,7 @@ impl Worker {
             let acc = DkgAccumulator::from_subset(current.clone(), subset.to_owned());
             self.tracker.insert(committee.id(), acc);
             let dec_key = subset
-                .extract_key(current, &self.dkg_sk, prev.as_ref())
+                .extract_key(&current, &self.dkg_sk, prev.as_ref())
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.dec_key.set(dec_key);
@@ -732,7 +756,7 @@ impl Worker {
         Ok(())
     }
 
-    /// Handles both DKG and resharing bundles.
+    /// Handles both initial DKG and resharing bundles.
     async fn on_dkg_bundle(&mut self, bundle: DkgBundle) -> Result<()> {
         let committee_id = bundle.committee_id();
         let is_resharing = *committee_id != self.current;
@@ -750,7 +774,7 @@ impl Worker {
         }
 
         if is_resharing && self.dec_key.get().is_none() {
-            warn!(node = %self.label, "received resharing bundle but initial DKG not complete");
+            warn!(node = %self.label, "initial DKG incomplete");
             return Ok(());
         }
 
@@ -763,10 +787,7 @@ impl Worker {
         };
 
         let acc = if is_resharing {
-            let dec_key = self
-                .dec_key
-                .get()
-                .expect("dec_key should exist for resharing");
+            let dec_key = self.dec_key.get().expect("dec_key exists for resharing");
             self.tracker.entry(*committee_id).or_insert_with(|| {
                 DkgAccumulator::new_resharing(key_store.clone(), dec_key.combkey().clone())
             })
@@ -842,9 +863,6 @@ impl Worker {
     /// Catch up by requesting DKG subsets from remote nodes.
     async fn dkg_catchup(&mut self) -> Result<()> {
         let req = Protocol::DkgRequest(self.current);
-        // the round number is ignored by the recieving party, but we don't want to give an
-        // arbitrary value since `gc()` will probably clean it up too early. Thus, we put in
-        // an estimated round number using the `.oldest_cached_round()`.
         self.net
             .broadcast(*self.oldest_cached_round(), serialize(&req)?)
             .await
@@ -890,7 +908,7 @@ impl Worker {
             .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
     }
 
-    /// Produce decryption shares for each encrypted bundles inside the inclusion list.
+    /// Produce decryption shares for each encrypted bundle inside the inclusion list.
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
@@ -1154,30 +1172,36 @@ impl Worker {
             let guard = self.key_stores.read();
             if guard.len() < 2 {
                 return Err(DecrypterError::Dkg(
-                    "unable to switch committees".to_string(),
+                    "insufficient key stores for committee switch".into(),
                 ));
             }
             (guard.last().clone(), guard.first().clone())
         };
 
         if old.committee().contains_key(&self.label) {
-            // member of both old and new committee
-            if let Some(acc) = self.tracker.get_mut(&committee_id) {
-                if let Some(subset) = acc.try_finalize() {
-                    if let Some(new_pos) = new.committee().get_index(&self.label) {
-                        let dkg_sk = DkgDecKey::from(self.dkg_sk.clone());
-                        let labeled_dkg_sk = dkg_sk.label(new_pos.into());
+            // member of both old and new committee - extract new decryption key
+            let Some(acc) = self.tracker.get_mut(&committee_id) else {
+                return Err(DecrypterError::Dkg("accumulator not found".into()));
+            };
 
-                        let new_key = subset
-                            .extract_key(&new, &labeled_dkg_sk, Some(&old))
-                            .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
-                        self.next_committee =
-                            NextCommittee::Use(round, Box::new(Some((labeled_dkg_sk, new_key))));
-                    }
-                }
-            }
-            info!(node = %self.label, %round, "completed key extraction");
+            let Some(subset) = acc.try_finalize() else {
+                return Err(DecrypterError::Dkg("accumulator incomplete".into()));
+            };
+
+            let Some(new_pos) = new.committee().get_index(&self.label) else {
+                return Err(DecrypterError::Dkg("node not found in committee".into()));
+            };
+
+            let new_dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(new_pos.into());
+            let new_dec_key = subset
+                .extract_key(&new, &new_dkg_sk, Some(&old))
+                .map_err(|e| DecrypterError::Dkg(format!("key extraction failed: {e}")))?;
+
+            self.next_committee =
+                NextCommittee::Use(round, Some(NextKey::new(new_dkg_sk, new_dec_key)));
+            debug!(node = %self.label, %round, "completed key extraction");
         } else {
+            // not in new committee - request DKG subset from current committee
             let dest: Vec<_> = old.committee().parties().copied().collect();
             let serialized = serialize(&Protocol::DkgRequest(committee_id))?;
             self.net
@@ -1185,7 +1209,8 @@ impl Worker {
                 .await
                 .map_err(|e| DecrypterError::End(e.into()))?;
 
-            self.next_committee = NextCommittee::Use(round, Box::new(None));
+            self.next_committee = NextCommittee::Use(round, None);
+            debug!(node = %self.label, %round, "requested DKG subset from current");
         }
         Ok(())
     }
@@ -1214,6 +1239,8 @@ impl Worker {
             .copied()
             .collect::<Vec<_>>();
 
+        // nodes in current are passive to allow messages to be received
+        // such that the last inclusion lists for the committee can be decrypted
         self.net
             .assign(Role::Passive, old)
             .await
@@ -1226,8 +1253,13 @@ impl Worker {
             .await
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
 
-        if let Some((next_dkg_key, next_dec_key)) = &**next_key {
-            self.dec_key.set(next_dec_key.to_owned());
+        // update keys if also member of next committee
+        if let Some(NextKey {
+            next_dkg_key,
+            next_dec_key,
+        }) = next_key
+        {
+            self.dec_key.set(next_dec_key.clone());
             self.dkg_sk = next_dkg_key.clone();
         }
         self.current = start.committee();
