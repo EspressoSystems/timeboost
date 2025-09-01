@@ -5,11 +5,14 @@ use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
+use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
+
 use multisig::{CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
@@ -22,7 +25,7 @@ use timeboost_types::{
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -65,16 +68,13 @@ enum Command {
 
 /// Holds key material for the next committee
 struct NextKey {
-    next_dkg_key: LabeledDkgDecKey,
-    next_dec_key: DecryptionKey,
+    dkg_key: LabeledDkgDecKey,
+    dec_key: DecryptionKey,
 }
 
 impl NextKey {
-    pub fn new(next_dkg_key: LabeledDkgDecKey, next_dec_key: DecryptionKey) -> Self {
-        Self {
-            next_dkg_key,
-            next_dec_key,
-        }
+    pub fn new(dkg_key: LabeledDkgDecKey, dec_key: DecryptionKey) -> Self {
+        Self { dkg_key, dec_key }
     }
 }
 
@@ -99,7 +99,7 @@ enum NextCommittee {
 /// ciphertexts. The shares are exchanged with other decrypters, and once a sufficient number are
 /// collected, shares can be combined ("hatching") to obtain the plaintext.
 ///
-/// In addition, the `Decrypter` extracts DKG bundles from inclusion lists and combines them to derive
+/// In addition, the `Decrypter` extracts DKG bundles from candidate lists and combines them to derive
 /// the keys used for threshold decryption/combining.
 pub struct Decrypter {
     /// Public key of the node.
@@ -111,7 +111,7 @@ pub struct Decrypter {
     incls: VecDeque<(RoundNumber, bool)>,
     /// Sender end of the worker commands
     worker_tx: Sender<Command>,
-    /// Receiver end of the Worker response
+    /// Receiver end of the Worker response.
     worker_rx: Receiver<InclusionList>,
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
@@ -121,7 +121,7 @@ pub struct Decrypter {
     key_stores: Arc<RwLock<KeyStoreVec<2>>>,
     /// Current committee.
     current: CommitteeId,
-    /// Metrics to keep track of decrypter status
+    /// Metrics to keep track of decrypter status.
     metrics: Arc<SequencerMetrics>,
 }
 
@@ -452,11 +452,11 @@ struct Worker {
     /// Number of rounds to retain.
     retain: usize,
 
-    /// State of the node holding generated threshold decryption keys.
+    /// Operational state of the node.
     #[builder(default)]
     state: WorkerState,
 
-    /// The next committee ID and its round number (if any).
+    /// The next committee ID, its round number and generated key (if any).
     #[builder(default)]
     next_committee: NextCommittee,
 
@@ -804,7 +804,7 @@ impl Worker {
         if !is_resharing {
             if let Some(subset) = acc.try_finalize() {
                 let dec_key = subset
-                    .extract_key(&key_store, &self.dkg_sk, None)
+                    .extract_key(&key_store.clone(), &self.dkg_sk, None)
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
                 self.dec_key.set(dec_key);
                 self.state = WorkerState::Running;
@@ -890,24 +890,6 @@ impl Worker {
         Ok(())
     }
 
-    /// scan through the inclusion list and extract the ciphertexts from encrypted
-    /// bundle/tx while preserving the order.
-    ///
-    /// dev: Option<_> return type indicates potential failure in ciphertext deserialization
-    fn extract_ciphertexts(incl: &InclusionList) -> impl Iterator<Item = Option<Ciphertext>> {
-        incl.priority_bundles()
-            .iter()
-            .filter(move |pb| pb.bundle().is_encrypted())
-            .map(|pb| pb.bundle().data())
-            .chain(
-                incl.regular_bundles()
-                    .iter()
-                    .filter(move |b| b.is_encrypted())
-                    .map(|b| b.data()),
-            )
-            .map(|bytes| deserialize::<Ciphertext>(bytes).ok())
-    }
-
     /// Produce decryption shares for each encrypted bundle inside the inclusion list.
     ///
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
@@ -918,17 +900,20 @@ impl Worker {
         })?;
 
         let round = Round::new(incl.round(), self.current);
-        let dec_shares = Self::extract_ciphertexts(incl)
-            .map(|optional_ct| {
-                optional_ct.and_then(|ct| {
-                    // TODO: (anders) consider using committee_id as part of `aad`.
-                    <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                        dec_key.privkey(),
-                        &ct,
-                        &THRES_AAD.to_vec(),
-                    )
-                    .ok() // decryption failure result in None
-                })
+        let ciphertexts: Vec<_> = incl
+            .filter_ciphertexts()
+            .filter_map(|bytes| deserialize::<_, Ciphertext>(&bytes).ok())
+            .collect();
+
+        let dec_shares = ciphertexts
+            .par_iter()
+            .map(|ct| {
+                <DecryptionScheme as ThresholdEncScheme>::decrypt(
+                    dec_key.privkey(),
+                    ct,
+                    &THRES_AAD.to_vec(),
+                )
+                .ok()
             })
             .collect::<Vec<_>>();
 
@@ -1011,7 +996,7 @@ impl Worker {
             return Ok(Some(incl));
         }
 
-        let ciphertexts = Self::extract_ciphertexts(&incl);
+        let ciphertexts = incl.filter_ciphertexts().map(|b| deserialize(b).ok());
         let Some(dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
         };
@@ -1042,51 +1027,90 @@ impl Worker {
 
         let mut decrypted: Vec<Option<Plaintext>> = vec![];
 
-        // Now, after immutable borrow is dropped, get mutable access
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get_mut(&round) else {
             return Ok(None);
         };
 
-        for (opt_ct, opt_dec_shares) in ciphertexts.into_iter().zip(per_ct_opt_dec_shares) {
-            // only Some(_) for valid ciphertext's decryption shares
-            let dec_shares = opt_dec_shares
-                .iter()
-                .filter_map(|s| s.as_ref())
-                .collect::<Vec<_>>();
+        // define the result of a combine operation
+        #[derive(Debug)]
+        enum CombineResult {
+            Success(Plaintext),
+            FaultySubset(BTreeSet<u32>),
+            Error(ThresholdEncError),
+            InsufficientShares,
+        }
 
-            if dec_shares.len() < key_store.committee().one_honest_threshold().into() {
-                decrypted.push(None);
-                continue;
+        // process each ciphertext in parallel using spawn_blocking
+        let combine_results = tokio::task::spawn_blocking({
+            let key_store = key_store.clone();
+            let dec_key = dec_key.clone();
+            let ciphertexts: Vec<_> = ciphertexts.collect();
+            let mut per_ct_opt_dec_shares = per_ct_opt_dec_shares.clone();
+
+            move || {
+                ciphertexts
+                    .into_par_iter()
+                    .zip(per_ct_opt_dec_shares.par_iter_mut())
+                    .map(|(maybe_ct, decryption_shares)| {
+                        // Collect valid decryption shares
+                        let valid_shares: Vec<_> = decryption_shares
+                            .iter()
+                            .filter_map(|s| s.as_ref())
+                            .cloned()
+                            .collect();
+
+                        // check if we have enough shares
+                        let threshold: usize = key_store.committee().one_honest_threshold().into();
+                        if valid_shares.len() < threshold {
+                            return CombineResult::InsufficientShares;
+                        }
+
+                        // skip if no ciphertext
+                        let Some(ct) = maybe_ct else {
+                            return CombineResult::InsufficientShares;
+                        };
+
+                        // attempt to combine shares
+                        match DecryptionScheme::combine(
+                            key_store.committee(),
+                            dec_key.combkey(),
+                            valid_shares.iter().collect(),
+                            &ct,
+                            &THRES_AAD.to_vec(),
+                        ) {
+                            Ok(pt) => CombineResult::Success(pt),
+                            Err(ThresholdEncError::FaultySubset(wrong_indices)) => {
+                                CombineResult::FaultySubset(wrong_indices.into())
+                            }
+                            Err(e) => CombineResult::Error(e),
+                        }
+                    })
+                    .collect::<Vec<_>>()
             }
+        })
+        .await?;
 
-            if let Some(ct) = opt_ct {
-                match DecryptionScheme::combine(
-                    key_store.committee(),
-                    dec_key.combkey(),
-                    dec_shares,
-                    &ct,
-                    &THRES_AAD.to_vec(),
-                ) {
-                    Ok(pt) => decrypted.push(Some(pt)),
-                    // with f+1 decryption shares, which means ciphertext is valid, we just need to
-                    // remove bad decryption shares and wait for enough shares from honest nodes
-                    Err(ThresholdEncError::FaultySubset(wrong_indices)) => {
-                        opt_dec_shares.retain(|opt_s| {
-                            opt_s
-                                .clone()
-                                .is_none_or(|s| !wrong_indices.contains(&s.index()))
-                        });
-                        warn!(node = %self.label, ?wrong_indices, "combine found faulty subset");
-                        // not ready to hatch this ciphertext, thus the containing inclusion list
-                        return Ok(None);
-                    }
-                    Err(e) => {
-                        warn!(node = %self.label, error = ?e, "error in combine");
-                        return Err(DecrypterError::Decryption(e));
-                    }
+        for (result, decryption_shares) in combine_results.into_iter().zip(per_ct_opt_dec_shares) {
+            match result {
+                CombineResult::Success(pt) => decrypted.push(Some(pt)),
+                CombineResult::FaultySubset(wrong_indices) => {
+                    // Remove faulty decryption shares
+                    decryption_shares.retain(|opt_s| {
+                        opt_s
+                            .clone()
+                            .is_none_or(|s| !wrong_indices.contains(&s.index()))
+                    });
+                    warn!(node = %self.label, ?wrong_indices, "combine found faulty subset");
+                    // Not ready to hatch this ciphertext
+                    return Ok(None);
                 }
-            } else {
-                decrypted.push(None);
+                CombineResult::Error(e) => {
+                    warn!(node = %self.label, error = ?e, "error in combine");
+                    return Err(DecrypterError::Decryption(e));
+                }
+                CombineResult::InsufficientShares => {
+                    decrypted.push(None);
+                }
             }
         }
 
@@ -1188,11 +1212,11 @@ impl Worker {
                 return Err(DecrypterError::Dkg("accumulator incomplete".into()));
             };
 
-            let Some(new_pos) = new.committee().get_index(&self.label) else {
+            let Some(new_node_idx) = new.committee().get_index(&self.label) else {
                 return Err(DecrypterError::Dkg("node not found in committee".into()));
             };
 
-            let new_dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(new_pos.into());
+            let new_dkg_sk = DkgDecKey::from(self.dkg_sk.clone()).label(new_node_idx.into());
             let new_dec_key = subset
                 .extract_key(&new, &new_dkg_sk, Some(&old))
                 .map_err(|e| DecrypterError::Dkg(format!("key extraction failed: {e}")))?;
@@ -1254,13 +1278,9 @@ impl Worker {
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
 
         // update keys if also member of next committee
-        if let Some(NextKey {
-            next_dkg_key,
-            next_dec_key,
-        }) = next_key
-        {
-            self.dec_key.set(next_dec_key.clone());
-            self.dkg_sk = next_dkg_key.clone();
+        if let Some(NextKey { dkg_key, dec_key }) = next_key {
+            self.dec_key.set(dec_key.clone());
+            self.dkg_sk = dkg_key.clone();
         }
         self.current = start.committee();
         self.next_committee = NextCommittee::Del(*start);
@@ -1353,9 +1373,12 @@ fn serialize<T: Serialize>(d: &T) -> Result<Data> {
     Ok(Data::try_from(b.into_inner())?)
 }
 
-fn deserialize<T: for<'de> serde::Deserialize<'de>>(d: &bytes::Bytes) -> Result<T> {
+fn deserialize<B, T: for<'de> serde::Deserialize<'de>>(d: B) -> Result<T>
+where
+    B: AsRef<[u8]>,
+{
     bincode::serde::decode_from_slice(
-        d,
+        d.as_ref(),
         bincode::config::standard().with_limit::<MAX_MESSAGE_SIZE>(),
     )
     .map(|(msg, _)| msg)
@@ -1389,6 +1412,9 @@ pub enum DecrypterError {
 
     #[error("unexpected internal err: {0}")]
     Internal(String),
+
+    #[error("failed to join task: {0}")]
+    JoinErr(#[from] JoinError),
 
     #[error("empty set of valid decryption shares")]
     EmptyDecShares,

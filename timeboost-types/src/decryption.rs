@@ -291,9 +291,12 @@ impl<const N: usize> From<KeyStore> for KeyStoreVec<N> {
 
 /// A `KeyStore` with committee information and public keys used in the DKG or key resharing
 #[derive(Debug, Clone)]
-pub struct KeyStore {
+pub struct KeyStore(Arc<Inner>);
+
+#[derive(Debug)]
+struct Inner {
     committee: Committee,
-    keys: Arc<BTreeMap<KeyId, DkgEncKey>>,
+    keys: BTreeMap<KeyId, DkgEncKey>,
 }
 
 impl KeyStore {
@@ -302,28 +305,24 @@ impl KeyStore {
         I: IntoIterator<Item = (T, DkgEncKey)>,
         T: Into<KeyId>,
     {
-        let this = Self {
+        let this = Self(Arc::new(Inner {
             committee: c,
-            keys: Arc::new(
-                keys.into_iter()
-                    .map(|(i, k)| (i.into(), k))
-                    .collect::<BTreeMap<_, _>>(),
-            ),
-        };
+            keys: keys.into_iter().map(|(i, k)| (i.into(), k)).collect(),
+        }));
 
         // basic sanity check
         // Current secret sharing impl assumes node_idx/key_id to range from 0..n
-        for (node_idx, (key_id, p)) in this.committee.entries().enumerate() {
+        for (node_idx, (key_id, p)) in this.0.committee.entries().enumerate() {
             assert_eq!(
                 KeyId::from(node_idx as u8),
                 key_id,
                 "{p}'s key ID is not {node_idx}"
             );
-            assert!(this.keys.contains_key(&key_id), "{p} has no DkgEncKey");
+            assert!(this.0.keys.contains_key(&key_id), "{p} has no DkgEncKey");
         }
-        for id in this.keys.keys() {
+        for id in this.0.keys.keys() {
             assert!(
-                this.committee.contains_index(id),
+                this.0.committee.contains_index(id),
                 "ID {id:?} not in committee",
             );
         }
@@ -332,12 +331,12 @@ impl KeyStore {
 
     /// Returns a reference to the committee.
     pub fn committee(&self) -> &Committee {
-        &self.committee
+        &self.0.committee
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
     pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyId, DkgEncKey> {
-        self.keys.values()
+        self.0.keys.values()
     }
 }
 
@@ -386,7 +385,7 @@ impl DkgAccumulator {
 
     /// Get a reference to the committee.
     pub fn committee(&self) -> &Committee {
-        &self.store.committee
+        self.store.committee()
     }
 
     /// Get the bundles collected so far.
