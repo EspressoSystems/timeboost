@@ -98,9 +98,8 @@ enum NextCommittee {
 /// As part of the Timeboost protocol, it produces decryption shares by threshold-decrypting these
 /// ciphertexts. The shares are exchanged with other decrypters, and once a sufficient number are
 /// collected, shares can be combined ("hatching") to obtain the plaintext.
-///
-/// In addition, the `Decrypter` extracts DKG bundles from candidate lists and combines them to derive
-/// the keys used for threshold decryption/combining.
+/// In addition, the `Decrypter` extracts DKG bundles from candidate lists and combines them to
+/// derive the keys used for threshold decryption/combining.
 pub struct Decrypter {
     /// Public key of the node.
     label: PublicKey,
@@ -398,10 +397,10 @@ enum WorkerState {
     /// Obtains the threshold decryption key from DKG bundles.
     ///
     /// A node can recover its threshold decryption key in two ways:  
-    /// 1. **Consensus**: by combining DKG bundles extracted directly from candidate lists  
-    ///    produced by peers.  
-    /// 2. **Network**: by receiving and combining an agreed-upon subset of DKG bundles from a  
-    ///    designated set of peers.  
+    /// 1. **Consensus**: by combining DKG bundles extracted directly from candidate lists produced
+    ///    by peers.
+    /// 2. **Network**: by receiving and combining an agreed-upon subset of DKG bundles from a
+    ///    designated set of peers.
     ///
     /// For the initial DKG, method (1) is used.  
     /// For resharing, method (2) is used, with the source peers being the previous committee.  
@@ -598,7 +597,7 @@ impl Worker {
             .unwrap_or(RoundNumber::genesis())
     }
 
-    /// Returns true iff DKG is completed for the committee (ongoing or no pending DKG found)
+    /// Returns true iff DKG is completed for the given committee.
     fn dkg_completed(&self, committee_id: &CommitteeId) -> bool {
         if let Some(acc) = self.tracker.get(committee_id) {
             acc.completed()
@@ -713,7 +712,7 @@ impl Worker {
             let acc = DkgAccumulator::from_subset(current.clone(), subset.to_owned());
             self.tracker.insert(committee.id(), acc);
             let dec_key = subset
-                .extract_key(&current, &self.dkg_sk, prev.as_ref())
+                .extract_key(current, &self.dkg_sk, prev.as_ref())
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
             self.dec_key.set(dec_key);
@@ -895,9 +894,7 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
-        let dec_key: DecryptionKey = self.dec_key.get().ok_or_else(|| {
-            DecrypterError::Internal("Worker running without dec key".to_string())
-        })?;
+        let dec_key: DecryptionKey = self.decryption_key()?;
 
         let round = Round::new(incl.round(), self.current);
         let ciphertexts: Vec<_> = incl
@@ -963,51 +960,105 @@ impl Worker {
         Ok(())
     }
 
-    /// Attempt to hatch for round, returns Ok(Some(_)) if hatched successfully, Ok(None) if
-    /// insufficient shares or inclusion list yet received (hatching target arrive later than
-    /// decrypted shares is possible due to out-of-order delivery).
-    /// Local cache are garbage collected for hatched rounds.
+    /// Attempts to decrypt and finalize an inclusion list for the given round number.
     async fn hatch(&mut self, round: RoundNumber) -> Result<Option<InclusionList>> {
-        let dec_key = match &self.state {
-            WorkerState::Running => self.dec_key.get().ok_or_else(|| {
-                DecrypterError::Internal("Worker running without dec key".to_string())
-            })?,
-            _ => {
-                return Err(DecrypterError::Dkg(
-                    "(hatching) worker state does not hold decryption key".to_string(),
-                ));
-            }
-        };
+        let dec_key = self.decryption_key()?;
 
         let Some((incl, is_encrypted)) = self.incls.get(&round) else {
             return Ok(None);
         };
         let mut incl = incl.clone();
 
-        // return immediately to parent if no encrypted transactions
         if !is_encrypted {
-            self.gc(&round).await?;
-            self.last_hatched_round = round;
-
-            self.tx
-                .send(incl.clone())
-                .await
-                .map_err(|_| EndOfPlay::DecrypterDown)?;
-            return Ok(Some(incl));
+            return Ok(Some(self.finalize_hatch(round, incl).await?));
         }
 
+        let Some(decrypted) = self.decrypt_ciphertexts(round, &incl, &dec_key).await? else {
+            return Ok(None);
+        };
+
+        self.update_inclusion_list(&mut incl, decrypted)?;
+
+        Ok(Some(self.finalize_hatch(round, incl).await?))
+    }
+
+    /// Get the current decryption key
+    fn decryption_key(&self) -> Result<DecryptionKey> {
+        match &self.state {
+            WorkerState::Running => self.dec_key.get().ok_or_else(|| {
+                DecrypterError::Internal("Worker running without dec key".to_string())
+            }),
+            _ => Err(DecrypterError::Dkg(
+                "(hatching) worker state does not hold decryption key".to_string(),
+            )),
+        }
+    }
+
+    /// Get the current key store for the committee.
+    fn current_store(&self) -> Result<KeyStore> {
+        let guard = self.key_stores.read();
+        guard
+            .get(self.current)
+            .cloned()
+            .ok_or_else(|| DecrypterError::NoCommittee(self.current))
+    }
+
+    /// Update the inclusion list with decrypted plaintexts.
+    fn update_inclusion_list(
+        &self,
+        incl: &mut InclusionList,
+        decrypted: Vec<Option<Plaintext>>,
+    ) -> Result<()> {
+        let mut num_encrypted_priority_bundles = 0;
+
+        // update priority bundles
+        incl.priority_bundles_mut()
+            .iter_mut()
+            .filter(|pb| pb.bundle().is_encrypted())
+            .zip(decrypted.clone())
+            .for_each(|(pb, opt_plaintext)| {
+                num_encrypted_priority_bundles += 1;
+                match opt_plaintext {
+                    Some(pt) => pb.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
+                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
+                    None => pb.set_data(pb.bundle().data().clone()),
+                }
+            });
+
+        // update regular bundles
+        incl.regular_bundles_mut()
+            .iter_mut()
+            .filter(|b| b.is_encrypted())
+            .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
+            .for_each(|(bundle, opt_plaintext)| {
+                match opt_plaintext {
+                    Some(pt) => bundle.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
+                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
+                    None => bundle.set_data(bundle.data().clone()),
+                }
+            });
+
+        if incl.is_encrypted() {
+            return Err(DecrypterError::Internal(
+                "didn't fully decrypt inclusion list".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Decrypt ciphertexts using available shares.
+    async fn decrypt_ciphertexts(
+        &mut self,
+        round: RoundNumber,
+        incl: &InclusionList,
+        dec_key: &DecryptionKey,
+    ) -> Result<Option<Vec<Option<Plaintext>>>> {
         let ciphertexts = incl.filter_ciphertexts().map(|b| deserialize(b).ok());
         let Some(dec_shares) = self.dec_shares.get(&round) else {
             return Ok(None);
         };
-        let key_store = {
-            let guard = self.key_stores.read();
-            let Some(key_store) = guard.get(self.current) else {
-                error!(node = %self.label, committee = %self.current, "current committee not found");
-                return Err(DecrypterError::NoCommittee(self.current));
-            };
-            key_store.clone()
-        };
+        let key_store = self.current_store()?;
 
         if dec_shares.is_empty()
             || dec_shares.iter().any(|opt_dec_shares| {
@@ -1019,13 +1070,6 @@ impl Worker {
         {
             return Ok(None);
         }
-
-        // hatching ciphertext
-        // Option<_> uses None to indicate either invalid ciphertext, or 2f+1 invalid decryption
-        // share both imply "skip hatching this garbage bundle which will result in no-op
-        // during execution"
-
-        let mut decrypted: Vec<Option<Plaintext>> = vec![];
 
         let Some(per_ct_opt_dec_shares) = self.dec_shares.get_mut(&round) else {
             return Ok(None);
@@ -1052,7 +1096,7 @@ impl Worker {
                     .into_par_iter()
                     .zip(per_ct_opt_dec_shares.par_iter_mut())
                     .map(|(maybe_ct, decryption_shares)| {
-                        // Collect valid decryption shares
+                        // collect valid decryption shares
                         let valid_shares: Vec<_> = decryption_shares
                             .iter()
                             .filter_map(|s| s.as_ref())
@@ -1080,7 +1124,7 @@ impl Worker {
                         ) {
                             Ok(pt) => CombineResult::Success(pt),
                             Err(ThresholdEncError::FaultySubset(wrong_indices)) => {
-                                CombineResult::FaultySubset(wrong_indices.into())
+                                CombineResult::FaultySubset(wrong_indices)
                             }
                             Err(e) => CombineResult::Error(e),
                         }
@@ -1090,18 +1134,19 @@ impl Worker {
         })
         .await?;
 
+        let mut decrypted = Vec::new();
         for (result, decryption_shares) in combine_results.into_iter().zip(per_ct_opt_dec_shares) {
             match result {
                 CombineResult::Success(pt) => decrypted.push(Some(pt)),
                 CombineResult::FaultySubset(wrong_indices) => {
-                    // Remove faulty decryption shares
+                    // remove faulty decryption shares
                     decryption_shares.retain(|opt_s| {
                         opt_s
                             .clone()
                             .is_none_or(|s| !wrong_indices.contains(&s.index()))
                     });
                     warn!(node = %self.label, ?wrong_indices, "combine found faulty subset");
-                    // Not ready to hatch this ciphertext
+                    // not ready to hatch this ciphertext
                     return Ok(None);
                 }
                 CombineResult::Error(e) => {
@@ -1114,40 +1159,16 @@ impl Worker {
             }
         }
 
-        // construct/modify the inclusion list to replace with decrypted payload
-        let mut num_encrypted_priority_bundles = 0;
-        incl.priority_bundles_mut()
-            .iter_mut()
-            .filter(|pb| pb.bundle().is_encrypted())
-            .zip(decrypted.clone())
-            .for_each(|(pb, opt_plaintext)| {
-                num_encrypted_priority_bundles += 1;
-                match opt_plaintext {
-                    Some(pt) => pb.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
-                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
-                    None => pb.set_data(pb.bundle().data().clone()),
-                }
-            });
-        incl.regular_bundles_mut()
-            .iter_mut()
-            .filter(|b| b.is_encrypted())
-            .zip(decrypted[num_encrypted_priority_bundles..].to_vec())
-            .for_each(|(bundle, opt_plaintext)| {
-                match opt_plaintext {
-                    Some(pt) => bundle.set_data(timeboost_types::Bytes::from(<Vec<u8>>::from(pt))),
-                    // None means garbage (undecryptable ciphertext), simply mark as decrypted
-                    None => bundle.set_data(bundle.data().clone()),
-                }
-            });
-        if incl.is_encrypted() {
-            return Err(DecrypterError::Internal(
-                "didn't fully decrypt inclusion list".to_string(),
-            ));
-        }
+        Ok(Some(decrypted))
+    }
 
-        // garbage collect hatched rounds
+    /// Finalize the hatching process by updating state and sending the inclusion list.
+    async fn finalize_hatch(
+        &mut self,
+        round: RoundNumber,
+        incl: InclusionList,
+    ) -> Result<InclusionList> {
         self.last_hatched_round = round;
-
         self.gc(&round).await?;
 
         self.tx
@@ -1155,9 +1176,10 @@ impl Worker {
             .await
             .map_err(|_| EndOfPlay::DecrypterDown)?;
 
-        Ok(Some(incl))
+        Ok(incl)
     }
 
+    /// Adds a new committee to the worker and updates network connections.
     async fn on_next_committee(&mut self, c: AddressableCommittee, k: KeyStore) -> Result<()> {
         info!(node = %self.label, committee = %c.committee().id(), "add next committee");
         let key_store = {
@@ -1188,6 +1210,17 @@ impl Worker {
         Ok(())
     }
 
+    /// Prepares for a committee switch at the specified round.
+    ///
+    /// This method is called on nodes that are members of the upcoming committee.
+    /// It handles two distinct cases:
+    ///
+    /// 1. **New Committee Member**: If this is the node's first committee, it requests DKG subsets
+    ///    from the current committee to construct the threshold decryption key.
+    ///
+    /// 2. **Existing Committee Member**: If the node is in both current and next committee, it
+    ///    generates and caches the new decryption keys immediately, ensuring they're ready for use
+    ///    when the switch occurs at the specified round.
     async fn on_use_committee(&mut self, round: Round) -> Result<()> {
         info!(node = %self.label, %round, "use committee");
         let committee_id = round.committee();
@@ -1239,6 +1272,7 @@ impl Worker {
         Ok(())
     }
 
+    /// Switches to the next committee if the clock is past the start round.
     async fn maybe_switch_committee(&mut self) -> Result<()> {
         let NextCommittee::Use(start, next_key) = &self.next_committee else {
             return Ok(());
@@ -1288,6 +1322,7 @@ impl Worker {
         Ok(())
     }
 
+    /// Removes the old committee and updates network connections.
     async fn remove_old_committee(&mut self) -> Result<()> {
         let NextCommittee::Del(round) = self.next_committee else {
             return Ok(());
@@ -1297,13 +1332,7 @@ impl Worker {
             return Ok(());
         };
 
-        let key_store = {
-            let guard = self.key_stores.read();
-            let Some(key_store) = guard.get(self.current) else {
-                return Err(DecrypterError::NoCommittee(self.current));
-            };
-            key_store.clone()
-        };
+        let key_store = self.current_store()?;
         let old = self
             .net
             .parties()

@@ -11927,6 +11927,7 @@ dependencies = [
  "multisig",
  "parking_lot",
  "portpicker",
+ "rayon",
  "sailfish",
  "serde",
  "thiserror 2.0.16",

@@ -40,7 +40,7 @@ async fn run_handover(
     const NUM_OF_BLOCKS_PER_EPOCH: usize = 50;
 
     let tasks = TaskTracker::new();
-    let (bcast, _) = broadcast::channel(500);
+    let (bcast, _) = broadcast::channel(1024);
     let finish = CancellationToken::new();
     let round2block = Arc::new(Round2Block::new());
 
