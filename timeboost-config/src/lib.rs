@@ -3,8 +3,11 @@ use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
-use timeboost_types::ChainConfig;
 use tracing::error;
+
+mod chain;
+
+pub use chain::{ChainConfig, ChainConfigBuilder, ParentChain, ParentChainBuilder};
 
 pub const DECRYPTER_PORT_OFFSET: u16 = 1;
 pub const CERTIFIER_PORT_OFFSET: u16 = 2;

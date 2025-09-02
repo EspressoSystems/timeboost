@@ -9,7 +9,7 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{DecryptionKeyCell, KeyStore};
+use timeboost_types::{DecryptionKeyCell, KeyStore, provider};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -21,8 +21,8 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
+use timeboost::conf::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost_utils::types::logging;
 use timeboost_utils::wait_for_live_peer;
 use tracing::warn;
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = node_config.chain.parent().provider();
+    let provider = provider(node_config.chain.parent().rpc_url());
     assert_eq!(
         provider.get_chain_id().await?,
         node_config.chain.parent().chain_id(),

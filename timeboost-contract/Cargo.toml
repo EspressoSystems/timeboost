@@ -20,6 +20,7 @@ bincode = { workspace = true }
 clap = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
+timeboost-config = { path = "../timeboost-config" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }

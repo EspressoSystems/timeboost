@@ -1,4 +1,3 @@
-pub mod config;
 pub mod load_generation;
 pub mod types;
 pub mod until;

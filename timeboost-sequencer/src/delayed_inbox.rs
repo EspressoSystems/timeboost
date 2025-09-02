@@ -8,7 +8,8 @@ use alloy::rpc::types::{BlockId, BlockNumberOrTag, Filter};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
-use timeboost_types::{ChainConfig, HttpProvider};
+use timeboost_config::ChainConfig;
+use timeboost_types::HttpProvider;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 

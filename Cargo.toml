@@ -12,6 +12,7 @@ members = [
     "tests",
     "timeboost",
     "timeboost-builder",
+    "timeboost-config",
     "timeboost-contract",
     "timeboost-crypto",
     "timeboost-proto",

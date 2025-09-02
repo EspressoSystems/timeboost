@@ -2,9 +2,10 @@ use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
 use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
+use timeboost_config::ChainConfig;
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
+use timeboost_types::{DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {

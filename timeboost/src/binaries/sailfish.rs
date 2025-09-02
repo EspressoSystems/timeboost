@@ -13,8 +13,9 @@ use sailfish::{
     types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
+use timeboost::conf::NodeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_utils::config::NodeConfig;
+use timeboost_types::provider;
 use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
@@ -91,7 +92,7 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = config.chain.parent().provider();
+    let provider = provider(config.chain.parent().rpc_url());
     assert_eq!(
         provider.get_chain_id().await?,
         config.chain.parent().chain_id(),

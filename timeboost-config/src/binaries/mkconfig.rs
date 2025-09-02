@@ -11,13 +11,12 @@ use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
-use timeboost_types::{ChainConfig, ParentChain};
-use timeboost_utils::config::{
+use timeboost_config::{ChainConfig, ParentChain};
+use timeboost_config::{
     CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeyConfig, NodeKeypairConfig,
     NodeNetConfig, PublicNet,
 };
-use timeboost_utils::types::logging;
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
@@ -205,8 +204,6 @@ impl Args {
 }
 
 fn main() -> Result<()> {
-    logging::init_logging();
-
     let args = Args::parse();
     args.mk_config()?;
 

@@ -7,8 +7,9 @@ use alloy::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::path::PathBuf;
+use timeboost_config::CommitteeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager, provider::build_provider};
-use timeboost_utils::{config::CommitteeConfig, types::logging};
+use timeboost_utils::types::logging;
 use tracing::info;
 use url::Url;
 

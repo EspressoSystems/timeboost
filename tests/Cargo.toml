@@ -23,10 +23,6 @@ sailfish = { path = "../sailfish", features = ["test"] }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
 timeboost = { path = "../timeboost" }
-timeboost-builder = { path = "../timeboost-builder" }
-timeboost-crypto = { path = "../timeboost-crypto" }
-timeboost-sequencer = { path = "../timeboost-sequencer" }
-timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils", features = ["test"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

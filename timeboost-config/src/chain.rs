@@ -1,12 +1,8 @@
 use alloy::eips::BlockNumberOrTag;
-use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
-use alloy::providers::ProviderBuilder;
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-use crate::{HttpProvider, HttpProviderWithWallet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct ChainConfig {
@@ -52,15 +48,5 @@ impl ParentChain {
 
     pub fn key_manager_contract(&self) -> &Address {
         &self.key_manager_contract
-    }
-
-    pub fn provider(&self) -> HttpProvider {
-        ProviderBuilder::new().connect_http(self.rpc_url.clone())
-    }
-
-    pub fn provider_with_wallet(&self, wallet: EthereumWallet) -> HttpProviderWithWallet {
-        ProviderBuilder::new()
-            .wallet(wallet)
-            .connect_http(self.rpc_url.clone())
     }
 }
