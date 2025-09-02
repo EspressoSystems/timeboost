@@ -7,8 +7,15 @@ rust-version.workspace = true
 
 [dependencies]
 alloy = { workspace = true }
+coins-bip39 = { workspace = true}
+anyhow = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+url = { workspace = true }
 
 [build-dependencies]
 alloy = { workspace = true }
+
+[dev-dependencies]
+anvil = { workspace = true }
+
