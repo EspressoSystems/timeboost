@@ -109,7 +109,8 @@ just build_release --features="until"
 if $nitro_enabled; then
     timeout 90 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
     echo "Waiting for espresso dev node"
-    timeout 90 bash -c 'until curl -sSf http://localhost:20000/api/dev-info -o /dev/null; do sleep 1; done' || exit 1
+    timeout 90 bash -c 'until curl -sSf http://localhost:20000/api/dev-info -o /dev/null; do sleep 1; done' && \
+        docker ps --format "table {{.Names}}\t{{.Status}}" || exit 1
 fi
 
 

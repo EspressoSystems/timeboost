@@ -204,7 +204,7 @@ jobs:
           --batchposters 0 \
           --redundantsequencers 1 \
           --decentralized-timeboost \
-          --init
+          --init &
     - name: Run test timeboost with nitro sequencer
       run: just run_demo -s /tmp/stamp --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro
     - name: Verify sequencer blocks
