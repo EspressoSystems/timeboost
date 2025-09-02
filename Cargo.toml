@@ -103,7 +103,7 @@ tonic-prost-build = "0.14.1"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
 url = { version = "2.5.4", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
