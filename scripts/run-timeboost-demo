@@ -114,7 +114,7 @@ fi
 RUST_LOG=${RUST_LOG:-}
 
 if [ -z "$RUST_LOG" ]; then
-    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
+    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info,robusta=info"
 fi
 
 cmd=("test-contract-deploy" "--keep-anvil")
@@ -141,6 +141,10 @@ for f in "$config_dir"/node_*.toml; do
 
     if $late_start; then
         cmd+=(--late-start --late-start-node-id 0)
+    fi
+
+    if $nitro_enabled; then
+        cmd+=(--espresso-base-url http://127.0.0.1:41000/v1/ --espresso-websocket-url ws://127.0.0.1:41000/v1/ --https-only false)
     fi
 
     echo "${cmd[@]}"
