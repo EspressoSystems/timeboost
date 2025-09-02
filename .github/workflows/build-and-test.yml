@@ -180,6 +180,17 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
+    - name: Print test-node commit info
+      run: |
+        echo "=== test-node Submodule Commit Details ==="
+        cd test-node
+        echo "Branch: $(git branch --show-current)"
+        echo "Latest commit: $(git log --oneline -1)"
+        echo "Commit hash: $(git rev-parse HEAD)"
+        echo "Author: $(git log -1 --pretty=format:'%an')"
+        echo "Date: $(git log -1 --pretty=format:'%cd')"
+        echo "Message: $(git log -1 --pretty=format:'%s')"
+        cd ..
     - name: Run Test Node with Timeboost
       run: |
         ./test-node/test-node.bash \
@@ -187,7 +198,7 @@ jobs:
           --batchposters 0 \
           --redundantsequencers 1 \
           --decentralized-timeboost \
-          --init &
+          --init
     - name: Run test timeboost with nitro sequencer
       run: just run_demo -s /tmp/stamp --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro
     - name: Verify sequencer blocks
