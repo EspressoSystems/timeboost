@@ -4,8 +4,9 @@ use cliquenet::AddressableCommittee;
 use multisig::{Keypair, PublicKey, x25519};
 use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
+use timeboost_config::ChainConfig;
 use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_types::{Address, ChainConfig, DecryptionKeyCell, KeyStore};
+use timeboost_types::{Address, DecryptionKeyCell, KeyStore};
 
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {

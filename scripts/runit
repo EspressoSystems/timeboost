@@ -15,7 +15,6 @@ keyset_file=
 tps=1
 stamp=
 ignore_stamp=false
-namespace=10101
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -26,10 +25,6 @@ while [[ $# -gt 0 ]]; do
         -l|--late)
             late_start=true
             shift
-            ;;
-        -n|--namespace)
-            namespace="$2"
-            shift 2
             ;;
         -r|--rounds)
             rounds="$2"
@@ -55,9 +50,6 @@ Options:
 
     -l | --late
         Delayed startup of first node.
-
-    -n | --namespace <NUMBER>
-        Espresso transactions namespace ID.
 
     -k | --keyset-file <PATH>
         Use a JSON file for node keys.
@@ -100,8 +92,7 @@ for (( i=0; i<$nodes; i++ )); do
         --until $rounds
         --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
-        --watchdog-timeout $rounds
-        --namespace $namespace)
+        --watchdog-timeout $rounds)
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)

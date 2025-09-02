@@ -7,8 +7,9 @@ use alloy::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::path::PathBuf;
+use timeboost_config::CommitteeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager, provider::build_provider};
-use timeboost_utils::{keyset::CommitteeConfig, types::logging};
+use timeboost_utils::types::logging;
 use tracing::info;
 use url::Url;
 
@@ -38,6 +39,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let config = CommitteeConfig::read(&args.config)
+        .await
         .context(format!("Failed to read config file: {:?}", &args.config))?;
 
     info!("Start committee registration");
@@ -70,7 +72,17 @@ async fn main() -> Result<()> {
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let timestamp: u64 = config.effective_timestamp.into();
+
+    let timestamp: u64 = config
+        .effective_timestamp
+        .as_second()
+        .try_into()
+        .with_context(|| {
+            format!(
+                "failed to convert timestamp {} to u64",
+                config.effective_timestamp
+            )
+        })?;
 
     // send tx and invoke the contract
     let _tx_receipt = contract
