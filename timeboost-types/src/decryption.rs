@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use sailfish_types::{Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::Deref;
 use std::{
     collections::{BTreeMap, btree_map},
@@ -350,6 +351,15 @@ pub enum AccumulatorMode {
     Resharing(CombKey),
 }
 
+impl fmt::Display for AccumulatorMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dkg => f.write_str("initial DKG"),
+            Self::Resharing(_) => f.write_str("resharing"),
+        }
+    }
+}
+
 /// Accumulates DKG bundles for a given committee and finalizes when enough have been collected.
 ///
 /// DkgAccumulator tracks received bundles and determines when the threshold for finalizing
@@ -364,22 +374,12 @@ pub struct DkgAccumulator {
 }
 
 impl DkgAccumulator {
-    /// Create a new accumulator for DKG operations.
-    pub fn new_dkg(store: KeyStore) -> Self {
+    /// Create a new accumulator with the specified mode.
+    pub fn new(store: KeyStore, mode: AccumulatorMode) -> Self {
         Self {
             store,
             bundles: Vec::new(),
-            mode: AccumulatorMode::Dkg,
-            complete: false,
-        }
-    }
-
-    /// Create a new accumulator for resharing operations.
-    pub fn new_resharing(store: KeyStore, combkey: CombKey) -> Self {
-        Self {
-            store,
-            bundles: Vec::new(),
-            mode: AccumulatorMode::Resharing(combkey),
+            mode,
             complete: false,
         }
     }
