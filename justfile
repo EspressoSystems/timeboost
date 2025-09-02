@@ -113,7 +113,7 @@ mkconfig_nitro DATETIME *ARGS:
     --public-addr "127.0.0.1:8000" \
     --internal-addr "127.0.0.1:8003" \
     --nitro-addr "localhost:55000" \
-    --chain-namespace 10101 \
+    --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
     --parent-chain-id 1337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \

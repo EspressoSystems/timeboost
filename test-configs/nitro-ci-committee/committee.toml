@@ -1,13 +1,13 @@
 effective_timestamp = "2025-09-01T02:00:00Z"
 
 [[members]]
-signing_key = "nYhHM4sfiXoxEcmGV8gTgzQZdHEE5HDbSt6LgUsHs1G1"
-dh_key = "Eupnv1J67fdfZpZDAFxNbWJ3Y5wWtCZcrFtLd6PuPhAJ"
-dkg_enc_key = "5rC3hWqnZSnn568NupfqqkxvLempdzq6z5fDUHVSkZV5mxv2GPRvYaG7JPWkYrNSoB"
+signing_key = "26pFBXZBuRPhXfhYkbJE9RdtQyKRUue1yombzb7GBBPne"
+dh_key = "Hz1ho2J1PCE7HnSQWA9iN91PFx6e53pWGByPxRHxWCFv"
+dkg_enc_key = "5mnuf3nx4io18zk4PTLLu7ee2XukLJWMetADPktQCyxbeN3jGG5rNojc1aFBqrbe5S"
 public_address = "127.0.0.1:8000"
 
 [[members]]
-signing_key = "wnLCGaDSQrhUVDvffXCAZUfL2uJ3uwNkVnzRyvwAwKSg"
-dh_key = "CeWS52bRwVLDfJq4hk4yRTFvX2uuJw494Bs7umfmiM4G"
-dkg_enc_key = "6azqwkVDns6ufoJeBfapKhdiMq496o4vE4YrJjLXG1AVc6KfxWETGiL1dJvhbZRRtU"
+signing_key = "bsRbe3znv9uJEbbz247P6JgcAFtDxuZ1ypo4eumMNhQ1"
+dh_key = "BZdQ7CoKmHKrHoRg44AV9viHaYh75A4LTQZZDFpr7s74"
+dkg_enc_key = "7631hsR1bDskt7UNnYrVPFaAr8NXPjLj6grCHgNjAC8hRVLe1otKK4NZC2XkGvrqqJ"
 public_address = "127.0.0.1:8010"
