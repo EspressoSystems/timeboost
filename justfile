@@ -11,6 +11,11 @@ LOG_LEVELS := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=deb
 build *ARGS:
   cargo build {{ARGS}}
 
+update-submodules:
+  git submodule update --remote --recursive
+  cd timeboost-proto && cargo build
+  cd ../contracts && forge build
+
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
