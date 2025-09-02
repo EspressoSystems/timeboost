@@ -14,7 +14,7 @@ use sailfish::{
 };
 use serde::{Deserialize, Serialize};
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_utils::keyset::NodeConfig;
+use timeboost_utils::config::NodeConfig;
 use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};

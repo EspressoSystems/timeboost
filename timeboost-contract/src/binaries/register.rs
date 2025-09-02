@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::path::PathBuf;
 use timeboost_contract::{CommitteeMemberSol, KeyManager, provider::build_provider};
-use timeboost_utils::{keyset::CommitteeConfig, types::logging};
+use timeboost_utils::{config::CommitteeConfig, types::logging};
 use tracing::info;
 use url::Url;
 

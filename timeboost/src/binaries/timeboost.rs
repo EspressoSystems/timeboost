@@ -22,7 +22,7 @@ use timeboost_utils::until::run_until;
 
 use clap::Parser;
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
+use timeboost_utils::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost_utils::types::logging;
 use timeboost_utils::wait_for_live_peer;
 use tracing::warn;

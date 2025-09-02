@@ -13,7 +13,7 @@ use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::{ChainConfig, ParentChain};
-use timeboost_utils::keyset::{
+use timeboost_utils::config::{
     CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeyConfig, NodeKeypairConfig,
     NodeNetConfig, PublicNet,
 };
