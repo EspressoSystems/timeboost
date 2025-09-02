@@ -1604,7 +1604,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e29d3ca6c44fd6bc23219f6441303e329ee44580d3cee160df9c5d205e8fc83"
 dependencies = [
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -11798,7 +11798,6 @@ dependencies = [
  "anyhow",
  "bincode 2.0.1",
  "clap",
- "coins-bip39",
  "rand 0.9.2",
  "serde",
  "timeboost-types",
