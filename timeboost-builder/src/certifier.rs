@@ -14,9 +14,9 @@ use multisig::{
     VoteAccumulator,
 };
 use smallvec::SmallVec;
+use timeboost_config::CERTIFIER_PORT_OFFSET;
 use timeboost_types::sailfish::{CommitteeVec, NodeInfo, Round, RoundNumber};
 use timeboost_types::{Block, BlockInfo, BlockNumber, CertifiedBlock};
-use timeboost_utils::keyset::CERTIFIER_PORT_OFFSET;
 use tokio::select;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};

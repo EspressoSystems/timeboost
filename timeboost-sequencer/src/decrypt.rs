@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
+use timeboost_config::DECRYPTER_PORT_OFFSET;
 use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
 use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
 use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
@@ -23,7 +24,6 @@ use timeboost_types::{
     AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgSubset,
     InclusionList, KeyStore, KeyStoreVec,
 };
-use timeboost_utils::keyset::DECRYPTER_PORT_OFFSET;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::{JoinError, JoinHandle};
