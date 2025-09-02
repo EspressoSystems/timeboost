@@ -108,15 +108,6 @@ just build_release --features="until"
 
 if $nitro_enabled; then
     timeout 90 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
-    echo "Waiting for espresso dev node"
-    timeout 300 bash -c '
-    until curl -sSf http://localhost:20000/api/dev-info -o /dev/null; do
-        docker ps --format "table {{.Names}}\t{{.Status}}"
-        echo ""
-        sleep 1
-    done
-    echo "✅ Connected to espresso dev node!"
-    '
 fi
 
 
@@ -150,10 +141,6 @@ for f in "$config_dir"/node_*.toml; do
 
     if $late_start; then
         cmd+=(--late-start --late-start-node-id 0)
-    fi
-
-    if $nitro_enabled; then
-        cmd+=(--espresso-base-url http://127.0.0.1:41000/v1/ --espresso-websocket-url ws://127.0.0.1:41000/v1/ --https-only false)
     fi
 
     echo "${cmd[@]}"
