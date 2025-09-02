@@ -15,6 +15,7 @@ use timeboost::sequencer::{Output, SequencerConfig};
 use timeboost::types::{Block, BlockInfo, BundleVariant, DecryptionKeyCell, KeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -84,6 +85,9 @@ async fn run_handover(
                         }
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
+                        }
+                        Err(RecvError::Lagged(e)) => {
+                           warn!("lagging behind: {e}");
                         }
                         Err(err) => panic!("command channel error: {err}")
                     },
