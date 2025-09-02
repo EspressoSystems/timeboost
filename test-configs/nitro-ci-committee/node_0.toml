@@ -23,6 +23,6 @@ namespace = 412346
 [chain.parent]
 id = 1337
 rpc_url = "http://127.0.0.1:8545/"
-ibox_contract = "0x52e3cAb4Bc04aCc265B452AdA9363B529DA8eBed"
+ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block_tag = "finalized"
 key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
