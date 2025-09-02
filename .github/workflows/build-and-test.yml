@@ -180,23 +180,6 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Print test-node commit info
-      run: |
-        echo "=== test-node Submodule Commit Details ==="
-        cd test-node
-        echo "Branch: $(git branch --show-current)"
-        echo "Latest commit: $(git log --oneline -1)"
-        echo "Commit hash: $(git rev-parse HEAD)"
-        echo "Author: $(git log -1 --pretty=format:'%an')"
-        echo "Date: $(git log -1 --pretty=format:'%cd')"
-        echo "Message: $(git log -1 --pretty=format:'%s')"
-        cd ..
-    - name: Print test-node.bash contents
-      run: |
-        echo "📄 Contents of test-node.bash:"
-        echo "=========================================="
-        cat ./test-node/test-node.bash
-        echo "=========================================="
     - name: Run Test Node with Timeboost
       run: |
         ./test-node/test-node.bash \
