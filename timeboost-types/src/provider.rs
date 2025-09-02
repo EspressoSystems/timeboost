@@ -1,13 +1,12 @@
 use alloy::{
     network::{Ethereum, EthereumWallet},
     providers::{
-        ProviderBuilder, RootProvider,
+        RootProvider,
         fillers::{FillProvider, JoinFill, WalletFiller},
         layers::AnvilProvider,
         utils::JoinedRecommendedFillers,
     },
 };
-use url::Url;
 
 /// Type alias that connects to providers with recommended fillers and wallet
 /// use `<HttpProviderWithWallet as WalletProvider>::wallet()` to access internal wallet
@@ -28,13 +27,3 @@ pub type TestProviderWithWallet = FillProvider<
     AnvilProvider<RootProvider>,
     Ethereum,
 >;
-
-pub fn provider(rpc: &Url) -> HttpProvider {
-    ProviderBuilder::new().connect_http(rpc.clone())
-}
-
-pub fn provider_with_wallet(rpc: &Url, wallet: EthereumWallet) -> HttpProviderWithWallet {
-    ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_http(rpc.clone())
-}

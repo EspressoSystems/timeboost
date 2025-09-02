@@ -1,7 +1,7 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
 use ::metrics::prometheus::PrometheusMetrics;
-use alloy::providers::Provider;
+use alloy::providers::{Provider, ProviderBuilder};
 use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
@@ -15,7 +15,6 @@ use sailfish::{
 use serde::{Deserialize, Serialize};
 use timeboost::config::NodeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_types::provider;
 use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
@@ -92,7 +91,7 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = provider(&config.chain.parent.rpc_url);
+    let provider = ProviderBuilder::new().connect_http(config.chain.parent.rpc_url);
     assert_eq!(
         provider.get_chain_id().await?,
         config.chain.parent.id,

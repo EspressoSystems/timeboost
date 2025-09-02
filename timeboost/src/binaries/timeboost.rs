@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alloy::providers::Provider;
+use alloy::providers::{Provider, ProviderBuilder};
 use anyhow::{Context, Result, bail};
 use cliquenet::AddressableCommittee;
 use multisig::CommitteeId;
@@ -9,7 +9,7 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{DecryptionKeyCell, KeyStore, provider};
+use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = provider(&node_config.chain.parent.rpc_url);
+    let provider = ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
     assert_eq!(
         provider.get_chain_id().await?,
         node_config.chain.parent.id,

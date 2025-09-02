@@ -28,7 +28,6 @@ pub use decryption::{
 pub use delayed_inbox::DelayedInboxIndex;
 pub use inclusion_list::InclusionList;
 pub use provider::{HttpProvider, HttpProviderWithWallet, TestProviderWithWallet};
-pub use provider::{provider, provider_with_wallet};
 pub use retry_list::RetryList;
 pub use seqno::SeqNo;
 pub use time::{ConsensusTime, Epoch, HasTime, Timestamp};
