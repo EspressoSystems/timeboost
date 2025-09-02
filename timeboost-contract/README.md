@@ -5,7 +5,6 @@ A Rust crate that provides interfaces for interacting with Timeboost smart contr
 ## Overview
 
 This crate bridges the Timeboost system with deployed smart contracts, providing:
-- **Contract Clients**: Type-safe interfaces for contract interactions
 - **Deployment Utilities**: Helper functions for contract deployment (testing only)
 - **Integration Patterns**: Common patterns for Timeboost<>contract communication
 
@@ -99,7 +98,6 @@ cargo test -p timeboost-contract test_key_manager_deployment
 ### Test Coverage
 
 - **`test_key_manager_deployment`**: Basic contract deployment and verification
-- **`test_local_deployment`**: End-to-end deployment with environment configuration
 
 Tests automatically spawn local Anvil instances for isolated testing.
 
@@ -109,13 +107,6 @@ This crate is designed to be used by other Timeboost components that need to:
 - Deploy contracts for testing
 - Interact with deployed KeyManager contracts
 - Handle contract-related errors and responses
-
-## Dependencies
-
-- **alloy**: Ethereum client library
-- **alloy-signer-local**: Local wallet signing
-- **tokio**: Async runtime
-- **anyhow**: Error handling
 
 ## Related Documentation
 

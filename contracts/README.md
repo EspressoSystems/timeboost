@@ -48,7 +48,6 @@ User → Proxy Contract → Implementation Contract
 ## The Contracts
 
 ### KeyManager - The Main Contract
-This is where all the magic happens. The KeyManager contract:
 
 **What it stores:**
 - **Encryption keys** - The cryptographic keys used by the protocol
@@ -73,7 +72,7 @@ This is the "shell" that makes upgrades possible:
 - **Never changes** - Users always interact with this address
 - **Delegates calls** - Forwards requests to the current implementation
 - **Preserves data** - All storage survives upgrades
-- **Battle-tested** - Used by thousands of projects
+- **SecOps Precautions** - it's important to call the initialize methods during deploys and upgrades so that those transactions aren't front-run
 
 ## Getting Started
 
