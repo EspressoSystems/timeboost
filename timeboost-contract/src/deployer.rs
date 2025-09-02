@@ -134,5 +134,6 @@ mod tests {
         assert_eq!(contract.manager().call().await.unwrap(), manager);
     }
 
-    // TODO: add tests for remote deployment where the user specifies the network url and mnemonic from an env file
+    // TODO: add tests for remote deployment where the user specifies the network url and mnemonic
+    // from an env file
 }
