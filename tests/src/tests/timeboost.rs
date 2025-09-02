@@ -11,11 +11,12 @@ use cliquenet::{Address, AddressableCommittee};
 use multisig::Keypair;
 use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
+use timeboost::builder::CertifierConfig;
+use timeboost::config::{ChainConfig, ParentChain};
+use timeboost::crypto::prelude::DkgDecKey;
+use timeboost::sequencer::SequencerConfig;
 use timeboost::types::BundleVariant;
-use timeboost_builder::CertifierConfig;
-use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
+use timeboost::types::{DecryptionKeyCell, KeyStore};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -107,6 +108,7 @@ where
             .threshold_dec_key(enc_key.clone())
             .chain_config(
                 ChainConfig::builder()
+                    .namespace(10101)
                     .parent(
                         ParentChain::builder()
                             .id(1)

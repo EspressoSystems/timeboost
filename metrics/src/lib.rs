@@ -14,6 +14,9 @@
 //! - [`Histogram`]: stores multiple float values based for a graph (example usage: CPU %)
 //! - text: stores a constant string in the collected metrics
 
+#[cfg(feature = "prometheus")]
+pub mod prometheus;
+
 use std::fmt::Debug;
 
 /// The metrics type.

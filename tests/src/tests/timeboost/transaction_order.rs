@@ -6,7 +6,7 @@ use std::time::Duration;
 use alloy::primitives::B256;
 use metrics::NoMetrics;
 use sailfish_types::RoundNumber;
-use timeboost_sequencer::{Output, Sequencer};
+use timeboost::sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;

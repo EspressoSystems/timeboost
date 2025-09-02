@@ -16,6 +16,9 @@ public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
 secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
 public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
 
+[chain]
+namespace = 10101
+
 [chain.parent]
 id = 31337
 rpc_url = "http://127.0.0.1:8545/"

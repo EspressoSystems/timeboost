@@ -21,11 +21,10 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
+use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::keyset::{
-    CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig, wait_for_live_peer,
-};
 use timeboost_utils::types::logging;
+use timeboost_utils::wait_for_live_peer;
 use tracing::warn;
 
 #[cfg(feature = "until")]
@@ -70,10 +69,6 @@ struct Cli {
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: Url,
 
-    /// Hotshot namespace for a chain
-    #[clap(long)]
-    namespace: u64,
-
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
@@ -106,22 +101,20 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let node_config = NodeConfig::read(&cli.config)
+        .await
         .with_context(|| format!("could not read node config {:?}", cli.config))?;
 
     let sign_keypair = Keypair::from(node_config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = node_config.chain.parent().provider();
+    let provider = node_config.chain.parent.provider();
     assert_eq!(
         provider.get_chain_id().await?,
-        node_config.chain.parent().chain_id(),
+        node_config.chain.parent.id,
         "Parent chain RPC has mismatched chain_id"
     );
-    let contract = KeyManager::new(
-        *node_config.chain.parent().key_manager_contract(),
-        &provider,
-    );
+    let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
@@ -269,7 +262,6 @@ async fn main() -> Result<()> {
                 .build(),
             Vec::new(),
         ))
-        .namespace(cli.namespace)
         .chain_config(node_config.chain.clone())
         .build();
 

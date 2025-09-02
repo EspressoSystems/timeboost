@@ -24,17 +24,12 @@ tps=1
 stamp=
 ignore_stamp=false
 nitro_enabled=false
-namespace=10101
 yapper=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -c|--config-dir)
             config_dir="$2"
-            shift 2
-            ;;
-        -n|--namespace)
-            namespace="$2"
             shift 2
             ;;
         -l|--late)
@@ -73,9 +68,6 @@ Options:
 
     -l | --late
         Delayed startup of first node.
-
-    -n | --namespace <NUMBER>
-        Espresso transactions namespace ID.
 
     -c | --config-dir <PATH>
         Use a TOML file for node config (keys and network addresses).
@@ -141,8 +133,7 @@ for f in "$config_dir"/node_*.toml; do
         --http-port $((8800 + 10 * $i))
         --until $rounds
         --stamp "${stamp}-$i.sf"
-        --watchdog-timeout 120
-        --namespace $namespace)
+        --watchdog-timeout 120)
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)

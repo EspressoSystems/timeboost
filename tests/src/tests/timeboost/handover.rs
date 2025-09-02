@@ -14,9 +14,10 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
+use timeboost::config::{ChainConfig, ParentChain};
+use timeboost::crypto::prelude::DkgDecKey;
+use timeboost::sequencer::SequencerConfig;
+use timeboost::types::{DecryptionKeyCell, KeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -155,6 +156,7 @@ where
                 .threshold_dec_key(enc_key.clone())
                 .chain_config(
                     ChainConfig::builder()
+                        .namespace(10101)
                         .parent(
                             ParentChain::builder()
                                 .id(1)

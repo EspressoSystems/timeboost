@@ -8,7 +8,8 @@ use alloy::rpc::types::{BlockId, BlockNumberOrTag, Filter};
 use alloy::sol;
 use alloy::sol_types::SolEvent;
 use multisig::PublicKey;
-use timeboost_types::{ChainConfig, HttpProvider};
+use timeboost_config::ChainConfig;
+use timeboost_types::HttpProvider;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -40,24 +41,24 @@ impl DelayedInbox {
         cfg: &ChainConfig,
         queue: BundleQueue,
     ) -> Result<Self, Error> {
-        let url = cfg.parent().rpc_url();
-        let parent_chain_id = cfg.parent().chain_id();
+        let url = &cfg.parent.rpc_url;
+        let parent_chain_id = cfg.parent.id;
         let provider = ProviderBuilder::new().connect_http(url.clone());
         let rpc_chain_id = provider
             .get_chain_id()
             .await
             .map_err(|e| Error::RpcError(e.to_string()))?;
-        if cfg.parent().chain_id() != rpc_chain_id {
+        if cfg.parent.id != rpc_chain_id {
             error!(%parent_chain_id, %rpc_chain_id, "mismatching chain id");
             return Err(Error::MismatchingChainID(parent_chain_id, rpc_chain_id));
         }
         Ok(Self {
             node,
-            ibox_addr: *cfg.parent().ibox_contract(),
+            ibox_addr: cfg.parent.ibox_contract,
             provider,
             queue,
             url: url.to_string(),
-            tag: cfg.parent().block_tag(),
+            tag: cfg.parent.block_tag,
         })
     }
 

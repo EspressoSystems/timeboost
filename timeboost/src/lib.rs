@@ -1,21 +1,22 @@
-mod config;
+mod conf;
 
 use std::iter::once;
 use std::sync::Arc;
 
+use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::Result;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, Submitter};
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::BundleVariant;
-use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tracing::{info, warn};
 
-pub use config::{TimeboostConfig, TimeboostConfigBuilder};
+pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
+pub use timeboost_config as config;
 pub use timeboost_crypto as crypto;
 pub use timeboost_proto as proto;
 pub use timeboost_sequencer as sequencer;

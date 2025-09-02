@@ -1,5 +1,6 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
+use ::metrics::prometheus::PrometheusMetrics;
 use alloy::providers::Provider;
 use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
@@ -12,9 +13,9 @@ use sailfish::{
     types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
+use timeboost::config::NodeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_utils::keyset::NodeConfig;
-use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
+use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
 
@@ -82,20 +83,22 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.config).context("Failed to read node config")?;
+    let config = NodeConfig::read(&cli.config)
+        .await
+        .context("Failed to read node config")?;
 
     let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = config.chain.parent().provider();
+    let provider = config.chain.parent.provider();
     assert_eq!(
         provider.get_chain_id().await?,
-        config.chain.parent().chain_id(),
+        config.chain.parent.id,
         "Parent chain RPC has mismatched chain_id"
     );
 
-    let contract = KeyManager::new(*config.chain.parent().key_manager_contract(), &provider);
+    let contract = KeyManager::new(config.chain.parent.key_manager_contract, &provider);
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
