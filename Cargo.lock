@@ -11813,6 +11813,7 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.16",
  "timeboost-types",
+ "timeboost-utils",
  "tokio",
  "tokio-util",
  "tracing",

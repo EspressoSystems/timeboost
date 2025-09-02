@@ -23,6 +23,7 @@ use timeboost_types::{
     AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgSubset,
     InclusionList, KeyStore, KeyStoreVec,
 };
+use timeboost_utils::keyset::DECRYPTER_PORT_OFFSET;
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::{JoinError, JoinHandle};
@@ -80,7 +81,6 @@ impl NextKey {
 
 /// Next committee state.
 #[derive(Default)]
-#[allow(clippy::large_enum_variant)]
 enum NextCommittee {
     /// No next committee is scheduled.
     #[default]
@@ -88,7 +88,7 @@ enum NextCommittee {
     /// The next committee should become effective at the given round.
     ///
     /// Key material is supplied if member of both current and next.
-    Use(Round, Option<NextKey>),
+    Use(Round, Option<Box<NextKey>>),
     /// The old committee should be removed when the given round is garbage collected.
     Del(Round),
 }
@@ -377,7 +377,7 @@ fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
     let shifted_entries = c
         .entries()
         .map(|(pk, dh, addr)| {
-            let dec_port = addr.port().saturating_add(1000);
+            let dec_port = addr.port().saturating_add(DECRYPTER_PORT_OFFSET);
             let new_addr = addr.with_port(dec_port);
             (pk, dh, new_addr)
         })
@@ -1240,7 +1240,7 @@ impl Worker {
                 .map_err(|e| DecrypterError::Dkg(format!("key extraction failed: {e}")))?;
 
             self.next_committee =
-                NextCommittee::Use(round, Some(NextKey::new(new_dkg_sk, new_dec_key)));
+                NextCommittee::Use(round, Some(Box::new(NextKey::new(new_dkg_sk, new_dec_key))));
             trace!(node = %self.label, %round, "completed key extraction");
         } else {
             // not in new committee - request DKG subset from current committee
@@ -1297,9 +1297,9 @@ impl Worker {
             .map_err(|_: NetworkDown| EndOfPlay::NetworkDown)?;
 
         // update keys if also member of next committee
-        if let Some(NextKey { dkg_key, dec_key }) = next_key {
-            self.dec_key.set(dec_key.clone());
-            self.dkg_sk = dkg_key.clone();
+        if let Some(next_key) = next_key.as_ref() {
+            self.dec_key.set(next_key.dec_key.clone());
+            self.dkg_sk = next_key.dkg_key.clone();
         }
         self.current = start.committee();
         self.next_committee = NextCommittee::Del(*start);
