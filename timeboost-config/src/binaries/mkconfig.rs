@@ -13,8 +13,8 @@ use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_config::{ChainConfig, ParentChain};
 use timeboost_config::{
-    CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeyConfig, NodeKeypairConfig,
-    NodeNetConfig, PublicNet,
+    CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeypair, NodeKeys, NodeNet,
+    PublicNet,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -129,7 +129,7 @@ impl Args {
             };
 
             let config = NodeConfig {
-                net: NodeNetConfig {
+                net: NodeNet {
                     public: PublicNet {
                         address: public_addr,
                     },
@@ -138,32 +138,30 @@ impl Args {
                         nitro: nitro_addr,
                     },
                 },
-                keys: NodeKeyConfig {
-                    signing: NodeKeypairConfig {
+                keys: NodeKeys {
+                    signing: NodeKeypair {
                         secret: signing_keypair.secret_key(),
                         public: signing_keypair.public_key(),
                     },
-                    dh: NodeKeypairConfig {
+                    dh: NodeKeypair {
                         secret: dh_keypair.secret_key(),
                         public: dh_keypair.public_key(),
                     },
-                    dkg: NodeKeypairConfig {
+                    dkg: NodeKeypair {
                         secret: dkg_dec_key.clone(),
                         public: DkgEncKey::from(&dkg_dec_key),
                     },
                 },
-                chain: ChainConfig::builder()
-                    .namespace(self.chain_namespace)
-                    .parent(
-                        ParentChain::builder()
-                            .id(self.parent_chain_id)
-                            .rpc_url(self.parent_rpc_url.clone())
-                            .ibox_contract(self.parent_ibox_contract)
-                            .key_manager_contract(self.key_manager_contract)
-                            .block_tag(self.parent_block_tag)
-                            .build(),
-                    )
-                    .build(),
+                chain: ChainConfig {
+                    namespace: self.chain_namespace,
+                    parent: ParentChain {
+                        id: self.parent_chain_id,
+                        rpc_url: self.parent_rpc_url.clone(),
+                        ibox_contract: self.parent_ibox_contract,
+                        block_tag: self.parent_block_tag,
+                        key_manager_contract: self.key_manager_contract,
+                    },
+                },
             };
 
             members.push(CommitteeMember {

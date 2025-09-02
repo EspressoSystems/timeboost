@@ -92,14 +92,14 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = provider(config.chain.parent().rpc_url());
+    let provider = provider(&config.chain.parent.rpc_url);
     assert_eq!(
         provider.get_chain_id().await?,
-        config.chain.parent().chain_id(),
+        config.chain.parent.id,
         "Parent chain RPC has mismatched chain_id"
     );
 
-    let contract = KeyManager::new(*config.chain.parent().key_manager_contract(), &provider);
+    let contract = KeyManager::new(config.chain.parent.key_manager_contract, &provider);
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()

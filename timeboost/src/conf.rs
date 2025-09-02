@@ -91,7 +91,7 @@ impl TimeboostConfig {
         SubmitterConfig::builder()
             .pubkey(self.sign_keypair.public_key())
             .robusta(self.robusta.clone())
-            .namespace(self.chain_config.namespace())
+            .namespace(self.chain_config.namespace)
             .committee(self.sailfish_committee.committee().clone())
             .build()
     }
