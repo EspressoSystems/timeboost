@@ -1,31 +1,31 @@
-effective_timestamp = "2025-09-01T02:00:00Z"
+effective_timestamp = "2025-09-01T20:00:00Z"
 
 [[members]]
-signing_key = "2BnRw2jfCamT71MkxYpgAJKJQhpLWcMXnCigS75hU1qih"
-dh_key = "BxXmTXxJfA6ZKdMDDen4c3bgXvCj31uRKWnRonG3Yv7K"
-dkg_enc_key = "5uLpmZgdePFeojPzWZMGFbGRdWEhvf1f4eqWnqSigaMNH7uCqN1gCHLfujCqT7KgmV"
+signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
+dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 public_address = "172.20.0.2:8000"
 
 [[members]]
-signing_key = "29C58aPGH7bmkZSXDqnChTfyGVFBm5NeosWZDRBA9Ux3d"
-dh_key = "2GipuWineN4eVpiyv77ztF7xzymJNettLX2WBjnKRk48"
-dkg_enc_key = "5iNu4kPU7rU4kJ5P8qzm5dKGexD1C2zkQEdHCw79iYQTpeavcFNsXU3dKt8hqHZiqA"
+signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
 public_address = "172.20.0.3:8000"
 
 [[members]]
-signing_key = "2BRkGavaUHy7ZDrr3F6vdoACq4qRUnE79PWP2umEkJgay"
-dh_key = "ERtb9N6bEfYyzxUtaZzGVazP4RCFnLGfWL6S2FK1Jv4c"
-dkg_enc_key = "6Z4uKNhZSMMiscDWEynVKrKmvsFJoGsAJcRgiBmftAhT2Ps3KE5EHS3xRN1K3yAegw"
+signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+dkg_enc_key = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
 public_address = "172.20.0.4:8000"
 
 [[members]]
-signing_key = "uXxASBe2Lu5kMfKK1ktAN1upw3rVLPJ51tZqM5ZgcA7D"
-dh_key = "Gni5HjhtQuqAgwHAEgU4ETxX2q2ir8ThPjpmjnkL8cff"
-dkg_enc_key = "77yBMksjiH6Dtzv897UQt1w1N2z4r1w37HGu9KqeaG1Wz8khXvenMKCgA8B8Y1ojS7"
+signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+dkg_enc_key = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
 public_address = "172.20.0.5:8000"
 
 [[members]]
-signing_key = "24KKPys4WkVwvS7FgCi5FWHpfsWNQWLoxmfzr3z14FjD9"
-dh_key = "BDbKk2ZQEfdib8nrEnbcajJBboCL93GqiN5xfWxBcno8"
-dkg_enc_key = "5nmDcipjEYt5eHxPBRHyZqGLLSXm32ZQSFf5iCtQz3FqzeiJUjksrm5HVEmSp3nqKD"
+signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
+dkg_enc_key = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnYV"
 public_address = "172.20.0.6:8000"

@@ -6,16 +6,16 @@ address = "127.0.0.1:8003"
 nitro = "localhost:55000"
 
 [keys.signing]
-secret = "4ZgAktx4bNaoueLrqexWQVrcxcirAH5cRDJregrLvWsd"
-public = "26pFBXZBuRPhXfhYkbJE9RdtQyKRUue1yombzb7GBBPne"
+secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
+public = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
 
 [keys.dh]
-secret = "obGuCJ3X5zqvii8CCqh25AX2fFM8GViDnZCBP43pPr2"
-public = "Hz1ho2J1PCE7HnSQWA9iN91PFx6e53pWGByPxRHxWCFv"
+secret = "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ"
+public = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
 
 [keys.dkg]
-secret = "HbGD6eMF1ZHSLBHZLaF296RneBYJJfSn68iqeWNMtRDw"
-public = "5mnuf3nx4io18zk4PTLLu7ee2XukLJWMetADPktQCyxbeN3jGG5rNojc1aFBqrbe5S"
+secret = "BW8gq8MARtDkSJL6daobPtGQm22TKkXdbLNrNGngNGTB"
+public = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 
 [chain]
 namespace = 412346

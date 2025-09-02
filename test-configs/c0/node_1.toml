@@ -5,16 +5,16 @@ address = "127.0.0.1:8010"
 address = "127.0.0.1:8013"
 
 [keys.signing]
-secret = "Bx821rTwZ2vKQfH1H4ABhDAeaeJXH2pShCWfbQcNXKwc"
-public = "oPiEDJTypFsxAStmWDGEDseEPq5PuzKJWHaG23Hs7QZL"
+secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
+public = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
 
 [keys.dh]
-secret = "6wxEcUm1guuBQLkeXByA2yNgUFDNduFG1aMq6zD7Cb8q"
-public = "FqQmk1BinZPS8CLnpUFA1b6TcQ11ApZ91miVNaeEp4E8"
+secret = "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP"
+public = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
 
 [keys.dkg]
-secret = "FpP3u5SdERbEbegS4wtCwKKuXDN22uNKxqraHVHo5K6e"
-public = "63x7CXWZMm7GsbaU6TtgpihicFeW1uZ1Qhv4gJ78B2Y4GL199RJ1gLACAtN66TNmAb"
+secret = "ARtqWGmRWrBqZUr4MmiLaPgzjsiKp5USsC9iQNRMZYy4"
+public = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
 
 [chain]
 namespace = 10101

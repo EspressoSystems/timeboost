@@ -29,11 +29,14 @@ struct Args {
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
 
-    /// RNG seed for deterministic key generation
+    /// RNG seed for deterministic key generation.
     #[clap(long)]
     seed: Option<u64>,
 
-    /// The effective timestamp for this new committee
+    /// The effective timestamp for this new committee.
+    ///
+    /// The timestamp format corresponds to RFC 3339, section 5.6, for example:
+    /// 1970-01-01T18:00:00Z.
     #[clap(long)]
     timestamp: jiff::Timestamp,
 
