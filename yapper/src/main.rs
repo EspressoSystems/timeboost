@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use clap::Parser;
-use timeboost::conf::CommitteeConfig;
+use timeboost::config::CommitteeConfig;
 use timeboost_utils::types::logging::init_logging;
 use timeboost_utils::wait_for_live_peer;
 use tokio::signal::{

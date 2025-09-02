@@ -13,7 +13,7 @@ use sailfish::{
     types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::conf::NodeConfig;
+use timeboost::config::NodeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_types::provider;
 use timeboost_utils::types::logging;

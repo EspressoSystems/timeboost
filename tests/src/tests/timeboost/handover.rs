@@ -14,7 +14,7 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost::conf::{ChainConfig, ParentChain};
+use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::{DecryptionKeyCell, KeyStore};

@@ -12,7 +12,7 @@ use multisig::Keypair;
 use multisig::{Committee, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use timeboost::builder::CertifierConfig;
-use timeboost::conf::{ChainConfig, ParentChain};
+use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::BundleVariant;

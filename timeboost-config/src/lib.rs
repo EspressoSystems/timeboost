@@ -128,13 +128,16 @@ public = "3V1LzAgCwubtAb1MT1YgTH2scXg6d2bQEhhsAMeyNo6X"
 secret = "Cab231aFJTQYmZV7Qw4qa2x49K58fbyTEsM4Tz2CKi1"
 public = "7jdMG9MUWoN4avAc3mbf2tTTGdKSmmGZWTgR3NJ9hJPn6dHj9Vdqspcs3j6zTThfjC"
 
+[chain]
+namespace = 10101
+
 [chain.parent]
 id = 31337
 rpc_url = "http://127.0.0.1:8545/"
 ibox_contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
 block_tag = "finalized"
 key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
-    "#;
+"#;
 
     use super::NodeConfig;
 

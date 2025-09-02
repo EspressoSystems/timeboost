@@ -21,7 +21,7 @@ use anyhow::ensure;
 use timeboost_utils::until::run_until;
 
 use clap::Parser;
-use timeboost::conf::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
+use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging;
 use timeboost_utils::wait_for_live_peer;

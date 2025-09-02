@@ -1,4 +1,4 @@
-mod config;
+mod conf;
 
 use std::iter::once;
 use std::sync::Arc;
@@ -14,9 +14,9 @@ use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tracing::{info, warn};
 
-pub use config::{TimeboostConfig, TimeboostConfigBuilder};
+pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
-pub use timeboost_config as conf;
+pub use timeboost_config as config;
 pub use timeboost_crypto as crypto;
 pub use timeboost_proto as proto;
 pub use timeboost_sequencer as sequencer;
