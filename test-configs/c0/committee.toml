@@ -1,31 +1,31 @@
-effective_timestamp = 1756181061
+effective_timestamp = "2025-09-01T10:00:00Z"
 
 [[members]]
-signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
-dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
-dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
+signing_key = "poThxe8T1mSVzWHEeKRQwWGimHRPZpgR1vxi8QnoM3HW"
+dh_key = "5hpgYEByvpZKFH65jAHkqYNVrK8SGaa9AkvPaHh1MJBm"
+dkg_enc_key = "7c5gxYq7KNSeXrAhwKsA8ZappWLzaQ1kXzBkctx58JnT9EpJ5EFDhWg1ne7gfMaJUe"
 public_address = "127.0.0.1:8000"
 
 [[members]]
-signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
-dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
-dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
+signing_key = "m4QcHdpXX4e8qHTw2GCWF965yXpiUwmRjZ7Fn6CJzqEv"
+dh_key = "AFp9Z4m6HFWYa3vwED4aJcmvbyMTPr8J6uDRoat8HzmT"
+dkg_enc_key = "7Kp6Bin6pAV7y2LZpS1sS7CUjopksLx2SdbDzEHGUebLFY9WzS6dMGJijXVXzqNMZr"
 public_address = "127.0.0.1:8010"
 
 [[members]]
-signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
-dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
-dkg_enc_key = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
+signing_key = "2BniRRYZa6kc553V7r8vrDU9DCPqxqpd9Dtts9kqQ41au"
+dh_key = "Ct5iNL597GbAChFLqKCPB8ovqR5FhBq2ddGRpx2APkFz"
+dkg_enc_key = "7hG6b4oKJL5peZQnn3NmDrk7Z4Fjq3oHt8Z4gGeRfTtrUJjy2ySXxZ7ZvSWUKfAapo"
 public_address = "127.0.0.1:8020"
 
 [[members]]
-signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
-dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
-dkg_enc_key = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+signing_key = "26n53jEoReGbvPmrcL2zSr4F7M63YKd678kiELw7JVbpP"
+dh_key = "3W5jcz2gWXEdyhCM7e21iKesbaCJwApdogTDcDrPyXyx"
+dkg_enc_key = "5p982gXbBB1W7WrygApz3PGut9EDNJ5RCt6HmE38197o4C9YUSvFv3pn48gkjkGc3s"
 public_address = "127.0.0.1:8030"
 
 [[members]]
-signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
-dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
-dkg_enc_key = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnYV"
+signing_key = "coujEMRGJtY7jRGymdmGD5W1MWctJ1e8r4jw5BuX8Mua"
+dh_key = "FAT7vE6EKz8EWrc4kaGMwhvtbE8BVRVwT6t8XoUnx2eh"
+dkg_enc_key = "5ozY7G3gsA7YeepPk4DUk2RSd4pHTewwohFH7TaCaJB9xTJZMtrkgmkqR6JUwPP9AD"
 public_address = "127.0.0.1:8040"

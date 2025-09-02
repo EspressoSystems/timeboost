@@ -6,16 +6,19 @@ address = "127.0.0.1:8003"
 nitro = "localhost:55000"
 
 [keys.signing]
-secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
-public = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
+secret = "3LDXngc5tvCJ2psBunSFfUrdJdPYtNX8REPKzGgrA35b"
+public = "hksYV9N4q2omdJF6V8KrZN79tat8mZjiQhYufxtPZTn2"
 
 [keys.dh]
-secret = "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ"
-public = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
+secret = "2Hems6dsyRj3XmKjBiqE2PnsKETcnQ4FWhdDanz1x5Ec"
+public = "99oupN2AzSf9t9GQnxfojE3AhvpoXyHBe2BduUchwjMW"
 
 [keys.dkg]
-secret = "BW8gq8MARtDkSJL6daobPtGQm22TKkXdbLNrNGngNGTB"
-public = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
+secret = "62oVNuZ6wndbFYiTpzdTYnL6GLgTTN8AJjRbcBqyiGmC"
+public = "5xSQ6SwsMZ1Q5zswRuFnAQWBmXpc8ii5ZL5hkK5hURQ3scv7hnDgnE4sATcjpagsxx"
+
+[chain]
+namespace = 10101
 
 [chain.parent]
 id = 1337

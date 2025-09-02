@@ -155,6 +155,7 @@ where
                 .threshold_dec_key(enc_key.clone())
                 .chain_config(
                     ChainConfig::builder()
+                        .namespace(10101)
                         .parent(
                             ParentChain::builder()
                                 .id(1)

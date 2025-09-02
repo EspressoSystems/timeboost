@@ -5,16 +5,19 @@ address = "127.0.0.1:8040"
 address = "127.0.0.1:8043"
 
 [keys.signing]
-secret = "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE"
-public = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
+secret = "uV9cQxk1KCY56yU97PTexxaMgbZEb4UN3q4UKz83kss"
+public = "coujEMRGJtY7jRGymdmGD5W1MWctJ1e8r4jw5BuX8Mua"
 
 [keys.dh]
-secret = "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz"
-public = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
+secret = "4XnERVerBHdDYH71ehYW5gMmWh3NXPeGaZ5aNvqRJu34"
+public = "FAT7vE6EKz8EWrc4kaGMwhvtbE8BVRVwT6t8XoUnx2eh"
 
 [keys.dkg]
-secret = "GFvv2wcQmiGpk5rFp1FGpeUjnVUyZmGM9k8VHb1Jn7EG"
-public = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnYV"
+secret = "74rSgTXBYK7kvRh9Q7ZzcnsjMjjg9cGv4a3GE4dar1Hf"
+public = "5ozY7G3gsA7YeepPk4DUk2RSd4pHTewwohFH7TaCaJB9xTJZMtrkgmkqR6JUwPP9AD"
+
+[chain]
+namespace = 10101
 
 [chain.parent]
 id = 31337

@@ -5,16 +5,19 @@ address = "172.20.0.5:8000"
 address = "172.20.0.5:8003"
 
 [keys.signing]
-secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
-public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+secret = "C7nhKPtwvP4rCuYUi43NHNgUf9dBMgYjrZ5NGsiog5Cw"
+public = "s2N7a6uqsSWTpgnnqwgEDUGsPJgNDPgbz9d7xu52QxxT"
 
 [keys.dh]
-secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
-public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+secret = "99SdryHcQ6nrnUcieg5gwuPnDeH8syKQybxEj27M4RzM"
+public = "uSqBJpmhzeDa3C9n64TxBWsvmC59UjaeEdJNRofZMzL"
 
 [keys.dkg]
-secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
-public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+secret = "HnAzTpM3xbLbNwzxpfUQiYS9TCWpW6rn7DSaJA9f2Kf8"
+public = "6swNFdheREU3Rncrir7ExkpUUggtsn2nEGYX9TpK7xh3JgBjwDChGmRRM4BRvW8VUF"
+
+[chain]
+namespace = 10101
 
 [chain.parent]
 id = 31337

@@ -82,7 +82,9 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let config = NodeConfig::read(&cli.config).context("Failed to read node config")?;
+    let config = NodeConfig::read(&cli.config)
+        .await
+        .context("Failed to read node config")?;
 
     let signing_keypair = Keypair::from(config.keys.signing.secret.clone());
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());

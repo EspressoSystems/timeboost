@@ -23,6 +23,7 @@ committable = { workspace = true, optional = true }
 crossbeam-queue = { workspace = true, optional = true }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
+jiff = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
@@ -32,6 +33,7 @@ reqwest = { workspace = true }
 sailfish-types = { path = "../sailfish-types", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }

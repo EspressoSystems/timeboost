@@ -14,7 +14,8 @@ use secp256k1::rand::SeedableRng as _;
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use timeboost_types::{ChainConfig, ParentChain};
 use timeboost_utils::keyset::{
-    CommitteeConfig, CommitteeMember, NodeConfig, NodeKeyConfig, NodeKeypairConfig, NodeNetConfig,
+    CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeyConfig, NodeKeypairConfig,
+    NodeNetConfig, PublicNet,
 };
 use timeboost_utils::types::logging;
 use url::Url;
@@ -34,8 +35,8 @@ struct Args {
     seed: Option<u64>,
 
     /// The effective timestamp for this new committee
-    #[clap(long, default_value = "1756181061")]
-    timestamp: u64,
+    #[clap(long)]
+    timestamp: jiff::Timestamp,
 
     /// The sailfish network address. Decrypter, certifier, and internal address are derived:
     /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
@@ -49,6 +50,9 @@ struct Args {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
+
+    #[clap(long)]
+    chain_namespace: u64,
 
     /// Parent chain rpc url
     #[clap(long)]
@@ -126,7 +130,15 @@ impl Args {
             };
 
             let config = NodeConfig {
-                net: NodeNetConfig::new(public_addr, internal_addr, nitro_addr),
+                net: NodeNetConfig {
+                    public: PublicNet {
+                        address: public_addr,
+                    },
+                    internal: InternalNet {
+                        address: internal_addr,
+                        nitro: nitro_addr,
+                    },
+                },
                 keys: NodeKeyConfig {
                     signing: NodeKeypairConfig {
                         secret: signing_keypair.secret_key(),
@@ -142,6 +154,7 @@ impl Args {
                     },
                 },
                 chain: ChainConfig::builder()
+                    .namespace(self.chain_namespace)
                     .parent(
                         ParentChain::builder()
                             .id(self.parent_chain_id)
@@ -166,7 +179,7 @@ impl Args {
         }
 
         let committee_config = CommitteeConfig {
-            effective_timestamp: self.timestamp.into(),
+            effective_timestamp: self.timestamp,
             members,
         };
         committee_config_file.write_all(toml::to_string_pretty(&committee_config)?.as_bytes())?;

@@ -1,13 +1,10 @@
-use std::{fmt, fs, path::Path, time::Duration};
-
 use anyhow::Result;
 use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
-use timeboost_types::{ChainConfig, Timestamp};
-use tokio::time::sleep;
-use tracing::{error, info};
+use timeboost_types::ChainConfig;
+use tracing::error;
 
 pub const DECRYPTER_PORT_OFFSET: u16 = 1;
 pub const CERTIFIER_PORT_OFFSET: u16 = 2;
@@ -39,18 +36,6 @@ pub struct InternalNet {
     pub nitro: Option<Address>,
 }
 
-impl NodeNetConfig {
-    pub fn new(public: Address, internal: Address, nitro: Option<Address>) -> Self {
-        Self {
-            public: PublicNet { address: public },
-            internal: InternalNet {
-                address: internal,
-                nitro,
-            },
-        }
-    }
-}
-
 /// Key materials in [`NodeConfig`]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeKeyConfig {
@@ -66,31 +51,11 @@ pub struct NodeKeypairConfig<SK, PK> {
     pub public: PK,
 }
 
-impl NodeConfig {
-    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        let data = fs::read_to_string(path)?;
-        Self::read_string(&data)
-    }
-
-    pub fn read_string(s: &str) -> Result<Self> {
-        let config = toml::from_str(s)?;
-        Ok(config)
-    }
-}
-
-impl fmt::Display for NodeConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = toml::to_string_pretty(self).map_err(|_| fmt::Error)?;
-        f.write_str(&s)
-    }
-}
-
 /// Config for the new committee info to be updated to the KeyManager contract.
 /// This file is written during per-node run of `mkconfig`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitteeConfig {
-    pub effective_timestamp: Timestamp,
+    pub effective_timestamp: jiff::Timestamp,
     #[serde(default)]
     pub members: Vec<CommitteeMember>,
 }
@@ -103,57 +68,40 @@ pub struct CommitteeMember {
     pub public_address: Address,
 }
 
-impl CommitteeConfig {
-    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path = path.as_ref();
-        let data = fs::read_to_string(path)?;
-        Self::read_string(&data)
-    }
+#[derive(Debug, thiserror::Error)]
+#[error("config error: {0}")]
+pub struct ConfigError(#[source] Box<dyn std::error::Error + Send + Sync>);
 
-    pub fn read_string(s: &str) -> Result<Self> {
-        let config = toml::from_str(s)?;
-        Ok(config)
-    }
-}
+macro_rules! ConfigImpls {
+    ($t:ty) => {
+        impl core::str::FromStr for $t {
+            type Err = ConfigError;
 
-impl fmt::Display for CommitteeConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = toml::to_string_pretty(self).map_err(|_| fmt::Error)?;
-        f.write_str(&s)
-    }
-}
-
-/// NON PRODUCTION
-/// This function takes the provided host and hits the health endpoint. This to ensure that when
-/// initiating the network TCP stream that we do not try to hit a dead host, causing issues with
-/// network startup.
-pub async fn wait_for_live_peer(host: &Address) -> Result<()> {
-    if host.is_ip() {
-        return Ok(());
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()?;
-
-    let url = format!("http://{host}/i/health");
-
-    loop {
-        info!(%host, %url, "establishing connection to load balancer");
-        match client.get(&url).send().await {
-            Ok(resp) => {
-                info!(response = ?resp, "got response");
-                if resp.status() == 200 {
-                    return Ok(());
-                }
-            }
-            Err(err) => {
-                error!(%err, "failed to send request")
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                toml::from_str(s).map_err(|e| ConfigError(Box::new(e)))
             }
         }
-        sleep(Duration::from_secs(3)).await;
-    }
+
+        impl core::fmt::Display for $t {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let s = toml::to_string_pretty(self).map_err(|_| core::fmt::Error)?;
+                f.write_str(&s)
+            }
+        }
+
+        impl $t {
+            pub async fn read<P: AsRef<std::path::Path>>(path: P) -> Result<Self, ConfigError> {
+                tokio::fs::read_to_string(path.as_ref())
+                    .await
+                    .map_err(|e| ConfigError(Box::new(e)))?
+                    .parse()
+            }
+        }
+    };
 }
+
+ConfigImpls!(NodeConfig);
+ConfigImpls!(CommitteeConfig);
 
 #[cfg(test)]
 mod tests {
@@ -189,8 +137,8 @@ key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
     #[test]
     fn serialisation_roundtrip() {
-        let a = NodeConfig::read_string(CONFIG).unwrap();
-        let b = NodeConfig::read_string(&a.to_string()).unwrap();
+        let a: NodeConfig = CONFIG.parse().unwrap();
+        let b: NodeConfig = a.to_string().parse().unwrap();
         assert_eq!(a, b);
     }
 }

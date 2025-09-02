@@ -1,10 +1,7 @@
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
-use timeboost_builder::{
-    CertifierConfig, SubmitterConfig,
-    robusta::{self, espresso_types::NamespaceId},
-};
+use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore};
@@ -58,9 +55,6 @@ pub struct TimeboostConfig {
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),
 
-    #[builder(into)]
-    pub(crate) namespace: NamespaceId,
-
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
 }
@@ -96,7 +90,7 @@ impl TimeboostConfig {
         SubmitterConfig::builder()
             .pubkey(self.sign_keypair.public_key())
             .robusta(self.robusta.clone())
-            .namespace(self.namespace)
+            .namespace(self.chain_config.namespace())
             .committee(self.sailfish_committee.committee().clone())
             .build()
     }

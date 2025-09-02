@@ -10,6 +10,7 @@ use crate::{HttpProvider, HttpProviderWithWallet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct ChainConfig {
+    namespace: u64,
     parent: ParentChain,
 }
 
@@ -23,6 +24,10 @@ pub struct ParentChain {
 }
 
 impl ChainConfig {
+    pub fn namespace(&self) -> u64 {
+        self.namespace
+    }
+
     pub fn parent(&self) -> &ParentChain {
         &self.parent
     }
