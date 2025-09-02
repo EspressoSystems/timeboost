@@ -18,6 +18,7 @@ bincode = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 bytes = { workspace = true }
+clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true, optional = true }
 crossbeam-queue = { workspace = true, optional = true }
@@ -31,6 +32,7 @@ prometheus = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sailfish-types = { path = "../sailfish-types", optional = true }
+secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -40,3 +42,8 @@ tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[[bin]]
+name = "mkconfig"
+path = "src/binaries/mkconfig.rs"

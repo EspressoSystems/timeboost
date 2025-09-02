@@ -1,5 +1,6 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
+use ::metrics::prometheus::PrometheusMetrics;
 use alloy::providers::Provider;
 use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
@@ -14,7 +15,7 @@ use sailfish::{
 use serde::{Deserialize, Serialize};
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_utils::keyset::NodeConfig;
-use timeboost_utils::types::{logging, prometheus::PrometheusMetrics};
+use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
 
