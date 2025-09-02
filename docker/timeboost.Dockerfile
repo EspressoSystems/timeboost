@@ -1,10 +1,16 @@
 # Builder stage
-FROM rust:bullseye AS builder
+FROM rust:bookworm AS builder
+SHELL ["/bin/bash", "-c"]
 
 WORKDIR /app
 
 COPY . .
 RUN apt update && apt-get install -y protobuf-compiler libssl-dev
+RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN forge --version
+RUN rustup component add rustfmt --toolchain nightly
+
 RUN cargo build --release --bin timeboost
 
 # Non-root app container stage
@@ -19,7 +25,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
 # Copy binary
 COPY --from=builder /app/target/release/timeboost .
-COPY --from=builder /app/test-configs .
+COPY --from=builder /app/test-configs/docker .
 
 # Set ownership of application files and make binary executable
 RUN chown -R timeboostuser:appgroup /app && chmod +x /app/timeboost

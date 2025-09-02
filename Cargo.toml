@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "adapters",
     "cliquenet",
     "metrics",
     "multisig",
@@ -17,8 +18,7 @@ members = [
     "timeboost-sequencer",
     "timeboost-types",
     "timeboost-utils",
-    "yapper",
-    "tests/block-verifier"
+    "yapper"
 ]
 resolver = "2"
 
@@ -69,6 +69,7 @@ ethereum_ssz = "0.9.0"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
 http = "1.3.1"
+minicbor = { version = "2.1.1", features = ["full"] }
 nohash-hasher = "0.2"
 parking_lot = "0.12.3"
 portpicker = "0.1.1"
@@ -94,6 +95,8 @@ tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = "0.7.15"
+toml = "0.9"
+toml_edit = "0.22"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
@@ -102,7 +105,7 @@ tower-http = { version = "0.6.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 turmoil = "0.6.4"
-url = "2.5.4"
+url = { version = "2.5.4", features = ["serde"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }

@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -emuo pipefail
+
+# Check if --keep-anvil flag was passed
+KEEP_ANVIL=false
+NITRO_ENABLED=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --keep-anvil)
+        KEEP_ANVIL=true
+        shift
+        ;;
+    --nitro-enabled)
+        NITRO_ENABLED=true
+        shift
+        ;;
+    *) ;;
+    esac
+done
+
+cleanup() {
+    trap - EXIT TERM
+    if $NITRO_ENABLED; then
+        echo "Anvil not running"
+    elif [[ "$KEEP_ANVIL" == "false" ]] && [ -n "$ANVIL_PID" ]; then
+        echo "Stopping anvil (PID: $ANVIL_PID)..."
+        kill "$ANVIL_PID" 2>/dev/null || true
+        rm -f .anvil.pid anvil.log
+    else
+        echo "Keeping anvil running (PID: $ANVIL_PID)..."
+    fi
+}
+
+trap cleanup EXIT TERM INT
+
+MANAGER_MNEMONIC="attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+MANAGER_ACCOUNT_INDEX=0
+MANAGER_ADDRESS="0x36561082951eed7ffD59cFD82D70570C57072d02"
+FAUCET_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+URL="http://localhost:8545"
+DEPLOYMENT_FILE=".tmp.deploy.toml"
+COMMITTEE_PATH=c0
+if $NITRO_ENABLED; then
+    COMMITTEE_PATH=nitro-ci-committee
+fi
+
+# Make sure foundry toolchain is installed locally
+if ! command -v anvil &>/dev/null; then
+    echo "Error: commands (anvil, cast) not installed (see https://getfoundry.sh/)." >&2
+    exit 1
+fi
+
+# We need yq for toml parsing
+if ! command -v yq &>/dev/null; then
+    echo "Error: commands (yq) not installed (see https://github.com/mikefarah/yq)." >&2
+    exit 1
+fi
+
+# Kill any existing anvil processes to avoid port conflicts
+pkill anvil || true
+sleep 1
+
+# Start anvil in background with proper output redirection
+if [[ "$NITRO_ENABLED" == false ]]; then
+    echo "Starting anvil..."
+    anvil --port 8545 >anvil.log 2>&1 &
+    ANVIL_PID=$!
+    echo $ANVIL_PID >.anvil.pid
+    echo "Anvil started (PID: $ANVIL_PID)"
+fi
+
+# Wait for anvil to start
+sleep 1
+
+# Fund the manager account
+cast send --value 1ether --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
+
+# Run the deploy command
+RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -o "$DEPLOYMENT_FILE"
+
+# Extract the deployed KeyManager address
+km_addr=$(yq -r ".deployments.key_manager" "$DEPLOYMENT_FILE")
+
+# Update the contract
+committee_config="test-configs/$COMMITTEE_PATH/committee.toml"
+RUST_LOG=info cargo run --bin register -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -k "$km_addr" -c "$committee_config"
+
+# Finally, clean up the temporary deployment file
+rm -f "$DEPLOYMENT_FILE"

@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 
-set -emuo pipefail
+set -muo pipefail
 
 cleanup() {
     trap - EXIT TERM
+    if [ -f .anvil.pid ]; then
+        ANVIL_PID=$(cat .anvil.pid)
+        if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping anvil (PID: $ANVIL_PID)..."
+            kill "$ANVIL_PID" 2>/dev/null || true
+        fi
+        rm -f .anvil.pid anvil.log
+    fi
     kill $(jobs -p) 2>/dev/null || true
 }
 
@@ -11,7 +19,7 @@ trap cleanup EXIT TERM INT
 
 rounds=300
 late_start=false
-keyset_file=
+config_dir=
 tps=1
 stamp=
 ignore_stamp=false
@@ -21,8 +29,8 @@ yapper=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -k|--keyset-file)
-            keyset_file="$2"
+        -c|--config-dir)
+            config_dir="$2"
             shift 2
             ;;
         -n|--namespace)
@@ -69,8 +77,8 @@ Options:
     -n | --namespace <NUMBER>
         Espresso transactions namespace ID.
 
-    -k | --keyset-file <PATH>
-        Use a JSON file for node keys.
+    -c | --config-dir <PATH>
+        Use a TOML file for node config (keys and network addresses).
 
     -r | --rounds <NUMBER>
         Run for the given number of rounds (default = 1000).
@@ -99,8 +107,8 @@ if [ ! $stamp ]; then
     exit 1
 fi
 
-if [ ! $keyset_file ]; then
-    echo "Missing -k | --keyset-file <PATH>"
+if [ ! $config_dir ]; then
+    echo "Missing -c | --config-dir <PATH>"
     exit 1
 fi
 
@@ -111,21 +119,27 @@ if $nitro_enabled; then
 fi
 
 
-nodes=$(jq '.keyset | length' $keyset_file)
-
 RUST_LOG=${RUST_LOG:-}
 
 if [ -z "$RUST_LOG" ]; then
     RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
 fi
 
+cmd=("test-contract-deploy" "--keep-anvil")
+if $nitro_enabled; then
+    cmd+=("--nitro-enabled")
+fi
+just "${cmd[@]}"
+echo "=== Contract deployment completed ==="
+
 pids=()
-for (( i=0; i<$nodes; i++ )); do
+i=0
+for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
-        --id $i
-        --http-port $((8800 + $i))
+        --committee-id 0
+        --config "$f"
+        --http-port $((8800 + 10 * $i))
         --until $rounds
-        --keyset-file $keyset_file
         --stamp "${stamp}-$i.sf"
         --watchdog-timeout 120
         --namespace $namespace)
@@ -142,12 +156,13 @@ for (( i=0; i<$nodes; i++ )); do
     RUST_LOG=$RUST_LOG "${cmd[@]}" &
 
     pids+=($!)
+    ((i++))
 done
 
 if $yapper; then
     cmd=(target/release/yapper
         --tps $tps
-        --keyset-file $keyset_file)
+        --keyset-file "$config_dir/committee.toml")
     if $nitro_enabled; then
         cmd+=(--nitro-integration)
     fi

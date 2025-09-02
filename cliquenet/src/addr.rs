@@ -39,6 +39,14 @@ impl Address {
         self
     }
 
+    pub fn with_offset(mut self, o: u16) -> Self {
+        match self {
+            Self::Inet(ip, p) => self = Self::Inet(ip, p + o),
+            Self::Name(hn, p) => self = Self::Name(hn, p + o),
+        }
+        self
+    }
+
     pub fn is_ip(&self) -> bool {
         matches!(self, Self::Inet(..))
     }

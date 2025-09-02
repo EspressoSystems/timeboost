@@ -1,10 +1,11 @@
-use std::fmt;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroUsize, ParseIntError};
+use std::{fmt, str::FromStr};
 
 use std::sync::Arc;
 
 use bimap::BiBTreeMap;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{KeyId, PublicKey};
@@ -103,7 +104,10 @@ impl Committee {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+#[cbor(transparent)]
 #[serde(transparent)]
 pub struct CommitteeId(u64);
 
@@ -128,6 +132,15 @@ impl From<CommitteeId> for u64 {
 impl fmt::Display for CommitteeId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl FromStr for CommitteeId {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v = s.parse::<u64>()?;
+        Ok(Self(v))
     }
 }
 

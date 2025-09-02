@@ -1,16 +1,19 @@
 use std::{hash::Hash, marker::PhantomData, ops::Deref};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
+use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::{Committee, Keypair, Signed};
 
 /// Marker type to denote envelopes whose signature has not been validated.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
 pub enum Unchecked {}
 
 /// Marker type to denote envelopes whose signature has been validated.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Serialize, Encode)]
 pub enum Validated {}
 
 /// An envelope contains data, its signed commitment hash and the signing key.
@@ -25,12 +28,18 @@ pub enum Validated {}
 /// let _: Envelope<Signature, Validated> =
 ///     bincode::serde::decode_from_slice(&[], bincode::config::standard()).unwrap().0;
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Encode, Decode,
+)]
 #[serde(bound(deserialize = "D: Deserialize<'de>, S: Deserialize<'de>"))]
+#[cbor(map)]
 pub struct Envelope<D: Committable, S> {
+    #[cbor(n(0))]
     signed: Signed<D>,
+
+    #[cbor(skip)]
     #[serde(skip)]
-    _marker: PhantomData<fn(S)>,
+    _marker: PhantomData<fn(&S)>,
 }
 
 impl<D: Committable> Envelope<D, Validated> {
