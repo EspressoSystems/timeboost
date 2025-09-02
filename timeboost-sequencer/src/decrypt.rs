@@ -777,12 +777,8 @@ impl Worker {
             return Ok(());
         }
 
-        let key_store = {
-            let guard = self.key_stores.read();
-            guard
-                .get(*committee_id)
-                .ok_or(DecrypterError::NoCommittee(*committee_id))?
-                .clone()
+        let Some(key_store) = self.key_stores.read().get(*committee_id).cloned() else {
+            return Err(DecrypterError::NoCommittee(*committee_id));
         };
 
         let acc = if is_resharing {
@@ -797,6 +793,7 @@ impl Worker {
         };
 
         acc.try_add(bundle)
+            .await
             .map_err(|e| DecrypterError::Dkg(format!("failed to add bundle: {e}")))?;
 
         // for initial DKG, try to finalize if we have enough bundles
@@ -982,7 +979,7 @@ impl Worker {
         Ok(Some(self.finalize_hatch(round, incl).await?))
     }
 
-    /// Get the current decryption key
+    /// Get the current decryption key.
     fn decryption_key(&self) -> Result<DecryptionKey> {
         match &self.state {
             WorkerState::Running => self.dec_key.get().ok_or_else(|| {
@@ -994,7 +991,7 @@ impl Worker {
         }
     }
 
-    /// Get the current key store for the committee.
+    /// Get the key store for the current committee.
     fn current_store(&self) -> Result<KeyStore> {
         let guard = self.key_stores.read();
         guard
