@@ -191,6 +191,12 @@ jobs:
         echo "Date: $(git log -1 --pretty=format:'%cd')"
         echo "Message: $(git log -1 --pretty=format:'%s')"
         cd ..
+    - name: Print test-node.bash contents
+      run: |
+        echo "📄 Contents of test-node.bash:"
+        echo "=========================================="
+        cat ./test-node/test-node.bash
+        echo "=========================================="
     - name: Run Test Node with Timeboost
       run: |
         ./test-node/test-node.bash \
