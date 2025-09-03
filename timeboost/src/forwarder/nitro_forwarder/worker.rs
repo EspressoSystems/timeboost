@@ -58,7 +58,7 @@ mod tests {
         },
         inclusion::{InclusionList, Transaction},
     };
-    use timeboost_utils::types::logging::init_logging;
+    use timeboost_utils::{ports::alloc_port, types::logging::init_logging};
     use tokio::{
         sync::mpsc::channel,
         time::{sleep, timeout},
@@ -114,7 +114,7 @@ mod tests {
     async fn test_forward() {
         init_logging();
 
-        let p = portpicker::pick_unused_port().expect("available port");
+        let p = alloc_port().await.unwrap();
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let cap = 10;
         let (tx, rx) = channel(cap);

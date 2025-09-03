@@ -17,7 +17,6 @@ futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
-portpicker = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 sailfish-types = { path = "../sailfish-types" }
@@ -33,11 +32,22 @@ url = { workspace = true }
 # optional:
 anyhow = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
+minicbor-io = { workspace = true, optional = true }
 
 [features]
-bin = ["dep:anyhow", "dep:clap"]
+bin = ["dep:anyhow", "dep:clap", "dep:minicbor-io"]
 
 [[bin]]
 name = "block-verifier"
 path = "src/binaries/block-verifier.rs"
+required-features = ["bin"]
+
+[[bin]]
+name = "run"
+path = "src/binaries/run.rs"
+required-features = ["bin"]
+
+[[bin]]
+name = "port-alloc"
+path = "src/binaries/port-alloc.rs"
 required-features = ["bin"]

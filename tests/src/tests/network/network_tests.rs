@@ -17,7 +17,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
 
     // Each node should see the initial vertex proposal from every other node.
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
@@ -62,7 +62,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
     let rounds = 25;
 
     let node_outcomes: HashMap<PublicKey, Vec<TestCondition>> = group
@@ -107,7 +107,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
     let committee = group.committee.clone();
     let timeout_round = 3;
     let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
@@ -188,7 +188,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
     let committee = group.committee.clone();
     let timeout_round = *RoundNumber::genesis();
     let interceptor = NetworkMessageInterceptor::new(move |msg, _id| {
@@ -269,7 +269,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
     let online_at_round = 4;
     let interceptor = NetworkMessageInterceptor::new(move |msg, id| {
         let round = *msg.round().num();
@@ -328,7 +328,7 @@ where
     logging::init_logging();
 
     let num_nodes = 5;
-    let group = Group::new(num_nodes);
+    let group = Group::new(num_nodes).await;
     let offline_at_round = 4;
     let committee = group.committee.clone();
     let node_id = 4;

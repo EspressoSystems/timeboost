@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::{unsafe_zero_dh_keypair, unsafe_zero_keypair};
+use timeboost_utils::{ports::alloc_port, unsafe_zero_dh_keypair, unsafe_zero_keypair};
 
 #[cfg(test)]
 mod tests;
@@ -58,7 +58,7 @@ pub struct Group {
 }
 
 impl Group {
-    pub fn new(size: usize) -> Self {
+    pub async fn new(size: usize) -> Self {
         let sign_keypairs = (0..size as u64)
             .map(unsafe_zero_keypair)
             .collect::<Vec<_>>();
@@ -70,7 +70,7 @@ impl Group {
 
         for (i, kpr) in sign_keypairs.iter().enumerate() {
             pubks.push((i as u8, kpr.public_key()));
-            let port = portpicker::pick_unused_port().expect("could not find an open port");
+            let port = alloc_port().await.unwrap();
             addrs.push(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
         }
 

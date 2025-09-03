@@ -1531,7 +1531,7 @@ mod tests {
         time::Instant,
     };
 
-    use timeboost_utils::types::logging;
+    use timeboost_utils::{ports::alloc_port, types::logging};
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
@@ -2273,21 +2273,17 @@ mod tests {
         );
 
         // Set up network peers with available ports
-        let network_peers: Vec<_> = signature_keys
-            .iter()
-            .zip(&dh_keys)
-            .map(|(sig_key, dh_key)| {
-                let available_port =
-                    portpicker::pick_unused_port().expect("Should find available port");
-                let sig_key = sig_key.public_key();
-                let dh_key = dh_key.public_key();
-                (
-                    sig_key,
-                    dh_key,
-                    SocketAddr::from((Ipv4Addr::LOCALHOST, available_port)),
-                )
-            })
-            .collect();
+        let mut network_peers = Vec::new();
+        for (sig_key, dh_key) in signature_keys.iter().zip(&dh_keys) {
+            let available_port = alloc_port().await.unwrap();
+            let sig_key = sig_key.public_key();
+            let dh_key = dh_key.public_key();
+            network_peers.push((
+                sig_key,
+                dh_key,
+                SocketAddr::from((Ipv4Addr::LOCALHOST, available_port)),
+            ))
+        }
 
         let addressable_committee =
             AddressableCommittee::new(committee.clone(), network_peers.clone());

@@ -25,12 +25,11 @@ thiserror = { workspace = true }
 timeboost-config = { path = "../timeboost-config" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+timeboost-utils = { path = "../timeboost-utils" }
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 futures = { workspace = true }
-portpicker = { workspace = true }
