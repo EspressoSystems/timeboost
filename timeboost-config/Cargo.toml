@@ -18,7 +18,6 @@ secp256k1 = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
-timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
