@@ -163,7 +163,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-    - name: Set up Buildx for CI with host.docker.internal support
     - uses: actions/checkout@v4
       with:
         submodules: recursive
