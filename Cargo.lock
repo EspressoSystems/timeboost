@@ -216,9 +216,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-chains"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2672194d5865f00b03e5c7844d2c6f172a842e5c3bc49d7f9b871c42c95ae65"
+checksum = "ef8ff73a143281cb77c32006b04af9c047a6b8fe5860e85a88ad325328965355"
 dependencies = [
  "alloy-primitives 1.3.1",
  "num_enum",
@@ -586,7 +586,7 @@ version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3165210652f71dfc094b051602bafd691f506c54050a174b1cba18fb5ef706a3"
 dependencies = [
- "alloy-chains 0.2.8",
+ "alloy-chains 0.2.9",
  "alloy-eip2124 0.2.0",
  "alloy-primitives 1.3.1",
  "auto_impl",
@@ -873,7 +873,7 @@ version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "040b10bb781540585e87a1e9f9a0c4f54f49674114f33aa05c9a50cf3c92e26c"
 dependencies = [
- "alloy-chains 0.2.8",
+ "alloy-chains 0.2.9",
  "alloy-consensus 1.0.29",
  "alloy-eips 1.0.29",
  "alloy-json-rpc 1.0.29",
@@ -4307,7 +4307,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4548,7 +4548,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9987,7 +9987,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11476,7 +11476,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
