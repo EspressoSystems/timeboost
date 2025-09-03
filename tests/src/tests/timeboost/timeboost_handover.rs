@@ -194,6 +194,9 @@ async fn run_handover(
                         Ok(Cmd::Bundle(bundle)) => {
                             s.add_bundles(once(bundle));
                         }
+                        Err(RecvError::Lagged(e)) => {
+                           warn!("lagging behind: {e}");
+                        }
                         Err(err) => panic!("command channel error: {err}")
                     },
                     out = s.next() => match out {
