@@ -23,7 +23,6 @@ smallvec = { workspace = true }
 thiserror = { workspace = true }
 timeboost-config = { path = "../timeboost-config" }
 timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }

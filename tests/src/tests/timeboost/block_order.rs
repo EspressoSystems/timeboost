@@ -4,8 +4,10 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use metrics::NoMetrics;
 use multisig::Certificate;
-use timeboost::sequencer::Output;
+use timeboost::builder::Certifier;
+use timeboost::sequencer::{Output, Sequencer};
 use timeboost::types::{Block, BlockInfo};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
@@ -16,9 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info};
 
-use crate::tests::timeboost::{
-    Round2Block, hash, start_certifier_with_retry, start_sequencer_with_retry,
-};
+use crate::tests::timeboost::{Round2Block, hash};
 
 use super::{gen_bundles, make_configs};
 
@@ -50,9 +50,14 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = start_sequencer_with_retry(c).await;
-            let mut p = start_certifier_with_retry(b).await;
+            let mut s = Sequencer::new(c.clone(), &NoMetrics)
+                .await
+                .unwrap_or_else(|e| panic!("failed to create sequencer: {e}"));
+            let mut p = Certifier::new(b.clone(), &NoMetrics)
+                .await
+                .unwrap_or_else(|e| panic!("failed to create certifer: {e}"));
             let mut r = None;
+
             let handle = p.handle();
             loop {
                 select! {

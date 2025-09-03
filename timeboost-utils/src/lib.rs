@@ -2,12 +2,12 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-use std::{fmt::Display, time::Duration};
+use std::time::Duration;
 
 use cliquenet::Address;
 use multisig::x25519;
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub fn unsafe_zero_keypair<N: Into<u64>>(i: N) -> multisig::Keypair {
     sig_keypair_from_seed_indexed([0u8; 32], i.into())
@@ -66,27 +66,5 @@ pub async fn wait_for_live_peer(host: &Address) -> anyhow::Result<()> {
             }
         }
         sleep(Duration::from_secs(3)).await;
-    }
-}
-
-/// Retries an async operation with exponential backoff until it succeeds.
-pub async fn with_retry<T, E, F, Fut>(op: F, err: impl Fn(&E) -> String) -> T
-where
-    E: Display,
-    F: Fn() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-{
-    let mut delay = Duration::from_millis(100);
-    const MAX_DELAY: Duration = Duration::from_secs(5);
-
-    loop {
-        match op().await {
-            Ok(result) => return result,
-            Err(e) => {
-                warn!("{}: {e}, retrying in {:?}...", err(&e), delay);
-                sleep(delay).await;
-                delay = (delay * 2).min(MAX_DELAY);
-            }
-        }
     }
 }

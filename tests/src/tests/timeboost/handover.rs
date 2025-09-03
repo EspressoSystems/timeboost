@@ -5,15 +5,16 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee, Overlay};
+use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics, Overlay};
 use futures::FutureExt;
 use futures::stream::{self, StreamExt};
+use metrics::NoMetrics;
 use multisig::{Committee, CommitteeId, Keypair, x25519};
 use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost::config::{ChainConfig, ParentChain};
+use timeboost::config::{ChainConfig, DECRYPTER_PORT_OFFSET, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
 use timeboost::types::{DecryptionKeyCell, KeyStore};
@@ -25,8 +26,6 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 use url::Url;
-
-use super::start_network_with_retry;
 
 #[derive(Debug, Clone)]
 enum Cmd {
@@ -80,7 +79,7 @@ where
 
     let de_addrs = sf_addrs
         .iter()
-        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + 1000)))
+        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + DECRYPTER_PORT_OFFSET)))
         .collect::<Vec<_>>();
 
     let committee = Committee::new(
@@ -173,7 +172,20 @@ where
 ///
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
-    let mut net = start_network_with_retry(cfg).await;
+    let mut net = Network::create(
+        "sailfish",
+        cfg.sailfish_address().clone(),
+        cfg.sign_keypair().public_key(),
+        cfg.dh_keypair().clone(),
+        cfg.sailfish_committee().entries(),
+        NetworkMetrics::new(
+            "sailfish",
+            &NoMetrics,
+            cfg.sailfish_committee().parties().copied(),
+        ),
+    )
+    .await
+    .unwrap();
 
     if let Some(prev) = &cfg.previous_sailfish_committee() {
         let old = prev.diff(cfg.sailfish_committee());

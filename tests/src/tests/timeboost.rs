@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alloy::eips::{BlockNumberOrTag, Encodable2718};
 use bytes::Bytes;
-use cliquenet::{Address, AddressableCommittee, Network, NetworkMetrics};
+use cliquenet::{Address, AddressableCommittee};
 use metrics::NoMetrics;
 use multisig::Keypair;
 use multisig::{Committee, x25519};
@@ -23,7 +23,6 @@ use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
 use timeboost::types::{BlockNumber, BundleVariant, DecryptionKeyCell, KeyStore, Transaction};
 use timeboost_utils::load_generation::make_bundle;
-use timeboost_utils::with_retry;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
 use tracing::warn;
@@ -193,42 +192,4 @@ impl Round2Block {
         *map.entry(r)
             .or_insert_with(|| self.counter.fetch_add(1, Ordering::Relaxed).into())
     }
-}
-
-async fn start_sequencer_with_retry(seq_conf: SequencerConfig) -> Sequencer {
-    with_retry(
-        || async { Sequencer::new(seq_conf.clone(), &NoMetrics).await },
-        |e| format!("failed to create sequencer: {e}"),
-    )
-    .await
-}
-
-async fn start_certifier_with_retry(cert_conf: CertifierConfig) -> Certifier {
-    with_retry(
-        || async { Certifier::new(cert_conf.clone(), &NoMetrics).await },
-        |e| format!("failed to create certifer: {e}"),
-    )
-    .await
-}
-
-async fn start_network_with_retry(cfg: &SequencerConfig) -> Network {
-    with_retry(
-        || async {
-            Network::create(
-                "sailfish",
-                cfg.sailfish_address().clone(),
-                cfg.sign_keypair().public_key(),
-                cfg.dh_keypair().clone(),
-                cfg.sailfish_committee().entries(),
-                NetworkMetrics::new(
-                    "sailfish",
-                    &NoMetrics,
-                    cfg.sailfish_committee().parties().copied(),
-                ),
-            )
-            .await
-        },
-        |e| format!("Network::create failed: {e}"),
-    )
-    .await
 }

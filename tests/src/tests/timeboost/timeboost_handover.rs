@@ -71,8 +71,8 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = start_sequencer_with_retry(seq_conf).await;
-            let mut c = start_certifier_with_retry(cert_conf).await;
+            let mut s = Sequencer::new(seq_conf.clone(), &NoMetrics).await.unwrap();
+            let mut c = Certifier::new(cert_conf.clone(), &NoMetrics).await.unwrap();
             let mut r: Option<RoundNumber> = None;
             let c_handle = c.handle();
 
@@ -179,8 +179,12 @@ async fn run_handover(
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = start_sequencer_with_retry(seq_conf).await;
-            let mut c = start_certifier_with_retry(cert_conf).await;
+          let mut s = Sequencer::new(seq_conf, &NoMetrics)
+                .await
+                .unwrap_or_else(|e| panic!("failed to create sequencer: {e}"));
+            let mut c = Certifier::new(cert_conf, &NoMetrics)
+                .await
+                .unwrap_or_else(|e| panic!("failed to create certifer: {e}"));
             let mut r: Option<sailfish_types::RoundNumber> = None;
             let c_handle = c.handle();
 

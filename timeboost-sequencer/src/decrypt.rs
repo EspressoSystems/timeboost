@@ -1479,8 +1479,7 @@ mod tests {
         sync::Arc,
         time::Instant,
     };
-
-    use timeboost_utils::{types::logging, with_retry};
+    use timeboost_utils::types::logging;
 
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
@@ -2445,7 +2444,13 @@ mod tests {
                 .threshold_dec_key(encryption_key_cell.clone())
                 .build();
 
-            let decrypter = start_decrypter_with_retry(decrypter_config).await;
+            let decrypter = Decrypter::new(
+                decrypter_config.clone(),
+                &NoMetrics,
+                Arc::new(SequencerMetrics::default()),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("failed to create decrypter: {e}"));
             decrypters.push(decrypter);
             encryption_key_cells.push(encryption_key_cell);
         }
@@ -2459,20 +2464,5 @@ mod tests {
                 signature_keys,
             ),
         )
-    }
-
-    async fn start_decrypter_with_retry(dec_config: DecrypterConfig) -> Decrypter {
-        with_retry(
-            || async {
-                Decrypter::new(
-                    dec_config.clone(),
-                    &NoMetrics,
-                    Arc::new(SequencerMetrics::default()),
-                )
-                .await
-            },
-            |e| format!("failed to create decrypter: {e}"),
-        )
-        .await
     }
 }

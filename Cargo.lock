@@ -11814,7 +11814,6 @@ dependencies = [
  "thiserror 2.0.16",
  "timeboost-config",
  "timeboost-types",
- "timeboost-utils",
  "tokio",
  "tokio-util",
  "tracing",
