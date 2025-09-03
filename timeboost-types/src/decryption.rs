@@ -410,48 +410,46 @@ impl DkgAccumulator {
     }
 
     /// Try to add a bundle to the accumulator.
-    pub async fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+    pub async fn try_add(&mut self, bundle: DkgBundle) -> anyhow::Result<()> {
         // caller should ensure that no bundles are added after finalization
         if self.bundles().contains(&bundle) || self.complete {
             return Ok(());
         }
 
         let aad: &[u8; 3] = b"dkg";
-        let committee = self.store.committee().clone();
-        let sorted_keys: Vec<DkgEncKey> = self.store.sorted_keys().cloned().collect();
+        let vess = Vess::new_fast();
+        let store = self.store.clone();
         let mode = self.mode.clone();
 
-        spawn_blocking({
-            let bundle = bundle.clone();
-            move || {
-                let vess = Vess::new_fast();
-                match mode {
-                    AccumulatorMode::Dkg => vess.verify_shares(
-                        &committee,
-                        sorted_keys.iter(),
+        let bundle = spawn_blocking(move || {
+            // verify the bundle based on the mode
+            match mode {
+                AccumulatorMode::Dkg => {
+                    vess.verify_shares(
+                        store.committee(),
+                        store.sorted_keys(),
                         bundle.vess_ct(),
                         bundle.comm(),
                         aad,
-                    ),
-                    AccumulatorMode::Resharing(combkey) => {
-                        let Some(pub_share) = combkey.get_pub_share(bundle.origin().0.into())
-                        else {
-                            return Err(VessError::FailedVerification);
-                        };
-                        vess.verify_reshares(
-                            &committee,
-                            sorted_keys.iter(),
-                            bundle.vess_ct(),
-                            bundle.comm(),
-                            aad,
-                            *pub_share,
-                        )
-                    }
+                    )?;
+                }
+                AccumulatorMode::Resharing(combkey) => {
+                    let Some(pub_share) = combkey.get_pub_share(bundle.origin().0.into()) else {
+                        return Err(VessError::FailedVerification);
+                    };
+                    vess.verify_reshares(
+                        store.committee(),
+                        store.sorted_keys(),
+                        bundle.vess_ct(),
+                        bundle.comm(),
+                        aad,
+                        *pub_share,
+                    )?;
                 }
             }
+            Ok(bundle)
         })
-        .await
-        .map_err(|_| VessError::FailedVerification)??;
+        .await??;
 
         self.bundles.push(bundle);
         // only store the necessary amount of bundles in the accumulator

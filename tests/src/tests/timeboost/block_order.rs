@@ -50,12 +50,8 @@ async fn block_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c.clone(), &NoMetrics)
-                .await
-                .unwrap_or_else(|e| panic!("failed to create sequencer: {e}"));
-            let mut p = Certifier::new(b.clone(), &NoMetrics)
-                .await
-                .unwrap_or_else(|e| panic!("failed to create certifer: {e}"));
+            let mut s = Sequencer::new(c, &NoMetrics).await.unwrap();
+            let mut p = Certifier::new(b, &NoMetrics).await.unwrap();
             let mut r = None;
 
             let handle = p.handle();

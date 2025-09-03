@@ -52,9 +52,7 @@ async fn transaction_order() {
                 // delay start of a recovering node:
                 sleep(Duration::from_secs(5)).await
             }
-            let mut s = Sequencer::new(c.clone(), &NoMetrics)
-                .await
-                .unwrap_or_else(|e| panic!("failed to create sequencer: {e}"));
+            let mut s = Sequencer::new(c.clone(), &NoMetrics).await.unwrap();
             loop {
                 select! {
                     trx = brx.recv() => match trx {

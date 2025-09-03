@@ -62,17 +62,17 @@ async fn run_handover(
 
     // run committee 1 (current):
     for (_, seq_conf, cert_conf) in &curr {
-        let seq_conf = seq_conf.clone();
-        let cert_conf = cert_conf.clone();
+        let sc = seq_conf.clone();
+        let cc = cert_conf.clone();
         let (tx, rx) = mpsc::unbounded_channel();
         let finish = finish.clone();
         let mut cmd = bcast.subscribe();
-        let label = seq_conf.sign_keypair().public_key();
+        let label = sc.sign_keypair().public_key();
         let r2b = round2block.clone();
 
         tasks.spawn(async move {
-            let mut s = Sequencer::new(seq_conf.clone(), &NoMetrics).await.unwrap();
-            let mut c = Certifier::new(cert_conf.clone(), &NoMetrics).await.unwrap();
+            let mut s = Sequencer::new(sc, &NoMetrics).await.unwrap();
+            let mut c = Certifier::new(cc, &NoMetrics).await.unwrap();
             let mut r: Option<RoundNumber> = None;
             let c_handle = c.handle();
 
@@ -181,10 +181,10 @@ async fn run_handover(
         tasks.spawn(async move {
           let mut s = Sequencer::new(seq_conf, &NoMetrics)
                 .await
-                .unwrap_or_else(|e| panic!("failed to create sequencer: {e}"));
+                .unwrap();
             let mut c = Certifier::new(cert_conf, &NoMetrics)
                 .await
-                .unwrap_or_else(|e| panic!("failed to create certifer: {e}"));
+                .unwrap();
             let mut r: Option<sailfish_types::RoundNumber> = None;
             let c_handle = c.handle();
 

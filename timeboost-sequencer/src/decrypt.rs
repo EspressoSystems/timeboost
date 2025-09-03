@@ -348,14 +348,13 @@ impl Decrypter {
     /// Prepare for the next committee.
     pub async fn next_committee(
         &mut self,
-        c: AddressableCommittee,
+        mut c: AddressableCommittee,
         k: KeyStore,
     ) -> StdResult<(), DecrypterDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
-        // map to Decrypter network
-        let d = translate_addr(c);
+        c.update_addresses(|a| a.to_owned().with_offset(DECRYPTER_PORT_OFFSET));
         self.worker_tx
-            .send(Command::NextCommittee(d, k))
+            .send(Command::NextCommittee(c, k))
             .await
             .map_err(|_| DecrypterDown(()))?;
         Ok(())
@@ -370,19 +369,6 @@ impl Decrypter {
             .map_err(|_| DecrypterDown(()))?;
         Ok(())
     }
-}
-
-fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
-    let committee = c.committee().clone();
-    let shifted_entries = c
-        .entries()
-        .map(|(pk, dh, addr)| {
-            let dec_port = addr.port().saturating_add(DECRYPTER_PORT_OFFSET);
-            let new_addr = addr.with_port(dec_port);
-            (pk, dh, new_addr)
-        })
-        .collect::<Vec<_>>();
-    AddressableCommittee::new(committee, shifted_entries)
 }
 
 impl Drop for Decrypter {
@@ -2450,7 +2436,7 @@ mod tests {
                 Arc::new(SequencerMetrics::default()),
             )
             .await
-            .unwrap_or_else(|e| panic!("failed to create decrypter: {e}"));
+            .unwrap();
             decrypters.push(decrypter);
             encryption_key_cells.push(encryption_key_cell);
         }

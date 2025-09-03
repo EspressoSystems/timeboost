@@ -143,11 +143,10 @@ impl Certifier {
     /// Prepare for the next committee.
     pub async fn set_next_committee(
         &mut self,
-        c: AddressableCommittee,
+        mut c: AddressableCommittee,
     ) -> StdResult<(), CertifierDown> {
         debug!(node = %self.label, committee = %c.committee().id(), "next committee");
-        // map to Certifier network
-        let c = translate_addr(c);
+        c.update_addresses(|a| a.to_owned().with_offset(CERTIFIER_PORT_OFFSET));
         self.worker_tx
             .send(Command::NextCommittee(c))
             .await
@@ -164,19 +163,6 @@ impl Certifier {
             .map_err(|_| CertifierDown(()))?;
         Ok(())
     }
-}
-
-fn translate_addr(c: AddressableCommittee) -> AddressableCommittee {
-    let committee = c.committee().clone();
-    let shifted_entries = c
-        .entries()
-        .map(|(pk, dh, addr)| {
-            let cert_port = addr.port().saturating_add(CERTIFIER_PORT_OFFSET);
-            let new_addr = addr.with_port(cert_port);
-            (pk, dh, new_addr)
-        })
-        .collect::<Vec<_>>();
-    AddressableCommittee::new(committee, shifted_entries)
 }
 
 impl Drop for Certifier {
