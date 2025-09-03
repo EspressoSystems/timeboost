@@ -26,7 +26,7 @@ use timeboost_types::{
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::{JoinError, JoinHandle, spawn_blocking};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::config::DecrypterConfig;
@@ -242,23 +242,49 @@ impl Decrypter {
     /// # Returns
     /// - `Some(DkgBundle)` if a new dealing was successfully created for the current committee.
     /// - `None` if already submitted or if encryption key is missing.
-    pub fn gen_dkg_bundle(&mut self) -> Option<DkgBundle> {
-        let guard = self.key_stores.read();
-        let Some(store) = guard.get(self.current) else {
+    pub async fn gen_dkg_bundle(&mut self) -> Option<DkgBundle> {
+        let Some(current_store) = self.key_stores.read().get(self.current).cloned() else {
             warn!(node = %self.label, committee = %self.current, "missing current key store");
             return None;
         };
-        let Some(node_idx) = store.committee().get_index(&self.label) else {
+        let Some(node_idx) = current_store.committee().get_index(&self.label) else {
             warn!(node = %self.label, committee = %self.current, "local key not in store");
             return None;
         };
 
-        let vess = Vess::new_fast();
-        let mut rng = thread_rng();
-        let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
-        let (ct, cm) = vess
-            .encrypt_shares(store.committee(), store.sorted_keys(), secret, DKG_AAD)
-            .ok()?;
+        let (ct, cm) = match spawn_blocking(move || {
+            let vess = Vess::new_fast();
+            let mut rng = thread_rng();
+            let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+            vess.encrypt_shares(
+                current_store.committee(),
+                current_store.sorted_keys(),
+                secret,
+                DKG_AAD,
+            )
+        })
+        .await
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                warn!(
+                    node = %self.label,
+                    committee = %self.current,
+                    error = ?e,
+                    "failed to produce dkg bundle"
+                );
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    node = %self.label,
+                    committee = %self.current,
+                    error = ?e,
+                    "task failed producing dkg bundle"
+                );
+                return None;
+            }
+        };
         debug!(node = %self.label, curr = %self.current, "produced dkg bundle");
         Some(DkgBundle::new((node_idx, self.label), self.current, ct, cm))
     }
@@ -268,10 +294,9 @@ impl Decrypter {
     /// # Returns
     /// - `Some(DkgBundle)` if a Resharing dealing was successfully created.
     /// - `None` if already submitted or if encryption key is missing.
-    pub fn gen_resharing_bundle(&mut self, next_store: KeyStore) -> Option<DkgBundle> {
+    pub async fn gen_resharing_bundle(&mut self, next_store: KeyStore) -> Option<DkgBundle> {
         let committee_id = next_store.committee().id();
-        let guard = self.key_stores.read();
-        let Some(current_store) = guard.get(self.current) else {
+        let Some(current_store) = self.key_stores.read().get(self.current).cloned() else {
             warn!(node = %self.label, committee = %self.current, "missing current key store");
             return None;
         };
@@ -285,15 +310,38 @@ impl Decrypter {
             warn!(node = %self.label, committee = %committee_id, "no existing key to reshare");
             return None;
         };
-        let vess = Vess::new_fast();
-        let (ct, cm) = vess
-            .encrypt_reshares(
+
+        let (ct, cm) = match spawn_blocking(move || {
+            let vess = Vess::new_fast();
+            vess.encrypt_reshares(
                 next_store.committee(),
                 next_store.sorted_keys(),
                 *dec_key.privkey().share(),
                 DKG_AAD,
             )
-            .ok()?;
+        })
+        .await
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                warn!(
+                    node = %self.label,
+                    committee = %committee_id,
+                    error = ?e,
+                    "failed to produce reshare bundle"
+                );
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    node = %self.label,
+                    committee = %committee_id,
+                    error = ?e,
+                    "task failed producing resharing bundle"
+                );
+                return None;
+            }
+        };
         debug!(node = %self.label, curr = %self.current, next = %committee_id, "produced resharing bundle");
         Some(DkgBundle::new((node_idx, self.label), committee_id, ct, cm))
     }
@@ -979,8 +1027,8 @@ impl Worker {
 
     /// Get the key store for the current committee.
     fn current_store(&self) -> Result<KeyStore> {
-        let guard = self.key_stores.read();
-        guard
+        self.key_stores
+            .read()
             .get(self.current)
             .cloned()
             .ok_or_else(|| DecrypterError::NoCommittee(self.current))
@@ -1068,7 +1116,7 @@ impl Worker {
         }
 
         // process each ciphertext in parallel using spawn_blocking
-        let combine_results = tokio::task::spawn_blocking({
+        let combine_results = spawn_blocking({
             let key_store = key_store.clone();
             let dec_key = dec_key.clone();
             let ciphertexts: Vec<_> = ciphertexts.collect();
@@ -2162,25 +2210,23 @@ mod tests {
 
     /// Generate all DKG bundle (one per decrypter) then enqueue all bundles at all decrypters
     async fn enqueue_all_dkg_bundles(decrypters: &mut [Decrypter], key_store: Option<KeyStore>) {
-        let bundles = if let Some(key_store) = key_store {
-            decrypters
-                .iter_mut()
-                .map(|decrypter| {
-                    decrypter
-                        .gen_resharing_bundle(key_store.clone())
-                        .expect("DKG bundle should be generated")
-                })
-                .collect::<VecDeque<_>>()
+        let bundles: VecDeque<_> = if let Some(key_store) = key_store {
+            futures::future::join_all(
+                decrypters
+                    .iter_mut()
+                    .map(|d| d.gen_resharing_bundle(key_store.clone())),
+            )
+            .await
+            .into_iter()
+            .collect()
         } else {
-            decrypters
-                .iter_mut()
-                .map(|decrypter| {
-                    decrypter
-                        .gen_dkg_bundle()
-                        .expect("DKG bundle should be generated")
-                })
-                .collect::<VecDeque<_>>()
+            futures::future::join_all(decrypters.iter_mut().map(Decrypter::gen_dkg_bundle))
+                .await
+                .into_iter()
+                .collect()
         };
+
+        let bundles: VecDeque<_> = bundles.into_iter().flatten().collect();
 
         // enqueuing them all to decrypters
         for decrypter in decrypters.iter_mut() {
