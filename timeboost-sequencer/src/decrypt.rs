@@ -8,7 +8,7 @@ use cliquenet::{
 use rayon::iter::ParallelIterator;
 use rayon::prelude::*;
 
-use multisig::{CommitteeId, PublicKey};
+use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
 use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,6 @@ const THRES_AAD: &[u8] = b"threshold";
 type Result<T> = StdResult<T, DecrypterError>;
 type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
 type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
-type DecShareCache = BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>;
 
 /// The message types exchanged during decryption phase.
 #[derive(Debug, Serialize, Deserialize)]
@@ -497,9 +496,9 @@ struct Worker {
     #[builder(default)]
     tracker: BTreeMap<CommitteeId, DkgAccumulator>,
 
-    /// Cache of decryption shares received from remote nodes or produced from local ciphertexts.
+    /// Decryption shares received from remote nodes or produced from local ciphertexts.
     #[builder(default)]
-    dec_shares: DecShareCache,
+    dec_shares: ShareStore,
 
     /// Map of received decryption shares for each round (DOS prevention).
     #[builder(default)]
@@ -882,7 +881,7 @@ impl Worker {
         // doesn't need those shares, thus pruning them.
         if self.first_requested_round.is_none() {
             trace!(node = %self.label, %round, "set first requested round");
-            self.dec_shares.retain(|k, _| k >= &round);
+            self.dec_shares.gc(&round);
             self.first_requested_round = Some(round);
         }
 
@@ -901,7 +900,7 @@ impl Worker {
 
     /// Garbage collect internally cached state.
     async fn gc(&mut self, round: &RoundNumber) -> Result<()> {
-        self.dec_shares.retain(|r, _| r > round);
+        self.dec_shares.gc(round);
         self.incls.retain(|r, _| r > round);
         self.acks.retain(|r, _| r > round);
         self.remove_old_committee().await?;
@@ -978,15 +977,7 @@ impl Worker {
         // there are 3 ciphertexts, and node a and b has contributed their decrypted shares batch so
         // far. with node c's batch [s1c, s2c, s3c], the new local cache is:
         // [[s1a, s1b, s1c], [s2a, s2b, s2c], [s3a, s3b, s3c]]
-        let entry = self
-            .dec_shares
-            .entry(round.num())
-            .or_insert_with(|| vec![vec![]; batch.len()]);
-        entry
-            .iter_mut()
-            .zip(batch.dec_shares)
-            .for_each(|(shares, new)| shares.push(new));
-
+        self.dec_shares.insert(round.num(), batch.dec_shares);
         Ok(())
     }
 
@@ -1085,18 +1076,10 @@ impl Worker {
         dec_key: &DecryptionKey,
     ) -> Result<Option<Vec<Option<Plaintext>>>> {
         let ciphertexts = incl.filter_ciphertexts().map(|b| deserialize(b).ok());
-        let Some(dec_shares) = self.dec_shares.get(&round) else {
-            return Ok(None);
-        };
         let key_store = self.current_store()?;
-
-        if dec_shares.is_empty()
-            || dec_shares.iter().any(|opt_dec_shares| {
-                let valid = opt_dec_shares.iter().filter(|s| s.is_some()).count();
-                let invalid = opt_dec_shares.len() - valid;
-                valid < key_store.committee().one_honest_threshold().get()
-                    && invalid < key_store.committee().quorum_size().get()
-            })
+        if !self
+            .dec_shares
+            .has_sufficient_shares(&round, key_store.committee())
         {
             return Ok(None);
         }
@@ -1368,6 +1351,61 @@ impl Worker {
     }
 }
 
+#[derive(Debug, Default)]
+struct ShareStore {
+    inner: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
+}
+
+impl ShareStore {
+    /// Inserts decryption shares for a specific round
+    fn insert(&mut self, round: RoundNumber, shares: Vec<Option<DecShare>>) {
+        let entry = self
+            .inner
+            .entry(round)
+            .or_insert_with(|| vec![vec![]; shares.len()]);
+        entry
+            .iter_mut()
+            .zip(shares)
+            .for_each(|(shares, new)| shares.push(new));
+    }
+
+    /// Gets a reference to the decryption shares for a specific round, if any
+    fn get(&self, round: &RoundNumber) -> Option<&Vec<Vec<Option<DecShare>>>> {
+        self.inner.get(round)
+    }
+
+    /// Gets a mutable reference to the decryption shares for a specific round, if any
+    fn get_mut(&mut self, round: &RoundNumber) -> Option<&mut Vec<Vec<Option<DecShare>>>> {
+        self.inner.get_mut(round)
+    }
+    /// Returns true if the cache is empty.
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Checks if there are enough valid decryption shares for the given round.
+    fn has_sufficient_shares(&self, round: &RoundNumber, committee: &Committee) -> bool {
+        let Some(dec_shares) = self.get(round) else {
+            return false;
+        };
+
+        // Check if there are enough valid shares to proceed
+        let one_honest_threshold = committee.one_honest_threshold().get();
+        let quorum_size = committee.quorum_size().get();
+
+        !dec_shares.iter().any(|opt_dec_shares| {
+            let valid = opt_dec_shares.iter().filter(|s| s.is_some()).count();
+            let invalid = opt_dec_shares.len() - valid;
+            valid < one_honest_threshold && invalid < quorum_size
+        })
+    }
+
+    /// Removes and returns the decryption shares for a specific round
+    fn gc(&mut self, round: &RoundNumber) {
+        self.inner.retain(|k, _| k >= round)
+    }
+}
+
 /// A batch of decryption shares. Each batch is uniquely identified via round_number.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 struct DecShareBatch {
@@ -1382,12 +1420,6 @@ struct DecShareBatch {
 }
 
 impl DecShareBatch {
-    /// Returns the number of decryption share in this batch. Equivalently, it's the number of
-    /// ciphertexts.
-    pub fn len(&self) -> usize {
-        self.dec_shares.len()
-    }
-
     /// Returns true if there's no *valid* decryption share. There are three sub-cases this may be
     /// true
     /// - empty set of ciphertext/encrypted bundle
