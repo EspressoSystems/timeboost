@@ -427,7 +427,6 @@ impl Drop for Decrypter {
 
 /// The operational state of the Worker.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 enum WorkerState {
     /// Obtains the threshold decryption key from DKG bundles.
     ///
