@@ -79,7 +79,8 @@ where
 
     let de_addrs = sf_addrs
         .iter()
-        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + DECRYPTER_PORT_OFFSET)))
+        .cloned()
+        .map(|addr| addr.with_offset(DECRYPTER_PORT_OFFSET))
         .collect::<Vec<_>>();
 
     let committee = Committee::new(
