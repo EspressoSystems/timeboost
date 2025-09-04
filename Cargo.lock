@@ -11978,7 +11978,6 @@ dependencies = [
  "metrics",
  "multisig",
  "parking_lot",
- "portpicker",
  "rayon",
  "sailfish",
  "serde",

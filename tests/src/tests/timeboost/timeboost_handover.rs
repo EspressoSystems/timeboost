@@ -1,14 +1,15 @@
-use alloy::eips::BlockNumberOrTag;
-use cliquenet::{Address, AddressableCommittee};
-use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
-use sailfish::types::{ConsensusTime, Timestamp};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::iter::{once, repeat_with};
 use std::net::Ipv4Addr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use timeboost::builder::CertifierConfig;
+
+use alloy::eips::BlockNumberOrTag;
+use cliquenet::{Address, AddressableCommittee};
+use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
+use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
+use timeboost::builder::Certifier;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, ChainConfig, DECRYPTER_PORT_OFFSET, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Output, SequencerConfig};
@@ -285,7 +286,7 @@ async fn run_handover(
 }
 
 /// Create sequencer configs.
-fn mk_configs(
+async fn mk_configs(
     id: CommitteeId,
     prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
     keep: usize,
@@ -313,30 +314,30 @@ fn mk_configs(
         .chain(repeat_with(DkgDecKey::generate).take(add.get()))
         .collect::<Vec<_>>();
 
-    let sf_addrs = prev
+    let mut sf_addrs = prev
         .iter()
         .take(keep)
         .map(|c| c.1.sailfish_address().clone())
-        .chain(
-            repeat_with(|| {
-                loop {
-                    if let Some(port) = portpicker::pick_unused_port() {
-                        break Address::from((Ipv4Addr::LOCALHOST, port));
-                    }
-                }
-            })
-            .take(add.get()),
-        )
         .collect::<Vec<_>>();
+
+    sf_addrs.extend(
+        alloc_ports(add.get() as u16)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| Address::from((Ipv4Addr::LOCALHOST, p))),
+    );
 
     let de_addrs = sf_addrs
         .iter()
-        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + CERTIFIER_PORT_OFFSET)))
+        .cloned()
+        .map(|addr| addr.with_offset(DECRYPTER_PORT_OFFSET))
         .collect::<Vec<_>>();
 
     let cert_addrs = sf_addrs
         .iter()
-        .map(|addr| Address::from((Ipv4Addr::LOCALHOST, addr.port() + DECRYPTER_PORT_OFFSET)))
+        .cloned()
+        .map(|addr| addr.with_offset(CERTIFIER_PORT_OFFSET))
         .collect::<Vec<_>>();
 
     let committee = Committee::new(
@@ -482,7 +483,7 @@ impl TestConfig {
         self
     }
 
-    fn build(self) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+    async fn build(self) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
         mk_configs(
             self.committee_id,
             &self.prev_configs,
@@ -490,6 +491,7 @@ impl TestConfig {
             self.add,
             self.set_prev,
         )
+        .await
     }
 }
 
@@ -497,13 +499,14 @@ impl TestConfig {
 async fn handover_0_to_5() {
     init_logging();
 
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(0)
         .add_nodes(NonZeroUsize::new(5).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
 
     run_handover(c1, c2).await;
 }
@@ -512,13 +515,14 @@ async fn handover_0_to_5() {
 async fn handover_1_to_4() {
     init_logging();
 
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(1)
         .add_nodes(NonZeroUsize::new(4).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
 
     run_handover(c1, c2).await;
 }
@@ -527,13 +531,14 @@ async fn handover_1_to_4() {
 async fn handover_2_to_3() {
     init_logging();
 
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(2)
         .add_nodes(NonZeroUsize::new(3).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
 
     run_handover(c1, c2).await;
 }
@@ -542,13 +547,14 @@ async fn handover_2_to_3() {
 async fn handover_3_to_2() {
     init_logging();
 
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(3)
         .add_nodes(NonZeroUsize::new(2).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
     run_handover(c1, c2).await;
 }
 
@@ -556,25 +562,27 @@ async fn handover_3_to_2() {
 async fn handover_4_to_1() {
     init_logging();
 
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(4)
         .add_nodes(NonZeroUsize::new(1).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
     run_handover(c1, c2).await;
 }
 
 #[tokio::test]
 async fn handover_3_to_5() {
     init_logging();
-    let c1 = TestConfig::new(0).build();
+    let c1 = TestConfig::new(0).build().await;
     let c2 = TestConfig::new(1)
         .with_prev_configs(&c1)
         .keep_nodes(3)
         .add_nodes(NonZeroUsize::new(5).unwrap())
         .set_previous_committee(true)
-        .build();
+        .build()
+        .await;
     run_handover(c1, c2).await;
 }
