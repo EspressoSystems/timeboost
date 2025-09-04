@@ -111,7 +111,7 @@ mkconfig_docker DATETIME *ARGS:
 mkconfig_nitro DATETIME *ARGS:
   cargo run --bin mkconfig -- -n 2 \
     --public-addr "127.0.0.1:8000" \
-    --internal-addr "127.0.0.1:8003" \
+    --internal-addr "0.0.0.0:8003" \
     --nitro-addr "localhost:55000" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \

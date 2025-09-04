@@ -3,19 +3,19 @@ address = "127.0.0.1:8010"
 
 [net.internal]
 address = "0.0.0.0:8013"
-nitro = "localhost:55001"
+nitro = "localhost:55010"
 
 [keys.signing]
-secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
-public = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+secret = "2NQoXsjfW9QbBWTb1zQwKAwTi2cx97imPngnE4ZuyCSJ"
+public = "vqa8EqiusUHGU5XNVM3og4qjUiUbptYTT6JsBXhU7tqn"
 
 [keys.dh]
-secret = "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP"
-public = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+secret = "B1As9xWQPUsXiJj9SPoceHJrjFQ3ZEHesMFpUwSxstZa"
+public = "CXp3hFF2xoP6ERFKd6tt1rWgfpnceK62au6qiB5uguqh"
 
 [keys.dkg]
-secret = "ARtqWGmRWrBqZUr4MmiLaPgzjsiKp5USsC9iQNRMZYy4"
-public = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
+secret = "39xTDJp6nyNZjApGT8QZP7kCaJRDtLBtTmubZ3p2HgLT"
+public = "7jZYT4XVyDZLqtsBBntP2qhtjaXouRscBKyzfpZCbBYfcGLQCM8uVLHc26vqH6mKrV"
 
 [chain]
 namespace = 412346
