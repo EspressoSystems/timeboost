@@ -10,6 +10,7 @@ members = [
     "sailfish-rbc",
     "sailfish-types",
     "tests",
+    "test-utils",
     "timeboost",
     "timeboost-builder",
     "timeboost-config",
@@ -94,7 +95,7 @@ thiserror = "2.0"
 tokio = { version = "1", default-features = false, features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
-tokio-util = { version = "0.7.15", features = ["compat"] }
+tokio-util = { version = "0.7.15", features = ["compat", "rt"] }
 toml = "0.9"
 toml_edit = "0.22"
 tonic = "0.14.1"

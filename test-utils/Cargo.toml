@@ -1,0 +1,36 @@
+[package]
+name = "test-utils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+ports = ["dep:minicbor", "dep:minicbor-io", "dep:tokio-util"]
+verifier = ["dep:alloy", "dep:timeboost-utils"]
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+# optional
+alloy = { workspace = true, optional = true }
+minicbor = { workspace = true, optional = true }
+minicbor-io = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+timeboost-utils = { path = "../timeboost-utils", optional = true }
+
+[[bin]]
+name = "block-verifier"
+path = "src/binaries/block-verifier.rs"
+required-features = ["verifier"]
+
+[[bin]]
+name = "run"
+path = "src/binaries/run.rs"
+
+[[bin]]
+name = "port-alloc"
+path = "src/binaries/port-alloc.rs"
+required-features = ["ports"]

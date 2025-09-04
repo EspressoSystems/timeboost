@@ -11491,27 +11491,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "tests"
+name = "test-utils"
 version = "0.1.0"
 dependencies = [
  "alloy 1.0.29",
  "anyhow",
+ "clap",
+ "futures",
+ "minicbor",
+ "minicbor-io",
+ "timeboost-utils",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "tests"
+version = "0.1.0"
+dependencies = [
+ "alloy 1.0.29",
  "async-trait",
  "blake3",
  "bytes 1.10.1",
- "clap",
  "cliquenet",
  "committable",
  "crossbeam-queue",
  "futures",
  "metrics",
- "minicbor-io",
  "multisig",
  "parking_lot",
  "rand 0.9.2",
  "sailfish",
  "sailfish-types",
  "serde",
+ "test-utils",
  "timeboost",
  "timeboost-utils",
  "tokio",
@@ -11765,6 +11779,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
+ "test-utils",
  "thiserror 2.0.16",
  "timeboost-builder",
  "timeboost-config",
@@ -11918,6 +11933,7 @@ dependencies = [
  "parking_lot",
  "sailfish",
  "serde",
+ "test-utils",
  "thiserror 2.0.16",
  "timeboost-config",
  "timeboost-crypto",
@@ -11975,8 +11991,6 @@ dependencies = [
  "cliquenet",
  "ethereum_ssz",
  "futures",
- "minicbor",
- "minicbor-io",
  "multisig",
  "rand 0.9.2",
  "reqwest",
@@ -11984,7 +11998,6 @@ dependencies = [
  "timeboost-crypto",
  "timeboost-types",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-subscriber 0.3.20",
 ]

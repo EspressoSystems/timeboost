@@ -2,7 +2,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::{ports::alloc_port, unsafe_zero_dh_keypair, unsafe_zero_keypair};
+use test_utils::ports::alloc_port;
+use timeboost_utils::{unsafe_zero_dh_keypair, unsafe_zero_keypair};
 
 #[cfg(test)]
 mod tests;

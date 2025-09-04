@@ -17,8 +17,6 @@ bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
-minicbor = { workspace = true }
-minicbor-io = { workspace = true }
 multisig = { path = "../multisig" }
 rand = { workspace = true }
 reqwest = { workspace = true }
@@ -26,6 +24,5 @@ serde = { workspace = true }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types", features = ["arbitrary"] }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -29,7 +29,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-timeboost-utils = { path = "../timeboost-utils" }
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 futures = { workspace = true }
+test-utils = { path = "../test-utils", features = ["ports"]}
+timeboost-utils = { path = "../timeboost-utils" }

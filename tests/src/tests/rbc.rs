@@ -6,7 +6,7 @@ use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::types::UNKNOWN_COMMITTEE_ID;
-use timeboost_utils::ports::alloc_ports_blocking;
+use test_utils::ports::alloc_ports_blocking;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 

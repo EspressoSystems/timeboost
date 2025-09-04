@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use minicbor_io::{AsyncReader, AsyncWriter};
-use timeboost_utils::ports::{ALLOCATOR_PORT, Request, Response};
+use test_utils::ports::{ALLOCATOR_PORT, Request, Response};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::{
     compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt},

@@ -51,6 +51,7 @@ mod tests {
 
     use multisig::Keypair;
     use prost::{Message, bytes::Bytes};
+    use test_utils::ports::alloc_port;
     use timeboost_proto::{
         forward::{
             forward_api_client::ForwardApiClient,
@@ -58,7 +59,7 @@ mod tests {
         },
         inclusion::{InclusionList, Transaction},
     };
-    use timeboost_utils::{ports::alloc_port, types::logging::init_logging};
+    use timeboost_utils::types::logging::init_logging;
     use tokio::{
         sync::mpsc::channel,
         time::{sleep, timeout},
