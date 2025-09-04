@@ -1544,6 +1544,7 @@ mod tests {
         sync::Arc,
         time::Instant,
     };
+    use timeboost_config::DECRYPTER_PORT_OFFSET;
     use timeboost_utils::types::logging;
 
     use cliquenet::AddressableCommittee;
@@ -2048,11 +2049,10 @@ mod tests {
 
         // trigger NextCommittee event at each decrypter in COM1
         for decrypter in com1_decrypters.iter_mut() {
+            let mut sf_addr = com2_setup.addr_comm().clone();
+            sf_addr.update_addresses(|a| a.clone().with_port(a.port() - DECRYPTER_PORT_OFFSET));
             decrypter
-                .next_committee(
-                    com2_setup.addr_comm().clone(),
-                    com2_setup.key_store().clone(),
-                )
+                .next_committee(sf_addr, com2_setup.key_store().clone())
                 .await
                 .expect("next committee event succeeds");
         }
