@@ -132,7 +132,7 @@ verify_blocks *ARGS:
 ####TEST COMMANDS###
 ####################
 test *ARGS: build-test-utils
-  target/release/run --with target/release/port-alloc cargo nextest run {{ARGS}}
+  target/release/run --with target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test-contracts: build-contracts
