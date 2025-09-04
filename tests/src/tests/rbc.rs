@@ -6,6 +6,7 @@ use multisig::{Committee, Keypair, PublicKey, x25519};
 use sailfish::Coordinator;
 use sailfish::rbc::{Rbc, RbcConfig};
 use sailfish::types::UNKNOWN_COMMITTEE_ID;
+use test_utils::ports::alloc_ports_blocking;
 use timeboost_utils::types::logging::init_logging;
 use tokio::time::timeout;
 
@@ -25,12 +26,6 @@ fn fresh_keys(n: usize) -> (Vec<Keypair>, Vec<x25519::Keypair>, Committee) {
             .map(|(i, kp)| (i as u8, kp.public_key())),
     );
     (ks, xs, co)
-}
-
-fn ports(n: usize) -> Vec<u16> {
-    (0..n)
-        .map(|_| portpicker::pick_unused_port().expect("open port"))
-        .collect()
 }
 
 // Local abbreviation.
@@ -97,7 +92,7 @@ fn small_committee() {
 
     let n = 3;
     let (ks, xs, committee) = fresh_keys(n);
-    let ports = ports(n);
+    let ports = alloc_ports_blocking(n as u16).unwrap();
 
     let peers = [
         (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),
@@ -151,7 +146,7 @@ fn medium_committee() {
 
     let n = 5;
     let (ks, xs, committee) = fresh_keys(n);
-    let ports = ports(n);
+    let ports = alloc_ports_blocking(n as u16).unwrap();
 
     let peers = [
         (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),
@@ -208,7 +203,7 @@ fn medium_committee_partition_network() {
 
     let n = 5;
     let (ks, xs, committee) = fresh_keys(n);
-    let ports = ports(n);
+    let ports = alloc_ports_blocking(n as u16).unwrap();
 
     let peers = [
         (ks[0].public_key(), xs[0].public_key(), ("A", ports[0]).into()),

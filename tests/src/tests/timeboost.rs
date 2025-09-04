@@ -15,9 +15,9 @@ use cliquenet::{Address, AddressableCommittee};
 use metrics::NoMetrics;
 use multisig::Keypair;
 use multisig::{Committee, x25519};
-use parking_lot::Mutex;
-use sailfish_types::{RoundNumber, UNKNOWN_COMMITTEE_ID};
-use timeboost::builder::{Certifier, CertifierConfig};
+use sailfish_types::UNKNOWN_COMMITTEE_ID;
+use test_utils::ports::alloc_ports;
+use timeboost::builder::CertifierConfig;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
@@ -28,7 +28,7 @@ use tokio::time::{Duration, sleep};
 use tracing::warn;
 use url::Url;
 
-fn make_configs<R>(
+async fn make_configs<R>(
     size: NonZeroUsize,
     recover_index: R,
 ) -> (
@@ -38,24 +38,21 @@ fn make_configs<R>(
 where
     R: Into<Option<usize>>,
 {
-    let parts = (0..size.into())
-        .map(|_| {
-            let p1 = portpicker::pick_unused_port().unwrap();
-            let p2 = portpicker::pick_unused_port().unwrap();
-            let p3 = portpicker::pick_unused_port().unwrap();
-            let a1 = Address::from((Ipv4Addr::LOCALHOST, p1));
-            let a2 = Address::from((Ipv4Addr::LOCALHOST, p2));
-            let a3 = Address::from((Ipv4Addr::LOCALHOST, p3));
-            (
-                Keypair::generate(),
-                x25519::Keypair::generate().unwrap(),
-                DkgDecKey::generate(),
-                a1,
-                a2,
-                a3,
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut parts = Vec::new();
+    for _ in 0..size.into() {
+        let [p1, p2, p3] = alloc_ports(3).await.unwrap().try_into().unwrap();
+        let a1 = Address::from((Ipv4Addr::LOCALHOST, p1));
+        let a2 = Address::from((Ipv4Addr::LOCALHOST, p2));
+        let a3 = Address::from((Ipv4Addr::LOCALHOST, p3));
+        parts.push((
+            Keypair::generate(),
+            x25519::Keypair::generate().unwrap(),
+            DkgDecKey::generate(),
+            a1,
+            a2,
+            a3,
+        ))
+    }
 
     let committee = Committee::new(
         UNKNOWN_COMMITTEE_ID,
