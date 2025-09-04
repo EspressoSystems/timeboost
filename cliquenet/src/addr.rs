@@ -194,6 +194,13 @@ impl AddressableCommittee {
             .map(|(k, (x, a))| (*k, *x, a.clone()))
     }
 
+    pub fn update_addresses<F>(&mut self, f: F)
+    where
+        F: Fn(&Address) -> Address,
+    {
+        self.addresses.values_mut().for_each(|(_, a)| *a = f(a))
+    }
+
     /// Assert that addresses and committee have the same keys.
     fn assert_shared_domain(&self) {
         for p in self.committee.parties() {

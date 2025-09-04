@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use sailfish_types::{Evidence, RoundNumber};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::Deref;
 use std::{
     collections::{BTreeMap, btree_map},
@@ -23,6 +24,7 @@ use timeboost_crypto::{
     vess::VessError,
 };
 use tokio::sync::Notify;
+use tokio::task::spawn_blocking;
 
 use crate::DkgBundle;
 
@@ -291,9 +293,12 @@ impl<const N: usize> From<KeyStore> for KeyStoreVec<N> {
 
 /// A `KeyStore` with committee information and public keys used in the DKG or key resharing
 #[derive(Debug, Clone)]
-pub struct KeyStore {
+pub struct KeyStore(Arc<Inner>);
+
+#[derive(Debug)]
+struct Inner {
     committee: Committee,
-    keys: Arc<BTreeMap<KeyId, DkgEncKey>>,
+    keys: BTreeMap<KeyId, DkgEncKey>,
 }
 
 impl KeyStore {
@@ -302,28 +307,24 @@ impl KeyStore {
         I: IntoIterator<Item = (T, DkgEncKey)>,
         T: Into<KeyId>,
     {
-        let this = Self {
+        let this = Self(Arc::new(Inner {
             committee: c,
-            keys: Arc::new(
-                keys.into_iter()
-                    .map(|(i, k)| (i.into(), k))
-                    .collect::<BTreeMap<_, _>>(),
-            ),
-        };
+            keys: keys.into_iter().map(|(i, k)| (i.into(), k)).collect(),
+        }));
 
         // basic sanity check
         // Current secret sharing impl assumes node_idx/key_id to range from 0..n
-        for (node_idx, (key_id, p)) in this.committee.entries().enumerate() {
+        for (node_idx, (key_id, p)) in this.0.committee.entries().enumerate() {
             assert_eq!(
                 KeyId::from(node_idx as u8),
                 key_id,
                 "{p}'s key ID is not {node_idx}"
             );
-            assert!(this.keys.contains_key(&key_id), "{p} has no DkgEncKey");
+            assert!(this.0.keys.contains_key(&key_id), "{p} has no DkgEncKey");
         }
-        for id in this.keys.keys() {
+        for id in this.0.keys.keys() {
             assert!(
-                this.committee.contains_index(id),
+                this.0.committee.contains_index(id),
                 "ID {id:?} not in committee",
             );
         }
@@ -332,12 +333,12 @@ impl KeyStore {
 
     /// Returns a reference to the committee.
     pub fn committee(&self) -> &Committee {
-        &self.committee
+        &self.0.committee
     }
 
     /// Returns an iterator over all public keys sorted by their node's KeyId
     pub fn sorted_keys(&self) -> btree_map::Values<'_, KeyId, DkgEncKey> {
-        self.keys.values()
+        self.0.keys.values()
     }
 }
 
@@ -348,6 +349,15 @@ pub enum AccumulatorMode {
     Dkg,
     /// Resharing mode with the previous committee's combined key
     Resharing(CombKey),
+}
+
+impl fmt::Display for AccumulatorMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dkg => f.write_str("initial DKG"),
+            Self::Resharing(_) => f.write_str("resharing"),
+        }
+    }
 }
 
 /// Accumulates DKG bundles for a given committee and finalizes when enough have been collected.
@@ -364,29 +374,19 @@ pub struct DkgAccumulator {
 }
 
 impl DkgAccumulator {
-    /// Create a new accumulator for DKG operations.
-    pub fn new_dkg(store: KeyStore) -> Self {
+    /// Create a new accumulator with the specified mode.
+    pub fn new(store: KeyStore, mode: AccumulatorMode) -> Self {
         Self {
             store,
             bundles: Vec::new(),
-            mode: AccumulatorMode::Dkg,
-            complete: false,
-        }
-    }
-
-    /// Create a new accumulator for resharing operations.
-    pub fn new_resharing(store: KeyStore, combkey: CombKey) -> Self {
-        Self {
-            store,
-            bundles: Vec::new(),
-            mode: AccumulatorMode::Resharing(combkey),
+            mode,
             complete: false,
         }
     }
 
     /// Get a reference to the committee.
     pub fn committee(&self) -> &Committee {
-        &self.store.committee
+        self.store.committee()
     }
 
     /// Get the bundles collected so far.
@@ -410,49 +410,58 @@ impl DkgAccumulator {
     }
 
     /// Try to add a bundle to the accumulator.
-    pub fn try_add(&mut self, bundle: DkgBundle) -> Result<(), VessError> {
+    pub async fn try_add(&mut self, bundle: DkgBundle) -> anyhow::Result<()> {
         // caller should ensure that no bundles are added after finalization
-        if self.bundles().contains(&bundle) {
+        if self.bundles().contains(&bundle) || self.complete {
             return Ok(());
         }
 
         let aad: &[u8; 3] = b"dkg";
-        let committee = self.store.committee();
         let vess = Vess::new_fast();
+        let store = self.store.clone();
+        let mode = self.mode.clone();
 
-        // verify the bundle based on the mode
-        match &self.mode {
-            AccumulatorMode::Dkg => {
-                vess.verify_shares(
-                    committee,
-                    self.store.sorted_keys(),
-                    bundle.vess_ct(),
-                    bundle.comm(),
-                    aad,
-                )?;
+        let bundle = spawn_blocking(move || {
+            // verify the bundle based on the mode
+            match mode {
+                AccumulatorMode::Dkg => {
+                    vess.verify_shares(
+                        store.committee(),
+                        store.sorted_keys(),
+                        bundle.vess_ct(),
+                        bundle.comm(),
+                        aad,
+                    )?;
+                }
+                AccumulatorMode::Resharing(combkey) => {
+                    let Some(pub_share) = combkey.get_pub_share(bundle.origin().0.into()) else {
+                        return Err(VessError::FailedVerification);
+                    };
+                    vess.verify_reshares(
+                        store.committee(),
+                        store.sorted_keys(),
+                        bundle.vess_ct(),
+                        bundle.comm(),
+                        aad,
+                        *pub_share,
+                    )?;
+                }
             }
-            AccumulatorMode::Resharing(combkey) => {
-                let Some(pub_share) = combkey.get_pub_share(bundle.origin().0.into()) else {
-                    return Err(VessError::FailedVerification);
-                };
-                vess.verify_reshares(
-                    committee,
-                    self.store.sorted_keys(),
-                    bundle.vess_ct(),
-                    bundle.comm(),
-                    aad,
-                    *pub_share,
-                )?;
-            }
-        }
+            Ok(bundle)
+        })
+        .await??;
 
         self.bundles.push(bundle);
+        // only store the necessary amount of bundles in the accumulator
+        if self.bundles.len() >= self.store.committee().one_honest_threshold().into() {
+            self.complete = true;
+        }
         Ok(())
     }
 
     /// Try to finalize the accumulator into a subset if enough bundles are collected.
     pub fn try_finalize(&mut self) -> Option<DkgSubset> {
-        if self.bundles.len() >= self.store.committee().one_honest_threshold().into() {
+        if self.complete {
             let combkey = match &self.mode {
                 AccumulatorMode::Dkg => None,
                 AccumulatorMode::Resharing(combkey) => Some(combkey.clone()),
@@ -463,7 +472,6 @@ impl DkgAccumulator {
                 bundles: self.bundles.clone(),
                 combkey,
             };
-            self.complete = true;
 
             Some(subset)
         } else {
@@ -545,9 +553,9 @@ impl DkgSubset {
     /// Extract the new threshold decryption key from the subset.
     pub fn extract_key(
         &self,
-        curr: KeyStore,
+        curr: &KeyStore,
         dkg_sk: &LabeledDkgDecKey,
-        prev: Option<KeyStore>,
+        prev: Option<&KeyStore>,
     ) -> anyhow::Result<DecryptionKey> {
         let vess = Vess::new_fast();
 
@@ -572,11 +580,11 @@ impl DkgSubset {
                 let Some(prev) = prev else {
                     return Err(anyhow!("previous key store missing"));
                 };
+
                 let dealings: Vec<_> = self
                     .bundles()
                     .iter()
-                    .enumerate()
-                    .map(|(i, b)| {
+                    .map(|b| {
                         let node_idx = b.origin().0.into();
                         let pub_share = combkey
                             .get_pub_share(node_idx)
@@ -588,10 +596,9 @@ impl DkgSubset {
                             DKG_AAD,
                             *pub_share,
                         )?;
-                        Ok((i, s, b.comm().clone()))
+                        Ok((node_idx, s, b.comm().clone()))
                     })
                     .collect::<Result<Vec<_>, VessError>>()?;
-
                 DecryptionKey::from_resharing(
                     prev.committee(),
                     curr.committee(),

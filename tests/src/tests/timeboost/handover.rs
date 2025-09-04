@@ -183,19 +183,17 @@ where
 ///
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
-    let met = NetworkMetrics::new(
-        "sailfish",
-        &NoMetrics,
-        cfg.sailfish_committee().parties().copied(),
-    );
-
     let mut net = Network::create(
         "sailfish",
         cfg.sailfish_address().clone(),
         cfg.sign_keypair().public_key(),
         cfg.dh_keypair().clone(),
         cfg.sailfish_committee().entries(),
-        met,
+        NetworkMetrics::new(
+            "sailfish",
+            &NoMetrics,
+            cfg.sailfish_committee().parties().copied(),
+        ),
     )
     .await
     .unwrap();
