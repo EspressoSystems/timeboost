@@ -9,7 +9,7 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{DecryptionKeyCell, KeyStore};
+use timeboost_types::{KeyStore, ThresholdKeyCell};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -252,7 +252,7 @@ async fn main() -> Result<()> {
         )
         .maybe_nitro_addr(node_config.net.internal.nitro.clone())
         .recover(is_recover)
-        .threshold_dec_key(DecryptionKeyCell::new())
+        .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
             robusta::Config::builder()
                 .base_url(cli.espresso_base_url)

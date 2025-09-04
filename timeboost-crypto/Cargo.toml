@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+bench = []
+
 [dependencies]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
@@ -42,7 +46,9 @@ serde_json = { workspace = true }
 [[bench]]
 name = "decryption"
 harness = false
+required-features = ["bench"]
 
 [[bench]]
 name = "vess"
 harness = false
+required-features = ["bench"]

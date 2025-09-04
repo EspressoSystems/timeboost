@@ -1,7 +1,7 @@
 //! Prelude module with concrete type instantiations for common use cases
 //!
-//! This module provides type aliases for MRE structs using BLS12-381 G1 curve,
-//! allowing consumers to use the MRE functionality without specifying generic parameters.
+//! This module provides type aliases for MRE and TPKE structs using BLS12-381 G1 curve,
+//! allowing consumers to use the encryption schemes without specifying generic parameters.
 //!
 //! # Example
 //! ```
@@ -30,15 +30,23 @@
 //! assert_eq!(plaintext, messages[node_idx]);
 //! ```
 
-pub use crate::mre;
-use crate::{
-    DecryptionScheme,
-    feldman::FeldmanVss,
-    traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
-    vess::{self, ShoupVess},
-};
-use ark_bls12_381::G1Projective;
-pub use vess::VessCiphertext;
+use ark_bls12_381::{G1Projective, g1::Config};
+use ark_ec::hashing::{curve_maps::wb::WBMap, map_to_curve_hasher::MapToCurveBasedHasher};
+use ark_ff::field_hashers::DefaultFieldHasher;
+use sha2::Sha256;
+use spongefish::DigestBridge;
+
+use crate::{feldman, mre, sg_encryption, vess};
+
+pub use crate::feldman::FeldmanVssPublicParam;
+pub use crate::sg_encryption::Plaintext;
+pub use crate::traits::dkg::{KeyResharing, VerifiableSecretSharing};
+pub use crate::traits::tpke::{ThresholdEncError, ThresholdEncScheme};
+pub use crate::vess::{VessCiphertext, VessError};
+
+type H = Sha256;
+type D = DigestBridge<H>;
+type H2C = MapToCurveBasedHasher<G1Projective, DefaultFieldHasher<H>, WBMap<Config>>;
 
 /// Encryption key used in the DKG and key resharing for secure communication
 pub type DkgEncKey = mre::EncryptionKey<G1Projective>;
@@ -56,19 +64,39 @@ pub type MultiRecvCiphertext = mre::MultiRecvCiphertext<G1Projective>;
 pub type DkgCiphertext = mre::Ciphertext<G1Projective>;
 
 /// Verifiable Encrypted Secret Sharing (VESS) scheme used in DKG/resharing
-pub type Vess = ShoupVess<G1Projective>;
+pub type Vess = vess::ShoupVess<G1Projective>;
 
 /// Verifiable secret sharing scheme used in DKG/resharing
-pub type Vss = FeldmanVss<G1Projective>;
+pub type Vss = feldman::FeldmanVss<G1Projective>;
+
+/// Secret value in the verifiable secret sharing scheme.
+pub type VssSecret = <Vss as VerifiableSecretSharing>::Secret;
+
+/// Secret share of the verifiable secret sharing scheme.
+pub type VssShare = <Vss as VerifiableSecretSharing>::SecretShare;
 
 /// Commitment to a Shamir secret dealing
-pub type VssCommitment = <FeldmanVss<G1Projective> as VerifiableSecretSharing>::Commitment;
+pub type VssCommitment = <Vss as VerifiableSecretSharing>::Commitment;
+
+/// Threshold Public Key Encryption (TPKE) scheme.
+pub type ThresholdScheme = sg_encryption::ShoupGennaro<G1Projective, H, D, H2C>;
 
 /// Public encryption key in the threshold decryption scheme
-pub type ThresholdEncKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
+pub type ThresholdEncKey =
+    <sg_encryption::ShoupGennaro<G1Projective, H, D, H2C> as ThresholdEncScheme>::PublicKey;
 
 /// Combiner key in the threshold decryption scheme
-pub type ThresholdCombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
+pub type ThresholdCombKey =
+    <sg_encryption::ShoupGennaro<G1Projective, H, D, H2C> as ThresholdEncScheme>::CombKey;
 
 /// Decryption key share in the threshold decryption scheme
-pub type ThresholdDecKeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
+pub type ThresholdKeyShare =
+    <sg_encryption::ShoupGennaro<G1Projective, H, D, H2C> as ThresholdEncScheme>::KeyShare;
+
+/// Decryption share in the threshold decryption scheme
+pub type ThresholdDecShare =
+    <sg_encryption::ShoupGennaro<G1Projective, H, D, H2C> as ThresholdEncScheme>::DecShare;
+
+/// Ciphertext for threshold decryption scheme
+pub type ThresholdCiphertext =
+    <sg_encryption::ShoupGennaro<G1Projective, H, D, H2C> as ThresholdEncScheme>::Ciphertext;
