@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-ports = ["dep:minicbor", "dep:minicbor-io", "dep:tokio-util"]
+ports = ["dep:bincode", "dep:tokio-util"]
 verifier = ["dep:alloy", "dep:timeboost-utils"]
 
 [dependencies]
@@ -16,8 +16,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 # optional
 alloy = { workspace = true, optional = true }
-minicbor = { workspace = true, optional = true }
-minicbor-io = { workspace = true, optional = true }
+bincode = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
 

@@ -7,13 +7,13 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use minicbor_io::{AsyncReader, AsyncWriter};
+use bincode::config::standard;
 use test_utils::ports::{ALLOCATOR_PORT, Request, Response};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_util::{
-    compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt},
-    task::TaskTracker,
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
 };
+use tokio_util::task::TaskTracker;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,13 +33,11 @@ async fn main() -> Result<()> {
 }
 
 async fn alloc(mut stream: TcpStream, ctr: Arc<AtomicU16>) -> Result<()> {
-    let mut reader = AsyncReader::new((&mut stream).compat());
-    let Some(request) = reader.read().await? else {
-        return Ok(());
-    };
-    let mut writer = AsyncWriter::new(stream.compat_write());
-    match request {
-        Request::Alloc(n) => {
+    let len = stream.read_u32().await?;
+    let mut buf = vec![0; len as usize];
+    stream.read_exact(&mut buf).await?;
+    match bincode::decode_from_slice(&buf, standard())? {
+        (Request::Alloc(n), _) => {
             let mut ports = Vec::new();
             for _ in 0..n {
                 loop {
@@ -50,7 +48,12 @@ async fn alloc(mut stream: TcpStream, ctr: Arc<AtomicU16>) -> Result<()> {
                     }
                 }
             }
-            writer.write(Response::Ports(ports)).await?;
+            buf.clear();
+            bincode::encode_into_std_write(Response::Ports(ports), &mut buf, standard())?;
+            stream
+                .write_u32(buf.len().try_into().expect("response fits into u32 bytes"))
+                .await?;
+            stream.write_all(&buf).await?;
         }
     }
     Ok(())
