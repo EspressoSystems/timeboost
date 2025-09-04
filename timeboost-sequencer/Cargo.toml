@@ -19,6 +19,7 @@ ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
+rayon = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }

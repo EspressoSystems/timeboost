@@ -8,8 +8,8 @@ use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 
-pub const DECRYPTER_PORT_OFFSET: u16 = 1;
-pub const CERTIFIER_PORT_OFFSET: u16 = 2;
+pub const DECRYPTER_PORT_OFFSET: u16 = 100;
+pub const CERTIFIER_PORT_OFFSET: u16 = 200;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConfig {

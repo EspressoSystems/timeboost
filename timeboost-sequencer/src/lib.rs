@@ -267,7 +267,7 @@ impl Task {
 
         // DKG bundle generation
         if !self.sailfish.awaits_handover() {
-            if let Some(bundle) = self.decrypter.gen_dkg_bundle() {
+            if let Some(bundle) = self.decrypter.gen_dkg_bundle().await {
                 self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
             }
         }
@@ -343,7 +343,7 @@ impl Task {
                             error!(node = %self.label, %err, "decrypt next committee error");
                         }
                         // Resharing bundle generation
-                        if let Some(bundle) = self.decrypter.gen_resharing_bundle(k) {
+                        if let Some(bundle) = self.decrypter.gen_resharing_bundle(k).await {
                             self.bundles.add_bundles(once(BundleVariant::Dkg(bundle)));
                         }
                     }

@@ -21,6 +21,7 @@ robusta = { path = "../robusta" }
 serde = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
+timeboost-config = { path = "../timeboost-config" }
 timeboost-types = { path = "../timeboost-types" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
