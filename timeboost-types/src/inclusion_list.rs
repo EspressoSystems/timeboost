@@ -7,7 +7,6 @@ pub struct InclusionList {
     // NOTE: different from sailfish's round number, monotonically increasing at timeboost
     // sequencer side, derived from the max sailfish round among all the `Candidates` included.
     round: RoundNumber,
-    part: u8,
     time: Timestamp,
     index: DelayedInboxIndex,
     evidence: Evidence,
@@ -16,10 +15,9 @@ pub struct InclusionList {
 }
 
 impl InclusionList {
-    pub fn new(r: RoundNumber, p: u8, t: Timestamp, i: DelayedInboxIndex, e: Evidence) -> Self {
+    pub fn new(r: RoundNumber, t: Timestamp, i: DelayedInboxIndex, e: Evidence) -> Self {
         Self {
             round: r,
-            part: p,
             time: t,
             index: i,
             evidence: e,
@@ -72,10 +70,6 @@ impl InclusionList {
 
     pub fn round(&self) -> RoundNumber {
         self.round
-    }
-
-    pub fn part(&self) -> u8 {
-        self.part
     }
 
     pub fn len(&self) -> usize {

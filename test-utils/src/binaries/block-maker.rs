@@ -1,17 +1,15 @@
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use adapters::bytes::BytesWriter;
 use anyhow::Result;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use clap::Parser;
-use minicbor::{Encoder, encode};
 use parking_lot::Mutex;
+use prost::Message;
 use timeboost_proto::block::Block;
 use timeboost_proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
-use timeboost_proto::inclusion::{InclusionList, Transaction};
+use timeboost_proto::inclusion::InclusionList;
 use timeboost_proto::internal::internal_api_client::InternalApiClient;
 use timeboost_utils::types::logging::init_logging;
 use tokio::spawn;
@@ -42,8 +40,7 @@ struct Service {
 
 #[derive(Default)]
 struct Cache {
-    // (Round, Part) -> (InclusionList, Block number)
-    lists: HashMap<(u64, u8), (InclusionList, u64)>
+    list2block: HashMap<Bytes, u64>,
 }
 
 impl Service {
@@ -58,7 +55,7 @@ impl Service {
     async fn serve(self, port: u16) -> Result<()> {
         tonic::transport::Server::builder()
             .add_service(ForwardApiServer::new(self))
-            .serve((Ipv4Addr::LOCALHOST, port).into())
+            .serve((Ipv4Addr::UNSPECIFIED, port).into())
             .await
             .map_err(From::from)
     }
@@ -71,44 +68,23 @@ impl ForwardApi for Service {
         r: Request<InclusionList>,
     ) -> Result<Response<()>, Status> {
         let list = r.into_inner();
-        let Some(part) : Option<u8> = list.part.try_into().ok() else {
-            return Err(Status::internal("invalid part number"))
-        };
-        let bnum = {
-            let mut cache = self.cache.lock();
-            if let Some((prev, bnum)) = cache.lists.get(&(list.round, part)) {
-                if prev != &list {
-                    return Err(Status::internal("inclusion list mismatch"))
-                }
-                *bnum
-            } else {
-                let bnum = self.next_block.fetch_add(1, Ordering::Relaxed);
-                cache.lists.insert((list.round, part), (list.clone(), bnum));
-                bnum
-            }
-        };
+        let bytes = Bytes::from(list.encode_to_vec());
+        let bnum = *self
+            .cache
+            .lock()
+            .list2block
+            .entry(bytes.clone())
+            .or_insert_with(|| self.next_block.fetch_add(1, Ordering::Relaxed));
         let block = Block {
             number: bnum,
             round: list.round,
-            payload: match encode_txs(&list.encoded_txns) {
-                Ok(bytes) => bytes,
-                Err(err) => return Err(Status::internal(err.to_string())),
-            },
+            payload: bytes,
         };
         if let Err(err) = self.output.send(block) {
             return Err(Status::internal(err.to_string()));
         }
         Ok(Response::new(()))
     }
-}
-
-fn encode_txs(txs: &[Transaction]) -> Result<Bytes, encode::Error<Infallible>> {
-    let mut e = Encoder::new(BytesWriter::default());
-    e.array(txs.len() as u64)?;
-    for t in txs {
-        e.bytes(&t.encoded_txn)?;
-    }
-    Ok(BytesMut::from(e.into_writer()).freeze())
 }
 
 /// Delivers broadcasted blocks to the given endpoint.
@@ -132,14 +108,10 @@ async fn deliver(to: Uri, mut rx: broadcast::Receiver<Block>) {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging();
-
     let args = Args::parse();
-
     let (tx, _) = broadcast::channel(args.capacity);
-
     for uri in args.connect {
         spawn(deliver(uri, tx.subscribe()));
     }
-
     Service::new(tx).serve(args.port).await
 }

@@ -2338,7 +2338,7 @@ mod tests {
                 .expect("Regular ciphertext encoding should succeed");
 
         // Create inclusion list with encrypted transaction bundles
-        let mut inclusion_list = InclusionList::new(round, 0, Timestamp::now(), 0.into(), evidence);
+        let mut inclusion_list = InclusionList::new(round, Timestamp::now(), 0.into(), evidence);
         let chain_id = ChainId::from(TEST_CHAIN_ID);
         let epoch = Epoch::from(TEST_EPOCH);
         let auction_address = Address::default();

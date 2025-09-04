@@ -44,7 +44,6 @@ type Candidates = VecDeque<(RoundNumber, Evidence, Vec<CandidateList>)>;
 pub enum Output {
     Transactions {
         round: RoundNumber,
-        part: u8,
         timestamp: Timestamp,
         transactions: Vec<Transaction>,
         delayed_inbox_index: DelayedInboxIndex,
@@ -313,19 +312,12 @@ impl Task {
                 result = self.decrypter.next() => match result {
                     Ok(incl) => {
                         let round = incl.round();
-                        let part = incl.part();
                         let timestamp = incl.timestamp();
                         let delayed_inbox_index = incl.delayed_inbox_index();
                         let transactions = self.sorter.sort(incl);
                         if !transactions.is_empty() || index != delayed_inbox_index {
                             index = delayed_inbox_index;
-                            let out = Output::Transactions {
-                                round,
-                                part,
-                                timestamp,
-                                transactions,
-                                delayed_inbox_index
-                            };
+                            let out = Output::Transactions { round, timestamp, transactions, delayed_inbox_index };
                             self.output.send(out).await.map_err(|_| TimeboostError::ChannelClosed)?;
                         }
                         if self.decrypter.has_capacity() {

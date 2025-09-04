@@ -5,23 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["maker"]
-ports = [
-    "dep:bincode",
-    "dep:tokio-util"
-]
-verifier = [
-    "dep:alloy",
-    "dep:timeboost-utils"
-]
-maker = [
-    "dep:adapters",
-    "dep:bytes",
-    "dep:minicbor",
-    "dep:timeboost-proto",
-    "dep:timeboost-utils",
-    "dep:tonic"
-]
+maker = ["dep:bytes", "dep:prost", "dep:timeboost-proto", "dep:timeboost-utils", "dep:tonic"]
+ports = ["dep:bincode", "dep:tokio-util"]
+run-committee = ["dep:tokio-util"]
+verifier = ["dep:alloy", "dep:timeboost-utils"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -31,11 +18,10 @@ parking_lot = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional
-adapters = { path = "../adapters", optional = true }
 alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
-minicbor = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost-proto = { path = "../timeboost-proto", optional = true }
@@ -52,10 +38,15 @@ path = "src/binaries/block-verifier.rs"
 required-features = ["verifier"]
 
 [[bin]]
+name = "port-alloc"
+path = "src/binaries/port-alloc.rs"
+required-features = ["ports"]
+
+[[bin]]
 name = "run"
 path = "src/binaries/run.rs"
 
 [[bin]]
-name = "port-alloc"
-path = "src/binaries/port-alloc.rs"
-required-features = ["ports"]
+name = "run-committee"
+path = "src/binaries/run-committee.rs"
+required-features = ["run-committee"]

@@ -46,14 +46,12 @@ impl NitroForwarder {
     pub async fn enqueue(
         &self,
         round: RoundNumber,
-        part: u8,
         timestamp: Timestamp,
         txns: &[Transaction],
         index: DelayedInboxIndex,
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
-            part: part.into(),
             encoded_txns: txns
                 .iter()
                 .map(|tx| timeboost_proto::inclusion::Transaction {

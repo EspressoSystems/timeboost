@@ -1,16 +1,16 @@
-use std::ffi::OsStr;
-use std::process::exit;
+use std::{ffi::OsStr, process::ExitStatus};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
-use tokio::process::Command;
 use tokio::select;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::{process::{Child, Command}, task::JoinSet};
 
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    with: String,
+    exec: Vec<String>,
+    #[clap(long, short)]
+    with: Vec<String>,
     main: Vec<String>,
 }
 
@@ -18,33 +18,34 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let mut with = command(args.with.split_whitespace())?.spawn()?;
-    let mut main = command(args.main)?.spawn()?;
+    for exe in &args.exec {
+        let status = command(exe.split_whitespace())?.status().await?;
+        if !status.success() {
+            bail!("{exe:?} failed with {:?}", status.code());
+        }
+    }
 
-    let mut intr = signal(SignalKind::interrupt())?;
-    let mut term = signal(SignalKind::terminate())?;
-    let mut quit = signal(SignalKind::quit())?;
+    let mut helpers = JoinSet::<Result<ExitStatus>>::new();
+    for w in args.with {
+        helpers.spawn(async move {
+            let mut c = spawn_command(w.split_whitespace())?;
+            let status = c.wait().await?;
+            Ok(status)
+        });
+    }
+
+    let mut main = spawn_command(args.main)?;
 
     select! {
         status = main.wait() => {
-            let _ = with.kill().await;
-            exit(status?.code().unwrap_or_default())
-        }
-        _ = with.wait() => {
-            let _ = main.kill().await;
-            exit(-1)
-        }
-        _ = intr.recv() => {
-            let _ = main.kill().await;
-            let _ = with.kill().await;
-        }
-        _ = term.recv() => {
-            let _ = main.kill().await;
-            let _ = with.kill().await;
-        }
-        _ = quit.recv() => {
-            let _ = main.kill().await;
-            let _ = with.kill().await;
+            let status = status?;
+            if !status.success() {
+                bail!("command failed with {:?}", status)
+            }
+        },
+        Some(status) = helpers.join_next() => {
+            let status = status??;
+            bail!("helper command exited before main with status {:?}", status)
         }
     }
 
@@ -64,5 +65,14 @@ where
     for a in args {
         cmd.arg(a);
     }
+    cmd.kill_on_drop(true);
     Ok(cmd)
+}
+
+fn spawn_command<I, S>(it: I) -> Result<Child>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    command(it)?.spawn().map_err(|e| e.into())
 }

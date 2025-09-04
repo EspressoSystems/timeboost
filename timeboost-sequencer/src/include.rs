@@ -25,8 +25,6 @@ pub struct Includer {
     next_committee: Option<(RoundNumber, Committee)>,
     /// Consensus round.
     round: RoundNumber,
-    /// Round number part.
-    part: u8,
     /// Consensus timestamp.
     time: Timestamp,
     /// Epoch of timestamp.
@@ -46,7 +44,6 @@ impl Includer {
             committee: c,
             next_committee: None,
             round: RoundNumber::genesis(),
-            part: 0,
             time: now,
             epoch: now.into(),
             seqno: SeqNo::zero(),
@@ -66,13 +63,9 @@ impl Includer {
             self.clear_cache()
         }
 
-        if self.round != round {
-            debug_assert!(self.round < round);
-            self.round = round;
-            self.part = 0
-        } else {
-            self.part += 1
-        };
+        debug_assert!(lists.len() >= self.committee.quorum_size().get());
+
+        self.round = round;
 
         while self.cache.len() > CACHE_SIZE {
             self.cache.pop_first();
@@ -172,7 +165,7 @@ impl Includer {
             }
         }
 
-        let mut ilist = InclusionList::new(self.round, self.part, self.time, self.index, evidence);
+        let mut ilist = InclusionList::new(self.round, self.time, self.index, evidence);
         ilist
             .set_priority_bundles(ipriority)
             .set_regular_bundles(iregular);

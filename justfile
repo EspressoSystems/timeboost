@@ -27,8 +27,12 @@ build-contracts:
   forge build
 
 [private]
+build-port-alloc:
+  cargo build --release -p test-utils --bin run --bin port-alloc --features ports
+
+[private]
 build-test-utils:
-  cargo build --release -p test-utils --features ports
+  cargo build --release -p test-utils --all-features
 
 ####################
 ###CHECK COMMANDS###
@@ -93,7 +97,7 @@ bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
 mkconfig NUM_NODES DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n {{NUM_NODES}} \
+  cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "127.0.0.1:8003" \
     --http-api "127.0.0.1:8004" \
@@ -107,7 +111,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --output "test-configs/c0" {{ARGS}}
 
 mkconfig_docker DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n 5 \
+  cargo run --release --bin mkconfig -- -n 5 \
     --public-addr "172.20.0.2:8000" \
     --internal-addr "172.20.0.2:8003" \
     --http-api "172.20.0.2:8004" \
@@ -122,7 +126,7 @@ mkconfig_docker DATETIME *ARGS:
     --output "test-configs/docker" {{ARGS}}
 
 mkconfig_nitro DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n 2 \
+  cargo run --release --bin mkconfig -- -n 2 \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "0.0.0.0:8003" \
     --http-api "127.0.0.1:8004" \
@@ -142,20 +146,20 @@ verify_blocks *ARGS:
 ####################
 ####TEST COMMANDS###
 ####################
-test *ARGS: build-test-utils
+test *ARGS: build-port-alloc
   target/release/run --with target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test-contracts: build-contracts
   forge test
 
-test_ci *ARGS: build-test-utils
+test_ci *ARGS: build-port-alloc
   env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
     --with target/release/port-alloc \
     -- cargo nextest run --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
-test-individually: build-test-utils
+test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
     target/release/run \
@@ -165,3 +169,10 @@ test-individually: build-test-utils
 
 test-contract-deploy *ARGS:
   ./scripts/test-contract-deploy {{ARGS}}
+
+test-all: build-test-utils
+    env RUST_LOG=timeboost=info,sailfish=info target/release/run \
+        --exec "scripts/test-contract-deploy --keep-anvil" \
+        --with "target/release/block-maker --port 55000 --connect 127.0.0.1:8003,127.0.0.1:8013,127.0.0.1:8023,127.0.0.1:8033,127.0.0.1:8043" \
+        --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+        target/release/run-committee -- --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost
