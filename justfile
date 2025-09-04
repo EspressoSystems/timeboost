@@ -21,6 +21,10 @@ build_docker:
 build-contracts:
   forge build
 
+[private]
+build-test-utils:
+  cargo build --release -p test-utils --features ports
+
 ####################
 ###CHECK COMMANDS###
 ####################
@@ -122,26 +126,30 @@ mkconfig_nitro DATETIME *ARGS:
     --output "test-configs/nitro-ci-committee" {{ARGS}}
 
 verify_blocks *ARGS:
-  cargo run --release --bin block-verifier --features bin {{ARGS}}
+  cargo run --release --bin block-verifier --features verifier {{ARGS}}
 
 ####################
 ####TEST COMMANDS###
 ####################
-test *ARGS:
-  cargo nextest run {{ARGS}}
+test *ARGS: build-test-utils
+  target/release/run --with target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test-contracts: build-contracts
   forge test
 
-test_ci *ARGS:
-  env {{LOG_LEVELS}} NO_COLOR=1 cargo nextest run --workspace {{ARGS}}
+test_ci *ARGS: build-test-utils
+  env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
+    --with target/release/port-alloc \
+    -- cargo nextest run --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
-test-individually:
+test-individually: build-test-utils
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
-    cargo nextest run --no-tests=pass -p $pkg || exit 1; \
+    target/release/run \
+        --with target/release/port-alloc \
+        -- cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
 
 test-contract-deploy *ARGS:
