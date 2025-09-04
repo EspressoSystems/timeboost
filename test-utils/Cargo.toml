@@ -5,20 +5,46 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-ports = ["dep:bincode", "dep:tokio-util"]
-verifier = ["dep:alloy", "dep:timeboost-utils"]
+default = ["maker"]
+ports = [
+    "dep:bincode",
+    "dep:tokio-util"
+]
+verifier = [
+    "dep:alloy",
+    "dep:timeboost-utils"
+]
+maker = [
+    "dep:adapters",
+    "dep:bytes",
+    "dep:minicbor",
+    "dep:timeboost-proto",
+    "dep:timeboost-utils",
+    "dep:tonic"
+]
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+parking_lot = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional
+adapters = { path = "../adapters", optional = true }
 alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+minicbor = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+timeboost-proto = { path = "../timeboost-proto", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
+
+[[bin]]
+name = "block-maker"
+path = "src/binaries/block-maker.rs"
+required-features = ["maker"]
 
 [[bin]]
 name = "block-verifier"

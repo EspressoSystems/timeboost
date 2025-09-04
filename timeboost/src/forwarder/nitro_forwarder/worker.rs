@@ -153,6 +153,7 @@ mod tests {
         for i in 0..max {
             let incl = InclusionList {
                 round: i,
+                part: 0,
                 consensus_timestamp: i,
                 encoded_txns: Vec::new(),
                 delayed_messages_read: 0,
@@ -173,6 +174,7 @@ mod tests {
 
         let incl = InclusionList {
             round: max,
+            part: 0,
             encoded_txns: Vec::new(),
             consensus_timestamp: max,
             delayed_messages_read: 0,

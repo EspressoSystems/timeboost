@@ -95,7 +95,13 @@ impl Timeboost {
                     }
                 },
                 out = self.sequencer.next() => match out {
-                    Ok(Output::Transactions { round, timestamp, transactions, delayed_inbox_index }) => {
+                    Ok(Output::Transactions {
+                        round,
+                        part,
+                        timestamp,
+                        transactions,
+                        delayed_inbox_index
+                    }) => {
                         info!(
                             node  = %self.label,
                             round = %round,
@@ -103,7 +109,13 @@ impl Timeboost {
                             "sequencer output"
                         );
                         if let Some(ref mut f) = self.nitro_forwarder {
-                            f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
+                            f.enqueue(
+                                round,
+                                part,
+                                timestamp,
+                                &transactions,
+                                delayed_inbox_index
+                            ).await?;
                         } else {
                             warn!(node = %self.label, %round, "no forwarder => dropping output")
                         }

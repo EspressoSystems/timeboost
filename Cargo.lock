@@ -11544,14 +11544,20 @@ dependencies = [
 name = "test-utils"
 version = "0.1.0"
 dependencies = [
+ "adapters",
  "alloy 1.0.30",
  "anyhow",
  "bincode 2.0.1",
+ "bytes 1.10.1",
  "clap",
  "futures",
+ "minicbor",
+ "parking_lot",
+ "timeboost-proto",
  "timeboost-utils",
  "tokio",
  "tokio-util",
+ "tonic 0.14.2",
  "tracing",
 ]
 
