@@ -8,7 +8,7 @@ use multisig::PublicKey;
 use sailfish::types::RoundNumber;
 use timeboost_proto::forward::forward_api_client::ForwardApiClient;
 use timeboost_proto::inclusion::InclusionList;
-use timeboost_types::{Timestamp, Transaction};
+use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
@@ -48,7 +48,7 @@ impl NitroForwarder {
         round: RoundNumber,
         timestamp: Timestamp,
         txns: &[Transaction],
-        index: u64,
+        index: DelayedInboxIndex,
     ) -> Result<(), Error> {
         let incl = InclusionList {
             round: *round,
@@ -61,8 +61,9 @@ impl NitroForwarder {
                 })
                 .collect(),
             consensus_timestamp: timestamp.into(),
-            // we need to add 1 to the index, since we start at 0
-            delayed_messages_read: index + 1,
+            // we need to add 1 to the index
+            // eg index 0 is really 1 delayed message read
+            delayed_messages_read: (index + DelayedInboxIndex::from(1)).into(),
         };
         self.incls_tx
             .send(incl)
