@@ -51,6 +51,7 @@ mod tests {
 
     use multisig::Keypair;
     use prost::{Message, bytes::Bytes};
+    use test_utils::ports::alloc_port;
     use timeboost_proto::{
         forward::{
             forward_api_client::ForwardApiClient,
@@ -114,7 +115,7 @@ mod tests {
     async fn test_forward() {
         init_logging();
 
-        let p = portpicker::pick_unused_port().expect("available port");
+        let p = alloc_port().await.unwrap();
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, p));
         let cap = 10;
         let (tx, rx) = channel(cap);

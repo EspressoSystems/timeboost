@@ -24,10 +24,8 @@ turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-portpicker = { workspace = true }
 quickcheck = { workspace = true }
 
 [[bench]]
 name = "network_bytes"
 harness = false
-

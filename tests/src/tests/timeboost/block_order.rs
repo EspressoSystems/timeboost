@@ -34,7 +34,7 @@ async fn block_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
-    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX);
+    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
 
     let mut rxs = Vec::new();
     let tasks = TaskTracker::new();
