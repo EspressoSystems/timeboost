@@ -11,7 +11,7 @@ use axum::{
 use bon::Builder;
 use http::{Request, Response, StatusCode};
 use timeboost_crypto::prelude::ThresholdEncKey;
-use timeboost_types::{Bundle, BundleVariant, DecryptionKeyCell, SignedPriorityBundle};
+use timeboost_types::{Bundle, BundleVariant, SignedPriorityBundle, ThresholdKeyCell};
 use tokio::{
     net::{TcpListener, ToSocketAddrs},
     sync::mpsc::Sender,
@@ -26,7 +26,7 @@ pub mod internal;
 #[derive(Debug, Clone, Builder)]
 pub struct ApiServer {
     bundles: Sender<BundleVariant>,
-    enc_key: DecryptionKeyCell,
+    enc_key: ThresholdKeyCell,
     metrics: Arc<PrometheusMetrics>,
 }
 

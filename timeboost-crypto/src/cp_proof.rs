@@ -27,26 +27,6 @@ where
     _hash: PhantomData<D>,
 }
 
-pub struct CPParameters<C, D>
-where
-    C: CurveGroup,
-    D: DuplexSpongeInterface,
-{
-    _hash: PhantomData<D>,
-    pub generator: C,
-    pub io_pattern: DomainSeparator<D>,
-}
-
-impl<C: CurveGroup, D: DuplexSpongeInterface> Clone for CPParameters<C, D> {
-    fn clone(&self) -> Self {
-        Self {
-            _hash: PhantomData,
-            generator: self.generator,
-            io_pattern: self.io_pattern.clone(),
-        }
-    }
-}
-
 /// Tuple (g, g_hat, h, h_hat)
 ///
 /// subject to proving: DLOG_{g}(g_hat) == DLOG_{h}(h_hat)

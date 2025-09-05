@@ -18,7 +18,7 @@ use test_utils::ports::alloc_ports;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::SequencerConfig;
-use timeboost::types::{DecryptionKeyCell, KeyStore};
+use timeboost::types::{KeyStore, ThresholdKeyCell};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -131,7 +131,7 @@ where
             .map(|(i, sk)| (i as u8, sk.into())),
     );
 
-    let enc_key = DecryptionKeyCell::new();
+    let enc_key = ThresholdKeyCell::new();
 
     sign_keys
         .into_iter()

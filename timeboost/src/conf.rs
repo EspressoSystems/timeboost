@@ -5,7 +5,7 @@ use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
 use timeboost_config::ChainConfig;
 use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{DecryptionKeyCell, KeyStore};
+use timeboost_types::{KeyStore, ThresholdKeyCell};
 
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
@@ -51,7 +51,7 @@ pub struct TimeboostConfig {
     pub(crate) leash_len: usize,
 
     /// Pending threshold encryption key that will be updated after DKG/resharing.
-    pub(crate) threshold_dec_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: ThresholdKeyCell,
 
     /// Configuration of espresso network client.
     pub(crate) robusta: (robusta::Config, Vec<robusta::Config>),

@@ -6,8 +6,7 @@ use sailfish::rbc::RbcConfig;
 use sailfish::types::CommitteeVec;
 use timeboost_config::ChainConfig;
 use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_types::{Address, DecryptionKeyCell, DelayedInboxIndex, KeyStore};
-
+use timeboost_types::{Address, DelayedInboxIndex, KeyStore, ThresholdKeyCell};
 #[derive(Debug, Clone, Builder)]
 pub struct SequencerConfig {
     /// The keypair to sign messages.
@@ -53,7 +52,7 @@ pub struct SequencerConfig {
     pub(crate) leash_len: usize,
 
     /// Atomic cell holding the threshold encryption key post DKG.
-    pub(crate) threshold_dec_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: ThresholdKeyCell,
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
@@ -100,7 +99,7 @@ impl SequencerConfig {
         self.recover
     }
 
-    pub fn dec_key(&self) -> &DecryptionKeyCell {
+    pub fn dec_key(&self) -> &ThresholdKeyCell {
         &self.threshold_dec_key
     }
 
@@ -142,6 +141,6 @@ pub struct DecrypterConfig {
     pub(crate) dkg_key: DkgDecKey,
     pub(crate) committee: (AddressableCommittee, KeyStore),
     pub(crate) prev_committee: Option<(AddressableCommittee, KeyStore)>,
-    pub(crate) threshold_dec_key: DecryptionKeyCell,
+    pub(crate) threshold_dec_key: ThresholdKeyCell,
     pub(crate) retain: usize,
 }

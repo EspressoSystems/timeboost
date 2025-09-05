@@ -12,7 +12,8 @@ use multisig::{Committee, KeyId, Keypair};
 use sha2::{Digest, Sha256};
 use spongefish::{DigestBridge, DuplexSpongeInterface};
 use timeboost_crypto::{
-    Plaintext, sg_encryption::ShoupGennaro, traits::threshold_enc::ThresholdEncScheme,
+    ShoupGennaro,
+    prelude::{Plaintext, ThresholdEncScheme},
 };
 
 const KB: usize = 1 << 10;

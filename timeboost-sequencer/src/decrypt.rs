@@ -16,13 +16,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 use timeboost_config::DECRYPTER_PORT_OFFSET;
-use timeboost_crypto::prelude::{DkgDecKey, LabeledDkgDecKey, Vess, Vss};
-use timeboost_crypto::traits::dkg::VerifiableSecretSharing;
-use timeboost_crypto::traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme};
-use timeboost_crypto::{DecryptionScheme, Plaintext};
+use timeboost_crypto::prelude::{
+    DkgDecKey, LabeledDkgDecKey, Plaintext, ThresholdCiphertext, ThresholdDecShare,
+    ThresholdEncError, ThresholdEncScheme, ThresholdScheme, Vess, VssSecret,
+};
 use timeboost_types::{
-    AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgBundle, DkgSubset,
-    InclusionList, KeyStore, KeyStoreVec,
+    AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, InclusionList, KeyStore, KeyStoreVec,
+    ThresholdKey, ThresholdKeyCell,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -36,8 +36,6 @@ const DKG_AAD: &[u8] = b"dkg";
 const THRES_AAD: &[u8] = b"threshold";
 
 type Result<T> = StdResult<T, DecrypterError>;
-type DecShare = <DecryptionScheme as ThresholdEncScheme>::DecShare;
-type Ciphertext = <DecryptionScheme as ThresholdEncScheme>::Ciphertext;
 
 /// The message types exchanged during decryption phase.
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,11 +67,11 @@ enum Command {
 /// Holds key material for the next committee
 struct NextKey {
     dkg_key: LabeledDkgDecKey,
-    dec_key: DecryptionKey,
+    dec_key: ThresholdKey,
 }
 
 impl NextKey {
-    pub fn new(dkg_key: LabeledDkgDecKey, dec_key: DecryptionKey) -> Self {
+    pub fn new(dkg_key: LabeledDkgDecKey, dec_key: ThresholdKey) -> Self {
         Self { dkg_key, dec_key }
     }
 }
@@ -114,7 +112,7 @@ pub struct Decrypter {
     /// Worker task handle.
     worker: JoinHandle<EndOfPlay>,
     /// Pending threshold encryption key material
-    dec_key: DecryptionKeyCell,
+    dec_key: ThresholdKeyCell,
     /// Key stores (shared with Worker)
     key_stores: Arc<RwLock<KeyStoreVec<2>>>,
     /// Current committee.
@@ -254,7 +252,7 @@ impl Decrypter {
         let (ct, cm) = match spawn_blocking(move || {
             let vess = Vess::new_fast();
             let mut rng = thread_rng();
-            let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+            let secret = VssSecret::rand(&mut rng);
             vess.encrypt_shares(
                 current_store.committee(),
                 current_store.sorted_keys(),
@@ -470,7 +468,7 @@ struct Worker {
     rx: Receiver<Command>,
 
     /// Pending decryption key that will be updated after DKG/resharing is done.
-    dec_key: DecryptionKeyCell,
+    dec_key: ThresholdKeyCell,
 
     /// First round where an inclusion list was received (ignore shares for earlier rounds).
     first_requested_round: Option<RoundNumber>,
@@ -923,24 +921,17 @@ impl Worker {
     /// NOTE: when a ciphertext is malformed, we will skip decrypting it (treat as garbage) here.
     /// but will later be marked as decrypted during `hatch()`
     async fn decrypt(&mut self, incl: &InclusionList) -> Result<DecShareBatch> {
-        let dec_key: DecryptionKey = self.decryption_key()?;
+        let dec_key: ThresholdKey = self.decryption_key()?;
 
         let round = Round::new(incl.round(), self.current);
         let ciphertexts: Vec<_> = incl
             .filter_ciphertexts()
-            .filter_map(|bytes| deserialize::<_, Ciphertext>(&bytes).ok())
+            .filter_map(|bytes| deserialize::<_, ThresholdCiphertext>(&bytes).ok())
             .collect();
 
         let dec_shares = ciphertexts
             .par_iter()
-            .map(|ct| {
-                <DecryptionScheme as ThresholdEncScheme>::decrypt(
-                    dec_key.privkey(),
-                    ct,
-                    &THRES_AAD.to_vec(),
-                )
-                .ok()
-            })
+            .map(|ct| ThresholdScheme::decrypt(dec_key.privkey(), ct, &THRES_AAD.to_vec()).ok())
             .collect::<Vec<_>>();
 
         Ok(DecShareBatch {
@@ -1004,7 +995,7 @@ impl Worker {
     }
 
     /// Get the current decryption key.
-    fn decryption_key(&self) -> Result<DecryptionKey> {
+    fn decryption_key(&self) -> Result<ThresholdKey> {
         match &self.state {
             WorkerState::Running => self.dec_key.get().ok_or_else(|| {
                 DecrypterError::Internal("Worker running without dec key".to_string())
@@ -1073,7 +1064,7 @@ impl Worker {
         &mut self,
         round: RoundNumber,
         incl: &InclusionList,
-        dec_key: &DecryptionKey,
+        dec_key: &ThresholdKey,
     ) -> Result<Option<Vec<Option<Plaintext>>>> {
         let ciphertexts = incl.filter_ciphertexts().map(|b| deserialize(b).ok());
         let key_store = self.current_store()?;
@@ -1126,8 +1117,8 @@ impl Worker {
                             return CombineResult::InsufficientShares;
                         };
 
-                        // attempt to combine shares
-                        match DecryptionScheme::combine(
+                        match ThresholdScheme::combine(
+                            // attempt to combine shares
                             key_store.committee(),
                             dec_key.combkey(),
                             valid_shares.iter().collect(),
@@ -1353,12 +1344,12 @@ impl Worker {
 
 #[derive(Debug, Default)]
 struct ShareStore {
-    inner: BTreeMap<RoundNumber, Vec<Vec<Option<DecShare>>>>,
+    inner: BTreeMap<RoundNumber, Vec<Vec<Option<ThresholdDecShare>>>>,
 }
 
 impl ShareStore {
     /// Inserts decryption shares for a specific round
-    fn insert(&mut self, round: RoundNumber, shares: Vec<Option<DecShare>>) {
+    fn insert(&mut self, round: RoundNumber, shares: Vec<Option<ThresholdDecShare>>) {
         let entry = self
             .inner
             .entry(round)
@@ -1370,12 +1361,12 @@ impl ShareStore {
     }
 
     /// Gets a reference to the decryption shares for a specific round, if any
-    fn get(&self, round: &RoundNumber) -> Option<&Vec<Vec<Option<DecShare>>>> {
+    fn get(&self, round: &RoundNumber) -> Option<&Vec<Vec<Option<ThresholdDecShare>>>> {
         self.inner.get(round)
     }
 
     /// Gets a mutable reference to the decryption shares for a specific round, if any
-    fn get_mut(&mut self, round: &RoundNumber) -> Option<&mut Vec<Vec<Option<DecShare>>>> {
+    fn get_mut(&mut self, round: &RoundNumber) -> Option<&mut Vec<Vec<Option<ThresholdDecShare>>>> {
         self.inner.get_mut(round)
     }
     /// Returns true if the cache is empty.
@@ -1414,7 +1405,7 @@ struct DecShareBatch {
     // None entry indicates invalid/failed decryption, we placehold for those invalid ciphertext
     // for simpler hatch/re-assemble logic without tracking a separate indices of those invalid
     // ones
-    dec_shares: Vec<Option<DecShare>>,
+    dec_shares: Vec<Option<ThresholdDecShare>>,
     /// round evidence to justify `round`, avoiding unbounded worker buffer w/ future rounds data
     evidence: Evidence,
 }
@@ -1551,14 +1542,11 @@ mod tests {
     use cliquenet::AddressableCommittee;
     use multisig::{Committee, KeyId, Keypair, SecretKey, Signed, VoteAccumulator, x25519};
     use sailfish::types::{Evidence, Round, RoundNumber};
-    use timeboost_crypto::{
-        DecryptionScheme, Plaintext,
-        prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, Vess, Vss},
-        traits::{dkg::VerifiableSecretSharing, threshold_enc::ThresholdEncScheme},
-    };
+    use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey, ThresholdEncKey, Vess};
+    use timeboost_crypto::prelude::{Plaintext, ThresholdEncScheme, ThresholdScheme, VssSecret};
     use timeboost_types::{
-        Address, Bundle, ChainId, DecryptionKeyCell, Epoch, InclusionList, KeyStore,
-        PriorityBundle, SeqNo, Signer, Timestamp,
+        Address, Bundle, ChainId, Epoch, InclusionList, KeyStore, PriorityBundle, SeqNo, Signer,
+        ThresholdKeyCell, Timestamp,
     };
 
     use crate::{
@@ -1655,7 +1643,7 @@ mod tests {
         let start = Instant::now();
         let dealings: Vec<_> = (0..COMMITTEE_SIZE)
             .map(|_| {
-                let secret = <Vss as VerifiableSecretSharing>::Secret::rand(&mut rng);
+                let secret = VssSecret::rand(&mut rng);
                 vess.encrypt_shares(&committee, &dkg_public_keys, secret, &dkg_aad)
                     .unwrap()
             })
@@ -1713,7 +1701,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(node_idx, shares)| {
-                super::DecryptionKey::from_dkg(
+                super::ThresholdKey::from_dkg(
                     COMMITTEE_SIZE,
                     node_idx,
                     shares.iter().cloned().zip(commitments.iter().cloned()),
@@ -1749,21 +1737,21 @@ mod tests {
         let sample_plaintext = Plaintext::new(b"fox jumps over the lazy dog".to_vec());
         let threshold_aad = THRES_AAD.to_vec();
         let ciphertext =
-            DecryptionScheme::encrypt(&mut rng, expected_pubkey, &sample_plaintext, &threshold_aad)
+            ThresholdScheme::encrypt(&mut rng, expected_pubkey, &sample_plaintext, &threshold_aad)
                 .expect("encryption should succeed");
 
         // Generate decryption shares from all nodes
         let decryption_shares: Vec<_> = threshold_decryption_keys
             .iter()
             .map(|key| {
-                DecryptionScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                ThresholdScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
                     .expect("decryption share generation should succeed")
             })
             .collect();
 
         // Combine threshold number of shares to recover the original plaintext
         let selected_shares: Vec<_> = decryption_shares.iter().take(threshold).collect();
-        let recovered_plaintext = DecryptionScheme::combine(
+        let recovered_plaintext = ThresholdScheme::combine(
             &committee,
             expected_combkey,
             selected_shares,
@@ -1876,7 +1864,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(node_idx, shares)| {
-                super::DecryptionKey::from_resharing(
+                super::ThresholdKey::from_resharing(
                     &committee,
                     &second_committee,
                     node_idx,
@@ -1921,14 +1909,14 @@ mod tests {
 
         // Test threshold encryption/decryption process
         let ciphertext =
-            DecryptionScheme::encrypt(&mut rng, second_pubkey, &sample_plaintext, &threshold_aad)
+            ThresholdScheme::encrypt(&mut rng, second_pubkey, &sample_plaintext, &threshold_aad)
                 .expect("encryption should succeed");
 
         // Generate decryption shares from all nodes
         let mut decryption_shares: Vec<_> = second_decryption_keys
             .iter()
             .map(|key| {
-                DecryptionScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
+                ThresholdScheme::decrypt(key.privkey(), &ciphertext, &threshold_aad)
                     .expect("decryption share generation should succeed")
             })
             .collect();
@@ -1936,7 +1924,7 @@ mod tests {
         // Combine threshold number of shares to recover the original plaintext
         decryption_shares.shuffle(&mut rng);
         let selected_shares: Vec<_> = decryption_shares.iter().take(threshold).collect();
-        let recovered_plaintext = DecryptionScheme::combine(
+        let recovered_plaintext = ThresholdScheme::combine(
             &second_committee,
             second_combkey,
             selected_shares,
@@ -2325,7 +2313,7 @@ mod tests {
         let priority_plaintext = Plaintext::new(priority_message.to_vec());
         let regular_plaintext = Plaintext::new(regular_message.to_vec());
 
-        let priority_ciphertext = DecryptionScheme::encrypt(
+        let priority_ciphertext = ThresholdScheme::encrypt(
             &mut test_rng(),
             encryption_key,
             &priority_plaintext,
@@ -2333,7 +2321,7 @@ mod tests {
         )
         .expect("Priority transaction encryption should succeed");
 
-        let regular_ciphertext = DecryptionScheme::encrypt(
+        let regular_ciphertext = ThresholdScheme::encrypt(
             &mut test_rng(),
             encryption_key,
             &regular_plaintext,
@@ -2382,7 +2370,7 @@ mod tests {
 
     #[derive(Clone)]
     struct DecrypterSetup {
-        dec_keys: Vec<DecryptionKeyCell>,
+        dec_keys: Vec<ThresholdKeyCell>,
         addr_comm: AddressableCommittee,
         key_store: KeyStore,
         sig_keys: Vec<SecretKey>,
@@ -2390,7 +2378,7 @@ mod tests {
 
     impl DecrypterSetup {
         pub fn new(
-            dec_keys: Vec<DecryptionKeyCell>,
+            dec_keys: Vec<ThresholdKeyCell>,
             addr_comm: AddressableCommittee,
             key_store: KeyStore,
             sig_keys: Vec<SecretKey>,
@@ -2403,7 +2391,7 @@ mod tests {
             }
         }
 
-        pub fn dec_keys(&self) -> &Vec<DecryptionKeyCell> {
+        pub fn dec_keys(&self) -> &Vec<ThresholdKeyCell> {
             &self.dec_keys
         }
 
@@ -2488,7 +2476,7 @@ mod tests {
             let signature_key = signature_keys[peer_index].clone();
             let dh_key = dh_keys[peer_index].clone();
             let (_, _, network_address) = network_peers[peer_index];
-            let encryption_key_cell = DecryptionKeyCell::new();
+            let encryption_key_cell = ThresholdKeyCell::new();
             let decrypter_config = DecrypterConfig::builder()
                 .label(signature_key.public_key())
                 .address(network_address.into())

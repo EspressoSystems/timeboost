@@ -10,10 +10,7 @@ use ark_std::rand::{self, Rng};
 use bincode::error::EncodeError;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::Serialize;
-use timeboost_crypto::{
-    DecryptionScheme, Plaintext, prelude::ThresholdEncKey,
-    traits::threshold_enc::ThresholdEncScheme,
-};
+use timeboost_crypto::prelude::{Plaintext, ThresholdEncKey, ThresholdEncScheme, ThresholdScheme};
 use timeboost_types::{Address, Bundle, BundleVariant, Epoch, PriorityBundle, SeqNo, Signer};
 
 pub struct TxInfo {
@@ -39,7 +36,7 @@ pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
         let aad = b"threshold".to_vec();
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, key, &plaintext, &aad)?;
+        let ciphertext = ThresholdScheme::encrypt(&mut rng, key, &plaintext, &aad)?;
         let encoded = serialize(&ciphertext)?;
         bundle.set_encrypted_data(encoded.into());
     }
@@ -76,7 +73,7 @@ pub fn make_dev_acct_bundle(
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
         let aad = b"threshold".to_vec();
-        let ciphertext = DecryptionScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
+        let ciphertext = ThresholdScheme::encrypt(&mut rng, pubkey, &plaintext, &aad)?;
         let encoded = serialize(&ciphertext)?;
         bundle.set_encrypted_data(encoded.into());
     }
