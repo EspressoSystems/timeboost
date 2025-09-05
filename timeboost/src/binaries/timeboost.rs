@@ -13,7 +13,7 @@ use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use url::Url;
+use tracing::info;
 
 #[cfg(feature = "until")]
 use anyhow::ensure;
@@ -32,42 +32,19 @@ const LATE_START_DELAY_SECS: u64 = 15;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// CommitteeId for the committee in which this member belongs to
-    #[clap(long, short)]
-    committee_id: CommitteeId,
-
-    /// API service port.
-    #[clap(long)]
-    http_port: u16,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
     config: PathBuf,
 
-    /// Backwards compatibility. This allows for a single region to run (i.e. local)
-    #[clap(long, default_value_t = false)]
-    multi_region: bool,
-
-    /// Path to a file that this process creates or reads as execution proof.
-    #[clap(long)]
-    stamp: PathBuf,
+    /// CommitteeId for the committee in which this member belongs to
+    #[clap(long, short)]
+    committee_id: CommitteeId,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
-
-    /// Base URL of Espresso's REST API.
-    #[clap(
-        long,
-        default_value = "https://query.decaf.testnet.espresso.network/v1/"
-    )]
-    espresso_base_url: Url,
-
-    /// Base URL of Espresso's Websocket API.
-    #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
-    espresso_websocket_url: Url,
 
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
@@ -109,22 +86,22 @@ async fn main() -> Result<()> {
 
     // syncing with contract to get peers keys and network addresses
     let provider = ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
+    let chain_id = provider.get_chain_id().await?;
+
     assert_eq!(
-        provider.get_chain_id().await?,
-        node_config.chain.parent.id,
-        "Parent chain RPC has mismatched chain_id"
+        chain_id, node_config.chain.parent.id,
+        "parent chain rpc has mismatched chain_id"
     );
+
     let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
+
     let members: Vec<CommitteeMemberSol> = contract
         .getCommitteeById(cli.committee_id.into())
         .call()
         .await?
         .members;
-    tracing::info!(
-        label = %sign_keypair.public_key(),
-        committee_id = %cli.committee_id,
-        "committee info synced"
-    );
+
+    info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
 
     let peer_hosts_and_keys = members
         .iter()
@@ -148,9 +125,14 @@ async fn main() -> Result<()> {
         .expect("node's sigKey should be a member of Committee");
 
     #[cfg(feature = "until")]
-    let peer_urls: Vec<Url> = peer_hosts_and_keys
+    let peer_urls: Vec<url::Url> = peer_hosts_and_keys
         .iter()
-        .map(|peer| format!("http://{}", peer.3).parse().unwrap())
+        .map(|peer| {
+            // TODO: remove port magic
+            format!("http://{}", peer.3.clone().with_offset(4))
+                .parse()
+                .unwrap()
+        })
         .collect();
 
     let mut sailfish_peer_hosts_and_keys = Vec::new();
@@ -214,11 +196,11 @@ async fn main() -> Result<()> {
             .map(|(i, k)| (i as u8, k)),
     );
 
-    let is_recover = !cli.ignore_stamp && cli.stamp.is_file();
+    let is_recover = !cli.ignore_stamp && node_config.stamp.is_file();
 
-    tokio::fs::File::create(&cli.stamp)
+    tokio::fs::File::create(&node_config.stamp)
         .await
-        .with_context(|| format!("Failed to create stamp file: {:?}", cli.stamp))?
+        .with_context(|| format!("Failed to create stamp file: {:?}", node_config.stamp))?
         .sync_all()
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
@@ -255,8 +237,8 @@ async fn main() -> Result<()> {
         .threshold_dec_key(DecryptionKeyCell::new())
         .robusta((
             robusta::Config::builder()
-                .base_url(cli.espresso_base_url)
-                .wss_base_url(cli.espresso_websocket_url)
+                .base_url(node_config.espresso.base_url)
+                .wss_base_url(node_config.espresso.websockets_base_url)
                 .label(pubkey.to_string())
                 .https_only(cli.https_only)
                 .build(),
@@ -272,20 +254,20 @@ async fn main() -> Result<()> {
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 
-    let mut api = spawn(timeboost.api().serve(format!("0.0.0.0:{}", cli.http_port)));
+    let mut api = spawn(
+        timeboost
+            .api()
+            .serve(node_config.net.public.http_api.to_string()),
+    );
 
     for peer in sailfish_peer_hosts_and_keys {
-        let p = peer.2.port();
-        wait_for_live_peer(&peer.2.with_port(p + 800)).await? // TODO: remove port magic
+        wait_for_live_peer(&peer.2.clone().with_offset(4)).await? // TODO: remove port magic
     }
 
     #[cfg(feature = "until")]
     let handle = {
         ensure!(peer_urls.len() >= node_idx, "Not enough peers");
-        let mut host = peer_urls[node_idx].clone();
-
-        host.set_port(Some(host.port().unwrap() + 800)).unwrap(); // TODO: remove port magic
-
+        let host = peer_urls[node_idx].clone();
         let task_handle = spawn(run_until(cli.until, cli.watchdog_timeout, host));
         if cli.late_start && node_idx as u16 == cli.late_start_node_id {
             warn!("Adding delay before starting node: id: {}", node_idx);

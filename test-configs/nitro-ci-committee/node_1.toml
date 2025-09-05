@@ -1,9 +1,12 @@
+stamp = "/tmp/timeboost.1.stamp"
+
 [net.public]
 address = "127.0.0.1:8010"
+http_api = "127.0.0.1:8014"
 
 [net.internal]
 address = "127.0.0.1:8013"
-nitro = "localhost:55001"
+nitro = "localhost:55010"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
@@ -26,3 +29,7 @@ rpc_url = "http://127.0.0.1:8545/"
 ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block_tag = "finalized"
 key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
+[espresso]
+base_url = "https://query.decaf.testnet.espresso.network/v1/"
+websockets_base_url = "wss://query.decaf.testnet.espresso.network/v1/"
