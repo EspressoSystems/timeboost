@@ -7,7 +7,7 @@ use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_contract::{CommitteeMemberSol, KeyManager};
+use timeboost_contract::{CommitteeMemberSol, CommitteeManager};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
@@ -114,12 +114,14 @@ async fn main() -> Result<()> {
         node_config.chain.parent.id,
         "Parent chain RPC has mismatched chain_id"
     );
-    let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
-    let members: Vec<CommitteeMemberSol> = contract
-        .getCommitteeById(cli.committee_id.into())
-        .call()
-        .await?
-        .members;
+    
+    // Use CommitteeManager for initial committee read
+    let committee_manager = CommitteeManager::new(&provider, node_config.chain.parent.key_manager_contract);
+    let (current_committee, _previous_committee) = committee_manager
+        .get_committees_for_startup(cli.committee_id.into(), None)
+        .await?;
+    
+    let members: Vec<CommitteeMemberSol> = current_committee.members;
     tracing::info!(
         label = %sign_keypair.public_key(),
         committee_id = %cli.committee_id,
