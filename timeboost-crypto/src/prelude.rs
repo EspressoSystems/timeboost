@@ -6,7 +6,6 @@
 //! # Example
 //! ```
 //! use timeboost_crypto::prelude::*;
-//! use timeboost_crypto::mre::encrypt;
 //! use ark_std::rand;
 //!
 //! let rng = &mut rand::thread_rng();
@@ -39,6 +38,7 @@ use spongefish::DigestBridge;
 use crate::{feldman, mre, sg_encryption, vess};
 
 pub use crate::feldman::FeldmanVssPublicParam;
+pub use crate::mre::encrypt;
 pub use crate::sg_encryption::Plaintext;
 pub use crate::traits::dkg::{KeyResharing, VerifiableSecretSharing};
 pub use crate::traits::tpke::{ThresholdEncError, ThresholdEncScheme};
