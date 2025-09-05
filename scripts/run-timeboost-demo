@@ -21,9 +21,8 @@ rounds=300
 late_start=false
 config_dir=
 tps=1
-stamp=
 ignore_stamp=false
-nitro_enabled=false
+nitro_url=
 yapper=false
 
 while [[ $# -gt 0 ]]; do
@@ -44,12 +43,8 @@ while [[ $# -gt 0 ]]; do
             tps="$2"
             shift 2
             ;;
-        --nitro)
-            nitro_enabled=true
-            shift
-            ;;
-        -s|--stamp)
-            stamp="$2"
+        -n|--nitro)
+            nitro_url="$2"
             shift 2
             ;;
         --ignore-stamp)
@@ -78,11 +73,8 @@ Options:
     -t | --tps <number>
         number of transactions per second to generate.
 
-    -s | --stamp <PATH prefix>
-        Path prefix for the stamp files.
-
-    --nitro
-        Local Nitro node is running.
+    -n | --nitro <URL>
+        Address the local Nitro node is running.
 
     --yapper
         Run external transaction generator.
@@ -94,11 +86,6 @@ Options:
     esac
 done
 
-if [ ! $stamp ]; then
-    echo "Missing -s | --stamp <PATH prefix>"
-    exit 1
-fi
-
 if [ ! $config_dir ]; then
     echo "Missing -c | --config-dir <PATH>"
     exit 1
@@ -106,8 +93,8 @@ fi
 
 just build_release --features="until"
 
-if $nitro_enabled; then
-    timeout 90 bash -c 'until curl -sSf http://localhost:8547 -o /dev/null; do sleep 1; done' || exit 1
+if [ $nitro_url ]; then
+    timeout 90 bash -c "until curl -sSf $nitro_url -o /dev/null; do sleep 1; done" || exit 1
 fi
 
 
@@ -118,7 +105,7 @@ if [ -z "$RUST_LOG" ]; then
 fi
 
 cmd=("test-contract-deploy" "--keep-anvil")
-if $nitro_enabled; then
+if [ $nitro_url ]; then
     cmd+=("--nitro-enabled")
 fi
 just "${cmd[@]}"
@@ -130,9 +117,7 @@ for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
         --config "$f"
-        --http-port $((8800 + 10 * $i))
         --until $rounds
-        --stamp "${stamp}-$i.sf"
         --watchdog-timeout 120)
 
     if $ignore_stamp; then
@@ -154,8 +139,8 @@ if $yapper; then
     cmd=(target/release/yapper
         --tps $tps
         --keyset-file "$config_dir/committee.toml")
-    if $nitro_enabled; then
-        cmd+=(--nitro-integration)
+    if [ $nitro_url ]; then
+        cmd+=(--nitro-url "$nitro_url")
     fi
     "${cmd[@]}" &
 fi

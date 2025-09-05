@@ -80,7 +80,7 @@ cast send --value 1ether --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
 RUST_LOG=info cargo run --bin deploy -- -m "$MANAGER_MNEMONIC" -i "$MANAGER_ACCOUNT_INDEX" -u "$URL" -o "$DEPLOYMENT_FILE"
 
 # Extract the deployed KeyManager address
-km_addr=$(yq -r ".deployments.key_manager" "$DEPLOYMENT_FILE")
+km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$DEPLOYMENT_FILE")
 
 # Update the contract
 committee_config="test-configs/$COMMITTEE_PATH/committee.toml"

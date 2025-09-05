@@ -1,5 +1,6 @@
 use bon::Builder;
 use cliquenet::Address;
+use reqwest::Url;
 
 #[derive(Debug, Clone, Builder)]
 pub(crate) struct YapperConfig {
@@ -7,10 +8,8 @@ pub(crate) struct YapperConfig {
     pub(crate) addresses: Vec<Address>,
     /// Transactions per second to send
     pub(crate) tps: u32,
-    /// Are we setup with nitro?
-    pub(crate) nitro_integration: bool,
     /// URL of nitro chain that is configured
-    pub(crate) nitro_url: String,
+    pub(crate) nitro_url: Option<Url>,
     /// Chain id for l2 chain
     pub(crate) chain_id: u64,
 }
