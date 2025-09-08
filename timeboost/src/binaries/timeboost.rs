@@ -62,7 +62,7 @@ struct Cli {
 
     #[cfg(feature = "until")]
     #[clap(long)]
-    require_decrypt_rounds: Option<u64>,
+    required_decrypt_rounds: Option<u64>,
 }
 
 #[tokio::main]
@@ -269,7 +269,7 @@ async fn main() -> Result<()> {
             }
 
             let mut until = Until::new(cli.until, Duration::from_secs(cli.watchdog_timeout), host);
-            until.require_decrypted(cli.require_decrypt_rounds);
+            until.require_decrypted(cli.required_decrypt_rounds);
 
             spawn(until.run())
         };

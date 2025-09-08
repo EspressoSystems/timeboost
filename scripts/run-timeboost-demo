@@ -130,7 +130,7 @@ for f in "$config_dir"/node_*.toml; do
     fi
 
     if $yapper; then
-        cmd+=(--require-decrypt-rounds 3)
+        cmd+=(--required-decrypt-rounds 3)
     fi
 
     echo "${cmd[@]}"
