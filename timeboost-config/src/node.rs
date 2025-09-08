@@ -1,5 +1,8 @@
 use core::fmt;
-use std::{path::Path, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use crate::{ChainConfig, ConfigError};
 use anyhow::Result;
@@ -7,15 +10,18 @@ use cliquenet::Address;
 use multisig::x25519;
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
+use url::Url;
 
 pub const DECRYPTER_PORT_OFFSET: u16 = 100;
 pub const CERTIFIER_PORT_OFFSET: u16 = 200;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConfig {
+    pub stamp: PathBuf,
     pub net: NodeNet,
     pub keys: NodeKeys,
     pub chain: ChainConfig,
+    pub espresso: Espresso,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +33,7 @@ pub struct NodeNet {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicNet {
     pub address: Address,
+    pub http_api: Address,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +54,12 @@ pub struct NodeKeys {
 pub struct NodeKeypair<SK, PK> {
     pub secret: SK,
     pub public: PK,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Espresso {
+    pub base_url: Url,
+    pub websockets_base_url: Url,
 }
 
 impl NodeConfig {
@@ -76,8 +89,11 @@ impl fmt::Display for NodeConfig {
 #[cfg(test)]
 mod tests {
     const CONFIG: &str = r#"
+stamp = "/tmp/timeboost.0.stamp"
+
 [net.public]
 address = "127.0.0.1:8001"
+http_api = "127.0.0.1:8004"
 
 [net.internal]
 address = "127.0.0.1:11001"
@@ -103,6 +119,10 @@ rpc_url = "http://127.0.0.1:8545/"
 ibox_contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
 block_tag = "finalized"
 key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
+[espresso]
+base_url = "https://query.decaf.testnet.espresso.network/v1/"
+websockets_base_url = "wss://query.decaf.testnet.espresso.network/v1/"
 "#;
 
     use super::NodeConfig;
