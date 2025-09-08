@@ -33,7 +33,6 @@ alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", 
 alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
-anvil = "0.3.2"
 anyhow = "1.0.89"
 arbitrary = { version = "1", features = ["derive"] }
 arbtest = "0.3.2"

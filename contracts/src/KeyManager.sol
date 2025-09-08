@@ -113,8 +113,7 @@ contract KeyManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @notice This function is used to initialize the contract.
      * @dev Reverts if the manager is the zero address.
      * @dev Assumes that the manager is valid.
-     * @dev This must be called once when the contract is first deployed.
-     * @dev This function must be called when the contract is first deployed.
+     * @dev This must be called once when the contract is first deployed, in the same transaction as the proxy deployment.
      * @param initialManager The initial manager.
      */
     function initialize(address initialManager) external initializer {

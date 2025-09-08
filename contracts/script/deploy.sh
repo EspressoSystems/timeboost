@@ -29,16 +29,12 @@ fi
 # Use environment variables with defaults
 RPC_URL=${RPC_URL:-"http://localhost:8545"}
 ACCOUNT_INDEX=${ACCOUNT_INDEX:-0}
+MNEMONIC=${MNEMONIC:-"test test test test test test test test test test test junk"}
 
 echo "Deploying KeyManager contract..."
 echo "Manager address: $MANAGER_ADDRESS"
 echo "RPC URL: $RPC_URL"
 echo "Account index: $ACCOUNT_INDEX"
-
-# Show mnemonic info securely
-if [ -z "$MNEMONIC" ]; then
-    echo "No mnemonic provided"
-fi
 echo
 
 # Set environment variable for the script

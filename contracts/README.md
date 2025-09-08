@@ -108,14 +108,13 @@ You can deploy a local anvil network (as done in the test), a fork of a real net
 
 ### Quick Start (Local Testing)
 ```bash
-# 1. Start a local blockchain
+# 1. Start a local blockchain\
 anvil
 
 # 2. Deploy the contracts
-cd script
 cp env.example .env
 # Edit .env with your values
-./deploy.sh
+./script/deploy.sh
 ```
 
 **📋 For detailed deployment instructions, see the [deployment script README](script/README.md)**
