@@ -16,7 +16,7 @@ implementation.
 
 Timeboost needs a way to coordinate cryptographic keys and committee members across a decentralized network. These smart contracts provide:
 
-- **Key Management**: Store and manage encryption keys for the protocol
+- **Key Management**: Store and manage public keys for the protocol
 - **Committee Coordination**: Track which nodes are part of the consensus committee
 - **Access Control**: Ensure only authorized parties can update critical protocol parameters
 - **Transparency**: All changes are recorded on-chain for public verification
