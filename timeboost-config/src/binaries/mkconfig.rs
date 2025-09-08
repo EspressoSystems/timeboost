@@ -53,7 +53,7 @@ struct Args {
     #[clap(long, short)]
     stamp_dir: PathBuf,
 
-    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3000
+    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3
     #[clap(long)]
     internal_addr: Address,
 
