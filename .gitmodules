@@ -7,4 +7,3 @@
 [submodule "test-node"]
 	path = test-node
 	url = https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode
-	branch = li/espresso-submission
