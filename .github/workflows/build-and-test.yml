@@ -194,7 +194,9 @@ jobs:
       run: |
         RUST_LOG=info just verify_blocks
     - name: Docker Logs Sequencer 1
+      if: failure()
       run: docker logs test-node-sequencer-1
     - name: Docker Logs Sequencer 2
+      if: failure()
       run: docker logs test-node-sequencer_b-1
 
