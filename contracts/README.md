@@ -108,7 +108,7 @@ You can deploy a local anvil network (as done in the test), a fork of a real net
 
 ### Quick Start (Local Testing)
 ```bash
-# 1. Start a local blockchain\
+# 1. Start a local blockchain
 anvil
 
 # 2. Deploy the contracts
