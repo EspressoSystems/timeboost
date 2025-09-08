@@ -26,7 +26,7 @@ use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use decrypt::{Decrypter, DecrypterError};
 use include::Includer;
@@ -78,6 +78,7 @@ struct Task {
     commands: Receiver<Command>,
     output: Sender<Output>,
     mode: Mode,
+    round: Option<RoundNumber>,
 }
 
 enum Command {
@@ -181,6 +182,7 @@ impl Sequencer {
             output: tx,
             commands: cr,
             mode: Mode::Passive,
+            round: None,
         };
 
         Ok(Self {
@@ -367,9 +369,23 @@ impl Task {
                 if let Action::Deliver(payload) = action {
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
-                            round = payload.round().num();
-                            evidence = payload.into_evidence();
-                            lists.push(data)
+                            if self
+                                .round
+                                .map(|r| r < payload.round().num())
+                                .unwrap_or(true)
+                            {
+                                round = payload.round().num();
+                                evidence = payload.into_evidence();
+                                lists.push(data)
+                            } else {
+                                debug!(
+                                    node   = %self.label,
+                                    ours   = ?self.round.map(u64::from),
+                                    theirs = %payload.round().num(),
+                                    src    = %payload.source(),
+                                    "dropping delayed payload"
+                                );
+                            }
                         }
                         Err(err) => {
                             warn!(
@@ -386,6 +402,8 @@ impl Task {
                 }
             }
             if !lists.is_empty() {
+                debug_assert!(self.round < Some(round));
+                self.round = Some(round);
                 candidates.push((round, evidence, lists))
             }
             while let Some(action) = actions.pop_front() {
