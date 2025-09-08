@@ -94,7 +94,7 @@ forge build
 just test-contracts
 
 # Run with detailed output
-forge test --vvv
+forge test -vvv
 
 # Run specific test
 forge test --match-test test_setThresholdEncryptionKey
