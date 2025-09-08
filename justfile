@@ -170,8 +170,8 @@ test-individually: build-port-alloc
 test-contract-deploy *ARGS:
   ./scripts/test-contract-deploy {{ARGS}}
 
-test-all: build-test-utils
-    env RUST_LOG=timeboost=info,sailfish=info target/release/run \
+test-all: build_release build-test-utils
+    env RUST_LOG=timeboost=info,warn target/release/run \
         --exec "scripts/test-contract-deploy --keep-anvil" \
         --with "target/release/block-maker --port 55000 --connect 127.0.0.1:8003,127.0.0.1:8013,127.0.0.1:8023,127.0.0.1:8033,127.0.0.1:8043" \
         --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \

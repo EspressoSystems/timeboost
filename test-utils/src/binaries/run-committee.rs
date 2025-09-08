@@ -32,6 +32,10 @@ async fn main() -> Result<()> {
         bail!("{:?} is not a directory", args.tmp)
     }
 
+    if !args.timeboost.is_file() {
+        bail!("{:?} is not a file", args.timeboost)
+    }
+
     let mut commands = Vec::new();
     let mut entries = read_dir(&args.configs).await?;
 
@@ -46,6 +50,7 @@ async fn main() -> Result<()> {
             .arg("false")
             .arg("--config")
             .arg(entry.path())
+            .arg("--ignore-stamp")
             .kill_on_drop(true);
         commands.push(cmd);
     }
