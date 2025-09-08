@@ -63,7 +63,7 @@ impl NitroForwarder {
             consensus_timestamp: timestamp.into(),
             // we need to add 1 to the index
             // eg index 0 is really 1 delayed message read
-            delayed_messages_read: (index + DelayedInboxIndex::from(1)).into(),
+            delayed_messages_read: u64::from(index) + 1,
         };
         self.incls_tx
             .send(incl)
