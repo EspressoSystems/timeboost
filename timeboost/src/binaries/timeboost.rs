@@ -15,20 +15,11 @@ use tokio::signal;
 use tokio::task::spawn;
 use tracing::info;
 
-#[cfg(feature = "until")]
-use anyhow::ensure;
-#[cfg(feature = "until")]
-use timeboost_utils::until::run_until;
-
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging;
-use timeboost_utils::wait_for_live_peer;
 use tracing::warn;
-
-#[cfg(feature = "until")]
-const LATE_START_DELAY_SECS: u64 = 15;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -50,6 +41,11 @@ struct Cli {
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
 
+    /// Path to committee config toml.
+    #[cfg(feature = "until")]
+    #[clap(long)]
+    committee: PathBuf,
+
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
@@ -60,15 +56,13 @@ struct Cli {
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
 
-    /// The id of a node that will start late.
     #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 0)]
-    late_start_node_id: u16,
+    #[clap(long)]
+    start_delay: Option<u64>,
 
-    /// The flag if we want to late start a node
     #[cfg(feature = "until")]
-    #[clap(long, short, action = clap::ArgAction::SetTrue)]
-    late_start: bool,
+    #[clap(long)]
+    require_decrypt_rounds: Option<u64>,
 }
 
 #[tokio::main]
@@ -118,29 +112,12 @@ async fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    #[cfg(feature = "until")]
-    let node_idx = peer_hosts_and_keys
-        .iter()
-        .position(|p| p.0 == node_config.keys.signing.public)
-        .expect("node's sigKey should be a member of Committee");
-
-    #[cfg(feature = "until")]
-    let peer_urls: Vec<url::Url> = peer_hosts_and_keys
-        .iter()
-        .map(|peer| {
-            // TODO: remove port magic
-            format!("http://{}", peer.3.clone().with_offset(4))
-                .parse()
-                .unwrap()
-        })
-        .collect();
-
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut certifier_peer_hosts_and_keys = Vec::new();
     let mut dkg_enc_keys = Vec::new();
 
-    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys {
+    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys.iter().cloned() {
         sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr.clone()));
         decrypt_peer_hosts_and_keys.push((
             signing_key,
@@ -260,39 +237,60 @@ async fn main() -> Result<()> {
             .serve(node_config.net.public.http_api.to_string()),
     );
 
-    for peer in sailfish_peer_hosts_and_keys {
-        wait_for_live_peer(&peer.2.clone().with_offset(4)).await? // TODO: remove port magic
-    }
-
     #[cfg(feature = "until")]
-    let handle = {
-        ensure!(peer_urls.len() >= node_idx, "Not enough peers");
-        let host = peer_urls[node_idx].clone();
-        let task_handle = spawn(run_until(cli.until, cli.watchdog_timeout, host));
-        if cli.late_start && node_idx as u16 == cli.late_start_node_id {
-            warn!("Adding delay before starting node: id: {}", node_idx);
-            tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
-        }
-        task_handle
-    };
+    {
+        use anyhow::bail;
+        use std::time::Duration;
+        use timeboost_config::CommitteeConfig;
+        use timeboost_utils::until::Until;
+        use tokio::time::sleep;
+        use url::Url;
 
-    #[cfg(feature = "until")]
-    select! {
-        res = handle => {
-            tracing::info!("watchdog completed");
-            return match res {
-                Ok(Ok(_))  => Ok(()),
-                Ok(Err(e)) => Err(e),
-                Err(e)     => Err(e.into())
+        let committee = CommitteeConfig::read(&cli.committee)
+            .await
+            .with_context(|| format!("failed to read committee config {:?}", cli.committee))?;
+
+        let handle = {
+            let Some(member) = committee
+                .members
+                .iter()
+                .find(|m| m.signing_key == node_config.keys.signing.public)
+            else {
+                bail!("failed to find node in committee")
             };
-        },
-        _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-        _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-        _ = &mut api         => bail!("api service shutdown unexpectedly"),
-        _ = signal::ctrl_c() => {
-            warn!("received ctrl-c; shutting down");
-            api.abort();
-            grpc.abort();
+
+            let host: Url = format!("http://{}", member.http_api)
+                .parse()
+                .context("invalid http api address")?;
+
+            if let Some(s) = cli.start_delay {
+                warn!("delaying start by {s}s");
+                sleep(Duration::from_secs(s)).await;
+            }
+
+            let mut until = Until::new(cli.until, Duration::from_secs(cli.watchdog_timeout), host);
+            until.require_decrypted(cli.require_decrypt_rounds);
+
+            spawn(until.run())
+        };
+
+        select! {
+            res = handle => {
+                tracing::info!("watchdog completed");
+                return match res {
+                    Ok(Ok(_))  => Ok(()),
+                    Ok(Err(e)) => Err(e),
+                    Err(e)     => Err(e.into())
+                };
+            },
+            _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api         => bail!("api service shutdown unexpectedly"),
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+            }
         }
     }
 

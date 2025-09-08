@@ -116,6 +116,7 @@ i=0
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
+        --committee "$config_dir/committee.toml"
         --config "$f"
         --until $rounds
         --watchdog-timeout 120)
@@ -124,8 +125,12 @@ for f in "$config_dir"/node_*.toml; do
         cmd+=(--ignore-stamp)
     fi
 
-    if $late_start; then
-        cmd+=(--late-start --late-start-node-id 0)
+    if $late_start && (( $i == 0 )); then
+        cmd+=(--start-delay 5)
+    fi
+
+    if $yapper; then
+        cmd+=(--require-decrypt-rounds 3)
     fi
 
     echo "${cmd[@]}"
