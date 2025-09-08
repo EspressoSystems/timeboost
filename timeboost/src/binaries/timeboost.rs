@@ -7,12 +7,13 @@ use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_contract::{CommitteeMemberSol, CommitteeManager};
+use timeboost_contract::{CommitteeManager, CommitteeMemberSol};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{DecryptionKeyCell, KeyStore};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
+use tracing::{error, warn};
 use url::Url;
 
 #[cfg(feature = "until")]
@@ -25,7 +26,6 @@ use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging;
 use timeboost_utils::wait_for_live_peer;
-use tracing::warn;
 
 #[cfg(feature = "until")]
 const LATE_START_DELAY_SECS: u64 = 15;
@@ -114,13 +114,14 @@ async fn main() -> Result<()> {
         node_config.chain.parent.id,
         "Parent chain RPC has mismatched chain_id"
     );
-    
+
     // Use CommitteeManager for initial committee read
-    let committee_manager = CommitteeManager::new(&provider, node_config.chain.parent.key_manager_contract);
+    let committee_manager =
+        CommitteeManager::new(&provider, node_config.chain.parent.key_manager_contract);
     let (current_committee, _previous_committee) = committee_manager
         .get_committees_for_startup(cli.committee_id.into(), None)
         .await?;
-    
+
     let members: Vec<CommitteeMemberSol> = current_committee.members;
     tracing::info!(
         label = %sign_keypair.public_key(),
@@ -267,7 +268,23 @@ async fn main() -> Result<()> {
         .chain_config(node_config.chain.clone())
         .build();
 
-    let timeboost = Timeboost::new(config).await?;
+    let timeboost = Timeboost::new(config.clone()).await?;
+
+    let event_monitor_handle = config.event_monitoring().enabled().then(|| {
+        let provider =
+            ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
+        let event_monitor = timeboost::event_monitor::EventMonitor::new(
+            provider,
+            node_config.chain.parent.key_manager_contract,
+            config.event_monitoring().clone(),
+        );
+
+        spawn(async move {
+            if let Err(e) = event_monitor.start_monitoring().await {
+                error!("Event monitoring failed: {}", e);
+            }
+        })
+    });
 
     let mut grpc = {
         let addr = node_config.net.internal.address.to_string();
@@ -309,6 +326,9 @@ async fn main() -> Result<()> {
         _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
         _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
         _ = &mut api         => bail!("api service shutdown unexpectedly"),
+        _ = &mut event_monitor_handle.as_ref().unwrap(), if event_monitor_handle.is_some() => {
+            bail!("event monitor shutdown unexpectedly")
+        },
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             api.abort();
@@ -317,14 +337,31 @@ async fn main() -> Result<()> {
     }
 
     #[cfg(not(feature = "until"))]
-    select! {
-        _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-        _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-        _ = &mut api         => bail!("api service shutdown unexpectedly"),
-        _ = signal::ctrl_c() => {
-            warn!("received ctrl-c; shutting down");
-            api.abort();
-            grpc.abort();
+    if let Some(mut event_handle) = event_monitor_handle {
+        select! {
+            _ = timeboost.go() => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api => bail!("api service shutdown unexpectedly"),
+            _ = &mut event_handle => {
+                bail!("event monitor shutdown unexpectedly")
+            },
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+                event_handle.abort();
+            }
+        }
+    } else {
+        select! {
+            _ = timeboost.go() => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api => bail!("api service shutdown unexpectedly"),
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+            }
         }
     }
 

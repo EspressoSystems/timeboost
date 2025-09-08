@@ -27,6 +27,7 @@ use crate::api::internal::GrpcServer;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
+pub mod event_monitor;
 pub mod forwarder;
 pub mod metrics;
 
