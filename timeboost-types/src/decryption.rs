@@ -12,16 +12,14 @@ use std::{
     collections::{BTreeMap, btree_map},
     sync::Arc,
 };
-use timeboost_crypto::prelude::{LabeledDkgDecKey, ThresholdEncKey};
+use timeboost_crypto::prelude::{
+    LabeledDkgDecKey, ThresholdCombKey, ThresholdEncKey, ThresholdKeyShare, VssCommitment, VssShare,
+};
 use timeboost_crypto::{
-    DecryptionScheme,
-    feldman::FeldmanVssPublicParam,
+    prelude::FeldmanVssPublicParam,
+    prelude::VessError,
     prelude::{DkgEncKey, Vess, Vss},
-    traits::{
-        dkg::{KeyResharing, VerifiableSecretSharing},
-        threshold_enc::ThresholdEncScheme,
-    },
-    vess::VessError,
+    prelude::{KeyResharing, VerifiableSecretSharing},
 };
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
@@ -30,23 +28,23 @@ use crate::DkgBundle;
 
 const DKG_AAD: &[u8; 3] = b"dkg";
 
-type KeyShare = <DecryptionScheme as ThresholdEncScheme>::KeyShare;
-type PublicKey = <DecryptionScheme as ThresholdEncScheme>::PublicKey;
-type CombKey = <DecryptionScheme as ThresholdEncScheme>::CombKey;
-
 /// Key materials related to the decryption phase, including the public key for encryption,
 /// the per-node key share for decryption, and combiner key for hatching decryption shares into
 /// plaintext
 #[derive(Debug, Clone)]
-pub struct DecryptionKey {
-    pubkey: PublicKey,
-    combkey: CombKey,
-    privkey: KeyShare,
+pub struct ThresholdKey {
+    pubkey: ThresholdEncKey,
+    combkey: ThresholdCombKey,
+    privkey: ThresholdKeyShare,
 }
 
-impl DecryptionKey {
-    pub fn new(pubkey: PublicKey, combkey: CombKey, privkey: KeyShare) -> Self {
-        DecryptionKey {
+impl ThresholdKey {
+    pub fn new(
+        pubkey: ThresholdEncKey,
+        combkey: ThresholdCombKey,
+        privkey: ThresholdKeyShare,
+    ) -> Self {
+        ThresholdKey {
             pubkey,
             combkey,
             privkey,
@@ -66,12 +64,7 @@ impl DecryptionKey {
         mut dealings: I,
     ) -> anyhow::Result<Self>
     where
-        I: Iterator<
-            Item = (
-                <Vss as VerifiableSecretSharing>::SecretShare,
-                <Vss as VerifiableSecretSharing>::Commitment,
-            ),
-        >,
+        I: Iterator<Item = (VssShare, VssCommitment)>,
     {
         // aggregate selected dealings
         let (agg_key_share, agg_comm) = Vss::aggregate(&mut dealings)?;
@@ -88,13 +81,7 @@ impl DecryptionKey {
         dealings: I,
     ) -> anyhow::Result<Self>
     where
-        I: ExactSizeIterator<
-                Item = (
-                    usize,
-                    <Vss as VerifiableSecretSharing>::SecretShare,
-                    <Vss as VerifiableSecretSharing>::Commitment,
-                ),
-            > + Clone,
+        I: ExactSizeIterator<Item = (usize, VssShare, VssCommitment)> + Clone,
     {
         let old_pp = FeldmanVssPublicParam::from(old_committee);
         let new_pp = FeldmanVssPublicParam::from(new_committee);
@@ -108,36 +95,36 @@ impl DecryptionKey {
     fn from_single_dkg(
         committee_size: usize,
         node_idx: usize,
-        key_share: <Vss as VerifiableSecretSharing>::SecretShare,
-        commitment: &<Vss as VerifiableSecretSharing>::Commitment,
+        key_share: VssShare,
+        commitment: &VssCommitment,
     ) -> anyhow::Result<Self> {
         // note: all .into() are made available via derive_more::From on those structs
-        let pk: PublicKey = commitment
+        let pk: ThresholdEncKey = commitment
             .first()
             .ok_or_else(|| anyhow!("feldman commitment can't be empty"))?
             .into_group()
             .into();
 
-        let combkey: CombKey = (0..committee_size)
+        let combkey: ThresholdCombKey = (0..committee_size)
             .into_par_iter()
             .map(|idx| Vss::derive_public_share_unchecked(idx, commitment))
             .collect::<Vec<_>>()
             .into();
 
-        let prikey: KeyShare = (key_share, node_idx as u32).into();
+        let privkey: ThresholdKeyShare = (key_share, node_idx as u32).into();
 
-        Ok(Self::new(pk, combkey, prikey))
+        Ok(Self::new(pk, combkey, privkey))
     }
 
-    pub fn pubkey(&self) -> &PublicKey {
+    pub fn pubkey(&self) -> &ThresholdEncKey {
         &self.pubkey
     }
 
-    pub fn combkey(&self) -> &CombKey {
+    pub fn combkey(&self) -> &ThresholdCombKey {
         &self.combkey
     }
 
-    pub fn privkey(&self) -> &KeyShare {
+    pub fn privkey(&self) -> &ThresholdKeyShare {
         &self.privkey
     }
 }
@@ -145,22 +132,22 @@ impl DecryptionKey {
 /// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
 /// that allows asynchronous notification when the key is set.
 #[derive(Debug, Clone, Default)]
-pub struct DecryptionKeyCell {
-    key: Arc<RwLock<Option<DecryptionKey>>>,
+pub struct ThresholdKeyCell {
+    key: Arc<RwLock<Option<ThresholdKey>>>,
     notify: Arc<Notify>,
 }
 
-impl DecryptionKeyCell {
+impl ThresholdKeyCell {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn set(&self, key: DecryptionKey) {
+    pub fn set(&self, key: ThresholdKey) {
         *self.key.write() = Some(key);
         self.notify.notify_waiters();
     }
 
-    pub fn get(&self) -> Option<DecryptionKey> {
+    pub fn get(&self) -> Option<ThresholdKey> {
         (*self.key.read()).clone()
     }
 
@@ -168,11 +155,11 @@ impl DecryptionKeyCell {
         self.get().map(|sk| sk.pubkey)
     }
 
-    pub fn get_ref(&self) -> impl Deref<Target = Option<DecryptionKey>> {
+    pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdKey>> {
         self.key.read()
     }
 
-    pub async fn read(&self) -> DecryptionKey {
+    pub async fn read(&self) -> ThresholdKey {
         loop {
             let fut = self.notify.notified();
             if let Some(k) = self.get() {
@@ -348,7 +335,7 @@ pub enum AccumulatorMode {
     /// Standard DKG mode
     Dkg,
     /// Resharing mode with the previous committee's combined key
-    Resharing(CombKey),
+    Resharing(ThresholdCombKey),
 }
 
 impl fmt::Display for AccumulatorMode {
@@ -499,7 +486,7 @@ impl DkgAccumulator {
 pub struct DkgSubset {
     committee_id: CommitteeId,
     bundles: Vec<DkgBundle>,
-    combkey: Option<CombKey>,
+    combkey: Option<ThresholdCombKey>,
 }
 
 impl DkgSubset {
@@ -516,7 +503,7 @@ impl DkgSubset {
     pub fn new_resharing(
         committee_id: CommitteeId,
         bundles: Vec<DkgBundle>,
-        combkey: CombKey,
+        combkey: ThresholdCombKey,
     ) -> Self {
         Self {
             committee_id,
@@ -536,7 +523,7 @@ impl DkgSubset {
     }
 
     /// Get the combiner key if this is a resharing subset.
-    pub fn combkey(&self) -> Option<&CombKey> {
+    pub fn combkey(&self) -> Option<&ThresholdCombKey> {
         self.combkey.as_ref()
     }
 
@@ -556,7 +543,7 @@ impl DkgSubset {
         curr: &KeyStore,
         dkg_sk: &LabeledDkgDecKey,
         prev: Option<&KeyStore>,
-    ) -> anyhow::Result<DecryptionKey> {
+    ) -> anyhow::Result<ThresholdKey> {
         let vess = Vess::new_fast();
 
         match &self.combkey {
@@ -566,7 +553,7 @@ impl DkgSubset {
                         .map(|s| (s, b.comm().clone()))
                 }));
 
-                let dec_key = DecryptionKey::from_dkg(
+                let dec_key = ThresholdKey::from_dkg(
                     curr.committee().size().into(),
                     dkg_sk.node_idx(),
                     &mut dealings_iter,
@@ -599,7 +586,7 @@ impl DkgSubset {
                         Ok((node_idx, s, b.comm().clone()))
                     })
                     .collect::<Result<Vec<_>, VessError>>()?;
-                DecryptionKey::from_resharing(
+                ThresholdKey::from_resharing(
                     prev.committee(),
                     curr.committee(),
                     dkg_sk.node_idx(),

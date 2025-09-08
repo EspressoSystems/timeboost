@@ -10,10 +10,10 @@ use cliquenet::{Address, AddressableCommittee};
 use multisig::{Certificate, Committee, CommitteeId, Keypair, x25519};
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use timeboost::builder::Certifier;
-use timeboost::config::{CERTIFIER_PORT_OFFSET, ChainConfig, DECRYPTER_PORT_OFFSET, ParentChain};
+use timeboost::config::{CERTIFIER_PORT_OFFSET, ChainConfig, DECRYPTER_PORT_OFFSET};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Output, SequencerConfig};
-use timeboost::types::{Block, BlockInfo, BundleVariant, DecryptionKeyCell, KeyStore};
+use timeboost::types::{Block, BlockInfo, BundleVariant, KeyStore, ThresholdKeyCell};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -35,8 +35,8 @@ enum Cmd {
 
 /// Run a handover test between the current and the next set of nodes.
 async fn run_handover(
-    curr: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
-    next: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    curr: Vec<(ThresholdKeyCell, SequencerConfig, CertifierConfig)>,
+    next: Vec<(ThresholdKeyCell, SequencerConfig, CertifierConfig)>,
 ) {
     const NEXT_COMMITTEE_DELAY: u64 = 15;
     const NUM_OF_BLOCKS_PER_EPOCH: usize = 50;
@@ -288,11 +288,11 @@ async fn run_handover(
 /// Create sequencer configs.
 async fn mk_configs(
     id: CommitteeId,
-    prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
+    prev: &[(ThresholdKeyCell, SequencerConfig, CertifierConfig)],
     keep: usize,
     add: NonZeroUsize,
     set_prev: bool,
-) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+) -> Vec<(ThresholdKeyCell, SequencerConfig, CertifierConfig)> {
     let sign_keys = prev
         .iter()
         .take(keep)
@@ -391,7 +391,7 @@ async fn mk_configs(
         let sa = &sf_addrs[i];
         let da = &de_addrs[i];
         let pa = &cert_addrs[i];
-        let enc_key = DecryptionKeyCell::new();
+        let enc_key = ThresholdKeyCell::new();
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
@@ -443,7 +443,7 @@ async fn mk_configs(
 
 struct TestConfig {
     committee_id: CommitteeId,
-    prev_configs: Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)>,
+    prev_configs: Vec<(ThresholdKeyCell, SequencerConfig, CertifierConfig)>,
     keep: usize,
     add: NonZeroUsize,
     set_prev: bool,
@@ -462,7 +462,7 @@ impl TestConfig {
 
     fn with_prev_configs(
         mut self,
-        prev: &[(DecryptionKeyCell, SequencerConfig, CertifierConfig)],
+        prev: &[(ThresholdKeyCell, SequencerConfig, CertifierConfig)],
     ) -> Self {
         self.prev_configs = prev.to_vec();
         self
@@ -483,7 +483,7 @@ impl TestConfig {
         self
     }
 
-    async fn build(self) -> Vec<(DecryptionKeyCell, SequencerConfig, CertifierConfig)> {
+    async fn build(self) -> Vec<(ThresholdKeyCell, SequencerConfig, CertifierConfig)> {
         mk_configs(
             self.committee_id,
             &self.prev_configs,
