@@ -63,9 +63,7 @@ impl Includer {
             self.clear_cache()
         }
 
-        debug_assert!(lists.len() >= self.committee.quorum_size().get());
-
-        self.round = round;
+        self.round = max(self.round, round);
 
         while self.cache.len() > CACHE_SIZE {
             self.cache.pop_first();
