@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::traits::dleq_proof::DleqProofError;
 
-/// A Threshold Encryption Scheme.
+/// A Threshold Public Key Encryption (TPKE) Scheme.
 pub trait ThresholdEncScheme {
     type Committee;
     type PublicKey;
