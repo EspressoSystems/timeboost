@@ -5,8 +5,8 @@ address = "127.0.0.1:8010"
 http_api = "127.0.0.1:8014"
 
 [net.internal]
-address = "127.0.0.1:8013"
-nitro = "localhost:55001"
+address = "0.0.0.0:8013"
+nitro = "localhost:55010"
 
 [keys.signing]
 secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"

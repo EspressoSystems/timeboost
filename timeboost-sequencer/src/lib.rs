@@ -111,11 +111,7 @@ impl Sequencer {
 
         let public_key = cfg.sign_keypair.public_key();
 
-        let queue = BundleQueue::new(
-            cfg.priority_addr,
-            cfg.delayed_inbox_index,
-            seq_metrics.clone(),
-        );
+        let queue = BundleQueue::new(cfg.priority_addr, seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
@@ -180,10 +176,7 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(
-                cfg.sailfish_committee.committee().clone(),
-                cfg.delayed_inbox_index,
-            ),
+            includer: Includer::new(cfg.sailfish_committee.committee().clone()),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,

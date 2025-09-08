@@ -101,7 +101,7 @@ fi
 RUST_LOG=${RUST_LOG:-}
 
 if [ -z "$RUST_LOG" ]; then
-    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info"
+    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info,robusta=debug"
 fi
 
 cmd=("test-contract-deploy" "--keep-anvil")
