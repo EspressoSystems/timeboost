@@ -18,7 +18,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::vess::VessError;
+use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
     BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
 };
