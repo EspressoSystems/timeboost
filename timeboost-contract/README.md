@@ -22,8 +22,8 @@ cargo test -p timeboost-contract test_key_manager_deployment
 
 ## Related Documentation
 
-- **[Contracts README](../contracts/README.md)** - Smart contract details and deployment scripts
-- **[Timeboost README](../timeboost/README.md)** - Main system documentation
+- **[Contracts README](https://github.com/EspressoSystems/timeboost-contracts/blob/main/README.md)** - Smart contract details and deployment scripts
+- **[Timeboost README](../README.md)** - Main system documentation
 
 ## License
 
