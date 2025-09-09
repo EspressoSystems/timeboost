@@ -173,6 +173,6 @@ test-contract-deploy *ARGS:
 test-all: build_release build-test-utils
     env RUST_LOG=timeboost=info,warn target/release/run \
         --exec "scripts/test-contract-deploy --keep-anvil" \
-        --with "target/release/block-maker --port 55000 --connect 127.0.0.1:8003,127.0.0.1:8013,127.0.0.1:8023,127.0.0.1:8033,127.0.0.1:8043" \
+        --with "target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
         --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \
         target/release/run-committee -- --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost

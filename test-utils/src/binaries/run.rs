@@ -3,14 +3,22 @@ use std::{ffi::OsStr, process::ExitStatus};
 use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use tokio::select;
-use tokio::{process::{Child, Command}, task::JoinSet};
+use tokio::{
+    process::{Child, Command},
+    task::JoinSet,
+};
 
 #[derive(Parser, Debug)]
 struct Args {
+    /// Commands to run to completion first.
     #[clap(long, short)]
     exec: Vec<String>,
+
+    /// Commands to run concurrently.
     #[clap(long, short)]
     with: Vec<String>,
+
+    /// Main command to execute.
     main: Vec<String>,
 }
 

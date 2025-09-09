@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
@@ -7,6 +8,7 @@ use bytes::Bytes;
 use clap::Parser;
 use parking_lot::Mutex;
 use prost::Message;
+use timeboost_config::CommitteeConfig;
 use timeboost_proto::block::Block;
 use timeboost_proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
 use timeboost_proto::inclusion::InclusionList;
@@ -24,8 +26,8 @@ struct Args {
     #[clap(long, short)]
     port: u16,
 
-    #[clap(long, short, use_value_delimiter = true, value_delimiter = ',')]
-    connect: Vec<Uri>,
+    #[clap(long, short)]
+    committee: PathBuf,
 
     #[clap(long, default_value_t = 16_000)]
     capacity: usize,
@@ -109,8 +111,10 @@ async fn deliver(to: Uri, mut rx: broadcast::Receiver<Block>) {
 async fn main() -> Result<()> {
     init_logging();
     let args = Args::parse();
+    let committee = CommitteeConfig::read(&args.committee).await?;
     let (tx, _) = broadcast::channel(args.capacity);
-    for uri in args.connect {
+    for member in committee.members {
+        let uri: Uri = format!("http://{}", member.internal_api).parse()?;
         spawn(deliver(uri, tx.subscribe()));
     }
     Service::new(tx).serve(args.port).await

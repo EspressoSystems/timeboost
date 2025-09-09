@@ -5,10 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-maker = ["dep:bytes", "dep:prost", "dep:timeboost-proto", "dep:timeboost-utils", "dep:tonic"]
 ports = ["dep:bincode", "dep:tokio-util"]
 run-committee = ["dep:tokio-util"]
 verifier = ["dep:alloy", "dep:timeboost-utils"]
+maker = [
+    "dep:bytes",
+    "dep:prost",
+    "dep:timeboost-config",
+    "dep:timeboost-proto",
+    "dep:timeboost-utils",
+    "dep:tonic"
+]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -24,6 +31,7 @@ bytes = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
+timeboost-config = { path = "../timeboost-config", optional = true }
 timeboost-proto = { path = "../timeboost-proto", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
 
