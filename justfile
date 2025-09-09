@@ -171,7 +171,7 @@ test-contract-deploy *ARGS:
   ./scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-    env RUST_LOG=timeboost=info,warn target/release/run \
+    env RUST_LOG=timeboost_builder::submit=info,warn target/release/run \
         --exec "scripts/test-contract-deploy --keep-anvil" \
         --with "target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
         --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \
