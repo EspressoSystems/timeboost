@@ -1,5 +1,4 @@
-//! Helper logic for contract deployment
-
+//! Contract deployment helpers for testing
 use alloy::{contract::RawCallBuilder, primitives::Address, providers::Provider};
 
 use crate::{ERC1967Proxy, KeyManager};
@@ -27,28 +26,31 @@ pub(crate) async fn deploy<P: Provider>(
 }
 
 /// Given a chain provider/connector, deploy a new KeyManager contract
-pub async fn deploy_key_manager_contract(
-    provider: impl Provider,
+pub async fn deploy_key_manager_contract<P>(
+    provider: &P,
     manager: Address,
-) -> ContractResult<Address> {
+) -> ContractResult<Address>
+where
+    P: Provider,
+{
     // first deploy the implementation contract
     let tx = KeyManager::deploy_builder(&provider);
     let impl_addr = deploy("KeyManager", tx).await?;
-    let km = KeyManager::new(impl_addr, &provider);
+    let km = KeyManager::new(impl_addr, provider);
 
     // then deploy the proxy, point to the implementation contract and initialize it
     let init_data = km.initialize(manager).calldata().to_owned();
     let tx = ERC1967Proxy::deploy_builder(&provider, impl_addr, init_data);
     let proxy_addr = deploy("KeyManagerProxy", tx).await?;
+    tracing::info!("deployed KeyManagerProxy at {proxy_addr:#x}");
     Ok(proxy_addr)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager};
     use alloy::{providers::WalletProvider, sol_types::SolValue};
     use rand::prelude::*;
-
-    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager};
 
     #[tokio::test]
     async fn test_key_manager_deployment() {
