@@ -30,6 +30,3 @@ url = { workspace = true }
 [build-dependencies]
 alloy = { workspace = true }
 
-[dev-dependencies]
-anvil = { workspace = true }
-
