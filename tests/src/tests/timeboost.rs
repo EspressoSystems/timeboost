@@ -22,7 +22,7 @@ use timeboost::builder::CertifierConfig;
 use timeboost::config::{ChainConfig, ParentChain};
 use timeboost::crypto::prelude::DkgDecKey;
 use timeboost::sequencer::{Sequencer, SequencerConfig};
-use timeboost::types::{BlockNumber, BundleVariant, DecryptionKeyCell, KeyStore, Transaction};
+use timeboost::types::{BlockNumber, BundleVariant, KeyStore, ThresholdKeyCell, Transaction};
 use timeboost_utils::load_generation::make_bundle;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
@@ -33,7 +33,7 @@ async fn make_configs<R>(
     size: NonZeroUsize,
     recover_index: R,
 ) -> (
-    Vec<DecryptionKeyCell>,
+    Vec<ThresholdKeyCell>,
     Vec<(SequencerConfig, CertifierConfig)>,
 )
 where
@@ -97,7 +97,7 @@ where
     let recover_index = recover_index.into();
 
     for (i, (kpair, xpair, dkg_sk, sa, da, pa)) in parts.into_iter().enumerate() {
-        let enc_key = DecryptionKeyCell::new();
+        let enc_key = ThresholdKeyCell::new();
         let conf = SequencerConfig::builder()
             .sign_keypair(kpair.clone())
             .dh_keypair(xpair.clone())
@@ -143,7 +143,7 @@ where
 }
 
 /// Generate random bundles at a fixed frequency.
-async fn gen_bundles(enc_key: DecryptionKeyCell, tx: broadcast::Sender<BundleVariant>) {
+async fn gen_bundles(enc_key: ThresholdKeyCell, tx: broadcast::Sender<BundleVariant>) {
     loop {
         let Ok(b) = make_bundle(enc_key.read().await.pubkey()) else {
             warn!("Failed to generate bundle");

@@ -1,12 +1,17 @@
-use aes_gcm::{AeadCore, Aes256Gcm, aead};
+use crate::serde_bridge::SerdeAs;
+use aes_gcm::aead::{Aead, Payload};
+use aes_gcm::{AeadCore, Aes256Gcm, KeyInit, Nonce};
 use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup, hashing::HashToCurve};
 use ark_ff::{PrimeField, UniformRand};
 use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
+use derive_more::From;
 use digest::{Digest, generic_array::GenericArray};
 use multisig::Committee;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use spongefish::DuplexSpongeInterface;
 use std::marker::PhantomData;
 use std::{
@@ -14,15 +19,15 @@ use std::{
     collections::BTreeSet,
     io::{BufWriter, Write},
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::cp_proof::Proof;
 use crate::interpolation::interpolate_in_exponent;
 use crate::{
-    Ciphertext, CombKey, DecShare, KeyShare, Keyset, Nonce, Plaintext, PublicKey,
     cp_proof::{ChaumPedersen, DleqTuple},
     traits::{
         dleq_proof::DleqProofScheme,
-        threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+        tpke::{ThresholdEncError, ThresholdEncScheme},
     },
 };
 
@@ -53,7 +58,7 @@ where
     C::ScalarField: PrimeField,
     H2C: HashToCurve<C>,
 {
-    type Committee = Keyset;
+    type Committee = Committee;
     type PublicKey = PublicKey<C>;
     type CombKey = CombKey<C>;
     type KeyShare = KeyShare<C>;
@@ -117,13 +122,13 @@ where
         let k = GenericArray::from_slice(&key);
 
         // AES encrypt using `k`, `nonce` and `message`
-        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
-        let nonce = Nonce::from(Aes256Gcm::generate_nonce(OsRng));
-        let payload = aead::Payload {
+        let cipher = <Aes256Gcm as KeyInit>::new(k);
+        let nonce = Aes256Gcm::generate_nonce(OsRng);
+        let payload = Payload {
             msg: &message.0,
             aad,
         };
-        let e = aes_gcm::aead::Aead::encrypt(&cipher, &nonce.into(), payload).map_err(|e| {
+        let e = Aead::encrypt(&cipher, &nonce, payload).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Unable to encrypt plaintext: {:?}", e))
         })?;
         let u_hat = hash_to_curve::<C, H2C>(v, e.clone())?;
@@ -189,11 +194,6 @@ where
             return Err(ThresholdEncError::NotEnoughShares);
         }
 
-        let (v, nonce, data) = (
-            ciphertext.v,
-            &ciphertext.nonce.into() as &GenericArray<u8, <Aes256Gcm as AeadCore>::NonceSize>,
-            ciphertext.e.clone(),
-        );
         let pk_comb = comb_key.key.clone();
 
         // Verify DLEQ proofs to ensure correctness of the decryption share w_i
@@ -206,7 +206,7 @@ where
                 ThresholdEncError::Argument(format!("CombKey missing idx: {}", share.index))
             })?;
 
-            let tuple = DleqTuple::new(generator, *u, v, w);
+            let tuple = DleqTuple::new(generator, *u, ciphertext.v, w);
             if ChaumPedersen::<C, D>::verify(tuple, phi).is_ok() {
                 valid_shares.push(share);
             } else {
@@ -235,13 +235,16 @@ where
         })?;
 
         // Hash to symmetric key `k`
-        let key = hash_to_key::<C, H>(v, w)
+        let key = hash_to_key::<C, H>(ciphertext.v, w)
             .map_err(|e| ThresholdEncError::Internal(anyhow!("Hash to key failed: {:?}", e)))?;
         let k = GenericArray::from_slice(&key);
-        let cipher = <Aes256Gcm as aes_gcm::KeyInit>::new(k);
+        let cipher = <Aes256Gcm as KeyInit>::new(k);
 
-        let payload = aead::Payload { msg: &data, aad };
-        let plaintext = aes_gcm::aead::Aead::decrypt(&cipher, nonce, payload).map_err(|e| {
+        let payload = Payload {
+            msg: &ciphertext.e.clone(),
+            aad,
+        };
+        let plaintext = Aead::decrypt(&cipher, &ciphertext.nonce, payload).map_err(|e| {
             ThresholdEncError::Internal(anyhow!("Symmetric decrypt failed: {:?}", e))
         })?;
         Ok(Plaintext(plaintext))
@@ -325,6 +328,82 @@ fn hash_to_key<C: CurveGroup, H: Digest>(v: C, w: C) -> Result<Vec<u8>, Threshol
     Ok(key.to_vec())
 }
 
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
+pub struct CombKey<C: CurveGroup> {
+    #[serde_as(as = "Vec<SerdeAs>")]
+    pub key: Vec<C>,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, From, Hash)]
+pub struct PublicKey<C: CurveGroup> {
+    #[serde_as(as = "SerdeAs")]
+    key: C,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop, From)]
+pub struct KeyShare<C: CurveGroup> {
+    #[serde_as(as = "SerdeAs")]
+    share: C::ScalarField,
+    index: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Plaintext(Vec<u8>);
+
+#[serde_as]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Ciphertext<C: CurveGroup> {
+    #[serde_as(as = "SerdeAs")]
+    v: C,
+    #[serde_as(as = "SerdeAs")]
+    w_hat: C,
+    e: Vec<u8>,
+    nonce: Nonce<<Aes256Gcm as AeadCore>::NonceSize>,
+    pi: Proof,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct DecShare<C: CurveGroup> {
+    #[serde_as(as = "SerdeAs")]
+    w: C,
+    index: u32,
+    phi: Proof,
+}
+
+impl<C: CurveGroup> CombKey<C> {
+    pub fn get_pub_share(&self, idx: usize) -> Option<&C> {
+        self.key.get(idx)
+    }
+}
+
+impl<C: CurveGroup> KeyShare<C> {
+    pub fn share(&self) -> &C::ScalarField {
+        &self.share
+    }
+}
+
+impl Plaintext {
+    pub fn new(data: Vec<u8>) -> Self {
+        Plaintext(data)
+    }
+}
+
+impl From<Plaintext> for Vec<u8> {
+    fn from(plaintext: Plaintext) -> Self {
+        plaintext.0
+    }
+}
+
+impl<C: CurveGroup> DecShare<C> {
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::BTreeSet;
@@ -332,7 +411,7 @@ mod test {
     use crate::{
         cp_proof::Proof,
         sg_encryption::{DecShare, Plaintext, ShoupGennaro},
-        traits::threshold_enc::{ThresholdEncError, ThresholdEncScheme},
+        traits::tpke::{ThresholdEncError, ThresholdEncScheme},
     };
 
     use ark_bls12_381::{G1Projective, g1::Config};

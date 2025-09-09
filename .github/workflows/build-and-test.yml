@@ -134,9 +134,9 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Run tests
-      run: just run_demo -s /tmp/stamp --ignore-stamp --yapper -c test-configs/c0
+      run: just run_demo --ignore-stamp --yapper -c test-configs/c0
     - name: Run tests with late-start node
-      run: just run_demo -l -s /tmp/stamp --ignore-stamp --yapper -c test-configs/c0
+      run: just run_demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
       run: just run_sailfish_demo
 
@@ -180,23 +180,23 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Clone Espresso Testnode Repository
-      run: |
-        git clone --recursive https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode.git
     - name: Run Test Node with Timeboost
       run: |
-        cd decentralized-timeboost-nitro-testnode
-        chmod +x test-node.bash
-        ./test-node.bash \
+        ./test-node/test-node.bash \
           --build-dev-nitro \
           --batchposters 0 \
           --redundantsequencers 1 \
           --decentralized-timeboost \
           --init &
-        cd ..
     - name: Run test timeboost with nitro sequencer
-      run: just run_demo -s /tmp/stamp --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro
+      run: just run_demo --ignore-stamp -c test-configs/nitro-ci-committee --rounds 10000 --yapper --nitro http://localhost:8547
     - name: Verify sequencer blocks
       run: |
         RUST_LOG=info just verify_blocks
+    - name: Docker Logs Sequencer 1
+      if: failure()
+      run: docker logs test-node-sequencer-1
+    - name: Docker Logs Sequencer 2
+      if: failure()
+      run: docker logs test-node-sequencer_b-1
 

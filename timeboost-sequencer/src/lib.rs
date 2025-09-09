@@ -18,7 +18,7 @@ use sailfish::consensus::{Consensus, ConsensusMetrics};
 use sailfish::rbc::{Rbc, RbcError, RbcMetrics};
 use sailfish::types::{Action, ConsensusTime, Evidence, Round, RoundNumber};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::vess::VessError;
+use timeboost_crypto::prelude::VessError;
 use timeboost_types::{
     BundleVariant, DelayedInboxIndex, DkgBundle, KeyStore, Timestamp, Transaction,
 };
@@ -26,7 +26,7 @@ use timeboost_types::{CandidateList, CandidateListBytes, InclusionList};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::{JoinHandle, spawn};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use decrypt::{Decrypter, DecrypterError};
 use include::Includer;
@@ -78,6 +78,7 @@ struct Task {
     commands: Receiver<Command>,
     output: Sender<Output>,
     mode: Mode,
+    round: Option<RoundNumber>,
 }
 
 enum Command {
@@ -110,11 +111,7 @@ impl Sequencer {
 
         let public_key = cfg.sign_keypair.public_key();
 
-        let queue = BundleQueue::new(
-            cfg.priority_addr,
-            cfg.delayed_inbox_index,
-            seq_metrics.clone(),
-        );
+        let queue = BundleQueue::new(cfg.priority_addr, seq_metrics.clone());
 
         // Limit max. size of candidate list. Leave margin of 128 KiB for overhead.
         queue.set_max_data_len(cliquenet::MAX_MESSAGE_SIZE - 128 * 1024);
@@ -179,15 +176,13 @@ impl Sequencer {
             label: public_key,
             bundles: queue.clone(),
             sailfish,
-            includer: Includer::new(
-                cfg.sailfish_committee.committee().clone(),
-                cfg.delayed_inbox_index,
-            ),
+            includer: Includer::new(cfg.sailfish_committee.committee().clone()),
             decrypter,
             sorter: Sorter::new(public_key),
             output: tx,
             commands: cr,
             mode: Mode::Passive,
+            round: None,
         };
 
         Ok(Self {
@@ -374,9 +369,23 @@ impl Task {
                 if let Action::Deliver(payload) = action {
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
-                            round = payload.round().num();
-                            evidence = payload.into_evidence();
-                            lists.push(data)
+                            if self
+                                .round
+                                .map(|r| r < payload.round().num())
+                                .unwrap_or(true)
+                            {
+                                round = payload.round().num();
+                                evidence = payload.into_evidence();
+                                lists.push(data)
+                            } else {
+                                debug!(
+                                    node   = %self.label,
+                                    ours   = ?self.round.map(u64::from),
+                                    theirs = %payload.round().num(),
+                                    src    = %payload.source(),
+                                    "dropping delayed payload"
+                                );
+                            }
                         }
                         Err(err) => {
                             warn!(
@@ -393,6 +402,8 @@ impl Task {
                 }
             }
             if !lists.is_empty() {
+                debug_assert!(self.round < Some(round));
+                self.round = Some(round);
                 candidates.push((round, evidence, lists))
             }
             while let Some(action) = actions.pop_front() {

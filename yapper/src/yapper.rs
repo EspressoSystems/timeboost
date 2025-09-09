@@ -62,8 +62,8 @@ impl Yapper {
             });
         }
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let provider = if cfg.nitro_integration {
-            Some(RootProvider::<Ethereum>::connect(&cfg.nitro_url).await?)
+        let provider = if let Some(url) = cfg.nitro_url {
+            Some(RootProvider::<Ethereum>::connect(url.as_str()).await?)
         } else {
             None
         };
