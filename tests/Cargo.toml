@@ -17,31 +17,16 @@ futures = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
-portpicker = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish", features = ["test"] }
 sailfish-types = { path = "../sailfish-types" }
 serde = { workspace = true }
+test-utils = { path = "../test-utils", features = ["ports"]}
 timeboost = { path = "../timeboost" }
-timeboost-builder = { path = "../timeboost-builder" }
-timeboost-crypto = { path = "../timeboost-crypto" }
-timeboost-sequencer = { path = "../timeboost-sequencer" }
-timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils", features = ["test"] }
+timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 turmoil = { workspace = true }
 url = { workspace = true }
-# optional:
-anyhow = { workspace = true, optional = true }
-clap = { workspace = true, optional = true }
-
-[features]
-bin = ["dep:anyhow", "dep:clap"]
-
-[[bin]]
-name = "block-verifier"
-path = "src/binaries/block-verifier.rs"
-required-features = ["bin"]

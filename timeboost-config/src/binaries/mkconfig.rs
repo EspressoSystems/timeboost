@@ -11,12 +11,12 @@ use clap::{Parser, ValueEnum};
 use cliquenet::Address;
 use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
-use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
-use timeboost_types::{ChainConfig, ParentChain};
-use timeboost_utils::keyset::{
-    CommitteeConfig, CommitteeMember, NodeConfig, NodeKeyConfig, NodeKeypairConfig, NodeNetConfig,
+use timeboost_config::{ChainConfig, ParentChain};
+use timeboost_config::{
+    CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeypair, NodeKeys, NodeNet,
+    PublicNet,
 };
-use timeboost_utils::types::logging;
+use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
@@ -29,13 +29,16 @@ struct Args {
     #[clap(long, short, default_value = "increment-port")]
     mode: Mode,
 
-    /// RNG seed for deterministic key generation
+    /// RNG seed for deterministic key generation.
     #[clap(long)]
     seed: Option<u64>,
 
-    /// The effective timestamp for this new committee
-    #[clap(long, default_value = "1756181061")]
-    timestamp: u64,
+    /// The effective timestamp for this new committee.
+    ///
+    /// The timestamp format corresponds to RFC 3339, section 5.6, for example:
+    /// 1970-01-01T18:00:00Z.
+    #[clap(long)]
+    timestamp: jiff::Timestamp,
 
     /// The sailfish network address. Decrypter, certifier, and internal address are derived:
     /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
@@ -49,6 +52,9 @@ struct Args {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     #[clap(long)]
     nitro_addr: Option<Address>,
+
+    #[clap(long)]
+    chain_namespace: u64,
 
     /// Parent chain rpc url
     #[clap(long)]
@@ -126,32 +132,39 @@ impl Args {
             };
 
             let config = NodeConfig {
-                net: NodeNetConfig::new(public_addr, internal_addr, nitro_addr),
-                keys: NodeKeyConfig {
-                    signing: NodeKeypairConfig {
+                net: NodeNet {
+                    public: PublicNet {
+                        address: public_addr,
+                    },
+                    internal: InternalNet {
+                        address: internal_addr,
+                        nitro: nitro_addr,
+                    },
+                },
+                keys: NodeKeys {
+                    signing: NodeKeypair {
                         secret: signing_keypair.secret_key(),
                         public: signing_keypair.public_key(),
                     },
-                    dh: NodeKeypairConfig {
+                    dh: NodeKeypair {
                         secret: dh_keypair.secret_key(),
                         public: dh_keypair.public_key(),
                     },
-                    dkg: NodeKeypairConfig {
+                    dkg: NodeKeypair {
                         secret: dkg_dec_key.clone(),
                         public: DkgEncKey::from(&dkg_dec_key),
                     },
                 },
-                chain: ChainConfig::builder()
-                    .parent(
-                        ParentChain::builder()
-                            .id(self.parent_chain_id)
-                            .rpc_url(self.parent_rpc_url.clone())
-                            .ibox_contract(self.parent_ibox_contract)
-                            .key_manager_contract(self.key_manager_contract)
-                            .block_tag(self.parent_block_tag)
-                            .build(),
-                    )
-                    .build(),
+                chain: ChainConfig {
+                    namespace: self.chain_namespace,
+                    parent: ParentChain {
+                        id: self.parent_chain_id,
+                        rpc_url: self.parent_rpc_url.clone(),
+                        ibox_contract: self.parent_ibox_contract,
+                        block_tag: self.parent_block_tag,
+                        key_manager_contract: self.key_manager_contract,
+                    },
+                },
             };
 
             members.push(CommitteeMember {
@@ -166,7 +179,7 @@ impl Args {
         }
 
         let committee_config = CommitteeConfig {
-            effective_timestamp: self.timestamp.into(),
+            effective_timestamp: self.timestamp,
             members,
         };
         committee_config_file.write_all(toml::to_string_pretty(&committee_config)?.as_bytes())?;
@@ -192,8 +205,6 @@ impl Args {
 }
 
 fn main() -> Result<()> {
-    logging::init_logging();
-
     let args = Args::parse();
     args.mk_config()?;
 

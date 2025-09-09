@@ -3,7 +3,6 @@ use std::net::{Ipv4Addr, SocketAddr};
 use bytes::BytesMut;
 use cliquenet::{Network, NetworkMetrics, Overlay, overlay::Data};
 use multisig::{Keypair, PublicKey, x25519};
-use portpicker::pick_unused_port;
 use rand::{Rng, RngCore};
 use tokio::time::{Duration, timeout};
 
@@ -20,12 +19,12 @@ async fn multiple_frames() {
         (
             party_a_sign.public_key(),
             party_a_dh.public_key(),
-            (Ipv4Addr::LOCALHOST, pick_unused_port().unwrap()).into(),
+            (Ipv4Addr::LOCALHOST, 50000).into(),
         ),
         (
             party_b_sign.public_key(),
             party_b_dh.public_key(),
-            (Ipv4Addr::LOCALHOST, pick_unused_port().unwrap()).into(),
+            (Ipv4Addr::LOCALHOST, 51000).into(),
         ),
     ];
 

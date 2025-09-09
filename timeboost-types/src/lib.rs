@@ -2,7 +2,6 @@ mod block;
 mod bundle;
 mod bytes;
 mod candidate_list;
-mod chain_config;
 mod decryption;
 mod delayed_inbox;
 mod inclusion_list;
@@ -22,7 +21,6 @@ pub use bundle::{
 };
 pub use bytes::Bytes;
 pub use candidate_list::{CandidateList, CandidateListBytes};
-pub use chain_config::{ChainConfig, ChainConfigBuilder, ParentChain, ParentChainBuilder};
 pub use decryption::{
     AccumulatorMode, DecryptionKey, DecryptionKeyCell, DkgAccumulator, DkgSubset, KeyStore,
     KeyStoreVec, ResultIter,

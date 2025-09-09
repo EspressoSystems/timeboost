@@ -14,7 +14,6 @@ cliquenet = { path = "../cliquenet" }
 futures = { workspace = true }
 reqwest = { workspace = true }
 timeboost = { path = "../timeboost" }
-timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }

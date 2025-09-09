@@ -1,6 +1,6 @@
 use reqwest::{Client, Url};
 use std::collections::HashMap;
-use timeboost_crypto::prelude::ThresholdEncKey;
+use timeboost::crypto::prelude::ThresholdEncKey;
 
 use tracing::warn;
 

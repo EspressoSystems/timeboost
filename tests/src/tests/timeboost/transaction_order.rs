@@ -6,7 +6,7 @@ use std::time::Duration;
 use alloy::primitives::B256;
 use metrics::NoMetrics;
 use sailfish_types::RoundNumber;
-use timeboost_sequencer::{Output, Sequencer};
+use timeboost::sequencer::{Output, Sequencer};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::broadcast::error::RecvError;
@@ -32,7 +32,7 @@ async fn transaction_order() {
 
     let num = NonZeroUsize::new(5).unwrap();
     let quorum = 4;
-    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX);
+    let (enc_keys, cfg) = make_configs(num, RECOVER_INDEX).await;
 
     let mut rxs = Vec::new();
     let tasks = TaskTracker::new();

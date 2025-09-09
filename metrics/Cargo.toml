@@ -4,3 +4,10 @@ description = "Metrics API types"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+
+[features]
+prometheus = ["dep:parking_lot", "dep:prometheus"]
+
+[dependencies]
+parking_lot = { workspace = true, optional = true }
+prometheus = { workspace = true, optional = true }

@@ -13,10 +13,6 @@ path = "src/binaries/timeboost.rs"
 name = "sailfish"
 path = "src/binaries/sailfish.rs"
 
-[[bin]]
-name = "mkconfig"
-path = "src/binaries/mkconfig.rs"
-
 [features]
 until = []
 
@@ -31,17 +27,17 @@ clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 http = { workspace = true }
-metrics = { path = "../metrics" }
+metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }
 prost = { workspace = true }
 rand = { workspace = true }
 sailfish = { path = "../sailfish" }
-secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
+timeboost-config = { path = "../timeboost-config" }
 timeboost-contract = { path = "../timeboost-contract" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-proto = { path = "../timeboost-proto" }
@@ -57,4 +53,4 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-portpicker = { workspace = true }
+test-utils = { path = "../test-utils", features = ["ports"]}

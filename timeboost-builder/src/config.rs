@@ -13,6 +13,12 @@ pub struct CertifierConfig {
     pub(crate) recover: bool,
 }
 
+impl CertifierConfig {
+    pub fn address(&self) -> &Address {
+        &self.address
+    }
+}
+
 #[derive(Debug, Clone, Builder)]
 pub struct SubmitterConfig {
     pub(crate) pubkey: PublicKey,

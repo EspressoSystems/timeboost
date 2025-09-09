@@ -14,9 +14,11 @@ use sailfish::consensus::Consensus;
 use sailfish::rbc::Rbc;
 use sailfish::types::{ConsensusTime, RoundNumber, Timestamp};
 use sailfish::{Coordinator, Event};
-use timeboost_crypto::prelude::DkgDecKey;
-use timeboost_sequencer::SequencerConfig;
-use timeboost_types::{ChainConfig, DecryptionKeyCell, KeyStore, ParentChain};
+use test_utils::ports::alloc_ports;
+use timeboost::config::{ChainConfig, ParentChain};
+use timeboost::crypto::prelude::DkgDecKey;
+use timeboost::sequencer::SequencerConfig;
+use timeboost::types::{DecryptionKeyCell, KeyStore};
 use timeboost_utils::types::logging::init_logging;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -39,7 +41,7 @@ enum Cmd {
 /// set on the configs.
 ///
 /// NB that the decryption parts are currently not used.
-fn mk_configs<C>(
+async fn mk_configs<C>(
     id: C,
     prev: &[SequencerConfig],
     keep: usize,
@@ -63,31 +65,33 @@ where
         .chain(repeat_with(|| x25519::Keypair::generate().unwrap()).take(add.get()))
         .collect::<Vec<_>>();
 
-    let sf_addrs = prev
+    let mut sf_addrs = prev
         .iter()
         .take(keep)
         .map(|c| c.sailfish_address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
         .collect::<Vec<_>>();
 
-    let de_addrs = prev
+    sf_addrs.extend(
+        alloc_ports(add.get() as u16)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| Address::from((Ipv4Addr::LOCALHOST, p))),
+    );
+
+    let mut de_addrs = prev
         .iter()
         .take(keep)
         .map(|c| c.decrypt_address().clone())
-        .chain(
-            repeat_with(|| {
-                let p = portpicker::pick_unused_port().unwrap();
-                Address::from((Ipv4Addr::LOCALHOST, p))
-            })
-            .take(add.get()),
-        )
         .collect::<Vec<_>>();
+
+    de_addrs.extend(
+        alloc_ports(add.get() as u16)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| Address::from((Ipv4Addr::LOCALHOST, p))),
+    );
 
     let committee = Committee::new(
         id.into(),
@@ -155,6 +159,7 @@ where
                 .threshold_dec_key(enc_key.clone())
                 .chain_config(
                     ChainConfig::builder()
+                        .namespace(10101)
                         .parent(
                             ParentChain::builder()
                                 .id(1)
@@ -178,19 +183,17 @@ where
 ///
 /// NB that the decryption parts of the config are not used yet.
 async fn mk_node(cfg: &SequencerConfig) -> Coordinator<Timestamp, Rbc<Timestamp>> {
-    let met = NetworkMetrics::new(
-        "sailfish",
-        &NoMetrics,
-        cfg.sailfish_committee().parties().copied(),
-    );
-
     let mut net = Network::create(
         "sailfish",
         cfg.sailfish_address().clone(),
         cfg.sign_keypair().public_key(),
         cfg.dh_keypair().clone(),
         cfg.sailfish_committee().entries(),
-        met,
+        NetworkMetrics::new(
+            "sailfish",
+            &NoMetrics,
+            cfg.sailfish_committee().parties().copied(),
+        ),
     )
     .await
     .unwrap();
@@ -346,8 +349,12 @@ async fn run_handover(curr: &[SequencerConfig], next: &[SequencerConfig]) {
 async fn handover_0_to_5() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 0, NonZeroUsize::new(5).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 0, NonZeroUsize::new(5).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }
 
@@ -355,8 +362,12 @@ async fn handover_0_to_5() {
 async fn handover_1_to_4() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 1, NonZeroUsize::new(4).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 1, NonZeroUsize::new(4).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }
 
@@ -364,8 +375,12 @@ async fn handover_1_to_4() {
 async fn handover_2_to_3() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 2, NonZeroUsize::new(3).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 2, NonZeroUsize::new(3).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }
 
@@ -373,8 +388,12 @@ async fn handover_2_to_3() {
 async fn handover_3_to_2() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 3, NonZeroUsize::new(2).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 3, NonZeroUsize::new(2).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }
 
@@ -382,8 +401,12 @@ async fn handover_3_to_2() {
 async fn handover_4_to_1() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 4, NonZeroUsize::new(1).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 4, NonZeroUsize::new(1).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }
 
@@ -391,7 +414,11 @@ async fn handover_4_to_1() {
 async fn handover_3_to_5() {
     init_logging();
 
-    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false).collect::<Vec<_>>();
-    let c2 = mk_configs(1, &c1, 3, NonZeroUsize::new(5).unwrap(), true).collect::<Vec<_>>();
+    let c1 = mk_configs(0, &[], 0, NonZeroUsize::new(5).unwrap(), false)
+        .await
+        .collect::<Vec<_>>();
+    let c2 = mk_configs(1, &c1, 3, NonZeroUsize::new(5).unwrap(), true)
+        .await
+        .collect::<Vec<_>>();
     run_handover(&c1, &c2).await;
 }

@@ -1,5 +1,6 @@
 use std::{io, sync::Arc, time::Duration};
 
+use ::metrics::prometheus::PrometheusMetrics;
 use axum::{
     Json, Router,
     body::Body,
@@ -11,7 +12,6 @@ use bon::Builder;
 use http::{Request, Response, StatusCode};
 use timeboost_crypto::prelude::ThresholdEncKey;
 use timeboost_types::{Bundle, BundleVariant, DecryptionKeyCell, SignedPriorityBundle};
-use timeboost_utils::types::prometheus::PrometheusMetrics;
 use tokio::{
     net::{TcpListener, ToSocketAddrs},
     sync::mpsc::Sender,

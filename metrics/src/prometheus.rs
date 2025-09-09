@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use metrics::{
+use crate::{
     Counter, CounterFamily, Gauge, GaugeFamily, Histogram, HistogramFamily, Metrics, TextFamily,
 };
 use parking_lot::RwLock;
@@ -64,7 +64,7 @@ impl TimeboostGauge {
 }
 
 #[derive(Debug)]
-pub struct PrometheusError(anyhow::Error);
+pub struct PrometheusError(Box<dyn std::error::Error + Send + Sync>);
 
 impl std::fmt::Display for PrometheusError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -80,7 +80,7 @@ impl std::error::Error for PrometheusError {
 
 impl From<prometheus::Error> for PrometheusError {
     fn from(source: prometheus::Error) -> Self {
-        Self(anyhow::anyhow!(source))
+        Self(Box::new(source))
     }
 }
 

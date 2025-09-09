@@ -19,12 +19,13 @@ ethereum_ssz = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
+rayon = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+timeboost-config = { path = "../timeboost-config" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
-timeboost-utils = { path = "../timeboost-utils" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
@@ -32,4 +33,5 @@ tracing = { workspace = true }
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 futures = { workspace = true }
-portpicker = { workspace = true }
+test-utils = { path = "../test-utils", features = ["ports"]}
+timeboost-utils = { path = "../timeboost-utils" }
