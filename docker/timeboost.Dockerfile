@@ -14,11 +14,11 @@ RUN rustup component add rustfmt --toolchain nightly
 RUN cargo build --release --bin timeboost
 
 # Non-root app container stage
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apt update && apt-get install -y libcurl4
+RUN apt update && apt-get install -y libcurl4 openssl
 
 # Create non-root user and group
 RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
