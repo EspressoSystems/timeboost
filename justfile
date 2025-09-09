@@ -175,4 +175,8 @@ test-all: build_release build-test-utils
         --exec "scripts/test-contract-deploy --keep-anvil" \
         --with "target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
         --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \
-        target/release/run-committee -- --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost
+        target/release/run-committee -- \
+            --max-duration 30 \
+            --configs test-configs/local/ \
+            --committee 0 \
+            --timeboost target/release/timeboost
