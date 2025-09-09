@@ -11,6 +11,7 @@ verifier = ["dep:alloy", "dep:timeboost-utils"]
 maker = [
     "dep:bytes",
     "dep:prost",
+    "dep:quick_cache",
     "dep:timeboost-config",
     "dep:timeboost-proto",
     "dep:timeboost-utils",
@@ -21,7 +22,6 @@ maker = [
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-parking_lot = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional
@@ -29,6 +29,7 @@ alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
+quick_cache = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost-config = { path = "../timeboost-config", optional = true }

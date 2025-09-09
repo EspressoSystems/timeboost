@@ -133,6 +133,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
+ "getrandom 0.3.3",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -9278,6 +9279,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick_cache"
+version = "0.6.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ad6644cb07b7f3488b9f3d2fde3b4c0a7fa367cafefb39dff93a659f76eb786"
+dependencies = [
+ "ahash 0.8.12",
+ "equivalent",
+ "hashbrown 0.15.5",
+ "parking_lot",
+]
+
+[[package]]
 name = "quickcheck"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11550,8 +11563,8 @@ dependencies = [
  "bytes 1.10.1",
  "clap",
  "futures",
- "parking_lot",
  "prost 0.14.1",
+ "quick_cache",
  "timeboost-config",
  "timeboost-proto",
  "timeboost-utils",

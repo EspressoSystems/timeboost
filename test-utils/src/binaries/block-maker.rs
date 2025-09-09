@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::Result;
 use bytes::Bytes;
 use clap::Parser;
-use parking_lot::Mutex;
 use prost::Message;
+use quick_cache::sync::Cache;
 use timeboost_config::CommitteeConfig;
 use timeboost_proto::block::Block;
 use timeboost_proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
@@ -29,27 +29,22 @@ struct Args {
     #[clap(long, short)]
     committee: PathBuf,
 
-    #[clap(long, default_value_t = 16_000)]
+    #[clap(long, default_value_t = 10_000)]
     capacity: usize,
 }
 
 /// GRPC service that accepts inclusion lists and broadcasts them to clients.
 struct Service {
     next_block: AtomicU64,
-    cache: Mutex<Cache>,
+    cache: Cache<Bytes, u64>,
     output: broadcast::Sender<Block>,
-}
-
-#[derive(Default)]
-struct Cache {
-    list2block: HashMap<Bytes, u64>,
 }
 
 impl Service {
     fn new(tx: broadcast::Sender<Block>) -> Self {
         Self {
             next_block: AtomicU64::new(1),
-            cache: Mutex::new(Cache::default()),
+            cache: Cache::new(20_000),
             output: tx,
         }
     }
@@ -71,12 +66,12 @@ impl ForwardApi for Service {
     ) -> Result<Response<()>, Status> {
         let list = r.into_inner();
         let bytes = Bytes::from(list.encode_to_vec());
-        let bnum = *self
+        let bnum = self
             .cache
-            .lock()
-            .list2block
-            .entry(bytes.clone())
-            .or_insert_with(|| self.next_block.fetch_add(1, Ordering::Relaxed));
+            .get_or_insert_with(&bytes, || -> Result<u64, Infallible> {
+                Ok(self.next_block.fetch_add(1, Ordering::Relaxed))
+            })
+            .expect("infallible insert");
         let block = Block {
             number: bnum,
             round: list.round,
