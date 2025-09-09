@@ -14,7 +14,7 @@ use tokio::{
     time::{Instant, error::Elapsed, sleep, timeout},
 };
 use tokio_util::task::TaskTracker;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
 
@@ -128,7 +128,7 @@ impl Verifier {
             let numbers = self.client.verified(self.nsid, &h, &committees).await;
             let mut set = self.verified.lock();
             for n in numbers {
-                debug!(node = %self.label, num = %n, "verified");
+                info!(node = %self.label, num = %n, "verified");
                 if set.len() == CACHE_SIZE {
                     set.pop_first();
                 }
@@ -189,7 +189,7 @@ impl Handler {
                         return;
                     } else {
                         state = if delay.is_zero() {
-                            debug!(node = %self.label, %num, "block submission verification timeout");
+                            warn!(node = %self.label, %num, "block submission verification timeout");
                             State::Submit(true)
                         } else {
                             State::Wait(delay)
