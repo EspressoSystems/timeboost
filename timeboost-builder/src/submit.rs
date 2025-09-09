@@ -80,9 +80,6 @@ impl Submitter {
     }
 
     pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
-        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
-            return;
-        };
         let num = cb.cert().data().num();
         debug!(
             node  = %self.public_key(),
@@ -90,6 +87,17 @@ impl Submitter {
             tasks = %self.submitters.len(),
             "creating block handler"
         );
+        if self.submitters.len() > MAX_TASKS - 10 {
+            warn!(
+                node  = %self.public_key(),
+                num   = %num,
+                tasks = %self.submitters.len(),
+                "approaching task limit"
+            );
+        }
+        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
+            return;
+        };
         self.submitters
             .spawn(self.handler.clone().handle(permit, cb));
         self.metrics.block_submit.set(*num as usize);
