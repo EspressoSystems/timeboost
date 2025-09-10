@@ -50,8 +50,7 @@ async fn main() -> Result<()> {
             .arg("false")
             .arg("--config")
             .arg(entry.path())
-            .arg("--ignore-stamp")
-            .kill_on_drop(true);
+            .arg("--ignore-stamp");
         commands.push(cmd);
     }
 

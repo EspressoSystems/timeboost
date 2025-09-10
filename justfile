@@ -28,11 +28,11 @@ build-contracts:
 
 [private]
 build-port-alloc:
-  cargo build --release -p test-utils --bin run --bin port-alloc --features ports
+  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
 
 [private]
 build-test-utils:
-  cargo build --release -p test-utils --all-features
+  cargo build --release -p test-utils
 
 ####################
 ###CHECK COMMANDS###
@@ -147,7 +147,7 @@ verify_blocks *ARGS:
 ####TEST COMMANDS###
 ####################
 test *ARGS: build-port-alloc
-  target/release/run --with target/release/port-alloc cargo nextest run -- {{ARGS}}
+  target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test-contracts: build-contracts
@@ -155,7 +155,7 @@ test-contracts: build-contracts
 
 test_ci *ARGS: build-port-alloc
   env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
-    --with target/release/port-alloc \
+    --spawn target/release/port-alloc \
     -- cargo nextest run --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
@@ -163,7 +163,7 @@ test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
     target/release/run \
-        --with target/release/port-alloc \
+        --spawn target/release/port-alloc \
         -- cargo nextest run --no-tests=pass -p $pkg || exit 1; \
   done
 
@@ -172,11 +172,10 @@ test-contract-deploy *ARGS:
 
 test-all: build_release build-test-utils
     env RUST_LOG=timeboost_builder::submit=info,warn target/release/run \
-        --exec "scripts/test-contract-deploy --keep-anvil" \
-        --with "target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
-        --with "target/release/yapper --keyset-file test-configs/c0/committee.toml" \
-        target/release/run-committee -- \
-            --max-duration 30 \
-            --configs test-configs/local/ \
-            --committee 0 \
-            --timeboost target/release/timeboost
+        --spawn "1:anvil --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-test-contract" \
+        --spawn "4:target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
+        --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+        --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
+        sleep -- 30

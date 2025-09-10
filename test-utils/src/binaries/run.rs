@@ -17,17 +17,20 @@ use tokio::{
 
 #[derive(Parser, Debug)]
 struct Args {
-    /// Commands to run to completion first.
-    #[clap(long, short)]
-    exec: Vec<String>,
+    /// Commands to run to completion.
+    #[clap(long, short, value_parser = parse_command_line)]
+    run: Vec<Commandline>,
 
     /// Commands to run concurrently.
-    #[clap(long, short)]
-    with: Vec<String>,
+    #[clap(long, short, value_parser = parse_command_line)]
+    spawn: Vec<Commandline>,
 
-    /// Optional timeout in seconds.
+    /// Optional timeout main command in seconds.
     #[clap(long, short)]
     timeout: Option<u64>,
+
+    #[clap(long, short)]
+    verbose: bool,
 
     /// Main command to execute.
     main: Vec<String>,
@@ -35,30 +38,42 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    args.spawn.iter_mut().for_each(|c| c.sync = false);
+
+    let mut commands = args.run;
+    commands.append(&mut args.spawn);
+    commands.sort();
 
     let mut term = signal(SignalKind::terminate())?;
     let mut intr = signal(SignalKind::interrupt())?;
-
-    for exe in &args.exec {
-        let mut pg = ProcessGroup::spawn(exe.split_whitespace())?;
-        let status = select! {
-            s = pg.wait()   => s?,
-            _ = term.recv() => return Ok(()),
-            _ = intr.recv() => return Ok(()),
-        };
-        if !status.success() {
-            bail!("{exe:?} failed with {:?}", status.code());
-        }
-    }
-
     let mut helpers = JoinSet::<Result<ExitStatus>>::new();
-    for w in args.with {
-        helpers.spawn(async move {
-            let mut pg = ProcessGroup::spawn(w.split_whitespace())?;
-            let status = pg.wait().await?;
-            Ok(status)
-        });
+
+    for commandline in commands {
+        if args.verbose {
+            if commandline.sync {
+                eprintln!("running command: {}", commandline.args)
+            } else {
+                eprintln!("spawning command: {}", commandline.args)
+            }
+        }
+        let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
+        if commandline.sync {
+            let status = select! {
+                s = pg.wait()   => s?,
+                _ = term.recv() => return Ok(()),
+                _ = intr.recv() => return Ok(()),
+            };
+            if !status.success() {
+                bail!("{:?} failed with {:?}", commandline.args, status.code());
+            }
+        } else {
+            helpers.spawn(async move {
+                let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
+                let status = pg.wait().await?;
+                Ok(status)
+            });
+        }
     }
 
     let mut main = ProcessGroup::spawn(args.main)?;
@@ -86,6 +101,22 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Commandline {
+    prio: u8,
+    args: String,
+    sync: bool,
+}
+
+fn parse_command_line(s: &str) -> Result<Commandline> {
+    let (p, a) = s.split_once(':').unwrap_or(("0", s));
+    Ok(Commandline {
+        prio: p.parse()?,
+        args: a.to_string(),
+        sync: true,
+    })
 }
 
 /// Every command is spawned into its own, newly created process group.
