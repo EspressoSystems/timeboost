@@ -85,10 +85,10 @@ stop_monitoring:
   docker compose -f docker-compose.metrics.yml down
 
 run_demo *ARGS:
-  ./scripts/run-timeboost-demo {{ARGS}}
+  scripts/run-timeboost-demo {{ARGS}}
 
 run_sailfish_demo *ARGS:
-  ./scripts/run-sailfish-demo {{ARGS}}
+  scripts/run-sailfish-demo {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}
@@ -156,32 +156,32 @@ test-contracts: build-contracts
 test_ci *ARGS: build-port-alloc
   env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
     --spawn target/release/port-alloc \
-    -- cargo nextest run --workspace {{ARGS}}
+    cargo nextest run -- --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
 test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
-    target/release/run \
+    $(target/release/run \
         --spawn target/release/port-alloc \
-        -- cargo nextest run --no-tests=pass -p $pkg || exit 1; \
+        cargo nextest run -- --no-tests=pass -p $pkg) || exit 1; \
   done
 
 test-contract-deploy *ARGS:
-  ./scripts/test-contract-deploy {{ARGS}}
+  scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-    env RUST_LOG=block_checker=info,warn target/release/run \
-        --verbose \
-        --timeout 120 \
-        --spawn "1:anvil --port 8545" \
-        --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-test-contract" \
-        --spawn "4:target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
-        --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
-        --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
-        target/release/block-checker -- \
-            --config test-configs/local/node_0.toml \
-            --committee test-configs/c0/committee.toml \
-            --committee-id 0 \
-            --blocks 1000
+  env RUST_LOG=block_checker=info,warn target/release/run \
+    --verbose \
+    --timeout 120 \
+    --spawn "1:anvil --port 8545" \
+    --run   "2:sleep 3" \
+    --run   "3:scripts/deploy-test-contract" \
+    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
+    --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
+    target/release/block-checker -- \
+      --config test-configs/local/node_0.toml \
+      --committee test-configs/c0/committee.toml \
+      --committee-id 0 \
+      --blocks 1000
