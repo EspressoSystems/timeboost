@@ -26,6 +26,8 @@ pub use crate::watcher::{WatchError, Watcher};
 pub use config::{Config, ConfigBuilder};
 pub use espresso_types;
 
+static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+
 /// A client for the Espresso network.
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -38,6 +40,7 @@ impl Client {
         let r = reqwest::Client::builder()
             .https_only(c.https_only)
             .timeout(Duration::from_secs(30))
+            .user_agent(USER_AGENT)
             .build()
             .expect("TLS and DNS resolver work");
         Self {

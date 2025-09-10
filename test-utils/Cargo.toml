@@ -9,12 +9,15 @@ default = [
     "dep:alloy",
     "dep:bincode",
     "dep:bytes",
+    "dep:either",
+    "dep:multisig",
     "dep:prost",
+    "dep:robusta",
     "dep:quick_cache",
+    "dep:sailfish",
     "dep:tokio-util",
     "dep:tonic",
-    "dep:timeboost-config",
-    "dep:timeboost-proto",
+    "dep:timeboost",
     "dep:timeboost-utils",
     "ports"
 ]
@@ -31,13 +34,20 @@ tracing = { workspace = true }
 alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
+either = { workspace = true, optional = true }
+multisig = { path = "../multisig", optional = true }
 prost = { workspace = true, optional = true }
 quick_cache = { workspace = true, optional = true }
+robusta = { path = "../robusta", optional = true }
+sailfish = { path = "../sailfish", optional = true }
 tokio-util = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
-timeboost-config = { path = "../timeboost-config", optional = true }
-timeboost-proto = { path = "../timeboost-proto", optional = true }
+timeboost = { path = "../timeboost", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
+
+[[bin]]
+name = "block-checker"
+path = "src/binaries/block-checker.rs"
 
 [[bin]]
 name = "block-maker"

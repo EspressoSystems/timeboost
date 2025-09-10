@@ -76,6 +76,10 @@ async fn main() -> Result<()> {
         }
     }
 
+    if args.verbose {
+        eprintln!("spawning command: {}", args.main.join(" "))
+    }
+
     let mut main = ProcessGroup::spawn(args.main)?;
 
     let timeout = if let Some(d) = args.timeout {
@@ -97,7 +101,7 @@ async fn main() -> Result<()> {
         }
         _ = term.recv() => {}
         _ = intr.recv() => {}
-        _ = timeout     => eprintln!("timeout")
+        _ = timeout     => bail!("timeout")
     }
 
     Ok(())
