@@ -14,11 +14,11 @@ RUN rustup component add rustfmt --toolchain nightly
 RUN cargo build --release --bin timeboost
 
 # Non-root app container stage
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apt update && apt-get install -y libcurl4
+RUN apt update && apt-get install -y libcurl4 openssl
 
 # Create non-root user and group
 RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
@@ -35,12 +35,6 @@ USER timeboostuser
 
 # Set the log level to debug by default
 ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug,cliquenet=error}
-
-EXPOSE ${TIMEBOOST_SAILFISH_PORT}
-EXPOSE ${TIMEBOOST_DECRYPT_PORT}
-EXPOSE ${TIMEBOOST_CERTIFIER_PORT}
-EXPOSE ${TIMEBOOST_RPC_PORT}
-EXPOSE ${TIMEBOOST_METRICS_PORT}
 
 # Run the timeboost binary
 CMD ["/app/timeboost"]
