@@ -7,13 +7,13 @@ use multisig::CommitteeId;
 use multisig::{Committee, Keypair, x25519};
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_contract::{CommitteeManager, CommitteeMemberSol};
+use timeboost_contract::{CommitteeMemberSol, KeyManager};
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, ThresholdKeyCell};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::info;
+use tracing::{error, info};
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
