@@ -7,14 +7,15 @@ use alloy::{
     sol_types::SolEvent,
 };
 use anyhow::Result;
+use std::sync::Arc;
 
 pub struct KeyManagerEventMonitor<P> {
-    provider: P,
+    provider: Arc<P>,
     contract_addr: Address,
 }
 
 impl<P: Provider> KeyManagerEventMonitor<P> {
-    pub fn new(provider: P, contract_addr: Address) -> Self {
+    pub fn new(provider: Arc<P>, contract_addr: Address) -> Self {
         Self {
             provider,
             contract_addr,
@@ -129,12 +130,13 @@ mod tests {
     async fn test_committee_created_event_monitoring() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let _manager = provider.default_signer_address();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let _manager = provider_arc.default_signer_address();
 
         // create event monitor & get initial block number
-        let monitor = KeyManagerEventMonitor::new(&provider, contract_addr);
-        let initial_block = provider.get_block_number().await.unwrap();
+        let contract = KeyManager::new(contract_addr, &provider_arc);
+        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+        let initial_block = provider_arc.get_block_number().await.unwrap();
 
         // create a committee to trigger CommitteeCreated event
         let rng = &mut rand::rng();
@@ -154,7 +156,7 @@ mod tests {
             .unwrap();
 
         // query for CommitteeCreated events
-        let final_block = provider.get_block_number().await.unwrap();
+        let final_block = provider_arc.get_block_number().await.unwrap();
         let events = monitor
             .get_committee_created_events(
                 BlockNumberOrTag::Number(initial_block),
@@ -173,11 +175,13 @@ mod tests {
     async fn test_threshold_encryption_key_updated_event_monitoring() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
         // create event monitor and get initial block number
-        let monitor = KeyManagerEventMonitor::new(&provider, contract_addr);
-        let initial_block = provider.get_block_number().await.unwrap();
+        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+        let initial_block = provider_arc.get_block_number().await.unwrap();
 
         // set threshold encryption key to trigger ThresholdEncryptionKeyUpdated event
         let test_key = b"test_threshold_encryption_key_32_bytes!".to_vec();
@@ -191,7 +195,7 @@ mod tests {
             .unwrap();
 
         // query for ThresholdEncryptionKeyUpdated events
-        let final_block = provider.get_block_number().await.unwrap();
+        let final_block = provider_arc.get_block_number().await.unwrap();
         let events = monitor
             .get_threshold_encryption_key_updated_events(
                 BlockNumberOrTag::Number(initial_block),
@@ -210,14 +214,16 @@ mod tests {
     async fn test_manager_changed_event_monitoring() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
-        let manager = provider.default_signer_address();
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
+
+        let manager = provider_arc.default_signer_address();
 
         // create event monitor
-        let monitor = KeyManagerEventMonitor::new(&provider, contract_addr);
+        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
 
         // get initial block number
-        let initial_block = provider.get_block_number().await.unwrap();
+        let initial_block = provider_arc.get_block_number().await.unwrap();
 
         // create a new manager address
         let new_manager = Address::random();
@@ -233,7 +239,7 @@ mod tests {
             .unwrap();
 
         // get the block number after the transaction
-        let final_block = provider.get_block_number().await.unwrap();
+        let final_block = provider_arc.get_block_number().await.unwrap();
 
         // query for ManagerChanged events
         let events = monitor
@@ -257,7 +263,7 @@ mod tests {
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
 
         // create event monitor
-        let monitor = KeyManagerEventMonitor::new(&provider, contract_addr);
+        let monitor = KeyManagerEventMonitor::new(Arc::new(provider), contract_addr);
 
         // query for events in a range where no events occurred
         let events = monitor
@@ -273,13 +279,14 @@ mod tests {
     async fn test_multiple_events_monitoring() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
         // create event monitor
-        let monitor = KeyManagerEventMonitor::new(&provider, contract_addr);
+        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
 
         // get initial block number
-        let initial_block = provider.get_block_number().await.unwrap();
+        let initial_block = provider_arc.get_block_number().await.unwrap();
 
         // create multiple committees to trigger multiple CommitteeCreated events
         let rng = &mut rand::rng();
@@ -302,7 +309,7 @@ mod tests {
         }
 
         // get the final block number
-        let final_block = provider.get_block_number().await.unwrap();
+        let final_block = provider_arc.get_block_number().await.unwrap();
 
         // query for all CommitteeCreated events
         let events = monitor

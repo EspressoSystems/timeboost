@@ -2,14 +2,15 @@
 use crate::bindings::keymanager::KeyManager;
 use alloy::{primitives::Address, providers::Provider};
 use anyhow::Result;
+use std::sync::Arc;
 
 pub struct CommitteeManager<P> {
-    provider: P,
+    provider: Arc<P>,
     contract_addr: Address,
 }
 
 impl<P: Provider> CommitteeManager<P> {
-    pub fn new(provider: P, contract_addr: Address) -> Self {
+    pub fn new(provider: Arc<P>, contract_addr: Address) -> Self {
         Self {
             provider,
             contract_addr,
@@ -43,9 +44,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_committees_for_startup_current_only() {
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let manager = CommitteeManager::new(provider_arc, contract_addr);
 
         let rng = &mut rand::rng();
         let members = (0..3)
@@ -78,9 +80,10 @@ mod tests {
     async fn test_get_committees_for_startup_with_previous() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let manager = CommitteeManager::new(provider_arc, contract_addr);
 
         let rng = &mut rand::rng();
         let first_members = (0..2)
@@ -136,7 +139,7 @@ mod tests {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
 
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let manager = CommitteeManager::new(Arc::new(provider), contract_addr);
 
         let result = manager.get_committees_for_startup(999, None).await;
 
@@ -148,9 +151,10 @@ mod tests {
     async fn test_get_committees_for_startup_nonexistent_previous() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let manager = CommitteeManager::new(provider_arc, contract_addr);
 
         let rng = &mut rand::rng();
         let members = (0..2)
@@ -178,9 +182,10 @@ mod tests {
     async fn test_get_committees_for_startup_multiple_committees() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let contract = KeyManager::new(contract_addr, &provider);
+        let provider_arc = Arc::new(provider);
+        let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let manager = CommitteeManager::new(provider_arc, contract_addr);
 
         // create multiple committees
         let rng = &mut rand::rng();
@@ -225,8 +230,8 @@ mod tests {
     async fn test_committee_manager_creation() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-
-        let manager = CommitteeManager::new(&provider, contract_addr);
+        let provider_arc = Arc::new(provider);
+        let manager = CommitteeManager::new(provider_arc, contract_addr);
 
         // manager should be created successfully
         assert_eq!(manager.contract_addr, contract_addr);

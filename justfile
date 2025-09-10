@@ -12,7 +12,7 @@ build *ARGS:
   cargo build {{ARGS}}
 
 update-submodules:
-  git submodule update --remote --recursive
+  git submodule update  --init --remote --recursive
   cargo build -p timeboost-proto
   forge build
   cargo build -p timeboost-contract
