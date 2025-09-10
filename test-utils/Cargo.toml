@@ -5,23 +5,26 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-ports = ["dep:bincode", "dep:tokio-util"]
-run-committee = ["dep:tokio-util"]
-verifier = ["dep:alloy", "dep:timeboost-utils"]
-maker = [
+default = [
+    "dep:alloy",
+    "dep:bincode",
     "dep:bytes",
     "dep:prost",
     "dep:quick_cache",
+    "dep:tokio-util",
+    "dep:tonic",
     "dep:timeboost-config",
     "dep:timeboost-proto",
     "dep:timeboost-utils",
-    "dep:tonic"
+    "ports"
 ]
+ports = ["dep:bincode", "dep:tokio-util"]
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+rustix = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional
@@ -39,12 +42,10 @@ timeboost-utils = { path = "../timeboost-utils", optional = true }
 [[bin]]
 name = "block-maker"
 path = "src/binaries/block-maker.rs"
-required-features = ["maker"]
 
 [[bin]]
 name = "block-verifier"
 path = "src/binaries/block-verifier.rs"
-required-features = ["verifier"]
 
 [[bin]]
 name = "port-alloc"
@@ -58,4 +59,3 @@ path = "src/binaries/run.rs"
 [[bin]]
 name = "run-committee"
 path = "src/binaries/run-committee.rs"
-required-features = ["run-committee"]

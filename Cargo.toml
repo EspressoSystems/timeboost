@@ -79,6 +79,7 @@ quickcheck = "1.0.3"
 quick_cache = "0.6.16"
 rand = "0.9"
 rayon = "1.10"
+rustix = { version = "1.1.2", features = ["process"] }
 reqwest = { version = "0.12", features = ["json"] }
 secp256k1 = { version = "0.31.0", features = ["global-context", "hashes", "rand", "serde"] }
 serde = { version = "1", features = ["derive", "rc"] }

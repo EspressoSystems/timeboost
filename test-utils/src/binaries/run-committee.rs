@@ -1,8 +1,8 @@
-use std::{ffi::OsStr, path::PathBuf, time::Duration};
+use std::{ffi::OsStr, path::PathBuf};
 
 use anyhow::{Result, bail};
 use clap::Parser;
-use tokio::{fs::read_dir, process::Command, time::timeout};
+use tokio::{fs::read_dir, process::Command};
 use tokio_util::task::TaskTracker;
 
 #[derive(Parser, Debug)]
@@ -18,9 +18,6 @@ struct Args {
 
     #[clap(long, short, default_value = "/tmp")]
     tmp: PathBuf,
-
-    #[clap(long)]
-    max_duration: Option<u64>,
 }
 
 #[tokio::main]
@@ -68,12 +65,7 @@ async fn main() -> Result<()> {
     }
 
     tasks.close();
-
-    if let Some(d) = args.max_duration {
-        let _ = timeout(Duration::from_secs(d), tasks.wait()).await;
-    } else {
-        tasks.wait().await
-    }
+    tasks.wait().await;
 
     Ok(())
 }
