@@ -760,7 +760,7 @@ impl Worker {
         let round = batch.round.num();
         let committee_id = batch.round.committee();
         if committee_id != self.current {
-            trace!(node = %self.label, %committee_id, "target committee: {} current: {}", round, self.current);
+            trace!(node = %self.label, %committee_id, current=%self.current, round=%round, "not current committee");
             return Ok(());
         }
         self.key_stores
