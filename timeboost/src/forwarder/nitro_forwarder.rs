@@ -12,6 +12,7 @@ use timeboost_types::{DelayedInboxIndex, Timestamp, Transaction};
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinHandle;
 use tonic::transport::Endpoint;
+use tracing::error;
 use worker::Worker;
 
 pub struct NitroForwarder {
@@ -29,7 +30,10 @@ impl NitroForwarder {
     pub async fn connect(key: PublicKey, addr: Address) -> Result<Self, Error> {
         let uri = format!("http://{addr}");
         let endpoint = Endpoint::from_shared(uri).map_err(|e| Error::InvalidUri(e.to_string()))?;
-        let chan = endpoint.connect().await?;
+        let chan = endpoint.connect().await.map_err(|err| {
+            error!(%err, %addr, "failed to connect to nitro node");
+            err
+        })?;
         let c = ForwardApiClient::new(chan);
         let (tx, rx) = channel(100_000);
         let w = Worker::new(key, c, rx);
@@ -57,7 +61,9 @@ impl NitroForwarder {
                 })
                 .collect(),
             consensus_timestamp: timestamp.into(),
-            delayed_messages_read: index.into(),
+            // we need to add 1 to the index
+            // eg index 0 is really 1 delayed message read
+            delayed_messages_read: u64::from(index) + 1,
         };
         self.incls_tx
             .send(incl)

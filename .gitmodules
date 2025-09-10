@@ -4,3 +4,9 @@
 [submodule "contracts/lib/openzeppelin-contracts-upgradeable"]
 	path = contracts/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/EspressoSystems/timeboost-contracts.git
+[submodule "test-node"]
+	path = test-node
+	url = https://github.com/EspressoSystems/decentralized-timeboost-nitro-testnode

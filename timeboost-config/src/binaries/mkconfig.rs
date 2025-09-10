@@ -13,8 +13,8 @@ use multisig::x25519;
 use secp256k1::rand::SeedableRng as _;
 use timeboost_config::{ChainConfig, ParentChain};
 use timeboost_config::{
-    CommitteeConfig, CommitteeMember, InternalNet, NodeConfig, NodeKeypair, NodeKeys, NodeNet,
-    PublicNet,
+    CommitteeConfig, CommitteeMember, Espresso, InternalNet, NodeConfig, NodeKeypair, NodeKeys,
+    NodeNet, PublicNet,
 };
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -45,7 +45,15 @@ struct Args {
     #[clap(long, short)]
     public_addr: Address,
 
-    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3000
+    /// HTTP API of a timeboost node.
+    #[clap(long)]
+    http_api: Address,
+
+    /// Directory to store timeboost stamp file in.
+    #[clap(long, short)]
+    stamp_dir: PathBuf,
+
+    /// Internal gPRC endpoints among nodes, default to same IP as sailfish with port + 3
     #[clap(long)]
     internal_addr: Address,
 
@@ -76,6 +84,17 @@ struct Args {
     /// Parent chain inbox block tag
     #[clap(long, default_value = "finalized")]
     parent_block_tag: BlockNumberOrTag,
+
+    /// Base URL of Espresso's REST API.
+    #[clap(
+        long,
+        default_value = "https://query.decaf.testnet.espresso.network/v1/"
+    )]
+    espresso_base_url: Url,
+
+    /// Base URL of Espresso's Websocket API.
+    #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
+    espresso_websocket_url: Url,
 
     /// The directory to stored all generated `NodeConfig` files for all committee members
     #[clap(long, short)]
@@ -120,10 +139,11 @@ impl Args {
 
         for i in 0..self.num.get() {
             let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
-            let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng).unwrap();
+            let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
             let public_addr = self.adjust_addr(i, &self.public_addr)?;
+            let http_addr = self.adjust_addr(i, &self.http_api)?;
             let internal_addr = self.adjust_addr(i, &self.internal_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
                 Some(self.adjust_addr(i, addr)?)
@@ -132,9 +152,11 @@ impl Args {
             };
 
             let config = NodeConfig {
+                stamp: self.stamp_dir.join(format!("timeboost.{i}.stamp")),
                 net: NodeNet {
                     public: PublicNet {
                         address: public_addr,
+                        http_api: http_addr,
                     },
                     internal: InternalNet {
                         address: internal_addr,
@@ -165,6 +187,10 @@ impl Args {
                         key_manager_contract: self.key_manager_contract,
                     },
                 },
+                espresso: Espresso {
+                    base_url: self.espresso_base_url.clone(),
+                    websockets_base_url: self.espresso_websocket_url.clone(),
+                },
             };
 
             members.push(CommitteeMember {
@@ -172,6 +198,7 @@ impl Args {
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),
                 public_address: config.net.public.address.clone(),
+                http_api: config.net.public.http_api.clone(),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;

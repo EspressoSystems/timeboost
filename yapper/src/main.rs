@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use clap::Parser;
+use reqwest::Url;
 use timeboost::config::CommitteeConfig;
 use timeboost_utils::types::logging::init_logging;
 use timeboost_utils::wait_for_live_peer;
@@ -37,22 +38,14 @@ struct Cli {
     #[clap(long, short, default_value_t = 100)]
     tps: u32,
 
-    /// Specify how to read the configuration file.
-    #[clap(long, default_value_t = false)]
-    multi_region: bool,
-
-    /// Is there a nitro setup?
-    #[clap(long, default_value_t = false)]
-    nitro_integration: bool,
-
     /// Chain id for l2 chain
     /// default: https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses
     #[clap(long, default_value_t = 412346)]
     chain_id: u64,
 
-    /// Nitro node url used for gas estimations and getting nonce when sending transactions
-    #[clap(long, default_value = "http://localhost:8547")]
-    nitro_url: String,
+    /// Nitro node url.
+    #[clap(long)]
+    nitro_url: Option<Url>,
 }
 
 #[tokio::main]
@@ -69,18 +62,15 @@ async fn main() -> Result<()> {
 
     let mut addresses = Vec::new();
     for node in keyset.members {
-        info!("waiting for peer: {}", node.public_address);
-        let port = node.public_address.port();
-        let addr = node.public_address.clone().with_port(port + 800); // TODO: remove port magic
-        wait_for_live_peer(&addr).await?;
-        addresses.push(addr);
+        info!("waiting for peer: {}", node.http_api);
+        wait_for_live_peer(&node.http_api).await?;
+        addresses.push(node.http_api);
     }
 
     let config = YapperConfig::builder()
         .addresses(addresses)
-        .nitro_integration(cli.nitro_integration)
         .tps(cli.tps)
-        .nitro_url(cli.nitro_url)
+        .maybe_nitro_url(cli.nitro_url)
         .chain_id(cli.chain_id)
         .build();
     let yapper = Yapper::new(config).await?;

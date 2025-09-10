@@ -9,69 +9,42 @@ use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
 use timeboost_contract::{CommitteeManager, CommitteeMemberSol};
 use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{DecryptionKeyCell, KeyStore};
+use timeboost_types::{KeyStore, ThresholdKeyCell};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::{error, warn};
-use url::Url;
-
-#[cfg(feature = "until")]
-use anyhow::ensure;
-#[cfg(feature = "until")]
-use timeboost_utils::until::run_until;
+use tracing::info;
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
 use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging;
-use timeboost_utils::wait_for_live_peer;
-
-#[cfg(feature = "until")]
-const LATE_START_DELAY_SECS: u64 = 15;
+use tracing::warn;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// CommitteeId for the committee in which this member belongs to
-    #[clap(long, short)]
-    committee_id: CommitteeId,
-
-    /// API service port.
-    #[clap(long)]
-    http_port: u16,
-
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
     #[clap(long)]
     config: PathBuf,
 
-    /// Backwards compatibility. This allows for a single region to run (i.e. local)
-    #[clap(long, default_value_t = false)]
-    multi_region: bool,
-
-    /// Path to a file that this process creates or reads as execution proof.
-    #[clap(long)]
-    stamp: PathBuf,
+    /// CommitteeId for the committee in which this member belongs to
+    #[clap(long, short)]
+    committee_id: CommitteeId,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
 
-    /// Base URL of Espresso's REST API.
-    #[clap(
-        long,
-        default_value = "https://query.decaf.testnet.espresso.network/v1/"
-    )]
-    espresso_base_url: Url,
-
-    /// Base URL of Espresso's Websocket API.
-    #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
-    espresso_websocket_url: Url,
-
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
+
+    /// Path to committee config toml.
+    #[cfg(feature = "until")]
+    #[clap(long)]
+    committee: PathBuf,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -83,15 +56,13 @@ struct Cli {
     #[clap(long, default_value_t = 30)]
     watchdog_timeout: u64,
 
-    /// The id of a node that will start late.
     #[cfg(feature = "until")]
-    #[clap(long, default_value_t = 0)]
-    late_start_node_id: u16,
+    #[clap(long)]
+    start_delay: Option<u64>,
 
-    /// The flag if we want to late start a node
     #[cfg(feature = "until")]
-    #[clap(long, short, action = clap::ArgAction::SetTrue)]
-    late_start: bool,
+    #[clap(long)]
+    required_decrypt_rounds: Option<u64>,
 }
 
 #[tokio::main]
@@ -109,25 +80,22 @@ async fn main() -> Result<()> {
 
     // syncing with contract to get peers keys and network addresses
     let provider = ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
+    let chain_id = provider.get_chain_id().await?;
+
     assert_eq!(
-        provider.get_chain_id().await?,
-        node_config.chain.parent.id,
-        "Parent chain RPC has mismatched chain_id"
+        chain_id, node_config.chain.parent.id,
+        "parent chain rpc has mismatched chain_id"
     );
 
-    // Use CommitteeManager for initial committee read
-    let committee_manager =
-        CommitteeManager::new(&provider, node_config.chain.parent.key_manager_contract);
-    let (current_committee, _previous_committee) = committee_manager
-        .get_committees_for_startup(cli.committee_id.into(), None)
-        .await?;
+    let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
 
-    let members: Vec<CommitteeMemberSol> = current_committee.members;
-    tracing::info!(
-        label = %sign_keypair.public_key(),
-        committee_id = %cli.committee_id,
-        "committee info synced"
-    );
+    let members: Vec<CommitteeMemberSol> = contract
+        .getCommitteeById(cli.committee_id.into())
+        .call()
+        .await?
+        .members;
+
+    info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
 
     let peer_hosts_and_keys = members
         .iter()
@@ -144,24 +112,12 @@ async fn main() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    #[cfg(feature = "until")]
-    let node_idx = peer_hosts_and_keys
-        .iter()
-        .position(|p| p.0 == node_config.keys.signing.public)
-        .expect("node's sigKey should be a member of Committee");
-
-    #[cfg(feature = "until")]
-    let peer_urls: Vec<Url> = peer_hosts_and_keys
-        .iter()
-        .map(|peer| format!("http://{}", peer.3).parse().unwrap())
-        .collect();
-
     let mut sailfish_peer_hosts_and_keys = Vec::new();
     let mut decrypt_peer_hosts_and_keys = Vec::new();
     let mut certifier_peer_hosts_and_keys = Vec::new();
     let mut dkg_enc_keys = Vec::new();
 
-    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys {
+    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys.iter().cloned() {
         sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr.clone()));
         decrypt_peer_hosts_and_keys.push((
             signing_key,
@@ -217,11 +173,11 @@ async fn main() -> Result<()> {
             .map(|(i, k)| (i as u8, k)),
     );
 
-    let is_recover = !cli.ignore_stamp && cli.stamp.is_file();
+    let is_recover = !cli.ignore_stamp && node_config.stamp.is_file();
 
-    tokio::fs::File::create(&cli.stamp)
+    tokio::fs::File::create(&node_config.stamp)
         .await
-        .with_context(|| format!("Failed to create stamp file: {:?}", cli.stamp))?
+        .with_context(|| format!("Failed to create stamp file: {:?}", node_config.stamp))?
         .sync_all()
         .await
         .with_context(|| "Failed to sync stamp file to disk")?;
@@ -255,11 +211,11 @@ async fn main() -> Result<()> {
         )
         .maybe_nitro_addr(node_config.net.internal.nitro.clone())
         .recover(is_recover)
-        .threshold_dec_key(DecryptionKeyCell::new())
+        .threshold_dec_key(ThresholdKeyCell::new())
         .robusta((
             robusta::Config::builder()
-                .base_url(cli.espresso_base_url)
-                .wss_base_url(cli.espresso_websocket_url)
+                .base_url(node_config.espresso.base_url)
+                .wss_base_url(node_config.espresso.websockets_base_url)
                 .label(pubkey.to_string())
                 .https_only(cli.https_only)
                 .build(),
@@ -291,48 +247,66 @@ async fn main() -> Result<()> {
         spawn(timeboost.internal_grpc_api().serve(addr))
     };
 
-    let mut api = spawn(timeboost.api().serve(format!("0.0.0.0:{}", cli.http_port)));
-
-    for peer in sailfish_peer_hosts_and_keys {
-        let p = peer.2.port();
-        wait_for_live_peer(&peer.2.with_port(p + 800)).await? // TODO: remove port magic
-    }
-
-    #[cfg(feature = "until")]
-    let handle = {
-        ensure!(peer_urls.len() >= node_idx, "Not enough peers");
-        let mut host = peer_urls[node_idx].clone();
-
-        host.set_port(Some(host.port().unwrap() + 800)).unwrap(); // TODO: remove port magic
-
-        let task_handle = spawn(run_until(cli.until, cli.watchdog_timeout, host));
-        if cli.late_start && node_idx as u16 == cli.late_start_node_id {
-            warn!("Adding delay before starting node: id: {}", node_idx);
-            tokio::time::sleep(std::time::Duration::from_secs(LATE_START_DELAY_SECS)).await;
-        }
-        task_handle
-    };
+    let mut api = spawn(
+        timeboost
+            .api()
+            .serve(node_config.net.public.http_api.to_string()),
+    );
 
     #[cfg(feature = "until")]
-    select! {
-        res = handle => {
-            tracing::info!("watchdog completed");
-            return match res {
-                Ok(Ok(_))  => Ok(()),
-                Ok(Err(e)) => Err(e),
-                Err(e)     => Err(e.into())
+    {
+        use anyhow::bail;
+        use std::time::Duration;
+        use timeboost_config::CommitteeConfig;
+        use timeboost_utils::until::Until;
+        use tokio::time::sleep;
+        use url::Url;
+
+        let committee = CommitteeConfig::read(&cli.committee)
+            .await
+            .with_context(|| format!("failed to read committee config {:?}", cli.committee))?;
+
+        let handle = {
+            let Some(member) = committee
+                .members
+                .iter()
+                .find(|m| m.signing_key == node_config.keys.signing.public)
+            else {
+                bail!("failed to find node in committee")
             };
-        },
-        _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-        _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-        _ = &mut api         => bail!("api service shutdown unexpectedly"),
-        _ = &mut event_monitor_handle.as_ref().unwrap(), if event_monitor_handle.is_some() => {
-            bail!("event monitor shutdown unexpectedly")
-        },
-        _ = signal::ctrl_c() => {
-            warn!("received ctrl-c; shutting down");
-            api.abort();
-            grpc.abort();
+
+            let host: Url = format!("http://{}", member.http_api)
+                .parse()
+                .context("invalid http api address")?;
+
+            if let Some(s) = cli.start_delay {
+                warn!("delaying start by {s}s");
+                sleep(Duration::from_secs(s)).await;
+            }
+
+            let mut until = Until::new(cli.until, Duration::from_secs(cli.watchdog_timeout), host);
+            until.require_decrypted(cli.required_decrypt_rounds);
+
+            spawn(until.run())
+        };
+
+        select! {
+            res = handle => {
+                tracing::info!("watchdog completed");
+                return match res {
+                    Ok(Ok(_))  => Ok(()),
+                    Ok(Err(e)) => Err(e),
+                    Err(e)     => Err(e.into())
+                };
+            },
+            _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api         => bail!("api service shutdown unexpectedly"),
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+            }
         }
     }
 
