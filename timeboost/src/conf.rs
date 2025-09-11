@@ -64,16 +64,6 @@ pub struct TimeboostConfig {
     pub(crate) event_monitoring: EventMonitoringConfig,
 }
 
-impl Default for EventMonitoringConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            poll_interval_seconds: 5,
-            start_block_number: 0,
-        }
-    }
-}
-
 impl TimeboostConfig {
     pub fn sequencer_config(&self) -> SequencerConfig {
         SequencerConfig::builder()
@@ -130,16 +120,12 @@ pub struct EventMonitoringConfig {
     pub(crate) start_block_number: u64,
 }
 
-impl EventMonitoringConfig {
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn new(enabled: bool, poll_interval_seconds: u64, start_block_number: u64) -> Self {
+impl Default for EventMonitoringConfig {
+    fn default() -> Self {
         Self {
-            enabled,
-            poll_interval_seconds,
-            start_block_number,
+            enabled: true,
+            poll_interval_seconds: 5,
+            start_block_number: 0,
         }
     }
 }
