@@ -26,6 +26,7 @@ bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+futures = { workspace = true }
 http = { workspace = true }
 metrics = { path = "../metrics", features = ["prometheus"]}
 multisig = { path = "../multisig" }

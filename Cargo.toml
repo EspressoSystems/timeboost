@@ -31,7 +31,7 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom", "signer-mnemonic"] }
+alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom", "signer-mnemonic", "transport-ws"] }
 alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
