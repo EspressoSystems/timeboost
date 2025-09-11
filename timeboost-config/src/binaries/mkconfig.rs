@@ -68,6 +68,10 @@ struct Args {
     #[clap(long)]
     parent_rpc_url: Url,
 
+    /// Parent chain websocket url
+    #[clap(long)]
+    parent_ws_url: Url,
+
     /// Parent chain id
     #[clap(long)]
     parent_chain_id: u64,
@@ -182,6 +186,7 @@ impl Args {
                     parent: ParentChain {
                         id: self.parent_chain_id,
                         rpc_url: self.parent_rpc_url.clone(),
+                        ws_url: self.parent_ws_url.clone(),
                         ibox_contract: self.parent_ibox_contract,
                         block_tag: self.parent_block_tag,
                         key_manager_contract: self.key_manager_contract,

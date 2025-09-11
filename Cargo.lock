@@ -1595,15 +1595,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anvil"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e29d3ca6c44fd6bc23219f6441303e329ee44580d3cee160df9c5d205e8fc83"
-dependencies = [
- "thiserror 2.0.16",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -99,6 +99,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --http-api "127.0.0.1:8004" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -114,6 +115,7 @@ mkconfig_docker DATETIME *ARGS:
     --mode "increment-address" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -129,6 +131,7 @@ mkconfig_nitro DATETIME *ARGS:
     --nitro-addr "localhost:55000" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 1337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
