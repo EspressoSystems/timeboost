@@ -5,10 +5,7 @@ services:
       [
         "/app/timeboost",
         "--committee-id", "0",
-        "--http-port", "8800",
-        "--config", "docker/node_0.toml",
-        "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--config", "node_0.toml",
       ]
     networks:
       timeboost:
@@ -26,16 +23,16 @@ services:
       - "8060:8002"
       - "8800:8800"
       - "9000:9000"
+    depends_on:
+      nitro-dev:
+        condition: service_healthy
   node1:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--committee-id", "0",
-        "--http-port", "8800",
-        "--config", "docker/node_1.toml",
-        "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--config", "node_1.toml",
       ]
     networks:
       timeboost:
@@ -53,16 +50,16 @@ services:
       - "8061:8002"
       - "8801:8800"
       - "9001:9000"
+    depends_on:
+      nitro-dev:
+        condition: service_healthy
   node2:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--committee-id", "0",
-        "--http-port", "8800",
-        "--config", "docker/node_2.toml",
-        "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--config", "node_2.toml",
       ]
     networks:
       timeboost:
@@ -80,16 +77,16 @@ services:
       - "8062:8002"
       - "8802:8800"
       - "9002:9000"
+    depends_on:
+      nitro-dev:
+        condition: service_healthy
   node3:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--committee-id", "0",
-        "--http-port", "8800",
-        "--config", "docker/node_3.toml",
-        "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--config", "node_3.toml",
       ]
     networks:
       timeboost:
@@ -107,17 +104,16 @@ services:
       - "8063:8002"
       - "8803:8800"
       - "9003:9000"
+    depends_on:
+      nitro-dev:
+        condition: service_healthy
   node4:
     image: timeboost:latest
     command:
       [
         "/app/timeboost",
         "--committee-id", "0",
-        "--http-port", "8800",
-        "--keyset-file", "docker.json",
-        "--config", "docker/node_4.toml",
-        "--stamp", "/tmp/timeboost.stamp",
-        "--namespace", "10101",
+        "--config", "node_4.toml",
       ]
     networks:
       timeboost:
@@ -135,6 +131,9 @@ services:
       - "8064:8002"
       - "8804:8800"
       - "9004:9000"
+    depends_on:
+      nitro-dev:
+        condition: service_healthy
   nitro-dev:
     image: offchainlabs/nitro-node:v3.2.1-d81324d
     ports:
@@ -143,6 +142,11 @@ services:
       timeboost:
         ipv4_address: 172.20.0.12
     command: --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   yapper:
     image: yapper:latest
     command:
