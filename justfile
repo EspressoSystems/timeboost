@@ -177,11 +177,11 @@ test-all: build_release build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-test-contract" \
-    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/c0/committee.toml" \
-    --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/local/committee.toml" \
+    --spawn "4:target/release/yapper --keyset-file test-configs/local/committee.toml" \
     --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
     target/release/block-checker -- \
       --config test-configs/local/node_0.toml \
-      --committee test-configs/c0/committee.toml \
+      --committee test-configs/local/committee.toml \
       --committee-id 0 \
       --blocks 1000

@@ -43,6 +43,9 @@ async fn main() -> Result<()> {
         if Some(OsStr::new("toml")) != entry.path().extension() {
             continue;
         }
+        if Some(OsStr::new("committee.toml")) == entry.path().file_name() {
+            continue;
+        }
         let mut cmd = Command::new(args.timeboost.as_os_str());
         cmd.arg("--committee-id")
             .arg(args.committee.to_string())
