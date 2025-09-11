@@ -129,3 +129,9 @@ impl Default for EventMonitoringConfig {
         }
     }
 }
+
+impl EventMonitoringConfig {
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+}
