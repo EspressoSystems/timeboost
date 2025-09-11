@@ -134,9 +134,9 @@ mod tests {
         let _manager = provider_arc.default_signer_address();
 
         // create event monitor & get initial block number
-        let contract = KeyManager::new(contract_addr, &provider_arc);
-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
         let initial_block = provider_arc.get_block_number().await.unwrap();
+        let contract = KeyManager::new(contract_addr, &provider_arc);
+        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
 
         // create a committee to trigger CommitteeCreated event
         let rng = &mut rand::rng();
@@ -176,12 +176,12 @@ mod tests {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
         let provider_arc = Arc::new(provider);
+        let initial_block = provider_arc.get_block_number().await.unwrap();
 
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
         // create event monitor and get initial block number
-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
-        let initial_block = provider_arc.get_block_number().await.unwrap();
+        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
 
         // set threshold encryption key to trigger ThresholdEncryptionKeyUpdated event
         let test_key = b"test_threshold_encryption_key_32_bytes!".to_vec();
@@ -220,7 +220,7 @@ mod tests {
         let manager = provider_arc.default_signer_address();
 
         // create event monitor
-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
 
         // get initial block number
         let initial_block = provider_arc.get_block_number().await.unwrap();
@@ -283,7 +283,7 @@ mod tests {
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
         // create event monitor
-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
 
         // get initial block number
         let initial_block = provider_arc.get_block_number().await.unwrap();

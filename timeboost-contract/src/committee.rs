@@ -47,7 +47,7 @@ mod tests {
         let provider_arc = Arc::new(provider);
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(provider_arc, contract_addr);
+        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
 
         let rng = &mut rand::rng();
         let members = (0..3)
@@ -83,7 +83,7 @@ mod tests {
         let provider_arc = Arc::new(provider);
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(provider_arc, contract_addr);
+        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
 
         let rng = &mut rand::rng();
         let first_members = (0..2)
@@ -154,7 +154,7 @@ mod tests {
         let provider_arc = Arc::new(provider);
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(provider_arc, contract_addr);
+        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
 
         let rng = &mut rand::rng();
         let members = (0..2)
@@ -185,7 +185,7 @@ mod tests {
         let provider_arc = Arc::new(provider);
         let contract = KeyManager::new(contract_addr, &provider_arc);
 
-        let manager = CommitteeManager::new(provider_arc, contract_addr);
+        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
 
         // create multiple committees
         let rng = &mut rand::rng();
@@ -230,8 +230,7 @@ mod tests {
     async fn test_committee_manager_creation() {
         // setup test chain and deploy contract
         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
-        let provider_arc = Arc::new(provider);
-        let manager = CommitteeManager::new(provider_arc, contract_addr);
+        let manager = CommitteeManager::new(Arc::new(provider), contract_addr);
 
         // manager should be created successfully
         assert_eq!(manager.contract_addr, contract_addr);

@@ -6,6 +6,7 @@ use anyhow::Result;
 use timeboost_contract::KeyManagerEventMonitor;
 use tokio::time::sleep;
 use tracing::{error, info};
+use std::sync::Arc;
 
 use crate::conf::EventMonitoringConfig;
 
@@ -47,7 +48,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> EventMonitor<P> {
 
     /// Monitor contract events and send them to the processing channel
     async fn monitor_events(self) -> Result<()> {
-        let event_monitor = KeyManagerEventMonitor::new(self.provider.clone(), self.contract_addr);
+        let event_monitor = KeyManagerEventMonitor::new(Arc::new(self.provider.clone()), self.contract_addr);
         let mut last_processed_block = None;
         let start_block_number = self.config.start_block_number;
         loop {
