@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
+use std::process::exit;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
@@ -8,6 +9,7 @@ use bytes::Bytes;
 use clap::Parser;
 use prost::Message;
 use quick_cache::sync::Cache;
+use sailfish::types::RoundNumber;
 use timeboost::config::CommitteeConfig;
 use timeboost::proto::block::Block;
 use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer};
@@ -36,7 +38,7 @@ struct Args {
 /// GRPC service that accepts inclusion lists and broadcasts them to clients.
 struct Service {
     next_block: AtomicU64,
-    cache: Cache<Bytes, u64>,
+    cache: Cache<RoundNumber, (Bytes, u64)>,
     output: broadcast::Sender<Block>,
 }
 
@@ -65,13 +67,21 @@ impl ForwardApi for Service {
         r: Request<InclusionList>,
     ) -> Result<Response<()>, Status> {
         let list = r.into_inner();
+        let round = RoundNumber::from(list.round);
         let bytes = Bytes::from(list.encode_to_vec());
-        let bnum = self
+        let (prev, bnum) = self
             .cache
-            .get_or_insert_with(&bytes, || -> Result<u64, Infallible> {
-                Ok(self.next_block.fetch_add(1, Ordering::Relaxed))
+            .get_or_insert_with(&round, || -> Result<_, Infallible> {
+                Ok((
+                    bytes.clone(),
+                    self.next_block.fetch_add(1, Ordering::Relaxed),
+                ))
             })
             .expect("infallible insert");
+        if bytes != prev {
+            error!(%round, "inclusion list mismatch");
+            exit(1)
+        }
         let block = Block {
             number: bnum,
             round: list.round,
