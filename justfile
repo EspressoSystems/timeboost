@@ -12,9 +12,10 @@ build *ARGS:
   cargo build {{ARGS}}
 
 update-submodules:
-  git submodule update --remote --recursive
-  cd timeboost-proto && cargo build
-  cd ../contracts && forge build
+  git submodule update  --init --remote --recursive
+  cargo build -p timeboost-proto
+  forge build
+  cargo build -p timeboost-contract
 
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}

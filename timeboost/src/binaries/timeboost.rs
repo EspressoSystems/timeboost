@@ -13,7 +13,7 @@ use timeboost_types::{KeyStore, ThresholdKeyCell};
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::info;
+use tracing::{error, info};
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
@@ -223,7 +223,23 @@ async fn main() -> Result<()> {
         .chain_config(node_config.chain.clone())
         .build();
 
-    let timeboost = Timeboost::new(config).await?;
+    let timeboost = Timeboost::new(config.clone()).await?;
+
+    let event_monitor_handle = config.event_monitoring().enabled().then(|| {
+        let provider =
+            ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
+        let event_monitor = timeboost::event_monitor::EventMonitor::new(
+            provider,
+            node_config.chain.parent.key_manager_contract,
+            config.event_monitoring().clone(),
+        );
+
+        spawn(async move {
+            if let Err(e) = event_monitor.start_monitoring().await {
+                error!("Event monitoring failed: {}", e);
+            }
+        })
+    });
 
     let mut grpc = {
         let addr = node_config.net.internal.address.to_string();
@@ -294,14 +310,31 @@ async fn main() -> Result<()> {
     }
 
     #[cfg(not(feature = "until"))]
-    select! {
-        _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-        _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-        _ = &mut api         => bail!("api service shutdown unexpectedly"),
-        _ = signal::ctrl_c() => {
-            warn!("received ctrl-c; shutting down");
-            api.abort();
-            grpc.abort();
+    if let Some(mut event_handle) = event_monitor_handle {
+        select! {
+            _ = timeboost.go() => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api => bail!("api service shutdown unexpectedly"),
+            _ = &mut event_handle => {
+                bail!("event monitor shutdown unexpectedly")
+            },
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+                event_handle.abort();
+            }
+        }
+    } else {
+        select! {
+            _ = timeboost.go() => bail!("timeboost shutdown unexpectedly"),
+            _ = &mut grpc => bail!("grpc api shutdown unexpectedly"),
+            _ = &mut api => bail!("api service shutdown unexpectedly"),
+            _ = signal::ctrl_c() => {
+                warn!("received ctrl-c; shutting down");
+                api.abort();
+                grpc.abort();
+            }
         }
     }
 

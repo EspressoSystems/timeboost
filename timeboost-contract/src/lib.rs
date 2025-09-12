@@ -11,10 +11,14 @@ use anyhow::Result;
 // Include the generated contract bindings
 // The build script auto-detects contracts and generates bindings in src/bindings/
 mod bindings;
+pub mod committee;
 pub mod deployer;
+pub mod events;
 pub mod provider;
 mod sol_types;
 
+pub use committee::*;
+pub use events::*;
 pub use sol_types::*;
 use timeboost_types::TestProviderWithWallet;
 

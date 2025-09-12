@@ -1,0 +1,126 @@
+diff --git a/contracts b/contracts
+--- a/contracts
++++ b/contracts
+@@ -1 +1 @@
+-Subproject commit 88d521cca14cd60c6a4fec621233ce5ab1fbbea8
++Subproject commit 88d521cca14cd60c6a4fec621233ce5ab1fbbea8-dirty
+diff --git a/timeboost-contract/src/committee.rs b/timeboost-contract/src/committee.rs
+index be5ac003..4d1d9a46 100644
+--- a/timeboost-contract/src/committee.rs
++++ b/timeboost-contract/src/committee.rs
+@@ -47,7 +47,7 @@ mod tests {
+         let provider_arc = Arc::new(provider);
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+-        let manager = CommitteeManager::new(provider_arc, contract_addr);
++        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
+ 
+         let rng = &mut rand::rng();
+         let members = (0..3)
+@@ -83,7 +83,7 @@ mod tests {
+         let provider_arc = Arc::new(provider);
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+-        let manager = CommitteeManager::new(provider_arc, contract_addr);
++        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
+ 
+         let rng = &mut rand::rng();
+         let first_members = (0..2)
+@@ -154,7 +154,7 @@ mod tests {
+         let provider_arc = Arc::new(provider);
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+-        let manager = CommitteeManager::new(provider_arc, contract_addr);
++        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
+ 
+         let rng = &mut rand::rng();
+         let members = (0..2)
+@@ -185,7 +185,7 @@ mod tests {
+         let provider_arc = Arc::new(provider);
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+-        let manager = CommitteeManager::new(provider_arc, contract_addr);
++        let manager = CommitteeManager::new(provider_arc.clone(), contract_addr);
+ 
+         // create multiple committees
+         let rng = &mut rand::rng();
+@@ -230,8 +230,7 @@ mod tests {
+     async fn test_committee_manager_creation() {
+         // setup test chain and deploy contract
+         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
+-        let provider_arc = Arc::new(provider);
+-        let manager = CommitteeManager::new(provider_arc, contract_addr);
++        let manager = CommitteeManager::new(Arc::new(provider), contract_addr);
+ 
+         // manager should be created successfully
+         assert_eq!(manager.contract_addr, contract_addr);
+diff --git a/timeboost-contract/src/events.rs b/timeboost-contract/src/events.rs
+index a8c19dc8..1bd7527a 100644
+--- a/timeboost-contract/src/events.rs
++++ b/timeboost-contract/src/events.rs
+@@ -134,9 +134,9 @@ mod tests {
+         let _manager = provider_arc.default_signer_address();
+ 
+         // create event monitor & get initial block number
+-        let contract = KeyManager::new(contract_addr, &provider_arc);
+-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+         let initial_block = provider_arc.get_block_number().await.unwrap();
++        let contract = KeyManager::new(contract_addr, &provider_arc);
++        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
+ 
+         // create a committee to trigger CommitteeCreated event
+         let rng = &mut rand::rng();
+@@ -176,12 +176,12 @@ mod tests {
+         // setup test chain and deploy contract
+         let (provider, contract_addr) = crate::init_test_chain().await.unwrap();
+         let provider_arc = Arc::new(provider);
++        let initial_block = provider_arc.get_block_number().await.unwrap();
+ 
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+         // create event monitor and get initial block number
+-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
+-        let initial_block = provider_arc.get_block_number().await.unwrap();
++        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
+ 
+         // set threshold encryption key to trigger ThresholdEncryptionKeyUpdated event
+         let test_key = b"test_threshold_encryption_key_32_bytes!".to_vec();
+@@ -220,7 +220,7 @@ mod tests {
+         let manager = provider_arc.default_signer_address();
+ 
+         // create event monitor
+-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
++        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
+ 
+         // get initial block number
+         let initial_block = provider_arc.get_block_number().await.unwrap();
+@@ -283,7 +283,7 @@ mod tests {
+         let contract = KeyManager::new(contract_addr, &provider_arc);
+ 
+         // create event monitor
+-        let monitor = KeyManagerEventMonitor::new(&provider_arc, contract_addr);
++        let monitor = KeyManagerEventMonitor::new(provider_arc.clone(), contract_addr);
+ 
+         // get initial block number
+         let initial_block = provider_arc.get_block_number().await.unwrap();
+diff --git a/timeboost/src/event_monitor.rs b/timeboost/src/event_monitor.rs
+index 1bc378a8..6b1fa638 100644
+--- a/timeboost/src/event_monitor.rs
++++ b/timeboost/src/event_monitor.rs
+@@ -6,6 +6,7 @@ use anyhow::Result;
+ use timeboost_contract::KeyManagerEventMonitor;
+ use tokio::time::sleep;
+ use tracing::{error, info};
++use std::sync::Arc;
+ 
+ use crate::conf::EventMonitoringConfig;
+ 
+@@ -47,7 +48,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> EventMonitor<P> {
+ 
+     /// Monitor contract events and send them to the processing channel
+     async fn monitor_events(self) -> Result<()> {
+-        let event_monitor = KeyManagerEventMonitor::new(self.provider.clone(), self.contract_addr);
++        let event_monitor = KeyManagerEventMonitor::new(Arc::new(self.provider.clone()), self.contract_addr);
+         let mut last_processed_block = None;
+         let start_block_number = self.config.start_block_number;
+         loop {
