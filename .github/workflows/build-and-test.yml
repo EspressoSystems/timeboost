@@ -139,6 +139,8 @@ jobs:
       run: just run_demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
       run: just run_sailfish_demo
+    - name: Test with block-maker
+      run: just test-all
 
   contracts:
     runs-on: ubuntu-latest

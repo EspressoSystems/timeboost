@@ -22,6 +22,7 @@ pub struct CommitteeMember {
     pub dkg_enc_key: DkgEncKey,
     pub public_address: Address,
     pub http_api: Address,
+    pub internal_api: Address,
 }
 
 impl CommitteeConfig {
