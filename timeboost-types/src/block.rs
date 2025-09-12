@@ -207,7 +207,7 @@ impl Committable for BlockInfo {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 #[cbor(map)]
 pub struct CertifiedBlock<S> {
     #[cbor(n(0))]

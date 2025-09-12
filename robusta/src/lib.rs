@@ -18,7 +18,9 @@ use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
 use tracing::{debug, warn};
 
-use crate::types::{RecvBody, SendBody, TaggedBase64, TransactionsWithProof, VidCommonResponse, TX};
+use crate::types::{
+    RecvBody, SendBody, TX, TaggedBase64, TransactionsWithProof, VidCommonResponse,
+};
 
 pub use crate::multiwatcher::Multiwatcher;
 pub use crate::types::Height;
@@ -58,7 +60,11 @@ impl Client {
         self.get_with_retry(u).await
     }
 
-    pub async fn submit<N>(&self, nsid: N, blocks: &[CertifiedBlock<Validated>]) -> Result<(), Error>
+    pub async fn submit<N>(
+        &self,
+        nsid: N,
+        blocks: &[CertifiedBlock<Validated>],
+    ) -> Result<(), Error>
     where
         N: Into<NamespaceId>,
     {
@@ -104,25 +110,23 @@ impl Client {
         }
         Either::Right(trxs.into_iter().flat_map(move |t| {
             match minicbor::decode::<RecvBody>(t.payload()) {
-                Ok(body) => {
-                    Either::Right(body.blocks.into_iter().filter_map(|b| {
-                        let Some(c) = cvec.get(b.committee()) else {
-                            warn!(
-                                node      = %self.config.label,
-                                height    = %hdr.height(),
-                                committee = %b.committee(),
-                                "unknown committee"
-                            );
-                            return None;
-                        };
-                        if let Some(b) = b.validated(c) {
-                            Some(b.cert().data().num())
-                        } else {
-                            warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
-                            None
-                        }
-                    }))
-                }
+                Ok(body) => Either::Right(body.blocks.into_iter().filter_map(|b| {
+                    let Some(c) = cvec.get(b.committee()) else {
+                        warn!(
+                            node      = %self.config.label,
+                            height    = %hdr.height(),
+                            committee = %b.committee(),
+                            "unknown committee"
+                        );
+                        return None;
+                    };
+                    if let Some(b) = b.validated(c) {
+                        Some(b.cert().data().num())
+                    } else {
+                        warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
+                        None
+                    }
+                })),
                 Err(err) => {
                     warn!(
                         node   = %self.config.label,

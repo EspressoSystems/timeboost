@@ -28,14 +28,14 @@ pub(crate) struct VidCommonResponse {
 #[cbor(map)]
 pub(crate) struct RecvBody {
     #[cbor(n(0))]
-    pub(crate) blocks: Vec<CertifiedBlock<Unchecked>>
+    pub(crate) blocks: Vec<CertifiedBlock<Unchecked>>,
 }
 
 #[derive(Debug, Encode)]
 #[cbor(map)]
 pub(crate) struct SendBody<'a> {
     #[cbor(n(0))]
-    pub(crate) blocks: &'a [CertifiedBlock<Validated>]
+    pub(crate) blocks: &'a [CertifiedBlock<Validated>],
 }
 
 macro_rules! Primitive {
