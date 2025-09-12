@@ -188,3 +188,42 @@ test-all: build_release build-test-utils
       --committee test-configs/local/committee.toml \
       --committee-id 0 \
       --blocks 1000
+
+test-dyn-comm: build_release build-test-utils
+  env RUST_LOG=info target/release/run \
+    --verbose \
+    --timeout 120 \
+    --spawn "1:anvil --port 8545" \
+    --run   "2:sleep 2" \
+    --run   "3:scripts/deploy-test-contract" \
+    --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+    --spawn "5:target/release/run-committee --configs test-configs/c0/ --committee 0" \
+    --run   "6:target/release/mkconfig -n 6 \
+                 --public-addr '127.0.0.1:9000' \
+                 --internal-addr '127.0.0.1:9003' \
+                 --http-api '127.0.0.1:9004' \
+                 --chain-namespace 10101 \
+                 --parent-rpc-url 'http://127.0.0.1:8545' \
+                 --parent-ws-url 'ws://127.0.0.1:8545' \
+                 --parent-chain-id 31337 \
+                 --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+                 --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+                 --timestamp '`just now-plus-20s`' \
+                 --stamp-dir '/tmp' \
+                 --output 'test-configs/c1'" \
+    --run   "7:target/release/register -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+                 -i 0 \
+                 -u 'http://localhost:8545' \
+                 -k '0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35' \
+                 -c 'test-configs/c1/committee.toml'" \
+    --run   "8:pkill -9 yapper && target/release/yapper --keyset-file test-configs/c1/committee.toml" \
+    target/release/run-committee --configs test-configs/c1 \
+      --committee 1 \
+      --until 800 \
+      --required-decrypt-rounds 3 && rm -rf test-configs/c1
+
+
+# portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format
+[private]
+now-plus-20s:
+    @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'
