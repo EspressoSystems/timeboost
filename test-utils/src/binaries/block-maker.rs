@@ -69,9 +69,11 @@ impl ForwardApi for Service {
         let list = r.into_inner();
         let round = RoundNumber::from(list.round);
         let bytes = Bytes::from(list.encode_to_vec());
+        let mut is_new = false;
         let (prev, bnum) = self
             .cache
             .get_or_insert_with(&round, || -> Result<_, Infallible> {
+                is_new = true;
                 Ok((
                     bytes.clone(),
                     self.next_block.fetch_add(1, Ordering::Relaxed),
@@ -82,13 +84,15 @@ impl ForwardApi for Service {
             error!(%round, "inclusion list mismatch");
             exit(1)
         }
-        let block = Block {
-            number: bnum,
-            round: list.round,
-            payload: bytes,
-        };
-        if let Err(err) = self.output.send(block) {
-            return Err(Status::internal(err.to_string()));
+        if is_new {
+            let block = Block {
+                number: bnum,
+                round: list.round,
+                payload: bytes,
+            };
+            if let Err(err) = self.output.send(block) {
+                return Err(Status::internal(err.to_string()));
+            }
         }
         Ok(Response::new(()))
     }
