@@ -11942,6 +11942,7 @@ dependencies = [
  "anyhow",
  "bincode 2.0.1",
  "clap",
+ "futures",
  "rand 0.9.2",
  "serde",
  "timeboost-config",
