@@ -224,7 +224,7 @@ test-dyn-comm: build_release_until build-test-utils
     target/release/run-committee -- --configs test-configs/c1/ \
       --committee 1 \
       --timeboost target/release/timeboost \
-      --until 800 \
+      --until 500 \
       --required-decrypt-rounds 3
 
 
