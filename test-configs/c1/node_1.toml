@@ -1,0 +1,35 @@
+stamp = "/tmp/timeboost.1.stamp"
+
+[net.public]
+address = "127.0.0.1:9010"
+http_api = "127.0.0.1:9014"
+
+[net.internal]
+address = "127.0.0.1:9013"
+
+[keys.signing]
+secret = "4JiTfGM5cb7RLDVfNb89nZH7ZeYWEy6UfgukCJe1uJ2s"
+public = "gWpDFTTBYN8u5JDz83PYVDakQTMzPPNNonnkt4FRSJD3"
+
+[keys.dh]
+secret = "FZGiSAFQaMvVJ7zCEFmQu5cgRYKwQJdCQqSrw8SYRhHJ"
+public = "6fBHLbP8fKjk2tYgqaMs3GQTiHQSPh1uZ9d3J4ZYM9gC"
+
+[keys.dkg]
+secret = "DegFS9EvP9pz7rYX4JsSJ4aLRSq3fBkdy8U6LqD3eQqt"
+public = "73sU1acMiGsiJu9pVY8yQag7DvRcvtYRkATjPCv485Mwr6FYimFVLRUsz9Papy745f"
+
+[chain]
+namespace = 10101
+
+[chain.parent]
+id = 31337
+rpc_url = "http://127.0.0.1:8545/"
+ws_url = "ws://127.0.0.1:8545/"
+ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
+block_tag = "finalized"
+key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+
+[espresso]
+base_url = "https://query.decaf.testnet.espresso.network/v1/"
+websockets_base_url = "wss://query.decaf.testnet.espresso.network/v1/"

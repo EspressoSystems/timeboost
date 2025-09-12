@@ -1,0 +1,25 @@
+effective_timestamp = "2025-09-12T20:05:52Z"
+
+[[members]]
+signing_key = "dQST7kJpV3RXqNMyKUA6eMW5HiVLAVK4AFwX5nQJbaka"
+dh_key = "JBm1FZhcGcZE4bUVDrRCsHZYcz78BcjgdKejknytQvnH"
+dkg_enc_key = "6ZH8nCCCmX5UDMjcR18oNz5YTUixDQeVqXVoYRqMxGHLkoNo95Gw27PWD323Kf7Fqs"
+public_address = "127.0.0.1:9000"
+http_api = "127.0.0.1:9004"
+internal_api = "127.0.0.1:9003"
+
+[[members]]
+signing_key = "gWpDFTTBYN8u5JDz83PYVDakQTMzPPNNonnkt4FRSJD3"
+dh_key = "6fBHLbP8fKjk2tYgqaMs3GQTiHQSPh1uZ9d3J4ZYM9gC"
+dkg_enc_key = "73sU1acMiGsiJu9pVY8yQag7DvRcvtYRkATjPCv485Mwr6FYimFVLRUsz9Papy745f"
+public_address = "127.0.0.1:9010"
+http_api = "127.0.0.1:9014"
+internal_api = "127.0.0.1:9013"
+
+[[members]]
+signing_key = "c24KQW7jK7d8NdKYatGn6cZDSoMro5XsxKoBkkLmSUwN"
+dh_key = "Fer6ptfw1MgBDxCuLn54Xo7V62iEhZZyQ3JTfyyGMgM9"
+dkg_enc_key = "5vacdPGGmQSfS474Fy5dizxoE1GHLW4W48FBx7UfVTtERjtPhFN7CEBT23y6uBHiew"
+public_address = "127.0.0.1:9020"
+http_api = "127.0.0.1:9024"
+internal_api = "127.0.0.1:9023"
