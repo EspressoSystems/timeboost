@@ -49,8 +49,6 @@ async fn main() -> Result<()> {
         let mut cmd = Command::new(args.timeboost.as_os_str());
         cmd.arg("--committee-id")
             .arg(args.committee.to_string())
-            .arg("--https-only")
-            .arg("false")
             .arg("--config")
             .arg(entry.path())
             .arg("--ignore-stamp");
