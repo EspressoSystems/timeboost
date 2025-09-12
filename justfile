@@ -19,6 +19,9 @@ update-submodules:
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
+build_release_until:
+  cargo build --release --workspace --all-targets --features "until"
+
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
@@ -103,6 +106,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --http-api "127.0.0.1:8004" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -118,6 +122,7 @@ mkconfig_docker DATETIME *ARGS:
     --mode "increment-address" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -133,6 +138,7 @@ mkconfig_nitro DATETIME *ARGS:
     --nitro-addr "localhost:55000" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8546" \
     --parent-chain-id 1337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -185,3 +191,44 @@ test-all: build_release build-test-utils
       --committee test-configs/local/committee.toml \
       --committee-id 0 \
       --blocks 1000
+
+test-dyn-comm: build_release_until build-test-utils
+  env RUST_LOG=sailfish=warn,yapper=error,timeboost=info,info target/release/run \
+    --verbose \
+    --timeout 120 \
+    --spawn "1:anvil --port 8545" \
+    --run   "2:sleep 2" \
+    --run   "3:scripts/deploy-test-contract" \
+    --spawn "4:target/release/yapper --keyset-file test-configs/c0/committee.toml" \
+    --spawn "5:target/release/run-committee --configs test-configs/c0/ --committee 0 --timeboost target/release/timeboost --until 1000" \
+    --run   "6:target/release/mkconfig -n 3 \
+                 --public-addr 127.0.0.1:9000 \
+                 --internal-addr 127.0.0.1:9003 \
+                 --http-api 127.0.0.1:9004 \
+                 --chain-namespace 10101 \
+                 --parent-rpc-url http://127.0.0.1:8545 \
+                 --parent-ws-url ws://127.0.0.1:8545 \
+                 --parent-chain-id 31337 \
+                 --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+                 --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+                 --timestamp `just now-plus-20s` \
+                 --stamp-dir /tmp \
+                 --output test-configs/c1" \
+    --run   "7:target/release/register \
+                 -i 0 \
+                 -u http://localhost:8545 \
+                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 -c test-configs/c1/committee.toml" \
+    --run   "8:sleep 5" \
+    --spawn "9:target/release/yapper --keyset-file test-configs/c1/committee.toml" \
+    target/release/run-committee -- --configs test-configs/c1/ \
+      --committee 1 \
+      --timeboost target/release/timeboost \
+      --until 500 \
+      --required-decrypt-rounds 3
+
+
+# portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format
+[private]
+now-plus-20s:
+    @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'

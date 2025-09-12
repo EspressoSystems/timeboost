@@ -15,7 +15,11 @@ use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    #[clap(short, long)]
+    #[clap(
+        short,
+        long,
+        default_value = "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+    )]
     mnemonic: String,
 
     #[clap(short, long)]

@@ -1,23 +1,23 @@
-stamp = "/tmp/timeboost.3.stamp"
+stamp = "/tmp/timeboost.0.stamp"
 
 [net.public]
-address = "127.0.0.1:8030"
-http_api = "127.0.0.1:8034"
+address = "127.0.0.1:9000"
+http_api = "127.0.0.1:9004"
 
 [net.internal]
-address = "127.0.0.1:8033"
+address = "127.0.0.1:9003"
 
 [keys.signing]
-secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
-public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+secret = "HwhEANTEwUJxYwtGXWqHp7YSubxceEc1kXLBPyVkBryv"
+public = "dQST7kJpV3RXqNMyKUA6eMW5HiVLAVK4AFwX5nQJbaka"
 
 [keys.dh]
-secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
-public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+secret = "3pz6B8owd4eFZoCmtt8FvJkUKHURTSF4QWw7VVmmeBzW"
+public = "JBm1FZhcGcZE4bUVDrRCsHZYcz78BcjgdKejknytQvnH"
 
 [keys.dkg]
-secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
-public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+secret = "6rACFLkLskjcCArUeEdUz4UBuU39BnzJAGHuRLJG6dg3"
+public = "6ZH8nCCCmX5UDMjcR18oNz5YTUixDQeVqXVoYRqMxGHLkoNo95Gw27PWD323Kf7Fqs"
 
 [chain]
 namespace = 10101
