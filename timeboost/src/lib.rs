@@ -23,7 +23,7 @@ use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{BundleVariant, ConsensusTime, KeyStore};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
@@ -101,13 +101,26 @@ impl Timeboost {
         // setup the websocket for contract event stream
         let ws = WsConnect::new(self.config.chain_config.parent.ws_url.clone());
         // spawn the pubsub service (and backend) and the frontend is registered at the provider
-        let provider = ProviderBuilder::new().connect_pubsub_with(ws).await?;
+        let provider = ProviderBuilder::new()
+            .connect_pubsub_with(ws)
+            .await
+            .map_err(|err| {
+                error!(?err, "event pubsub failed to start");
+                err
+            })?;
 
         let filter = Filter::new()
             .address(self.config.chain_config.parent.key_manager_contract)
             .event(KeyManager::CommitteeCreated::SIGNATURE)
             .from_block(BlockNumberOrTag::Finalized);
-        let mut events = provider.subscribe_logs(&filter).await?.into_stream();
+        let mut events = provider
+            .subscribe_logs(&filter)
+            .await
+            .map_err(|err| {
+                error!(?err, "pubsub subscription failed");
+                err
+            })?
+            .into_stream();
 
         loop {
             select! {
