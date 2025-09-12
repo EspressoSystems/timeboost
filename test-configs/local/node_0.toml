@@ -1,11 +1,12 @@
 stamp = "/tmp/timeboost.0.stamp"
 
 [net.public]
-address = "172.20.0.2:8000"
-http_api = "172.20.0.2:8004"
+address = "127.0.0.1:8000"
+http_api = "127.0.0.1:8004"
 
 [net.internal]
-address = "172.20.0.2:8003"
+address = "127.0.0.1:8003"
+nitro   = "127.0.0.1:55000"
 
 [keys.signing]
 secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"
@@ -23,8 +24,8 @@ public = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
 namespace = 10101
 
 [chain.parent]
-id = 412346
-rpc_url = "http://172.20.0.12:8547/"
+id = 31337
+rpc_url = "http://127.0.0.1:8545/"
 ibox_contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block_tag = "finalized"
 key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"

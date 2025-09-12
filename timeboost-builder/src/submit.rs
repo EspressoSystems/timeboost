@@ -14,7 +14,7 @@ use tokio::{
     time::{Instant, error::Elapsed, sleep, timeout},
 };
 use tokio_util::task::TaskTracker;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
 
@@ -80,9 +80,6 @@ impl Submitter {
     }
 
     pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
-        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
-            return;
-        };
         let num = cb.cert().data().num();
         debug!(
             node  = %self.public_key(),
@@ -90,6 +87,17 @@ impl Submitter {
             tasks = %self.submitters.len(),
             "creating block handler"
         );
+        if self.submitters.len() > MAX_TASKS - 10 {
+            warn!(
+                node  = %self.public_key(),
+                num   = %num,
+                tasks = %self.submitters.len(),
+                "approaching task limit"
+            );
+        }
+        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
+            return;
+        };
         self.submitters
             .spawn(self.handler.clone().handle(permit, cb));
         self.metrics.block_submit.set(*num as usize);
@@ -128,7 +136,7 @@ impl Verifier {
             let numbers = self.client.verified(self.nsid, &h, &committees).await;
             let mut set = self.verified.lock();
             for n in numbers {
-                debug!(node = %self.label, num = %n, "verified");
+                info!(node = %self.label, num = %n, "verified");
                 if set.len() == CACHE_SIZE {
                     set.pop_first();
                 }
@@ -189,7 +197,7 @@ impl Handler {
                         return;
                     } else {
                         state = if delay.is_zero() {
-                            debug!(node = %self.label, %num, "block submission verification timeout");
+                            warn!(node = %self.label, %num, "block submission verification timeout");
                             State::Submit(true)
                         } else {
                             State::Wait(delay)

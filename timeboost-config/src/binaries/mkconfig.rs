@@ -199,6 +199,7 @@ impl Args {
                 dkg_enc_key: config.keys.dkg.public.clone(),
                 public_address: config.net.public.address.clone(),
                 http_api: config.net.public.http_api.clone(),
+                internal_api: config.net.internal.address.clone(),
             });
 
             let mut node_config_file = File::create(self.output.join(format!("node_{i}.toml")))?;
