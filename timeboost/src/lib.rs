@@ -109,10 +109,20 @@ impl Timeboost {
                 err
             })?;
 
+        let chain_id = provider.get_chain_id().await.map_err(|err| {
+            error!(?err, "fail to get chainid");
+            err
+        })?;
+        // local test chain don't have finality gadget, thus don't support `Finalized` tag
+        let tag = if chain_id == 31337 || chain_id == 1337 {
+            BlockNumberOrTag::Latest
+        } else {
+            BlockNumberOrTag::Finalized
+        };
         let filter = Filter::new()
             .address(self.config.chain_config.parent.key_manager_contract)
             .event(KeyManager::CommitteeCreated::SIGNATURE)
-            .from_block(BlockNumberOrTag::Finalized);
+            .from_block(tag);
         let mut events = provider
             .subscribe_logs(&filter)
             .await
