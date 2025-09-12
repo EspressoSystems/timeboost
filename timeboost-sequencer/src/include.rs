@@ -67,12 +67,12 @@ impl Includer {
 
         self.round = round;
 
+        // Ensure cache has an entry for this round.
+        self.cache.entry(self.round).or_default();
+
         while self.cache.len() > CACHE_SIZE {
             self.cache.pop_first();
         }
-
-        // Ensure cache has an entry for this round.
-        self.cache.entry(self.round).or_default();
 
         self.time = {
             let mut times = lists
