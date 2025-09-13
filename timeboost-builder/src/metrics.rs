@@ -1,10 +1,10 @@
-use metrics::{Gauge, Metrics, NoMetrics};
+use metrics::{Counter, Metrics, NoMetrics};
 
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct BuilderMetrics {
-    pub block_submit: Box<dyn Gauge>,
-    pub submit_tasks: Box<dyn Gauge>,
+    pub blocks_submitted: Box<dyn Counter>,
+    pub blocks_verified: Box<dyn Counter>,
 }
 
 impl Default for BuilderMetrics {
@@ -16,8 +16,8 @@ impl Default for BuilderMetrics {
 impl BuilderMetrics {
     pub fn new<M: Metrics>(m: &M) -> Self {
         Self {
-            block_submit: m.create_gauge("block_submit", None),
-            submit_tasks: m.create_gauge("submit_tasks", None),
+            blocks_submitted: m.create_counter("blocks_submitted", None),
+            blocks_verified: m.create_counter("blocks_verified", None),
         }
     }
 }

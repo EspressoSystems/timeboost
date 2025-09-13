@@ -171,7 +171,7 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-  env RUST_LOG=block_checker=info,warn target/release/run \
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn target/release/run \
     --verbose \
     --timeout 120 \
     --spawn "1:anvil --port 8545" \

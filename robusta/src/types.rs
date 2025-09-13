@@ -8,7 +8,10 @@ use bon::Builder;
 use data_encoding::BASE64URL_NOPAD;
 use espresso_types::{NsProof, Transaction};
 use hotshot_query_service::VidCommon;
+use minicbor::{Decode, Encode};
+use multisig::{Unchecked, Validated};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use timeboost_types::CertifiedBlock;
 
 #[derive(Debug, Deserialize, Serialize, Builder)]
 pub(crate) struct TransactionsWithProof {
@@ -19,6 +22,20 @@ pub(crate) struct TransactionsWithProof {
 #[derive(Debug, Deserialize)]
 pub(crate) struct VidCommonResponse {
     pub(crate) common: VidCommon,
+}
+
+#[derive(Debug, Decode)]
+#[cbor(map)]
+pub(crate) struct RecvBody {
+    #[cbor(n(0))]
+    pub(crate) blocks: Vec<CertifiedBlock<Unchecked>>,
+}
+
+#[derive(Debug, Encode)]
+#[cbor(map)]
+pub(crate) struct SendBody<'a> {
+    #[cbor(n(0))]
+    pub(crate) blocks: &'a [CertifiedBlock<Validated>],
 }
 
 macro_rules! Primitive {
