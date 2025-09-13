@@ -1,25 +1,23 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, mem, sync::Arc, time::Duration};
 
 use bon::Builder;
 use multisig::{Committee, PublicKey, Validated};
 use robusta::{Client, espresso_types::NamespaceId};
 use timeboost_types::{
-    BlockNumber, CertifiedBlock,
+    CertifiedBlock,
     sailfish::{CommitteeVec, Empty},
 };
 use tokio::{
     select, spawn,
     sync::{Mutex, mpsc},
     task::JoinHandle,
-    time::sleep,
+    time::{Instant, MissedTickBehavior, interval, sleep},
 };
 use tracing::{debug, warn};
 
-mod time;
 mod verify;
 
 use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
-use time::Timer;
 use verify::{Verified, Verifier};
 
 const DELAY: Duration = Duration::from_secs(30);
@@ -62,10 +60,10 @@ impl Submitter {
         let sender = Sender::builder()
             .label(cfg.pubkey)
             .nsid(cfg.namespace)
-            .timer(Timer::new(cfg.pubkey))
             .client(client)
             .verified(verified.clone())
             .receiver(rx)
+            .clock(Instant::now())
             .build();
         let mut configs = vec![cfg.robusta.0.clone()];
         configs.extend(cfg.robusta.1.iter().cloned());
@@ -88,88 +86,92 @@ impl Submitter {
         self.committees.lock().await.add(c);
     }
 
-    pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
+    pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) -> Result<(), SenderTaskDown> {
         self.metrics.blocks_submitted.add(1);
         if self.verified.contains(cb.cert().data().num()) {
-            return;
+            return Ok(());
         }
-        self.sender.send(cb).await.unwrap() // TODO
+        self.sender.send(cb).await.map_err(|_| SenderTaskDown(()))
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("submit sender task terminated")]
+pub struct SenderTaskDown(());
 
 #[derive(Builder)]
 struct Sender {
     label: PublicKey,
-    timer: Timer<BlockNumber>,
     nsid: NamespaceId,
     client: Client,
     verified: Verified<15_000>,
     receiver: mpsc::Receiver<CertifiedBlock<Validated>>,
+    clock: Instant,
+    #[builder(default)]
+    pending: BTreeMap<Instant, Vec<CertifiedBlock<Validated>>>,
 }
 
 impl Sender {
     async fn go(mut self) {
-        let mut pending = HashMap::new();
         let mut inbox = Vec::new();
         let mut outbox = Vec::new();
-        let mut timeouts = Vec::new();
 
-        loop {
+        let drop_verified_blocks = |v: &mut Vec<CertifiedBlock<Validated>>| {
+            v.retain(|b| !self.verified.contains(b.cert().data().num()));
+        };
+
+        let mut checkpoints = interval(Duration::from_secs(1));
+        checkpoints.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        'main: loop {
             select! {
                 k = self.receiver.recv_many(&mut inbox, 10) => {
-                    if k == 0 {
+                    if k == 0 { // channel is closed
                         return
-                    } else {
-                        for b in inbox.drain(..) {
-                            let n = b.cert().data().num();
-                            if self.verified.contains(n) {
-                                continue
-                            }
-                            if b.is_leader() {
-                                outbox.push(b)
-                            } else {
-                                pending.insert(n, b);
-                            }
-                            self.timer.set(n, DELAY)
-                        }
                     }
-                },
-                n = self.timer.next() => {
-                    timeouts.push(n);
-                    while let Some(n) = self.timer.try_next() {
-                        timeouts.push(n)
-                    }
-                    timeouts.sort();
-                    for n in timeouts.drain(..) {
-                        let Some(b) = pending.remove(&n) else {
-                            continue
-                        };
-                        if self.verified.contains(n) {
-                            continue
+                    for b in inbox.drain(..) {
+                        if b.is_leader() {
+                            outbox.push(b)
+                        } else {
+                            self.pending.entry(self.clock + DELAY).or_default().push(b);
                         }
-                        debug!(node = %self.label, num = %n, "block timeout");
-                        outbox.push(b)
                     }
                 }
+                t = checkpoints.tick() => {
+                    self.clock = t;
+                    // Move blocks that timed out into `outbox`:
+                    let mut blocks = self.pending.split_off(&self.clock);
+                    mem::swap(&mut blocks, &mut self.pending);
+                    outbox.extend(blocks.into_values().flatten());
+                }
             }
+
+            drop_verified_blocks(&mut outbox);
 
             if outbox.is_empty() {
                 continue;
             }
 
-            let mut delays = self.client.config().delay_iter();
+            // TODO: Ensure that the resulting payload size does not exceed the allowed maximum.
 
             debug!(node = %self.label, blocks = %outbox.len(), "submitting blocks");
+
+            let mut delays = self.client.config().delay_iter();
 
             while let Err(err) = self.client.submit(self.nsid, &outbox).await {
                 warn!(node= %self.label, %err, "error submitting blocks");
                 let d = delays.next().expect("delay iterator repeats");
-                sleep(d).await
+                sleep(d).await;
+                drop_verified_blocks(&mut outbox);
+                if outbox.is_empty() {
+                    continue 'main;
+                }
             }
 
-            for b in outbox.drain(..) {
-                pending.insert(b.cert().data().num(), b);
-            }
+            self.pending
+                .entry(self.clock + DELAY)
+                .or_default()
+                .append(&mut outbox);
         }
     }
 }
