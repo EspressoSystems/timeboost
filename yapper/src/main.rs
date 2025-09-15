@@ -23,7 +23,6 @@ use crate::config::YapperConfig;
 use crate::yapper::Yapper;
 
 mod config;
-mod enc_key;
 mod yapper;
 
 #[derive(Parser, Debug)]

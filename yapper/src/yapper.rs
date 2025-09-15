@@ -11,11 +11,12 @@ use anyhow::{Context, Result};
 use futures::future::join_all;
 use reqwest::{Client, Url};
 use timeboost::types::BundleVariant;
+use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
 use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
 use tokio::time::interval;
 use tracing::warn;
 
-use crate::{config::YapperConfig, enc_key::ThresholdEncKeyCellAccumulator};
+use crate::config::YapperConfig;
 
 /// This is the address of the prefunded dev account for nitro chain
 /// https://docs.arbitrum.io/run-arbitrum-node/run-local-full-chain-simulation#default-endpoints-and-addresses

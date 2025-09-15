@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use ark_ec::{AffineRepr, CurveGroup, hashing::HashToCurve};
 use ark_ff::{PrimeField, UniformRand};
 use ark_poly::{DenseUVPolynomial, Polynomial, polynomial::univariate::DensePolynomial};
+use ark_serialize::SerializationError;
 use ark_std::rand::Rng;
 use ark_std::rand::rngs::OsRng;
 use derive_more::From;
@@ -340,6 +341,19 @@ pub struct CombKey<C: CurveGroup> {
 pub struct PublicKey<C: CurveGroup> {
     #[serde_as(as = "SerdeAs")]
     key: C,
+}
+
+impl<C: CurveGroup> PublicKey<C> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, SerializationError> {
+        let mut v = Vec::new();
+        self.key.serialize_compressed(&mut v)?;
+        Ok(v)
+    }
+
+    pub fn from_bytes(value: &[u8]) -> Result<Self, SerializationError> {
+        let key = C::deserialize_compressed(value)?;
+        Ok(Self { key })
+    }
 }
 
 #[serde_as]

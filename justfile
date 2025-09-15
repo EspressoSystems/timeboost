@@ -215,7 +215,6 @@ test-dyn-comm: build_release_until build-test-utils
                  --stamp-dir /tmp \
                  --output test-configs/c1" \
     --run   "7:target/release/register \
-                 -i 0 \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \
