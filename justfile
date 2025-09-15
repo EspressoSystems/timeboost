@@ -218,8 +218,16 @@ test-dyn-comm: build_release_until build-test-utils
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \
-    --run   "8:sleep 5" \
-    --spawn "9:target/release/yapper --keyset-file test-configs/c1/committee.toml" \
+    --run   "8:sleep 8" \
+    --run   "9:target/release/register \
+                 -u http://localhost:8545 \
+                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 -c test-configs/c0/committee.toml \
+                 -a threshold-enc-key" \
+    --spawn "10:target/release/yapper \
+                  --keyset-file test-configs/c1/committee.toml \
+                  --parent-url http://localhost:8545 \
+                  --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     target/release/run-committee -- --configs test-configs/c1/ \
       --committee 1 \
       --timeboost target/release/timeboost \

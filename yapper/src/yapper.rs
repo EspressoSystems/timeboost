@@ -10,7 +10,7 @@ use alloy::{
 use anyhow::{Context, Result};
 use futures::future::join_all;
 use reqwest::{Client, Url};
-use timeboost::types::BundleVariant;
+use timeboost::{crypto::prelude::ThresholdEncKey, types::BundleVariant};
 use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
 use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
 use tokio::time::interval;
@@ -42,6 +42,7 @@ pub(crate) struct Yapper {
     interval: Duration,
     chain_id: u64,
     provider: Option<RootProvider>,
+    enc_key: Option<ThresholdEncKey>,
 }
 
 impl Yapper {
@@ -68,12 +69,14 @@ impl Yapper {
         } else {
             None
         };
+
         Ok(Self {
             urls,
             interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
             provider,
             chain_id: cfg.chain_id,
+            enc_key: cfg.threshold_enc_key,
         })
     }
 
@@ -93,12 +96,15 @@ impl Yapper {
                     warn!("failed to prepare txn");
                     continue;
                 };
-                let enc_key = match acc.enc_key().await {
+                let enc_key = match self.enc_key.as_ref() {
                     Some(key) => key,
-                    None => {
-                        warn!("encryption key not available yet");
-                        continue;
-                    }
+                    None => match acc.enc_key().await {
+                        Some(key) => key,
+                        None => {
+                            warn!("encryption key not available yet");
+                            continue;
+                        }
+                    },
                 };
                 let Ok(b) = make_dev_acct_bundle(enc_key, txn) else {
                     warn!("failed to generate dev account bundle");
@@ -106,12 +112,15 @@ impl Yapper {
                 };
                 b
             } else {
-                let enc_key = match acc.enc_key().await {
+                let enc_key = match self.enc_key.as_ref() {
                     Some(key) => key,
-                    None => {
-                        warn!("encryption key not available yet");
-                        continue;
-                    }
+                    None => match acc.enc_key().await {
+                        Some(key) => key,
+                        None => {
+                            warn!("encryption key not available yet");
+                            continue;
+                        }
+                    },
                 };
                 let Ok(b) = make_bundle(enc_key) else {
                     warn!("failed to generate bundle");

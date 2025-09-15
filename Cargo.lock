@@ -14035,6 +14035,7 @@ dependencies = [
  "futures",
  "reqwest",
  "timeboost",
+ "timeboost-contract",
  "timeboost-utils",
  "tokio",
  "tracing",

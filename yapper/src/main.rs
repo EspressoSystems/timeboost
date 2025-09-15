@@ -6,11 +6,13 @@
 
 use std::path::PathBuf;
 
+use alloy::{primitives::Address, providers::ProviderBuilder};
 use anyhow::{Context, Result};
 
 use clap::Parser;
 use reqwest::Url;
-use timeboost::config::CommitteeConfig;
+use timeboost::{config::CommitteeConfig, crypto::prelude::ThresholdEncKey};
+use timeboost_contract::KeyManager;
 use timeboost_utils::types::logging::init_logging;
 use timeboost_utils::wait_for_live_peer;
 use tokio::signal::{
@@ -45,6 +47,14 @@ struct Cli {
     /// Nitro node url.
     #[clap(long)]
     nitro_url: Option<Url>,
+
+    /// Parent chain where KeyManager is deployed
+    #[clap(long)]
+    parent_url: Option<Url>,
+
+    /// KeyManager contract address on the parent chain
+    #[clap(long)]
+    key_manager_contract: Option<Address>,
 }
 
 #[tokio::main]
@@ -66,10 +76,25 @@ async fn main() -> Result<()> {
         addresses.push(node.http_api);
     }
 
+    let threshold_enc_key = if let Some(rpc) = cli.parent_url {
+        let km_addr = cli
+            .key_manager_contract
+            .expect("provide both parent chain and key manager contract");
+        let provider = ProviderBuilder::new().connect_http(rpc);
+        let contract = KeyManager::new(km_addr, provider);
+
+        Some(ThresholdEncKey::from_bytes(
+            &contract.thresholdEncryptionKey().call().await?.0,
+        )?)
+    } else {
+        None
+    };
+
     let config = YapperConfig::builder()
         .addresses(addresses)
         .tps(cli.tps)
         .maybe_nitro_url(cli.nitro_url)
+        .maybe_threshold_enc_key(threshold_enc_key)
         .chain_id(cli.chain_id)
         .build();
     let yapper = Yapper::new(config).await?;
