@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bimap::BiBTreeMap;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use minicbor::{Decode, Encode};
+use minicbor::{CborLen, Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{KeyId, PublicKey};
@@ -105,7 +105,19 @@ impl Committee {
 }
 
 #[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    CborLen,
 )]
 #[cbor(transparent)]
 #[serde(transparent)]

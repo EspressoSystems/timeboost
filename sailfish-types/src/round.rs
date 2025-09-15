@@ -2,7 +2,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Sub};
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use minicbor::{Decode, Encode};
+use minicbor::{CborLen, Decode, Encode};
 use multisig::CommitteeId;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,19 @@ pub const GENESIS_ROUND: RoundNumber = RoundNumber::new(0);
 
 /// A sailfish round number.
 #[derive(
-    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    CborLen,
 )]
 #[cbor(transparent)]
 #[serde(transparent)]
@@ -117,7 +129,19 @@ impl fmt::Display for RoundNumber {
 }
 
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    CborLen,
 )]
 #[cbor(map)]
 pub struct Round {

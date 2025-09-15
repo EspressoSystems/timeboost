@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
 use ed25519_compact::x25519;
+use minicbor::CborLen;
 use minicbor::decode::{Decode, Decoder, Error as DecodeError};
 use minicbor::encode::{Encoder, Error as EncodeError, Write};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -108,6 +109,8 @@ where
     }
 }
 
+const SECP256K1_SIG_LEN: usize = 64;
+
 pub fn encode_secp256k1_sig<C, W>(
     s: &secp256k1::ecdsa::Signature,
     e: &mut Encoder<W>,
@@ -116,7 +119,7 @@ pub fn encode_secp256k1_sig<C, W>(
 where
     W: Write,
 {
-    let a: [u8; 64] = s.serialize_compact();
+    let a: [u8; SECP256K1_SIG_LEN] = s.serialize_compact();
     e.bytes(&a)?;
     Ok(())
 }
@@ -150,4 +153,8 @@ pub fn decode_secp256k1_pk<'b, C>(
     let p = d.position();
     let a: [u8; 33] = minicbor::bytes::ByteArray::<33>::decode(d, c)?.into();
     secp256k1::PublicKey::from_byte_array_compressed(a).map_err(|e| DecodeError::custom(e).at(p))
+}
+
+pub fn cbor_len_secp256k1_sig<C>(_: &secp256k1::ecdsa::Signature, c: &mut C) -> usize {
+    SECP256K1_SIG_LEN.cbor_len(c) + SECP256K1_SIG_LEN
 }

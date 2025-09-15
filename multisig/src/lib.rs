@@ -10,7 +10,7 @@ pub mod x25519;
 use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use minicbor::{Decode, Encode};
+use minicbor::{CborLen, Decode, Encode};
 use secp256k1::rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,19 @@ pub use signed::Signed;
 pub use votes::VoteAccumulator;
 
 #[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    CborLen,
 )]
 #[cbor(transparent)]
 #[serde(transparent)]
@@ -85,14 +97,26 @@ pub struct SecretKey {
 }
 
 #[derive(
-    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    CborLen,
 )]
 #[cbor(transparent)]
 #[serde(transparent)]
 pub struct Signature {
     #[cbor(
         encode_with = "util::encode_secp256k1_sig",
-        decode_with = "util::decode_secp256k1_sig"
+        decode_with = "util::decode_secp256k1_sig",
+        cbor_len = "util::cbor_len_secp256k1_sig"
     )]
     sig: secp256k1::ecdsa::Signature,
 }
