@@ -8,16 +8,16 @@ http-api = "172.20.0.3:8004"
 address = "172.20.0.3:8003"
 
 [keys.signing]
-secret = "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs"
-public = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
+secret = "DQFySXkfkGQS2VudujHD5nD1ePeKDBGC9w5pphfF2EQ7"
+public = "z6FrBScyGgtbkbD7LzUfYWGHKnpF9XzrZw81ENPunFLW"
 
 [keys.dh]
-secret = "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP"
-public = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
+secret = "AAfU2kXDKMXccU8uK6JGWkizNahR4kmn1CvZmZud7fFD"
+public = "8hMVYLCeffEWAsk147ny4Z71AVHA619L1ijmMVmba7GD"
 
 [keys.dkg]
-secret = "ARtqWGmRWrBqZUr4MmiLaPgzjsiKp5USsC9iQNRMZYy4"
-public = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
+secret = "HxFwTjUPpM6nU1HQ7swSg1z73WNco4LxPkAdxNgYZt1G"
+public = "7ajdb8uCeehrXr1yaHF3wtgSKpxf9YEYKBwg2QsapZeRGnbD2MZcUx36rVyhU8AQwr"
 
 [chain]
 namespace = 10101
