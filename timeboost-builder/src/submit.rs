@@ -1,38 +1,40 @@
-use std::{cmp::min, collections::BTreeSet, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, mem, sync::Arc, time::Duration};
 
+use bon::Builder;
 use multisig::{Committee, PublicKey, Validated};
-use parking_lot::Mutex;
-use robusta::espresso_types::NamespaceId;
+use robusta::{Client, espresso_types::NamespaceId};
 use timeboost_types::{
-    BlockNumber, CertifiedBlock,
+    CertifiedBlock,
     sailfish::{CommitteeVec, Empty},
 };
 use tokio::{
-    spawn,
-    sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore},
+    select, spawn,
+    sync::{Mutex, mpsc},
     task::JoinHandle,
-    time::{Instant, error::Elapsed, sleep, timeout},
+    time::{Instant, MissedTickBehavior, interval, sleep},
 };
-use tokio_util::task::TaskTracker;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
+
+mod verify;
 
 use crate::{config::SubmitterConfig, metrics::BuilderMetrics};
+use verify::{Verified, Verifier};
 
-const CACHE_SIZE: usize = 15_000;
-const MAX_TASKS: usize = 1000;
+const DELAY: Duration = Duration::from_secs(30);
 
 pub struct Submitter {
     config: SubmitterConfig,
+    verified: Verified<15_000>,
+    committees: Arc<Mutex<CommitteeVec<2>>>,
+    sender: mpsc::Sender<CertifiedBlock<Validated>>,
     verify_task: JoinHandle<Empty>,
-    submitters: TaskTracker,
-    handler: Handler,
-    committees: Arc<AsyncMutex<CommitteeVec<2>>>,
-    task_permits: Arc<Semaphore>,
-    metrics: BuilderMetrics,
+    sender_task: JoinHandle<()>,
+    metrics: Arc<BuilderMetrics>,
 }
 
 impl Drop for Submitter {
     fn drop(&mut self) {
+        self.sender_task.abort();
         self.verify_task.abort();
     }
 }
@@ -42,32 +44,37 @@ impl Submitter {
     where
         M: ::metrics::Metrics,
     {
-        let client = robusta::Client::new(cfg.robusta.0.clone());
-        let verified = Arc::new(Mutex::new(BTreeSet::new()));
-        let committees = Arc::new(AsyncMutex::new(CommitteeVec::new(cfg.committee.clone())));
-        let handler = Handler {
-            label: cfg.pubkey,
-            nsid: cfg.namespace,
-            client: client.clone(),
-            verified: verified.clone(),
-        };
-        let verifier = Verifier {
-            label: cfg.pubkey,
-            nsid: cfg.namespace,
-            committees: committees.clone(),
-            client: client.clone(),
-            verified,
-        };
+        let client = Client::new(cfg.robusta.0.clone());
+        let verified = Verified::default();
+        let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
+        let metrics = Arc::new(BuilderMetrics::new(metrics));
+        let verifier = Verifier::builder()
+            .label(cfg.pubkey)
+            .nsid(cfg.namespace)
+            .committees(committees.clone())
+            .client(client.clone())
+            .verified(verified.clone())
+            .metrics(metrics.clone())
+            .build();
+        let (tx, rx) = mpsc::channel(10_000);
+        let sender = Sender::builder()
+            .label(cfg.pubkey)
+            .nsid(cfg.namespace)
+            .client(client)
+            .verified(verified.clone())
+            .receiver(rx)
+            .clock(Instant::now())
+            .build();
         let mut configs = vec![cfg.robusta.0.clone()];
         configs.extend(cfg.robusta.1.iter().cloned());
         Submitter {
-            handler,
             config: cfg,
-            verify_task: spawn(verifier.verify(configs)),
-            submitters: TaskTracker::new(),
+            verified,
             committees,
-            task_permits: Arc::new(Semaphore::new(MAX_TASKS)),
-            metrics: BuilderMetrics::new(metrics),
+            metrics,
+            sender: tx,
+            verify_task: spawn(verifier.verify(configs)),
+            sender_task: spawn(sender.go()),
         }
     }
 
@@ -75,254 +82,96 @@ impl Submitter {
         &self.config.pubkey
     }
 
-    pub async fn add_committe(&mut self, c: Committee) {
+    pub async fn add_committee(&mut self, c: Committee) {
         self.committees.lock().await.add(c);
     }
 
-    pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) {
-        let num = cb.cert().data().num();
-        debug!(
-            node  = %self.public_key(),
-            num   = %num,
-            tasks = %self.submitters.len(),
-            "creating block handler"
-        );
-        if self.submitters.len() > MAX_TASKS - 10 {
-            warn!(
-                node  = %self.public_key(),
-                num   = %num,
-                tasks = %self.submitters.len(),
-                "approaching task limit"
-            );
+    pub async fn submit(&mut self, cb: CertifiedBlock<Validated>) -> Result<(), SenderTaskDown> {
+        self.metrics.blocks_submitted.add(1);
+        if self.verified.contains(cb.cert().data().num()) {
+            return Ok(());
         }
-        let Ok(permit) = Semaphore::acquire_owned(self.task_permits.clone()).await else {
-            return;
-        };
-        self.submitters
-            .spawn(self.handler.clone().handle(permit, cb));
-        self.metrics.block_submit.set(*num as usize);
-        self.metrics.submit_tasks.set(self.submitters.len());
-    }
-
-    pub async fn join(self) {
-        self.submitters.close();
-        self.submitters.wait().await
+        self.sender.send(cb).await.map_err(|_| SenderTaskDown(()))
     }
 }
 
-struct Verifier {
+#[derive(Debug, thiserror::Error)]
+#[error("submit sender task terminated")]
+pub struct SenderTaskDown(());
+
+#[derive(Builder)]
+struct Sender {
     label: PublicKey,
     nsid: NamespaceId,
-    client: robusta::Client,
-    committees: Arc<AsyncMutex<CommitteeVec<2>>>,
-    verified: Arc<Mutex<BTreeSet<BlockNumber>>>,
+    client: Client,
+    verified: Verified<15_000>,
+    receiver: mpsc::Receiver<CertifiedBlock<Validated>>,
+    clock: Instant,
+    #[builder(default)]
+    pending: BTreeMap<Instant, Vec<CertifiedBlock<Validated>>>,
 }
 
-impl Verifier {
-    async fn verify(self, configs: Vec<robusta::Config>) -> Empty {
-        let mut delays = self.client.config().delay_iter();
-        let height = loop {
-            if let Ok(h) = self.client.height().await {
-                break h;
-            };
-            let d = delays.next().expect("delay iterator repeats endlessly");
-            sleep(d).await;
+impl Sender {
+    async fn go(mut self) {
+        let mut inbox = Vec::new();
+        let mut outbox = Vec::new();
+
+        let drop_verified_blocks = |v: &mut Vec<CertifiedBlock<Validated>>| {
+            v.retain(|b| !self.verified.contains(b.cert().data().num()));
         };
-        let threshold = 2 * configs.len() / 3 + 1;
-        let mut watcher = robusta::Multiwatcher::new(configs, height, self.nsid, threshold);
-        loop {
-            let h = watcher.next().await;
-            let committees = self.committees.lock().await;
-            let numbers = self.client.verified(self.nsid, &h, &committees).await;
-            let mut set = self.verified.lock();
-            for n in numbers {
-                info!(node = %self.label, num = %n, "verified");
-                if set.len() == CACHE_SIZE {
-                    set.pop_first();
-                }
-                set.insert(n);
-            }
-        }
-    }
-}
 
-#[derive(Clone)]
-struct Handler {
-    label: PublicKey,
-    nsid: NamespaceId,
-    client: robusta::Client,
-    verified: Arc<Mutex<BTreeSet<BlockNumber>>>,
-}
+        let mut checkpoints = interval(Duration::from_secs(1));
+        checkpoints.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-impl Handler {
-    async fn handle(mut self, _: OwnedSemaphorePermit, cb: CertifiedBlock<Validated>) {
-        enum State {
-            Submit(bool),
-            Wait(Duration),
-            Verify(Duration),
-        }
-
-        let num = cb.cert().data().num();
-
-        // Maybe the block has already been verified?
-        if self.verified.lock().remove(&num) {
-            debug!(node = %self.label, %num, "block submission verified");
-            return;
-        }
-
-        let max_delay = Duration::from_secs(30);
-        let mut state = State::Submit(false);
-
-        loop {
-            match state {
-                State::Submit(force) => {
-                    let now = Instant::now();
-                    match timeout(max_delay, self.submit_block(&cb, force)).await {
-                        Ok(()) => state = State::Wait(max_delay.saturating_sub(now.elapsed())),
-                        Err(e) => {
-                            debug!(node = %self.label, %num, "block submission timeout");
-                            let _: Elapsed = e;
-                            state = State::Submit(true)
-                        }
+        'main: loop {
+            select! {
+                k = self.receiver.recv_many(&mut inbox, 10) => {
+                    if k == 0 { // channel is closed
+                        return
                     }
-                }
-                State::Wait(delay) => {
-                    let d = min(Duration::from_secs(3), delay);
-                    sleep(d).await;
-                    state = State::Verify(delay.saturating_sub(d))
-                }
-                State::Verify(delay) => {
-                    if self.verified.lock().remove(&num) {
-                        debug!(node = %self.label, %num, "block submission verified");
-                        return;
-                    } else {
-                        state = if delay.is_zero() {
-                            warn!(node = %self.label, %num, "block submission verification timeout");
-                            State::Submit(true)
+                    for b in inbox.drain(..) {
+                        if b.is_leader() {
+                            outbox.push(b)
                         } else {
-                            State::Wait(delay)
+                            self.pending.entry(self.clock + DELAY).or_default().push(b);
                         }
                     }
                 }
-            }
-        }
-    }
-
-    pub async fn submit_block(&mut self, cb: &CertifiedBlock<Validated>, force: bool) {
-        if !(cb.is_leader() || force) {
-            return;
-        }
-        let mut delays = self.client.config().delay_iter();
-        debug!(
-            node      = %self.label,
-            is_leader = cb.is_leader(),
-            force     = %force,
-            num       = %cb.cert().data().num(),
-            round     = %cb.cert().data().round(),
-            "submitting block"
-        );
-        while let Err(err) = self.client.submit(self.nsid, cb).await {
-            warn!(node = %self.label, %err, "error submitting block");
-            let d = delays.next().expect("delay iterator repeats");
-            sleep(d).await
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-    use metrics::NoMetrics;
-    use multisig::{Committee, Keypair, PublicKey, Signed, VoteAccumulator};
-    use timeboost_types::{Block, BlockInfo, BlockNumber, sailfish::Round};
-    use tokio::task::JoinSet;
-
-    use super::*;
-
-    struct BlockGen {
-        p: PublicKey,
-        r: Round,
-        i: BlockNumber,
-        k: Vec<Keypair>,
-        c: Committee,
-    }
-
-    impl BlockGen {
-        fn next(&mut self) -> CertifiedBlock<Validated> {
-            let b = Block::new(self.i, self.r.num(), Bytes::new());
-            let i = BlockInfo::new(self.i, self.r, b.hash());
-            self.i += 1;
-            self.r.set_num(self.r.num() + 1);
-            let mut a = VoteAccumulator::new(self.c.clone());
-            for k in &self.k {
-                if a.add(Signed::new(i.clone(), k)).unwrap().is_some() {
-                    break;
+                t = checkpoints.tick() => {
+                    self.clock = t;
+                    // Move blocks that timed out into `outbox`:
+                    let mut blocks = self.pending.split_off(&self.clock);
+                    mem::swap(&mut blocks, &mut self.pending);
+                    outbox.extend(blocks.into_values().flatten());
                 }
             }
-            let l = self.c.leader(*i.round().num() as usize) == self.p;
-            CertifiedBlock::v1(a.certificate().cloned().unwrap(), b, l)
-        }
-    }
 
-    #[tokio::test]
-    async fn submit_random_block() {
-        const NODES: usize = 5;
+            drop_verified_blocks(&mut outbox);
 
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter("timeboost_builder=debug,robusta=debug")
-            .try_init();
+            if outbox.is_empty() {
+                continue;
+            }
 
-        let keys: Vec<Keypair> = (0..NODES).map(|_| Keypair::generate()).collect();
+            // TODO: Ensure that the resulting payload size does not exceed the allowed maximum.
 
-        let committee = Committee::new(
-            0,
-            keys.iter()
-                .enumerate()
-                .map(|(i, k)| (i as u8, k.public_key())),
-        );
+            debug!(node = %self.label, blocks = %outbox.len(), "submitting blocks");
 
-        let mut tasks = JoinSet::new();
+            let mut delays = self.client.config().delay_iter();
 
-        for k in &keys {
-            let mut g = BlockGen {
-                p: k.public_key(),
-                r: Round::new(1, 0),
-                i: BlockNumber::from(1),
-                k: keys.clone(),
-                c: committee.clone(),
-            };
-
-            let rcfg = robusta::Config::builder()
-                .base_url(
-                    "https://query.decaf.testnet.espresso.network/v1/"
-                        .parse()
-                        .unwrap(),
-                )
-                .wss_base_url(
-                    "wss://query.decaf.testnet.espresso.network/v1/"
-                        .parse()
-                        .unwrap(),
-                )
-                .label(k.public_key().to_string())
-                .build();
-
-            let scfg = SubmitterConfig::builder()
-                .pubkey(k.public_key())
-                .robusta((rcfg.clone(), Vec::new()))
-                .namespace(10_101u64)
-                .committee(committee.clone())
-                .build();
-
-            let mut s = Submitter::new(scfg, &NoMetrics);
-
-            tasks.spawn(async move {
-                for _ in 0..NODES {
-                    s.submit(g.next()).await;
+            while let Err(err) = self.client.submit(self.nsid, &outbox).await {
+                warn!(node= %self.label, %err, "error submitting blocks");
+                let d = delays.next().expect("delay iterator repeats");
+                sleep(d).await;
+                drop_verified_blocks(&mut outbox);
+                if outbox.is_empty() {
+                    continue 'main;
                 }
-                s.join().await
-            });
-        }
+            }
 
-        tasks.join_all().await;
+            self.pending
+                .entry(self.clock + DELAY)
+                .or_default()
+                .append(&mut outbox);
+        }
     }
 }
