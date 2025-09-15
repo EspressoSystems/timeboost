@@ -31,6 +31,7 @@ pub struct NodeNet {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct PublicNet {
     pub address: Address,
     pub http_api: Address,
@@ -57,9 +58,11 @@ pub struct NodeKeypair<SK, PK> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Espresso {
     pub base_url: Url,
     pub websockets_base_url: Url,
+    pub max_transaction_size: usize,
 }
 
 impl NodeConfig {
@@ -93,7 +96,7 @@ stamp = "/tmp/timeboost.0.stamp"
 
 [net.public]
 address = "127.0.0.1:8001"
-http_api = "127.0.0.1:8004"
+http-api = "127.0.0.1:8004"
 
 [net.internal]
 address = "127.0.0.1:11001"
@@ -115,14 +118,15 @@ namespace = 10101
 
 [chain.parent]
 id = 31337
-rpc_url = "http://127.0.0.1:8545/"
-ibox_contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
-block_tag = "finalized"
-key_manager_contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
+rpc-url = "http://127.0.0.1:8545/"
+ibox-contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
+block-tag = "finalized"
+key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
-base_url = "https://query.decaf.testnet.espresso.network/v1/"
-websockets_base_url = "wss://query.decaf.testnet.espresso.network/v1/"
+base-url = "https://query.decaf.testnet.espresso.network/v1/"
+websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
+max-transaction-size = 1048576
 "#;
 
     use super::NodeConfig;

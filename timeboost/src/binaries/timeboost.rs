@@ -220,6 +220,7 @@ async fn main() -> Result<()> {
                 .build(),
             Vec::new(),
         ))
+        .max_transaction_size(node_config.espresso.max_transaction_size)
         .chain_config(node_config.chain.clone())
         .build();
 
