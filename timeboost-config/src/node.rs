@@ -96,7 +96,7 @@ stamp = "/tmp/timeboost.0.stamp"
 
 [net.public]
 address = "127.0.0.1:8001"
-http_api = "127.0.0.1:8004"
+http-api = "127.0.0.1:8004"
 
 [net.internal]
 address = "127.0.0.1:11001"
