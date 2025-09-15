@@ -403,7 +403,6 @@ impl DkgAccumulator {
             return Ok(());
         }
 
-        let aad: &[u8; 3] = b"dkg";
         let vess = Vess::new_fast();
         let store = self.store.clone();
         let mode = self.mode.clone();
@@ -417,7 +416,7 @@ impl DkgAccumulator {
                         store.sorted_keys(),
                         bundle.vess_ct(),
                         bundle.comm(),
-                        aad,
+                        DKG_AAD,
                     )?;
                 }
                 AccumulatorMode::Resharing(combkey) => {
@@ -429,7 +428,7 @@ impl DkgAccumulator {
                         store.sorted_keys(),
                         bundle.vess_ct(),
                         bundle.comm(),
-                        aad,
+                        DKG_AAD,
                         *pub_share,
                     )?;
                 }
