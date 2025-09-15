@@ -58,7 +58,7 @@ impl Timeboost {
     pub async fn new(cfg: TimeboostConfig) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
         let met = Arc::new(TimeboostMetrics::new(&*pro));
-        let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
+        let seq = Sequencer::new(cfg.sequencer_config().await?, &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
 

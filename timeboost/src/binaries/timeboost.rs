@@ -100,13 +100,13 @@ async fn main() -> Result<()> {
         .iter()
         .map(|peer| {
             let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
-                .expect("Failed to parse sigKey");
+                .expect("Should parse sigKey bytes");
             let dh_key =
-                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())
-                .expect("Blackbox from_bytes should work");
+                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Should parse dhKey bytes");
+            let dkg_enc_key =
+                DkgEncKey::from_bytes(peer.dkgKey.as_ref()).expect("Should parse dkgKey bytes");
             let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
-                .expect("Failed to parse networkAddress");
+                .expect("Should parse networkAddress string");
             (sig_key, dh_key, dkg_enc_key, sailfish_address)
         })
         .collect::<Vec<_>>();
