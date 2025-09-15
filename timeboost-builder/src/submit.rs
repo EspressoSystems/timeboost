@@ -7,7 +7,8 @@ use std::{
 
 use bon::Builder;
 use multisig::{Committee, PublicKey, Validated};
-use robusta::{Client, espresso_types::NamespaceId};
+use rand::seq::IndexedRandom;
+use robusta::{Client, Config, espresso_types::NamespaceId};
 use timeboost_types::{
     CertifiedBlock,
     sailfish::{CommitteeVec, Empty},
@@ -49,7 +50,6 @@ impl Submitter {
     where
         M: ::metrics::Metrics,
     {
-        let client = Client::new(cfg.robusta.0.clone());
         let verified = Verified::default();
         let committees = Arc::new(Mutex::new(CommitteeVec::new(cfg.committee.clone())));
         let metrics = Arc::new(BuilderMetrics::new(metrics));
@@ -57,7 +57,7 @@ impl Submitter {
             .label(cfg.pubkey)
             .nsid(cfg.namespace)
             .committees(committees.clone())
-            .client(client.clone())
+            .client(Client::new(cfg.robusta.0.clone()))
             .verified(verified.clone())
             .metrics(metrics.clone())
             .build();
@@ -65,11 +65,11 @@ impl Submitter {
         let sender = Sender::builder()
             .label(cfg.pubkey)
             .nsid(cfg.namespace)
-            .client(client)
             .verified(verified.clone())
             .receiver(rx)
             .clock(Instant::now())
             .size_limit(cfg.max_transaction_size)
+            .config(cfg.robusta.0.clone())
             .build();
         let mut configs = vec![cfg.robusta.0.clone()];
         configs.extend(cfg.robusta.1.iter().cloned());
@@ -79,8 +79,8 @@ impl Submitter {
             committees,
             metrics,
             sender: tx,
-            verify_task: spawn(verifier.verify(configs)),
-            sender_task: spawn(sender.go()),
+            verify_task: spawn(verifier.verify(configs.clone())),
+            sender_task: spawn(sender.send(configs)),
         }
     }
 
@@ -109,17 +109,20 @@ pub struct SenderTaskDown(());
 struct Sender {
     label: PublicKey,
     nsid: NamespaceId,
-    client: Client,
     verified: Verified<15_000>,
     receiver: mpsc::Receiver<CertifiedBlock<Validated>>,
     clock: Instant,
     #[builder(default)]
     pending: BTreeMap<Instant, Vec<CertifiedBlock<Validated>>>,
     size_limit: usize,
+    config: Config,
 }
 
 impl Sender {
-    async fn go(mut self) {
+    async fn send(mut self, configs: Vec<Config>) {
+        let clients: Vec<Client> = configs.into_iter().map(Client::new).collect();
+        assert!(!clients.is_empty());
+
         // Blocks we receive from the application:
         let mut inbox = Vec::new();
         // Blocks scheduled for submission:
@@ -129,6 +132,12 @@ impl Sender {
 
         let drop_verified_blocks = |v: &mut Vec<CertifiedBlock<Validated>>| {
             v.retain(|b| !self.verified.contains(b.cert().data().num()));
+        };
+
+        let random_client = || {
+            clients
+                .choose(&mut rand::rng())
+                .expect("Vec<Client> is non-empty")
         };
 
         let mut checkpoints = interval(Duration::from_secs(1));
@@ -186,9 +195,9 @@ impl Sender {
 
                 debug!(node = %self.label, blocks = %transaction.len(), %size, "submitting blocks");
 
-                let mut delays = self.client.config().delay_iter();
+                let mut delays = self.config.delay_iter();
 
-                while let Err(err) = self.client.submit(self.nsid, &transaction).await {
+                while let Err(err) = random_client().submit(self.nsid, &transaction).await {
                     warn!(node= %self.label, %err, "error submitting blocks");
                     let d = delays.next().expect("delay iterator repeats");
                     sleep(d).await;
