@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, mem, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    mem,
+    sync::Arc,
+    time::Duration,
+};
 
 use bon::Builder;
 use multisig::{Committee, PublicKey, Validated};
@@ -13,7 +18,7 @@ use tokio::{
     task::JoinHandle,
     time::{Instant, MissedTickBehavior, interval, sleep},
 };
-use tracing::{debug, warn};
+use tracing::{Level, debug, enabled, error, trace, warn};
 
 mod verify;
 
@@ -64,6 +69,7 @@ impl Submitter {
             .verified(verified.clone())
             .receiver(rx)
             .clock(Instant::now())
+            .size_limit(cfg.max_transaction_size)
             .build();
         let mut configs = vec![cfg.robusta.0.clone()];
         configs.extend(cfg.robusta.1.iter().cloned());
@@ -109,12 +115,17 @@ struct Sender {
     clock: Instant,
     #[builder(default)]
     pending: BTreeMap<Instant, Vec<CertifiedBlock<Validated>>>,
+    size_limit: usize,
 }
 
 impl Sender {
     async fn go(mut self) {
+        // Blocks we receive from the application:
         let mut inbox = Vec::new();
-        let mut outbox = Vec::new();
+        // Blocks scheduled for submission:
+        let mut outbox = VecDeque::new();
+        // A subset of `outbox` that fits into one transaction:
+        let mut transaction = Vec::new();
 
         let drop_verified_blocks = |v: &mut Vec<CertifiedBlock<Validated>>| {
             v.retain(|b| !self.verified.contains(b.cert().data().num()));
@@ -123,7 +134,7 @@ impl Sender {
         let mut checkpoints = interval(Duration::from_secs(1));
         checkpoints.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        'main: loop {
+        loop {
             select! {
                 k = self.receiver.recv_many(&mut inbox, 10) => {
                     if k == 0 { // channel is closed
@@ -131,7 +142,8 @@ impl Sender {
                     }
                     for b in inbox.drain(..) {
                         if b.is_leader() {
-                            outbox.push(b)
+                            trace!(node = %self.label, block = %b.cert().data().num(), "leader submits");
+                            outbox.push_back(b)
                         } else {
                             self.pending.entry(self.clock + DELAY).or_default().push(b);
                         }
@@ -143,35 +155,59 @@ impl Sender {
                     let mut blocks = self.pending.split_off(&self.clock);
                     mem::swap(&mut blocks, &mut self.pending);
                     outbox.extend(blocks.into_values().flatten());
+                    if enabled!(Level::TRACE) {
+                        for b in &outbox {
+                            trace!(node = %self.label, block = %b.cert().data().num(), "timeout");
+                        }
+                    }
                 }
             }
 
-            drop_verified_blocks(&mut outbox);
+            debug_assert!(transaction.is_empty());
 
-            if outbox.is_empty() {
-                continue;
-            }
-
-            // TODO: Ensure that the resulting payload size does not exceed the allowed maximum.
-
-            debug!(node = %self.label, blocks = %outbox.len(), "submitting blocks");
-
-            let mut delays = self.client.config().delay_iter();
-
-            while let Err(err) = self.client.submit(self.nsid, &outbox).await {
-                warn!(node= %self.label, %err, "error submitting blocks");
-                let d = delays.next().expect("delay iterator repeats");
-                sleep(d).await;
-                drop_verified_blocks(&mut outbox);
-                if outbox.is_empty() {
-                    continue 'main;
+            'submit: while !outbox.is_empty() {
+                let mut size: usize = 0;
+                while let Some(b) = outbox.pop_front() {
+                    if self.verified.contains(b.cert().data().num()) {
+                        continue;
+                    }
+                    let n = minicbor::len(&b);
+                    if size + n < self.size_limit {
+                        size += n;
+                        transaction.push(b)
+                    } else {
+                        break;
+                    }
                 }
-            }
 
-            self.pending
-                .entry(self.clock + DELAY)
-                .or_default()
-                .append(&mut outbox);
+                if transaction.is_empty() {
+                    break;
+                }
+
+                debug!(node = %self.label, blocks = %transaction.len(), %size, "submitting blocks");
+
+                let mut delays = self.client.config().delay_iter();
+
+                while let Err(err) = self.client.submit(self.nsid, &transaction).await {
+                    warn!(node= %self.label, %err, "error submitting blocks");
+                    let d = delays.next().expect("delay iterator repeats");
+                    sleep(d).await;
+                    drop_verified_blocks(&mut transaction);
+                    if transaction.is_empty() {
+                        continue 'submit;
+                    }
+                }
+
+                drop_verified_blocks(&mut transaction);
+                if transaction.is_empty() {
+                    continue;
+                }
+
+                self.pending
+                    .entry(self.clock + DELAY)
+                    .or_default()
+                    .append(&mut transaction);
+            }
         }
     }
 }

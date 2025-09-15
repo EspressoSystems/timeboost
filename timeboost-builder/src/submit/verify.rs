@@ -41,7 +41,7 @@ impl Verifier {
             let committees = self.committees.lock().await;
             let numbers = self.client.verified(self.nsid, &h, &committees).await;
             let len = self.verified.insert(numbers);
-            debug!(node = %self.label, %len, "blocks verified");
+            debug!(node = %self.label, blocks = %len, "blocks verified");
             self.metrics.blocks_verified.add(len);
         }
     }
