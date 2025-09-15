@@ -17,6 +17,7 @@ metrics = { path = "../metrics" }
 minicbor = { workspace = true }
 multisig = { path = "../multisig" }
 parking_lot = { workspace = true }
+rand = { workspace = true }
 robusta = { path = "../robusta" }
 serde = { workspace = true }
 smallvec = { workspace = true }
@@ -28,5 +29,4 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
 tracing-subscriber = { workspace = true }
