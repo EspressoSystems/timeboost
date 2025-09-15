@@ -113,9 +113,9 @@ impl Timeboost {
             error!(?err, "fail to get chainid");
             err
         })?;
-        // local test chain don't have finality gadget, thus don't support `Finalized` tag
         let tag = if chain_id == 31337 || chain_id == 1337 {
-            BlockNumberOrTag::Latest
+            // local test chain, we start scanning from the genesis
+            BlockNumberOrTag::Number(0)
         } else {
             BlockNumberOrTag::Finalized
         };
