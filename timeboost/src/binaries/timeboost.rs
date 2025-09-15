@@ -17,7 +17,6 @@ use tracing::info;
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
-use timeboost::types::UNKNOWN_COMMITTEE_ID;
 use timeboost_utils::types::logging;
 use tracing::warn;
 
@@ -134,7 +133,7 @@ async fn main() -> Result<()> {
 
     let sailfish_committee = {
         let c = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
+            cli.committee_id,
             sailfish_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -145,7 +144,7 @@ async fn main() -> Result<()> {
 
     let decrypt_committee = {
         let c = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
+            cli.committee_id,
             decrypt_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -156,7 +155,7 @@ async fn main() -> Result<()> {
 
     let certifier_committee = {
         let c = Committee::new(
-            UNKNOWN_COMMITTEE_ID,
+            cli.committee_id,
             certifier_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -221,6 +220,7 @@ async fn main() -> Result<()> {
                 .build(),
             Vec::new(),
         ))
+        .max_transaction_size(node_config.espresso.max_transaction_size)
         .chain_config(node_config.chain.clone())
         .build();
 

@@ -27,8 +27,12 @@ build-contracts:
   forge build
 
 [private]
+build-port-alloc:
+  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
+
+[private]
 build-test-utils:
-  cargo build --release -p test-utils --features ports
+  cargo build --release -p test-utils
 
 ####################
 ###CHECK COMMANDS###
@@ -81,10 +85,10 @@ stop_monitoring:
   docker compose -f docker-compose.metrics.yml down
 
 run_demo *ARGS:
-  ./scripts/run-timeboost-demo {{ARGS}}
+  scripts/run-timeboost-demo {{ARGS}}
 
 run_sailfish_demo *ARGS:
-  ./scripts/run-sailfish-demo {{ARGS}}
+  scripts/run-sailfish-demo {{ARGS}}
 
 run *ARGS:
   cargo run {{ARGS}}
@@ -93,7 +97,7 @@ bench *ARGS:
   cargo bench --benches {{ARGS}} -- --nocapture
 
 mkconfig NUM_NODES DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n {{NUM_NODES}} \
+  cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "127.0.0.1:8003" \
     --http-api "127.0.0.1:8004" \
@@ -107,7 +111,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --output "test-configs/c0" {{ARGS}}
 
 mkconfig_docker DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n 5 \
+  cargo run --release --bin mkconfig -- -n 5 \
     --public-addr "172.20.0.2:8000" \
     --internal-addr "172.20.0.2:8003" \
     --http-api "172.20.0.2:8004" \
@@ -122,7 +126,7 @@ mkconfig_docker DATETIME *ARGS:
     --output "test-configs/docker" {{ARGS}}
 
 mkconfig_nitro DATETIME *ARGS:
-  cargo run --bin mkconfig -- -n 2 \
+  cargo run --release --bin mkconfig -- -n 2 \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "0.0.0.0:8003" \
     --http-api "127.0.0.1:8004" \
@@ -137,31 +141,47 @@ mkconfig_nitro DATETIME *ARGS:
     --output "test-configs/nitro-ci-committee" {{ARGS}}
 
 verify_blocks *ARGS:
-  cargo run --release --bin block-verifier --features verifier {{ARGS}}
+  cargo run --release --bin block-verifier {{ARGS}}
 
 ####################
 ####TEST COMMANDS###
 ####################
-test *ARGS: build-test-utils
-  target/release/run --with target/release/port-alloc cargo nextest run -- {{ARGS}}
+test *ARGS: build-port-alloc
+  target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
 
 test-contracts: build-contracts
   forge test
 
-test_ci *ARGS: build-test-utils
+test_ci *ARGS: build-port-alloc
   env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
-    --with target/release/port-alloc \
-    -- cargo nextest run --workspace {{ARGS}}
+    --spawn target/release/port-alloc \
+    cargo nextest run -- --workspace {{ARGS}}
   env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
-test-individually: build-test-utils
+test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
     echo "Testing $pkg"; \
-    target/release/run \
-        --with target/release/port-alloc \
-        -- cargo nextest run --no-tests=pass -p $pkg || exit 1; \
+    $(target/release/run \
+        --spawn target/release/port-alloc \
+        cargo nextest run -- --no-tests=pass -p $pkg) || exit 1; \
   done
 
 test-contract-deploy *ARGS:
-  ./scripts/test-contract-deploy {{ARGS}}
+  scripts/test-contract-deploy {{ARGS}}
+
+test-all: build_release build-test-utils
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn target/release/run \
+    --verbose \
+    --timeout 120 \
+    --spawn "1:anvil --port 8545" \
+    --run   "2:sleep 3" \
+    --run   "3:scripts/deploy-test-contract" \
+    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/local/committee.toml" \
+    --spawn "4:target/release/yapper --keyset-file test-configs/local/committee.toml" \
+    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
+    target/release/block-checker -- \
+      --config test-configs/local/node_0.toml \
+      --committee test-configs/local/committee.toml \
+      --committee-id 0 \
+      --blocks 1000

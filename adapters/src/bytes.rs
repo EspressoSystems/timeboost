@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 
 use bytes::{Bytes, BytesMut};
+use minicbor::CborLen;
 use minicbor::decode::{Decoder, Error as DecodeError};
 use minicbor::encode::{Encoder, Error as EncodeError, Write};
 
@@ -13,6 +14,11 @@ where
 
 pub fn decode<'b, C>(d: &mut Decoder<'b>, _: &mut C) -> Result<Bytes, DecodeError> {
     Ok(Bytes::copy_from_slice(d.bytes()?))
+}
+
+pub fn cbor_len<C>(b: &Bytes, c: &mut C) -> usize {
+    let n = b.len();
+    n.cbor_len(c) + n
 }
 
 /// `BytesWrite` can be used to encode directly into `BytesMut`.

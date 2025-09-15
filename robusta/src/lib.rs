@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use either::Either;
 use espresso_types::{Header, NamespaceId, Transaction};
-use multisig::{Unchecked, Validated};
+use multisig::Validated;
 use reqwest::{StatusCode, Url};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json as json;
@@ -18,13 +18,17 @@ use timeboost_types::{BlockNumber, CertifiedBlock};
 use tokio::time::sleep;
 use tracing::{debug, warn};
 
-use crate::types::{TX, TaggedBase64, TransactionsWithProof, VidCommonResponse};
+use crate::types::{
+    RecvBody, SendBody, TX, TaggedBase64, TransactionsWithProof, VidCommonResponse,
+};
 
 pub use crate::multiwatcher::Multiwatcher;
 pub use crate::types::Height;
 pub use crate::watcher::{WatchError, Watcher};
 pub use config::{Config, ConfigBuilder};
 pub use espresso_types;
+
+static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 /// A client for the Espresso network.
 #[derive(Debug, Clone)]
@@ -38,6 +42,7 @@ impl Client {
         let r = reqwest::Client::builder()
             .https_only(c.https_only)
             .timeout(Duration::from_secs(30))
+            .user_agent(USER_AGENT)
             .build()
             .expect("TLS and DNS resolver work");
         Self {
@@ -55,11 +60,15 @@ impl Client {
         self.get_with_retry(u).await
     }
 
-    pub async fn submit<N>(&self, nsid: N, cb: &CertifiedBlock<Validated>) -> Result<(), Error>
+    pub async fn submit<N>(
+        &self,
+        nsid: N,
+        blocks: &[CertifiedBlock<Validated>],
+    ) -> Result<(), Error>
     where
         N: Into<NamespaceId>,
     {
-        let trx = Transaction::new(nsid.into(), minicbor::to_vec(cb)?);
+        let trx = Transaction::new(nsid.into(), minicbor::to_vec(SendBody { blocks })?);
         let url = self.config.base_url.join("submit/submit")?;
         self.post_with_retry::<_, TaggedBase64<TX>>(url, &trx)
             .await?;
@@ -99,9 +108,9 @@ impl Client {
             warn!(node = %self.config.label, a = %nsid, b = %ns, height = %hdr.height(), "namespace mismatch");
             return Either::Left(empty());
         }
-        Either::Right(trxs.into_iter().filter_map(move |t| {
-            match minicbor::decode::<CertifiedBlock<Unchecked>>(t.payload()) {
-                Ok(b) => {
+        Either::Right(trxs.into_iter().flat_map(move |t| {
+            match minicbor::decode::<RecvBody>(t.payload()) {
+                Ok(body) => Either::Right(body.blocks.into_iter().filter_map(|b| {
                     let Some(c) = cvec.get(b.committee()) else {
                         warn!(
                             node      = %self.config.label,
@@ -117,16 +126,16 @@ impl Client {
                         warn!(node = %self.config.label, height = %hdr.height(), "invalid block");
                         None
                     }
-                }
+                })),
                 Err(err) => {
                     warn!(
                         node   = %self.config.label,
                         nsid   = %nsid,
                         height = %hdr.height(),
                         err    = %err,
-                        "could not deserialize block"
+                        "could not decode transaction payload"
                     );
-                    None
+                    Either::Left(empty())
                 }
             }
         }))
