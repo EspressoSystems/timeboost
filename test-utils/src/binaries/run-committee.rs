@@ -60,10 +60,7 @@ async fn main() -> Result<()> {
             .arg("--ignore-stamp");
 
         if let Some(until) = args.until {
-            cmd.arg("--committee")
-                .arg(format!("{}/committee.toml", args.configs.to_str().unwrap()))
-                .arg("--until")
-                .arg(until.to_string());
+            cmd.arg("--until").arg(until.to_string());
         }
         if let Some(r) = args.required_decrypt_rounds {
             cmd.arg("--required-decrypt-rounds").arg(r.to_string());

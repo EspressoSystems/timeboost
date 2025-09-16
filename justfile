@@ -230,7 +230,7 @@ test-dyn-comm: build_release_until build-test-utils
     target/release/run-committee -- \
       --configs test-configs/c1/ \
       --committee-id 1 \
-      --until 1800 \
+      --until 800 \
       --required-decrypt-rounds 3 && rm -rf test-configs/c1
 
 # portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format

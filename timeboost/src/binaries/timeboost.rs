@@ -40,11 +40,6 @@ struct Cli {
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
 
-    /// Path to committee config toml.
-    #[cfg(feature = "until")]
-    #[clap(long)]
-    committee: PathBuf,
-
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
     #[clap(long, default_value_t = 1000)]
@@ -246,9 +241,10 @@ async fn main() -> Result<()> {
         use tokio::time::sleep;
         use url::Url;
 
-        let committee = CommitteeConfig::read(&cli.committee)
+        let committee_conf = cli.config.with_file_name("committee.toml");
+        let committee = CommitteeConfig::read(&committee_conf.to_str().unwrap())
             .await
-            .with_context(|| format!("failed to read committee config {:?}", cli.committee))?;
+            .with_context(|| format!("failed to read committee config {:?}", committee_conf))?;
 
         let handle = {
             let Some(member) = committee
