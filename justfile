@@ -199,8 +199,8 @@ test-dyn-comm: build_release_until build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-test-contract" \
-    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee 0" \
-    --run   "5:target/release/mkconfig -n 3 \
+    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee 0 --until 1600" \
+    --run   "5:target/release/mkconfig -n 4 \
                  --public-addr 127.0.0.1:9000 \
                  --internal-addr 127.0.0.1:9003 \
                  --http-api 127.0.0.1:9004 \
@@ -213,16 +213,16 @@ test-dyn-comm: build_release_until build-test-utils
                  --timestamp `just now-plus-20s` \
                  --stamp-dir /tmp \
                  --output test-configs/c1" \
-    --run   "6:target/release/register \
-                 -u http://localhost:8545 \
-                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c1/committee.toml" \
-    --run   "7:sleep 8" \
-    --run   "8:target/release/register \
+    --run   "6:sleep 8" \
+    --run   "7:target/release/register \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c0/committee.toml \
                  -a threshold-enc-key" \
+    --run   "8:target/release/register \
+                 -u http://localhost:8545 \
+                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 -c test-configs/c1/committee.toml" \
     --spawn "9:target/release/yapper \
                   --keyset-file test-configs/c1/committee.toml \
                   --parent-url http://localhost:8545 \
@@ -230,10 +230,10 @@ test-dyn-comm: build_release_until build-test-utils
     target/release/run-committee -- \
       --configs test-configs/c1/ \
       --committee 1 \
-      --until 500 \
+      --until 2000 \
       --required-decrypt-rounds 3
 
-# portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format
+# portable calculation of now() + 12s in "%Y-%m-%dT%H:%M:%SZ" format
 [private]
 now-plus-20s:
-    @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'
+  @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'
