@@ -11,6 +11,7 @@ pub struct ChainConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[serde(rename_all = "kebab-case")]
 pub struct ParentChain {
     pub id: u64,
     pub rpc_url: Url,

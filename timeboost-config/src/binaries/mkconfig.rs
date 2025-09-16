@@ -100,6 +100,9 @@ struct Args {
     #[clap(long, default_value = "wss://query.decaf.testnet.espresso.network/v1/")]
     espresso_websocket_url: Url,
 
+    #[clap(long, default_value_t = 1024 * 1024)]
+    max_transaction_size: usize,
+
     /// The directory to stored all generated `NodeConfig` files for all committee members
     #[clap(long, short)]
     output: PathBuf,
@@ -195,6 +198,7 @@ impl Args {
                 espresso: Espresso {
                     base_url: self.espresso_base_url.clone(),
                     websockets_base_url: self.espresso_websocket_url.clone(),
+                    max_transaction_size: self.max_transaction_size,
                 },
             };
 

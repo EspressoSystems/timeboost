@@ -45,6 +45,6 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         push: true
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         file: ./docker/timeboost.Dockerfile
         tags: ghcr.io/espressosystems/timeboost:${{ env.TAG }}

@@ -45,6 +45,9 @@ pub struct TimeboostConfig {
     /// The address of the Arbitrum Nitro node listener where we forward inclusion list to.
     pub(crate) nitro_addr: Option<Address>,
 
+    /// Max. size of an espresso transaction.
+    pub(crate) max_transaction_size: usize,
+
     /// Is this node recovering from a crash?
     #[builder(default = true)]
     pub(crate) recover: bool,
@@ -185,6 +188,7 @@ impl TimeboostConfig {
             .robusta(self.robusta.clone())
             .namespace(self.chain_config.namespace)
             .committee(self.sailfish_committee.committee().clone())
+            .max_transaction_size(self.max_transaction_size)
             .build()
     }
 }

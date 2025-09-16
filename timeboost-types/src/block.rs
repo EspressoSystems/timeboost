@@ -7,12 +7,14 @@ use std::{
 use alloy::primitives::B256;
 use bytes::Bytes;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use minicbor::{Decode, Encode};
+use minicbor::{CborLen, Decode, Encode};
 use multisig::{Certificate, Committee, CommitteeId, Unchecked, Validated};
 use sailfish_types::{Round, RoundNumber};
 
 /// A timeboost block number.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, CborLen,
+)]
 #[cbor(transparent)]
 pub struct BlockNumber(u64);
 
@@ -81,7 +83,9 @@ impl fmt::Display for BlockNumber {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Ord, PartialOrd, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Debug, Default, Clone, Copy, Ord, PartialOrd, PartialEq, Eq, Hash, Encode, Decode, CborLen,
+)]
 #[cbor(transparent)]
 pub struct BlockHash(#[cbor(with = "minicbor::bytes")] [u8; 32]);
 
@@ -113,7 +117,7 @@ impl Committable for BlockHash {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, CborLen)]
 #[cbor(map)]
 pub struct Block {
     #[cbor(n(0))]
@@ -159,7 +163,7 @@ impl Block {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, CborLen)]
 #[cbor(map)]
 pub struct BlockInfo {
     #[cbor(n(0))]
@@ -207,7 +211,7 @@ impl Committable for BlockInfo {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, CborLen)]
 #[cbor(map)]
 pub struct CertifiedBlock<S> {
     #[cbor(n(0))]

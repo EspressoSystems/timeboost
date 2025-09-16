@@ -15,7 +15,7 @@ use futures::StreamExt;
 use metrics::TimeboostMetrics;
 use multisig::{Committee, PublicKey, x25519};
 use sailfish::types::Timestamp;
-use timeboost_builder::{Certifier, CertifierDown, Submitter};
+use timeboost_builder::{Certifier, CertifierDown, SenderTaskDown, Submitter};
 use timeboost_contract::CommitteeMemberSol;
 use timeboost_contract::{KeyManager, KeyManager::CommitteeCreated};
 use timeboost_crypto::prelude::DkgEncKey;
@@ -166,7 +166,10 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        self.submitter.submit(b).await
+                        if let Err(e) = self.submitter.submit(b).await {
+                            let e: SenderTaskDown = e;
+                            return Err(e.into())
+                        }
                     }
                     Err(e) => {
                         let e: CertifierDown = e;
