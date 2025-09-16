@@ -215,11 +215,14 @@ test-dyn-comm: build_release_until build-test-utils
                  --output test-configs/c1" \
     --run   "6:sleep 8" \
     --run   "7:target/release/register \
+                 -a threshold-enc-key \
+                 -m attend__SPACE__year__SPACE__erase__SPACE__basket__SPACE__blind__SPACE__adapt__SPACE__stove__SPACE__broccoli__SPACE__isolate__SPACE__unveil__SPACE__acquire__SPACE__category \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 -c test-configs/c0/committee.toml \
-                 -a threshold-enc-key" \
+                 -c test-configs/c0/committee.toml" \
     --run   "8:target/release/register \
+                 -a new-committee \
+                 -m attend__SPACE__year__SPACE__erase__SPACE__basket__SPACE__blind__SPACE__adapt__SPACE__stove__SPACE__broccoli__SPACE__isolate__SPACE__unveil__SPACE__acquire__SPACE__category \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \

@@ -19,11 +19,7 @@ use url::Url;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {
-    #[clap(
-        short,
-        long,
-        default_value = "attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
-    )]
+    #[clap(short, long)]
     mnemonic: String,
 
     #[clap(short, long, default_value_t = 0)]
@@ -41,7 +37,7 @@ struct Args {
     config: PathBuf,
 
     /// What to register (new committee or threshold enc key?)
-    #[clap(long, short, default_value = "new-committee")]
+    #[clap(short, long)]
     action: Action,
 }
 

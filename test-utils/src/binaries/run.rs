@@ -51,13 +51,15 @@ async fn main() -> Result<()> {
 
     for commandline in commands {
         if args.verbose {
+            let joined = commandline.args.join(" ");
             if commandline.sync {
-                eprintln!("running command: {}", commandline.args)
+                eprintln!("running command: {joined}");
             } else {
-                eprintln!("spawning command: {}", commandline.args)
+                eprintln!("spawning command: {joined}");
             }
         }
-        let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
+
+        let mut pg = ProcessGroup::spawn(&commandline.args)?;
         if commandline.sync {
             let status = select! {
                 s = pg.wait()   => s?,
@@ -69,7 +71,7 @@ async fn main() -> Result<()> {
             }
         } else {
             helpers.spawn(async move {
-                let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
+                let mut pg = ProcessGroup::spawn(&commandline.args)?;
                 let status = pg.wait().await?;
                 Ok(status)
             });
@@ -110,15 +112,20 @@ async fn main() -> Result<()> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Commandline {
     prio: u8,
-    args: String,
+    args: Vec<String>,
     sync: bool,
 }
 
 fn parse_command_line(s: &str) -> Result<Commandline> {
     let (p, a) = s.split_once(':').unwrap_or(("0", s));
+    // Replace __SPACE__ with actual spaces, then split like shell would
+    let parts = shell_words::split(a)?
+        .into_iter()
+        .map(|arg| arg.replace("__SPACE__", " "))
+        .collect();
     Ok(Commandline {
         prio: p.parse()?,
-        args: a.to_string(),
+        args: parts,
         sync: true,
     })
 }
@@ -137,9 +144,7 @@ impl ProcessGroup {
             .next()
             .ok_or_else(|| anyhow!("invalid command-line args"))?;
         let mut cmd = Command::new(exe);
-        for a in args {
-            cmd.arg(a);
-        }
+        cmd.args(args);
         cmd.process_group(0);
         let child = cmd.spawn()?;
         let id = child.id().ok_or_else(|| anyhow!("child already exited"))?;
