@@ -1,4 +1,31 @@
 services:
+  demo-l1-network:
+    image: ghcr.io/espressosystems/geth-l1:main
+    command: --dev --dev.period=1
+    ports:
+      - 8545:8545
+      - 8546:8546
+    volumes:
+      - "./geth-config/genesis-default.json:/genesis.json"
+      - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.11
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://172.20.0.11:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  deploy-test-contract:
+    image: timeboost:latest
+    environment:
+      - RUST_LOG=debug
+    entrypoint: ["/app/deploy-contract-docker"]
+    depends_on:
+      demo-l1-network:
+        condition: service_healthy
+    networks:
+      - timeboost
   node0:
     image: timeboost:latest
     command:
@@ -12,18 +39,17 @@ services:
         ipv4_address: 172.20.0.2
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_CERTIFIER_PORT=8002
-      - TIMEBOOST_RPC_PORT=8800
-      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8000:8000"
       - "8030:8001"
       - "8060:8002"
+      - "8080:8003"
+      - "8100:8004"
       - "8800:8800"
       - "9000:9000"
     depends_on:
+      deploy-test-contract:
+        condition: service_completed_successfully
       nitro-dev:
         condition: service_healthy
   node1:
@@ -39,18 +65,17 @@ services:
         ipv4_address: 172.20.0.3
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_CERTIFIER_PORT=8002
-      - TIMEBOOST_RPC_PORT=8800
-      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8001:8000"
       - "8031:8001"
       - "8061:8002"
+      - "8081:8003"
+      - "8101:8004"
       - "8801:8800"
       - "9001:9000"
     depends_on:
+      deploy-test-contract:
+        condition: service_completed_successfully
       nitro-dev:
         condition: service_healthy
   node2:
@@ -66,18 +91,17 @@ services:
         ipv4_address: 172.20.0.4
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_CERTIFIER_PORT=8002
-      - TIMEBOOST_RPC_PORT=8800
-      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8002:8000"
       - "8032:8001"
       - "8062:8002"
+      - "8082:8003"
+      - "8102:8004"      
       - "8802:8800"
       - "9002:9000"
     depends_on:
+      deploy-test-contract:
+        condition: service_completed_successfully
       nitro-dev:
         condition: service_healthy
   node3:
@@ -93,18 +117,17 @@ services:
         ipv4_address: 172.20.0.5
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_CERTIFIER_PORT=8002
-      - TIMEBOOST_RPC_PORT=8800
-      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8003:8000"
       - "8033:8001"
       - "8063:8002"
+      - "8083:8003"
+      - "8103:8004"      
       - "8803:8800"
       - "9003:9000"
     depends_on:
+      deploy-test-contract:
+        condition: service_completed_successfully
       nitro-dev:
         condition: service_healthy
   node4:
@@ -120,18 +143,17 @@ services:
         ipv4_address: 172.20.0.6
     environment:
       - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
-      - TIMEBOOST_SAILFISH_PORT=8000
-      - TIMEBOOST_DECRYPT_PORT=8001
-      - TIMEBOOST_CERTIFIER_PORT=8002
-      - TIMEBOOST_RPC_PORT=8800
-      - TIMEBOOST_METRICS_PORT=9000
     ports:
       - "8004:8000"
       - "8034:8001"
       - "8064:8002"
+      - "8084:8003"
+      - "8104:8004"        
       - "8804:8800"
       - "9004:9000"
     depends_on:
+      deploy-test-contract:
+        condition: service_completed_successfully
       nitro-dev:
         condition: service_healthy
   nitro-dev:
@@ -148,15 +170,14 @@ services:
       timeout: 3s
       retries: 10
   yapper:
-    image: yapper:latest
+    image: timeboost:latest
     command:
       [
         "/app/yapper",
-        "--tps",
-        "1",
-        "--keyset-file",
-        "committee.json",
+        "--keyset-file", "committee.toml",
       ]
+    environment:
+      - RUST_LOG=info
     networks:
       timeboost:
         ipv4_address: 172.20.0.13
