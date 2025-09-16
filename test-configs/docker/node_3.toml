@@ -8,24 +8,24 @@ http-api = "172.20.0.5:8004"
 address = "172.20.0.5:8003"
 
 [keys.signing]
-secret = "C3S84dgsyHhrc5nEhCgBRe8zBaEHbEcwWz5fbShCZvU1"
-public = "uxkURysS7THRSkKUDW22R5LWAEkKVepjLDpHRa5jB6MK"
+secret = "EpXe2EVVhzTXJhHhppiAwnVZrDkUqkBXd1Wsnn8BewGx"
+public = "mnMw9aV8hRuZJJfXw24X9xQkMNRm29F69KQkZdFCAWRm"
 
 [keys.dh]
-secret = "BCnTCKitRJewSgZo8jVn7SU1PpPhRenBkUXy7AhuBwku"
-public = "4HZj5ysKMsPobkAMnJytnQvf3NsVSLSkY3N9nBzDfCrc"
+secret = "A9wk8qJGuk9nLsmAKyKwZitFxH6F1MD4rrttpG66rrxZ"
+public = "FgJ5RWL769YBTT4eNimJp5dfAqLshrUAqdBCCZtgcrbm"
 
 [keys.dkg]
-secret = "8vkvBsFk2uZ4ci7UGvhNKAT8eXBkBSd9xMxgrDa2Szgx"
-public = "7n6vbt3zsTUifwkGngct9QMc9JqwT3ALvY2uYaKfkk5FDFKZgTSdnoboKr68BiveYv"
+secret = "A5LfoCff3jSknLzFhwDQNqUqc5KTUpigiTzDTbwuki5u"
+public = "5yRtZSeQU4f16oHxkJbFph9bcbVQ1yoy7fx2jiXnDyBkCfZYfRKqRVRH6ps83izUcw"
 
 [chain]
 namespace = 10101
 
 [chain.parent]
 id = 31337
-rpc-url = "http://127.0.0.1:8545/"
-ws-url = "ws://127.0.0.1:8545/"
+rpc-url = "http://172.20.0.11:8545/"
+ws-url = "ws://172.20.0.11:8545/"
 ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
