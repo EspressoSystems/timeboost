@@ -11,7 +11,7 @@ struct Args {
     configs: PathBuf,
 
     #[clap(long, short)]
-    committee: u64,
+    committee_id: u64,
 
     #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
@@ -54,15 +54,16 @@ async fn main() -> Result<()> {
         }
         let mut cmd = Command::new(args.timeboost.as_os_str());
         cmd.arg("--committee-id")
-            .arg(args.committee.to_string())
-            .arg("--committee")
-            .arg(format!("{}/committee.toml", args.configs.to_str().unwrap()))
+            .arg(args.committee_id.to_string())
             .arg("--config")
             .arg(entry.path())
             .arg("--ignore-stamp");
 
         if let Some(until) = args.until {
-            cmd.arg("--until").arg(until.to_string());
+            cmd.arg("--committee")
+                .arg(format!("{}/committee.toml", args.configs.to_str().unwrap()))
+                .arg("--until")
+                .arg(until.to_string());
         }
         if let Some(r) = args.required_decrypt_rounds {
             cmd.arg("--required-decrypt-rounds").arg(r.to_string());

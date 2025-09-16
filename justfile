@@ -185,7 +185,7 @@ test-all: build_release build-test-utils
     --run   "3:scripts/deploy-test-contract" \
     --spawn "4:target/release/block-maker --port 55000 --committee test-configs/local/committee.toml" \
     --spawn "4:target/release/yapper --keyset-file test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
+    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee-id 0 --timeboost target/release/timeboost" \
     target/release/block-checker -- \
       --config test-configs/local/node_0.toml \
       --committee test-configs/local/committee.toml \
@@ -199,7 +199,7 @@ test-dyn-comm: build_release_until build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-test-contract" \
-    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee 0 --until 1600" \
+    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee-id 0 --until 1600" \
     --run   "5:target/release/mkconfig -n 4 \
                  --public-addr 127.0.0.1:9000 \
                  --internal-addr 127.0.0.1:9003 \
@@ -229,11 +229,11 @@ test-dyn-comm: build_release_until build-test-utils
                   --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     target/release/run-committee -- \
       --configs test-configs/c1/ \
-      --committee 1 \
-      --until 2000 \
-      --required-decrypt-rounds 3
+      --committee-id 1 \
+      --until 1800 \
+      --required-decrypt-rounds 3 && rm -rf test-configs/c1
 
-# portable calculation of now() + 12s in "%Y-%m-%dT%H:%M:%SZ" format
+# portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format
 [private]
 now-plus-20s:
   @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'
