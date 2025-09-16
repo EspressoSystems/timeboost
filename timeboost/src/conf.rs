@@ -1,5 +1,5 @@
 use alloy::providers::ProviderBuilder;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Committee, Keypair, x25519};
@@ -89,19 +89,19 @@ impl TimeboostConfig {
 
             let peer_hosts_and_keys = members
                 .iter()
-                .map(|peer| {
+                .map(|peer| -> Result<_> {
                     let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
-                        .expect("Should parse sigKey bytes");
+                        .with_context(|| "Failed to parse sigKey bytes")?;
                     let dh_key = x25519::PublicKey::try_from(peer.dhKey.as_ref())
-                        .expect("Should parse dhKey bytes");
+                        .with_context(|| "Failed to parse dhKey bytes")?;
                     let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())
-                        .expect("Should parse dkgKey bytes");
+                        .with_context(|| "Failed to parse dkgKey bytes")?;
                     let sailfish_address =
                         cliquenet::Address::try_from(peer.networkAddress.as_ref())
-                            .expect("Should parse networkAddress string");
-                    (sig_key, dh_key, dkg_enc_key, sailfish_address)
+                            .with_context(|| "Failed to parse networkAddress string")?;
+                    Ok((sig_key, dh_key, dkg_enc_key, sailfish_address))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>>>()?;
 
             let mut sailfish_peer_hosts_and_keys = Vec::new();
             let mut decrypt_peer_hosts_and_keys = Vec::new();
