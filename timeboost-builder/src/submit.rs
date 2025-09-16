@@ -181,10 +181,18 @@ impl Sender {
                         continue;
                     }
                     let n = minicbor::len(&b);
-                    if size + n < self.size_limit {
+                    // If a single block exceeds the transaction size limit, skip it with a warning
+                    // to avoid permanently blocking the queue with an unshippable item.
+                    if n > self.size_limit {
+                        warn!(node = %self.label, block = %b.cert().data().num(), size = %n, limit = %self.size_limit, "block exceeds max transaction size; dropping");
+                        continue;
+                    }
+                    if size + n <= self.size_limit {
                         size += n;
                         transaction.push(b)
                     } else {
+                        // Re-queue the block to avoid dropping it when current transaction is full.
+                        outbox.push_front(b);
                         break;
                     }
                 }
