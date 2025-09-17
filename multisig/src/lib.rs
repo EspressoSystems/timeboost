@@ -139,16 +139,13 @@ impl Keypair {
     }
 
     /// Generate keypair from a seed.
-    pub fn from_seed(seed: [u8; 32]) -> Self {
-        loop {
-            if let Ok(sk) = secp256k1::SecretKey::from_byte_array(seed) {
-                let pk = sk.public_key(secp256k1::SECP256K1);
-                return Self {
-                    sk: SecretKey { key: sk },
-                    pk: PublicKey { key: pk },
-                };
-            }
-        }
+    pub fn from_seed(seed: [u8; 32]) -> Result<Self, InvalidSecretKey> {
+        let sk = secp256k1::SecretKey::from_byte_array(seed).map_err(|_| InvalidSecretKey(()))?;
+        let pk = sk.public_key(secp256k1::SECP256K1);
+        Ok(Self {
+            sk: SecretKey { key: sk },
+            pk: PublicKey { key: pk },
+        })
     }
 
     /// Returns ed25519 Public key.
