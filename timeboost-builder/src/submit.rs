@@ -181,10 +181,21 @@ impl Sender {
                         continue;
                     }
                     let n = minicbor::len(&b);
-                    if size + n < self.size_limit {
+                    if n > self.size_limit {
+                        error!(
+                            node  = %self.label,
+                            block = %b.cert().data().num(),
+                            size  = %n,
+                            limit = %self.size_limit,
+                            "block exceeds max transaction size; dropping"
+                        );
+                        continue;
+                    }
+                    if size + n <= self.size_limit {
                         size += n;
                         transaction.push(b)
                     } else {
+                        outbox.push_front(b);
                         break;
                     }
                 }
