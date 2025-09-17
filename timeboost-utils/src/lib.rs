@@ -22,7 +22,7 @@ pub fn sig_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> multisig::Ke
     hasher.update(&seed);
     hasher.update(&index.to_le_bytes());
     let new_seed = *hasher.finalize().as_bytes();
-    multisig::Keypair::from_seed(new_seed)
+    multisig::Keypair::from_seed(new_seed).expect("blake3 hash should always produce valid secp256k1 key")
 }
 
 pub fn dh_keypair_from_seed_indexed(seed: [u8; 32], index: u64) -> x25519::Keypair {
