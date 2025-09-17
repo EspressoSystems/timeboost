@@ -345,10 +345,9 @@ impl<C: CurveGroup> KeyResharing<Self> for FeldmanVss<C> {
                     row_commitments.iter().map(|row| row[j]).collect();
                 interpolate_in_exponent::<C>(&eval_points, &j_th_coeffs)
                     .map_err(|e| VssError::FailedCombine(e.to_string()))
+                    .map(|p| p.into_affine())
             })
             .collect::<Result<Vec<_>, VssError>>()?;
-
-        let new_commitment = C::normalize_batch(&new_commitment);
 
         Ok((new_secret, new_commitment.into()))
     }
