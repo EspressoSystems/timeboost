@@ -81,7 +81,7 @@ impl ThresholdKey {
         dealings: I,
     ) -> anyhow::Result<Self>
     where
-        I: ExactSizeIterator<Item = (usize, VssShare, VssCommitment)> + Clone,
+        I: Iterator<Item = (usize, VssShare, VssCommitment)>,
     {
         let old_pp = FeldmanVssPublicParam::from(old_committee);
         let new_pp = FeldmanVssPublicParam::from(new_committee);
@@ -600,38 +600,28 @@ impl<'a> DkgSubsetRef<'a> {
                 )?;
 
                 dealings_iter.result()?;
-
                 Ok(dec_key)
             }
             Some(combkey) => {
-                let Some(prev) = prev else {
-                    return Err(anyhow!("previous key store missing"));
-                };
+                let prev = prev.ok_or_else(|| anyhow!("previous key store missing"))?;
+                let mut dealings_iter = ResultIter::new(self.bundles.iter().map(|b| {
+                    let node_idx = b.origin().0.into();
+                    let pub_share = combkey
+                        .get_pub_share(node_idx)
+                        .ok_or(VessError::FailedVerification)?;
+                    vess.decrypt_reshare(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD, *pub_share)
+                        .map(|s| (node_idx, s, b.comm().clone()))
+                }));
 
-                let dealings: Vec<_> = self
-                    .bundles
-                    .iter()
-                    .map(|b| {
-                        let node_idx = b.origin().0.into();
-                        let pub_share = combkey
-                            .get_pub_share(node_idx)
-                            .ok_or(VessError::FailedVerification)?;
-                        let s = vess.decrypt_reshare(
-                            curr.committee(),
-                            dkg_sk,
-                            b.vess_ct(),
-                            DKG_AAD,
-                            *pub_share,
-                        )?;
-                        Ok((node_idx, s, b.comm().clone()))
-                    })
-                    .collect::<Result<Vec<_>, VessError>>()?;
-                ThresholdKey::from_resharing(
+                let dec_key = ThresholdKey::from_resharing(
                     prev.committee(),
                     curr.committee(),
                     dkg_sk.node_idx(),
-                    dealings.into_iter(),
-                )
+                    &mut dealings_iter,
+                )?;
+
+                dealings_iter.result()?;
+                Ok(dec_key)
             }
         }
     }
