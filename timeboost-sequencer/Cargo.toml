@@ -33,5 +33,5 @@ tracing = { workspace = true }
 ark-std = { workspace = true }
 bs58 = { workspace = true }
 futures = { workspace = true }
-test-utils = { path = "../test-utils", features = ["ports"]}
+test-utils = { path = "../test-utils", features = ["ports"] }
 timeboost-utils = { path = "../timeboost-utils" }
