@@ -4,26 +4,17 @@ use std::iter::once;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
-use alloy::eips::BlockNumberOrTag;
-use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::Filter;
-use alloy::sol_types::SolEvent;
-use alloy::transports::ws::WsConnect;
 use anyhow::{Result, anyhow};
-use cliquenet::AddressableCommittee;
+use committee::NewCommitteeStream;
 use futures::StreamExt;
 use metrics::TimeboostMetrics;
-use multisig::{Committee, PublicKey, x25519};
-use sailfish::types::Timestamp;
+use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, SenderTaskDown, Submitter};
-use timeboost_contract::CommitteeMemberSol;
-use timeboost_contract::{KeyManager, KeyManager::CommitteeCreated};
-use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_sequencer::{Output, Sequencer};
-use timeboost_types::{BundleVariant, ConsensusTime, KeyStore};
+use timeboost_types::{BundleVariant, ConsensusTime};
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub use conf::{TimeboostConfig, TimeboostConfigBuilder};
 pub use timeboost_builder as builder;
@@ -35,9 +26,11 @@ pub use timeboost_types as types;
 
 use crate::api::ApiServer;
 use crate::api::internal::GrpcServer;
+use crate::committee::CommitteeInfo;
 use crate::forwarder::nitro_forwarder::NitroForwarder;
 
 pub mod api;
+pub mod committee;
 pub mod forwarder;
 pub mod metrics;
 
@@ -55,10 +48,22 @@ pub struct Timeboost {
 }
 
 impl Timeboost {
-    pub async fn new(cfg: TimeboostConfig) -> Result<Self> {
+    pub async fn new(mut cfg: TimeboostConfig) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
         let met = Arc::new(TimeboostMetrics::new(&*pro));
-        let seq = Sequencer::new(cfg.sequencer_config().await?, &*pro).await?;
+
+        // optionally fetch previous committee info
+        let cid: u64 = cfg.sailfish_committee.committee().id().into();
+        if cid > 0u64 {
+            let c = &cfg.chain_config.parent;
+            let prev_comm =
+                CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
+
+            cfg.prev_sailfish_committee = Some(prev_comm.sailfish_committee());
+            cfg.prev_decrypt_committee =
+                Some((prev_comm.decrypt_committee(), prev_comm.dkg_key_store()));
+        }
+        let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
 
@@ -98,39 +103,7 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        // setup the websocket for contract event stream
-        let ws = WsConnect::new(self.config.chain_config.parent.ws_url.clone());
-        // spawn the pubsub service (and backend) and the frontend is registered at the provider
-        let provider = ProviderBuilder::new()
-            .connect_pubsub_with(ws)
-            .await
-            .map_err(|err| {
-                error!(?err, "event pubsub failed to start");
-                err
-            })?;
-
-        let chain_id = provider.get_chain_id().await.map_err(|err| {
-            error!(?err, "fail to get chainid");
-            err
-        })?;
-        let tag = if chain_id == 31337 || chain_id == 1337 {
-            // local test chain, we start scanning from the genesis
-            BlockNumberOrTag::Number(0)
-        } else {
-            BlockNumberOrTag::Finalized
-        };
-        let filter = Filter::new()
-            .address(self.config.chain_config.parent.key_manager_contract)
-            .event(KeyManager::CommitteeCreated::SIGNATURE)
-            .from_block(tag);
-        let mut events = provider
-            .subscribe_logs(&filter)
-            .await
-            .map_err(|err| {
-                error!(?err, "pubsub subscription failed");
-                err
-            })?
-            .into_stream();
+        let mut events = NewCommitteeStream::create(&self.config.chain_config.parent).await?;
 
         loop {
             select! {
@@ -177,15 +150,23 @@ impl Timeboost {
                     }
                 },
                 res = events.next() => match res {
-                    Some(log) => {
-                        let typed_log = log.log_decode_validate::<CommitteeCreated>()?;
-                        let id = typed_log.data().id;
+                    Some(id) => {
                         let cur: u64 = self.config.key_store.committee().id().into();
 
                         if id == cur + 1 {
+                            info!(node = %self.label, committee_id = %id, current = %cur, "fetching next committee");
+                            let comm_info = CommitteeInfo::fetch(
+                                self.config.chain_config.parent.rpc_url.clone(),
+                                self.config.chain_config.parent.key_manager_contract,
+                                id,
+                            ).await?;
+
                             info!(node = %self.label, committee_id = %id, current = %cur, "setting next committee");
-                            let (t, a, k) = self.fetch_next_committee(&provider, id).await?;
-                            self.sequencer.set_next_committee(t, a, k).await?;
+                            self.sequencer.set_next_committee(
+                                ConsensusTime(comm_info.effective_timestamp()),
+                                comm_info.sailfish_committee(),
+                                comm_info.dkg_key_store()
+                            ).await?;
                         } else {
                             warn!(node = %self.label, committee_id = %id, current = %cur, "ignored new CommitteeCreated event");
                             continue;
@@ -198,58 +179,5 @@ impl Timeboost {
                 }
             }
         }
-    }
-
-    /// Given the next committee is available on chain, fetch it and prepare it for `NextCommittee`
-    async fn fetch_next_committee(
-        &self,
-        provider: impl Provider,
-        next_committee_id: u64,
-    ) -> Result<(ConsensusTime, AddressableCommittee, KeyStore)> {
-        let contract = KeyManager::new(
-            self.config.chain_config.parent.key_manager_contract,
-            &provider,
-        );
-        let c = contract.getCommitteeById(next_committee_id).call().await?;
-        let members: Vec<CommitteeMemberSol> = c.members;
-        let timestamp: Timestamp = c.effectiveTimestamp.into();
-
-        let sailfish_peer_hosts_and_keys = members
-            .iter()
-            .map(|peer| {
-                let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())?;
-                let dh_key = x25519::PublicKey::try_from(peer.dhKey.as_ref())?;
-                let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())?;
-                Ok((sig_key, dh_key, sailfish_address))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let dkg_enc_keys = members
-            .iter()
-            .map(|peer| {
-                let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())?;
-                Ok(dkg_enc_key)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let sailfish_committee = {
-            let c = Committee::new(
-                next_committee_id,
-                sailfish_peer_hosts_and_keys
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (k, ..))| (i as u8, *k)),
-            );
-            AddressableCommittee::new(c, sailfish_peer_hosts_and_keys.iter().cloned())
-        };
-
-        let key_store = KeyStore::new(
-            sailfish_committee.committee().clone(),
-            dkg_enc_keys
-                .into_iter()
-                .enumerate()
-                .map(|(i, k)| (i as u8, k)),
-        );
-
-        Ok((ConsensusTime(timestamp), sailfish_committee, key_store))
     }
 }

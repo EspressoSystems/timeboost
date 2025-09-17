@@ -1,12 +1,9 @@
-use alloy::providers::ProviderBuilder;
-use anyhow::{Context, Result};
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
-use multisig::{Committee, Keypair, x25519};
+use multisig::{Keypair, x25519};
 use timeboost_builder::{CertifierConfig, SubmitterConfig, robusta};
-use timeboost_config::{ChainConfig, DECRYPTER_PORT_OFFSET};
-use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
+use timeboost_config::ChainConfig;
+use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::{KeyStore, ThresholdKeyCell};
 
@@ -15,8 +12,14 @@ pub struct TimeboostConfig {
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
+    /// Previous sailfish peers
+    pub(crate) prev_sailfish_committee: Option<AddressableCommittee>,
+
     /// The decrypt peers that this node will connect to.
     pub(crate) decrypt_committee: AddressableCommittee,
+
+    /// Previous decrypt peers
+    pub(crate) prev_decrypt_committee: Option<(AddressableCommittee, KeyStore)>,
 
     /// The block certifier peers that this node will connect to.
     pub(crate) certifier_committee: AddressableCommittee,
@@ -67,95 +70,8 @@ pub struct TimeboostConfig {
 }
 
 impl TimeboostConfig {
-    pub async fn sequencer_config(&self) -> Result<SequencerConfig> {
-        let cur_cid: u64 = self.sailfish_committee.committee().id().into();
-
-        let (prev_sailfish, prev_decrypt) = if cur_cid == 0u64 {
-            (None, None)
-        } else {
-            // syncing with contract to get peer info about the previous committee
-            // largely adapted from binaries/timeboost.rs
-            // TODO: (alex) extrapolate the remaining logic into a common helper
-            let prev_cid = cur_cid - 1;
-
-            let provider =
-                ProviderBuilder::new().connect_http(self.chain_config.parent.rpc_url.clone());
-            let contract =
-                KeyManager::new(self.chain_config.parent.key_manager_contract, &provider);
-            let members: Vec<CommitteeMemberSol> =
-                contract.getCommitteeById(prev_cid).call().await?.members;
-
-            tracing::info!(label = %self.sign_keypair.public_key(), committee_id = %prev_cid, "prev committee info synced");
-
-            let peer_hosts_and_keys = members
-                .iter()
-                .map(|peer| -> Result<_> {
-                    let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
-                        .with_context(|| "Failed to parse sigKey bytes")?;
-                    let dh_key = x25519::PublicKey::try_from(peer.dhKey.as_ref())
-                        .with_context(|| "Failed to parse dhKey bytes")?;
-                    let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())
-                        .with_context(|| "Failed to parse dkgKey bytes")?;
-                    let sailfish_address =
-                        cliquenet::Address::try_from(peer.networkAddress.as_ref())
-                            .with_context(|| "Failed to parse networkAddress string")?;
-                    Ok((sig_key, dh_key, dkg_enc_key, sailfish_address))
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            let mut sailfish_peer_hosts_and_keys = Vec::new();
-            let mut decrypt_peer_hosts_and_keys = Vec::new();
-            let mut dkg_enc_keys = Vec::new();
-
-            for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in
-                peer_hosts_and_keys.iter().cloned()
-            {
-                sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr.clone()));
-                decrypt_peer_hosts_and_keys.push((
-                    signing_key,
-                    dh_key,
-                    sailfish_addr.clone().with_offset(DECRYPTER_PORT_OFFSET),
-                ));
-                dkg_enc_keys.push(dkg_enc_key.clone());
-            }
-
-            let sailfish_committee = {
-                let c = Committee::new(
-                    prev_cid,
-                    sailfish_peer_hosts_and_keys
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (k, ..))| (i as u8, *k)),
-                );
-                AddressableCommittee::new(c, sailfish_peer_hosts_and_keys.iter().cloned())
-            };
-
-            let decrypt_committee = {
-                let c = Committee::new(
-                    prev_cid,
-                    decrypt_peer_hosts_and_keys
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (k, ..))| (i as u8, *k)),
-                );
-                AddressableCommittee::new(c, decrypt_peer_hosts_and_keys.iter().cloned())
-            };
-
-            let key_store = KeyStore::new(
-                sailfish_committee.committee().clone(),
-                dkg_enc_keys
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, k)| (i as u8, k)),
-            );
-
-            (
-                Some(sailfish_committee),
-                Some((decrypt_committee, key_store)),
-            )
-        };
-
-        Ok(SequencerConfig::builder()
+    pub fn sequencer_config(&self) -> SequencerConfig {
+        SequencerConfig::builder()
             .sign_keypair(self.sign_keypair.clone())
             .dh_keypair(self.dh_keypair.clone())
             .dkg_key(self.dkg_key.clone())
@@ -164,12 +80,12 @@ impl TimeboostConfig {
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
-            .maybe_previous_sailfish_committee(prev_sailfish)
-            .maybe_previous_decrypt_committee(prev_decrypt)
+            .maybe_previous_sailfish_committee(self.prev_sailfish_committee.clone())
+            .maybe_previous_decrypt_committee(self.prev_decrypt_committee.clone())
             .leash_len(self.leash_len)
             .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())
-            .build())
+            .build()
     }
 
     pub fn certifier_config(&self) -> CertifierConfig {
