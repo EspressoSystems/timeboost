@@ -308,7 +308,7 @@ impl Simulator {
                 for (b, s) in name.as_bytes().iter().zip(seed.iter_mut()) {
                     *s = *b
                 }
-                (name, Keypair::from_seed(seed))
+                (name, Keypair::from_seed(seed).expect("name-based seed should produce valid keypair"))
             })
             .collect();
 
