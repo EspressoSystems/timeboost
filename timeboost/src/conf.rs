@@ -61,6 +61,10 @@ pub struct TimeboostConfig {
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
+
+    /// Event monitoring configuration
+    #[builder(default)]
+    pub(crate) event_monitoring: EventMonitoringConfig,
 }
 
 impl TimeboostConfig {
@@ -98,5 +102,40 @@ impl TimeboostConfig {
             .committee(self.sailfish_committee.committee().clone())
             .max_transaction_size(self.max_transaction_size)
             .build()
+    }
+
+    pub fn event_monitoring(&self) -> &EventMonitoringConfig {
+        &self.event_monitoring
+    }
+}
+
+#[derive(Debug, Clone, Builder)]
+pub struct EventMonitoringConfig {
+    /// Enable event monitoring for contract events
+    #[builder(default = true)]
+    pub(crate) enabled: bool,
+
+    /// Polling interval for checking new events (in seconds)
+    #[builder(default = 5)]
+    pub(crate) poll_interval_seconds: u64,
+
+    /// The start block number to monitor events from
+    #[builder(default = 0)]
+    pub(crate) start_block_number: u64,
+}
+
+impl Default for EventMonitoringConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            poll_interval_seconds: 5,
+            start_block_number: 0,
+        }
+    }
+}
+
+impl EventMonitoringConfig {
+    pub fn enabled(&self) -> bool {
+        self.enabled
     }
 }
