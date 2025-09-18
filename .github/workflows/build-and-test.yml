@@ -139,12 +139,11 @@ jobs:
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Enable ip4 forwarding
-      run: just forward-ipv4 true
-    - name: Create network namespaces
-      run: just create-net
     - name: Run network simulation
-      run: just netsim
+      run: |
+        just forward-ipv4 true
+        just create-net
+        just netsim
 
   contracts:
     runs-on: ubuntu-latest
