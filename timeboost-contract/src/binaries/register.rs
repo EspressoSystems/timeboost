@@ -42,10 +42,9 @@ struct Args {
 }
 
 /// Specific register action
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum Action {
     /// register the next committee
-    #[default]
     NewCommittee,
     /// register the threshold encryption key (when ready)
     ThresholdEncKey,

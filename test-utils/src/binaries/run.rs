@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::ops::{Deref, DerefMut};
+use std::process::ExitStatus;
 use std::time::Duration;
-use std::{ffi::OsStr, process::ExitStatus};
 
 use anyhow::{Result, anyhow, bail};
 use clap::Parser;
@@ -51,16 +51,15 @@ async fn main() -> Result<()> {
 
     for commandline in commands {
         if args.verbose {
-            let joined = commandline.args.join(" ");
             if commandline.sync {
-                eprintln!("running command: {joined}");
+                eprintln!("running command: {}", commandline.args)
             } else {
-                eprintln!("spawning command: {joined}");
+                eprintln!("spawning command: {}", commandline.args)
             }
         }
 
-        let mut pg = ProcessGroup::spawn(&commandline.args)?;
         if commandline.sync {
+            let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
             let status = select! {
                 s = pg.wait()   => s?,
                 _ = term.recv() => return Ok(()),
@@ -70,8 +69,8 @@ async fn main() -> Result<()> {
                 bail!("{:?} failed with {:?}", commandline.args, status.code());
             }
         } else {
+            let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
             helpers.spawn(async move {
-                let mut pg = ProcessGroup::spawn(&commandline.args)?;
                 let status = pg.wait().await?;
                 Ok(status)
             });
@@ -112,20 +111,15 @@ async fn main() -> Result<()> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Commandline {
     prio: u8,
-    args: Vec<String>,
+    args: String,
     sync: bool,
 }
 
 fn parse_command_line(s: &str) -> Result<Commandline> {
     let (p, a) = s.split_once(':').unwrap_or(("0", s));
-    // Replace __SPACE__ with actual spaces, then split like shell would
-    let parts = shell_words::split(a)?
-        .into_iter()
-        .map(|arg| arg.replace("__SPACE__", " "))
-        .collect();
     Ok(Commandline {
         prio: p.parse()?,
-        args: parts,
+        args: a.to_string(),
         sync: true,
     })
 }
@@ -137,14 +131,33 @@ impl ProcessGroup {
     fn spawn<I, S>(it: I) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+        S: Into<String> + AsRef<str>,
     {
         let mut args = it.into_iter();
         let exe = args
             .next()
             .ok_or_else(|| anyhow!("invalid command-line args"))?;
-        let mut cmd = Command::new(exe);
-        cmd.args(args);
+        let mut cmd = Command::new(exe.as_ref());
+        let mut buf: Option<Vec<String>> = None;
+        for a in args {
+            if let Some(b) = &mut buf {
+                let mut a = a.into();
+                if a.ends_with("'") {
+                    a.pop();
+                    b.push(a);
+                    cmd.arg(b.join(" "));
+                    buf = None
+                } else {
+                    b.push(a);
+                }
+            } else if a.as_ref().starts_with("'") {
+                let mut a = a.into();
+                a.remove(0);
+                buf = Some(vec![a]);
+            } else {
+                cmd.arg(a.as_ref());
+            }
+        }
         cmd.process_group(0);
         let child = cmd.spawn()?;
         let id = child.id().ok_or_else(|| anyhow!("child already exited"))?;

@@ -28,7 +28,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 rustix = { workspace = true }
-shell-words = "1.1"
 tokio = { workspace = true }
 tracing = { workspace = true }
 # optional

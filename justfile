@@ -210,19 +210,19 @@ test-dyn-comm: build_release_until build-test-utils
                  --parent-chain-id 31337 \
                  --parent-ibox-contract 0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1 \
                  --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 --timestamp `just now-plus-20s` \
+                 --timestamp +18s \
                  --stamp-dir /tmp \
                  --output test-configs/c1" \
     --run   "6:sleep 8" \
     --run   "7:target/release/register \
                  -a threshold-enc-key \
-                 -m attend__SPACE__year__SPACE__erase__SPACE__basket__SPACE__blind__SPACE__adapt__SPACE__stove__SPACE__broccoli__SPACE__isolate__SPACE__unveil__SPACE__acquire__SPACE__category \
+                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c0/committee.toml" \
     --run   "8:target/release/register \
                  -a new-committee \
-                 -m attend__SPACE__year__SPACE__erase__SPACE__basket__SPACE__blind__SPACE__adapt__SPACE__stove__SPACE__broccoli__SPACE__isolate__SPACE__unveil__SPACE__acquire__SPACE__category \
+                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \
@@ -235,8 +235,3 @@ test-dyn-comm: build_release_until build-test-utils
       --committee-id 1 \
       --until 800 \
       --required-decrypt-rounds 3 && rm -rf test-configs/c1
-
-# portable calculation of now() + 20s in "%Y-%m-%dT%H:%M:%SZ" format
-[private]
-now-plus-20s:
-  @python3 -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)+timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%SZ"))'
