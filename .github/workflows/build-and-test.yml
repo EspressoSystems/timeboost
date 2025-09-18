@@ -26,11 +26,7 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -59,11 +55,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -82,11 +74,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -104,11 +92,7 @@ jobs:
         submodules: recursive
         fetch-depth: 0
     - uses: docker/setup-buildx-action@v3
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Build Docker
       run: just build_docker
 
@@ -124,11 +108,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -154,11 +134,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -177,11 +153,7 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
@@ -201,11 +173,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y protobuf-compiler
-    - name: Install Just
-      run: |
-        wget https://github.com/casey/just/releases/download/1.14.0/just-1.14.0-x86_64-unknown-linux-musl.tar.gz
-        tar -vxf just-1.14.0-x86_64-unknown-linux-musl.tar.gz just
-        sudo cp just /usr/bin/just
+    - uses: taiki-e/install-action@just
     - name: Install rustfmt for nightly
       run: rustup component add --toolchain nightly rustfmt
     - name: Install Foundry
