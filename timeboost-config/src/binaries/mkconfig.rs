@@ -9,7 +9,7 @@ use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
-use multisig::x25519;
+use multisig::{CommitteeId, x25519};
 use secp256k1::rand::SeedableRng as _;
 use timeboost_config::{ChainConfig, ParentChain};
 use timeboost_config::{
@@ -32,6 +32,9 @@ struct Args {
     /// RNG seed for deterministic key generation.
     #[clap(long)]
     seed: Option<u64>,
+
+    #[clap(long)]
+    committee_id: CommitteeId,
 
     /// The effective timestamp for this new committee.
     ///
@@ -211,6 +214,7 @@ impl Args {
         }
 
         let committee_config = CommitteeConfig {
+            id: self.committee_id,
             effective_timestamp: self.timestamp,
             members,
         };

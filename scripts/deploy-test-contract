@@ -2,15 +2,17 @@
 
 set -euo pipefail
 
+COMMITTEE="$1"
+URL="$2"
+
 MANAGER_MNEMONIC="attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
 MANAGER_ACCOUNT_INDEX=0
 MANAGER_ADDRESS="0x36561082951eed7ffD59cFD82D70570C57072d02"
 FAUCET_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-URL="http://localhost:8545"
 DEPLOYMENT_FILE=$(mktemp -t timeboost-deployment-XXXXX)
 
 # Fund manager account && create deployment file
-cast send --value 1ether --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
+cast send --value 1ether -r "$URL" --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
 env RUST_LOG=info cargo run --release --bin deploy -- \
     -m "$MANAGER_MNEMONIC" \
     -i "$MANAGER_ACCOUNT_INDEX" \
@@ -26,7 +28,7 @@ env RUST_LOG=info cargo run --release --bin register -- \
     -i "$MANAGER_ACCOUNT_INDEX" \
     -u "$URL" \
     -k "$km_addr" \
-    -c "test-configs/c0/committee.toml"
+    -c "$COMMITTEE"
 
 # Clean up the temporary deployment file
 rm -f "$DEPLOYMENT_FILE"

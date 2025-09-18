@@ -32,7 +32,7 @@ build-port-alloc:
 
 [private]
 build-test-utils:
-  cargo build --release -p test-utils
+  cargo build --release -p test-utils --all-features
 
 ####################
 ###CHECK COMMANDS###
@@ -171,17 +171,42 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn target/release/run \
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  target/release/run \
     --verbose \
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
-    --run   "3:scripts/deploy-test-contract" \
-    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/local/committee.toml" \
-    --spawn "4:target/release/yapper --keyset-file test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee 0 --timeboost target/release/timeboost" \
-    target/release/block-checker -- \
-      --config test-configs/local/node_0.toml \
-      --committee test-configs/local/committee.toml \
-      --committee-id 0 \
-      --blocks 1000
+    --run   "3:scripts/deploy-test-contract test-configs/local/committee.toml http://localhost:8545" \
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
+    --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
+    --spawn "5:target/release/run-committee -c test-configs/local/ -t target/release/timeboost" \
+    target/release/block-checker -- -c test-configs/local -b 1000
+
+forward-ipv4 val: build-test-utils
+    run0 target/release/net-setup system --forward-ipv4 {{val}}
+
+create-net: build-test-utils
+    run0 target/release/net-setup create -c test-configs/linux/net.toml
+
+delete-net: build-test-utils
+    run0 target/release/net-setup delete -c test-configs/linux/net.toml
+
+netsim: build_release build-test-utils
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG target/release/run \
+    --verbose \
+    --timeout 120 \
+    --clear-env \
+    --env PATH \
+    --env HOME \
+    --env RUST_LOG \
+    --uid `id -u` \
+    --gid `id -g` \
+    --spawn "1:anvil --host 10.0.1.0 --port 8545" \
+    --run   "2:sleep 3" \
+    --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://10.0.1.0:8545" \
+    --spawn "4:target/release/block-maker --bind 10.0.1.0:55000 -c test-configs/linux/committee.toml" \
+    --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
+    --spawn-as-root "5:target/release/run-committee -u `id -u` -g `id -g` -c test-configs/linux/ -t target/release/timeboost" \
+    target/release/block-checker -- -c test-configs/linux -b 200
