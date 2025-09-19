@@ -6,7 +6,7 @@ use std::{ops::Deref, pin::Pin};
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::Address,
+    primitives::{Address, BlockNumber},
     providers::{Provider, ProviderBuilder},
     rpc::types::{Filter, Log},
     signers::local::{LocalSignerError, MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
@@ -14,7 +14,7 @@ use alloy::{
     transports::{http::reqwest::Url, ws::WsConnect},
 };
 use futures::{Stream, StreamExt};
-use timeboost_types::{HttpProvider, HttpProviderWithWallet};
+use timeboost_types::{HttpProvider, HttpProviderWithWallet, Timestamp};
 use tracing::error;
 
 /// Build a local signer from wallet mnemonic and account index
@@ -46,6 +46,7 @@ pub struct PubSubProvider(HttpProvider);
 
 impl Deref for PubSubProvider {
     type Target = HttpProvider;
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -62,10 +63,6 @@ impl PubSubProvider {
                 err
             })?;
         Ok(Self(provider))
-    }
-
-    pub fn inner(&self) -> &HttpProvider {
-        &self.0
     }
 
     /// create an event stream of event type `E`, subscribing since `from_block` on `contract`
@@ -89,22 +86,24 @@ impl PubSubProvider {
             .into_stream();
 
         let validated = events.filter_map(|log| async move {
-            let Ok(event) = log.log_decode_validate::<E>() else {
-                error!("fail to parse CommitteeCreated event log");
-                return None;
-            };
-            Some(event)
+            match log.log_decode_validate::<E>() {
+                Ok(event) => Some(event),
+                Err(err) => {
+                    error!(%err, "fail to parse `CommitteeCreated` event log");
+                    None
+                }
+            }
         });
 
         Ok(Box::pin(validated))
     }
 
     /// Returns the smallest block number whose timestamp is >= `target_ts` through binary search.
-    /// Useful to determine `from_block` input of `Self::event_strea()` subscription.
+    /// Useful to determine `from_block` input of `Self::event_stream()` subscription.
     pub async fn get_block_number_by_timestamp(
         &self,
-        target_ts: u64,
-    ) -> anyhow::Result<Option<u64>> {
+        target_ts: Timestamp,
+    ) -> anyhow::Result<Option<BlockNumber>> {
         let latest = self.get_block_number().await?;
         let mut lo: u64 = 0;
         let mut hi: u64 = latest;
@@ -124,7 +123,7 @@ impl PubSubProvider {
                 }
             };
 
-            if block.header.timestamp >= target_ts {
+            if block.header.timestamp >= target_ts.into() {
                 if mid == 0 {
                     return Ok(Some(0));
                 }

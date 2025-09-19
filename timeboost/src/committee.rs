@@ -37,7 +37,11 @@ pub struct CommitteeInfo {
 
 impl CommitteeInfo {
     /// Fetch the committee info for `committee_id` from `key_manager_addr` on chain
-    pub async fn fetch(rpc: Url, key_manager_addr: Address, committee_id: u64) -> Result<Self> {
+    pub async fn fetch(
+        rpc: Url,
+        key_manager_addr: Address,
+        committee_id: CommitteeId,
+    ) -> Result<Self> {
         let provider = ProviderBuilder::new().connect_http(rpc);
         Self::fetch_with(provider, key_manager_addr, committee_id).await
     }
@@ -45,10 +49,13 @@ impl CommitteeInfo {
     pub(crate) async fn fetch_with(
         provider: impl Provider,
         key_manager_addr: Address,
-        committee_id: u64,
+        committee_id: CommitteeId,
     ) -> Result<Self> {
         let contract = KeyManager::new(key_manager_addr, &provider);
-        let c = contract.getCommitteeById(committee_id).call().await?;
+        let c = contract
+            .getCommitteeById(committee_id.into())
+            .call()
+            .await?;
 
         let (signing_keys, dh_keys, dkg_keys, public_addresses) = c
             .members
@@ -69,7 +76,7 @@ impl CommitteeInfo {
             .multiunzip();
 
         Ok(Self {
-            id: committee_id.into(),
+            id: committee_id,
             timestamp: c.effectiveTimestamp.into(),
             signing_keys,
             dh_keys,
@@ -100,7 +107,7 @@ impl CommitteeInfo {
         )
     }
 
-    pub fn group(
+    pub fn address_info(
         &self,
     ) -> impl Iterator<Item = (multisig::PublicKey, x25519::PublicKey, cliquenet::Address)> {
         izip!(
@@ -111,7 +118,7 @@ impl CommitteeInfo {
     }
 
     pub fn sailfish_committee(&self) -> AddressableCommittee {
-        AddressableCommittee::new(self.committee(), self.group())
+        AddressableCommittee::new(self.committee(), self.address_info())
     }
 
     pub fn decrypt_committee(&self) -> AddressableCommittee {
@@ -157,7 +164,7 @@ impl CommitteeInfo {
         config: &ParentChain,
     ) -> Result<NewCommitteeStream> {
         let from_block = provider
-            .get_block_number_by_timestamp(start_ts.into())
+            .get_block_number_by_timestamp(start_ts)
             .await?
             .unwrap_or_default();
         let events = provider
@@ -176,11 +183,13 @@ impl CommitteeInfo {
         let s = events.filter_map(move |log| {
             let provider = provider.clone();
             async move {
-                let id = log.data().id;
-                match CommitteeInfo::fetch_with(provider.inner(), key_manager_contract, id).await {
+                let committee_id: CommitteeId = log.data().id.into();
+                match CommitteeInfo::fetch_with(&*provider, key_manager_contract, committee_id)
+                    .await
+                {
                     Ok(comm_info) => Some(comm_info),
-                    Err(_) => {
-                        error!(committee_id = %id, "fail to fetch new CommitteeInfo");
+                    Err(err) => {
+                        error!(%committee_id, %err, "fail to fetch new `CommitteeInfo`");
                         None
                     }
                 }

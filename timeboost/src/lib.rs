@@ -154,8 +154,8 @@ impl Timeboost {
                 },
                 res = self.events.next() => match res {
                     Some(comm_info) => {
-                        let cur: u64 = self.config.key_store.committee().id().into();
-                        let new_id: u64 = comm_info.id().into();
+                        let cur = self.config.key_store.committee().id();
+                        let new_id = comm_info.id();
 
                         // contract ensures consecutive CommitteeId assignment
                         if new_id == cur + 1 {

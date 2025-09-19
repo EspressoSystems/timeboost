@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
     let comm_info = CommitteeInfo::fetch(
         config.chain.parent.rpc_url,
         config.chain.parent.key_manager_contract,
-        cli.committee_id.into(),
+        cli.committee_id,
     )
     .await?;
     info!(label = %config.keys.signing.public, committee_id = %cli.committee_id, "committee info synced");
@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
         config.net.public.address.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
-        comm_info.group(),
+        comm_info.address_info(),
         net_metrics,
     )
     .await?;

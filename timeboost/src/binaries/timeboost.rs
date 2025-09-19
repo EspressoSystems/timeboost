@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
     let comm_info = CommitteeInfo::fetch(
         node_config.chain.parent.rpc_url.clone(),
         node_config.chain.parent.key_manager_contract,
-        cli.committee_id.into(),
+        cli.committee_id,
     )
     .await?;
     info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
@@ -95,8 +95,8 @@ async fn main() -> Result<()> {
     let pubkey = sign_keypair.public_key();
 
     // optionally fetch previous committee info
-    let cid: u64 = cli.committee_id.into();
-    let prev_comm = if cid > 0u64 {
+    let cid = cli.committee_id;
+    let prev_comm = if cid > CommitteeId::default() {
         let c = &node_config.chain.parent;
         let prev_comm =
             CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
