@@ -199,7 +199,7 @@ test-dyn-comm: build_release_until build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
     --run   "3:scripts/deploy-test-contract" \
-    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee-id 0 --until 1600" \
+    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee-id 0 --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --public-addr 127.0.0.1:9000 \
                  --internal-addr 127.0.0.1:9003 \
@@ -210,10 +210,10 @@ test-dyn-comm: build_release_until build-test-utils
                  --parent-chain-id 31337 \
                  --parent-ibox-contract 0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1 \
                  --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
-                 --timestamp +18s \
+                 --timestamp +16s \
                  --stamp-dir /tmp \
                  --output test-configs/c1" \
-    --run   "6:sleep 8" \
+    --run   "6:sleep 6" \
     --run   "7:target/release/register \
                  -a threshold-enc-key \
                  -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
