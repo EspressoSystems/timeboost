@@ -197,7 +197,7 @@ test-dyn-comm: build_release_until build-test-utils
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
-    --run   "3:scripts/deploy-test-contract" \
+    --run   "3:scripts/deploy-contract-local" \
     --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee-id 0 --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --public-addr 127.0.0.1:9000 \

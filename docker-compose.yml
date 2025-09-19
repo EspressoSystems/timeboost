@@ -12,11 +12,11 @@ services:
       timeboost:
         ipv4_address: 172.20.0.11
     healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://172.20.0.11:8545"]
+      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8545"]
       interval: 5s
       timeout: 3s
       retries: 10
-  deploy-test-contract:
+  deploy-contract:
     image: timeboost:latest
     environment:
       - RUST_LOG=debug
@@ -33,12 +33,13 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--config", "node_0.toml",
+        "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.2
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
     ports:
       - "8000:8000"
       - "8030:8001"
@@ -48,10 +49,8 @@ services:
       - "8800:8800"
       - "9000:9000"
     depends_on:
-      deploy-test-contract:
+      deploy-contract:
         condition: service_completed_successfully
-      nitro-dev:
-        condition: service_healthy
   node1:
     image: timeboost:latest
     command:
@@ -59,12 +58,13 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--config", "node_1.toml",
+        "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.3
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
     ports:
       - "8001:8000"
       - "8031:8001"
@@ -74,10 +74,8 @@ services:
       - "8801:8800"
       - "9001:9000"
     depends_on:
-      deploy-test-contract:
+      deploy-contract:
         condition: service_completed_successfully
-      nitro-dev:
-        condition: service_healthy
   node2:
     image: timeboost:latest
     command:
@@ -85,12 +83,13 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--config", "node_2.toml",
+        "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.4
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
     ports:
       - "8002:8000"
       - "8032:8001"
@@ -100,10 +99,8 @@ services:
       - "8802:8800"
       - "9002:9000"
     depends_on:
-      deploy-test-contract:
+      deploy-contract:
         condition: service_completed_successfully
-      nitro-dev:
-        condition: service_healthy
   node3:
     image: timeboost:latest
     command:
@@ -111,12 +108,13 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--config", "node_3.toml",
+        "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.5
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
     ports:
       - "8003:8000"
       - "8033:8001"
@@ -126,10 +124,8 @@ services:
       - "8803:8800"
       - "9003:9000"
     depends_on:
-      deploy-test-contract:
+      deploy-contract:
         condition: service_completed_successfully
-      nitro-dev:
-        condition: service_healthy
   node4:
     image: timeboost:latest
     command:
@@ -137,12 +133,13 @@ services:
         "/app/timeboost",
         "--committee-id", "0",
         "--config", "node_4.toml",
+        "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.6
     environment:
-      - RUST_LOG=timeboost=info,sailfish=info,cliquenet=info
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=info
     ports:
       - "8004:8000"
       - "8034:8001"
@@ -152,23 +149,43 @@ services:
       - "8804:8800"
       - "9004:9000"
     depends_on:
-      deploy-test-contract:
+      deploy-contract:
         condition: service_completed_successfully
-      nitro-dev:
-        condition: service_healthy
-  nitro-dev:
-    image: offchainlabs/nitro-node:v3.2.1-d81324d
+  block-maker:
+    image: timeboost:latest
     ports:
-      - "8547:8547"
+      - "55000:55000"
+    command: 
+      [
+        "/app/block-maker",
+        "--port", "55000",
+        "--committee", "committee.toml",
+      ]
+    environment:
+      - RUST_LOG=info
     networks:
       timeboost:
         ipv4_address: 172.20.0.12
-    command: --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug
-    healthcheck:
-      test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8547"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+  block-checker:
+    image: timeboost:latest
+    command:
+      [
+        "/app/block-checker",
+        "--config", "node_0.toml",
+        "--committee", "committee.toml",
+        "--committee-id", "0",
+        "--blocks", "10000",
+        "--https-only", "false",
+      ]
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_LOG=trace
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.15
+    depends_on:
+      deploy-contract:
+        condition: service_completed_successfully
   yapper:
     image: timeboost:latest
     command:
@@ -181,7 +198,35 @@ services:
     networks:
       timeboost:
         ipv4_address: 172.20.0.13
-
+  espresso-dev-node:
+    pid: host
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:latest
+    ports:
+      - "41000:41000"
+      - "41003:41003"
+      - "20000:20000"
+    environment:
+      - ESPRESSO_BUILDER_PORT=41003
+      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX=5
+      - ESPRESSO_DEV_NODE_PORT=20000
+      - ESPRESSO_SEQUENCER_API_PORT=41000
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      - ESPRESSO_SEQUENCER_L1_PROVIDER=http://172.20.0.11:8545
+      - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
+      - ESPRESSO_DEV_NODE_EPOCH_HEIGHT=1000000
+      - ESPRESSO_DEV_NODE_MAX_BLOCK_SIZE=10485760
+      - ESPRESSO_SEQUENCER_STORAGE_PATH=/data/espresso
+      - RUST_LOG=INFO
+      - RUST_LOG_FORMAT
+      - ESPRESSO_DEV_NODE_VERSION=0.4
+    volumes:
+      - espresso_storage:/data/espresso
+    depends_on:
+      demo-l1-network:
+        condition: service_healthy
+    networks:
+      timeboost:
+        ipv4_address: 172.20.0.14
 networks:
   timeboost:
     driver: bridge
@@ -189,3 +234,6 @@ networks:
       driver: default
       config:
         - subnet: 172.20.0.0/16
+
+volumes:
+  espresso_storage:

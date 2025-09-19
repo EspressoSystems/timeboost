@@ -79,6 +79,7 @@ struct Task {
     output: Sender<Output>,
     mode: Mode,
     round: Option<RoundNumber>,
+    metrics: Arc<SequencerMetrics>,
 }
 
 enum Command {
@@ -183,6 +184,7 @@ impl Sequencer {
             commands: cr,
             mode: Mode::Passive,
             round: None,
+            metrics: seq_metrics,
         };
 
         Ok(Self {
@@ -427,6 +429,8 @@ impl Task {
                             if let Err(err) = self.decrypter.use_committee(r).await {
                                 error!(node = %self.label, %err, "decrypt use committee error");
                             }
+                            let committee_id: u64 = r.committee().into();
+                            self.metrics.committee.set(committee_id as usize);
                             self.output
                                 .send(Output::UseCommittee(r))
                                 .await

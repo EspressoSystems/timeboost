@@ -22,6 +22,7 @@ km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$DEPLOYMENT_FILE")
 
 # Update the contract
 RUST_LOG=info /app/register \
+    -a new-committee \
     -m "$MANAGER_MNEMONIC" \
     -i "$MANAGER_ACCOUNT_INDEX" \
     -u "$URL" \
