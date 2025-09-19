@@ -1,10 +1,7 @@
-set export
-
 export RUSTDOCFLAGS := '-D warnings'
 
-LOG_LEVELS := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
-
-run_as_root := if env("CI", "false") == "true" { "sudo" } else { "run0" }
+log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
+run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
 
 ####################
 ###BUILD COMMANDS###
@@ -156,10 +153,10 @@ test-contracts: build-contracts
   forge test
 
 test_ci *ARGS: build-port-alloc
-  env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
+  env {{log_levels}} NO_COLOR=1 target/release/run \
     --spawn target/release/port-alloc \
     cargo nextest run -- --workspace {{ARGS}}
-  env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
+  env {{log_levels}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
 test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
@@ -185,30 +182,43 @@ test-all: build_release build-test-utils
     --spawn "5:target/release/run-committee -c test-configs/local/ -t target/release/timeboost" \
     target/release/block-checker -- -c test-configs/local -b 1000
 
+[linux]
 forward-ipv4 val: build-test-utils
     {{run_as_root}} target/release/net-setup system --forward-ipv4 {{val}}
 
+[linux]
 create-net: build-test-utils
     {{run_as_root}} target/release/net-setup create -c test-configs/linux/net.toml
 
+[linux]
 delete-net: build-test-utils
     {{run_as_root}} target/release/net-setup delete -c test-configs/linux/net.toml
 
+[linux]
 netsim: build_release build-test-utils
-    env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
-        {{run_as_root}} --setenv=PATH --setenv=HOME --setenv=RUST_LOG target/release/run \
-            --verbose \
-            --timeout 120 \
-            --clear-env \
-            --env PATH \
-            --env HOME \
-            --env RUST_LOG \
-            --uid `id -u` \
-            --gid `id -g` \
-            --spawn "1:anvil --host 10.0.1.0 --port 8545" \
-            --run   "2:sleep 3" \
-            --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://10.0.1.0:8545" \
-            --spawn "4:target/release/block-maker --bind 10.0.1.0:55000 -c test-configs/linux/committee.toml" \
-            --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
-            --spawn-as-root "5:target/release/run-committee -u `id -u` -g `id -g` -c test-configs/linux/ -t target/release/timeboost" \
-            target/release/block-checker -- -c test-configs/linux -b 200
+    #!/usr/bin/env bash
+    set -eo pipefail
+    function run_as_root {
+        if [ "$CI" == "true" ]; then
+            sudo "$@"
+        else
+            run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG "$@"
+        fi
+    }
+    export RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn
+    run_as_root target/release/run \
+        --verbose \
+        --timeout 120 \
+        --clear-env \
+        --env PATH \
+        --env HOME \
+        --env RUST_LOG \
+        --uid $(id -u) \
+        --gid $(id -g) \
+        --spawn "1:anvil --host 10.0.1.0 --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://10.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 10.0.1.0:55000 -c test-configs/linux/committee.toml" \
+        --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ -t target/release/timeboost" \
+        target/release/block-checker -- -c test-configs/linux -b 200
