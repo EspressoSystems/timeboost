@@ -20,8 +20,6 @@ struct Args {
     #[clap(long, short)]
     configs: PathBuf,
 
-    #[clap(long, short)]
-
     #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
 
