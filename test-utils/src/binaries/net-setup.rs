@@ -46,6 +46,9 @@ fn main() -> Result<()> {
                 if !d.delay.is_zero() {
                     dev.delay(&d.delay, &d.jitter)?
                 }
+                if c.nat.is_some() {
+                    dev.add_resolv_conf()?
+                }
             }
             if let Some(nat) = c.nat {
                 run_command(TRACE, ["iptables",
@@ -62,7 +65,11 @@ fn main() -> Result<()> {
             let c: Config = toml::from_slice(&t)?;
             let b = Bridge::new(&c.bridge.name, c.bridge.cidr);
             for d in c.device {
-                Device::new(&d).delete()?
+                let dev = Device::new(&d);
+                if c.nat.is_some() {
+                    dev.del_resolv_conf()?
+                }
+                dev.delete()?;
             }
             b.delete()?;
             if let Some(nat) = c.nat {
@@ -111,6 +118,42 @@ impl Device {
             "ip", "netns", "exec", &self.space,
             "tc", "qdisc", "add", "dev", &self.dev, "root", "netem", "delay", &d, &j
         ])
+    }
+
+    fn add_resolv_conf(&self) -> Result<()> {
+        const RESOLV_CONF: &str = "nameserver 1.1.1.1\nnameserver 8.8.8.8\n";
+
+        let dir = PathBuf::from(format!("/etc/netns/{}", self.space));
+        if !dir.exists() {
+            if TRACE {
+                eprintln!("> creating {dir:?}")
+            }
+            fs::create_dir_all(&dir)?
+        }
+        let file = dir.join("resolv.conf");
+        if TRACE {
+            eprintln!("> writing {file:?}")
+        }
+        fs::write(file, RESOLV_CONF)?;
+        Ok(())
+    }
+
+    fn del_resolv_conf(&self) -> Result<()> {
+        let dir = PathBuf::from(format!("/etc/netns/{}", self.space));
+        if dir.exists() {
+            let file = dir.join("resolv.conf");
+            if file.exists() {
+                if TRACE {
+                    eprintln!("> removing {file:?}")
+                }
+                fs::remove_file(file)?
+            }
+            if TRACE {
+                eprintln!("> removing {dir:?}")
+            }
+            fs::remove_dir(dir)?
+        }
+        Ok(())
     }
 
     fn delete(self) -> Result<()> {
