@@ -130,6 +130,8 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+    - name: Show net devices
+      run: ip -o addr show scope global
     - name: Install protobuf compiler
       run: |
         sudo apt-get update

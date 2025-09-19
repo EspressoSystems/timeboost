@@ -1,6 +1,6 @@
 [nat]
 table  = "nat"
-device = "eth0"
+device = "enp0s3"
 cidr   = "10.0.0.0/8"
 
 [bridge]
