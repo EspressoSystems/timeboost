@@ -11,13 +11,19 @@ struct Args {
     configs: PathBuf,
 
     #[clap(long, short)]
-    committee: u64,
+    committee_id: u64,
 
-    #[clap(long, short)]
+    #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
 
     #[clap(long, short, default_value = "/tmp")]
     tmp: PathBuf,
+
+    #[clap(long)]
+    until: Option<u64>,
+
+    #[clap(long)]
+    required_decrypt_rounds: Option<u64>,
 }
 
 #[tokio::main]
@@ -48,10 +54,17 @@ async fn main() -> Result<()> {
         }
         let mut cmd = Command::new(args.timeboost.as_os_str());
         cmd.arg("--committee-id")
-            .arg(args.committee.to_string())
+            .arg(args.committee_id.to_string())
             .arg("--config")
             .arg(entry.path())
             .arg("--ignore-stamp");
+
+        if let Some(until) = args.until {
+            cmd.arg("--until").arg(until.to_string());
+        }
+        if let Some(r) = args.required_decrypt_rounds {
+            cmd.arg("--required-decrypt-rounds").arg(r.to_string());
+        }
         commands.push(cmd);
     }
 

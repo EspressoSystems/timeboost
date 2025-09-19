@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::ops::{Deref, DerefMut};
+use std::process::ExitStatus;
 use std::time::Duration;
-use std::{ffi::OsStr, process::ExitStatus};
 
 use anyhow::{Result, anyhow, bail};
 use clap::Parser;
@@ -57,8 +57,9 @@ async fn main() -> Result<()> {
                 eprintln!("spawning command: {}", commandline.args)
             }
         }
-        let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
+
         if commandline.sync {
+            let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
             let status = select! {
                 s = pg.wait()   => s?,
                 _ = term.recv() => return Ok(()),
@@ -68,8 +69,8 @@ async fn main() -> Result<()> {
                 bail!("{:?} failed with {:?}", commandline.args, status.code());
             }
         } else {
+            let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
             helpers.spawn(async move {
-                let mut pg = ProcessGroup::spawn(commandline.args.split_whitespace())?;
                 let status = pg.wait().await?;
                 Ok(status)
             });
@@ -130,15 +131,32 @@ impl ProcessGroup {
     fn spawn<I, S>(it: I) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+        S: Into<String> + AsRef<str>,
     {
         let mut args = it.into_iter();
         let exe = args
             .next()
             .ok_or_else(|| anyhow!("invalid command-line args"))?;
-        let mut cmd = Command::new(exe);
+        let mut cmd = Command::new(exe.as_ref());
+        let mut buf: Option<Vec<String>> = None;
         for a in args {
-            cmd.arg(a);
+            if let Some(b) = &mut buf {
+                let mut a = a.into();
+                if a.ends_with("'") {
+                    a.pop();
+                    b.push(a);
+                    cmd.arg(b.join(" "));
+                    buf = None
+                } else {
+                    b.push(a);
+                }
+            } else if a.as_ref().starts_with("'") {
+                let mut a = a.into();
+                a.remove(0);
+                buf = Some(vec![a]);
+            } else {
+                cmd.arg(a.as_ref());
+            }
         }
         cmd.process_group(0);
         let child = cmd.spawn()?;

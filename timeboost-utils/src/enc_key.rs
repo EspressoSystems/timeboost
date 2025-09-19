@@ -1,6 +1,6 @@
 use reqwest::{Client, Url};
 use std::collections::HashMap;
-use timeboost::crypto::prelude::ThresholdEncKey;
+use timeboost_crypto::prelude::ThresholdEncKey;
 
 use tracing::warn;
 
@@ -28,7 +28,7 @@ async fn fetch_encryption_key(client: &Client, enckey_url: &Url) -> Option<Thres
 }
 
 /// helper struct to keep track of sufficient quorum of DKG keys
-pub(crate) struct ThresholdEncKeyCellAccumulator {
+pub struct ThresholdEncKeyCellAccumulator {
     client: Client,
     // DKG results on individual node
     results: HashMap<Url, Option<ThresholdEncKey>>,
@@ -40,7 +40,7 @@ pub(crate) struct ThresholdEncKeyCellAccumulator {
 
 impl ThresholdEncKeyCellAccumulator {
     /// give a list of TimeboostApi's endpoint to query `/enckey` status
-    pub(crate) fn new(client: Client, urls: impl Iterator<Item = Url>) -> Self {
+    pub fn new(client: Client, urls: impl Iterator<Item = Url>) -> Self {
         let results: HashMap<Url, Option<ThresholdEncKey>> = urls.map(|url| (url, None)).collect();
         let threshold = results.len().div_ceil(3);
         Self {
@@ -53,7 +53,7 @@ impl ThresholdEncKeyCellAccumulator {
 
     /// try to get the threshold encryption key, only available after a threshold of nodes
     /// finish their DKG processes.
-    pub(crate) async fn enc_key(&mut self) -> Option<&ThresholdEncKey> {
+    pub async fn enc_key(&mut self) -> Option<&ThresholdEncKey> {
         // if result is already available, directly return
         if self.output.is_some() {
             self.output.as_ref()

@@ -119,6 +119,7 @@ namespace = 10101
 [chain.parent]
 id = 31337
 rpc-url = "http://127.0.0.1:8545/"
+ws-url = "ws://127.0.0.1:8545/"
 ibox-contract = "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"

@@ -1,15 +1,12 @@
 use std::path::PathBuf;
 
-use alloy::providers::{Provider, ProviderBuilder};
 use anyhow::{Context, Result, bail};
-use cliquenet::AddressableCommittee;
 use multisig::CommitteeId;
-use multisig::{Committee, Keypair, x25519};
+use multisig::{Keypair, x25519};
+use timeboost::committee::CommitteeInfo;
 use timeboost::{Timeboost, TimeboostConfig};
 use timeboost_builder::robusta;
-use timeboost_contract::{CommitteeMemberSol, KeyManager};
-use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{KeyStore, ThresholdKeyCell};
+use timeboost_types::ThresholdKeyCell;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
@@ -39,11 +36,6 @@ struct Cli {
     /// Submitter should connect only with https?
     #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
     https_only: bool,
-
-    /// Path to committee config toml.
-    #[cfg(feature = "until")]
-    #[clap(long)]
-    committee: PathBuf,
 
     /// The until value to use for the committee config.
     #[cfg(feature = "until")]
@@ -78,99 +70,18 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(node_config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = ProviderBuilder::new().connect_http(node_config.chain.parent.rpc_url.clone());
-    let chain_id = provider.get_chain_id().await?;
-
-    assert_eq!(
-        chain_id, node_config.chain.parent.id,
-        "parent chain rpc has mismatched chain_id"
-    );
-
-    let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
-
-    let members: Vec<CommitteeMemberSol> = contract
-        .getCommitteeById(cli.committee_id.into())
-        .call()
-        .await?
-        .members;
-
+    let comm_info = CommitteeInfo::fetch(
+        node_config.chain.parent.rpc_url.clone(),
+        node_config.chain.parent.key_manager_contract,
+        cli.committee_id,
+    )
+    .await?;
     info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
 
-    let peer_hosts_and_keys = members
-        .iter()
-        .map(|peer| {
-            let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
-                .expect("Failed to parse sigKey");
-            let dh_key =
-                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let dkg_enc_key = DkgEncKey::from_bytes(peer.dkgKey.as_ref())
-                .expect("Blackbox from_bytes should work");
-            let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
-                .expect("Failed to parse networkAddress");
-            (sig_key, dh_key, dkg_enc_key, sailfish_address)
-        })
-        .collect::<Vec<_>>();
-
-    let mut sailfish_peer_hosts_and_keys = Vec::new();
-    let mut decrypt_peer_hosts_and_keys = Vec::new();
-    let mut certifier_peer_hosts_and_keys = Vec::new();
-    let mut dkg_enc_keys = Vec::new();
-
-    for (signing_key, dh_key, dkg_enc_key, sailfish_addr) in peer_hosts_and_keys.iter().cloned() {
-        sailfish_peer_hosts_and_keys.push((signing_key, dh_key, sailfish_addr.clone()));
-        decrypt_peer_hosts_and_keys.push((
-            signing_key,
-            dh_key,
-            sailfish_addr.clone().with_offset(DECRYPTER_PORT_OFFSET),
-        ));
-        certifier_peer_hosts_and_keys.push((
-            signing_key,
-            dh_key,
-            sailfish_addr.clone().with_offset(CERTIFIER_PORT_OFFSET),
-        ));
-        dkg_enc_keys.push(dkg_enc_key.clone());
-    }
-
-    let sailfish_committee = {
-        let c = Committee::new(
-            cli.committee_id,
-            sailfish_peer_hosts_and_keys
-                .iter()
-                .enumerate()
-                .map(|(i, (k, ..))| (i as u8, *k)),
-        );
-        AddressableCommittee::new(c, sailfish_peer_hosts_and_keys.iter().cloned())
-    };
-
-    let decrypt_committee = {
-        let c = Committee::new(
-            cli.committee_id,
-            decrypt_peer_hosts_and_keys
-                .iter()
-                .enumerate()
-                .map(|(i, (k, ..))| (i as u8, *k)),
-        );
-        AddressableCommittee::new(c, decrypt_peer_hosts_and_keys.iter().cloned())
-    };
-
-    let certifier_committee = {
-        let c = Committee::new(
-            cli.committee_id,
-            certifier_peer_hosts_and_keys
-                .iter()
-                .enumerate()
-                .map(|(i, (k, ..))| (i as u8, *k)),
-        );
-        AddressableCommittee::new(c, certifier_peer_hosts_and_keys.iter().cloned())
-    };
-
-    let key_store = KeyStore::new(
-        sailfish_committee.committee().clone(),
-        dkg_enc_keys
-            .into_iter()
-            .enumerate()
-            .map(|(i, k)| (i as u8, k)),
-    );
+    let sailfish_committee = comm_info.sailfish_committee();
+    let decrypt_committee = comm_info.decrypt_committee();
+    let certifier_committee = comm_info.certifier_committee();
+    let key_store = comm_info.dkg_key_store();
 
     let is_recover = !cli.ignore_stamp && node_config.stamp.is_file();
 
@@ -183,8 +94,21 @@ async fn main() -> Result<()> {
 
     let pubkey = sign_keypair.public_key();
 
+    // optionally fetch previous committee info
+    let cid = cli.committee_id;
+    let prev_comm = if cid > CommitteeId::default() {
+        let c = &node_config.chain.parent;
+        let prev_comm =
+            CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
+        Some(prev_comm)
+    } else {
+        None
+    };
+
     let config = TimeboostConfig::builder()
         .sailfish_committee(sailfish_committee)
+        .registered_blk(*comm_info.registered_block())
+        .maybe_prev_committee(prev_comm)
         .decrypt_committee(decrypt_committee)
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
@@ -246,9 +170,10 @@ async fn main() -> Result<()> {
         use tokio::time::sleep;
         use url::Url;
 
-        let committee = CommitteeConfig::read(&cli.committee)
+        let committee_conf = cli.config.with_file_name("committee.toml");
+        let committee = CommitteeConfig::read(&committee_conf.to_str().unwrap())
             .await
-            .with_context(|| format!("failed to read committee config {:?}", cli.committee))?;
+            .with_context(|| format!("failed to read committee config {:?}", committee_conf))?;
 
         let handle = {
             let Some(member) = committee
