@@ -28,6 +28,10 @@ struct Cli {
     #[clap(long)]
     config: PathBuf,
 
+    /// CommitteeId for the committee in which this member belongs to
+    #[clap(long, short)]
+    committee_id: CommitteeId,
+
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
@@ -84,15 +88,13 @@ async fn main() -> Result<()> {
 
     let contract = KeyManager::new(node_config.chain.parent.key_manager_contract, &provider);
 
-    let committee_id = CommitteeId::from(contract.currentCommitteeId().call().await?);
-
     let members: Vec<CommitteeMemberSol> = contract
-        .getCommitteeById(committee_id.into())
+        .getCommitteeById(cli.committee_id.into())
         .call()
         .await?
         .members;
 
-    info!(label = %sign_keypair.public_key(), %committee_id, "committee info synced");
+    info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
 
     let peer_hosts_and_keys = members
         .iter()
@@ -131,7 +133,7 @@ async fn main() -> Result<()> {
 
     let sailfish_committee = {
         let c = Committee::new(
-            committee_id,
+            cli.committee_id,
             sailfish_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -142,7 +144,7 @@ async fn main() -> Result<()> {
 
     let decrypt_committee = {
         let c = Committee::new(
-            committee_id,
+            cli.committee_id,
             decrypt_peer_hosts_and_keys
                 .iter()
                 .enumerate()
@@ -153,7 +155,7 @@ async fn main() -> Result<()> {
 
     let certifier_committee = {
         let c = Committee::new(
-            committee_id,
+            cli.committee_id,
             certifier_peer_hosts_and_keys
                 .iter()
                 .enumerate()

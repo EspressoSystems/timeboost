@@ -8,6 +8,7 @@ use std::{
 use anyhow::{Result, bail, ensure};
 use clap::Parser;
 use test_utils::net::Config;
+use timeboost::config::CommitteeConfig;
 use tokio::{
     fs::{self, read_dir},
     process::Command,
@@ -48,6 +49,8 @@ async fn main() -> Result<()> {
         bail!("{:?} is not a file", args.timeboost)
     }
 
+    let committee = CommitteeConfig::read(args.configs.join("committee.toml")).await?;
+
     let mut netconf: Option<Config> = None;
     let mut commands = BTreeMap::new();
     let mut entries = read_dir(&args.configs).await?;
@@ -61,7 +64,11 @@ async fn main() -> Result<()> {
             }
             ConfigType::Node(name) => {
                 let mut cmd = StdCommand::new(args.timeboost.as_os_str());
-                cmd.arg("--config").arg(entry.path()).arg("--ignore-stamp");
+                cmd.arg("--committee-id")
+                    .arg(committee.id.to_string())
+                    .arg("--config")
+                    .arg(entry.path())
+                    .arg("--ignore-stamp");
                 commands.insert(name.to_string(), cmd);
             }
             ConfigType::Committee | ConfigType::Unknown => continue,

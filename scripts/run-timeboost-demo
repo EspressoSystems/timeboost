@@ -115,6 +115,7 @@ pids=()
 i=0
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
+        --committee-id 0
         --committee "$config_dir/committee.toml"
         --config "$f"
         --until $rounds
@@ -142,7 +143,7 @@ done
 if $yapper; then
     cmd=(target/release/yapper
         --tps $tps
-        --keyset-file "$config_dir/committee.toml")
+        --config "$config_dir/committee.toml")
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi
