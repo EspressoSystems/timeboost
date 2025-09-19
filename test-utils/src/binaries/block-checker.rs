@@ -13,13 +13,7 @@ use tracing::{debug, info};
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    config: PathBuf,
-
-    #[clap(long)]
-    committee: PathBuf,
-
-    #[clap(long)]
-    committee_id: u64,
+    configs: PathBuf,
 
     #[clap(long, short)]
     blocks: usize,
@@ -32,16 +26,16 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let committees = {
-        let conf = CommitteeConfig::read(&args.committee).await?;
+        let conf = CommitteeConfig::read(args.configs.join("committee.toml")).await?;
         let mems = conf
             .members
             .into_iter()
             .enumerate()
             .map(|(i, m)| (i as u8, m.signing_key));
-        CommitteeVec::<1>::new(Committee::new(args.committee_id, mems))
+        CommitteeVec::<1>::new(Committee::new(conf.id, mems))
     };
 
-    let node = NodeConfig::read(&args.config).await?;
+    let node = NodeConfig::read(args.configs.join("node_0.toml")).await?;
 
     let conf = Config::builder()
         .base_url(node.espresso.base_url)

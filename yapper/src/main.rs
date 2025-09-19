@@ -32,8 +32,8 @@ struct Cli {
     /// Path to file containing the committee member's public info.
     ///
     /// The file contains backend urls and public key material.
-    #[clap(long)]
-    keyset_file: PathBuf,
+    #[clap(long, short)]
+    config: PathBuf,
 
     /// Specify how many transactions per second to send to each node
     #[clap(long, short, default_value_t = 100)]
@@ -65,9 +65,9 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
-    let keyset = CommitteeConfig::read(&cli.keyset_file)
+    let keyset = CommitteeConfig::read(&cli.config)
         .await
-        .with_context(|| format!("opening the keyfile at path {:?}", cli.keyset_file))?;
+        .with_context(|| format!("opening the config at path {:?}", cli.config))?;
 
     let mut addresses = Vec::new();
     for node in keyset.members {
