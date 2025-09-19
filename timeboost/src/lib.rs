@@ -10,6 +10,7 @@ use futures::StreamExt;
 use metrics::TimeboostMetrics;
 use multisig::PublicKey;
 use timeboost_builder::{Certifier, CertifierDown, SenderTaskDown, Submitter};
+use timeboost_contract::provider::PubSubProvider;
 use timeboost_sequencer::{Output, Sequencer};
 use timeboost_types::{BundleVariant, ConsensusTime};
 use tokio::select;
@@ -45,24 +46,16 @@ pub struct Timeboost {
     prometheus: Arc<PrometheusMetrics>,
     nitro_forwarder: Option<NitroForwarder>,
     submitter: Submitter,
+    // pubsub service (+backend) handle, disconnect on drop
+    _pubsub_provider: PubSubProvider,
+    events: NewCommitteeStream,
 }
 
 impl Timeboost {
-    pub async fn new(mut cfg: TimeboostConfig) -> Result<Self> {
+    pub async fn new(cfg: TimeboostConfig) -> Result<Self> {
         let pro = Arc::new(PrometheusMetrics::default());
         let met = Arc::new(TimeboostMetrics::new(&*pro));
 
-        // optionally fetch previous committee info
-        let cid: u64 = cfg.sailfish_committee.committee().id().into();
-        if cid > 0u64 {
-            let c = &cfg.chain_config.parent;
-            let prev_comm =
-                CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
-
-            cfg.prev_sailfish_committee = Some(prev_comm.sailfish_committee());
-            cfg.prev_decrypt_committee =
-                Some((prev_comm.decrypt_committee(), prev_comm.dkg_key_store()));
-        }
         let seq = Sequencer::new(cfg.sequencer_config(), &*pro).await?;
         let blk = Certifier::new(cfg.certifier_config(), &*pro).await?;
         let sub = Submitter::new(cfg.submitter_config(), &*pro);
@@ -73,6 +66,16 @@ impl Timeboost {
         } else {
             None
         };
+
+        let provider = PubSubProvider::new(cfg.chain_config.parent.ws_url.clone()).await?;
+        let start_ts = cfg
+            .prev_committee
+            .as_ref()
+            .map(|c| c.effective_timestamp())
+            .unwrap_or_default();
+        let events =
+            CommitteeInfo::new_committee_stream(&provider, start_ts, &cfg.chain_config.parent)
+                .await?;
 
         let (tx, rx) = mpsc::channel(100);
 
@@ -87,6 +90,8 @@ impl Timeboost {
             _metrics: met,
             nitro_forwarder,
             submitter: sub,
+            _pubsub_provider: provider,
+            events,
         })
     }
 
@@ -103,8 +108,6 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
-        let mut events = NewCommitteeStream::create(&self.config.chain_config.parent).await?;
-
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -149,26 +152,21 @@ impl Timeboost {
                         return Err(e.into())
                     }
                 },
-                res = events.next() => match res {
-                    Some(id) => {
+                res = self.events.next() => match res {
+                    Some(comm_info) => {
                         let cur: u64 = self.config.key_store.committee().id().into();
+                        let new_id: u64 = comm_info.id().into();
 
-                        if id == cur + 1 {
-                            info!(node = %self.label, committee_id = %id, current = %cur, "fetching next committee");
-                            let comm_info = CommitteeInfo::fetch(
-                                self.config.chain_config.parent.rpc_url.clone(),
-                                self.config.chain_config.parent.key_manager_contract,
-                                id,
-                            ).await?;
-
-                            info!(node = %self.label, committee_id = %id, current = %cur, "setting next committee");
+                        // contract ensures consecutive CommitteeId assignment
+                        if new_id == cur + 1 {
+                            info!(node = %self.label, committee_id = %new_id, current = %cur, "setting next committee");
                             self.sequencer.set_next_committee(
                                 ConsensusTime(comm_info.effective_timestamp()),
                                 comm_info.sailfish_committee(),
                                 comm_info.dkg_key_store()
                             ).await?;
                         } else {
-                            warn!(node = %self.label, committee_id = %id, current = %cur, "ignored new CommitteeCreated event");
+                            warn!(node = %self.label, committee_id = %new_id, current = %cur, "ignored new CommitteeCreated event");
                             continue;
                         }
                     },

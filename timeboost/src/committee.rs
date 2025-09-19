@@ -1,15 +1,11 @@
 //! Syncing committee info from the KeyManager contract
 
 use std::pin::Pin;
-use std::task::{Context, Poll};
 
 use alloy::{
     eips::BlockNumberOrTag,
     primitives::Address,
     providers::{Provider, ProviderBuilder},
-    rpc::types::Filter,
-    sol_types::SolEvent,
-    transports::ws::WsConnect,
 };
 use anyhow::{Context as AnyhowContext, Result};
 use cliquenet::AddressableCommittee;
@@ -18,10 +14,14 @@ use itertools::{Itertools, izip};
 use multisig::{Committee, CommitteeId, x25519};
 use timeboost_config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, ParentChain};
 use timeboost_contract::KeyManager::{self, CommitteeCreated};
+use timeboost_contract::provider::PubSubProvider;
 use timeboost_crypto::prelude::DkgEncKey;
 use timeboost_types::{KeyStore, Timestamp};
 use tracing::error;
 use url::Url;
+
+/// Type alias for the committee stream
+pub type NewCommitteeStream = Pin<Box<dyn Stream<Item = CommitteeInfo>>>;
 
 /// The committee info stored on the KeyManager contract, a subset of [`CommitteeConfig`]
 /// Keys and hosts are ordered in the same as they were registered (with KeyId from 0..n)
@@ -39,7 +39,14 @@ impl CommitteeInfo {
     /// Fetch the committee info for `committee_id` from `key_manager_addr` on chain
     pub async fn fetch(rpc: Url, key_manager_addr: Address, committee_id: u64) -> Result<Self> {
         let provider = ProviderBuilder::new().connect_http(rpc);
+        Self::fetch_with(provider, key_manager_addr, committee_id).await
+    }
 
+    pub(crate) async fn fetch_with(
+        provider: impl Provider,
+        key_manager_addr: Address,
+        committee_id: u64,
+    ) -> Result<Self> {
         let contract = KeyManager::new(key_manager_addr, &provider);
         let c = contract.getCommitteeById(committee_id).call().await?;
 
@@ -69,6 +76,10 @@ impl CommitteeInfo {
             dkg_keys,
             public_addresses,
         })
+    }
+
+    pub fn id(&self) -> CommitteeId {
+        self.id
     }
 
     pub fn effective_timestamp(&self) -> Timestamp {
@@ -138,64 +149,44 @@ impl CommitteeInfo {
                 .map(|(i, k)| (i as u8, k.clone())),
         )
     }
-}
 
-/// An pubsub-provider-holding event stream. (the pubsub will close on drop)
-pub struct NewCommitteeStream {
-    _provider: Box<dyn Provider>,
-    inner: Pin<Box<dyn Stream<Item = u64> + Send>>,
-}
-
-impl Stream for NewCommitteeStream {
-    type Item = u64;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
-    }
-}
-
-impl NewCommitteeStream {
-    pub async fn create(config: &ParentChain) -> Result<Self> {
-        // setup the websocket for contract event stream
-        let ws = WsConnect::new(config.ws_url.clone());
-        // spawn the pubsub service (and backend) and the frontend is registered at the provider
-        let provider = ProviderBuilder::new()
-            .connect_pubsub_with(ws)
+    /// subscribe an event stream
+    pub async fn new_committee_stream(
+        provider: &PubSubProvider,
+        start_ts: Timestamp,
+        config: &ParentChain,
+    ) -> Result<NewCommitteeStream> {
+        let from_block = provider
+            .get_block_number_by_timestamp(start_ts.into())
+            .await?
+            .unwrap_or_default();
+        let events = provider
+            .event_stream::<CommitteeCreated>(
+                config.key_manager_contract,
+                BlockNumberOrTag::Number(from_block),
+            )
             .await
-            .map_err(|err| {
-                error!(?err, "event pubsub failed to start");
-                err
+            .map_err(|e| {
+                error!("Failed to create CommitteeCreated stream: {:?}", e);
+                e
             })?;
 
-        let chain_id = config.id;
-        let tag = if chain_id == 31337 || chain_id == 1337 {
-            // local test chain, we start scanning from the genesis
-            BlockNumberOrTag::Number(0)
-        } else {
-            config.block_tag
-        };
-
-        let filter = Filter::new()
-            .address(config.key_manager_contract)
-            .event(KeyManager::CommitteeCreated::SIGNATURE)
-            .from_block(tag);
-        let events = provider
-            .subscribe_logs(&filter)
-            .await
-            .map_err(|err| {
-                error!(?err, "pubsub subscription failed");
-                err
-            })?
-            .into_stream();
-
-        let validated = events.filter_map(|log| async move {
-            log.log_decode_validate::<CommitteeCreated>()
-                .ok()
-                .map(|v| v.data().id)
+        let provider = provider.clone();
+        let key_manager_contract = config.key_manager_contract;
+        let s = events.filter_map(move |log| {
+            let provider = provider.clone();
+            async move {
+                let id = log.data().id;
+                match CommitteeInfo::fetch_with(provider.inner(), key_manager_contract, id).await {
+                    Ok(comm_info) => Some(comm_info),
+                    Err(_) => {
+                        error!(committee_id = %id, "fail to fetch new CommitteeInfo");
+                        None
+                    }
+                }
+            }
         });
-        Ok(Self {
-            _provider: Box::new(provider),
-            inner: Box::pin(validated),
-        })
+
+        Ok(Box::pin(s))
     }
 }

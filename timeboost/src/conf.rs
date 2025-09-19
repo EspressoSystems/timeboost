@@ -7,19 +7,18 @@ use timeboost_crypto::prelude::DkgDecKey;
 use timeboost_sequencer::SequencerConfig;
 use timeboost_types::{KeyStore, ThresholdKeyCell};
 
+use crate::committee::CommitteeInfo;
+
 #[derive(Debug, Clone, Builder)]
 pub struct TimeboostConfig {
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
 
-    /// Previous sailfish peers
-    pub(crate) prev_sailfish_committee: Option<AddressableCommittee>,
+    /// Previous committee info stored on chain
+    pub(crate) prev_committee: Option<CommitteeInfo>,
 
     /// The decrypt peers that this node will connect to.
     pub(crate) decrypt_committee: AddressableCommittee,
-
-    /// Previous decrypt peers
-    pub(crate) prev_decrypt_committee: Option<(AddressableCommittee, KeyStore)>,
 
     /// The block certifier peers that this node will connect to.
     pub(crate) certifier_committee: AddressableCommittee,
@@ -80,8 +79,14 @@ impl TimeboostConfig {
             .sailfish_committee(self.sailfish_committee.clone())
             .decrypt_committee((self.decrypt_committee.clone(), self.key_store.clone()))
             .recover(self.recover)
-            .maybe_previous_sailfish_committee(self.prev_sailfish_committee.clone())
-            .maybe_previous_decrypt_committee(self.prev_decrypt_committee.clone())
+            .maybe_previous_sailfish_committee(
+                self.prev_committee.as_ref().map(|c| c.sailfish_committee()),
+            )
+            .maybe_previous_decrypt_committee(
+                self.prev_committee
+                    .as_ref()
+                    .map(|c| (c.decrypt_committee(), c.dkg_key_store())),
+            )
             .leash_len(self.leash_len)
             .threshold_dec_key(self.threshold_dec_key.clone())
             .chain_config(self.chain_config.clone())

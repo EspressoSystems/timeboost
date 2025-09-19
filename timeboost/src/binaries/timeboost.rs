@@ -94,8 +94,20 @@ async fn main() -> Result<()> {
 
     let pubkey = sign_keypair.public_key();
 
+    // optionally fetch previous committee info
+    let cid: u64 = cli.committee_id.into();
+    let prev_comm = if cid > 0u64 {
+        let c = &node_config.chain.parent;
+        let prev_comm =
+            CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
+        Some(prev_comm)
+    } else {
+        None
+    };
+
     let config = TimeboostConfig::builder()
         .sailfish_committee(sailfish_committee)
+        .maybe_prev_committee(prev_comm)
         .decrypt_committee(decrypt_committee)
         .certifier_committee(certifier_committee)
         .sign_keypair(sign_keypair)
