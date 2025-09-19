@@ -1,3 +1,8 @@
+[nat]
+table  = "nat"
+device = "eth0"
+cidr   = "10.0.0.0/8"
+
 [bridge]
 name = "bridge"
 cidr = "10.0.1.0/16"

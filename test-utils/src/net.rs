@@ -6,6 +6,7 @@ use serde::Deserialize;
 pub struct Config {
     pub bridge: BridgeConfig,
     pub device: Vec<DeviceConfig>,
+    pub nat: Option<NatConfig>,
 }
 
 #[derive(Deserialize)]
@@ -25,6 +26,13 @@ pub struct DeviceConfig {
 
     #[serde(default)]
     pub jitter: Span,
+}
+
+#[derive(Deserialize)]
+pub struct NatConfig {
+    pub table: String,
+    pub device: String,
+    pub cidr: Ipv4Net,
 }
 
 impl DeviceConfig {

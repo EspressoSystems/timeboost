@@ -13,7 +13,7 @@ DEPLOYMENT_FILE=$(mktemp -t timeboost-deployment-XXXXX)
 
 # Fund manager account && create deployment file
 cast send --value 1ether -r "$URL" --private-key "$FAUCET_PRIVATE_KEY" "$MANAGER_ADDRESS"
-env RUST_LOG=info cargo run --release --bin deploy -- \
+env RUST_LOG=info target/release/deploy \
     -m "$MANAGER_MNEMONIC" \
     -i "$MANAGER_ACCOUNT_INDEX" \
     -u "$URL" \
@@ -23,7 +23,7 @@ env RUST_LOG=info cargo run --release --bin deploy -- \
 km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$DEPLOYMENT_FILE")
 
 # Update the contract
-env RUST_LOG=info cargo run --release --bin register -- \
+env RUST_LOG=info target/release/register \
     -m "$MANAGER_MNEMONIC" \
     -i "$MANAGER_ACCOUNT_INDEX" \
     -u "$URL" \

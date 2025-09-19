@@ -1,3 +1,5 @@
+#![cfg_attr(rustfmt, rustfmt_skip)]
+
 use std::{fs, path::PathBuf};
 
 use anyhow::{Result, ensure};
@@ -45,6 +47,15 @@ fn main() -> Result<()> {
                     dev.delay(&d.delay, &d.jitter)?
                 }
             }
+            if let Some(nat) = c.nat {
+                run_command(TRACE, ["iptables",
+                    "-t", &nat.table,
+                    "-A", "POSTROUTING",
+                    "-s", &nat.cidr.to_string(),
+                    "-o", &nat.device,
+                    "-j", "MASQUERADE"
+                ])?
+            }
         }
         Command::Delete { config } => {
             let t = fs::read(&config)?;
@@ -53,7 +64,10 @@ fn main() -> Result<()> {
             for d in c.device {
                 Device::new(&d).delete()?
             }
-            b.delete()?
+            b.delete()?;
+            if let Some(nat) = c.nat {
+                run_command(TRACE, ["iptables", "-t", &nat.table, "-F"])?
+            }
         }
     }
     Ok(())
@@ -77,7 +91,6 @@ impl Device {
         }
     }
 
-    #[rustfmt::skip]
     fn create(&self, b: &Bridge) -> Result<()> {
         ensure!(b.net.contains(&self.cidr));
         run_command(TRACE, ["ip", "netns", "add", &self.space])?;
@@ -91,7 +104,6 @@ impl Device {
         run_command(TRACE, ["ip", "netns", "exec", &self.space, "ip", "route", "add", "default",  "via",  &b.net.addr().to_string()])
     }
 
-    #[rustfmt::skip]
     fn delay(&self, delay: &Span, jitter: &Span) -> Result<()> {
         let d = format!("{}ms", delay.get_milliseconds());
         let j = format!("{}ms", jitter.get_milliseconds());
@@ -113,7 +125,6 @@ struct Bridge {
     net: Ipv4Net,
 }
 
-#[rustfmt::skip]
 impl Bridge {
     fn new(name: &str, ip: Ipv4Net) -> Self {
         Self { name: name.to_string(), net: ip }
