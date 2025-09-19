@@ -200,7 +200,7 @@ netsim: build_release build-test-utils
     set -eo pipefail
     function run_as_root {
         if [ "$CI" == "true" ]; then
-            sudo --preserve-env=RUST_LOG "$@"
+            sudo --preserve-env=PATH,HOME,RUST_LOG "$@"
         else
             run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG "$@"
         fi
