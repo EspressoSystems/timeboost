@@ -1,3 +1,4 @@
+use alloy::primitives::BlockNumber;
 use bon::Builder;
 use cliquenet::{Address, AddressableCommittee};
 use multisig::{Keypair, x25519};
@@ -13,6 +14,9 @@ use crate::committee::CommitteeInfo;
 pub struct TimeboostConfig {
     /// The sailfish peers that this node will connect to.
     pub(crate) sailfish_committee: AddressableCommittee,
+
+    /// The block in which the current committee is registered
+    pub(crate) registered_blk: BlockNumber,
 
     /// Previous committee info stored on chain
     pub(crate) prev_committee: Option<CommitteeInfo>,

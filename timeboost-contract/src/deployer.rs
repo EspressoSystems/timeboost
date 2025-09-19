@@ -53,6 +53,7 @@ mod tests {
     use alloy::{
         eips::BlockNumberOrTag,
         node_bindings::Anvil,
+        primitives::U256,
         providers::{Provider, ProviderBuilder, WalletProvider},
         rpc::types::Filter,
         sol_types::{SolEvent, SolValue},
@@ -94,8 +95,11 @@ mod tests {
                 .await
                 .unwrap()
                 .abi_encode_sequence(),
+            // deploy takes first 2 blocks: deploying implementation contract and proxy contract
+            // setNextCommittee is the 3rd tx, thus in 3rd block
             CommitteeSol {
                 id: 0,
+                registeredBlockNumber: U256::from(3),
                 effectiveTimestamp: timestamp,
                 members,
             }

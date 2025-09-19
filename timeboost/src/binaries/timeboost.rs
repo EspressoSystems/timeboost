@@ -107,6 +107,7 @@ async fn main() -> Result<()> {
 
     let config = TimeboostConfig::builder()
         .sailfish_committee(sailfish_committee)
+        .registered_blk(*comm_info.registered_block())
         .maybe_prev_committee(prev_comm)
         .decrypt_committee(decrypt_committee)
         .certifier_committee(certifier_committee)

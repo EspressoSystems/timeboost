@@ -6,7 +6,7 @@ use std::{ops::Deref, pin::Pin};
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::{Address, BlockNumber},
+    primitives::Address,
     providers::{Provider, ProviderBuilder},
     rpc::types::{Filter, Log},
     signers::local::{LocalSignerError, MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
@@ -14,7 +14,7 @@ use alloy::{
     transports::{http::reqwest::Url, ws::WsConnect},
 };
 use futures::{Stream, StreamExt};
-use timeboost_types::{HttpProvider, HttpProviderWithWallet, Timestamp};
+use timeboost_types::{HttpProvider, HttpProviderWithWallet};
 use tracing::error;
 
 /// Build a local signer from wallet mnemonic and account index
@@ -96,44 +96,5 @@ impl PubSubProvider {
         });
 
         Ok(Box::pin(validated))
-    }
-
-    /// Returns the smallest block number whose timestamp is >= `target_ts` through binary search.
-    /// Useful to determine `from_block` input of `Self::event_stream()` subscription.
-    pub async fn get_block_number_by_timestamp(
-        &self,
-        target_ts: Timestamp,
-    ) -> anyhow::Result<Option<BlockNumber>> {
-        let latest = self.get_block_number().await?;
-        let mut lo: u64 = 0;
-        let mut hi: u64 = latest;
-
-        while lo <= hi {
-            let mid = lo + (hi - lo) / 2;
-
-            let block = match self
-                .0
-                .get_block_by_number(BlockNumberOrTag::Number(mid))
-                .await?
-            {
-                Some(b) => b,
-                None => {
-                    lo = mid + 1;
-                    continue;
-                }
-            };
-
-            if block.header.timestamp >= target_ts.into() {
-                if mid == 0 {
-                    return Ok(Some(0));
-                }
-                hi = mid - 1;
-            } else {
-                lo = mid + 1;
-            }
-        }
-
-        // At this point, `lo` is the smallest index with ts >= target_ts (if any)
-        if lo > latest { Ok(None) } else { Ok(Some(lo)) }
     }
 }

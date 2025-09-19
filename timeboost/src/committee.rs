@@ -16,7 +16,7 @@ use timeboost_config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, ParentChain
 use timeboost_contract::KeyManager::{self, CommitteeCreated};
 use timeboost_contract::provider::PubSubProvider;
 use timeboost_crypto::prelude::DkgEncKey;
-use timeboost_types::{KeyStore, Timestamp};
+use timeboost_types::{BlockNumber, KeyStore, Timestamp};
 use tracing::error;
 use url::Url;
 
@@ -29,6 +29,7 @@ pub type NewCommitteeStream = Pin<Box<dyn Stream<Item = CommitteeInfo>>>;
 pub struct CommitteeInfo {
     id: CommitteeId,
     timestamp: Timestamp,
+    registered_blk: BlockNumber,
     signing_keys: Vec<multisig::PublicKey>,
     dh_keys: Vec<x25519::PublicKey>,
     dkg_keys: Vec<DkgEncKey>,
@@ -78,6 +79,7 @@ impl CommitteeInfo {
         Ok(Self {
             id: committee_id,
             timestamp: c.effectiveTimestamp.into(),
+            registered_blk: c.registeredBlockNumber.to::<u64>().into(),
             signing_keys,
             dh_keys,
             dkg_keys,
@@ -91,6 +93,10 @@ impl CommitteeInfo {
 
     pub fn effective_timestamp(&self) -> Timestamp {
         self.timestamp
+    }
+
+    pub fn registered_block(&self) -> BlockNumber {
+        self.registered_blk
     }
 
     pub fn signing_keys(&self) -> &[multisig::PublicKey] {
@@ -160,17 +166,13 @@ impl CommitteeInfo {
     /// subscribe an event stream
     pub async fn new_committee_stream(
         provider: &PubSubProvider,
-        start_ts: Timestamp,
+        from_block: BlockNumber,
         config: &ParentChain,
     ) -> Result<NewCommitteeStream> {
-        let from_block = provider
-            .get_block_number_by_timestamp(start_ts)
-            .await?
-            .unwrap_or_default();
         let events = provider
             .event_stream::<CommitteeCreated>(
                 config.key_manager_contract,
-                BlockNumberOrTag::Number(from_block),
+                BlockNumberOrTag::Number(*from_block),
             )
             .await
             .map_err(|e| {
