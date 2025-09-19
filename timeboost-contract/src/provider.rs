@@ -89,7 +89,7 @@ impl PubSubProvider {
             match log.log_decode_validate::<E>() {
                 Ok(event) => Some(event),
                 Err(err) => {
-                    error!(%err, "fail to parse `CommitteeCreated` event log");
+                    error!(%err, "failed to parse `CommitteeCreated` event log");
                     None
                 }
             }

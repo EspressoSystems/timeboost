@@ -68,14 +68,9 @@ impl Timeboost {
         };
 
         let provider = PubSubProvider::new(cfg.chain_config.parent.ws_url.clone()).await?;
-        let from_blk = cfg
-            .prev_committee
-            .as_ref()
-            .map_or_else(|| cfg.registered_blk, |prev| *prev.registered_block());
-
         let events = CommitteeInfo::new_committee_stream(
             &provider,
-            from_blk.into(),
+            cfg.registered_blk.into(),
             &cfg.chain_config.parent,
         )
         .await?;
