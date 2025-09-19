@@ -120,6 +120,11 @@ where
                                     .parse::<Url>()
                                     .expect("valid url"),
                             )
+                            .ws_url(
+                                "wss://theserversroom.com/ethereumws/54cmzzhcj1o/"
+                                    .parse::<Url>()
+                                    .expect("valid url"),
+                            )
                             .ibox_contract(alloy::primitives::Address::default())
                             .key_manager_contract(alloy::primitives::Address::default())
                             .block_tag(BlockNumberOrTag::Finalized)

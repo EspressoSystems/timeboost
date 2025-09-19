@@ -18,6 +18,9 @@ update-submodules:
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
+build_release_until:
+  cargo build --release --workspace --all-targets --features "until"
+
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
   docker build . -f ./docker/yapper.Dockerfile -t yapper:latest
@@ -102,6 +105,7 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --http-api "127.0.0.1:8004" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -117,6 +121,7 @@ mkconfig_docker DATETIME *ARGS:
     --mode "increment-address" \
     --chain-namespace 10101 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -132,6 +137,7 @@ mkconfig_nitro DATETIME *ARGS:
     --nitro-addr "localhost:55000" \
     --chain-namespace 412346 \
     --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8546" \
     --parent-chain-id 1337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
@@ -179,8 +185,52 @@ test-all: build_release build-test-utils
     --run   "3:scripts/deploy-test-contract test-configs/local/committee.toml http://localhost:8545" \
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
     --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee -c test-configs/local/ -t target/release/timeboost" \
+    --spawn "5:target/release/run-committee -c test-configs/local/" \
     target/release/block-checker -- -c test-configs/local -b 1000
+
+test-dyn-comm: build_release_until build-test-utils
+  env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
+    --verbose \
+    --timeout 120 \
+    --spawn "1:anvil --port 8545" \
+    --run   "2:sleep 2" \
+    --run   "3:scripts/deploy-test-contract test-configs/local/committee.toml http://localhost:8545" \
+    --spawn "4:target/release/run-committee -c test-configs/c0/ --until 2000" \
+    --run   "5:target/release/mkconfig -n 4 \
+                 --committee-id 1 \
+                 --public-addr 127.0.0.1:9000 \
+                 --internal-addr 127.0.0.1:9003 \
+                 --http-api 127.0.0.1:9004 \
+                 --chain-namespace 10101 \
+                 --parent-rpc-url http://127.0.0.1:8545 \
+                 --parent-ws-url ws://127.0.0.1:8545 \
+                 --parent-chain-id 31337 \
+                 --parent-ibox-contract 0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1 \
+                 --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 --timestamp +16s \
+                 --stamp-dir /tmp \
+                 --output test-configs/c1" \
+    --run   "6:sleep 6" \
+    --run   "7:target/release/register \
+                 -a threshold-enc-key \
+                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+                 -u http://localhost:8545 \
+                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 -c test-configs/c0/committee.toml" \
+    --run   "8:target/release/register \
+                 -a new-committee \
+                 -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' \
+                 -u http://localhost:8545 \
+                 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
+                 -c test-configs/c1/committee.toml" \
+    --spawn "9:target/release/yapper \
+                  --config test-configs/c1/committee.toml \
+                  --parent-url http://localhost:8545 \
+                  --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    target/release/run-committee -- \
+      -c test-configs/c1/ \
+      --until 800 \
+      --required-decrypt-rounds 3 && rm -rf test-configs/c1
 
 [linux]
 forward-ipv4 val: build-test-utils
@@ -220,5 +270,5 @@ netsim: build_release build-test-utils
         --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://10.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 10.0.1.0:55000 -c test-configs/linux/committee.toml" \
         --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
-        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ -t target/release/timeboost" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
         target/release/block-checker -- -c test-configs/linux -b 200

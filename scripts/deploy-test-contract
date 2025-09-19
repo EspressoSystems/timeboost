@@ -24,6 +24,7 @@ km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$DEPLOYMENT_FILE")
 
 # Update the contract
 env RUST_LOG=info target/release/register \
+    -a new-committee \
     -m "$MANAGER_MNEMONIC" \
     -i "$MANAGER_ACCOUNT_INDEX" \
     -u "$URL" \

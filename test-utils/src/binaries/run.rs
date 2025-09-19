@@ -1,7 +1,7 @@
 use std::future::pending;
 use std::ops::{Deref, DerefMut};
+use std::process::ExitStatus;
 use std::time::Duration;
-use std::{ffi::OsStr, process::ExitStatus};
 
 use anyhow::{Result, anyhow, bail, ensure};
 use clap::Parser;
@@ -182,15 +182,32 @@ impl ProcessGroup {
     ) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+        S: Into<String> + AsRef<str>,
     {
         let mut args = it.into_iter();
         let exe = args
             .next()
             .ok_or_else(|| anyhow!("invalid command-line args"))?;
-        let mut cmd = Command::new(exe);
+        let mut cmd = Command::new(exe.as_ref());
+        let mut buf: Option<Vec<String>> = None;
         for a in args {
-            cmd.arg(a);
+            if let Some(b) = &mut buf {
+                let mut a = a.into();
+                if a.ends_with("'") {
+                    a.pop();
+                    b.push(a);
+                    cmd.arg(b.join(" "));
+                    buf = None
+                } else {
+                    b.push(a);
+                }
+            } else if a.as_ref().starts_with("'") {
+                let mut a = a.into();
+                a.remove(0);
+                buf = Some(vec![a]);
+            } else {
+                cmd.arg(a.as_ref());
+            }
         }
         cmd.process_group(0);
         if let Some(id) = uid {

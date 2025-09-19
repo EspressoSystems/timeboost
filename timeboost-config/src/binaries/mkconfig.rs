@@ -3,12 +3,14 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::num::NonZeroU8;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use alloy::eips::BlockNumberOrTag;
 use anyhow::{Result, bail};
 use ark_std::rand::SeedableRng as _;
 use clap::{Parser, ValueEnum};
 use cliquenet::Address;
+use jiff::{SignedDuration, Timestamp};
 use multisig::{CommitteeId, x25519};
 use secp256k1::rand::SeedableRng as _;
 use timeboost_config::{ChainConfig, ParentChain};
@@ -41,7 +43,7 @@ struct Args {
     /// The timestamp format corresponds to RFC 3339, section 5.6, for example:
     /// 1970-01-01T18:00:00Z.
     #[clap(long)]
-    timestamp: jiff::Timestamp,
+    timestamp: TimestampOrOffset,
 
     /// The sailfish network address. Decrypter, certifier, and internal address are derived:
     /// sharing the same IP as the sailfish IP, and a different (but fixed) port number.
@@ -70,6 +72,10 @@ struct Args {
     /// Parent chain rpc url
     #[clap(long)]
     parent_rpc_url: Url,
+
+    /// Parent chain websocket url
+    #[clap(long)]
+    parent_ws_url: Url,
 
     /// Parent chain id
     #[clap(long)]
@@ -105,6 +111,23 @@ struct Args {
     /// The directory to stored all generated `NodeConfig` files for all committee members
     #[clap(long, short)]
     output: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct TimestampOrOffset(Timestamp);
+
+impl FromStr for TimestampOrOffset {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(ts) = Timestamp::from_str(s) {
+            Ok(Self(ts))
+        } else if let Ok(dur) = s.parse::<SignedDuration>() {
+            Ok(Self(Timestamp::now() + dur))
+        } else {
+            Err("Expected RFC3339 timestamp or [+/-]duration".into())
+        }
+    }
 }
 
 /// How should addresses be updated?
@@ -188,6 +211,7 @@ impl Args {
                     parent: ParentChain {
                         id: self.parent_chain_id,
                         rpc_url: self.parent_rpc_url.clone(),
+                        ws_url: self.parent_ws_url.clone(),
                         ibox_contract: self.parent_ibox_contract,
                         block_tag: self.parent_block_tag,
                         key_manager_contract: self.key_manager_contract,
@@ -215,7 +239,7 @@ impl Args {
 
         let committee_config = CommitteeConfig {
             id: self.committee_id,
-            effective_timestamp: self.timestamp,
+            effective_timestamp: self.timestamp.0,
             members,
         };
         committee_config_file.write_all(toml::to_string_pretty(&committee_config)?.as_bytes())?;

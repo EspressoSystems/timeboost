@@ -31,7 +31,6 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy = { version = "1.0", features = ["default", "arbitrary", "k256", "serde", "rlp", "node-bindings", "getrandom", "signer-mnemonic"] }
 alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
@@ -70,6 +69,7 @@ futures = { version = "0.3", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.14.7", features = ["serde", "zeroize"] }
 http = "1.3.1"
 ipnet = { version = "2.11.0", features = ["serde"] }
+itertools = "0.14.0"
 jiff = { version = "0.2", default-features = false, features = ["serde", "std"] }
 minicbor = { version = "2.1.1", features = ["full"] }
 nohash-hasher = "0.2"
@@ -114,6 +114,20 @@ zeroize = { version = "1.8", features = ["zeroize_derive"] }
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 hotshot-query-service = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
+
+[workspace.dependencies.alloy]
+version  = "1.0"
+features = [
+    "arbitrary",
+    "default",
+    "getrandom",
+    "k256",
+    "node-bindings",
+    "rlp",
+    "serde",
+    "signer-mnemonic",
+    "transport-ws"
+]
 
 [profile.test]
 codegen-units = 16

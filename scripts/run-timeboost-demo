@@ -116,7 +116,6 @@ i=0
 for f in "$config_dir"/node_*.toml; do
     cmd=(target/release/timeboost
         --committee-id 0
-        --committee "$config_dir/committee.toml"
         --config "$f"
         --until $rounds
         --watchdog-timeout 120)

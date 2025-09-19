@@ -183,7 +183,7 @@ dependencies = [
  "alloy-network 0.13.0",
  "alloy-node-bindings 0.13.0",
  "alloy-provider 0.13.0",
- "alloy-pubsub",
+ "alloy-pubsub 0.13.0",
  "alloy-rpc-client 0.13.0",
  "alloy-rpc-types 0.13.0",
  "alloy-serde 0.13.0",
@@ -192,7 +192,7 @@ dependencies = [
  "alloy-signer-local 0.13.0",
  "alloy-transport 0.13.0",
  "alloy-transport-http 0.13.0",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.13.0",
 ]
 
 [[package]]
@@ -209,6 +209,7 @@ dependencies = [
  "alloy-network 1.0.30",
  "alloy-node-bindings 1.0.30",
  "alloy-provider 1.0.30",
+ "alloy-pubsub 1.0.30",
  "alloy-rpc-client 1.0.30",
  "alloy-rpc-types 1.0.30",
  "alloy-serde 1.0.30",
@@ -216,6 +217,7 @@ dependencies = [
  "alloy-signer-local 1.0.30",
  "alloy-transport 1.0.30",
  "alloy-transport-http 1.0.30",
+ "alloy-transport-ws 1.0.30",
  "alloy-trie 0.9.1",
 ]
 
@@ -343,7 +345,7 @@ dependencies = [
  "alloy-network-primitives 0.13.0",
  "alloy-primitives 0.8.25",
  "alloy-provider 0.13.0",
- "alloy-pubsub",
+ "alloy-pubsub 0.13.0",
  "alloy-rpc-types-eth 0.13.0",
  "alloy-sol-types 0.8.25",
  "alloy-transport 0.13.0",
@@ -365,6 +367,7 @@ dependencies = [
  "alloy-network-primitives 1.0.30",
  "alloy-primitives 1.3.1",
  "alloy-provider 1.0.30",
+ "alloy-pubsub 1.0.30",
  "alloy-rpc-types-eth 1.0.30",
  "alloy-sol-types 1.3.1",
  "alloy-transport 1.0.30",
@@ -854,7 +857,7 @@ dependencies = [
  "alloy-network-primitives 0.13.0",
  "alloy-node-bindings 0.13.0",
  "alloy-primitives 0.8.25",
- "alloy-pubsub",
+ "alloy-pubsub 0.13.0",
  "alloy-rpc-client 0.13.0",
  "alloy-rpc-types-anvil 0.13.0",
  "alloy-rpc-types-eth 0.13.0",
@@ -862,7 +865,7 @@ dependencies = [
  "alloy-sol-types 0.8.25",
  "alloy-transport 0.13.0",
  "alloy-transport-http 0.13.0",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.13.0",
  "async-stream",
  "async-trait",
  "auto_impl",
@@ -897,6 +900,7 @@ dependencies = [
  "alloy-network-primitives 1.0.30",
  "alloy-node-bindings 1.0.30",
  "alloy-primitives 1.3.1",
+ "alloy-pubsub 1.0.30",
  "alloy-rpc-client 1.0.30",
  "alloy-rpc-types-anvil 1.0.30",
  "alloy-rpc-types-eth 1.0.30",
@@ -945,6 +949,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-pubsub"
+version = "1.0.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f97c18795ce1ce8151c5539ce1e4200940389674173f677c7455f79bfb00e5df"
+dependencies = [
+ "alloy-json-rpc 1.0.30",
+ "alloy-primitives 1.3.1",
+ "alloy-transport 1.0.30",
+ "auto_impl",
+ "bimap",
+ "futures",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower 0.5.2",
+ "tracing",
+ "wasmtimer",
+]
+
+[[package]]
 name = "alloy-rlp"
 version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -974,10 +1000,10 @@ checksum = "cec6dc89c4c3ef166f9fa436d1831f8142c16cf2e637647c936a6aaaabd8d898"
 dependencies = [
  "alloy-json-rpc 0.13.0",
  "alloy-primitives 0.8.25",
- "alloy-pubsub",
+ "alloy-pubsub 0.13.0",
  "alloy-transport 0.13.0",
  "alloy-transport-http 0.13.0",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.13.0",
  "async-stream",
  "futures",
  "pin-project",
@@ -1001,6 +1027,7 @@ checksum = "25289674cd8c58fcca2568b5350423cb0dd7bca8c596c5e2869bfe4c5c57ed14"
 dependencies = [
  "alloy-json-rpc 1.0.30",
  "alloy-primitives 1.3.1",
+ "alloy-pubsub 1.0.30",
  "alloy-transport 1.0.30",
  "alloy-transport-http 1.0.30",
  "futures",
@@ -1484,8 +1511,26 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ef7a4301e8967c1998f193755fd9429e0ca81730e2e134e30c288c43dbf96f0"
 dependencies = [
- "alloy-pubsub",
+ "alloy-pubsub 0.13.0",
  "alloy-transport 0.13.0",
+ "futures",
+ "http 1.3.1",
+ "rustls 0.23.31",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "tracing",
+ "ws_stream_wasm",
+]
+
+[[package]]
+name = "alloy-transport-ws"
+version = "1.0.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6d44395e6793566e9c89bd82297cc4b0566655c1e78a1d69362640814784cc6"
+dependencies = [
+ "alloy-pubsub 1.0.30",
+ "alloy-transport 1.0.30",
  "futures",
  "http 1.3.1",
  "rustls 0.23.31",
@@ -11907,7 +11952,9 @@ dependencies = [
  "clap",
  "cliquenet",
  "committable",
+ "futures",
  "http 1.3.1",
+ "itertools 0.14.0",
  "metrics",
  "multisig",
  "prost 0.14.1",
@@ -11994,9 +12041,12 @@ dependencies = [
  "anyhow",
  "bincode 2.0.1",
  "clap",
+ "futures",
  "rand 0.9.2",
+ "reqwest",
  "serde",
  "timeboost-config",
+ "timeboost-crypto",
  "timeboost-types",
  "timeboost-utils",
  "tokio",
@@ -13994,6 +14044,7 @@ dependencies = [
  "futures",
  "reqwest",
  "timeboost",
+ "timeboost-contract",
  "timeboost-utils",
  "tokio",
  "tracing",

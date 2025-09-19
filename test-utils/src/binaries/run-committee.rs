@@ -21,6 +21,8 @@ struct Args {
     configs: PathBuf,
 
     #[clap(long, short)]
+
+    #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
 
     #[clap(long, short)]
@@ -31,6 +33,12 @@ struct Args {
 
     #[clap(long, default_value = "/tmp")]
     tmp: PathBuf,
+
+    #[clap(long)]
+    until: Option<u64>,
+
+    #[clap(long)]
+    required_decrypt_rounds: Option<u64>,
 }
 
 #[tokio::main]
@@ -69,6 +77,12 @@ async fn main() -> Result<()> {
                     .arg("--config")
                     .arg(entry.path())
                     .arg("--ignore-stamp");
+                if let Some(until) = args.until {
+                    cmd.arg("--until").arg(until.to_string());
+                }
+                if let Some(r) = args.required_decrypt_rounds {
+                    cmd.arg("--required-decrypt-rounds").arg(r.to_string());
+                }
                 commands.insert(name.to_string(), cmd);
             }
             ConfigType::Committee | ConfigType::Unknown => continue,
