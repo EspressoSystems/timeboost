@@ -265,10 +265,10 @@ netsim: build_release build-test-utils
         --env RUST_LOG \
         --uid $(id -u) \
         --gid $(id -g) \
-        --spawn "1:anvil --host 10.0.1.0 --port 8545" \
+        --spawn "1:anvil --host 11.0.1.0 --port 8545" \
         --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://10.0.1.0:8545" \
-        --spawn "4:target/release/block-maker --bind 10.0.1.0:55000 -c test-configs/linux/committee.toml" \
+        --run   "3:scripts/deploy-test-contract test-configs/linux/committee.toml http://11.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
         --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
         --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
         target/release/block-checker -- -c test-configs/linux -b 200

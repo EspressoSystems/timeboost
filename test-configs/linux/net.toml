@@ -1,43 +1,43 @@
 [nat]
 table  = "nat"
 device = "eth0"
-cidr   = "10.0.0.0/8"
+cidr   = "11.0.0.0/8"
 
 [bridge]
 name = "bridge"
-cidr = "10.0.1.0/16"
+cidr = "11.0.1.0/16"
 
 [[device]]
 node   = "node_0"
 name   = "dev1"
-cidr   = "10.0.0.1/16"
+cidr   = "11.0.0.1/16"
 delay  = "50ms"
 jitter = "50ms"
 
 [[device]]
 node   = "node_1"
 name   = "dev2"
-cidr   = "10.0.0.10/16"
+cidr   = "11.0.0.10/16"
 delay  = "50ms"
 jitter = "50ms"
 
 [[device]]
 node   = "node_2"
 name   = "dev3"
-cidr   = "10.0.0.20/16"
+cidr   = "11.0.0.20/16"
 delay  = "50ms"
 jitter = "50ms"
 
 [[device]]
 node   = "node_3"
 name   = "dev4"
-cidr   = "10.0.0.30/16"
+cidr   = "11.0.0.30/16"
 delay  = "50ms"
 jitter = "50ms"
 
 [[device]]
 node   = "node_4"
 name   = "dev5"
-cidr   = "10.0.0.40/16"
+cidr   = "11.0.0.40/16"
 delay  = "50ms"
 jitter = "50ms"
