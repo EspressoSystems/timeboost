@@ -292,7 +292,7 @@ where
                     TestCondition::new(format!("Vertex from {}", k.public_key()), move |msg, _a| {
                         if let Some(Message::Vertex(v)) = msg {
                             let r = *v.data().round().data().num();
-                            if v.data().evidence().is_timeout() && r != 6 {
+                            if v.data().evidence().is_timeout() && r != 5 {
                                 return TestOutcome::Failed(
                                     "We should only timeout when node 4 is leader the first time",
                                 );
