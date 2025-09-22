@@ -4,13 +4,17 @@ use alloy::{
     primitives::Address,
     providers::{Provider, WalletProvider},
 };
-use anyhow::{Context, Result, bail};
-use clap::Parser;
+use anyhow::{Context, Result, anyhow, bail};
+use clap::{Parser, ValueEnum};
+use reqwest::Client;
 use std::path::PathBuf;
+use std::time::Duration;
 use timeboost_config::CommitteeConfig;
 use timeboost_contract::{CommitteeMemberSol, KeyManager, provider::build_provider};
+use timeboost_crypto::prelude::ThresholdEncKey;
+use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
 use timeboost_utils::types::logging;
-use tracing::info;
+use tracing::{info, warn};
 use url::Url;
 
 #[derive(Clone, Debug, Parser)]
@@ -18,7 +22,7 @@ struct Args {
     #[clap(short, long)]
     mnemonic: String,
 
-    #[clap(short, long)]
+    #[clap(short, long, default_value_t = 0)]
     index: u32,
 
     #[clap(short, long)]
@@ -31,6 +35,19 @@ struct Args {
     /// Path to the committee.toml config for the next committee
     #[clap(short, long)]
     config: PathBuf,
+
+    /// What to register (new committee or threshold enc key?)
+    #[clap(short, long)]
+    action: Action,
+}
+
+/// Specific register action
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum Action {
+    /// register the next committee
+    NewCommittee,
+    /// register the threshold encryption key (when ready)
+    ThresholdEncKey,
 }
 
 #[tokio::main]
@@ -41,8 +58,6 @@ async fn main() -> Result<()> {
     let config = CommitteeConfig::read(&args.config)
         .await
         .context(format!("Failed to read config file: {:?}", &args.config))?;
-
-    info!("Start committee registration");
 
     let provider = build_provider(args.mnemonic.clone(), args.index, args.url.clone())?;
     let addr = args.key_manager_addr;
@@ -59,40 +74,79 @@ async fn main() -> Result<()> {
 
     let contract = KeyManager::new(addr, provider);
 
-    // prepare input argument from config file
-    let members = config
-        .members
-        .iter()
-        .map(|m| {
-            Ok::<_, anyhow::Error>(CommitteeMemberSol {
-                sigKey: m.signing_key.to_bytes().into(),
-                dhKey: m.dh_key.as_bytes().into(),
-                dkgKey: m.dkg_enc_key.to_bytes()?.into(),
-                networkAddress: m.public_address.to_string(),
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    match args.action {
+        Action::NewCommittee => {
+            info!("Start committee registration");
+            // prepare input argument from config file
+            let members = config
+                .members
+                .iter()
+                .map(|m| {
+                    Ok::<_, anyhow::Error>(CommitteeMemberSol {
+                        sigKey: m.signing_key.to_bytes().into(),
+                        dhKey: m.dh_key.as_bytes().into(),
+                        dkgKey: m.dkg_enc_key.to_bytes()?.into(),
+                        networkAddress: m.public_address.to_string(),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
-    let timestamp: u64 = config
-        .effective_timestamp
-        .as_second()
-        .try_into()
-        .with_context(|| {
-            format!(
-                "failed to convert timestamp {} to u64",
-                config.effective_timestamp
-            )
-        })?;
+            let timestamp: u64 = config
+                .effective_timestamp
+                .as_second()
+                .try_into()
+                .with_context(|| {
+                    format!(
+                        "failed to convert timestamp {} to u64",
+                        config.effective_timestamp
+                    )
+                })?;
 
-    // send tx and invoke the contract
-    let _tx_receipt = contract
-        .setNextCommittee(timestamp, members)
-        .send()
-        .await?
-        .get_receipt()
-        .await?;
+            // send tx and invoke the contract
+            let _tx_receipt = contract
+                .setNextCommittee(timestamp, members)
+                .send()
+                .await?
+                .get_receipt()
+                .await?;
 
-    let registered_cid = contract.nextCommitteeId().call().await? - 1;
-    info!("Registered new committee with id: {registered_cid}");
+            let registered_cid = contract.nextCommitteeId().call().await? - 1;
+            info!("Registered new committee with id: {registered_cid}");
+        }
+        Action::ThresholdEncKey => {
+            info!("Start threshold encryption key registration");
+            let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
+            let urls = config
+                .members
+                .iter()
+                .map(|m| {
+                    let addr = m.http_api.clone();
+                    Url::parse(&format!("http://{addr}/v1/encryption-key"))
+                        .with_context(|| format!("parsing {addr} into a url"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let mut acc = ThresholdEncKeyCellAccumulator::new(client, urls.into_iter());
+            let Some(key) = acc.enc_key().await else {
+                warn!("encryption key not available yet");
+                return Err(anyhow!(
+                    "threshold enc key not available on enough nodes, try later"
+                ));
+            };
+
+            let _tx_receipt = contract
+                .setThresholdEncryptionKey(key.to_owned().to_bytes()?.into())
+                .send()
+                .await?
+                .get_receipt()
+                .await?;
+            assert_eq!(
+                &ThresholdEncKey::from_bytes(&contract.thresholdEncryptionKey().call().await?.0)?,
+                key
+            );
+
+            info!("Registered threshold encryption key");
+        }
+    }
     Ok(())
 }

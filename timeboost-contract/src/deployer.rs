@@ -48,8 +48,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager};
-    use alloy::{providers::WalletProvider, sol_types::SolValue};
+    use super::deploy_key_manager_contract;
+    use crate::{CommitteeMemberSol, CommitteeSol, KeyManager, KeyManager::CommitteeCreated};
+    use alloy::{
+        eips::BlockNumberOrTag,
+        node_bindings::Anvil,
+        primitives::U256,
+        providers::{Provider, ProviderBuilder, WalletProvider},
+        rpc::types::Filter,
+        sol_types::{SolEvent, SolValue},
+        transports::ws::WsConnect,
+    };
+    use futures::StreamExt;
     use rand::prelude::*;
 
     #[tokio::test]
@@ -85,12 +95,73 @@ mod tests {
                 .await
                 .unwrap()
                 .abi_encode_sequence(),
+            // deploy takes first 2 blocks: deploying implementation contract and proxy contract
+            // setNextCommittee is the 3rd tx, thus in 3rd block
             CommitteeSol {
                 id: 0,
+                registeredBlockNumber: U256::from(3),
                 effectiveTimestamp: timestamp,
                 members,
             }
             .abi_encode_sequence()
         );
+    }
+
+    #[tokio::test]
+    async fn test_event_stream() {
+        let anvil = Anvil::new().spawn();
+        let wallet = anvil.wallet().unwrap();
+        let provider = ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_http(anvil.endpoint_url());
+        let pubsub_provider = ProviderBuilder::new()
+            .connect_pubsub_with(WsConnect::new(anvil.ws_endpoint_url()))
+            .await
+            .unwrap();
+        assert_eq!(
+            pubsub_provider.get_chain_id().await.unwrap(),
+            provider.get_chain_id().await.unwrap()
+        );
+
+        let manager = provider.default_signer_address();
+        let km_addr = deploy_key_manager_contract(&provider, manager)
+            .await
+            .unwrap();
+        let contract = KeyManager::new(km_addr, &provider);
+
+        // setup event stream
+        let filter = Filter::new()
+            .address(km_addr)
+            .event(KeyManager::CommitteeCreated::SIGNATURE)
+            .from_block(BlockNumberOrTag::Latest);
+        let mut events = pubsub_provider
+            .subscribe_logs(&filter)
+            .await
+            .unwrap()
+            .into_stream();
+
+        // register some committees on the contract, which emit events
+        let rng = &mut rand::rng();
+        let c0_timestamp = rng.random::<u64>();
+        for i in 0..5 {
+            let members = (0..5)
+                .map(|_| CommitteeMemberSol::random())
+                .collect::<Vec<_>>();
+            let timestamp = c0_timestamp + 1000 * i;
+
+            let _tx_receipt = contract
+                .setNextCommittee(timestamp, members.clone())
+                .send()
+                .await
+                .unwrap()
+                .get_receipt()
+                .await
+                .unwrap();
+
+            // Read the corresponding event
+            let log = events.next().await.unwrap();
+            let typed_log = log.log_decode_validate::<CommitteeCreated>().unwrap();
+            assert_eq!(typed_log.data().id, i);
+        }
     }
 }

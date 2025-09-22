@@ -1,20 +1,18 @@
 use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
 
 use ::metrics::prometheus::PrometheusMetrics;
-use alloy::providers::{Provider, ProviderBuilder};
 use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{Committee, CommitteeId, Keypair, x25519};
+use multisig::{CommitteeId, Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
     rbc::{Rbc, RbcConfig, RbcMetrics},
-    types::{Action, HasTime, Timestamp, UNKNOWN_COMMITTEE_ID},
+    types::{Action, HasTime, Timestamp},
 };
 use serde::{Deserialize, Serialize};
-use timeboost::config::NodeConfig;
-use timeboost_contract::{CommitteeMemberSol, KeyManager};
+use timeboost::{committee::CommitteeInfo, config::NodeConfig};
 use timeboost_utils::types::logging;
 use tokio::{select, signal, time::sleep};
 use tracing::{error, info};
@@ -91,40 +89,20 @@ async fn main() -> Result<()> {
     let dh_keypair = x25519::Keypair::from(config.keys.dh.secret.clone());
 
     // syncing with contract to get peers keys and network addresses
-    let provider = ProviderBuilder::new().connect_http(config.chain.parent.rpc_url);
-    assert_eq!(
-        provider.get_chain_id().await?,
-        config.chain.parent.id,
-        "Parent chain RPC has mismatched chain_id"
-    );
-
-    let contract = KeyManager::new(config.chain.parent.key_manager_contract, &provider);
-    let members: Vec<CommitteeMemberSol> = contract
-        .getCommitteeById(cli.committee_id.into())
-        .call()
-        .await?
-        .members;
+    let comm_info = CommitteeInfo::fetch(
+        config.chain.parent.rpc_url,
+        config.chain.parent.key_manager_contract,
+        cli.committee_id,
+    )
+    .await?;
     info!(label = %config.keys.signing.public, committee_id = %cli.committee_id, "committee info synced");
-
-    let peer_hosts_and_keys = members
-        .iter()
-        .map(|peer| {
-            let sig_key = multisig::PublicKey::try_from(peer.sigKey.as_ref())
-                .expect("Failed to parse sigKey");
-            let dh_key =
-                x25519::PublicKey::try_from(peer.dhKey.as_ref()).expect("Failed to parse dhKey");
-            let sailfish_address = cliquenet::Address::try_from(peer.networkAddress.as_ref())
-                .expect("Failed to parse networkAddress");
-            (sig_key, dh_key, sailfish_address)
-        })
-        .collect::<Vec<_>>();
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());
     let net_metrics = NetworkMetrics::new(
         "sailfish",
         prom.as_ref(),
-        peer_hosts_and_keys.iter().map(|(k, ..)| *k),
+        comm_info.signing_keys().iter().cloned(),
     );
     let rbc_metrics = RbcMetrics::new(prom.as_ref());
     let network = Network::create(
@@ -132,19 +110,12 @@ async fn main() -> Result<()> {
         config.net.public.address.clone(),
         signing_keypair.public_key(),
         dh_keypair.clone(),
-        peer_hosts_and_keys.clone(),
+        comm_info.address_info(),
         net_metrics,
     )
     .await?;
 
-    let committee = Committee::new(
-        UNKNOWN_COMMITTEE_ID,
-        peer_hosts_and_keys
-            .iter()
-            .map(|b| b.0)
-            .enumerate()
-            .map(|(i, key)| (i as u8, key)),
-    );
+    let committee = comm_info.committee();
 
     // If the stamp file exists we need to recover from a previous run.
     let recover = if cli.ignore_stamp {

@@ -114,7 +114,7 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
     - uses: actions/checkout@v5
       with:
@@ -141,6 +141,8 @@ jobs:
       run: just run_sailfish_demo
     - name: Test with block-maker
       run: just test-all
+    - name: Test dynamic committee change
+      run: just test-dyn-comm
 
   contracts:
     runs-on: ubuntu-latest

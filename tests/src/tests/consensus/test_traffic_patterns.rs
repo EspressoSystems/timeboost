@@ -139,18 +139,18 @@ fn delay_vertices_to_leader() {
             .with(edges("E", all)),
         Rule::new("trigger timeout of leader vertex")
             .precondition(|sim| {
-                sim.round() == Some(1) && sim.leader(1) == Some("E") && sim.leader(2) == Some("B")
+                sim.round() == Some(1) && sim.leader(1) == Some("B") && sim.leader(2) == Some("D")
             })
             .plus(edge("A", "A"))
             .plus(edge("A", "B").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
             .plus(edge("A", "C"))
             .plus(edge("A", "D"))
             .plus(edge("A", "E"))
-            .plus(edge("B", "A"))
-            .plus(edge("B", "B").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
-            .plus(edge("B", "C"))
-            .plus(edge("B", "D"))
-            .plus(edge("B", "E"))
+            .plus(edge("B", "A").delay(15))
+            .plus(edge("B", "B").delay(15))
+            .plus(edge("B", "C").delay(15))
+            .plus(edge("B", "D").delay(15))
+            .plus(edge("B", "E").delay(15))
             .plus(edge("C", "A"))
             .plus(edge("C", "B").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
             .plus(edge("C", "C"))
@@ -161,11 +161,11 @@ fn delay_vertices_to_leader() {
             .plus(edge("D", "C"))
             .plus(edge("D", "D"))
             .plus(edge("D", "E"))
-            .plus(edge("E", "A").delay(15))
-            .plus(edge("E", "B").delay(15))
-            .plus(edge("E", "C").delay(15))
-            .plus(edge("E", "D").delay(15))
-            .plus(edge("E", "E").delay(15)),
+            .plus(edge("E", "A").delay_fn(|m| if m.is_vertex() { 15 } else { 0 }))
+            .plus(edge("E", "B"))
+            .plus(edge("E", "C"))
+            .plus(edge("E", "D"))
+            .plus(edge("E", "E")),
     ]);
     sim.goto(50);
 

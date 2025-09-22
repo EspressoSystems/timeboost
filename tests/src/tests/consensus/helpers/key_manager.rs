@@ -4,12 +4,13 @@ use committable::Committable;
 use multisig::{
     Certificate, Committee, Envelope, Keypair, PublicKey, Signed, Validated, VoteAccumulator,
 };
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use sailfish::consensus::ConsensusMetrics;
 use sailfish::types::CommitteeVec;
 use sailfish::types::{
     Evidence, Round, RoundNumber, Timeout, TimeoutMessage, UNKNOWN_COMMITTEE_ID,
 };
-use timeboost_utils::unsafe_zero_keypair;
 
 use super::node_instrument::TestNodeInstrument;
 use crate::prelude::*;
@@ -24,14 +25,21 @@ pub struct KeyManager {
 /// Helper for all the keys in a committeee for testing purposes.
 impl KeyManager {
     pub(crate) fn new(num_nodes: u8) -> Self {
-        let key_pairs = (0..num_nodes).map(|i| (i, unsafe_zero_keypair(i as u64)));
+        let key_pairs = (0..num_nodes)
+            .map(|i| {
+                (i, {
+                    let mut g = StdRng::seed_from_u64(i.into());
+                    Keypair::generate_with_rng(&mut g)
+                })
+            })
+            .collect::<BTreeMap<_, _>>();
         let committee = Committee::new(
             UNKNOWN_COMMITTEE_ID,
-            key_pairs.clone().map(|(i, k)| (i, k.public_key())),
+            key_pairs.iter().map(|(i, k)| (*i, k.public_key())),
         );
         let cv = CommitteeVec::new(committee.clone());
         Self {
-            keys: key_pairs.collect(),
+            keys: key_pairs,
             committee,
             committees: cv,
         }
