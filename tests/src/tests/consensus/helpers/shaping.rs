@@ -308,7 +308,8 @@ impl Simulator {
                 for (b, s) in name.as_bytes().iter().zip(seed.iter_mut()) {
                     *s = *b
                 }
-                (name, Keypair::from_seed(seed))
+                let mut g = rand::rngs::StdRng::from_seed(seed);
+                (name, Keypair::generate_with_rng(&mut g))
             })
             .collect();
 

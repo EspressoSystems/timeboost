@@ -11,8 +11,10 @@ use std::fmt;
 
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use minicbor::{CborLen, Decode, Encode};
-use secp256k1::rand::Rng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+
+pub use rand;
 
 pub use cert::Certificate;
 pub use committee::{Committee, CommitteeId};
@@ -135,19 +137,6 @@ impl Keypair {
         Self {
             sk: SecretKey { key: sk },
             pk: PublicKey { key: pk },
-        }
-    }
-
-    /// Generate keypair from a seed.
-    pub fn from_seed(seed: [u8; 32]) -> Self {
-        loop {
-            if let Ok(sk) = secp256k1::SecretKey::from_byte_array(seed) {
-                let pk = sk.public_key(secp256k1::SECP256K1);
-                return Self {
-                    sk: SecretKey { key: sk },
-                    pk: PublicKey { key: pk },
-                };
-            }
         }
     }
 

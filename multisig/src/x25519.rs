@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use ed25519_compact::x25519;
-use secp256k1::rand::Rng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use super::{InvalidKeypair, InvalidPublicKey, InvalidSecretKey};
@@ -42,14 +42,8 @@ impl Keypair {
         Ok(Self { pair })
     }
 
-    // note: `ed25519_compat` crate doesn't offer or re-export anything from `rand`,
-    // thus we use `Rng` re-exported from `secp256k1` instead for convenience
     pub fn generate_with_rng<R: Rng>(rng: &mut R) -> Result<Self, InvalidKeypair> {
         let seed: [u8; 32] = rng.random();
-        Self::from_seed(seed)
-    }
-
-    pub fn from_seed(seed: [u8; 32]) -> Result<Self, InvalidKeypair> {
         let sk = x25519::SecretKey::new(seed);
         let Ok(pk) = sk.recover_public_key() else {
             return Err(InvalidKeypair(()));
