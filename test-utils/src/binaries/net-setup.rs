@@ -57,7 +57,19 @@ fn main() -> Result<()> {
                     "-s", &nat.cidr.to_string(),
                     "-o", &nat.device,
                     "-j", "MASQUERADE"
-                ])?
+                ])?;
+                run_command(TRACE, ["iptables",
+                    "-I", "FORWARD",
+                    "-i", &nat.device,
+                    "-o", "bridge",
+                    "-j", "ACCEPT"
+                ])?;
+                run_command(TRACE, ["iptables",
+                    "-I", "FORWARD",
+                    "-i", "bridge",
+                    "-o", &nat.device,
+                    "-j", "ACCEPT"
+                ])?;
             }
         }
         Command::Delete { config } => {
@@ -71,10 +83,28 @@ fn main() -> Result<()> {
                 }
                 dev.delete()?;
             }
-            b.delete()?;
             if let Some(nat) = c.nat {
-                run_command(TRACE, ["iptables", "-t", &nat.table, "-F"])?
+                run_command(TRACE, ["iptables",
+                    "-t", &nat.table,
+                    "-D", "POSTROUTING",
+                    "-s", &nat.cidr.to_string(),
+                    "-o", &nat.device,
+                    "-j", "MASQUERADE"
+                ])?;
+                run_command(TRACE, ["iptables",
+                    "-D", "FORWARD",
+                    "-i", &nat.device,
+                    "-o", "bridge",
+                    "-j", "ACCEPT"
+                ])?;
+                run_command(TRACE, ["iptables",
+                    "-D", "FORWARD",
+                    "-i", "bridge",
+                    "-o", &nat.device,
+                    "-j", "ACCEPT"
+                ])?;
             }
+            b.delete()?
         }
     }
     Ok(())
