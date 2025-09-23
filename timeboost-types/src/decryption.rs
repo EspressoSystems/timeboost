@@ -131,7 +131,7 @@ impl ThresholdKey {
 
 /// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
 /// that allows asynchronous notification when the key is set.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ThresholdKeyCell {
     inner: Arc<ThresholdKeyCellInner>,
 }
@@ -171,14 +171,6 @@ impl ThresholdKeyCell {
                 return k;
             }
             fut.await;
-        }
-    }
-}
-
-impl Clone for ThresholdKeyCell {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
         }
     }
 }
