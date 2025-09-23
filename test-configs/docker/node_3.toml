@@ -6,31 +6,32 @@ http-api = "172.20.0.5:8004"
 
 [net.internal]
 address = "172.20.0.5:8003"
+nitro = "172.20.0.12:55000"
 
 [keys.signing]
-secret = "CUpkbkn8bix7ZrbztPKJwu66MRpJrc1Wr2JfdrhetASk"
-public = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
+secret = "EpXe2EVVhzTXJhHhppiAwnVZrDkUqkBXd1Wsnn8BewGx"
+public = "mnMw9aV8hRuZJJfXw24X9xQkMNRm29F69KQkZdFCAWRm"
 
 [keys.dh]
-secret = "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T"
-public = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
+secret = "A9wk8qJGuk9nLsmAKyKwZitFxH6F1MD4rrttpG66rrxZ"
+public = "FgJ5RWL769YBTT4eNimJp5dfAqLshrUAqdBCCZtgcrbm"
 
 [keys.dkg]
-secret = "7vWcVJDAhfSvmtm1L7KZvoD9agx6hyy9FvA75xWpjxK7"
-public = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+secret = "A5LfoCff3jSknLzFhwDQNqUqc5KTUpigiTzDTbwuki5u"
+public = "5yRtZSeQU4f16oHxkJbFph9bcbVQ1yoy7fx2jiXnDyBkCfZYfRKqRVRH6ps83izUcw"
 
 [chain]
 namespace = 10101
 
 [chain.parent]
 id = 31337
-rpc-url = "http://127.0.0.1:8545/"
-ws-url = "ws://127.0.0.1:8545/"
+rpc-url = "http://172.20.0.11:8545/"
+ws-url = "ws://172.20.0.11:8546/"
 ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
-base-url = "https://query.decaf.testnet.espresso.network/v1/"
-websockets-base-url = "wss://query.decaf.testnet.espresso.network/v1/"
+base-url = "http://172.20.0.14:41000/v1/"
+websockets-base-url = "ws://172.20.0.14:41000/v1/"
 max-transaction-size = 1048576

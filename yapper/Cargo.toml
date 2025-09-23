@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "yapper"
+path = "src/main.rs"
+
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }

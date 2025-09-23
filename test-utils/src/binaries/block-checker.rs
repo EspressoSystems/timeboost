@@ -23,6 +23,9 @@ struct Args {
 
     #[clap(long, short)]
     blocks: usize,
+
+    #[clap(long, default_value_t = true, action = clap::ArgAction::Set)]
+    https_only: bool,
 }
 
 #[tokio::main]
@@ -44,6 +47,7 @@ async fn main() -> Result<()> {
     let node = NodeConfig::read(&args.config).await?;
 
     let conf = Config::builder()
+        .https_only(args.https_only)
         .base_url(node.espresso.base_url)
         .wss_base_url(node.espresso.websockets_base_url)
         .label("block-checker")
