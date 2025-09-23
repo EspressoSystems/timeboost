@@ -142,7 +142,7 @@ done
 if $yapper; then
     cmd=(target/release/yapper
         --tps $tps
-        --keyset-file "$config_dir/committee.toml")
+        --config "$config_dir/committee.toml")
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi

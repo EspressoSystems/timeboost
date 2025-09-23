@@ -10,17 +10,21 @@ default = [
     "dep:bincode",
     "dep:bytes",
     "dep:either",
+    "dep:jiff",
     "dep:multisig",
     "dep:prost",
     "dep:robusta",
     "dep:quick_cache",
     "dep:sailfish",
+    "dep:serde",
     "dep:tokio-util",
+    "dep:toml",
     "dep:tonic",
     "dep:timeboost",
     "dep:timeboost-utils",
     "ports"
 ]
+netns = ["dep:ipnet"]
 ports = ["dep:bincode", "dep:tokio-util"]
 
 [dependencies]
@@ -35,12 +39,16 @@ alloy = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 either = { workspace = true, optional = true }
+ipnet = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 multisig = { path = "../multisig", optional = true }
 prost = { workspace = true, optional = true }
 quick_cache = { workspace = true, optional = true }
 robusta = { path = "../robusta", optional = true }
 sailfish = { path = "../sailfish", optional = true }
+serde = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
 timeboost = { path = "../timeboost", optional = true }
 timeboost-utils = { path = "../timeboost-utils", optional = true }
@@ -69,3 +77,9 @@ path = "src/binaries/run.rs"
 [[bin]]
 name = "run-committee"
 path = "src/binaries/run-committee.rs"
+required-features = ["netns"]
+
+[[bin]]
+name = "net-setup"
+path = "src/binaries/net-setup.rs"
+required-features = ["netns"]

@@ -2,7 +2,7 @@ use core::fmt;
 use std::{path::Path, str::FromStr};
 
 use cliquenet::Address;
-use multisig::x25519;
+use multisig::{CommitteeId, x25519};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::DkgEncKey;
 
@@ -10,6 +10,7 @@ use crate::ConfigError;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitteeConfig {
+    pub id: CommitteeId,
     pub effective_timestamp: jiff::Timestamp,
     #[serde(default)]
     pub members: Vec<CommitteeMember>,

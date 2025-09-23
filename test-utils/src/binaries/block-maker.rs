@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::net::Ipv4Addr;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,7 +26,7 @@ use tracing::error;
 #[derive(Parser, Debug)]
 struct Args {
     #[clap(long, short)]
-    port: u16,
+    bind: SocketAddr,
 
     #[clap(long, short)]
     committee: PathBuf,
@@ -51,10 +51,10 @@ impl Service {
         }
     }
 
-    async fn serve(self, port: u16) -> Result<()> {
+    async fn serve(self, addr: SocketAddr) -> Result<()> {
         tonic::transport::Server::builder()
             .add_service(ForwardApiServer::new(self))
-            .serve((Ipv4Addr::UNSPECIFIED, port).into())
+            .serve(addr)
             .await
             .map_err(From::from)
     }
@@ -126,5 +126,5 @@ async fn main() -> Result<()> {
         let uri: Uri = format!("http://{}", member.internal_api).parse()?;
         spawn(deliver(uri, tx.subscribe()));
     }
-    Service::new(tx).serve(args.port).await
+    Service::new(tx).serve(args.bind).await
 }

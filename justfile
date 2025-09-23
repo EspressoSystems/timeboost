@@ -1,8 +1,7 @@
-set export
-
 export RUSTDOCFLAGS := '-D warnings'
 
-LOG_LEVELS := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
+log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
+run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
 
 ####################
 ###BUILD COMMANDS###
@@ -34,7 +33,7 @@ build-port-alloc:
 
 [private]
 build-test-utils:
-  cargo build --release -p test-utils
+  cargo build --release -p test-utils --all-features
 
 ####################
 ###CHECK COMMANDS###
@@ -159,10 +158,10 @@ test-contracts: build-contracts
   forge test
 
 test_ci *ARGS: build-port-alloc
-  env {{LOG_LEVELS}} NO_COLOR=1 target/release/run \
+  env {{log_levels}} NO_COLOR=1 target/release/run \
     --spawn target/release/port-alloc \
     cargo nextest run -- --workspace {{ARGS}}
-  env {{LOG_LEVELS}} NO_COLOR=1 cargo test --doc {{ARGS}}
+  env {{log_levels}} NO_COLOR=1 cargo test --doc {{ARGS}}
 
 test-individually: build-port-alloc
   @for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do \
@@ -176,30 +175,28 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn target/release/run \
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  target/release/run \
     --verbose \
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
-    --run   "3:scripts/deploy-contract-local" \
-    --spawn "4:target/release/block-maker --port 55000 --committee test-configs/local/committee.toml" \
-    --spawn "4:target/release/yapper --keyset-file test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee --configs test-configs/local/ --committee-id 0 --timeboost target/release/timeboost" \
-    target/release/block-checker -- \
-      --config test-configs/local/node_0.toml \
-      --committee test-configs/local/committee.toml \
-      --committee-id 0 \
-      --blocks 1000
+    --run   "3:scripts/deploy-contract-local test-configs/local/committee.toml http://localhost:8545" \
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
+    --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
+    --spawn "5:target/release/run-committee -c test-configs/local/" \
+    target/release/block-checker -- -c test-configs/local -b 1000
 
 test-dyn-comm: build_release_until build-test-utils
-  env RUST_LOG=sailfish=warn,yapper=error,timeboost=info,info target/release/run \
+  env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
     --verbose \
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
-    --run   "3:scripts/deploy-contract-local" \
-    --spawn "4:target/release/run-committee --configs test-configs/c0/ --committee-id 0 --until 2000" \
+    --run   "3:scripts/deploy-contract-local test-configs/local/committee.toml http://localhost:8545" \
+    --spawn "4:target/release/run-committee -c test-configs/c0/ --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
+                 --committee-id 1 \
                  --public-addr 127.0.0.1:9000 \
                  --internal-addr 127.0.0.1:9003 \
                  --http-api 127.0.0.1:9004 \
@@ -226,11 +223,51 @@ test-dyn-comm: build_release_until build-test-utils
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \
     --spawn "9:target/release/yapper \
-                  --keyset-file test-configs/c1/committee.toml \
+                  --config test-configs/c1/committee.toml \
                   --parent-url http://localhost:8545 \
                   --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     target/release/run-committee -- \
-      --configs test-configs/c1/ \
-      --committee-id 1 \
+      -c test-configs/c1/ \
       --until 800 \
       --required-decrypt-rounds 3 && rm -rf test-configs/c1
+
+[linux]
+forward-ipv4 val: build-test-utils
+    {{run_as_root}} target/release/net-setup system --forward-ipv4 {{val}}
+
+[linux]
+create-net: build-test-utils
+    {{run_as_root}} target/release/net-setup create -c test-configs/linux/net.toml
+
+[linux]
+delete-net: build-test-utils
+    {{run_as_root}} target/release/net-setup delete -c test-configs/linux/net.toml
+
+[linux]
+netsim: build_release build-test-utils
+    #!/usr/bin/env bash
+    set -eo pipefail
+    function run_as_root {
+        if [ "$CI" == "true" ]; then
+            sudo --preserve-env=PATH,HOME,RUST_LOG "$@"
+        else
+            run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG "$@"
+        fi
+    }
+    export RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn
+    run_as_root target/release/run \
+        --verbose \
+        --timeout 120 \
+        --clear-env \
+        --env PATH \
+        --env HOME \
+        --env RUST_LOG \
+        --uid $(id -u) \
+        --gid $(id -g) \
+        --spawn "1:anvil --host 11.0.1.0 --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-contract-local test-configs/linux/committee.toml http://11.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
+        --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
+        target/release/block-checker -- -c test-configs/linux -b 200
