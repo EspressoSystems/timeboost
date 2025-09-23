@@ -1,3 +1,7 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::result::Result as StdResult;
+use std::sync::Arc;
+
 use ark_std::{UniformRand, rand::thread_rng};
 use bon::Builder;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -5,24 +9,20 @@ use cliquenet::overlay::{Data, DataError, NetworkDown, Overlay};
 use cliquenet::{
     AddressableCommittee, MAX_MESSAGE_SIZE, Network, NetworkError, NetworkMetrics, Role,
 };
-use rayon::iter::ParallelIterator;
-use rayon::prelude::*;
-
 use multisig::{Committee, CommitteeId, PublicKey};
 use parking_lot::RwLock;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
 use sailfish::types::{Evidence, Round, RoundNumber};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::result::Result as StdResult;
-use std::sync::Arc;
 use timeboost_config::DECRYPTER_PORT_OFFSET;
 use timeboost_crypto::prelude::{
     DkgDecKey, LabeledDkgDecKey, Plaintext, ThresholdCiphertext, ThresholdDecShare,
     ThresholdEncError, ThresholdEncScheme, ThresholdScheme, Vess, VssSecret,
 };
 use timeboost_types::{
-    AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, InclusionList, KeyStore, KeyStoreVec,
-    ThresholdKey, ThresholdKeyCell,
+    AccumulatorMode, DkgAccumulator, DkgBundle, DkgSubset, DkgSubsetRef, InclusionList, KeyStore,
+    KeyStoreVec, ThresholdKey, ThresholdKeyCell,
 };
 use tokio::spawn;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -728,21 +728,31 @@ impl Worker {
             .ok_or(DecrypterError::NoCommittee(self.current))?;
 
         let prev = (guard.len() == 2).then(|| guard.last().clone());
-
-        subsets.insert(src, res.subset.to_owned());
         let committee = current.committee();
         let threshold: usize = committee.one_honest_threshold().into();
 
-        let mut counts = HashMap::new();
-        for subset in subsets.values() {
-            *counts.entry(subset).or_insert(0) += 1;
+        subsets.insert(src, res.subset);
+
+        let mut subset_groups: HashMap<DkgSubsetRef, Vec<&PublicKey>> = HashMap::new();
+        let mut threshold_subset = None;
+
+        for (pk, subset) in subsets.iter() {
+            let pks = subset_groups.entry(subset.as_ref()).or_default();
+            pks.push(pk);
+
+            if pks.len() >= threshold {
+                threshold_subset = Some((subset.as_ref(), pks[0]));
+                break;
+            }
         }
 
-        if let Some((&subset, _)) = counts.iter().find(|(_, count)| **count >= threshold) {
-            let acc = DkgAccumulator::from_subset(current.clone(), subset.to_owned());
+        if let Some((subset_ref, pk)) = threshold_subset {
+            let subset = subsets.to_owned().remove(pk).expect("subset exists in map");
+            let acc = DkgAccumulator::from_subset(current.clone(), subset);
             let mode = acc.mode().clone();
             self.tracker.insert(committee.id(), acc);
-            let dec_key = subset
+
+            let dec_key = subset_ref
                 .extract_key(current, &self.dkg_sk, prev.as_ref())
                 .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
 
@@ -830,7 +840,7 @@ impl Worker {
         if matches!(mode, AccumulatorMode::Dkg) {
             if let Some(subset) = acc.try_finalize() {
                 let dec_key = subset
-                    .extract_key(&key_store.clone(), &self.dkg_sk, None)
+                    .extract_key(&key_store, &self.dkg_sk, None)
                     .map_err(|e| DecrypterError::Dkg(e.to_string()))?;
                 self.dec_key.set(dec_key);
                 self.state = WorkerState::Running;

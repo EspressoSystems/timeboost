@@ -81,7 +81,7 @@ impl ThresholdKey {
         dealings: I,
     ) -> anyhow::Result<Self>
     where
-        I: ExactSizeIterator<Item = (usize, VssShare, VssCommitment)> + Clone,
+        I: Iterator<Item = (usize, VssShare, VssCommitment)>,
     {
         let old_pp = FeldmanVssPublicParam::from(old_committee);
         let new_pp = FeldmanVssPublicParam::from(new_committee);
@@ -131,10 +131,15 @@ impl ThresholdKey {
 
 /// `DecryptionKeyCell` is a thread-safe container for an optional `DecryptionKey`
 /// that allows asynchronous notification when the key is set.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ThresholdKeyCell {
-    key: Arc<RwLock<Option<ThresholdKey>>>,
-    notify: Arc<Notify>,
+    inner: Arc<ThresholdKeyCellInner>,
+}
+
+#[derive(Debug, Default)]
+struct ThresholdKeyCellInner {
+    key: RwLock<Option<ThresholdKey>>,
+    notify: Notify,
 }
 
 impl ThresholdKeyCell {
@@ -143,12 +148,12 @@ impl ThresholdKeyCell {
     }
 
     pub fn set(&self, key: ThresholdKey) {
-        *self.key.write() = Some(key);
-        self.notify.notify_waiters();
+        *self.inner.key.write() = Some(key);
+        self.inner.notify.notify_waiters();
     }
 
     pub fn get(&self) -> Option<ThresholdKey> {
-        (*self.key.read()).clone()
+        (*self.inner.key.read()).clone()
     }
 
     pub fn enc_key(&self) -> Option<ThresholdEncKey> {
@@ -156,12 +161,12 @@ impl ThresholdKeyCell {
     }
 
     pub fn get_ref(&self) -> impl Deref<Target = Option<ThresholdKey>> {
-        self.key.read()
+        self.inner.key.read()
     }
 
     pub async fn read(&self) -> ThresholdKey {
         loop {
-            let fut = self.notify.notified();
+            let fut = self.inner.notify.notified();
             if let Some(k) = self.get() {
                 return k;
             }
@@ -280,10 +285,10 @@ impl<const N: usize> From<KeyStore> for KeyStoreVec<N> {
 
 /// A `KeyStore` with committee information and public keys used in the DKG or key resharing
 #[derive(Debug, Clone)]
-pub struct KeyStore(Arc<Inner>);
+pub struct KeyStore(Arc<KeyStoreInner>);
 
 #[derive(Debug)]
-struct Inner {
+struct KeyStoreInner {
     committee: Committee,
     keys: BTreeMap<KeyId, DkgEncKey>,
 }
@@ -294,7 +299,7 @@ impl KeyStore {
         I: IntoIterator<Item = (T, DkgEncKey)>,
         T: Into<KeyId>,
     {
-        let this = Self(Arc::new(Inner {
+        let this = Self(Arc::new(KeyStoreInner {
             committee: c,
             keys: keys.into_iter().map(|(i, k)| (i.into(), k)).collect(),
         }));
@@ -446,20 +451,19 @@ impl DkgAccumulator {
     }
 
     /// Try to finalize the accumulator into a subset if enough bundles are collected.
-    pub fn try_finalize(&mut self) -> Option<DkgSubset> {
+    /// Returns a reference to the internal data to avoid cloning the bundles.
+    pub fn try_finalize(&self) -> Option<DkgSubsetRef<'_>> {
         if self.complete {
             let combkey = match &self.mode {
                 AccumulatorMode::Dkg => None,
                 AccumulatorMode::Resharing(combkey) => Some(combkey.clone()),
             };
 
-            let subset = DkgSubset {
+            Some(DkgSubsetRef {
                 committee_id: self.committee().id(),
-                bundles: self.bundles.clone(),
+                bundles: &self.bundles,
                 combkey,
-            };
-
-            Some(subset)
+            })
         } else {
             None
         }
@@ -485,6 +489,14 @@ impl DkgAccumulator {
 pub struct DkgSubset {
     committee_id: CommitteeId,
     bundles: Vec<DkgBundle>,
+    combkey: Option<ThresholdCombKey>,
+}
+
+/// A reference-based version of DkgSubset to avoid cloning bundles.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DkgSubsetRef<'a> {
+    committee_id: CommitteeId,
+    bundles: &'a [DkgBundle],
     combkey: Option<ThresholdCombKey>,
 }
 
@@ -536,6 +548,27 @@ impl DkgSubset {
         self.combkey.is_some()
     }
 
+    /// Convert this DkgSubset to a DkgSubsetRef.
+    pub fn as_ref(&self) -> DkgSubsetRef<'_> {
+        DkgSubsetRef {
+            committee_id: self.committee_id,
+            bundles: &self.bundles,
+            combkey: self.combkey.as_ref().cloned(),
+        }
+    }
+
+    /// Extract the new threshold decryption key from the subset.
+    pub fn extract_key(
+        &self,
+        curr: &KeyStore,
+        dkg_sk: &LabeledDkgDecKey,
+        prev: Option<&KeyStore>,
+    ) -> anyhow::Result<ThresholdKey> {
+        self.as_ref().extract_key(curr, dkg_sk, prev)
+    }
+}
+
+impl<'a> DkgSubsetRef<'a> {
     /// Extract the new threshold decryption key from the subset.
     pub fn extract_key(
         &self,
@@ -547,7 +580,7 @@ impl DkgSubset {
 
         match &self.combkey {
             None => {
-                let mut dealings_iter = ResultIter::new(self.bundles().iter().map(|b| {
+                let mut dealings_iter = ResultIter::new(self.bundles.iter().map(|b| {
                     vess.decrypt_share(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD)
                         .map(|s| (s, b.comm().clone()))
                 }));
@@ -559,38 +592,28 @@ impl DkgSubset {
                 )?;
 
                 dealings_iter.result()?;
-
                 Ok(dec_key)
             }
             Some(combkey) => {
-                let Some(prev) = prev else {
-                    return Err(anyhow!("previous key store missing"));
-                };
+                let prev = prev.ok_or_else(|| anyhow!("previous key store missing"))?;
+                let mut dealings_iter = ResultIter::new(self.bundles.iter().map(|b| {
+                    let node_idx = b.origin().0.into();
+                    let pub_share = combkey
+                        .get_pub_share(node_idx)
+                        .ok_or(VessError::FailedVerification)?;
+                    vess.decrypt_reshare(curr.committee(), dkg_sk, b.vess_ct(), DKG_AAD, *pub_share)
+                        .map(|s| (node_idx, s, b.comm().clone()))
+                }));
 
-                let dealings: Vec<_> = self
-                    .bundles()
-                    .iter()
-                    .map(|b| {
-                        let node_idx = b.origin().0.into();
-                        let pub_share = combkey
-                            .get_pub_share(node_idx)
-                            .ok_or(VessError::FailedVerification)?;
-                        let s = vess.decrypt_reshare(
-                            curr.committee(),
-                            dkg_sk,
-                            b.vess_ct(),
-                            DKG_AAD,
-                            *pub_share,
-                        )?;
-                        Ok((node_idx, s, b.comm().clone()))
-                    })
-                    .collect::<Result<Vec<_>, VessError>>()?;
-                ThresholdKey::from_resharing(
+                let dec_key = ThresholdKey::from_resharing(
                     prev.committee(),
                     curr.committee(),
                     dkg_sk.node_idx(),
-                    dealings.into_iter(),
-                )
+                    &mut dealings_iter,
+                )?;
+
+                dealings_iter.result()?;
+                Ok(dec_key)
             }
         }
     }
