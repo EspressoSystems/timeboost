@@ -2,41 +2,41 @@ id = 0
 effective_timestamp = "2025-09-01T02:00:00Z"
 
 [[members]]
-signing_key = "eiwaGN1NNaQdbnR9FsjKzUeLghQZsTLPjiL4RcQgfLoX"
-dh_key = "AZrLbV37HAGhBWh49JHzup6Wfpu2AAGWGJJnxCDJibiY"
-dkg_enc_key = "7PdmfTS45d2hTXB8NcrTmvDwUVBimpYBbrBaGnu3i5Ne65krVfUpbe7bYRHS3AEg7H"
+signing_key = "hc48HUoRWoSngFzcB1j9NgzWqf1giMRK8ZwUGRbirXDf"
+dh_key = "BUVYasb9FFFHTLAq3GXumRkq2dVkFmtwdJdgrQwpJnRZ"
+dkg_enc_key = "6bJf6og7E5nPsYLrtqYYudoiVhGm88jom4gzp3GouXbeQpAPc8Z8C48fae4NdBDLSz"
 public_address = "172.20.0.2:8000"
 http_api = "172.20.0.2:8004"
 internal_api = "172.20.0.2:8003"
 
 [[members]]
-signing_key = "vGKKAxVNfkSCdn8qh36nXdSZqyhPq644sQBoeZtcEUCR"
-dh_key = "FHTJAk6oyt3jefEp1ZrPEn2MkqRt2LibEFd57AnEUZdb"
-dkg_enc_key = "7p1BtEz7WnFMt6Hr28X3Rngqza6i8hRoswhzZRFd6GzgkspLKHBfDocHP8DwzXiNiZ"
+signing_key = "ra3qtN6y26nFpWSe5MEbyMnvuN54hE82azu5hYg6hxce"
+dh_key = "CpuxwJLuXcFLr6mdpqAp3vRZChtH6xVqxro9YcD9rH9k"
+dkg_enc_key = "6H2qo1piFuhKgW22bgHxcTbzh9JAQocK77KqfsCtaNx8HaL3GYir4QG2tJkfoBKfQU"
 public_address = "172.20.0.3:8000"
 http_api = "172.20.0.3:8004"
 internal_api = "172.20.0.3:8003"
 
 [[members]]
-signing_key = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
-dh_key = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
-dkg_enc_key = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
+signing_key = "iUpUHyk3vongZ1LuVjP3AH5cjHTSiJb9Cgtsi53CwtYM"
+dh_key = "Bt3CVThACdYeSapFZvaa3PpxVHcQ5znWwpEhVENJJrFF"
+dkg_enc_key = "7Jeas4FYbhY2uuzM4HWthHDXRTnsZzqCiykDetVTVjctbkAYZQno7KVvTizPwQ2q2g"
 public_address = "172.20.0.4:8000"
 http_api = "172.20.0.4:8004"
 internal_api = "172.20.0.4:8003"
 
 [[members]]
-signing_key = "v6UBdLT5BvMhLW7iKv7M2xYeaW2SCAsnZ5PiSg6AaKfA"
-dh_key = "Do2GmAexW5MUdD8nToDiBWGbDgk1AwXoxtLTyirDtKQh"
-dkg_enc_key = "7aZBFZUEbXxFH9SiGJeUyjzas4mYJ1R13mTPsPeawVU7JFuocfvX9XsRT8qgr17RCe"
+signing_key = "mnMw9aV8hRuZJJfXw24X9xQkMNRm29F69KQkZdFCAWRm"
+dh_key = "FgJ5RWL769YBTT4eNimJp5dfAqLshrUAqdBCCZtgcrbm"
+dkg_enc_key = "5yRtZSeQU4f16oHxkJbFph9bcbVQ1yoy7fx2jiXnDyBkCfZYfRKqRVRH6ps83izUcw"
 public_address = "172.20.0.5:8000"
 http_api = "172.20.0.5:8004"
 internal_api = "172.20.0.5:8003"
 
 [[members]]
-signing_key = "tV66KknkDH47hRSNzwJtt7Q7EZtxVxQsNnUGoAJdDn6J"
-dh_key = "HXaesvEGFiDgrVTix1fKzSLTarFexTZSJD6ymSrF7vPL"
-dkg_enc_key = "6R69TzDg3jo1MTex9Uter9XQud458YPpSvXirkYdS295PV81CRvgz5jVWQbkCpZnYV"
+signing_key = "ewYeKQvaC3QDjrSC9aS2bQL1CJZNYFBmWmg76TzmGtan"
+dh_key = "D4MUChEMCKo1ZfgkPU12PFe9ZfbiUVqH95Gie3uqEPXC"
+dkg_enc_key = "5xbbdsfegZDv2vpJ2CrhTiF1EbfsMfB9mkmsATkaxhkXQdnwu5g2AuLUba4THigwMz"
 public_address = "172.20.0.6:8000"
 http_api = "172.20.0.6:8004"
 internal_api = "172.20.0.6:8003"
