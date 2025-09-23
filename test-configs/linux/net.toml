@@ -1,5 +1,4 @@
 [nat]
-table  = "nat"
 device = "eth0"
 cidr   = "11.0.0.0/8"
 

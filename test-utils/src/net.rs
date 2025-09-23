@@ -30,7 +30,6 @@ pub struct DeviceConfig {
 
 #[derive(Deserialize)]
 pub struct NatConfig {
-    pub table: String,
     pub device: String,
     pub cidr: Ipv4Net,
 }

@@ -10909,7 +10909,7 @@ dependencies = [
  "timeboost-utils",
  "tokio",
  "tokio-util",
- "toml 0.9.5",
+ "toml 0.9.7",
  "tonic 0.14.2",
  "tracing",
 ]
