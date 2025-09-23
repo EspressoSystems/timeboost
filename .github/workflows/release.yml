@@ -24,6 +24,10 @@ jobs:
         with:
           toolchain: stable
           override: true
+
+      - name: Install rustfmt for nightly
+        run: rustup component add --toolchain nightly rustfmt
+        
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
