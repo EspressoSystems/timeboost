@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use multisig::PublicKey;
+use multisig::{Keypair, PublicKey};
 use sailfish::types::{Evidence, RoundNumber};
 use timeboost_utils::types::logging;
-use timeboost_utils::unsafe_zero_keypair;
 
 use crate::prelude::*;
 use crate::tests::consensus::helpers::node_instrument::TestNodeInstrument;
@@ -163,7 +162,6 @@ async fn test_invalid_vertex_signatures() {
     logging::init_logging();
 
     let num_nodes = 5;
-    let invalid_node_id = num_nodes + 1;
 
     let (nodes, manager) = make_consensus_nodes(num_nodes);
 
@@ -173,7 +171,7 @@ async fn test_invalid_vertex_signatures() {
         move |msg: &Message, _node_handle: &mut TestNodeInstrument| {
             if let Message::Vertex(_e) = msg {
                 // generate keys for invalid node for a node one not in stake table
-                let invalid_kpair = unsafe_zero_keypair(invalid_node_id);
+                let invalid_kpair = Keypair::generate();
                 // modify current network message with this invalid one
                 return vec![manager.create_vertex_proposal_msg(msg.round().num(), &invalid_kpair)];
             }

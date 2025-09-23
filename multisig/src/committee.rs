@@ -1,4 +1,5 @@
 use std::num::{NonZeroUsize, ParseIntError};
+use std::ops::{Add, Sub};
 use std::{fmt, str::FromStr};
 
 use std::sync::Arc;
@@ -107,6 +108,7 @@ impl Committee {
 #[derive(
     Debug,
     Copy,
+    Default,
     Clone,
     PartialEq,
     Eq,
@@ -161,5 +163,21 @@ impl Committable for CommitteeId {
         RawCommitmentBuilder::new("CommitteeId")
             .u64(self.0)
             .finalize()
+    }
+}
+
+impl Add<u64> for CommitteeId {
+    type Output = Self;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Sub<u64> for CommitteeId {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Self(self.0 - rhs)
     }
 }

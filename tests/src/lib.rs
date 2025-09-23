@@ -1,9 +1,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use multisig::{Committee, Keypair, PublicKey, x25519};
+use rand::{SeedableRng, rngs::StdRng};
 use sailfish_types::UNKNOWN_COMMITTEE_ID;
 use test_utils::ports::alloc_port;
-use timeboost_utils::{unsafe_zero_dh_keypair, unsafe_zero_keypair};
 
 #[cfg(test)]
 mod tests;
@@ -61,10 +61,16 @@ pub struct Group {
 impl Group {
     pub async fn new(size: usize) -> Self {
         let sign_keypairs = (0..size as u64)
-            .map(unsafe_zero_keypair)
+            .map(|i| {
+                let mut g = StdRng::seed_from_u64(i);
+                Keypair::generate_with_rng(&mut g)
+            })
             .collect::<Vec<_>>();
         let dh_keypairs = (0..size as u64)
-            .map(unsafe_zero_dh_keypair)
+            .map(|i| {
+                let mut g = StdRng::seed_from_u64(i);
+                x25519::Keypair::generate_with_rng(&mut g).unwrap()
+            })
             .collect::<Vec<_>>();
         let mut addrs = vec![];
         let mut pubks = vec![];

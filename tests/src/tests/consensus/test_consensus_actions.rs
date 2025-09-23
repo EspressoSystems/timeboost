@@ -108,7 +108,7 @@ async fn test_single_node_timeout_cert() {
     let committee = node_handle.committee().clone();
 
     // Setup expectations
-    let expected_round = RoundNumber::new(4);
+    let expected_round = RoundNumber::new(2);
     let timeout = node_handle.expected_timeout(expected_round);
     let no_vote = node_handle.expected_no_vote(expected_round);
 

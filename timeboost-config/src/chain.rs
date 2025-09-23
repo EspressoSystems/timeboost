@@ -15,6 +15,7 @@ pub struct ChainConfig {
 pub struct ParentChain {
     pub id: u64,
     pub rpc_url: Url,
+    pub ws_url: Url,
     pub ibox_contract: Address,
     pub block_tag: BlockNumberOrTag,
     pub key_manager_contract: Address,
