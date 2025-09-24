@@ -1,0 +1,12 @@
+[Unit]
+Description=Timeboost
+After=network.target
+Requires=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/timeboost --config /etc/timeboost/timeboost.toml --committee-id ${TIMEBOOST_COMMITTEE_ID}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

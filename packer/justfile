@@ -1,0 +1,42 @@
+version         	:= "0.1.0"
+vector-version  	:= "0.50.0"
+overlay-archive 	:= "timeboost-overlay.tar.gz"
+
+init:
+	packer init .
+
+clean:
+	rm -f {{overlay-archive}}
+
+format:
+	packer fmt .
+
+build:
+    cargo build --release --bin timeboost --target x86_64-unknown-linux-gnu
+
+make-overlay:
+    #!/usr/bin/env bash
+    set -e
+    if [[ -f {{overlay-archive}} ]]; then
+        rm {{overlay-archive}}
+    fi
+    dir=$(mktemp -d)
+    cp -R overlay $dir/
+    mkdir -p $dir/overlay/usr/local/bin
+    cp ../target/release/timeboost $dir/overlay/usr/local/bin/timeboost
+    tar czf {{overlay-archive}} -C $dir/overlay/ .
+
+validate:
+	packer validate \
+		--var version={{version}} \
+		--var vector-version={{vector-version}} \
+		--var overlay-archive={{overlay-archive}} \
+		timeboost.pkr.hcl
+
+make-image: validate
+	packer build \
+		--var version={{version}} \
+		--var vector-version={{vector-version}} \
+		--var overlay-archive={{overlay-archive}} \
+		timeboost.pkr.hcl
+
