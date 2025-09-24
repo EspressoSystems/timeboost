@@ -50,6 +50,7 @@ jobs:
       - name: Build AMI
         run: |
           cd packer
+          packer init .
           just build
           just make-overlay
           just make-image
