@@ -31,14 +31,12 @@ rust-version = "1.85.0"
 
 [workspace.dependencies]
 aes-gcm = { version = "0.10.3" }
-alloy-chains = "0.2"
 # derive feature is not exposed via `alloy`, thus has to explicitly declare here
 alloy-rlp = { version = "0.3.12", features = ["derive"] }
 anyhow = "1.0.89"
 arbitrary = { version = "1", features = ["derive"] }
 arbtest = "0.3.2"
 ark-bls12-381 = "0.5"
-ark-bn254 = "0.5"
 ark-ec = "0.5"
 ark-ff = "0.5"
 ark-poly = "0.5"
@@ -99,7 +97,6 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots", "url"] }
 tokio-util = { version = "0.7.15", features = ["compat", "rt"] }
 toml = "0.9"
-toml_edit = "0.22"
 tonic = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
@@ -113,7 +110,6 @@ zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 espresso-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 hotshot-query-service = { git = "https://github.com/EspressoSystems/espresso-network.git" }
-hotshot-types = { git = "https://github.com/EspressoSystems/espresso-network.git" }
 
 [workspace.dependencies.alloy]
 version  = "1.0"

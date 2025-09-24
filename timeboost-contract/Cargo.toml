@@ -16,7 +16,6 @@ path = "src/binaries/register.rs"
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
-bincode = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
