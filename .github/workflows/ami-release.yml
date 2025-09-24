@@ -53,4 +53,4 @@ jobs:
           packer init .
           just build
           just make-overlay
-          just make-image version=${GITHUB_REF_NAME}
+          VERSION=${GITHUB_REF_NAME} just make-image
