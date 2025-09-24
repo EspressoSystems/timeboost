@@ -5,7 +5,7 @@ on:
     types: [published]
 
 jobs:
-  build-and-ami:
+  build-ami:
     runs-on: ubuntu-latest
 
     steps:
@@ -49,6 +49,8 @@ jobs:
 
       - name: Build AMI
         run: |
-          # Use release tag as version
-          just --justfile packer/justfile make-overlay
-          just --justfile packer/justfile make-image
+          cd packer
+          packer init .
+          just build
+          just make-overlay
+          VERSION=${GITHUB_REF_NAME} just make-image
