@@ -11,13 +11,10 @@ anyhow = { workspace = true }
 arbitrary = { workspace = true }
 ark-std = { workspace = true }
 bincode = { workspace = true }
-blake3 = { workspace = true }
-bs58 = { workspace = true }
 bytes = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 ethereum_ssz = { workspace = true }
 futures = { workspace = true }
-multisig = { path = "../multisig" }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

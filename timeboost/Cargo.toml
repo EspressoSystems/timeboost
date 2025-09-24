@@ -19,9 +19,7 @@ until = []
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
-ark-std = { workspace = true }
 axum = { workspace = true }
-bincode = { workspace = true }
 bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
@@ -36,7 +34,6 @@ rand = { workspace = true }
 sailfish = { path = "../sailfish" }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 timeboost-builder = { path = "../timeboost-builder" }
 timeboost-config = { path = "../timeboost-config" }
