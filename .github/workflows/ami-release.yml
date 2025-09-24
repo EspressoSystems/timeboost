@@ -1,0 +1,54 @@
+name: Release Timeboost AMI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-ami:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install nightly rustfmt
+        run: rustup component add --toolchain nightly rustfmt
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+    
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install just
+        uses: taiki-e/install-action@just
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: "1.9.0"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Build AMI
+        run: |
+          # Use release tag as version
+          just --justfile packer/justfile make-overlay
+          just --justfile packer/justfile make-image
