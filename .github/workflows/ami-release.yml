@@ -49,6 +49,7 @@ jobs:
 
       - name: Build AMI
         run: |
-          # Use release tag as version
-          just --justfile packer/justfile make-overlay
-          just --justfile packer/justfile make-image
+          cd packer
+          just build
+          just make-overlay
+          just make-image
