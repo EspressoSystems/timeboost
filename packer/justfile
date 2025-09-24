@@ -1,4 +1,4 @@
-version         	:= "0.1.0"
+version 			:= env("VERSION", "0.1.0")
 vector-version  	:= "0.50.0"
 overlay-archive 	:= "timeboost-overlay.tar.gz"
 
