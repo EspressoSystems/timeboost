@@ -42,8 +42,6 @@ source "amazon-ebs" "al2" {
   }
 
   ssh_username         = "ec2-user"
-  ssh_keypair_name     = "timeboost-eu-central-1"
-  ssh_private_key_file = "~/.ssh/timeboost-eu-central-1.pem"
 }
 
 build {
