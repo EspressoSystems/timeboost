@@ -23,7 +23,7 @@ make-overlay:
     dir=$(mktemp -d)
     cp -R overlay $dir/
     mkdir -p $dir/overlay/usr/local/bin
-    cp ../target/release/timeboost $dir/overlay/usr/local/bin/timeboost
+    cp target/release/timeboost $dir/overlay/usr/local/bin/timeboost
     tar czf {{overlay-archive}} -C $dir/overlay/ .
 
 validate:
