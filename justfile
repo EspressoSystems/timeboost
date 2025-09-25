@@ -89,7 +89,7 @@ run_demo *ARGS:
   scripts/run-timeboost-demo {{ARGS}}
 
 run-sailfish-demo: build-test-utils build_release
-    env RUST_LOG=sailfish=info,timeboost=info,warn \
+    env RUST_LOG=sailfish=info,warn \
     target/release/run --verbose \
         --spawn "1:anvil --port 8545" \
         --run   "2:sleep 3" \
