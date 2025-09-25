@@ -299,7 +299,7 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 // Validate the timeout certificate signatures:
                 if !crt.is_valid_par(c) {
-                    warn!("invalid timeout certiticate");
+                    warn!("invalid timeout certificate");
                     return None;
                 }
 
@@ -316,7 +316,7 @@ impl<T: Committable> Message<T, Unchecked> {
 
                 // Validate the handover certificate signatures:
                 if !crt.is_valid_par(c) {
-                    warn!("invalid handover certiticate");
+                    warn!("invalid handover certificate");
                     return None;
                 }
 
