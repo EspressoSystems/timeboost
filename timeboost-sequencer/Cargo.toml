@@ -8,8 +8,6 @@ rust-version.workspace = true
 [dependencies]
 alloy = { workspace = true }
 ark-std = { workspace = true }
-arrayvec = { workspace = true }
-bimap = { workspace = true }
 bincode = { workspace = true }
 blake3 = { workspace = true }
 bon = { workspace = true }
@@ -31,7 +29,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 ark-std = { workspace = true }
-bs58 = { workspace = true }
 futures = { workspace = true }
 test-utils = { path = "../test-utils", features = ["ports"] }
 timeboost-utils = { path = "../timeboost-utils" }

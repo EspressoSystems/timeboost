@@ -114,11 +114,7 @@ echo "=== Contract deployment completed ==="
 pids=()
 i=0
 for f in "$config_dir"/node_*.toml; do
-    cmd=(target/release/timeboost
-        --committee-id 0
-        --config "$f"
-        --until $rounds
-        --watchdog-timeout 120)
+    cmd=(target/release/timeboost -c "$f" --until "$rounds" --watchdog-timeout 120)
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)
@@ -140,9 +136,7 @@ for f in "$config_dir"/node_*.toml; do
 done
 
 if $yapper; then
-    cmd=(target/release/yapper
-        --tps $tps
-        --config "$config_dir/committee.toml")
+    cmd=(target/release/yapper --tps "$tps" -c "$config_dir/committee.toml")
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi

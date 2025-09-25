@@ -1,3 +1,4 @@
+committee = 0
 stamp = "/tmp/timeboost.1.stamp"
 
 [net.public]

@@ -64,7 +64,7 @@ fix:
 ci_local:
   just build && just lint && just test_ci --release && \
   just run_demo --ignore-stamp --yapper -c test-configs/c0 && \
-  just run_sailfish_demo && just build_docker
+  just run-sailfish-demo && just build_docker
 
 bacon: clippy check fmt
 
@@ -88,8 +88,17 @@ stop_monitoring:
 run_demo *ARGS:
   scripts/run-timeboost-demo {{ARGS}}
 
-run_sailfish_demo *ARGS:
-  scripts/run-sailfish-demo {{ARGS}}
+run-sailfish-demo: build-test-utils build_release
+    env RUST_LOG=sailfish=info,warn \
+    target/release/run --verbose \
+        --spawn "1:anvil --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_0.toml --stamp /tmp/stamp-0.sf --ignore-stamp" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp" \
+        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
 
 run *ARGS:
   cargo run {{ARGS}}
@@ -99,6 +108,7 @@ bench *ARGS:
 
 mkconfig NUM_NODES DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n {{NUM_NODES}} \
+    --committee-id 0 \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "127.0.0.1:8003" \
     --http-api "127.0.0.1:8004" \
@@ -114,22 +124,27 @@ mkconfig NUM_NODES DATETIME *ARGS:
 
 mkconfig_docker DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 5 \
+    --committee-id 0 \
     --public-addr "172.20.0.2:8000" \
     --internal-addr "172.20.0.2:8003" \
     --http-api "172.20.0.2:8004" \
+    --nitro-addr "172.20.0.12:55000" \
     --mode "increment-address" \
     --chain-namespace 10101 \
-    --parent-rpc-url "http://172.20.0.12:8545" \
-    --parent-ws-url "ws://172.20.0.12:8545" \
+    --parent-rpc-url "http://172.20.0.11:8545" \
+    --parent-ws-url "ws://172.20.0.11:8546" \
     --parent-chain-id 31337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
+    --espresso-base-url "http://172.20.0.14:41000/v1/" \
+    --espresso-websocket-url "ws://172.20.0.14:41000/v1/" \
     --output "test-configs/docker" {{ARGS}}
 
 mkconfig_nitro DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 2 \
+    --committee-id 0 \
     --public-addr "127.0.0.1:8000" \
     --internal-addr "0.0.0.0:8003" \
     --http-api "127.0.0.1:8004" \
@@ -181,7 +196,7 @@ test-all: build_release build-test-utils
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
-    --run   "3:scripts/deploy-contract-local test-configs/local/committee.toml http://localhost:8545" \
+    --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
     --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
     --spawn "5:target/release/run-committee -c test-configs/local/" \
@@ -193,7 +208,7 @@ test-dyn-comm: build_release_until build-test-utils
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
-    --run   "3:scripts/deploy-contract-local test-configs/local/committee.toml http://localhost:8545" \
+    --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/run-committee -c test-configs/c0/ --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
@@ -266,7 +281,7 @@ netsim: build_release build-test-utils
         --gid $(id -g) \
         --spawn "1:anvil --host 11.0.1.0 --port 8545" \
         --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract-local test-configs/linux/committee.toml http://11.0.1.0:8545" \
+        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml -u http://11.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
         --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
         --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \

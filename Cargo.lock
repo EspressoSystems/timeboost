@@ -9164,7 +9164,6 @@ dependencies = [
  "espresso-types",
  "futures",
  "hotshot-query-service",
- "hotshot-types",
  "minicbor",
  "multisig",
  "reqwest",
@@ -9470,12 +9469,9 @@ name = "sailfish"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "cliquenet",
  "committable 0.2.4",
- "criterion",
  "futures",
  "multisig",
- "rayon",
  "sailfish-consensus",
  "sailfish-rbc",
  "sailfish-types",
@@ -11173,9 +11169,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "ark-std 0.5.0",
  "axum 0.8.4",
- "bincode 2.0.1",
  "bon",
  "clap",
  "cliquenet",
@@ -11190,7 +11184,6 @@ dependencies = [
  "sailfish",
  "serde",
  "serde_bytes",
- "serde_json",
  "test-utils",
  "thiserror 2.0.16",
  "timeboost-builder",
@@ -11215,27 +11208,22 @@ name = "timeboost-builder"
 version = "0.1.0"
 dependencies = [
  "adapters",
- "bincode 2.0.1",
  "bon",
  "bytes 1.10.1",
  "cliquenet",
  "committable 0.2.4",
- "futures",
  "metrics",
  "minicbor",
  "multisig",
  "parking_lot",
  "rand 0.9.2",
  "robusta",
- "serde",
  "smallvec",
  "thiserror 2.0.16",
  "timeboost-config",
  "timeboost-types",
  "tokio",
- "tokio-util",
  "tracing",
- "tracing-subscriber 0.3.20",
 ]
 
 [[package]]
@@ -11257,7 +11245,6 @@ dependencies = [
  "timeboost-crypto",
  "tokio",
  "toml 0.9.7",
- "tracing",
  "url",
 ]
 
@@ -11267,7 +11254,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "bincode 2.0.1",
  "clap",
  "futures",
  "rand 0.9.2",
@@ -11290,7 +11276,6 @@ dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
  "ark-bls12-381",
- "ark-bn254",
  "ark-ec",
  "ark-ff 0.5.0",
  "ark-poly",
@@ -11299,7 +11284,6 @@ dependencies = [
  "ark-std 0.5.0",
  "bincode 2.0.1",
  "bs58",
- "committable 0.2.4",
  "criterion",
  "derive_more 2.0.1",
  "digest 0.10.7",
@@ -11314,7 +11298,6 @@ dependencies = [
  "sha2 0.10.9",
  "spongefish 0.2.0 (git+https://github.com/arkworks-rs/spongefish.git?rev=e9f7031)",
  "thiserror 2.0.16",
- "tokio",
  "zeroize",
 ]
 
@@ -11334,12 +11317,9 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "ark-std 0.5.0",
- "arrayvec",
- "bimap",
  "bincode 2.0.1",
  "blake3",
  "bon",
- "bs58",
  "bytes 1.10.1",
  "cliquenet",
  "ethereum_ssz",
@@ -11372,10 +11352,8 @@ dependencies = [
  "ark-ec",
  "ark-std 0.5.0",
  "arrayvec",
- "async-trait",
  "bincode 2.0.1",
  "blake3",
- "bon",
  "bytes 1.10.1",
  "committable 0.2.4",
  "ethereum_ssz",
@@ -11389,8 +11367,6 @@ dependencies = [
  "thiserror 2.0.16",
  "timeboost-crypto",
  "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -11402,13 +11378,10 @@ dependencies = [
  "arbitrary",
  "ark-std 0.5.0",
  "bincode 2.0.1",
- "blake3",
- "bs58",
  "bytes 1.10.1",
  "cliquenet",
  "ethereum_ssz",
  "futures",
- "multisig",
  "rand 0.9.2",
  "reqwest",
  "serde",
@@ -13340,7 +13313,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "bincode 2.0.1",
  "bon",
  "clap",
  "cliquenet",

@@ -10,7 +10,6 @@ test = ["sailfish-consensus/test"]
 
 [dependencies]
 arrayvec = { workspace = true }
-cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
 futures = { workspace = true }
 multisig = { path = "../multisig" }
@@ -18,8 +17,4 @@ sailfish-consensus = { path = "../sailfish-consensus" }
 sailfish-rbc = { path = "../sailfish-rbc" }
 sailfish-types = { path = "../sailfish-types" }
 tokio = { workspace = true }
-
-[dev-dependencies]
-criterion = { workspace = true }
-rayon = { workspace = true }
 

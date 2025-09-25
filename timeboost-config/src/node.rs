@@ -7,7 +7,7 @@ use std::{
 use crate::{ChainConfig, ConfigError};
 use anyhow::Result;
 use cliquenet::Address;
-use multisig::x25519;
+use multisig::{CommitteeId, x25519};
 use serde::{Deserialize, Serialize};
 use timeboost_crypto::prelude::{DkgDecKey, DkgEncKey};
 use url::Url;
@@ -17,6 +17,7 @@ pub const CERTIFIER_PORT_OFFSET: u16 = 200;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConfig {
+    pub committee: CommitteeId,
     pub stamp: PathBuf,
     pub net: NodeNet,
     pub keys: NodeKeys,
@@ -92,6 +93,7 @@ impl fmt::Display for NodeConfig {
 #[cfg(test)]
 mod tests {
     const CONFIG: &str = r#"
+committee = 0
 stamp = "/tmp/timeboost.0.stamp"
 
 [net.public]
