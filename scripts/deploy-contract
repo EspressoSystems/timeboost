@@ -56,7 +56,7 @@ deployment_file=$(mktemp -t timeboost-deployment-XXXXX)
 
 # Fund manager account && create deployment file
 cast send --value 1ether -r "$url" --private-key "$faucet_private_key" "$manager_address"
-env RUST_LOG=info target/release/deploy \
+env RUST_LOG=info $deploy_cmd \
     -m "$manager_mnemonic" \
     -i "$manager_account_index" \
     -u "$url" \
@@ -66,7 +66,7 @@ env RUST_LOG=info target/release/deploy \
 km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$deployment_file")
 
 # Update the contract
-env RUST_LOG=info target/release/register \
+env RUST_LOG=info $register_cmd \
     -a new-committee \
     -m "$manager_mnemonic" \
     -i "$manager_account_index" \
