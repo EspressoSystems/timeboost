@@ -1,4 +1,4 @@
-use std::{iter::repeat_with, path::PathBuf, sync::Arc, time::Duration};
+use std::{iter::repeat_with, path::PathBuf, sync::Arc};
 
 use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::{Context, Result};
@@ -14,30 +14,16 @@ use sailfish::{
 use serde::{Deserialize, Serialize};
 use timeboost::{committee::CommitteeInfo, config::NodeConfig};
 use timeboost_utils::types::logging;
-use tokio::{select, signal, time::sleep};
+use tokio::{select, signal};
 use tracing::{error, info};
 
 use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Path to file containing the keyset description.
-    ///
-    /// The file contains backend urls and public key material.
+    /// Path to node configuration.
     #[clap(long, short)]
     config: PathBuf,
-
-    /// How many rounds to run.
-    #[clap(long, default_value_t = 1000)]
-    until: u64,
-
-    /// Max. number of seconds to run.
-    #[clap(long, default_value_t = 30)]
-    timeout: u64,
-
-    /// Backwards compatibility. This allows for a single region to run (i.e. local)
-    #[clap(long, default_value_t = false)]
-    multi_region: bool,
 
     /// Path to a file that this process creates or reads as execution proof.
     #[clap(long)]
@@ -45,6 +31,10 @@ struct Cli {
 
     #[clap(long, default_value_t = false)]
     ignore_stamp: bool,
+
+    /// How many rounds to run.
+    #[clap(long, default_value_t = 1000)]
+    until: u64,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -148,8 +138,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut timeout = Box::pin(sleep(Duration::from_secs(cli.timeout)));
-
     'main: loop {
         select! {
             result = coordinator.next() => {
@@ -170,10 +158,6 @@ async fn main() -> Result<()> {
                         error!(%err, "error getting next actions");
                     },
                 }
-            }
-            _ = &mut timeout => {
-                error!("timeout");
-                break;
             }
             _ = signal::ctrl_c() => {
                 info!("received ctrl-c; shutting down");
