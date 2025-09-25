@@ -88,7 +88,7 @@ stop_monitoring:
 run_demo *ARGS:
   scripts/run-timeboost-demo {{ARGS}}
 
-run-sailfish-demo rounds="300": build-test-utils build_release
+run-sailfish-demo: build-test-utils build_release
     env RUST_LOG=sailfish=info,timeboost=info,warn \
     target/release/run --verbose \
         --spawn "1:anvil --port 8545" \
@@ -98,7 +98,7 @@ run-sailfish-demo rounds="300": build-test-utils build_release
         --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp" \
         --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp" \
         --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp" \
-        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until {{rounds}}
+        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
 
 run *ARGS:
   cargo run {{ARGS}}
