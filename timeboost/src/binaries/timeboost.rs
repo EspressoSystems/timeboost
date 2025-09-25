@@ -22,12 +22,8 @@ struct Cli {
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
-    #[clap(long)]
-    config: PathBuf,
-
-    /// CommitteeId for the committee in which this member belongs to
     #[clap(long, short)]
-    committee_id: CommitteeId,
+    config: PathBuf,
 
     /// Ignore any existing stamp file and start from genesis.
     #[clap(long, default_value_t = false)]
@@ -73,10 +69,15 @@ async fn main() -> Result<()> {
     let comm_info = CommitteeInfo::fetch(
         node_config.chain.parent.rpc_url.clone(),
         node_config.chain.parent.key_manager_contract,
-        cli.committee_id,
+        node_config.committee,
     )
     .await?;
-    info!(label = %sign_keypair.public_key(), committee_id = %cli.committee_id, "committee info synced");
+
+    info!(
+        label        = %sign_keypair.public_key(),
+        committee_id = %node_config.committee,
+        "committee info synced"
+    );
 
     let sailfish_committee = comm_info.sailfish_committee();
     let decrypt_committee = comm_info.decrypt_committee();
@@ -94,12 +95,10 @@ async fn main() -> Result<()> {
 
     let pubkey = sign_keypair.public_key();
 
-    // optionally fetch previous committee info
-    let cid = cli.committee_id;
-    let prev_comm = if cid > CommitteeId::default() {
+    let prev_comm = if node_config.committee > CommitteeId::default() {
         let c = &node_config.chain.parent;
-        let prev_comm =
-            CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, cid - 1).await?;
+        let p = node_config.committee - 1;
+        let prev_comm = CommitteeInfo::fetch(c.rpc_url.clone(), c.key_manager_contract, p).await?;
         Some(prev_comm)
     } else {
         None

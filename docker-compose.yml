@@ -20,7 +20,13 @@ services:
     image: timeboost:latest
     environment:
       - RUST_LOG=debug
-    entrypoint: ["/app/deploy-contract-docker"]
+    entrypoint: [
+      "/app/deploy-contract",
+      "-d", "/app/deploy",
+      "-r", "/app/register",
+      "-c", "committee.toml",
+      "-u", "http://172.20.0.11:8545"
+    ]
     depends_on:
       demo-l1-network:
         condition: service_healthy
@@ -95,7 +101,7 @@ services:
       - "8032:8001"
       - "8062:8002"
       - "8082:8003"
-      - "8102:8004"      
+      - "8102:8004"
       - "8802:8800"
       - "9002:9000"
     depends_on:
@@ -120,7 +126,7 @@ services:
       - "8033:8001"
       - "8063:8002"
       - "8083:8003"
-      - "8103:8004"      
+      - "8103:8004"
       - "8803:8800"
       - "9003:9000"
     depends_on:
@@ -145,7 +151,7 @@ services:
       - "8034:8001"
       - "8064:8002"
       - "8084:8003"
-      - "8104:8004"        
+      - "8104:8004"
       - "8804:8800"
       - "9004:9000"
     depends_on:
@@ -155,7 +161,7 @@ services:
     image: timeboost:latest
     ports:
       - "55000:55000"
-    command: 
+    command:
       [
         "/app/block-maker",
         "--port", "55000",

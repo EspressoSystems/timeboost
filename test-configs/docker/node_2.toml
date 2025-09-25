@@ -1,3 +1,4 @@
+committee = 0
 stamp = "/tmp/timeboost.2.stamp"
 
 [net.public]
@@ -9,16 +10,16 @@ address = "172.20.0.4:8003"
 nitro = "172.20.0.12:55000"
 
 [keys.signing]
-secret = "A93KRMuKoFMGnW7XcPqqgqCprTX4iczCad6mpQXe9L2X"
-public = "iUpUHyk3vongZ1LuVjP3AH5cjHTSiJb9Cgtsi53CwtYM"
+secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
+public = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
 
 [keys.dh]
-secret = "Fn891W26UJphbmMNz757q3zHd7Hf73b79rri5tBNAmqN"
-public = "Bt3CVThACdYeSapFZvaa3PpxVHcQ5znWwpEhVENJJrFF"
+secret = "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg"
+public = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
 
 [keys.dkg]
-secret = "3e1DHq9Zhob58y8ApF9EpSHeB3hvgxEWUY3K6re3HM5y"
-public = "7Jeas4FYbhY2uuzM4HWthHDXRTnsZzqCiykDetVTVjctbkAYZQno7KVvTizPwQ2q2g"
+secret = "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX"
+public = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
 
 [chain]
 namespace = 10101

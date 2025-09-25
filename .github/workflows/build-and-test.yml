@@ -118,7 +118,7 @@ jobs:
     - name: Run tests with late-start node
       run: just run_demo -l --ignore-stamp --yapper -c test-configs/c0
     - name: Run sailfish demo
-      run: just run_sailfish_demo
+      run: just run-sailfish-demo
     - name: Test with block-maker
       run: just test-all
     - name: Test dynamic committee change

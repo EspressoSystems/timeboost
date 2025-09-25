@@ -181,6 +181,7 @@ impl Args {
             };
 
             let config = NodeConfig {
+                committee: self.committee_id,
                 stamp: self.stamp_dir.join(format!("timeboost.{i}.stamp")),
                 net: NodeNet {
                     public: PublicNet {
