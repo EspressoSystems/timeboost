@@ -4,7 +4,7 @@ use ::metrics::prometheus::PrometheusMetrics;
 use anyhow::{Context, Result};
 use cliquenet::{Network, NetworkMetrics, Overlay};
 use committable::{Commitment, Committable, RawCommitmentBuilder};
-use multisig::{CommitteeId, Keypair, x25519};
+use multisig::{Keypair, x25519};
 use sailfish::{
     Coordinator,
     consensus::{Consensus, ConsensusMetrics},
@@ -21,13 +21,10 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// CommitteeId for the committee in which this member belongs to
-    #[clap(long, short)]
-    committee_id: CommitteeId,
     /// Path to file containing the keyset description.
     ///
     /// The file contains backend urls and public key material.
-    #[clap(long)]
+    #[clap(long, short)]
     config: PathBuf,
 
     /// How many rounds to run.
@@ -92,10 +89,15 @@ async fn main() -> Result<()> {
     let comm_info = CommitteeInfo::fetch(
         config.chain.parent.rpc_url,
         config.chain.parent.key_manager_contract,
-        cli.committee_id,
+        config.committee,
     )
     .await?;
-    info!(label = %config.keys.signing.public, committee_id = %cli.committee_id, "committee info synced");
+
+    info!(
+        label        = %config.keys.signing.public,
+        committee_id = %config.committee,
+        "committee info synced"
+    );
 
     let prom = Arc::new(PrometheusMetrics::default());
     let sf_metrics = ConsensusMetrics::new(prom.as_ref());

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+manager_mnemonic="attend year erase basket blind adapt stove broccoli isolate unveil acquire category"
+manager_account_index=0
+manager_address="0x36561082951eed7ffD59cFD82D70570C57072d02"
+faucet_private_key="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+deploy_cmd=target/release/deploy
+register_cmd=target/release/register
+committee=
+url=
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d|--deploy)
+            deploy_cmd="$2"
+            shift 2
+            ;;
+        -r|--register)
+            register_cmd="$2"
+            shift
+            ;;
+        -c|--committee)
+            committee="$2"
+            shift 2
+            ;;
+        -u|--url)
+            url="$2"
+            shift 2
+            ;;
+        *)
+            echo -e "Unknown: $1\n"
+            echo "Usage: $0 [Options] where
+
+Options:
+
+    -d | --deploy <PATH>
+        Path to deploy executable.
+
+    -r | --register <PATH>
+        Path to register executable.
+
+    -c | --committee <PATH>
+        Path to committee configuration.
+
+    -u | --url <URL>
+        Contract URL"
+            exit 1
+            ;;
+    esac
+done
+
+deployment_file=$(mktemp -t timeboost-deployment-XXXXX)
+
+# Fund manager account && create deployment file
+cast send --value 1ether -r "$url" --private-key "$faucet_private_key" "$manager_address"
+env RUST_LOG=info target/release/deploy \
+    -m "$manager_mnemonic" \
+    -i "$manager_account_index" \
+    -u "$url" \
+    -o "$deployment_file"
+
+# Extract the deployed KeyManager address
+km_addr=$(sed -nr 's/^key_manager.*=.*"(.+)"/\1/p' "$deployment_file")
+
+# Update the contract
+env RUST_LOG=info target/release/register \
+    -a new-committee \
+    -m "$manager_mnemonic" \
+    -i "$manager_account_index" \
+    -u "$url" \
+    -k "$km_addr" \
+    -c "$committee"
+
+# Clean up the temporary deployment file
+rm -f "$deployment_file"
