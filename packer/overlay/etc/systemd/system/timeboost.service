@@ -4,7 +4,7 @@ After=network.target
 Requires=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/timeboost --config /etc/timeboost/timeboost.toml --committee-id ${TIMEBOOST_COMMITTEE_ID}
+ExecStart=/usr/local/bin/timeboost --config /etc/timeboost/timeboost.toml
 Restart=always
 RestartSec=5
 
