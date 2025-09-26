@@ -20,6 +20,8 @@ impl CommitteeMemberSol {
             dhKey: Bytes::from(rng.random::<[u8; 32]>()),
             dkgKey: Bytes::from(rng.random::<[u8; 32]>()),
             networkAddress: format!("127.0.0.1:{}", rng.random::<u16>()),
+            batchPosterAddress: format!("127.0.0.1:{}", rng.random::<u16>()),
+            sigKeyAddress: alloy::primitives::Address::default(),
         }
     }
 }
