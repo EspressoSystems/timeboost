@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--register)
             register_cmd="$2"
-            shift
+            shift 2
             ;;
         -c|--committee)
             committee="$2"
