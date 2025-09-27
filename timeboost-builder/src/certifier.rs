@@ -309,7 +309,7 @@ impl Worker {
                         match self.on_next_committee(c).await {
                             Ok(()) => {}
                             Err(CertifierError::End(end)) => return end,
-                            Err(err) => warn!(node = %self.label, %err, "error on use committee")
+                            Err(err) => warn!(node = %self.label, %err, "error on next committee")
                         }
                     Some(Command::UseCommittee(r)) =>
                         match self.on_use_committee(r).await {
