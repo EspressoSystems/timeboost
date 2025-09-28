@@ -21,10 +21,10 @@ services:
     environment:
       - RUST_LOG=debug
     entrypoint: [
-      "/app/deploy-contract",
+      "/app/scripts/deploy-contract",
       "-d", "/app/deploy",
       "-r", "/app/register",
-      "-c", "committee.toml",
+      "-c", "/app/configs/committee.toml",
       "-u", "http://172.20.0.11:8545"
     ]
     depends_on:
@@ -37,15 +37,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee-id", "0",
-        "--config", "node_0.toml",
+        "--config", "/app/configs/node_0.toml",
         "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.2
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
+      - RUST_LOG=timeboost=warn,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=trace
     ports:
       - "8000:8000"
       - "8030:8001"
@@ -62,15 +61,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee-id", "0",
-        "--config", "node_1.toml",
+        "--config", "/app/configs/node_1.toml",
         "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.3
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
+      - RUST_LOG=timeboost=warn,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=trace
     ports:
       - "8001:8000"
       - "8031:8001"
@@ -87,15 +85,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee-id", "0",
-        "--config", "node_2.toml",
+        "--config", "/app/configs/node_2.toml",
         "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.4
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
+      - RUST_LOG=timeboost=warn,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=trace
     ports:
       - "8002:8000"
       - "8032:8001"
@@ -112,15 +109,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee-id", "0",
-        "--config", "node_3.toml",
+        "--config", "/app/configs/node_3.toml",
         "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.5
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,block_checker=info
+      - RUST_LOG=timeboost=warn,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=trace
     ports:
       - "8003:8000"
       - "8033:8001"
@@ -137,15 +133,14 @@ services:
     command:
       [
         "/app/timeboost",
-        "--committee-id", "0",
-        "--config", "node_4.toml",
+        "--config", "/app/configs/node_4.toml",
         "--https-only", "false",
       ]
     networks:
       timeboost:
         ipv4_address: 172.20.0.6
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=info
+      - RUST_LOG=timeboost=warn,sailfish=warn,cliquenet=warn,timeboost-builder=warn,robusta=info,block_checker=trace
     ports:
       - "8004:8000"
       - "8034:8001"
@@ -164,11 +159,11 @@ services:
     command:
       [
         "/app/block-maker",
-        "--port", "55000",
-        "--committee", "committee.toml",
+        "--bind", "172.20.0.12:55000",
+        "--committee", "/app/configs/committee.toml",
       ]
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=debug
     networks:
       timeboost:
         ipv4_address: 172.20.0.12
@@ -177,14 +172,11 @@ services:
     command:
       [
         "/app/block-checker",
-        "--config", "node_0.toml",
-        "--committee", "committee.toml",
-        "--committee-id", "0",
-        "--blocks", "10000",
+        "-c", "/app/configs",
+        "-b", "20000",
         "--https-only", "false",
       ]
     environment:
-      - RUST_BACKTRACE=1
       - RUST_LOG=trace
     networks:
       timeboost:
@@ -197,7 +189,7 @@ services:
     command:
       [
         "/app/yapper",
-        "--keyset-file", "committee.toml",
+        "-c", "/app/configs/committee.toml",
       ]
     environment:
       - RUST_LOG=info
