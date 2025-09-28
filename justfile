@@ -24,6 +24,14 @@ build_release_until:
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
+build_docker_aws:
+  docker build . -f ./docker/timeboost-aws.Dockerfile -t timeboost:latest
+
+clean_docker:
+  docker ps -q | xargs -r docker stop
+  docker compose down --rmi all --volumes --remove-orphans
+  docker system prune -a --volumes --force
+
 build-contracts:
   forge build
 
@@ -72,6 +80,10 @@ bacon: clippy check fmt
 ####RUN COMMANDS####
 ####################
 run_integration: build_docker
+  -docker network create --subnet=172.20.0.0/16 timeboost
+  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+
+run_integration_aws: build_docker_aws
   -docker network create --subnet=172.20.0.0/16 timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
 
