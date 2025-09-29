@@ -45,7 +45,7 @@ ark-serialize = { version = "0.5", features = ["derive"] }
 ark-std = { version = "0.5", default-features = false }
 arrayvec = "0.7.6"
 async-trait = "0.1"
-axum = "0.8.4"
+axum = "0.8.5"
 bimap = "0.6.3"
 bincode = { version = "2", features = ["serde"] }
 blake3 = { version = "1.5", features = ["serde"] }
