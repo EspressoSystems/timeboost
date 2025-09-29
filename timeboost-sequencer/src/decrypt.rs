@@ -427,15 +427,15 @@ impl Drop for Decrypter {
 enum WorkerState {
     /// Obtains the threshold decryption key from DKG bundles.
     ///
-    /// A node can recover its threshold decryption key in two ways:  
+    /// A node can recover its threshold decryption key in two ways:
     /// 1. **Consensus**: by combining DKG bundles extracted directly from candidate lists produced
     ///    by peers.
     /// 2. **Network**: by receiving and combining an agreed-upon subset of DKG bundles from a
     ///    designated set of peers.
     ///
-    /// For the initial DKG, method (1) is used.  
-    /// For resharing, method (2) is used, with the source peers being the previous committee.  
-    /// When catching up—whether during the initial DKG or after resharing—the node also uses  
+    /// For the initial DKG, method (1) is used.
+    /// For resharing, method (2) is used, with the source peers being the previous committee.
+    /// When catching up—whether during the initial DKG or after resharing—the node also uses
     /// method (2), but obtains the bundles from the current committee.
     DkgPending(HashMap<PublicKey, DkgSubset>),
     /// Active mode with decryption key ready.
@@ -448,7 +448,7 @@ impl Default for WorkerState {
     }
 }
 
-/// A `Worker` handles the production, exchange, and combination of decryption shares  
+/// A `Worker` handles the production, exchange, and combination of decryption shares
 /// in coordination with other peers. See [`Decrypter`] for details.
 #[derive(Builder)]
 struct Worker {
@@ -1260,7 +1260,7 @@ impl Worker {
                 NextCommittee::Use(round, Some(Box::new(NextKey::new(new_dkg_sk, new_dec_key))));
             trace!(node = %self.label, %round, "completed key extraction");
         } else {
-            // not in new committee - request DKG subset from current committee
+            // not in old committee - request DKG subset from current committee
             let dest: Vec<_> = old.committee().parties().copied().collect();
             let serialized = serialize(&Protocol::DkgRequest(committee_id))?;
             self.net
@@ -1558,6 +1558,7 @@ mod tests {
         Address, Bundle, ChainId, Epoch, InclusionList, KeyStore, PriorityBundle, SeqNo, Signer,
         ThresholdKeyCell, Timestamp,
     };
+    use tracing::info;
 
     use crate::{
         config::DecrypterConfig,
@@ -1625,10 +1626,10 @@ mod tests {
         "216zC1MgfV54cJJtt3AKdjJHhqfgZLZCmEyCkFN1bPoF",
     ];
 
-    #[test]
     /// Tests the local DKG (Distributed Key Generation) end-to-end flow without networking.
     /// Verifies that committee members can generate threshold decryption keys and perform
     /// threshold encryption/decryption operations.
+    #[test]
     fn test_local_dkg_e2e() {
         logging::init_logging();
         let mut rng = thread_rng();
@@ -1658,7 +1659,7 @@ mod tests {
                     .unwrap()
             })
             .collect();
-        tracing::info!(
+        info!(
             "VESS::encrypt_shares takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1669,7 +1670,7 @@ mod tests {
             vess.verify_shares(&committee, dkg_public_keys.iter(), ct, comm, &dkg_aad)
                 .is_ok()
         }));
-        tracing::info!(
+        info!(
             "VESS::verify takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1701,7 +1702,7 @@ mod tests {
                     .collect()
             })
             .collect();
-        tracing::info!(
+        info!(
             "VESS::decrypt_shares takes {} ms",
             start.elapsed().as_millis() / (COMMITTEE_SIZE * threshold) as u128
         );
@@ -1719,7 +1720,7 @@ mod tests {
                 .expect("threshold key derivation should succeed")
             })
             .collect();
-        tracing::info!(
+        info!(
             "DKG post-processing takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1806,7 +1807,7 @@ mod tests {
                 (i, share)
             })
             .collect();
-        tracing::info!(
+        info!(
             "VESS::encrypt_reshares takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1825,7 +1826,7 @@ mod tests {
             )
             .is_ok()
         }));
-        tracing::info!(
+        info!(
             "VESS::verify_reshares takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1865,7 +1866,7 @@ mod tests {
                     .collect()
             })
             .collect();
-        tracing::info!(
+        info!(
             "VESS::decrypt_reshare takes {} ms",
             start.elapsed().as_millis() / (COMMITTEE_SIZE * threshold) as u128
         );
@@ -1887,7 +1888,7 @@ mod tests {
                 .expect("threshold key derivation should succeed")
             })
             .collect();
-        tracing::info!(
+        info!(
             "Resharing post-processing takes {} ms",
             start.elapsed().as_millis() / COMMITTEE_SIZE as u128
         );
@@ -1949,9 +1950,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     /// Tests integrated DKG to ensure it terminates with consistent public encryption keys
     /// across all committee members in a networked environment.
+    #[tokio::test]
     async fn test_dkg_termination() {
         logging::init_logging();
         let (mut decrypters, setup) = setup(
@@ -1985,29 +1986,29 @@ mod tests {
         }
     }
 
-    #[tokio::test]
     /// Tests the complete DKG and decryption phase end-to-end flow in a networked environment.
     /// Verifies that encrypted transactions can be properly decrypted after DKG completion.
+    #[tokio::test]
     async fn test_dkg_and_decryption_phase_e2e() {
         run_dkg_and_decryption_phase_e2e(false).await;
     }
 
-    #[tokio::test]
     /// Tests the complete DKG and decryption phase end-to-end flow in a networked environment.
     /// Verifies that encrypted transactions can be properly decrypted after DKG completion.
     /// The node that is catching up will not have the dealings locally enqueued but will instead
     /// fetch the dealings from other nodes to obtain the DKG key material.
+    #[tokio::test]
     async fn test_dkg_and_decryption_phase_e2e_with_catchup() {
         run_dkg_and_decryption_phase_e2e(true).await;
     }
 
-    #[tokio::test]
     /// Tests the full spectrum of Decrypter states:
     /// 1. Initial committee completes dkg and decrypts transactions.
     /// 2. NextCommittee and UseCommittee events are triggered adding nodes to the network.
     /// 3. Resharing is done in the background among new/old committee members.
     /// 4. Old committee decrypts its last inclusion list triggering committee switch.
     /// 5. New committee decrypts its first inclusion list using key from resharing.
+    #[tokio::test]
     async fn run_dkg_handover_decryption_phase_e2e() {
         logging::init_logging();
 
@@ -2019,17 +2020,17 @@ mod tests {
             None,
         )
         .await;
-        tracing::info!("COM1 decrypters and setup initialized");
+        info!("COM1 decrypters and setup initialized");
 
         let com1_round = RoundNumber::new(DECRYPTION_ROUND);
 
         enqueue_all_dkg_bundles(&mut com1_decrypters, None).await;
-        tracing::info!("All DKG bundles enqueued for COM1");
+        info!("All DKG bundles enqueued for COM1");
 
         for cell in com1_setup.dec_keys() {
             cell.read().await;
         }
-        tracing::info!("COM1 DKG keys generated and available");
+        info!("COM1 DKG keys generated and available");
 
         let encryption_key = com1_setup.dec_keys()[0]
             .get()
@@ -2044,7 +2045,7 @@ mod tests {
             Some(com1_setup.clone()),
         )
         .await;
-        tracing::info!("COM2 decrypters and setup initialized with previous committee");
+        info!("COM2 decrypters and setup initialized with previous committee");
 
         // trigger NextCommittee event at each decrypter in COM1
         for decrypter in com1_decrypters.iter_mut() {
@@ -2055,7 +2056,7 @@ mod tests {
                 .await
                 .expect("next committee event succeeds");
         }
-        tracing::info!("NextCommittee event triggered for all COM1 decrypters");
+        info!("NextCommittee event triggered for all COM1 decrypters");
 
         let priority_tx_message = b"Priority message for old committee";
         let regular_tx_message = b"Non-priority message for old committee";
@@ -2068,7 +2069,7 @@ mod tests {
             priority_tx_message,
             regular_tx_message,
         );
-        tracing::info!("Encrypted inclusion list created for COM1 round");
+        info!("Encrypted inclusion list created for COM1 round");
 
         // enqueues the same inclusion list to all nodes in COM1
         for decrypter in com1_decrypters.iter_mut() {
@@ -2077,14 +2078,14 @@ mod tests {
                 .await
                 .expect("Inclusion list should be enqueued successfully");
         }
-        tracing::info!("Encrypted inclusion list enqueued to all COM1 decrypters");
+        info!("Encrypted inclusion list enqueued to all COM1 decrypters");
 
         let _ = collect_inclusion_lists(&mut com1_decrypters).await;
-        tracing::info!("Decrypted inclusion lists collected from COM1 decrypters");
+        info!("Decrypted inclusion lists collected from COM1 decrypters");
 
         // enqueue resharing bundles (for COM2) at each decrypter in COM1
         enqueue_all_dkg_bundles(&mut com1_decrypters, Some(com2_setup.key_store().clone())).await;
-        tracing::info!("Resharing bundles enqueued for COM2 at all COM1 decrypters");
+        info!("Resharing bundles enqueued for COM2 at all COM1 decrypters");
 
         // trigger UseCommittee event for COM2
         for decrypter in com2_decrypters.iter_mut() {
@@ -2093,7 +2094,7 @@ mod tests {
                 .await
                 .expect("use committee event succeeds");
         }
-        tracing::info!("UseCommittee event triggered for COM2 decrypters");
+        info!("UseCommittee event triggered for COM2 decrypters");
 
         let priority_tx_message = b"Priority message for new committee";
         let regular_tx_message = b"Non-priority message for new committee";
@@ -2106,7 +2107,7 @@ mod tests {
             priority_tx_message,
             regular_tx_message,
         );
-        tracing::info!("Encrypted inclusion list created for COM2 round");
+        info!("Encrypted inclusion list created for COM2 round");
 
         for new_decrypter in com2_decrypters.iter_mut() {
             new_decrypter
@@ -2114,10 +2115,10 @@ mod tests {
                 .await
                 .expect("Inclusion list should be enqueued successfully");
         }
-        tracing::info!("Encrypted inclusion list enqueued to all COM2 decrypters");
+        info!("Encrypted inclusion list enqueued to all COM2 decrypters");
 
         let decrypted_inclusion_lists = collect_inclusion_lists(&mut com2_decrypters).await;
-        tracing::info!("Decrypted inclusion lists collected from COM2 decrypters");
+        info!("Decrypted inclusion lists collected from COM2 decrypters");
 
         // Verify that all decrypted inclusion lists are correct
         for decrypted_list in decrypted_inclusion_lists {
@@ -2296,7 +2297,7 @@ mod tests {
     /// This simulates gathering the results after decryption processing.
     async fn collect_inclusion_lists(decrypters: &mut [Decrypter]) -> Vec<InclusionList> {
         let mut processed_lists = Vec::with_capacity(decrypters.len());
-        for decrypter in decrypters.iter_mut() {
+        for decrypter in decrypters {
             let processed_list = decrypter
                 .next()
                 .await
@@ -2478,20 +2479,21 @@ mod tests {
 
         let addressable_committee =
             AddressableCommittee::new(committee.clone(), network_peers.clone());
+
         let mut decrypters = Vec::with_capacity(COMMITTEE_SIZE);
         let mut encryption_key_cells = Vec::with_capacity(COMMITTEE_SIZE);
 
         // Create decrypter instances for each committee member
-        for peer_index in 0..network_peers.len() {
-            let signature_key = signature_keys[peer_index].clone();
-            let dh_key = dh_keys[peer_index].clone();
-            let (_, _, network_address) = network_peers[peer_index];
+        for i in 0..network_peers.len() {
+            let signature_key = signature_keys[i].clone();
+            let dh_key = dh_keys[i].clone();
+            let (_, _, network_address) = network_peers[i];
             let encryption_key_cell = ThresholdKeyCell::new();
             let decrypter_config = DecrypterConfig::builder()
                 .label(signature_key.public_key())
                 .address(network_address.into())
                 .dh_keypair(dh_key.into())
-                .dkg_key(dkg_keys[peer_index].clone())
+                .dkg_key(dkg_keys[i].clone())
                 .committee((addressable_committee.clone(), key_store.clone()))
                 .maybe_prev_committee(
                     prev_setup

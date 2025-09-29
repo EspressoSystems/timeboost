@@ -1,19 +1,19 @@
 export RUSTDOCFLAGS := '-D warnings'
 
-log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
+log_levels  := "RUST_LOG=timeboost=debug,timeboost_sequencer::decrypt=trace,sailfish=debug,cliquenet=debug,tests=debug"
 run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
 
-####################
-###BUILD COMMANDS###
-####################
+[private]
+build-port-alloc:
+  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
 
+[private]
+build-test-utils:
+  cargo build --release -p test-utils --all-features
+
+[default]
 build *ARGS:
   cargo build {{ARGS}}
-
-update-submodules:
-  git submodule update --remote --recursive
-  cd timeboost-proto && cargo build
-  cd ../contracts && forge build
 
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
@@ -27,17 +27,6 @@ build_docker:
 build-contracts:
   forge build
 
-[private]
-build-port-alloc:
-  cargo build --release -p test-utils --bin run --bin port-alloc --no-default-features --features ports
-
-[private]
-build-test-utils:
-  cargo build --release -p test-utils --all-features
-
-####################
-###CHECK COMMANDS###
-####################
 clippy:
   cargo clippy --workspace --lib --tests --benches -- -D warnings
 
@@ -68,9 +57,6 @@ ci_local:
 
 bacon: clippy check fmt
 
-####################
-####RUN COMMANDS####
-####################
 run_integration: build_docker
   -docker network create --subnet=172.20.0.0/16 timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
@@ -162,9 +148,6 @@ mkconfig_nitro DATETIME *ARGS:
 verify_blocks *ARGS:
   cargo run --release --bin block-verifier {{ARGS}}
 
-####################
-####TEST COMMANDS###
-####################
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
