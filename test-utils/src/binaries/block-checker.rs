@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
             .zip(start.skip(1))
             .take_while(|(a, b)| **a + 1 == **b)
             .count();
-        info!(blocks = %offset, "validated")
+        info!(blocks = %offset, total = %set.len(), "validated")
     }
 
     Ok(())

@@ -3,17 +3,8 @@ export RUSTDOCFLAGS := '-D warnings'
 log_levels  := "RUST_LOG=timeboost=debug,sailfish=debug,cliquenet=debug,tests=debug"
 run_as_root := if env("CI", "") == "true" { "sudo" } else { "run0" }
 
-####################
-###BUILD COMMANDS###
-####################
-
 build *ARGS:
   cargo build {{ARGS}}
-
-update-submodules:
-  git submodule update --remote --recursive
-  cd timeboost-proto && cargo build
-  cd ../contracts && forge build
 
 build_release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
@@ -35,9 +26,6 @@ build-port-alloc:
 build-test-utils:
   cargo build --release -p test-utils --all-features
 
-####################
-###CHECK COMMANDS###
-####################
 clippy:
   cargo clippy --workspace --lib --tests --benches -- -D warnings
 
@@ -58,19 +46,11 @@ fmt_check:
 
 lint: clippy fmt_check
 
-fix:
-  cargo fix --allow-dirty --allow-staged
-
 ci_local:
   just build && just lint && just test_ci --release && \
   just run_demo --ignore-stamp --yapper -c test-configs/c0 && \
   just run-sailfish-demo && just build_docker
 
-bacon: clippy check fmt
-
-####################
-####RUN COMMANDS####
-####################
 run_integration: build_docker
   -docker network create --subnet=172.20.0.0/16 timeboost
   docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
@@ -162,9 +142,6 @@ mkconfig_nitro DATETIME *ARGS:
 verify_blocks *ARGS:
   cargo run --release --bin block-verifier {{ARGS}}
 
-####################
-####TEST COMMANDS###
-####################
 test *ARGS: build-port-alloc
   target/release/run --spawn target/release/port-alloc cargo nextest run -- {{ARGS}}
   @if [ "{{ARGS}}" == "" ]; then cargo test --doc; fi
@@ -190,7 +167,7 @@ test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
 test-all: build_release build-test-utils
-  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
+  env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,error \
   target/release/run \
     --verbose \
     --timeout 120 \
@@ -199,7 +176,9 @@ test-all: build_release build-test-utils
     --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
     --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee -c test-configs/local/" \
+    --spawn "5:target/release/run-committee \
+        -c test-configs/local/ \
+        -s test-configs/scenarios/rolling-restart.toml" \
     target/release/block-checker -- -c test-configs/local -b 1000
 
 test-dyn-comm: build_release_until build-test-utils
@@ -269,7 +248,7 @@ netsim: build_release build-test-utils
             run0 --setenv=PATH --setenv=HOME --setenv=RUST_LOG "$@"
         fi
     }
-    export RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn
+    export RUST_LOG=sailfish=info,timeboost=warn,cliquenet=warn,timeboost_builder::submit=debug,block_checker=info,error
     run_as_root target/release/run \
         --verbose \
         --timeout 120 \
@@ -284,5 +263,9 @@ netsim: build_release build-test-utils
         --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml -u http://11.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
         --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
-        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
+        --spawn-as-root "5:target/release/run-committee \
+            -u $(id -u) \
+            -g $(id -g) \
+            -c test-configs/linux/ \
+            -s test-configs/scenarios/default.toml" \
         target/release/block-checker -- -c test-configs/linux -b 200

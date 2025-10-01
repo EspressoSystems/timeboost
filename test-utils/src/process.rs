@@ -1,30 +1,98 @@
 use anyhow::{Result, anyhow, bail};
-use std::{ffi::OsStr, iter::once, process::Command};
+use std::{
+    ffi::{OsStr, OsString},
+    iter::once,
+    process::Command,
+};
 
 pub fn run_command<I, S>(trace: bool, it: I) -> Result<()>
 where
     I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
+    S: Into<OsString>,
 {
     let mut args = it.into_iter();
     let exe = args.next().ok_or_else(|| anyhow!("invalid command"))?;
-    let mut cmd = Command::new(exe);
-    for a in args {
-        cmd.arg(a);
+    let mut cmd = Cmd::new(exe);
+    cmd.with_args(args).trace(trace);
+    cmd.execute()
+}
+
+#[derive(Debug, Clone)]
+pub struct Cmd {
+    exe: OsString,
+    args: Vec<OsString>,
+    trace: bool,
+}
+
+impl Cmd {
+    pub fn new<S: Into<OsString>>(exe: S) -> Self {
+        Self {
+            exe: exe.into(),
+            args: Vec::new(),
+            trace: false,
+        }
     }
-    if trace {
-        eprintln!(
-            "> {}",
-            once(cmd.get_program())
-                .chain(cmd.get_args())
-                .map(|os| os.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        );
+
+    pub fn trace(&mut self, v: bool) -> &mut Self {
+        self.trace = v;
+        self
     }
-    let status = cmd.status()?;
-    if !status.success() {
-        bail!("command not successful, status = {status:?}")
+
+    pub fn exe(&self) -> &OsStr {
+        &self.exe
     }
-    Ok(())
+
+    pub fn args(&self) -> &[OsString] {
+        &self.args
+    }
+
+    pub fn with_arg<S: Into<OsString>>(&mut self, a: S) -> &mut Self {
+        self.args.push(a.into());
+        self
+    }
+
+    pub fn with_args<I, S>(&mut self, it: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<OsString>,
+    {
+        self.args.extend(it.into_iter().map(|s| s.into()));
+        self
+    }
+
+    pub fn execute(self) -> Result<()> {
+        let mut cmd = Command::new(self.exe);
+        cmd.args(self.args);
+        if self.trace {
+            eprintln!(
+                "> {}",
+                once(cmd.get_program())
+                    .chain(cmd.get_args())
+                    .map(|os| os.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+        let status = cmd.status()?;
+        if !status.success() {
+            bail!("command not successful, status = {status:?}")
+        }
+        Ok(())
+    }
+}
+
+impl From<Cmd> for std::process::Command {
+    fn from(c: Cmd) -> Self {
+        let mut cmd = std::process::Command::new(c.exe);
+        cmd.args(c.args);
+        cmd
+    }
+}
+
+impl From<Cmd> for tokio::process::Command {
+    fn from(c: Cmd) -> Self {
+        let mut cmd = tokio::process::Command::new(c.exe);
+        cmd.args(c.args);
+        cmd
+    }
 }
