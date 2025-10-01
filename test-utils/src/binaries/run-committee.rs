@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
-use std::process::Command as StdCommand;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 use clap::Parser;
 use test_utils::net::Config;
+use test_utils::process::Cmd;
+use test_utils::scenario::{Action, Scenario};
+use tokio::time::sleep;
 use tokio::{
     fs::{self, read_dir},
     process::Command,
@@ -18,6 +20,9 @@ use tokio_util::task::TaskTracker;
 struct Args {
     #[clap(long, short)]
     configs: PathBuf,
+
+    #[clap(long, short)]
+    scenario: Option<PathBuf>,
 
     #[clap(long, short, default_value = "target/release/timeboost")]
     timeboost: PathBuf,
@@ -66,13 +71,14 @@ async fn main() -> Result<()> {
                 netconf = Some(toml::from_slice(&bytes)?);
             }
             ConfigType::Node(name) => {
-                let mut cmd = StdCommand::new(args.timeboost.as_os_str());
-                cmd.arg("--config").arg(entry.path()).arg("--ignore-stamp");
+                let mut cmd = Cmd::new(&args.timeboost);
+                cmd.with_arg("--config").with_arg(entry.path());
                 if let Some(until) = args.until {
-                    cmd.arg("--until").arg(until.to_string());
+                    cmd.with_arg("--until").with_arg(until.to_string());
                 }
                 if let Some(r) = args.required_decrypt_rounds {
-                    cmd.arg("--required-decrypt-rounds").arg(r.to_string());
+                    cmd.with_arg("--required-decrypt-rounds")
+                        .with_arg(r.to_string());
                 }
                 commands.insert(name.to_string(), cmd);
             }
@@ -85,13 +91,13 @@ async fn main() -> Result<()> {
         ensure!(conf.device.len() == commands.len());
         for d in conf.device {
             let Some(c) = commands.get_mut(&d.node) else {
-                eprintln!("no command for device {} node {}", d.name, d.node);
+                eprintln!("> no command for device {} node {}", d.name, d.node);
                 continue;
             };
-            let mut cmd = StdCommand::new("ip");
-            cmd.args(["netns", "exec", &d.namespace()]);
+            let mut cmd = Cmd::new("ip");
+            cmd.with_args(["netns", "exec", &d.namespace()]);
             if let Some((uid, gid)) = args.uid.zip(args.gid) {
-                cmd.args([
+                cmd.with_args([
                     "setpriv",
                     "--reuid",
                     &uid.to_string(),
@@ -100,18 +106,62 @@ async fn main() -> Result<()> {
                     "--clear-groups",
                 ]);
             }
-            cmd.arg(c.get_program()).args(c.get_args());
+            cmd.with_arg(c.exe()).with_args(c.args());
             *c = cmd;
         }
     }
 
     let tasks = TaskTracker::new();
 
-    for cmd in commands.into_values() {
-        tasks.spawn(async move {
-            let mut child = Command::from(cmd).spawn()?;
-            child.wait().await
-        });
+    if let Some(path) = args.scenario {
+        let bytes = fs::read(path).await?;
+        let scenario: Scenario = toml::from_slice(&bytes)?;
+        let mut nodes = BTreeMap::new();
+        for s in &scenario.steps {
+            if !s.delay.is_zero() {
+                sleep(s.delay.try_into()?).await
+            }
+            eprintln!("> executing scenario action: {}", s.action);
+            match &s.action {
+                Action::Remove { files } => {
+                    for f in files {
+                        if f.is_file() {
+                            eprintln!(">> removing file {f:?}");
+                            fs::remove_file(f).await?
+                        }
+                    }
+                }
+                Action::StartNode { node, .. } => {
+                    let cmd = commands
+                        .get(node)
+                        .cloned()
+                        .ok_or_else(|| anyhow!("{node:?} not found"))?;
+                    nodes.insert(
+                        node,
+                        tasks.spawn(async move {
+                            let mut cmd = Command::from(cmd);
+                            cmd.kill_on_drop(true);
+                            let mut child = cmd.spawn()?;
+                            child.wait().await
+                        }),
+                    );
+                }
+                Action::StopNode { node, .. } => {
+                    let handle = nodes
+                        .remove(node)
+                        .ok_or_else(|| anyhow!("{node:?} not running"))?;
+                    handle.abort();
+                }
+                Action::Exit => return Ok(()),
+            }
+        }
+    } else {
+        for cmd in commands.into_values() {
+            tasks.spawn(async move {
+                let mut child = Command::from(cmd).spawn()?;
+                child.wait().await
+            });
+        }
     }
 
     tasks.close();

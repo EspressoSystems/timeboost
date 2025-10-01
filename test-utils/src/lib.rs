@@ -1,4 +1,5 @@
 pub mod process;
+pub mod scenario;
 
 #[cfg(feature = "ports")]
 pub mod ports;
