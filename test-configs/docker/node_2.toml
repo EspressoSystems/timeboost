@@ -7,7 +7,7 @@ http-api = "172.20.0.4:8004"
 
 [net.internal]
 address = "172.20.0.4:8003"
-nitro = "172.20.0.12:55000"
+nitro = "172.20.0.24:55000"
 
 [keys.signing]
 secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
@@ -22,10 +22,10 @@ secret = "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX"
 public = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
 
 [chain]
-namespace = 10101
+namespace = 412346
 
 [chain.parent]
-id = 31337
+id = 1337
 rpc-url = "http://172.20.0.11:8545/"
 ws-url = "ws://172.20.0.11:8546/"
 ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
