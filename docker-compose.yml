@@ -439,8 +439,6 @@ services:
       - http://172.20.0.22:8547
       - --key-manager-contract
       - 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
-      - --tps
-      - "100"
     volumes:
       - "config:/config"
     environment:
