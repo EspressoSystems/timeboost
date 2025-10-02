@@ -133,5 +133,5 @@
         "vhosts": "*",
         "corsdomain": "*"
     },
-    "log-level": "DEBUG"
+    "log-level": "INFO"
 }
