@@ -1,11 +1,10 @@
-# Builder stage
 FROM rust:bookworm AS builder
 SHELL ["/bin/bash", "-c"]
 
 WORKDIR /app
 
 COPY . .
-RUN apt update && apt-get install -y protobuf-compiler libssl-dev
+RUN apt update && apt-get install -y protobuf-compiler libssl-dev jq
 RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 ENV PATH="/root/.foundry/bin:${PATH}"
 RUN forge --version
@@ -21,13 +20,13 @@ RUN apt update && apt-get install -y libcurl4 openssl
 
 RUN groupadd -r appgroup && useradd -r -g appgroup timeboostuser
 
-# Copy binary
 COPY --from=builder /app/target/release/timeboost .
 COPY --from=builder /app/target/release/yapper .
 COPY --from=builder /app/target/release/register .
 COPY --from=builder /app/target/release/deploy .
 COPY --from=builder /app/target/release/block-maker .
 COPY --from=builder /app/target/release/block-checker .
+COPY --from=builder /app/target/release/mkconfig .
 COPY --from=builder /app/scripts/deploy-contract /app/scripts/deploy-contract
 
 COPY --from=builder /app/test-configs/docker /app/configs
@@ -41,9 +40,10 @@ RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/yapper \
     /app/register \
     /app/deploy \
-    /app/scripts/deploy-contract \
     /app/block-maker \
-    /app/block-checker
+    /app/block-checker \
+    /app/mkconfig \
+    /app/scripts/deploy-contract
 
 USER timeboostuser
 
