@@ -121,7 +121,7 @@ pub fn tps_to_millis<N: Into<u64>>(tps: N) -> u64 {
 }
 
 fn serialize<T: Serialize>(d: &T) -> Result<Bytes, EncodeError> {
-    let mut b = BytesMut::new().writer();
-    bincode::serde::encode_into_std_write(d, &mut b, bincode::config::standard())?;
-    Ok(b.into_inner().freeze())
+    let mut writer = BytesMut::new().writer();
+    bincode::serde::encode_into_std_write(d, &mut writer, bincode::config::standard())?;
+    Ok(writer.into_inner().freeze())
 }
