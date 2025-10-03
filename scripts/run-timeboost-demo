@@ -17,10 +17,10 @@ cleanup() {
 
 trap cleanup EXIT TERM INT
 
-rounds=300
+rounds=30000
 late_start=false
 config_dir=
-tps=1
+tps=5
 ignore_stamp=false
 nitro_url=
 yapper=false
@@ -101,20 +101,20 @@ fi
 RUST_LOG=${RUST_LOG:-}
 
 if [ -z "$RUST_LOG" ]; then
-    RUST_LOG="sailfish=info,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=info,robusta=debug"
+    RUST_LOG="sailfish=error,timeboost=info,sailfish_consensus=warn,cliquenet=warn,sailfish_rbc=error,robusta=error,yapper=info"
 fi
 
 cmd=("test-contract-deploy" "--keep-anvil")
 if [ $nitro_url ]; then
     cmd+=("--nitro-enabled")
 fi
-just "${cmd[@]}"
+# just "${cmd[@]}"
 echo "=== Contract deployment completed ==="
 
 pids=()
 i=0
 for f in "$config_dir"/node_*.toml; do
-    cmd=(target/release/timeboost -c "$f" --until "$rounds" --watchdog-timeout 120)
+    cmd=(target/release/timeboost -c "$f" --until "$rounds" --watchdog-timeout 10000)
 
     if $ignore_stamp; then
         cmd+=(--ignore-stamp)

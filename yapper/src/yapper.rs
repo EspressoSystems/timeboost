@@ -1,13 +1,9 @@
 use std::{str::FromStr, time::Duration};
 
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
-    primitives::{Address, U256, address},
-    providers::{Provider, RootProvider},
-    rpc::types::TransactionRequest,
-    signers::local::PrivateKeySigner,
+    consensus::crypto::secp256k1::public_key_to_address, network::{Ethereum, TransactionBuilder}, primitives::{address, Address, U256}, providers::{Provider, RootProvider}, rpc::types::TransactionRequest, signers::{k256::{ecdsa::VerifyingKey}, local::PrivateKeySigner}
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures::future::join_all;
 use reqwest::{Client, Url};
 use timeboost::{crypto::prelude::ThresholdEncKey, types::BundleVariant};
@@ -15,6 +11,7 @@ use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
 use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
 use tokio::time::interval;
 use tracing::warn;
+use secp256k1::rand::SeedableRng;
 
 use crate::config::YapperConfig;
 
@@ -36,6 +33,12 @@ struct ApiUrls {
     enckey_url: Url,
 }
 
+#[derive(Clone)]
+struct NitroAddress {
+    kp: multisig::Keypair,
+    address: alloy::primitives::Address,
+}
+
 pub(crate) struct Yapper {
     urls: Vec<ApiUrls>,
     client: Client,
@@ -43,6 +46,7 @@ pub(crate) struct Yapper {
     chain_id: u64,
     provider: Option<RootProvider>,
     enc_key: Option<ThresholdEncKey>,
+    addresses: Vec<NitroAddress>,
 }
 
 impl Yapper {
@@ -63,11 +67,26 @@ impl Yapper {
                 enckey_url,
             });
         }
+        
+        
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let provider = if let Some(url) = cfg.nitro_url {
-            Some(RootProvider::<Ethereum>::connect(url.as_str()).await?)
+        
+        let (provider, addresses) = if let Some(url) = cfg.nitro_url {
+            let mut addresses = vec![];
+            let mut s_rng = secp256k1::rand::rngs::StdRng::seed_from_u64(rand::random());
+            for _ in 0..=100 {
+                let kp = multisig::Keypair::generate_with_rng(&mut s_rng);
+                let pub_key = VerifyingKey::from_sec1_bytes(&kp.public_key().to_bytes())?;
+                addresses.push(
+                    NitroAddress {
+                        kp,
+                        address: public_key_to_address(pub_key)
+                    }
+                )
+            }
+            (Some(RootProvider::<Ethereum>::connect(url.as_str()).await?), addresses)
         } else {
-            None
+            (None, vec![])
         };
 
         Ok(Self {
@@ -77,6 +96,7 @@ impl Yapper {
             provider,
             chain_id: cfg.chain_id,
             enc_key: cfg.threshold_enc_key,
+            addresses,
         })
     }
 
@@ -89,10 +109,11 @@ impl Yapper {
             self.urls.iter().map(|url| url.enckey_url.clone()),
         );
 
+        let mut count: u64 = 0;
         loop {
             let b = if let Some(ref p) = self.provider {
                 // For testing just send from the dev account to the validator address
-                let Ok(txn) = Self::prepare_txn(p, self.chain_id).await else {
+                let Ok(txn) = Self::prepare_txn(p, self.chain_id, &self.addresses[count as usize % self.addresses.len()]).await else {
                     warn!("failed to prepare txn");
                     continue;
                 };
@@ -129,25 +150,48 @@ impl Yapper {
                 b
             };
 
-            join_all(self.urls.iter().map(|urls| async {
+            let r = join_all(self.urls.iter().map(|urls| async {
                 self.send_bundle_to_node(&b, &urls.regular_url, &urls.priority_url)
                     .await
             }))
             .await;
+            if r.iter().any(|l| l.is_ok()) {
+                count += 1;
+                if count % 100 == 0 {
+                    tracing::error!("yapper count: {}", count);
+                }
+                
+                if count == 10000 {
+                    tracing::error!("yapper donezel");
+                    return Ok(());
+                }
+            }
 
             interval.tick().await;
         }
     }
 
-    async fn prepare_txn(p: &RootProvider, chain_id: u64) -> Result<TxInfo> {
-        let nonce = p.get_transaction_count(DEV_ACCT_ADDRESS).await?;
+    async fn prepare_txn(p: &RootProvider, chain_id: u64, next_sender: &NitroAddress) -> Result<TxInfo> {
+        let mut value = U256::from(1);
+        let mut to = VALIDATOR_ADDRESS;
+        let mut signer = PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?;
+        let mut from = DEV_ACCT_ADDRESS;
+        let balance: U256 = p.get_balance(next_sender.address).await?;
+        if balance.is_zero() {
+            value = U256::from(99999999999999999 as u64);
+            to = next_sender.address;
+        } else {
+            signer = PrivateKeySigner::from_slice(&next_sender.kp.secret_key().as_slice())?;
+            from = next_sender.address;
+        }
+        let nonce = p.get_transaction_count(from).await?;
         let tx = TransactionRequest::default()
             .with_chain_id(chain_id)
             .with_nonce(nonce)
-            .with_from(DEV_ACCT_ADDRESS)
+            .with_from(from)
             // Just choosing an address that already exists on the chain
-            .with_to(VALIDATOR_ADDRESS)
-            .with_value(U256::from(1));
+            .with_to(to)
+            .with_value(value);
 
         let gas_limit = p
             .estimate_gas(tx)
@@ -162,10 +206,11 @@ impl Yapper {
         Ok(TxInfo {
             chain_id,
             nonce,
-            to: VALIDATOR_ADDRESS,
+            to,
             gas_limit,
             base_fee,
-            signer: PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?,
+            signer,
+            value,
         })
     }
 
@@ -174,7 +219,7 @@ impl Yapper {
         bundle: &BundleVariant,
         regular_url: &Url,
         priority_url: &Url,
-    ) {
+    ) -> Result<()> {
         let result = match bundle {
             BundleVariant::Regular(bundle) => {
                 self.client
@@ -192,7 +237,7 @@ impl Yapper {
             }
             _ => {
                 warn!("Unsupported bundle variant");
-                return;
+                return Err(anyhow!("err"));
             }
         };
 
@@ -200,10 +245,13 @@ impl Yapper {
             Ok(response) => {
                 if !response.status().is_success() {
                     warn!("response status: {}", response.status());
+                    return Err(anyhow!("err"));
                 }
+                return Ok(());
             }
             Err(err) => {
                 warn!(%err, "failed to send bundle");
+                return Err(anyhow!("err"));
             }
         }
     }

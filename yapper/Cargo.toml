@@ -15,7 +15,10 @@ bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 futures = { workspace = true }
+multisig = { path = "../multisig" }
+rand = { workspace = true }
 reqwest = { workspace = true }
+secp256k1 = { workspace = true }
 timeboost = { path = "../timeboost" }
 timeboost-contract = { path = "../timeboost-contract" }
 timeboost-utils = { path = "../timeboost-utils" }

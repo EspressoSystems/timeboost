@@ -1,6 +1,7 @@
 mod conf;
 
 use std::iter::once;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use ::metrics::prometheus::PrometheusMetrics;
@@ -75,7 +76,17 @@ impl Timeboost {
         )
         .await?;
 
-        let (tx, rx) = mpsc::channel(100);
+        let (tx, rx) = mpsc::channel(100_000);
+        // tokio::spawn({
+        //     match rx.recv().await {
+        //         Some(trx) => {
+
+        //         },
+        //         None => {
+
+        //         }
+        //     }
+        // })
 
         Ok(Self {
             label: cfg.sign_keypair.public_key(),
@@ -98,6 +109,7 @@ impl Timeboost {
             .bundles(self.sender.clone())
             .enc_key(self.config.threshold_dec_key.clone())
             .metrics(self.prometheus.clone())
+            .counter(Arc::new(AtomicU64::new(0)))
             .build()
     }
 
@@ -106,10 +118,16 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
+        let mut count = 0;
+        
         loop {
             select! {
                 trx = self.receiver.recv() => {
                     if let Some(t) = trx {
+                        count += 1;
+                        if count % 100 == 0 {
+                            tracing::error!("rcv count {}", count);
+                        }
                         self.sequencer.add_bundles(once(t))
                     }
                 },
@@ -124,7 +142,10 @@ impl Timeboost {
                         if let Some(ref mut f) = self.nitro_forwarder {
                             f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
                         } else {
-                            warn!(node = %self.label, %round, "no forwarder => dropping output")
+                            count += transactions.len();
+                            if count % 100 == 0 {
+                                tracing::error!(node = %self.label, %count, "no forwarder => dropping output");
+                            }
                         }
                     }
                     Ok(Output::UseCommittee(r)) => {
