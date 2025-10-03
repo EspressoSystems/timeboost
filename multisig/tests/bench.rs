@@ -31,6 +31,7 @@ fn bench_vote_accumulator() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            0u64,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -59,6 +60,7 @@ fn bench_certificate_is_valid() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            0u64,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -74,6 +76,7 @@ fn bench_certificate_is_valid_par() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            0u64,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
@@ -89,6 +92,7 @@ fn certificate_sizes() {
     for n in SIZES {
         let mut keys = (0..n).map(|_| Keypair::generate()).collect::<Vec<_>>();
         let comm = Committee::new(
+            0u64,
             keys.iter()
                 .enumerate()
                 .map(|(i, kp)| (i as u8, kp.public_key())),
