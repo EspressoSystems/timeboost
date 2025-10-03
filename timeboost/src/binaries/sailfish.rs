@@ -14,7 +14,6 @@ use sailfish::{
 use serde::{Deserialize, Serialize};
 use timeboost::{committee::CommitteeInfo, config::NodeConfig};
 use timeboost_utils::types::logging;
-use times::write_csv;
 use tokio::{select, signal};
 use tracing::{error, info};
 
@@ -161,7 +160,7 @@ async fn main() -> Result<()> {
                                     if let Some(series) = times::take_time_series("sf") {
                                         let path = cli.stamp.with_extension("csv");
                                         let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
-                                        write_csv(path, &[("round", "delta")], vals).await?;
+                                        times::write_csv(path, &[("round", "delta")], vals).await?;
                                     }
                                     dumped = true
                                 }

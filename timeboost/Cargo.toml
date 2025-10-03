@@ -12,7 +12,6 @@ path = "src/binaries/timeboost.rs"
 [[bin]]
 name = "sailfish"
 path = "src/binaries/sailfish.rs"
-required-features = ["times"]
 
 [features]
 until = []
