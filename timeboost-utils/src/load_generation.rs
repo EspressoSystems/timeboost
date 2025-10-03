@@ -20,6 +20,7 @@ pub struct TxInfo {
     pub base_fee: u128,
     pub gas_limit: u64,
     pub signer: PrivateKeySigner,
+    pub value: U256,
 }
 
 pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
@@ -99,7 +100,7 @@ pub fn create_dev_acct_txn_bundle(tx_info: TxInfo) -> anyhow::Result<Bundle> {
         max_fee_per_gas: tx_info.base_fee,
         gas_limit: tx_info.gas_limit,
         to: TxKind::Call(tx_info.to),
-        value: U256::from(1),
+        value: tx_info.value,
         ..Default::default()
     };
 

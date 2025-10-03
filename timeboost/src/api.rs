@@ -1,4 +1,4 @@
-use std::{io, sync::Arc, time::Duration};
+use std::{io, sync::{atomic::{AtomicU64, Ordering}, Arc}, time::Duration};
 
 use ::metrics::prometheus::PrometheusMetrics;
 use axum::{
@@ -28,6 +28,7 @@ pub struct ApiServer {
     bundles: Sender<BundleVariant>,
     enc_key: ThresholdKeyCell,
     metrics: Arc<PrometheusMetrics>,
+    counter: Arc<AtomicU64>,
 }
 
 impl ApiServer {
@@ -71,6 +72,11 @@ impl ApiServer {
     }
 
     async fn submit_bundle(&self, bundle: BundleVariant) -> Result<()> {
+        self.counter.fetch_add(1,Ordering::Relaxed);
+        let c = self.counter.load(Ordering::Relaxed);
+        if c % 100 == 0 {
+            tracing::error!("received {} bundles", c);
+        }
         if self.bundles.send(bundle).await.is_err() {
             error!("bundle channel is closed");
             return Err(StatusCode::INTERNAL_SERVER_ERROR.into());
@@ -80,6 +86,7 @@ impl ApiServer {
 }
 
 async fn submit_priority(server: State<ApiServer>, json: Json<SignedPriorityBundle>) -> Result<()> {
+    
     server.submit_bundle(BundleVariant::Priority(json.0)).await
 }
 
