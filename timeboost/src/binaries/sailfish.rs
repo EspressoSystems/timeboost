@@ -14,6 +14,7 @@ use sailfish::{
 use serde::{Deserialize, Serialize};
 use timeboost::{committee::CommitteeInfo, config::NodeConfig};
 use timeboost_utils::types::logging;
+use times::write_csv;
 use tokio::{select, signal};
 use tracing::{error, info};
 
@@ -35,6 +36,10 @@ struct Cli {
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
     until: u64,
+
+    #[cfg(feature = "times")]
+    #[clap(long)]
+    times_until: u64,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -130,13 +135,19 @@ async fn main() -> Result<()> {
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
     // Create proof of execution.
-    tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
+    tokio::fs::File::create(cli.stamp.clone())
+        .await?
+        .sync_all()
+        .await?;
 
     for a in coordinator.init() {
         if let Err(err) = coordinator.execute(a).await {
             error!(%err, "error executing coordinator action");
         }
     }
+
+    #[cfg(feature = "times")]
+    let mut dumped = false;
 
     'main: loop {
         select! {
@@ -145,6 +156,15 @@ async fn main() -> Result<()> {
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
+                                #[cfg(feature = "times")]
+                                if !dumped && *payload.round().num() >= cli.times_until {
+                                    if let Some(series) = times::take_time_series("sf") {
+                                        let path = cli.stamp.with_extension("csv");
+                                        let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
+                                        write_csv(path, &[("round", "delta")], vals).await?;
+                                    }
+                                    dumped = true
+                                }
                                 if *payload.round().num() >= cli.until {
                                     break 'main
                                 }

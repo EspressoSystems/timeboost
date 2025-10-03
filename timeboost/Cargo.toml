@@ -12,9 +12,11 @@ path = "src/binaries/timeboost.rs"
 [[bin]]
 name = "sailfish"
 path = "src/binaries/sailfish.rs"
+required-features = ["times"]
 
 [features]
 until = []
+times = ["sailfish/times"]
 
 [dependencies]
 alloy = { workspace = true }
@@ -43,6 +45,7 @@ timeboost-proto = { path = "../timeboost-proto" }
 timeboost-sequencer = { path = "../timeboost-sequencer" }
 timeboost-types = { path = "../timeboost-types" }
 timeboost-utils = { path = "../timeboost-utils" }
+times = { path = "../times" }
 tokio = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }

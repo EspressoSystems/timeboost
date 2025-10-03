@@ -21,6 +21,9 @@ build_release *ARGS:
 build_release_until:
   cargo build --release --workspace --all-targets --features "until"
 
+build_release_until_times:
+  cargo build --release --workspace --all-targets --features "until,times"
+
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
@@ -99,6 +102,18 @@ run-sailfish-demo: build-test-utils build_release
         --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp" \
         --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp" \
         target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
+
+sailfish-times: build-test-utils build_release_until_times
+    env RUST_LOG=error \
+    target/release/run --verbose \
+        --spawn "1:anvil --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_0.toml --stamp /tmp/stamp-0.sf --ignore-stamp --times-until 10000 --until 20000" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp --times-until 10000 --until 20000" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp --times-until 10000 --until 20000" \
+        --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp --times-until 10000 --until 20000" \
+        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --times-until 10000 --until 11000
 
 run *ARGS:
   cargo run {{ARGS}}

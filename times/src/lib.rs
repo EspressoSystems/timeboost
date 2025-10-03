@@ -1,0 +1,71 @@
+use std::{
+    collections::BTreeMap,
+    fmt::Display,
+    io,
+    path::Path,
+    time::{Duration, Instant},
+};
+
+use parking_lot::Mutex;
+use tokio::{
+    fs,
+    io::{AsyncWriteExt, BufWriter},
+};
+
+static __TIMERS: Mutex<BTreeMap<&'static str, TimeSeries>> = Mutex::new(BTreeMap::new());
+
+#[derive(Clone, Debug, Default)]
+pub struct TimeSeries {
+    times: Vec<(u64, Instant)>,
+}
+
+impl TimeSeries {
+    pub fn records(&self) -> impl Iterator<Item = (u64, Instant)> {
+        self.times.iter().copied()
+    }
+
+    pub fn deltas(&self) -> impl Iterator<Item = (u64, Duration)> {
+        self.records()
+            .zip(self.records().skip(1))
+            .map(|(fst, snd)| (snd.0, snd.1.duration_since(fst.1)))
+    }
+}
+
+pub fn time_series(name: &'static str) -> Option<TimeSeries> {
+    __TIMERS.lock().get(name).cloned()
+}
+
+pub fn take_time_series(name: &'static str) -> Option<TimeSeries> {
+    __TIMERS.lock().remove(name)
+}
+
+pub fn record(series: &'static str, key: u64) {
+    __TIMERS
+        .lock()
+        .entry(series)
+        .or_default()
+        .times
+        .push((key, Instant::now()))
+}
+
+#[macro_export]
+macro_rules! record {
+    ($s:expr, $k:expr) => {
+        #[cfg(feature = "times")]
+        $crate::record($s, $k)
+    };
+}
+
+pub async fn write_csv<A, B, P, I>(path: P, hdrs: &[(&str, &str)], vals: I) -> io::Result<()>
+where
+    A: Display,
+    B: Display,
+    P: AsRef<Path>,
+    I: IntoIterator<Item = (A, B)>,
+{
+    let mut csv = vec![format!("{},{}", hdrs[0].0, hdrs[0].1)];
+    csv.extend(vals.into_iter().map(|(a, b)| format!("{a},{b}")));
+    let mut w = BufWriter::new(fs::File::create(path).await?);
+    w.write_all(csv.join("\n").as_bytes()).await?;
+    w.flush().await
+}
