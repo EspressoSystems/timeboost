@@ -9511,6 +9511,7 @@ dependencies = [
  "multisig",
  "rayon",
  "sailfish-types",
+ "times",
  "tracing",
 ]
 
@@ -11216,6 +11217,7 @@ dependencies = [
  "timeboost-sequencer",
  "timeboost-types",
  "timeboost-utils",
+ "times",
  "tokio",
  "toml 0.9.7",
  "tonic 0.14.2",
@@ -11412,6 +11414,14 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.20",
+]
+
+[[package]]
+name = "times"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "tokio",
 ]
 
 [[package]]

@@ -20,6 +20,7 @@ members = [
     "timeboost-sequencer",
     "timeboost-types",
     "timeboost-utils",
+    "times",
     "yapper"
 ]
 resolver = "2"

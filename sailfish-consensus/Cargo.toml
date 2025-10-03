@@ -6,13 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-test = []
+test  = []
+times = []
 
 [dependencies]
 committable = { workspace = true }
 metrics = { path = "../metrics" }
 multisig = { path = "../multisig" }
 sailfish-types = { path = "../sailfish-types" }
+times = { path = "../times" }
 tracing = { workspace = true }
 
 [dev-dependencies]
