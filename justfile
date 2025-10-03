@@ -104,8 +104,14 @@ run-sailfish-demo: build-test-utils build_release
         target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
 
 sailfish-times: build-test-utils build_release_until_times
-    env RUST_LOG=error \
-    target/release/run --verbose \
+    env RUST_LOG=error TOKIO_WORKER_THREADS=2 RAYON_NUM_THREADS=2 \
+    target/release/run \
+        --verbose \
+        --env PATH \
+        --env HOME \
+        --env RUST_LOG \
+        --env TOKIO_WORKER_THREADS \
+        --env RAYON_NUM_THREADS \
         --spawn "1:anvil --port 8545" \
         --run   "2:sleep 3" \
         --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
