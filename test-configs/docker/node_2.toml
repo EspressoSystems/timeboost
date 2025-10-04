@@ -2,37 +2,37 @@ committee = 0
 stamp = "/tmp/timeboost.2.stamp"
 
 [net.public]
-address = "172.20.0.4:8000"
-http-api = "172.20.0.4:8004"
+address = "node2:8000"
+http-api = "node2:8004"
 
 [net.internal]
-address = "172.20.0.4:8003"
-nitro = "172.20.0.24:55000"
+address = "node2:8003"
+nitro = "nitro2:55000"
 
 [keys.signing]
-secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
-public = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+secret = "2n6GZjsizPooAHzMeRnYFubayS6A9Pv5tXpPkhwT4ZRG"
+public = "xjgK4BPUDXpv1oTCUrFABpDxVE9tuxfrSwvjuSrSU4rU"
 
 [keys.dh]
-secret = "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg"
-public = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+secret = "3cQBUTqRCDkJQ9SXeAejX6xqrag3hyYw47n63vuzpiPS"
+public = "G9eSPKSU6CAb4egagEXvDJ5xyXUw6uN7SMo9XgMTS1Uh"
 
 [keys.dkg]
-secret = "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX"
-public = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
+secret = "5Q9hzpSBHzShP5vHH2uiVS6CPzTcNyciVRGRLqZwn3qc"
+public = "5zVtxDp8EPmtzk1KWszLD3ERQt7ChT6kymsKDxJf5q44q8YwhBnNWKDe6gwJbMYggK"
 
 [chain]
 namespace = 412346
 
 [chain.parent]
 id = 1337
-rpc-url = "http://172.20.0.11:8545/"
-ws-url = "ws://172.20.0.11:8546/"
+rpc-url = "http://demo-l1-network:8545/"
+ws-url = "ws://demo-l1-network:8546/"
 ibox-contract = "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1"
 block-tag = "finalized"
 key-manager-contract = "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35"
 
 [espresso]
-base-url = "http://172.20.0.14:41000/v1/"
-websockets-base-url = "ws://172.20.0.14:41000/v1/"
+base-url = "http://espresso-dev-node:41000/v1/"
+websockets-base-url = "ws://espresso-dev-node:41000/v1/"
 max-transaction-size = 1048576

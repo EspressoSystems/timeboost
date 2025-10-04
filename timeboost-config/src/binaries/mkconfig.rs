@@ -138,6 +138,8 @@ enum Mode {
     IncrementPort,
     /// Increment the IP address.
     IncrementAddress,
+    /// Trailing number on DNS name.
+    DockerDns,
 }
 
 impl Args {
@@ -260,6 +262,12 @@ impl Args {
                     IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
                 };
                 Ok(Address::Inet(ip, *port))
+            }
+            Mode::DockerDns => {
+                let Address::Name(name, port) = base else {
+                    bail!("increment dns requires dns name")
+                };
+                Ok(Address::Name(format!("{}{}", name, i), *port))
             }
         }
     }

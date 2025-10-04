@@ -137,21 +137,21 @@ mkconfig NUM_NODES DATETIME *ARGS:
 mkconfig_docker DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 5 \
     --committee-id 0 \
-    --public-addr "172.20.0.2:8000" \
-    --internal-addr "172.20.0.2:8003" \
-    --http-api "172.20.0.2:8004" \
-    --nitro-addr "172.20.0.22:55000" \
-    --mode "increment-address" \
-    --parent-rpc-url "http://172.20.0.11:8545" \
-    --parent-ws-url "ws://172.20.0.11:8546" \
+    --public-addr "node:8000" \
+    --internal-addr "node:8003" \
+    --http-api "node:8004" \
+    --nitro-addr "nitro:55000" \
+    --mode "docker-dns" \
+    --parent-rpc-url "http://demo-l1-network:8545" \
+    --parent-ws-url "ws://demo-l1-network:8546" \
     --chain-namespace 412346 \
     --parent-chain-id 1337 \
     --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
-    --espresso-base-url "http://172.20.0.14:41000/v1/" \
-    --espresso-websocket-url "ws://172.20.0.14:41000/v1/" \
+    --espresso-base-url "http://espresso-dev-node:41000/v1/" \
+    --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
     --output "test-configs/docker" {{ARGS}}
 
 mkconfig_nitro DATETIME *ARGS:

@@ -9,8 +9,7 @@ services:
       - "./geth-config/genesis-default.json:/genesis.json"
       - "./geth-config/test-jwt-secret.txt:/config/test-jwt-secret.txt"
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.11
+      - timeboost
     healthcheck:
       test: ["CMD", "curl", "-s", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}', "-H", "Content-Type: application/json", "http://localhost:8545"]
       interval: 5s
@@ -29,7 +28,7 @@ services:
       - ESPRESSO_DEV_NODE_PORT=20000
       - ESPRESSO_SEQUENCER_API_PORT=41000
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC=indoor dish desk flag debris potato excuse depart ticket judge file exit
-      - ESPRESSO_SEQUENCER_L1_PROVIDER=http://172.20.0.11:8545
+      - ESPRESSO_SEQUENCER_L1_PROVIDER=http://demo-l1-network:8545
       - ESPRESSO_SEQUENCER_DATABASE_MAX_CONNECTIONS=25
       - ESPRESSO_DEV_NODE_EPOCH_HEIGHT=1000000
       - ESPRESSO_DEV_NODE_MAX_BLOCK_SIZE=10485760
@@ -43,8 +42,7 @@ services:
       demo-l1-network:
         condition: service_healthy
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.14
+      - timeboost
   rollup-creator:    
     pid: host
     build:
@@ -55,7 +53,7 @@ services:
       - "config:/config"
       - "./nitro-config:/nitro-config"
     environment:
-      PARENT_CHAIN_RPC: "http://172.20.0.11:8545"
+      PARENT_CHAIN_RPC: "http://demo-l1-network:8545"
       DEPLOYER_PRIVKEY: 0x4f3edf983ac636a65a842ce7c78d9aa706d3b113b37f60c1b6d9d1f0a5b2b5ff
       PARENT_CHAIN_ID: 1337
       CHILD_CHAIN_NAME: "arb-dev-test"
@@ -85,21 +83,21 @@ services:
       - -c
       - > 
         /app/mkconfig -n 4 --committee-id 0 \
-          --public-addr "172.20.0.2:8000" \
-          --internal-addr "172.20.0.2:8003" \
-          --http-api "172.20.0.2:8004" \
-          --nitro-addr "172.20.0.22:55000" \
-          --mode "increment-address" \
+          --public-addr "node:8000" \
+          --internal-addr "node:8003" \
+          --http-api "node:8004" \
+          --nitro-addr "nitro:55000" \
+          --mode "docker-dns" \
           --chain-namespace 412346 \
-          --parent-rpc-url "http://172.20.0.11:8545" \
-          --parent-ws-url "ws://172.20.0.11:8546" \
+          --parent-rpc-url "http://demo-l1-network:8545" \
+          --parent-ws-url "ws://demo-l1-network:8546" \
           --parent-chain-id 1337 \
           --parent-ibox-contract "$(jq -r '.inbox' /config/deployment.json)" \
           --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
           --timestamp $(date -u +"%Y-%m-%dT%H:%M:%SZ") \
           --stamp-dir "/tmp" \
-          --espresso-base-url "http://172.20.0.14:41000/v1/" \
-          --espresso-websocket-url "ws://172.20.0.14:41000/v1/" \
+          --espresso-base-url "http://espresso-dev-node:41000/v1/" \
+          --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
           --output "/config"
     networks:
       - timeboost
@@ -115,7 +113,7 @@ services:
     entrypoint: 
       - sh
       - -c
-      - "/app/scripts/deploy-contract -d /app/deploy -r /app/register -c /config/committee.toml -u http://172.20.0.11:8545"
+      - "/app/scripts/deploy-contract -d /app/deploy -r /app/register -c /config/committee.toml -u http://demo-l1-network:8545"
     networks:
       - timeboost
     depends_on:
@@ -147,8 +145,7 @@ services:
       - --graphql.corsdomain=*
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8003
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.22
+       - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
@@ -178,8 +175,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.23
+       - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
@@ -209,8 +205,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8003
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.24
+       - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
@@ -240,8 +235,7 @@ services:
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8003
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.25
+       - timeboost
     depends_on:
       config-producer:
         condition: service_completed_successfully
@@ -261,14 +255,13 @@ services:
     volumes:
       - "config:/config"
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.2
+      - timeboost
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
-    # ports:
-    #   - "8100:8004"
-    #   - "8800:8800"
-    #   - "9000:9000"
+    ports:
+      - "8100:8004"
+      - "8800:8800"
+      - "9000:9000"
     depends_on:
       nitro0:
         condition: service_healthy
@@ -279,8 +272,8 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://172.20.0.2:8004/i/health"]
-      interval: 5s
+      test: ["CMD", "curl", "-f", "http://node0:8004/i/health"]
+      interval: 10s
       timeout: 3s
       retries: 10
     restart: on-failure
@@ -295,8 +288,7 @@ services:
     volumes:
       - "config:/config"    
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.3
+      - timeboost
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
     ports:
@@ -313,8 +305,8 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://172.20.0.3:8004/i/health"]
-      interval: 5s
+      test: ["CMD", "curl", "-f", "http://node1:8004/i/health"]
+      interval: 10s
       timeout: 3s
       retries: 10      
     restart: on-failure
@@ -329,8 +321,7 @@ services:
     volumes:
       - "config:/config"      
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.4
+      - timeboost
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
     ports:
@@ -347,8 +338,8 @@ services:
       nitro3:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://172.20.0.4:8004/i/health"]
-      interval: 5s
+      test: ["CMD", "curl", "-f", "http://node2:8004/i/health"]
+      interval: 10s
       timeout: 3s
       retries: 10
     restart: on-failure
@@ -363,8 +354,7 @@ services:
     volumes:
       - "config:/config"      
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.5
+      - timeboost
     environment:
       - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
     ports:
@@ -372,10 +362,10 @@ services:
       - "8803:8800"
       - "9003:9000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://172.20.0.5:8004/i/health"]
-      interval: 5s
+      test: ["CMD", "curl", "-f", "http://node3:8004/i/health"]
+      interval: 10s
       timeout: 3s
-      retries: 10      
+      retries: 20      
     depends_on:
       nitro0:
         condition: service_healthy
@@ -397,13 +387,13 @@ services:
       - -c
       - "sleep 30s && /app/register -a threshold-enc-key -m 'attend year erase basket blind adapt stove broccoli isolate unveil acquire category' -u http://demo-l1-network:8545 -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 -c /config/committee.toml"
     depends_on:
-      node0:
+      nitro0:
         condition: service_healthy
-      node1:
+      nitro1:
         condition: service_healthy
-      node2:
+      nitro2:
         condition: service_healthy
-      node3:
+      nitro3:
         condition: service_healthy
     networks:
       - timeboost
@@ -422,8 +412,7 @@ services:
     environment:
       - RUST_LOG=trace
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.15
+      - timeboost
     depends_on:
       contract-deployer:
         condition: service_completed_successfully
@@ -434,9 +423,9 @@ services:
       - --config
       - /config/committee.toml
       - --parent-url
-      - http://172.20.0.11:8545
+      - http://demo-l1-network:8545
       - --nitro-url
-      - http://172.20.0.22:8547
+      - http://nitro0:8547
       - --key-manager-contract
       - 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
     volumes:
@@ -444,8 +433,7 @@ services:
     environment:
       - RUST_LOG=info
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.13
+      - timeboost
     depends_on:
       threshold-key-register:
         condition: service_completed_successfully
@@ -453,10 +441,6 @@ services:
 networks:
   timeboost:
     driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.20.0.0/16
 
 volumes:
   config:
@@ -466,5 +450,4 @@ volumes:
   nitro1:
   nitro2:
   nitro3:
-  # nitro4:
   tokenbridge-data:
