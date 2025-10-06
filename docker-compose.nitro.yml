@@ -87,7 +87,7 @@ services:
           --internal-addr "node:8003" \
           --http-api "node:8004" \
           --nitro-addr "nitro:55000" \
-          --mode "docker-dns" \
+          --nitro-mode "docker-dns" \
           --chain-namespace 412346 \
           --parent-rpc-url "http://demo-l1-network:8545" \
           --parent-ws-url "ws://demo-l1-network:8546" \
@@ -143,6 +143,7 @@ services:
       - --graphql.enable
       - --graphql.vhosts=*
       - --graphql.corsdomain=*
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node0:8003
     networks:
        - timeboost
@@ -173,6 +174,7 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro1:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s    
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node1:8003
     networks:
        - timeboost
@@ -203,6 +205,7 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro2:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node2:8003
     networks:
        - timeboost
@@ -233,6 +236,7 @@ services:
       - --conf.file=/nitro-config/sequencer_config.json
       - --node.seq-coordinator.my-url=http://nitro3:8547
       - --http.api=net,web3,eth,txpool,debug,timeboost,auctioneer
+      - --node.decentralized-timeboost-sequencer.block-retry-duration=0s
       - --node.decentralized-timeboost-sequencer.decentralized-timeboost-bridge-config.internal-timeboost-grpc-url=node3:8003
     networks:
        - timeboost
@@ -257,7 +261,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
       - "8100:8004"
       - "8800:8800"
@@ -290,7 +294,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
       - "8101:8004"
       - "8801:8800"
@@ -323,7 +327,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
       - "8102:8004"
       - "8802:8800"
@@ -356,7 +360,7 @@ services:
     networks:
       - timeboost
     environment:
-      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=info,robusta=info,timeboost::forwarder=trace,warn
+      - RUST_LOG=timeboost=info,sailfish=warn,cliquenet=warn,timeboost-builder=debug,robusta=info,timeboost::forwarder=trace,warn
     ports:
       - "8103:8004"
       - "8803:8800"
@@ -416,27 +420,27 @@ services:
     depends_on:
       contract-deployer:
         condition: service_completed_successfully
-  yapper:
-    image: timeboost:latest
-    command:
-      - /app/yapper
-      - --config
-      - /config/committee.toml
-      - --parent-url
-      - http://demo-l1-network:8545
-      - --nitro-url
-      - http://nitro0:8547
-      - --key-manager-contract
-      - 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
-    volumes:
-      - "config:/config"
-    environment:
-      - RUST_LOG=info
-    networks:
-      - timeboost
-    depends_on:
-      threshold-key-register:
-        condition: service_completed_successfully
+  # yapper:
+  #   image: timeboost:latest
+  #   command:
+  #     - /app/yapper
+  #     - --config
+  #     - /config/committee.toml
+  #     - --parent-url
+  #     - http://demo-l1-network:8545
+  #     - --nitro-url
+  #     - http://nitro0:8547
+  #     - --key-manager-contract
+  #     - 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
+  #   volumes:
+  #     - "config:/config"
+  #   environment:
+  #     - RUST_LOG=info
+  #   networks:
+  #     - timeboost
+  #   depends_on:
+  #     threshold-key-register:
+  #       condition: service_completed_successfully
 
 networks:
   timeboost:
