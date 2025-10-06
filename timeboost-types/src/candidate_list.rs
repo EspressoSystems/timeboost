@@ -14,7 +14,6 @@ use crate::{
 pub struct CandidateList(Arc<Inner>);
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename = "CandidateList")]
 struct Inner {
     time: Timestamp,
     index: DelayedInboxIndex,
