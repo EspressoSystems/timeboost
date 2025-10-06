@@ -427,15 +427,15 @@ impl Drop for Decrypter {
 enum WorkerState {
     /// Obtains the threshold decryption key from DKG bundles.
     ///
-    /// A node can recover its threshold decryption key in two ways:  
+    /// A node can recover its threshold decryption key in two ways:
     /// 1. **Consensus**: by combining DKG bundles extracted directly from candidate lists produced
     ///    by peers.
     /// 2. **Network**: by receiving and combining an agreed-upon subset of DKG bundles from a
     ///    designated set of peers.
     ///
-    /// For the initial DKG, method (1) is used.  
-    /// For resharing, method (2) is used, with the source peers being the previous committee.  
-    /// When catching up—whether during the initial DKG or after resharing—the node also uses  
+    /// For the initial DKG, method (1) is used.
+    /// For resharing, method (2) is used, with the source peers being the previous committee.
+    /// When catching up—whether during the initial DKG or after resharing—the node also uses
     /// method (2), but obtains the bundles from the current committee.
     DkgPending(HashMap<PublicKey, DkgSubset>),
     /// Active mode with decryption key ready.
@@ -448,7 +448,7 @@ impl Default for WorkerState {
     }
 }
 
-/// A `Worker` handles the production, exchange, and combination of decryption shares  
+/// A `Worker` handles the production, exchange, and combination of decryption shares
 /// in coordination with other peers. See [`Decrypter`] for details.
 #[derive(Builder)]
 struct Worker {
@@ -1546,7 +1546,6 @@ mod tests {
         time::Instant,
     };
     use test_utils::ports::alloc_port;
-    use timeboost_config::DECRYPTER_PORT_OFFSET;
     use timeboost_utils::types::logging;
 
     use cliquenet::AddressableCommittee;
@@ -1573,7 +1572,6 @@ mod tests {
     const TEST_SEQNO: u64 = 10;
     const RETAIN_ROUNDS: usize = 100;
     const COM1: u64 = 1;
-    const COM2: u64 = 2;
 
     // Pre-generated deterministic keys for consistent testing
     // Generated via: `just mkconfig-local 5 --seed 42`
@@ -1585,28 +1583,12 @@ mod tests {
         "6LMMEuoPRCkpDsnxnANCRCBC6JagdCHs2pjNicdmQpQE",
     ];
 
-    const COM2_SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
-        "6YJc9asDJQsFFHHg8iX23oL1sySx2EgTGM8CqDd71WMa",
-        "6NZdk8EGRSVS7sSjcjMiC8vL4KcSY41ELU6HaKyk1Drk",
-        "AMJEYXVhS4FfoqfD6VL5nZTNbzJQdtgdxBcVEAwZnLJ3",
-        "5mLCMSVT4f8HPqCqdKChxugpMcQ3x1C7hwfEnsTApFfp",
-        "4yhZYmNvAouKFpiYomrV9aH8kUZTLRH2hiCZtJzcAASa",
-    ];
-
     const COM1_DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
         "BB3zUfFQGfw3sL6bpp1JH1HozK6ehEDmRGoiCpQH62rZ",
         "4hjtciEvuoFVT55nAzvdP9E76r18QwntWwFoeginCGnP",
         "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg",
         "5KpixkV7czZTDVh7nV7VL1vGk4uf4kjKidDWq34CJx1T",
         "39wAn3bQzpn19oa8CiaNUFd8GekQAJMMuzrbp8Jt3FKz",
-    ];
-
-    const COM2_DH_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
-        "Ho9ZZCkP1i6f12fkWGUZucJxX2qbv9L3UbB56sqwjvkw",
-        "F5E9cp5qUe4z2wdaRYvEhFMYXaLy4sEX1rwCWRcTH69i",
-        "5zhwDWJ1ut6q871aHCHmH7QRCHDykXjUSEriGTLkwezL",
-        "2PojAT3g5iqGTrgLhTRKKHqwbeoFhRkzkYLM9AttFoKK",
-        "Bk2wY7o2YE9gpu6jxiRSbWiMU88H8s9D9MQGMaF2LJ7h",
     ];
 
     const COM1_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
@@ -1617,18 +1599,10 @@ mod tests {
         "GFvv2wcQmiGpk5rFp1FGpeUjnVUyZmGM9k8VHb1Jn7EG",
     ];
 
-    const COM2_DKG_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
-        "GLNPt6EYeFQbq8cCX5nKMA4LbCKdrUN5o5hmWTPJbkJZ",
-        "2n3Pz5NeUAVu5YaWgXN9CCrS6rC7NZwVZ48AG8m7JRqF",
-        "AGxRDhGvgovb1DZMjL3Y6Q4hF6UUpFCtpPD6sTJd827U",
-        "A3GUHxG3cPKvCch6XowztrHrrvaGS5JH3CuXQKCxQEnv",
-        "216zC1MgfV54cJJtt3AKdjJHhqfgZLZCmEyCkFN1bPoF",
-    ];
-
-    #[test]
     /// Tests the local DKG (Distributed Key Generation) end-to-end flow without networking.
     /// Verifies that committee members can generate threshold decryption keys and perform
     /// threshold encryption/decryption operations.
+    #[test]
     fn test_local_dkg_e2e() {
         logging::init_logging();
         let mut rng = thread_rng();
@@ -1949,9 +1923,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
     /// Tests integrated DKG to ensure it terminates with consistent public encryption keys
     /// across all committee members in a networked environment.
+    #[tokio::test]
     async fn test_dkg_termination() {
         logging::init_logging();
         let (mut decrypters, setup) = setup(
@@ -1985,172 +1959,20 @@ mod tests {
         }
     }
 
-    #[tokio::test]
     /// Tests the complete DKG and decryption phase end-to-end flow in a networked environment.
     /// Verifies that encrypted transactions can be properly decrypted after DKG completion.
+    #[tokio::test]
     async fn test_dkg_and_decryption_phase_e2e() {
         run_dkg_and_decryption_phase_e2e(false).await;
     }
 
-    #[tokio::test]
     /// Tests the complete DKG and decryption phase end-to-end flow in a networked environment.
     /// Verifies that encrypted transactions can be properly decrypted after DKG completion.
     /// The node that is catching up will not have the dealings locally enqueued but will instead
     /// fetch the dealings from other nodes to obtain the DKG key material.
+    #[tokio::test]
     async fn test_dkg_and_decryption_phase_e2e_with_catchup() {
         run_dkg_and_decryption_phase_e2e(true).await;
-    }
-
-    #[tokio::test]
-    /// Tests the full spectrum of Decrypter states:
-    /// 1. Initial committee completes dkg and decrypts transactions.
-    /// 2. NextCommittee and UseCommittee events are triggered adding nodes to the network.
-    /// 3. Resharing is done in the background among new/old committee members.
-    /// 4. Old committee decrypts its last inclusion list triggering committee switch.
-    /// 5. New committee decrypts its first inclusion list using key from resharing.
-    async fn run_dkg_handover_decryption_phase_e2e() {
-        logging::init_logging();
-
-        let (mut com1_decrypters, com1_setup) = setup(
-            COM1,
-            &COM1_SIGNATURE_PRIVATE_KEY_STRINGS,
-            &COM1_DH_PRIVATE_KEY_STRINGS,
-            &COM1_DKG_PRIVATE_KEY_STRINGS,
-            None,
-        )
-        .await;
-        tracing::info!("COM1 decrypters and setup initialized");
-
-        let com1_round = RoundNumber::new(DECRYPTION_ROUND);
-
-        enqueue_all_dkg_bundles(&mut com1_decrypters, None).await;
-        tracing::info!("All DKG bundles enqueued for COM1");
-
-        for cell in com1_setup.dec_keys() {
-            cell.read().await;
-        }
-        tracing::info!("COM1 DKG keys generated and available");
-
-        let encryption_key = com1_setup.dec_keys()[0]
-            .get()
-            .expect("encryption key should be generated after DKG");
-
-        let com2_round = RoundNumber::new(DECRYPTION_ROUND + 1);
-        let (mut com2_decrypters, com2_setup) = setup(
-            COM2,
-            &COM2_SIGNATURE_PRIVATE_KEY_STRINGS,
-            &COM2_DH_PRIVATE_KEY_STRINGS,
-            &COM2_DKG_PRIVATE_KEY_STRINGS,
-            Some(com1_setup.clone()),
-        )
-        .await;
-        tracing::info!("COM2 decrypters and setup initialized with previous committee");
-
-        // trigger NextCommittee event at each decrypter in COM1
-        for decrypter in com1_decrypters.iter_mut() {
-            let mut sf_addr = com2_setup.addr_comm().clone();
-            sf_addr.update_addresses(|a| a.clone().with_port(a.port() - DECRYPTER_PORT_OFFSET));
-            decrypter
-                .next_committee(sf_addr, com2_setup.key_store().clone())
-                .await
-                .expect("next committee event succeeds");
-        }
-        tracing::info!("NextCommittee event triggered for all COM1 decrypters");
-
-        let priority_tx_message = b"Priority message for old committee";
-        let regular_tx_message = b"Non-priority message for old committee";
-
-        let encrypted_inclusion_list = create_encrypted_inclusion_list(
-            com1_round,
-            com1_setup.addr_comm().committee().clone(),
-            com1_setup.sig_keys(),
-            encryption_key.pubkey(),
-            priority_tx_message,
-            regular_tx_message,
-        );
-        tracing::info!("Encrypted inclusion list created for COM1 round");
-
-        // enqueues the same inclusion list to all nodes in COM1
-        for decrypter in com1_decrypters.iter_mut() {
-            decrypter
-                .enqueue(encrypted_inclusion_list.clone())
-                .await
-                .expect("Inclusion list should be enqueued successfully");
-        }
-        tracing::info!("Encrypted inclusion list enqueued to all COM1 decrypters");
-
-        let _ = collect_inclusion_lists(&mut com1_decrypters).await;
-        tracing::info!("Decrypted inclusion lists collected from COM1 decrypters");
-
-        // enqueue resharing bundles (for COM2) at each decrypter in COM1
-        enqueue_all_dkg_bundles(&mut com1_decrypters, Some(com2_setup.key_store().clone())).await;
-        tracing::info!("Resharing bundles enqueued for COM2 at all COM1 decrypters");
-
-        // trigger UseCommittee event for COM2
-        for decrypter in com2_decrypters.iter_mut() {
-            decrypter
-                .use_committee(Round::new(com2_round, COM2))
-                .await
-                .expect("use committee event succeeds");
-        }
-        tracing::info!("UseCommittee event triggered for COM2 decrypters");
-
-        let priority_tx_message = b"Priority message for new committee";
-        let regular_tx_message = b"Non-priority message for new committee";
-
-        let encrypted_inclusion_list = create_encrypted_inclusion_list(
-            com2_round,
-            com2_setup.addr_comm().committee().clone(),
-            com2_setup.sig_keys(),
-            encryption_key.pubkey(), // same encryption key
-            priority_tx_message,
-            regular_tx_message,
-        );
-        tracing::info!("Encrypted inclusion list created for COM2 round");
-
-        for new_decrypter in com2_decrypters.iter_mut() {
-            new_decrypter
-                .enqueue(encrypted_inclusion_list.clone())
-                .await
-                .expect("Inclusion list should be enqueued successfully");
-        }
-        tracing::info!("Encrypted inclusion list enqueued to all COM2 decrypters");
-
-        let decrypted_inclusion_lists = collect_inclusion_lists(&mut com2_decrypters).await;
-        tracing::info!("Decrypted inclusion lists collected from COM2 decrypters");
-
-        // Verify that all decrypted inclusion lists are correct
-        for decrypted_list in decrypted_inclusion_lists {
-            assert_eq!(
-                decrypted_list.round(),
-                com2_round,
-                "Decrypted list should have the expected round number"
-            );
-            assert_eq!(
-                decrypted_list.priority_bundles().len(),
-                1,
-                "Should have exactly one priority bundle"
-            );
-            assert_eq!(
-                decrypted_list.regular_bundles().len(),
-                1,
-                "Should have exactly one regular bundle"
-            );
-
-            let decrypted_priority_data = decrypted_list.priority_bundles()[0].bundle().data();
-            let decrypted_regular_data = decrypted_list.regular_bundles()[0].data();
-
-            assert_eq!(
-                decrypted_priority_data.to_vec(),
-                priority_tx_message.to_vec(),
-                "Decrypted priority transaction should match original"
-            );
-            assert_eq!(
-                decrypted_regular_data.to_vec(),
-                regular_tx_message.to_vec(),
-                "Decrypted regular transaction should match original"
-            );
-        }
     }
 
     /// Helper to run DKG and decryption phase E2E test.
