@@ -84,6 +84,7 @@ services:
       - > 
         /app/mkconfig -n 4 --committee-id 0 \
           --public-addr "node:8000" \
+          --public-mode "docker-dns" \
           --internal-addr "node:8003" \
           --http-api "node:8004" \
           --nitro-addr "nitro:55000" \
@@ -420,27 +421,23 @@ services:
     depends_on:
       contract-deployer:
         condition: service_completed_successfully
-  # yapper:
-  #   image: timeboost:latest
-  #   command:
-  #     - /app/yapper
-  #     - --config
-  #     - /config/committee.toml
-  #     - --parent-url
-  #     - http://demo-l1-network:8545
-  #     - --nitro-url
-  #     - http://nitro0:8547
-  #     - --key-manager-contract
-  #     - 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35
-  #   volumes:
-  #     - "config:/config"
-  #   environment:
-  #     - RUST_LOG=info
-  #   networks:
-  #     - timeboost
-  #   depends_on:
-  #     threshold-key-register:
-  #       condition: service_completed_successfully
+  yapper:
+    image: timeboost:latest
+    command:
+      - /app/yapper
+      - --config
+      - /config/
+      - --nitro-url
+      - http://nitro0:8547
+    volumes:
+      - "config:/config"
+    environment:
+      - RUST_LOG=info
+    networks:
+      - timeboost
+    depends_on:
+      threshold-key-register:
+        condition: service_completed_successfully
 
 networks:
   timeboost:
