@@ -133,20 +133,21 @@ async fn main() -> Result<()> {
         .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
+    #[cfg(feature = "times")]
+    let csv_path = cli.stamp.with_extension("csv");
+    #[cfg(feature = "times")]
+    let mut dumped = false;
+    #[cfg(feature = "times")]
+    let mut round = sailfish::types::RoundNumber::genesis();
+
     // Create proof of execution.
-    tokio::fs::File::create(cli.stamp.clone())
-        .await?
-        .sync_all()
-        .await?;
+    tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
 
     for a in coordinator.init() {
         if let Err(err) = coordinator.execute(a).await {
             error!(%err, "error executing coordinator action");
         }
     }
-
-    #[cfg(feature = "times")]
-    let mut dumped = false;
 
     'main: loop {
         select! {
@@ -156,13 +157,18 @@ async fn main() -> Result<()> {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
                                 #[cfg(feature = "times")]
-                                if !dumped && *payload.round().num() >= cli.times_until {
-                                    if let Some(series) = times::take_time_series("sf") {
-                                        let path = cli.stamp.with_extension("csv");
-                                        let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
-                                        times::write_csv(path, &[("round", "delta")], vals).await?;
+                                {
+                                    if payload.round().num() != round {
+                                        times::record("sf", *round);
+                                        round = payload.round().num()
                                     }
-                                    dumped = true
+                                    if !dumped && *payload.round().num() >= cli.times_until {
+                                        if let Some(series) = times::take_time_series("sf") {
+                                            let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
+                                            times::write_csv(&csv_path, &[("round", "delta")], vals).await?;
+                                        }
+                                        dumped = true
+                                    }
                                 }
                                 if *payload.round().num() >= cli.until {
                                     break 'main

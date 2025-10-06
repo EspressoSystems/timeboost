@@ -631,7 +631,6 @@ where
 
         // With a leader vertex we can move on to the next round immediately.
         if self.leader_vertex(round).is_some() {
-            times::record!("sf", *self.round);
             self.round = round + 1;
             actions.push(Action::ResetTimer(Round::new(
                 self.round,
@@ -666,7 +665,6 @@ where
 
         // If we are not ourselves leader of the next round we can move to it directly.
         if self.public_key() != leader {
-            times::record!("sf", *self.round);
             self.round = round + 1;
             actions.push(Action::ResetTimer(Round::new(
                 self.round,
@@ -713,7 +711,6 @@ where
         trace!(node = %self.public_key(), from = %round, "advance with no-vote certificate");
         debug_assert_eq!(tc.data().round(), nc.data().round());
         let mut actions = Vec::new();
-        times::record!("sf", *self.round);
         self.round = round + 1;
         actions.push(Action::ResetTimer(Round::new(
             self.round,

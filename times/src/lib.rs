@@ -1,16 +1,16 @@
-use std::{
-    collections::BTreeMap,
-    fmt::Display,
-    io,
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, fmt::Display, io, path::Path, time::Duration};
 
 use parking_lot::Mutex;
 use tokio::{
     fs,
     io::{AsyncWriteExt, BufWriter},
 };
+
+#[cfg(feature = "quanta")]
+use quanta::Instant;
+
+#[cfg(not(feature = "quanta"))]
+use std::time::Instant;
 
 static __TIMERS: Mutex<BTreeMap<&'static str, TimeSeries>> = Mutex::new(BTreeMap::new());
 
@@ -46,14 +46,6 @@ pub fn record(series: &'static str, key: u64) {
         .or_default()
         .times
         .push((key, Instant::now()))
-}
-
-#[macro_export]
-macro_rules! record {
-    ($s:expr, $k:expr) => {
-        #[cfg(feature = "times")]
-        $crate::record($s, $k)
-    };
 }
 
 pub async fn write_csv<A, B, P, I>(path: P, hdrs: &[(&str, &str)], vals: I) -> io::Result<()>
