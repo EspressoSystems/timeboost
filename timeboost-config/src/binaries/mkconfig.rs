@@ -27,9 +27,13 @@ struct Args {
     #[clap(long, short)]
     num: NonZeroU8,
 
-    /// Address modification mode.
-    #[clap(long, short, default_value = "increment-port")]
-    mode: Mode,
+    /// Address modification mode for public addresses.
+    #[clap(long, default_value = "increment-port")]
+    public_mode: Mode,
+
+    /// Address modification mode for Nitro addresses.
+    #[clap(long, default_value = "increment-port")]
+    nitro_mode: Mode,
 
     /// RNG seed for deterministic key generation.
     #[clap(long)]
@@ -131,10 +135,11 @@ impl FromStr for TimestampOrOffset {
 }
 
 /// How should addresses be updated?
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum Mode {
+    /// Leave the address unchanged.
+    Unchanged,
     /// Increment the port number of addresses.
-    #[default]
     IncrementPort,
     /// Increment the IP address.
     IncrementAddress,
@@ -173,11 +178,11 @@ impl Args {
             let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
 
-            let public_addr = self.adjust_addr(i, &self.public_addr)?;
-            let http_addr = self.adjust_addr(i, &self.http_api)?;
-            let internal_addr = self.adjust_addr(i, &self.internal_addr)?;
+            let public_addr = Self::adjust_addr(self.public_mode, i, &self.public_addr)?;
+            let http_addr = Self::adjust_addr(self.public_mode, i, &self.http_api)?;
+            let internal_addr = Self::adjust_addr(self.public_mode, i, &self.internal_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
-                Some(self.adjust_addr(i, addr)?)
+                Some(Self::adjust_addr(self.nitro_mode, i, addr)?)
             } else {
                 None
             };
@@ -250,8 +255,9 @@ impl Args {
         Ok(())
     }
 
-    fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
-        match self.mode {
+    fn adjust_addr(mode: Mode, i: u8, base: &Address) -> Result<Address> {
+        match mode {
+            Mode::Unchanged => Ok(base.clone()),
             Mode::IncrementPort => Ok(base.clone().with_port(base.port() + 10 * u16::from(i))),
             Mode::IncrementAddress => {
                 let Address::Inet(ip, port) = base else {

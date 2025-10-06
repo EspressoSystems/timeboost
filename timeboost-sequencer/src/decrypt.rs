@@ -1576,7 +1576,7 @@ mod tests {
     const COM2: u64 = 2;
 
     // Pre-generated deterministic keys for consistent testing
-    // Generated via: `just mkconfig_local 5 --seed 42`
+    // Generated via: `just mkconfig-local 5 --seed 42`
     const COM1_SIGNATURE_PRIVATE_KEY_STRINGS: [&str; COMMITTEE_SIZE] = [
         "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp",
         "FWJzNGvEjFS3h1N1sSMkcvvroWwjT5LQuGkGHu9JMAYs",

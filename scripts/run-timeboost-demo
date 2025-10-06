@@ -91,7 +91,7 @@ if [ ! $config_dir ]; then
     exit 1
 fi
 
-just build_release --features="until"
+just build-release --features="until"
 
 if [ $nitro_url ]; then
     timeout 90 bash -c "until curl -sSf $nitro_url -o /dev/null; do sleep 1; done" || exit 1
@@ -136,7 +136,7 @@ for f in "$config_dir"/node_*.toml; do
 done
 
 if $yapper; then
-    cmd=(target/release/yapper --tps "$tps" -c "$config_dir/committee.toml")
+    cmd=(target/release/yapper --tps "$tps" -c "$config_dir/")
     if [ $nitro_url ]; then
         cmd+=(--nitro-url "$nitro_url")
     fi

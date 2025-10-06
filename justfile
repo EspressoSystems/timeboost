@@ -15,19 +15,19 @@ update-submodules:
   cd timeboost-proto && cargo build
   cd ../contracts && forge build
 
-build_release *ARGS:
+build-release *ARGS:
   cargo build --release --workspace --all-targets {{ARGS}}
 
-build_release_until:
+build-release-until:
   cargo build --release --workspace --all-targets --features "until"
 
-build_docker:
+build-docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
-build_docker_aws:
-  docker build . -f ./docker/timeboost-aws.Dockerfile -t timeboost:latest
+build-docker-amd:
+  docker build . -f ./docker/timeboost-amd.Dockerfile -t timeboost:latest
 
-clean_docker:
+clean-docker:
   docker ps -q | xargs -r docker stop
   docker compose down --rmi all --volumes --remove-orphans
   docker system prune -a --volumes --force
@@ -61,56 +61,46 @@ check-individually:
 fmt *ARGS='--all':
   cargo +nightly fmt {{ARGS}}
 
-fmt_check:
+fmt-check:
   cargo +nightly fmt --check
 
-lint: clippy fmt_check
+lint: clippy fmt-check
 
 fix:
   cargo fix --allow-dirty --allow-staged
 
-ci_local:
-  just build && just lint && just test_ci --release && \
-  just run_demo --ignore-stamp --yapper -c test-configs/c0 && \
-  just run-sailfish-demo && just build_docker
+ci-local:
+  just build && just lint && just test-ci --release && \
+  just run-demo --ignore-stamp --yapper -c test-configs/c0 && \
+  just run-sailfish-demo && just build-docker
 
 bacon: clippy check fmt
 
 ####################
 ####RUN COMMANDS####
 ####################
-run_integration: build_docker
-  -docker network create --subnet=172.20.0.0/16 timeboost
-  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+run-integration: build-docker-amd
+  -docker network create timeboost
+  docker compose -f docker-compose.block-maker.yml -f docker-compose.metrics.yml up -d
 
-run_integration_aws: build_docker_aws
-  -docker network create --subnet=172.20.0.0/16 timeboost
-  docker compose -f docker-compose.yml -f docker-compose.metrics.yml up -d
+run-integration-nitro: build-docker-amd
+  -docker network create timeboost
+  docker compose -f docker-compose.nitro.yml -f docker-compose.metrics.yml up -d
 
-stop_integration:
-  docker compose -f docker-compose.yml -f docker-compose.metrics.yml down
-
-run_monitoring:
-  -docker network create --subnet=172.20.0.0/16 timeboost
-  docker compose -f docker-compose.metrics.yml up -d
-
-stop_monitoring:
-  docker compose -f docker-compose.metrics.yml down
-
-run_demo *ARGS:
+run-demo *ARGS:
   scripts/run-timeboost-demo {{ARGS}}
 
-run-sailfish-demo: build-test-utils build_release
-    env RUST_LOG=sailfish=info,warn \
-    target/release/run --verbose \
-        --spawn "1:anvil --port 8545" \
-        --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_0.toml --stamp /tmp/stamp-0.sf --ignore-stamp" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp" \
-        --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp" \
-        target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
+run-sailfish-demo: build-test-utils build-release
+  env RUST_LOG=sailfish=info,warn \
+  target/release/run --verbose \
+      --spawn "1:anvil --port 8545" \
+      --run   "2:sleep 3" \
+      --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
+      --spawn "4:target/release/sailfish -c test-configs/c0/node_0.toml --stamp /tmp/stamp-0.sf --ignore-stamp" \
+      --spawn "4:target/release/sailfish -c test-configs/c0/node_1.toml --stamp /tmp/stamp-1.sf --ignore-stamp" \
+      --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp" \
+      --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp" \
+      target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --until 300
 
 run *ARGS:
   cargo run {{ARGS}}
@@ -134,14 +124,14 @@ mkconfig NUM_NODES DATETIME *ARGS:
     --stamp-dir "/tmp" \
     --output "test-configs/c0" {{ARGS}}
 
-mkconfig_docker DATETIME *ARGS:
+mkconfig-docker DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 5 \
     --committee-id 0 \
     --public-addr "node:8000" \
     --internal-addr "node:8003" \
     --http-api "node:8004" \
     --nitro-addr "nitro:55000" \
-    --mode "docker-dns" \
+    --nitro-mode "docker-dns" \
     --parent-rpc-url "http://demo-l1-network:8545" \
     --parent-ws-url "ws://demo-l1-network:8546" \
     --chain-namespace 412346 \
@@ -154,7 +144,7 @@ mkconfig_docker DATETIME *ARGS:
     --espresso-websocket-url "ws://espresso-dev-node:41000/v1/" \
     --output "test-configs/docker" {{ARGS}}
 
-mkconfig_nitro DATETIME *ARGS:
+mkconfig-nitro-ci DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 2 \
     --committee-id 0 \
     --public-addr "127.0.0.1:8000" \
@@ -169,9 +159,46 @@ mkconfig_nitro DATETIME *ARGS:
     --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     --timestamp {{DATETIME}} \
     --stamp-dir "/tmp" \
-    --output "test-configs/nitro-ci-committee" {{ARGS}}
+    --output "test-configs/nitro-ci" {{ARGS}}
 
-verify_blocks *ARGS:
+mkconfig-local DATETIME *ARGS:
+  cargo run --release --bin mkconfig -- -n 5 \
+    --committee-id 0 \
+    --public-addr "127.0.0.1:8000" \
+    --internal-addr "127.0.0.1:8003" \
+    --http-api "127.0.0.1:8004" \
+    --nitro-addr "127.0.0.1:55000" \
+    --nitro-mode "unchanged" \
+    --chain-namespace 10101 \
+    --parent-rpc-url "http://127.0.0.1:8545" \
+    --parent-ws-url "ws://127.0.0.1:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --timestamp {{DATETIME}} \
+    --stamp-dir "/tmp" \
+    --output "test-configs/local" {{ARGS}}
+
+mkconfig-linux DATETIME *ARGS:
+  cargo run --release --bin mkconfig -- -n 5 \
+    --committee-id 0 \
+    --public-addr "11.0.0.1:8000" \
+    --public-mode "increment-address" \
+    --internal-addr "11.0.0.1:8003" \
+    --http-api "11.0.0.1:8004" \
+    --nitro-addr "11.0.1.0:55000" \
+    --nitro-mode "unchanged" \
+    --chain-namespace 10101 \
+    --parent-rpc-url "http://11.0.1.0:8545" \
+    --parent-ws-url "ws://11.0.1.0:8545" \
+    --parent-chain-id 31337 \
+    --parent-ibox-contract "0xa0f3a1a4e2b2bcb7b48c8527c28098f207572ec1" \
+    --key-manager-contract "0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --timestamp {{DATETIME}} \
+    --stamp-dir "/tmp" \
+    --output "test-configs/linux" {{ARGS}}            
+
+verify-blocks *ARGS:
   cargo run --release --bin block-verifier {{ARGS}}
 
 ####################
@@ -184,7 +211,7 @@ test *ARGS: build-port-alloc
 test-contracts: build-contracts
   forge test
 
-test_ci *ARGS: build-port-alloc
+test-ci *ARGS: build-port-alloc
   env {{log_levels}} NO_COLOR=1 target/release/run \
     --spawn target/release/port-alloc \
     cargo nextest run -- --workspace {{ARGS}}
@@ -201,7 +228,7 @@ test-individually: build-port-alloc
 test-contract-deploy *ARGS:
   scripts/test-contract-deploy {{ARGS}}
 
-test-all: build_release build-test-utils
+test-all: build-release build-test-utils
   env RUST_LOG=timeboost_builder::submit=debug,block_checker=info,warn \
   target/release/run \
     --verbose \
@@ -210,11 +237,11 @@ test-all: build_release build-test-utils
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
-    --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
+    --spawn "4:target/release/yapper -c test-configs/local/" \
     --spawn "5:target/release/run-committee -c test-configs/local/" \
     target/release/block-checker -- -c test-configs/local -b 1000
 
-test-dyn-comm: build_release_until build-test-utils
+test-dyn-comm: build-release-until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
     --verbose \
     --timeout 120 \
@@ -249,10 +276,7 @@ test-dyn-comm: build_release_until build-test-utils
                  -u http://localhost:8545 \
                  -k 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35 \
                  -c test-configs/c1/committee.toml" \
-    --spawn "9:target/release/yapper \
-                  --config test-configs/c1/committee.toml \
-                  --parent-url http://localhost:8545 \
-                  --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
+    --spawn "9:target/release/yapper --config test-configs/c1/" \
     target/release/run-committee -- \
       -c test-configs/c1/ \
       --until 800 \
@@ -271,7 +295,7 @@ delete-net: build-test-utils
     {{run_as_root}} target/release/net-setup delete -c test-configs/linux/net.toml
 
 [linux]
-netsim: build_release build-test-utils
+netsim: build-release build-test-utils
     #!/usr/bin/env bash
     set -eo pipefail
     function run_as_root {
@@ -295,6 +319,6 @@ netsim: build_release build-test-utils
         --run   "2:sleep 3" \
         --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml -u http://11.0.1.0:8545" \
         --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
-        --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
+        --spawn "4:target/release/yapper -c test-configs/linux/" \
         --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
         target/release/block-checker -- -c test-configs/linux -b 200
