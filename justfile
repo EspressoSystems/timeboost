@@ -220,7 +220,7 @@ test-dyn-comm: build_release_until build-test-utils
     --timeout 120 \
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 2" \
-    --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
+    --run   "3:scripts/deploy-contract -c test-configs/c0/committee.toml -u http://localhost:8545" \
     --spawn "4:target/release/run-committee -c test-configs/c0/ --until 2000" \
     --run   "5:target/release/mkconfig -n 4 \
                  --committee-id 1 \
