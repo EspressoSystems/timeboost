@@ -288,6 +288,8 @@ where
                 }
             }
             Action::SendProposal(e) => {
+                #[cfg(feature = "times")]
+                times::record("sf-round-start", *e.data().round().data().num());
                 self.comm.broadcast(Message::Vertex(e)).await?;
             }
             Action::SendTimeout(e) => {

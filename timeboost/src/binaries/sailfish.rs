@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
                                     if !dumped && cli.times_until.map(|n| n <= *payload.round().num()).unwrap_or(false) {
                                         if let Some(series) = times::take_time_series("sf") {
                                             let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
-                                            times::write_csv(&csv_path, ("round", "delta"), vals).await?;
+                                            timeboost_utils::write_csv(&csv_path, ("round", "delta"), vals).await?;
                                         }
                                         dumped = true
                                     }

@@ -125,7 +125,7 @@ impl Timeboost {
                         );
                         #[cfg(feature = "times")]
                         {
-                            times::record("tb-decrypt", *round);
+                            times::record("tb-sequenced", *round);
                             if !dumped && *round >= self.config.times_until {
                                 self.dump_all_csvs().await?;
                                 dumped = true
@@ -151,7 +151,7 @@ impl Timeboost {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
                         #[cfg(feature = "times")]
-                        times::record("tb-blockcert", b.cert().data().num().into());
+                        times::record("tb-certified", *b.cert().data().round().num());
                         if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
@@ -191,13 +191,12 @@ impl Timeboost {
 
     #[cfg(feature = "times")]
     async fn dump_all_csvs(&self) -> Result<()> {
-        for name in ["sf-round", "tb-decrypt"] {
+        for name in ["sf-round-start", "tb-sequenced", "tb-certified", "tb-round-submitted"] {
             self.dump_csv(name, "round").await?
         }
-        for name in ["tb-blockcert", "tb-submit", "tb-verify"] {
+        for name in ["tb-block-submitted", "tb-verified"] {
             self.dump_csv(name, "block").await?
         }
-
         Ok(())
     }
 
@@ -209,7 +208,7 @@ impl Timeboost {
                 .with_extension("csv");
             let num = self.config.times_until as usize;
             let vals = series.deltas().take(num).map(|(k, d)| (k, d.as_millis()));
-            times::write_csv(path, (unit, "delta"), vals).await?
+            timeboost_utils::write_csv(path, (unit, "delta"), vals).await?
         }
         Ok(())
     }

@@ -220,7 +220,8 @@ impl Sender {
 
                 #[cfg(feature = "times")]
                 for b in &transaction {
-                    times::record_once("tb-submit", b.cert().data().num().into());
+                    times::record_once("tb-round-submitted", *b.cert().data().round().num());
+                    times::record_once("tb-block-submitted", b.cert().data().num().into());
                 }
 
                 drop_verified_blocks(&mut transaction);
