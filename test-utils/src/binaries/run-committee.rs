@@ -123,14 +123,19 @@ async fn main() -> Result<()> {
         bail!("missing committee config")
     };
 
-    let subset: HashSet<String> = conf.members.into_iter().take(args.max_nodes).map(|m| m.node).collect();
+    let subset: HashSet<String> = conf
+        .members
+        .into_iter()
+        .take(args.max_nodes)
+        .map(|m| m.node)
+        .collect();
 
     let tasks = TaskTracker::new();
 
     for (node, cmd) in commands {
         if !subset.contains(&node) {
             eprintln!("ignoring node {node} command");
-            continue
+            continue;
         }
         tasks.spawn(async move {
             let mut child = Command::from(cmd).spawn()?;

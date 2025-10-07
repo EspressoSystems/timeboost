@@ -57,7 +57,7 @@ struct Cli {
     key_manager_contract: Option<Address>,
 
     #[clap(long)]
-    max_nodes: usize
+    max_nodes: usize,
 }
 
 #[tokio::main]
