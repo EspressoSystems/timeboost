@@ -10,7 +10,7 @@ use timeboost_types::ThresholdKeyCell;
 use tokio::select;
 use tokio::signal;
 use tokio::task::spawn;
-use tracing::info;
+use tracing::{error, info};
 
 use clap::Parser;
 use timeboost::config::{CERTIFIER_PORT_OFFSET, DECRYPTER_PORT_OFFSET, NodeConfig};
@@ -214,9 +214,24 @@ async fn main() -> Result<()> {
                     Err(e)     => Err(e.into())
                 };
             },
-            _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-            _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-            _ = &mut api         => bail!("api service shutdown unexpectedly"),
+            r = timeboost.go() => {
+                if let Err(err) = r {
+                    error!(%err, "fatal timeboost error")
+                }
+                bail!("timeboost shutdown unexpectedly")
+            }
+            r = &mut grpc => {
+                if let Err(err) = r {
+                    error!(%err, "fatal grpc error")
+                }
+                bail!("grpc api shutdown unexpectedly")
+            }
+            r = &mut api => {
+                if let Err(err) = r {
+                    error!(%err, "fatal api error")
+                }
+                bail!("api service shutdown unexpectedly")
+            }
             _ = signal::ctrl_c() => {
                 warn!("received ctrl-c; shutting down");
                 api.abort();
@@ -227,9 +242,24 @@ async fn main() -> Result<()> {
 
     #[cfg(not(feature = "until"))]
     select! {
-        _ = timeboost.go()   => bail!("timeboost shutdown unexpectedly"),
-        _ = &mut grpc        => bail!("grpc api shutdown unexpectedly"),
-        _ = &mut api         => bail!("api service shutdown unexpectedly"),
+        r = timeboost.go() => {
+            if let Err(err) = r {
+                error!(%err, "fatal timeboost error")
+            }
+            bail!("timeboost shutdown unexpectedly")
+        }
+        r = &mut grpc => {
+            if let Err(err) = r {
+                error!(%err, "fatal grpc error")
+            }
+            bail!("grpc api shutdown unexpectedly")
+        }
+        r = &mut api => {
+            if let Err(err) = r {
+                error!(%err, "fatal api error")
+            }
+            bail!("api service shutdown unexpectedly")
+        }
         _ = signal::ctrl_c() => {
             warn!("received ctrl-c; shutting down");
             api.abort();

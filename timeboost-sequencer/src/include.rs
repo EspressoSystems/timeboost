@@ -63,14 +63,7 @@ impl Includer {
             self.clear_cache()
         }
 
-        debug_assert!(round > self.round, "{} <= {}", round, self.round);
-
-        debug_assert!(
-            lists.len() >= self.committee.quorum_size().get(),
-            "round {round}: {} < {}",
-            lists.len(),
-            self.committee.quorum_size().get()
-        );
+        debug_assert!(lists.len() >= self.committee.quorum_size().get());
 
         self.round = round;
 

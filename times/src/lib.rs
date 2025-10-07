@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::{Duration, Instant}};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 
@@ -10,14 +13,15 @@ pub struct TimeSeries {
 }
 
 impl TimeSeries {
-    pub fn records(&self) -> impl Iterator<Item = (u64, Instant)> {
-        self.times.iter().map(|(k, v)| (*k, *v))
+    pub fn records(&self) -> &BTreeMap<u64, Instant> {
+        &self.times
     }
 
     pub fn deltas(&self) -> impl Iterator<Item = (u64, Duration)> {
-        self.records()
-            .zip(self.records().skip(1))
-            .map(|(fst, snd)| (snd.0, snd.1.duration_since(fst.1)))
+        self.times
+            .iter()
+            .zip(self.times.iter().skip(1))
+            .map(|(fst, snd)| (*snd.0, snd.1.duration_since(*fst.1)))
     }
 }
 

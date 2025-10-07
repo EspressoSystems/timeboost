@@ -49,6 +49,8 @@ pub struct Timeboost {
     // pubsub service (+backend) handle, disconnect on drop
     _pubsub_provider: PubSubProvider,
     events: NewCommitteeStream,
+    #[cfg(feature = "times")]
+    epoch: std::time::Instant,
 }
 
 impl Timeboost {
@@ -90,6 +92,8 @@ impl Timeboost {
             submitter: sub,
             _pubsub_provider: provider,
             events,
+            #[cfg(feature = "times")]
+            epoch: std::time::Instant::now(),
         })
     }
 
@@ -108,6 +112,12 @@ impl Timeboost {
     pub async fn go(mut self) -> Result<()> {
         #[cfg(feature = "times")]
         let mut dumped = false;
+
+        #[cfg(feature = "times")]
+        {
+            self.epoch = std::time::Instant::now();
+        }
+
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -127,7 +137,7 @@ impl Timeboost {
                         {
                             times::record("tb-sequenced", *round);
                             if !dumped && *round >= self.config.times_until {
-                                self.dump_all_csvs().await?;
+                                self.save_all().await?;
                                 dumped = true
                             }
                         }
@@ -190,19 +200,31 @@ impl Timeboost {
     }
 
     #[cfg(feature = "times")]
-    async fn dump_all_csvs(&self) -> Result<()> {
-        for name in ["sf-round-start", "tb-sequenced", "tb-certified", "tb-round-submitted"] {
-            self.dump_csv(name, "round").await?
-        }
-        for name in ["tb-block-submitted", "tb-verified"] {
-            self.dump_csv(name, "block").await?
-        }
+    async fn save_a_b_duration(&self, a: &str, b: &str, unit: &str) -> Result<()> {
+        let Some(sa) = times::time_series(a) else {
+            anyhow::bail!("no time series corresponds to {a:?}")
+        };
+        let Some(sb) = times::time_series(b) else {
+            anyhow::bail!("no time series corresponds to {b:?}")
+        };
+        let vals = sa
+            .records()
+            .iter()
+            .filter_map(|(k, a)| {
+                let b = sb.records().get(k)?;
+                Some((*k, b.duration_since(*a).as_millis()))
+            })
+            .take(self.config.times_until as usize);
+        let path = std::path::Path::new("/tmp")
+            .join(&format!("{a}-{b}-{}", self.label))
+            .with_extension("csv");
+        timeboost_utils::write_csv(path, (unit, "delta"), vals).await?;
         Ok(())
     }
 
     #[cfg(feature = "times")]
-    async fn dump_csv(&self, name: &str, unit: &str) -> Result<()> {
-        if let Some(series) = times::take_time_series(name) {
+    async fn save_duration(&self, name: &str, unit: &str) -> Result<()> {
+        if let Some(series) = times::time_series(name) {
             let path = std::path::Path::new("/tmp")
                 .join(&format!("{name}-{}", self.label))
                 .with_extension("csv");
@@ -210,6 +232,18 @@ impl Timeboost {
             let vals = series.deltas().take(num).map(|(k, d)| (k, d.as_millis()));
             timeboost_utils::write_csv(path, (unit, "delta"), vals).await?
         }
+        Ok(())
+    }
+
+    #[cfg(feature = "times")]
+    async fn save_all(&self) -> Result<()> {
+        self.save_duration("sf-round-start", "round").await?;
+        self.save_a_b_duration("sf-round-start", "tb-sequenced", "round")
+            .await?;
+        self.save_a_b_duration("sf-round-start", "tb-certified", "round")
+            .await?;
+        self.save_a_b_duration("tb-sequenced", "tb-certified", "round")
+            .await?;
         Ok(())
     }
 }
