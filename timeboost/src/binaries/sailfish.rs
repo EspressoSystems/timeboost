@@ -36,9 +36,8 @@ struct Cli {
     #[clap(long, default_value_t = 1000)]
     until: u64,
 
-    #[cfg(feature = "times")]
     #[clap(long)]
-    times_until: u64,
+    times_until: Option<u64>,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -158,14 +157,14 @@ async fn main() -> Result<()> {
                             if let Action::Deliver(payload) = a {
                                 #[cfg(feature = "times")]
                                 {
-                                    if payload.round().num() != round {
+                                    if payload.round().num() > round {
                                         times::record("sf", *round);
                                         round = payload.round().num()
                                     }
-                                    if !dumped && *payload.round().num() >= cli.times_until {
+                                    if !dumped && cli.times_until.map(|n| n <= *payload.round().num()).unwrap_or(false) {
                                         if let Some(series) = times::take_time_series("sf") {
                                             let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
-                                            times::write_csv(&csv_path, &[("round", "delta")], vals).await?;
+                                            times::write_csv(&csv_path, ("round", "delta"), vals).await?;
                                         }
                                         dumped = true
                                     }

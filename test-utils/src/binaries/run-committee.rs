@@ -36,6 +36,9 @@ struct Args {
 
     #[clap(long)]
     required_decrypt_rounds: Option<u64>,
+
+    #[clap(long)]
+    times_until: Option<u64>,
 }
 
 #[tokio::main]
@@ -73,6 +76,9 @@ async fn main() -> Result<()> {
                 }
                 if let Some(r) = args.required_decrypt_rounds {
                     cmd.arg("--required-decrypt-rounds").arg(r.to_string());
+                }
+                if let Some(t) = args.times_until {
+                    cmd.arg("--times-until").arg(t.to_string());
                 }
                 commands.insert(name.to_string(), cmd);
             }

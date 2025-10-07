@@ -15,7 +15,7 @@ path = "src/binaries/sailfish.rs"
 
 [features]
 until = []
-times = []
+times = ["timeboost-builder/times", "timeboost-sequencer/times"]
 
 [dependencies]
 alloy = { workspace = true }

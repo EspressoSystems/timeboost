@@ -68,7 +68,11 @@ impl<const MAX_SIZE: usize> Verified<MAX_SIZE> {
     {
         let mut set = self.set.write();
         let len = set.len();
-        set.extend(it);
+        for b in it {
+            set.insert(b);
+            #[cfg(feature = "times")]
+            times::record_once("tb-verify", b.into());
+        }
         let len = set.len() - len;
         while set.len() > MAX_SIZE {
             set.pop_first();

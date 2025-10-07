@@ -24,6 +24,9 @@ build_release_until:
 build_release_until_times:
   cargo build --release --workspace --all-targets --features "until,times"
 
+build_release_times:
+  cargo build --release --workspace --all-targets --features "times"
+
 build_docker:
   docker build . -f ./docker/timeboost.Dockerfile -t timeboost:latest
 
@@ -120,6 +123,23 @@ sailfish-times: build-test-utils build_release_until_times
         --spawn "4:target/release/sailfish -c test-configs/c0/node_2.toml --stamp /tmp/stamp-2.sf --ignore-stamp --times-until 10000 --until 20000" \
         --spawn "4:target/release/sailfish -c test-configs/c0/node_3.toml --stamp /tmp/stamp-3.sf --ignore-stamp --times-until 10000 --until 20000" \
         target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --times-until 10000 --until 11000
+
+timeboost-times: build-test-utils build_release_times
+    env RUST_LOG=error TOKIO_WORKER_THREADS=2 RAYON_NUM_THREADS=2 \
+    target/release/run \
+        --verbose \
+        --env PATH \
+        --env HOME \
+        --env RUST_LOG \
+        --env TOKIO_WORKER_THREADS \
+        --env RAYON_NUM_THREADS \
+        --spawn "1:anvil --port 8545" \
+        --run   "2:sleep 3" \
+        --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
+        --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
+        --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
+        --spawn "5:target/release/run-committee -c test-configs/local/ --times-until 10000" \
+        target/release/block-checker -- -c test-configs/local -b 4000
 
 run *ARGS:
   cargo run {{ARGS}}

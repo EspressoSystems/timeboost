@@ -106,6 +106,8 @@ impl Timeboost {
     }
 
     pub async fn go(mut self) -> Result<()> {
+        #[cfg(feature = "times")]
+        let mut dumped = false;
         loop {
             select! {
                 trx = self.receiver.recv() => {
@@ -121,6 +123,14 @@ impl Timeboost {
                             trxs  = %transactions.len(),
                             "sequencer output"
                         );
+                        #[cfg(feature = "times")]
+                        {
+                            times::record("tb-decrypt", *round);
+                            if !dumped && *round >= self.config.times_until {
+                                self.dump_all_csvs().await?;
+                                dumped = true
+                            }
+                        }
                         if let Some(ref mut f) = self.nitro_forwarder {
                             f.enqueue(round, timestamp, &transactions, delayed_inbox_index).await?;
                         } else {
@@ -140,6 +150,8 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
+                        #[cfg(feature = "times")]
+                        times::record("tb-blockcert", b.cert().data().num().into());
                         if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
@@ -175,5 +187,30 @@ impl Timeboost {
                 }
             }
         }
+    }
+
+    #[cfg(feature = "times")]
+    async fn dump_all_csvs(&self) -> Result<()> {
+        for name in ["sf-round", "tb-decrypt"] {
+            self.dump_csv(name, "round").await?
+        }
+        for name in ["tb-blockcert", "tb-submit", "tb-verify"] {
+            self.dump_csv(name, "block").await?
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "times")]
+    async fn dump_csv(&self, name: &str, unit: &str) -> Result<()> {
+        if let Some(series) = times::take_time_series(name) {
+            let path = std::path::Path::new("/tmp")
+                .join(&format!("{name}-{}", self.label))
+                .with_extension("csv");
+            let num = self.config.times_until as usize;
+            let vals = series.deltas().take(num).map(|(k, d)| (k, d.as_millis()));
+            times::write_csv(path, (unit, "delta"), vals).await?
+        }
+        Ok(())
     }
 }

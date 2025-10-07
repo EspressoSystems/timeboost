@@ -70,6 +70,11 @@ pub struct TimeboostConfig {
 
     /// Chain configuration
     pub(crate) chain_config: ChainConfig,
+
+    /// For how many units (rounds/blocks) should times be collected?
+    #[cfg(feature = "times")]
+    #[builder(default)]
+    pub(crate) times_until: u64,
 }
 
 impl TimeboostConfig {

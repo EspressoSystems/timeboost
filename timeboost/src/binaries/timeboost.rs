@@ -50,6 +50,9 @@ struct Cli {
     #[cfg(feature = "until")]
     #[clap(long)]
     required_decrypt_rounds: Option<u64>,
+
+    #[clap(long)]
+    times_until: Option<u64>,
 }
 
 #[tokio::main]
@@ -144,8 +147,12 @@ async fn main() -> Result<()> {
             Vec::new(),
         ))
         .max_transaction_size(node_config.espresso.max_transaction_size)
-        .chain_config(node_config.chain.clone())
-        .build();
+        .chain_config(node_config.chain.clone());
+
+    #[cfg(feature = "times")]
+    let config = config.maybe_times_until(cli.times_until).build();
+    #[cfg(not(feature = "times"))]
+    let config = config.build();
 
     let timeboost = Timeboost::new(config).await?;
 

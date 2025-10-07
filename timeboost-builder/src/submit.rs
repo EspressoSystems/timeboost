@@ -218,6 +218,11 @@ impl Sender {
                     }
                 }
 
+                #[cfg(feature = "times")]
+                for b in &transaction {
+                    times::record_once("tb-submit", b.cert().data().num().into());
+                }
+
                 drop_verified_blocks(&mut transaction);
                 if transaction.is_empty() {
                     continue;

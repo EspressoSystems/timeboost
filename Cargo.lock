@@ -11269,6 +11269,7 @@ dependencies = [
  "thiserror 2.0.17",
  "timeboost-config",
  "timeboost-types",
+ "times",
  "tokio",
  "tracing",
 ]
@@ -11383,6 +11384,7 @@ dependencies = [
  "timeboost-crypto",
  "timeboost-types",
  "timeboost-utils",
+ "times",
  "tokio",
  "tracing",
 ]
