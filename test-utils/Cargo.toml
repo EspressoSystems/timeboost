@@ -26,6 +26,7 @@ default = [
 ]
 netns = ["dep:ipnet"]
 ports = ["dep:bincode", "dep:tokio-util"]
+scenario = ["dep:jiff", "dep:serde"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -77,7 +78,7 @@ path = "src/binaries/run.rs"
 [[bin]]
 name = "run-committee"
 path = "src/binaries/run-committee.rs"
-required-features = ["netns"]
+required-features = ["netns", "scenario"]
 
 [[bin]]
 name = "net-setup"
