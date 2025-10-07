@@ -51,6 +51,10 @@ struct Cli {
     #[clap(long)]
     required_decrypt_rounds: Option<u64>,
 
+    #[cfg(feature = "until")]
+    #[clap(long)]
+    committee: PathBuf,
+
     #[clap(long)]
     times_until: Option<u64>,
 }
@@ -176,8 +180,7 @@ async fn main() -> Result<()> {
         use tokio::time::sleep;
         use url::Url;
 
-        let committee_conf = cli.config.with_file_name("committee.toml");
-        let committee = CommitteeConfig::read(&committee_conf.to_str().unwrap())
+        let committee = CommitteeConfig::read(&cli.committee)
             .await
             .with_context(|| format!("failed to read committee config {:?}", committee_conf))?;
 

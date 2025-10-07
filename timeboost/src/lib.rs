@@ -136,6 +136,9 @@ impl Timeboost {
                         #[cfg(feature = "times")]
                         {
                             times::record("tb-sequenced", *round);
+                            if *round % 100 == 0 {
+                                tracing::error!(node = %self.label, round = %*round)
+                            }
                             if !dumped && *round >= self.config.times_until {
                                 self.save_all().await?;
                                 dumped = true

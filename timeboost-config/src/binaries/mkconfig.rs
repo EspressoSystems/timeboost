@@ -226,6 +226,7 @@ impl Args {
             };
 
             members.push(CommitteeMember {
+                node: format!("node_{i}"),
                 signing_key: config.keys.signing.public,
                 dh_key: config.keys.dh.public,
                 dkg_enc_key: config.keys.dkg.public.clone(),

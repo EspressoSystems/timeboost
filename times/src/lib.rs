@@ -5,7 +5,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-static __TIMERS: Mutex<BTreeMap<&str, TimeSeries>> = Mutex::new(BTreeMap::new());
+static TIMERS: Mutex<BTreeMap<&str, TimeSeries>> = Mutex::new(BTreeMap::new());
 
 #[derive(Clone, Debug, Default)]
 pub struct TimeSeries {
@@ -26,15 +26,15 @@ impl TimeSeries {
 }
 
 pub fn time_series(name: &str) -> Option<TimeSeries> {
-    __TIMERS.lock().get(name).cloned()
+    TIMERS.lock().get(name).cloned()
 }
 
 pub fn take_time_series(name: &str) -> Option<TimeSeries> {
-    __TIMERS.lock().remove(name)
+    TIMERS.lock().remove(name)
 }
 
 pub fn record(series: &'static str, key: u64) {
-    __TIMERS
+    TIMERS
         .lock()
         .entry(series)
         .or_default()
@@ -43,7 +43,7 @@ pub fn record(series: &'static str, key: u64) {
 }
 
 pub fn record_once(series: &'static str, key: u64) {
-    __TIMERS
+    TIMERS
         .lock()
         .entry(series)
         .or_default()

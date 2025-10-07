@@ -31,6 +31,9 @@ struct Args {
     #[clap(long, short)]
     committee: PathBuf,
 
+    #[clap(long, short)]
+    max_nodes: usize,
+
     #[clap(long, default_value_t = 10_000)]
     capacity: usize,
 }
@@ -120,7 +123,8 @@ async fn deliver(to: Uri, mut rx: broadcast::Receiver<Block>) {
 async fn main() -> Result<()> {
     init_logging();
     let args = Args::parse();
-    let committee = CommitteeConfig::read(&args.committee).await?;
+    let mut committee = CommitteeConfig::read(&args.committee).await?;
+    committee.members.truncate(args.max_nodes);
     let (tx, _) = broadcast::channel(args.capacity);
     for member in committee.members {
         let uri: Uri = format!("http://{}", member.internal_api).parse()?;

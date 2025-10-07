@@ -22,22 +22,30 @@ sailfish-times: (build "until" "times")
         target/release/sailfish -- -c test-configs/c0/node_4.toml --stamp /tmp/stamp-4.sf --ignore-stamp --times-until 10000 --until 11000
 
 [working-directory: ".."]
-timeboost-times: (build "times")
+timeboost-times nodes: (build "times")
     env RUST_LOG=error TOKIO_WORKER_THREADS=2 RAYON_NUM_THREADS=2 \
-    target/release/run \
-        --verbose \
-        --env PATH \
-        --env HOME \
-        --env RUST_LOG \
-        --env TOKIO_WORKER_THREADS \
-        --env RAYON_NUM_THREADS \
-        --spawn "1:anvil --port 8545" \
-        --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
-        --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
-        --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
-        --spawn "5:target/release/run-committee -c test-configs/local/ --times-until 10000" \
-        target/release/block-checker -- -c test-configs/local -b 4000
+    run0 --setenv=PATH \
+        --setenv=HOME \
+        --setenv=RUST_LOG \
+        --setenv=TOKIO_WORKER_THREADS \
+        --setenv=RAYON_NUM_THREADS \
+        target/release/run \
+            --verbose \
+            --clear-env \
+            --env PATH \
+            --env HOME \
+            --env RUST_LOG \
+            --env TOKIO_WORKER_THREADS \
+            --env RAYON_NUM_THREADS \
+            --uid $(id -u) \
+            --gid $(id -g) \
+            --spawn "1:anvil --host 11.0.1.0 --port 8545" \
+            --run   "2:sleep 3" \
+            --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
+            --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+            --spawn "4:target/release/yapper -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+            --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 10000 --max-nodes {{nodes}}" \
+            target/release/block-checker -- -c test-configs/linux -b 10000 --max-nodes {{nodes}}
 
 plot unit gnuplot pdf +csv:
     #!/usr/bin/env bash

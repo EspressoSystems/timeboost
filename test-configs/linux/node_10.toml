@@ -1,25 +1,25 @@
 committee = 0
-stamp = "/tmp/timeboost.2.stamp"
+stamp = "/tmp/timeboost.10.stamp"
 
 [net.public]
-address = "11.0.0.20:8000"
-http-api = "11.0.0.20:8004"
+address = "11.0.0.100:8000"
+http-api = "11.0.0.100:8004"
 
 [net.internal]
-address = "11.0.0.20:8003"
+address = "11.0.0.100:8003"
 nitro   = "11.0.1.0:55000"
 
 [keys.signing]
-secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
-public = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+secret = "4DXdtKDNBs1DeLGP7GeqGWeSuX3RgkRhwcT9aXKwzu9p"
+public = "pzFeUaH8Q73zYiJKJNgf86BGH99TtTH5wXJLUXCkJ3Es"
 
 [keys.dh]
-secret = "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg"
-public = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+secret = "7X3bBjha3wEUGvCNUWf7627RTqpNFGo6uwUtHM1nFYrW"
+public = "EBPENaYdA28xAV7cHh6q1ESJcsf7P2LpZUWv5dEmo2Sv"
 
 [keys.dkg]
-secret = "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX"
-public = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
+secret = "3hBZLhBJM3hmYzLrGy2AGijUcEvo6Wh1f2ej6KtHvNmX"
+public = "6yKj81Wuj6eBuMT5jmUu3HGX9AvvX3njQFaZXJoKX9CjmsSJNDMoQJTPA5M9ug1hpr"
 
 [chain]
 namespace = 10101

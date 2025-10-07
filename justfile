@@ -197,10 +197,10 @@ test-all: build_release build-test-utils
     --spawn "1:anvil --port 8545" \
     --run   "2:sleep 3" \
     --run   "3:scripts/deploy-contract -c test-configs/local/committee.toml -u http://localhost:8545" \
-    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml" \
-    --spawn "4:target/release/yapper -c test-configs/local/committee.toml" \
-    --spawn "5:target/release/run-committee -c test-configs/local/" \
-    target/release/block-checker -- -c test-configs/local -b 1000
+    --spawn "4:target/release/block-maker --bind 127.0.0.1:55000 -c test-configs/local/committee.toml --max-nodes 5" \
+    --spawn "4:target/release/yapper -c test-configs/local/committee.toml --max-nodes 5" \
+    --spawn "5:target/release/run-committee -c test-configs/local/ --max-nodes 5" \
+    target/release/block-checker -- -c test-configs/local --max-nodes 5 -b 1000
 
 test-dyn-comm: build_release_until build-test-utils
   env RUST_LOG=sailfish=warn,timeboost=info,info target/release/run \
@@ -240,11 +240,13 @@ test-dyn-comm: build_release_until build-test-utils
     --spawn "9:target/release/yapper \
                   --config test-configs/c1/committee.toml \
                   --parent-url http://localhost:8545 \
+                  --max-nodes 5 \
                   --key-manager-contract 0x2bbf15bc655c4cc157b769cfcb1ea9924b9e1a35" \
     target/release/run-committee -- \
       -c test-configs/c1/ \
       --until 800 \
-      --required-decrypt-rounds 3 && rm -rf test-configs/c1
+      --required-decrypt-rounds 3 \
+      --max-nodes 5 && rm -rf test-configs/c1
 
 [linux]
 forward-ipv4 val: build-test-utils
@@ -259,7 +261,7 @@ delete-net: build-test-utils
     {{run_as_root}} target/release/net-setup delete -c test-configs/linux/net.toml
 
 [linux]
-netsim: build_release build-test-utils
+netsim nodes: build_release build-test-utils
     #!/usr/bin/env bash
     set -eo pipefail
     function run_as_root {
@@ -281,8 +283,8 @@ netsim: build_release build-test-utils
         --gid $(id -g) \
         --spawn "1:anvil --host 11.0.1.0 --port 8545" \
         --run   "2:sleep 3" \
-        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml -u http://11.0.1.0:8545" \
-        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml" \
-        --spawn "4:target/release/yapper -c test-configs/linux/committee.toml" \
-        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/" \
-        target/release/block-checker -- -c test-configs/linux -b 200
+        --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
+        --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+        --spawn "4:target/release/yapper -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+        --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --max-nodes {{nodes}}" \
+        target/release/block-checker -- -c test-configs/linux -b 200 --max-nodes {{nodes}}

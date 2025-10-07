@@ -55,6 +55,9 @@ struct Cli {
     /// KeyManager contract address on the parent chain
     #[clap(long)]
     key_manager_contract: Option<Address>,
+
+    #[clap(long)]
+    max_nodes: usize
 }
 
 #[tokio::main]
@@ -65,9 +68,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Unpack the keyset file which has the urls
-    let keyset = CommitteeConfig::read(&cli.config)
+    let mut keyset = CommitteeConfig::read(&cli.config)
         .await
         .with_context(|| format!("opening the config at path {:?}", cli.config))?;
+
+    keyset.members.truncate(cli.max_nodes);
 
     let mut addresses = Vec::new();
     for node in keyset.members {
