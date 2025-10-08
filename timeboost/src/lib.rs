@@ -137,7 +137,7 @@ impl Timeboost {
                         {
                             times::record("tb-sequenced", *round);
                             if *round % 100 == 0 {
-                                tracing::error!(node = %self.label, round = %*round)
+                                info!(target: "times", node = %self.label, round = %*round)
                             }
                             if !dumped && *round >= self.config.times_until {
                                 self.save_all().await?;
@@ -202,51 +202,100 @@ impl Timeboost {
         }
     }
 
+    /// Save the deltas between different series.
     #[cfg(feature = "times")]
-    async fn save_a_b_duration(&self, a: &str, b: &str, unit: &str) -> Result<()> {
-        let Some(sa) = times::time_series(a) else {
-            anyhow::bail!("no time series corresponds to {a:?}")
+    async fn save_relative_durations(&self) -> Result<()> {
+        let Some(sf_start) = times::time_series("sf-round-start") else {
+            anyhow::bail!("no time series corresponds to sf-round-start")
         };
-        let Some(sb) = times::time_series(b) else {
-            anyhow::bail!("no time series corresponds to {b:?}")
+        let Some(sf_end) = times::time_series("sf-round-end") else {
+            anyhow::bail!("no time series corresponds to sf-round-end")
         };
-        let vals = sa
-            .records()
-            .iter()
-            .filter_map(|(k, a)| {
-                let b = sb.records().get(k)?;
-                Some((*k, b.duration_since(*a).as_millis()))
-            })
-            .take(self.config.times_until as usize);
+        let Some(tb_sequenced) = times::time_series("tb-sequenced") else {
+            anyhow::bail!("no time series corresponds to tb-sequenced")
+        };
+        let Some(tb_certified) = times::time_series("tb-certified") else {
+            anyhow::bail!("no time series corresponds to tb-certified")
+        };
+        let Some(tb_verified) = times::time_series("tb-verified") else {
+            anyhow::bail!("no time series corresponds to tb-verified")
+        };
+        let mut csv = csv::Writer::from_writer(Vec::new());
+        for (r, s) in sf_start.records() {
+            let Some(sfe) = sf_end.records().get(r) else {
+                continue;
+            };
+            let Some(tbs) = tb_sequenced.records().get(r) else {
+                continue;
+            };
+            let Some(tbc) = tb_certified.records().get(r) else {
+                continue;
+            };
+            let Some(tbv) = tb_verified.records().get(r) else {
+                continue;
+            };
+            csv.serialize(Relative {
+                round: *r,
+                consensus: sfe.duration_since(*s).as_millis() as u64,
+                sequenced: tbs.duration_since(*s).as_millis() as u64,
+                certified: tbc.duration_since(*s).as_millis() as u64,
+                verified: tbv.duration_since(*s).as_millis() as u64,
+            })?
+        }
         let path = std::path::Path::new("/tmp")
-            .join(&format!("{a}-{b}-{}", self.label))
+            .join(self.label.to_string())
             .with_extension("csv");
-        timeboost_utils::write_csv(path, (unit, "delta"), vals).await?;
+        tokio::fs::write(path, csv.into_inner()?).await?;
         Ok(())
     }
 
+    /// Save the delta between successive rounds.
     #[cfg(feature = "times")]
-    async fn save_duration(&self, name: &str, unit: &str) -> Result<()> {
+    async fn save_duration(&self, name: &str, skip: usize) -> Result<()> {
         if let Some(series) = times::time_series(name) {
+            let mut csv = csv::Writer::from_writer(Vec::new());
+            for d in series
+                .deltas()
+                .skip(skip)
+                .take(self.config.times_until as usize)
+                .map(|(k, d)| Delta {
+                    round: k,
+                    delta: d.as_millis() as u64,
+                })
+            {
+                csv.serialize(d)?
+            }
             let path = std::path::Path::new("/tmp")
-                .join(&format!("{name}-{}", self.label))
+                .join(format!("{name}-{}", self.label))
                 .with_extension("csv");
-            let num = self.config.times_until as usize;
-            let vals = series.deltas().take(num).map(|(k, d)| (k, d.as_millis()));
-            timeboost_utils::write_csv(path, (unit, "delta"), vals).await?
+            tokio::fs::write(path, csv.into_inner()?).await?;
         }
         Ok(())
     }
 
     #[cfg(feature = "times")]
     async fn save_all(&self) -> Result<()> {
-        self.save_duration("sf-round-start", "round").await?;
-        self.save_a_b_duration("sf-round-start", "tb-sequenced", "round")
-            .await?;
-        self.save_a_b_duration("sf-round-start", "tb-certified", "round")
-            .await?;
-        self.save_a_b_duration("tb-sequenced", "tb-certified", "round")
-            .await?;
+        self.save_duration("sf-round-start", 1).await?;
+        self.save_duration("tb-sequenced", 0).await?;
+        self.save_duration("tb-certified", 0).await?;
+        self.save_relative_durations().await?;
         Ok(())
     }
+}
+
+#[cfg(feature = "times")]
+#[derive(serde::Serialize)]
+struct Delta {
+    round: u64,
+    delta: u64,
+}
+
+#[cfg(feature = "times")]
+#[derive(serde::Serialize)]
+struct Relative {
+    round: u64,
+    consensus: u64,
+    sequenced: u64,
+    certified: u64,
+    verified: u64,
 }

@@ -15,7 +15,7 @@ path = "src/binaries/sailfish.rs"
 
 [features]
 until = []
-times = ["timeboost-builder/times"]
+times = ["dep:csv", "timeboost-builder/times", "timeboost-sequencer/times"]
 
 [dependencies]
 alloy = { workspace = true }
@@ -25,6 +25,7 @@ bon = { workspace = true }
 clap = { workspace = true }
 cliquenet = { path = "../cliquenet" }
 committable = { workspace = true }
+csv = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }

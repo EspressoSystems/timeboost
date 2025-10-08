@@ -410,6 +410,8 @@ impl Task {
                 debug_assert!(self.round < round);
                 self.round = round;
                 candidates.push((round, evidence, lists));
+                #[cfg(feature = "times")]
+                times::record("sf-round-end", *round)
             }
             while let Some(action) = actions.pop_front() {
                 if action.is_deliver() {

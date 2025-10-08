@@ -5,6 +5,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+times = []
+
 [dependencies]
 alloy = { workspace = true }
 ark-std = { workspace = true }
@@ -24,6 +27,7 @@ thiserror = { workspace = true }
 timeboost-config = { path = "../timeboost-config" }
 timeboost-crypto = { path = "../timeboost-crypto" }
 timeboost-types = { path = "../timeboost-types" }
+times = { path = "../times" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

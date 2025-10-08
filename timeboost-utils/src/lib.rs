@@ -3,12 +3,9 @@ pub mod load_generation;
 pub mod types;
 pub mod until;
 
-use std::io;
-use std::{fmt::Display, path::Path, time::Duration};
+use std::time::Duration;
 
 use cliquenet::Address;
-use tokio::fs;
-use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::time::sleep;
 use tracing::{error, info};
 
@@ -42,18 +39,4 @@ pub async fn wait_for_live_peer(host: &Address) -> anyhow::Result<()> {
         }
         sleep(Duration::from_secs(3)).await;
     }
-}
-
-pub async fn write_csv<A, B, P, I>(path: P, hdrs: (&str, &str), vals: I) -> io::Result<()>
-where
-    A: Display,
-    B: Display,
-    P: AsRef<Path>,
-    I: IntoIterator<Item = (A, B)>,
-{
-    let mut csv = vec![format!("{},{}", hdrs.0, hdrs.1)];
-    csv.extend(vals.into_iter().map(|(a, b)| format!("{a},{b}")));
-    let mut w = BufWriter::new(fs::File::create(path).await?);
-    w.write_all(csv.join("\n").as_bytes()).await?;
-    w.flush().await
 }

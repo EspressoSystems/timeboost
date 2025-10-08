@@ -35,9 +35,6 @@ struct Cli {
     /// How many rounds to run.
     #[clap(long, default_value_t = 1000)]
     until: u64,
-
-    #[clap(long)]
-    times_until: Option<u64>,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -132,13 +129,6 @@ async fn main() -> Result<()> {
         .with_metrics(sf_metrics);
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
-    #[cfg(feature = "times")]
-    let csv_path = cli.stamp.with_extension("csv");
-    #[cfg(feature = "times")]
-    let mut dumped = false;
-    #[cfg(feature = "times")]
-    let mut round = sailfish::types::RoundNumber::genesis();
-
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
 
@@ -155,20 +145,6 @@ async fn main() -> Result<()> {
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
-                                #[cfg(feature = "times")]
-                                {
-                                    if payload.round().num() > round {
-                                        times::record("sf", *round);
-                                        round = payload.round().num()
-                                    }
-                                    if !dumped && cli.times_until.map(|n| n <= *payload.round().num()).unwrap_or(false) {
-                                        if let Some(series) = times::take_time_series("sf") {
-                                            let vals = series.deltas().map(|(k, d)| (k, d.as_millis()));
-                                            timeboost_utils::write_csv(&csv_path, ("round", "delta"), vals).await?;
-                                        }
-                                        dumped = true
-                                    }
-                                }
                                 if *payload.round().num() >= cli.until {
                                     break 'main
                                 }
