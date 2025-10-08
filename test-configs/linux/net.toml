@@ -1,5 +1,5 @@
 [nat]
-device = "eth0"
+device = "enp5s0"
 cidr   = "11.0.0.0/8"
 
 [bridge]
@@ -110,4 +110,3 @@ name   = "dev14"
 cidr   = "11.0.0.15/16"
 delay  = "10ms"
 #jitter = "2ms"
-

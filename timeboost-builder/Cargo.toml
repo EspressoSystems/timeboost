@@ -5,9 +5,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[features]
-times = []
-
 [dependencies]
 adapters = { path = "../adapters" }
 bon = { workspace = true }
@@ -24,6 +21,7 @@ smallvec = { workspace = true }
 thiserror = { workspace = true }
 timeboost-config = { path = "../timeboost-config" }
 timeboost-types = { path = "../timeboost-types" }
-times = { path = "../times" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+# optional:
+times = { path = "../times", optional = true }

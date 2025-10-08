@@ -7,7 +7,6 @@ rust-version.workspace = true
 
 [features]
 test  = ["sailfish-consensus/test"]
-times = []
 
 [dependencies]
 arrayvec = { workspace = true }
@@ -17,5 +16,6 @@ multisig = { path = "../multisig" }
 sailfish-consensus = { path = "../sailfish-consensus" }
 sailfish-rbc = { path = "../sailfish-rbc" }
 sailfish-types = { path = "../sailfish-types" }
-times = { path = "../times" }
 tokio = { workspace = true }
+# optional:
+times = { path = "../times", optional = true }
