@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -7,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::Result;
 use bytes::Bytes;
 use clap::Parser;
+use multisig::PublicKey;
 use prost::Message;
 use quick_cache::sync::Cache;
 use sailfish::types::RoundNumber;
@@ -16,10 +18,9 @@ use timeboost::proto::forward::forward_api_server::{ForwardApi, ForwardApiServer
 use timeboost::proto::inclusion::InclusionList;
 use timeboost::proto::internal::internal_api_client::InternalApiClient;
 use timeboost_utils::types::logging::init_logging;
-use tokio::spawn;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::RecvError;
-use tonic::transport::{Endpoint, Uri};
+use tokio::sync::Mutex;
+use tonic::metadata::AsciiMetadataValue;
+use tonic::transport::{Channel, Endpoint, Uri};
 use tonic::{Request, Response, Status};
 use tracing::error;
 
@@ -42,16 +43,24 @@ struct Args {
 struct Service {
     next_block: AtomicU64,
     cache: Cache<RoundNumber, (Bytes, u64)>,
-    output: broadcast::Sender<Block>,
+    clients: HashMap<AsciiMetadataValue, Mutex<InternalApiClient<Channel>>>,
 }
 
 impl Service {
-    fn new(tx: broadcast::Sender<Block>) -> Self {
+    fn new() -> Self {
         Self {
             next_block: AtomicU64::new(1),
             cache: Cache::new(20_000),
-            output: tx,
+            clients: HashMap::new(),
         }
+    }
+
+    fn register(&mut self, key: PublicKey, to: Uri) {
+        let client = InternalApiClient::new(Endpoint::from(to.clone()).connect_lazy());
+        let mut k = key.to_string();
+        k.retain(|c| c.is_ascii());
+        self.clients
+            .insert(AsciiMetadataValue::try_from(k).unwrap(), Mutex::new(client));
     }
 
     async fn serve(self, addr: SocketAddr) -> Result<()> {
@@ -69,14 +78,15 @@ impl ForwardApi for Service {
         &self,
         r: Request<InclusionList>,
     ) -> Result<Response<()>, Status> {
-        let list = r.into_inner();
-        let round = RoundNumber::from(list.round);
-        let bytes = Bytes::from(list.encode_to_vec());
-        let mut is_new = false;
+        let Some(sender) = r.metadata().get("src") else {
+            error!("missing 'src' metadata");
+            exit(1)
+        };
+        let round = RoundNumber::from(r.get_ref().round);
+        let bytes = Bytes::from(r.get_ref().encode_to_vec());
         let (prev, bnum) = self
             .cache
             .get_or_insert_with(&round, || -> Result<_, Infallible> {
-                is_new = true;
                 Ok((
                     bytes.clone(),
                     self.next_block.fetch_add(1, Ordering::Relaxed),
@@ -87,35 +97,21 @@ impl ForwardApi for Service {
             error!(%round, "inclusion list mismatch");
             exit(1)
         }
-        if is_new {
-            let block = Block {
-                number: bnum,
-                round: list.round,
-                payload: bytes,
-            };
-            if let Err(err) = self.output.send(block) {
-                return Err(Status::internal(err.to_string()));
-            }
+        let block = Block {
+            number: bnum,
+            round: *round,
+            payload: bytes,
+        };
+        let Some(client) = self.clients.get(sender) else {
+            error!("unknown sender {sender:?}");
+            exit(1)
+        };
+        let mut c = client.lock().await;
+        if let Err(err) = c.submit_block(block).await {
+            error!(%err, "failed to send block to {sender:?}");
+            exit(1)
         }
         Ok(Response::new(()))
-    }
-}
-
-/// Delivers broadcasted blocks to the given endpoint.
-async fn deliver(to: Uri, mut rx: broadcast::Receiver<Block>) {
-    let mut client = InternalApiClient::new(Endpoint::from(to.clone()).connect_lazy());
-    loop {
-        match rx.recv().await {
-            Ok(b) => {
-                if let Err(err) = client.submit_block(b).await {
-                    error!(%err, %to, "block-maker could not submit block");
-                }
-            }
-            Err(RecvError::Closed) => break,
-            Err(RecvError::Lagged(n)) => {
-                error!(%to, %n, "block-maker lagging behind");
-            }
-        }
     }
 }
 
@@ -125,10 +121,10 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let mut committee = CommitteeConfig::read(&args.committee).await?;
     committee.members.truncate(args.max_nodes);
-    let (tx, _) = broadcast::channel(args.capacity);
+    let mut srv = Service::new();
     for member in committee.members {
         let uri: Uri = format!("http://{}", member.internal_api).parse()?;
-        spawn(deliver(uri, tx.subscribe()));
+        srv.register(member.signing_key, uri)
     }
-    Service::new(tx).serve(args.bind).await
+    srv.serve(args.bind).await
 }
