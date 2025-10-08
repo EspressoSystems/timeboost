@@ -128,6 +128,7 @@ mkconfig-docker DATETIME *ARGS:
   cargo run --release --bin mkconfig -- -n 5 \
     --committee-id 0 \
     --public-addr "node:8000" \
+    --public-mode "docker-dns" \
     --internal-addr "node:8003" \
     --http-api "node:8004" \
     --nitro-addr "nitro:55000" \
