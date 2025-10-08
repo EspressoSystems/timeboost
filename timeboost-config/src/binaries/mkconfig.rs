@@ -27,9 +27,13 @@ struct Args {
     #[clap(long, short)]
     num: NonZeroU8,
 
-    /// Address modification mode.
-    #[clap(long, short, default_value = "increment-port")]
-    mode: Mode,
+    /// Address modification mode for public addresses.
+    #[clap(long, default_value = "increment-port")]
+    public_mode: Mode,
+
+    /// Address modification mode for Nitro addresses.
+    #[clap(long, default_value = "increment-port")]
+    nitro_mode: Mode,
 
     /// RNG seed for deterministic key generation.
     #[clap(long)]
@@ -131,13 +135,41 @@ impl FromStr for TimestampOrOffset {
 }
 
 /// How should addresses be updated?
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum Mode {
+    /// Leave the address unchanged.
+    Unchanged,
     /// Increment the port number of addresses.
-    #[default]
     IncrementPort,
     /// Increment the IP address.
     IncrementAddress,
+    /// Trailing number on DNS name.
+    DockerDns,
+}
+
+impl Mode {
+    fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
+        match self {
+            Mode::Unchanged => Ok(base.clone()),
+            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + 10 * u16::from(i))),
+            Mode::IncrementAddress => {
+                let Address::Inet(ip, port) = base else {
+                    bail!("increment-address requires IP addresses")
+                };
+                let ip = match ip {
+                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip) + u32::from(i)).into()),
+                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
+                };
+                Ok(Address::Inet(ip, *port))
+            }
+            Mode::DockerDns => {
+                let Address::Name(name, port) = base else {
+                    bail!("increment dns requires dns name")
+                };
+                Ok(Address::Name(format!("{}{}", name, i), *port))
+            }
+        }
+    }
 }
 
 impl Args {
@@ -170,12 +202,13 @@ impl Args {
             let signing_keypair = multisig::Keypair::generate_with_rng(&mut s_rng);
             let dh_keypair = x25519::Keypair::generate_with_rng(&mut d_rng)?;
             let dkg_dec_key = DkgDecKey::rand(&mut p_rng);
-
-            let public_addr = self.adjust_addr(i, &self.public_addr)?;
-            let http_addr = self.adjust_addr(i, &self.http_api)?;
-            let internal_addr = self.adjust_addr(i, &self.internal_addr)?;
+            let public_mode = self.public_mode;
+            let nitro_mode = self.nitro_mode;
+            let public_addr = public_mode.adjust_addr(i, &self.public_addr)?;
+            let http_addr = public_mode.adjust_addr(i, &self.http_api)?;
+            let internal_addr = public_mode.adjust_addr(i, &self.internal_addr)?;
             let nitro_addr = if let Some(addr) = &self.nitro_addr {
-                Some(self.adjust_addr(i, addr)?)
+                Some(nitro_mode.adjust_addr(i, addr)?)
             } else {
                 None
             };
@@ -246,22 +279,6 @@ impl Args {
         committee_config_file.write_all(toml::to_string_pretty(&committee_config)?.as_bytes())?;
 
         Ok(())
-    }
-
-    fn adjust_addr(&self, i: u8, base: &Address) -> Result<Address> {
-        match self.mode {
-            Mode::IncrementPort => Ok(base.clone().with_port(base.port() + 10 * u16::from(i))),
-            Mode::IncrementAddress => {
-                let Address::Inet(ip, port) = base else {
-                    bail!("increment-address requires IP addresses")
-                };
-                let ip = match ip {
-                    IpAddr::V4(ip) => IpAddr::V4((u32::from(*ip) + u32::from(i)).into()),
-                    IpAddr::V6(ip) => IpAddr::V6((u128::from(*ip) + u128::from(i)).into()),
-                };
-                Ok(Address::Inet(ip, *port))
-            }
-        }
     }
 }
 

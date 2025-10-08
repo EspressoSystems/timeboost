@@ -7,19 +7,19 @@ http-api = "127.0.0.1:8024"
 
 [net.internal]
 address = "127.0.0.1:8023"
-nitro   = "127.0.0.1:55000"
+nitro = "127.0.0.1:55000"
 
 [keys.signing]
-secret = "2yWTaC6MWvNva97t81cd9QX5qph68NnB1wRVwAChtuGr"
-public = "264jMLf85hfufg4ck97Hw2jiL6i1PHNoGUqxUqfhtssaE"
+secret = "7Tsf8A18BuPwTkB2y6h21BE78tsmEsRW9uDJRQuDJevD"
+public = "2A7G9nv7cEZo89LBs8KqhD8gYeB6iFphSGkYeoFcBFvdw"
 
 [keys.dh]
-secret = "Fo2nYV4gE9VfoVW9bSySAJ1ZuKT461x6ovZnr3EecCZg"
-public = "63eYNKoW2PsWZFhHHj3eZwHTdPE7gEjEDM7gGeDf9Uaj"
+secret = "53oKyxEP59A2zmrtP9iBTDRCdfXLYpMrtbkewWFD2y4f"
+public = "CdQvXJum7X6aSisrBzKXcYjvj61hVjkXLaRPrd35NkPk"
 
 [keys.dkg]
-secret = "77r7T3En7NNQvRA81G5hLhJD3VpnigJdkPonX3oAwWkX"
-public = "62bnAAbU58zZUcGqy9JKGZRZHkm3g7JZB2DtJGQyChXQBPGvXSS6fF21yoxiVuD1eb"
+secret = "BjuwAZ8UnqoP5TQwcE8WCnDZWFrsMr3i5WxxTXyjy6kT"
+public = "5mQmEhakPa5GLUpm5zNCSc5p3WC4KA96FzEQMczufAve2roN2z7psiRRiDq3H3NSqt"
 
 [chain]
 namespace = 10101

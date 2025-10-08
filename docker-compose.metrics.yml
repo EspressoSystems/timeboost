@@ -9,8 +9,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=timeboost
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/main.json
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.8
+      - timeboost        
     volumes:
       - ./grafana/provisioning/:/etc/grafana/provisioning/
       - ./grafana/dashboards:/var/lib/grafana/dashboards/
@@ -26,8 +25,7 @@ services:
       - ./prometheus:/etc/prometheus
       - prom_data:/prometheus
     networks:
-      timeboost:
-        ipv4_address: 172.20.0.9
+      - timeboost
 
 networks:
   timeboost:

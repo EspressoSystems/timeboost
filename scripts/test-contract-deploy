@@ -42,7 +42,7 @@ URL="http://localhost:8545"
 DEPLOYMENT_FILE=".tmp.deploy.toml"
 COMMITTEE_PATH=c0
 if $NITRO_ENABLED; then
-    COMMITTEE_PATH=nitro-ci-committee
+    COMMITTEE_PATH=nitro-ci
 fi
 
 # Make sure foundry toolchain is installed locally

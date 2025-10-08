@@ -13,6 +13,12 @@ pub(crate) struct YapperConfig {
     pub(crate) nitro_url: Option<Url>,
     /// Chain id for l2 chain
     pub(crate) chain_id: u64,
+    /// Chain id id for the parent chain
+    pub(crate) parent_id: u64,
+    /// URL of the parent chain that is configured
+    pub(crate) parent_url: Url,
+    /// Bridge address
+    pub(crate) bridge_addr: alloy::primitives::Address,
     /// Use a given threshold encryption key, instead of fetching from nodes
     pub(crate) threshold_enc_key: Option<ThresholdEncKey>,
 }
