@@ -59,6 +59,8 @@ pub fn make_bundle(key: &ThresholdEncKey) -> anyhow::Result<BundleVariant> {
 pub fn make_dev_acct_bundle(
     pubkey: &ThresholdEncKey,
     txn: TxInfo,
+    enc_ratio: f64,
+    prio_ratio: f64,
 ) -> anyhow::Result<BundleVariant> {
     let mut rng = rand::thread_rng();
     let mut v = [0; 256];
@@ -68,7 +70,7 @@ pub fn make_dev_acct_bundle(
     let max_seqno = 10;
     let mut bundle = create_dev_acct_txn_bundle(txn)?;
 
-    if rng.gen_bool(0.5) {
+    if rng.gen_bool(enc_ratio) {
         // encrypt bundle
         let data = bundle.data();
         let plaintext = Plaintext::new(data.to_vec());
@@ -78,7 +80,7 @@ pub fn make_dev_acct_bundle(
         bundle.set_encrypted_data(encoded.into());
     }
 
-    if rng.gen_bool(0.5) {
+    if rng.gen_bool(prio_ratio) {
         // priority
         let auction = Address::default();
         let seqno = SeqNo::from(u.int_in_range(0..=max_seqno)?);
