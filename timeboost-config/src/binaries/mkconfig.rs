@@ -85,7 +85,7 @@ struct Args {
     #[clap(long)]
     parent_chain_id: u64,
 
-    /// Parent chain inbox contract adddress
+    /// Parent chain inbox contract address
     #[clap(long)]
     parent_ibox_contract: alloy::primitives::Address,
 
