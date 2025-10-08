@@ -182,7 +182,7 @@ async fn main() -> Result<()> {
 
         let committee = CommitteeConfig::read(&cli.committee)
             .await
-            .with_context(|| format!("failed to read committee config {:?}", committee_conf))?;
+            .with_context(|| format!("failed to read committee config {:?}", cli.committee))?;
 
         let handle = {
             let Some(member) = committee
