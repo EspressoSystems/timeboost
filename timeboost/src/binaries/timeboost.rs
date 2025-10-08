@@ -51,8 +51,9 @@ struct Cli {
     #[clap(long)]
     required_decrypt_rounds: Option<u64>,
 
+    #[cfg(feature = "times")]
     #[clap(long)]
-    times_until: Option<u64>,
+    times_until: u64,
 }
 
 #[tokio::main]
@@ -150,7 +151,7 @@ async fn main() -> Result<()> {
         .chain_config(node_config.chain.clone());
 
     #[cfg(feature = "times")]
-    let config = config.maybe_times_until(cli.times_until).build();
+    let config = config.times_until(cli.times_until).build();
     #[cfg(not(feature = "times"))]
     let config = config.build();
 

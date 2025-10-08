@@ -1,5 +1,6 @@
 [private]
 build *features:
+    cargo build --release --bin run --bin run-committee --features "netns"
     cargo build --release --workspace --all-targets --features "{{features}}"
 
 [working-directory: ".."]
@@ -43,22 +44,9 @@ timeboost-times nodes: (build "times")
             --run   "2:sleep 3" \
             --run   "3:scripts/deploy-contract -c test-configs/linux/committee.toml --max-nodes {{nodes}} -u http://11.0.1.0:8545" \
             --spawn "4:target/release/block-maker --bind 11.0.1.0:55000 -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
-            --spawn "4:target/release/yapper -c test-configs/linux/committee.toml --max-nodes {{nodes}}" \
+            --spawn "4:target/release/yapper -c test-configs/linux/ --max-nodes {{nodes}}" \
             --spawn-as-root "5:target/release/run-committee -u $(id -u) -g $(id -g) -c test-configs/linux/ --times-until 10000 --max-nodes {{nodes}}" \
             target/release/block-checker -- -c test-configs/linux -b 10000 --max-nodes {{nodes}}
-
-plot-all unit gnuplot output +csv:
-    #!/usr/bin/env bash
-    set -e
-    dir=$(mktemp -p /tmp -d csv-XXXXX)
-    inputs=()
-    read -a inputs <<< "{{csv}}"
-    for i in ${!inputs[@]}; do
-        xan rename "delta-$i" -s delta "${inputs[$i]}" -o "$dir/0$i.csv"
-    done
-    xan cat columns $dir/*.csv | xan select '{{unit}},delta-*' -o "$dir/data.csv"
-    gnuplot -e "filename=\"$dir/data.csv\"" "{{gnuplot}}" > "{{output}}"
-    xan stats -s "1:" -q "$dir/data.csv" | xan select mean,q1,median,q3,stddev | xan view -MR -t borderless
 
 plot-node gnuplot output csv:
     #!/usr/bin/env bash

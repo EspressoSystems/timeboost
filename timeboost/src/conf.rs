@@ -73,7 +73,6 @@ pub struct TimeboostConfig {
 
     /// For how many units (rounds/blocks) should times be collected?
     #[cfg(feature = "times")]
-    #[builder(default)]
     pub(crate) times_until: u64,
 }
 

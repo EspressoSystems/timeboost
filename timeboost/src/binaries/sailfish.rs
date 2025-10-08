@@ -36,8 +36,9 @@ struct Cli {
     #[clap(long, default_value_t = 1000)]
     until: u64,
 
+    #[cfg(feature = "times")]
     #[clap(long)]
-    times_until: Option<u64>,
+    times_until: u64,
 }
 
 /// Payload data type is a block of 512 random bytes.
@@ -133,7 +134,7 @@ async fn main() -> Result<()> {
     let mut coordinator = Coordinator::new(rbc, consensus, false);
 
     #[cfg(feature = "times")]
-    let mut dumped = false;
+    let mut writer = timeboost::times::TimesWriter::new(config.keys.signing.public);
 
     // Create proof of execution.
     tokio::fs::File::create(cli.stamp).await?.sync_all().await?;
@@ -151,33 +152,15 @@ async fn main() -> Result<()> {
                     Ok(actions) => {
                         for a in actions {
                             if let Action::Deliver(payload) = a {
+                                let r = *payload.round().num();
                                 #[cfg(feature = "times")]
-                                times::record_once("sf-round-end", *payload.round().num());
-                                #[cfg(feature = "times")]
-                                if !dumped && cli.times_until.map(|n| n <= *payload.round().num()).unwrap_or(false) {
-                                    let Some(start) = times::take_time_series("sf-round-start") else {
-                                        anyhow::bail!("no time series corresponds to sf-round-start");
-                                    };
-                                    let Some(end) = times::take_time_series("sf-round-end") else {
-                                        anyhow::bail!("no time series corresponds to sf-round-end");
-                                    };
-                                    let mut csv = csv::Writer::from_writer(Vec::new());
-                                    for (r, s) in start.records() {
-                                        let Some(e) = end.records().get(r) else {
-                                            continue;
-                                        };
-                                        csv.serialize(Duration {
-                                            round: *r,
-                                            sailfish: e.duration_since(*s).as_millis() as u64,
-                                        })?
+                                {
+                                    times::record_once("sf-round-end", r);
+                                    if !writer.is_sailfish_saved() && r >= cli.times_until {
+                                        writer.save_sailfish_series().await?
                                     }
-                                    let path = std::path::Path::new("/tmp")
-                                        .join(config.keys.signing.public.to_string())
-                                        .with_extension("csv");
-                                    tokio::fs::write(path, csv.into_inner()?).await?;
-                                    dumped = true
                                 }
-                                if *payload.round().num() >= cli.until {
+                                if r >= cli.until {
                                     break 'main
                                 }
                                 info!(round = %payload.round().num(), "payload delivered");
@@ -199,11 +182,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(feature = "times")]
-#[derive(serde::Serialize)]
-struct Duration {
-    round: u64,
-    sailfish: u64,
 }

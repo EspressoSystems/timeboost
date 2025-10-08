@@ -35,6 +35,9 @@ pub mod committee;
 pub mod forwarder;
 pub mod metrics;
 
+#[cfg(feature = "times")]
+pub mod times;
+
 pub struct Timeboost {
     label: PublicKey,
     config: TimeboostConfig,
@@ -49,8 +52,6 @@ pub struct Timeboost {
     // pubsub service (+backend) handle, disconnect on drop
     _pubsub_provider: PubSubProvider,
     events: NewCommitteeStream,
-    #[cfg(feature = "times")]
-    epoch: std::time::Instant,
 }
 
 impl Timeboost {
@@ -92,8 +93,6 @@ impl Timeboost {
             submitter: sub,
             _pubsub_provider: provider,
             events,
-            #[cfg(feature = "times")]
-            epoch: std::time::Instant::now(),
         })
     }
 
@@ -111,12 +110,7 @@ impl Timeboost {
 
     pub async fn go(mut self) -> Result<()> {
         #[cfg(feature = "times")]
-        let mut dumped = false;
-
-        #[cfg(feature = "times")]
-        {
-            self.epoch = std::time::Instant::now();
-        }
+        let mut writer = crate::times::TimesWriter::new(self.label);
 
         loop {
             select! {
@@ -138,9 +132,8 @@ impl Timeboost {
                             if *round % 100 == 0 {
                                 info!(target: "times", node = %self.label, round = %*round)
                             }
-                            if !dumped && *round >= self.config.times_until {
-                                self.save_durations().await?;
-                                dumped = true
+                            if !writer.is_timeboost_saved() && *round >= self.config.times_until {
+                                writer.save_timeboost_series().await?
                             }
                         }
                         if let Some(ref mut f) = self.nitro_forwarder {
@@ -198,67 +191,4 @@ impl Timeboost {
             }
         }
     }
-
-    /// Save the durations of various phases.
-    #[cfg(feature = "times")]
-    async fn save_durations(&self) -> Result<()> {
-        let Some(sf_start) = times::time_series("sf-round-start") else {
-            anyhow::bail!("no time series corresponds to sf-round-start")
-        };
-        let Some(sf_end) = times::time_series("sf-round-end") else {
-            anyhow::bail!("no time series corresponds to sf-round-end")
-        };
-        let Some(tb_decrypt_start) = times::time_series("tb-decrypt-start") else {
-            anyhow::bail!("no time series corresponds to tb-decrypt-start")
-        };
-        let Some(tb_decrypt_end) = times::time_series("tb-decrypt-end") else {
-            anyhow::bail!("no time series corresponds to tb-decrypt-end")
-        };
-        let Some(tb_cert_start) = times::time_series("tb-certify-start") else {
-            anyhow::bail!("no time series corresponds to tb-certify-start")
-        };
-        let Some(tb_cert_end) = times::time_series("tb-certify-end") else {
-            anyhow::bail!("no time series corresponds to tb-certify-end")
-        };
-        let mut csv = csv::Writer::from_writer(Vec::new());
-        for (r, sfs) in sf_start.records() {
-            let Some(sfe) = sf_end.records().get(r) else {
-                continue;
-            };
-            let Some(tbds) = tb_decrypt_start.records().get(r) else {
-                continue;
-            };
-            let Some(tbde) = tb_decrypt_end.records().get(r) else {
-                continue;
-            };
-            let Some(tbcs) = tb_cert_start.records().get(r) else {
-                continue;
-            };
-            let Some(tbce) = tb_cert_end.records().get(r) else {
-                continue;
-            };
-            csv.serialize(Durations {
-                round: *r,
-                sailfish: sfe.duration_since(*sfs).as_millis() as u64,
-                decrypt: tbde.duration_since(*tbds).as_millis() as u64,
-                certify: tbce.duration_since(*tbcs).as_millis() as u64,
-                total: tbce.duration_since(*sfs).as_millis() as u64,
-            })?
-        }
-        let path = std::path::Path::new("/tmp")
-            .join(self.label.to_string())
-            .with_extension("csv");
-        tokio::fs::write(path, csv.into_inner()?).await?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "times")]
-#[derive(serde::Serialize)]
-struct Durations {
-    round: u64,
-    sailfish: u64,
-    decrypt: u64,
-    certify: u64,
-    total: u64,
 }
