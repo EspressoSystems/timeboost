@@ -7,7 +7,7 @@ http-api = "11.0.0.1:8004"
 
 [net.internal]
 address = "11.0.0.1:8003"
-nitro   = "11.0.1.0:55000"
+nitro = "11.0.1.0:55000"
 
 [keys.signing]
 secret = "3hzb3bRzn3dXSV1iEVE6mU4BF2aS725s8AboRxLwULPp"

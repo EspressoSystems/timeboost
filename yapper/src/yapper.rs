@@ -1,20 +1,25 @@
 use std::{str::FromStr, time::Duration};
 
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
+    consensus::{SignableTransaction, TxEnvelope, TxLegacy},
+    network::{Ethereum, TransactionBuilder, TxSignerSync},
     primitives::{Address, U256, address},
     providers::{Provider, RootProvider},
+    rlp::Encodable,
     rpc::types::TransactionRequest,
-    signers::local::PrivateKeySigner,
+    signers::local::{LocalSigner, PrivateKeySigner},
 };
 use anyhow::{Context, Result};
+use bytes::BytesMut;
 use futures::future::join_all;
 use reqwest::{Client, Url};
 use timeboost::{crypto::prelude::ThresholdEncKey, types::BundleVariant};
-use timeboost_utils::enc_key::ThresholdEncKeyCellAccumulator;
-use timeboost_utils::load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis};
-use tokio::time::interval;
-use tracing::warn;
+use timeboost_utils::{
+    enc_key::ThresholdEncKeyCellAccumulator,
+    load_generation::{TxInfo, make_bundle, make_dev_acct_bundle, tps_to_millis},
+};
+use tokio::time::{interval, sleep};
+use tracing::{debug, info, trace, warn};
 
 use crate::config::YapperConfig;
 
@@ -41,7 +46,7 @@ pub(crate) struct Yapper {
     client: Client,
     interval: Duration,
     chain_id: u64,
-    provider: Option<RootProvider>,
+    nitro: Option<(RootProvider, Vec<PrivateKeySigner>)>,
     enc_key: Option<ThresholdEncKey>,
 }
 
@@ -64,8 +69,20 @@ impl Yapper {
             });
         }
         let client = Client::builder().timeout(Duration::from_secs(1)).build()?;
-        let provider = if let Some(url) = cfg.nitro_url {
-            Some(RootProvider::<Ethereum>::connect(url.as_str()).await?)
+        let nitro = if let Some(nitro_url) = cfg.nitro_url {
+            let nitro_provider = RootProvider::<Ethereum>::connect(nitro_url.as_str()).await?;
+            let l1_provider = RootProvider::<Ethereum>::connect(cfg.parent_url.as_str()).await?;
+            // TODO: parameterize number of sender addresses
+            let keys: Vec<_> = (0..20).map(|_| LocalSigner::random()).collect();
+            Self::fund_addresses(
+                &l1_provider,
+                &nitro_provider,
+                cfg.parent_id,
+                &keys,
+                cfg.bridge_addr,
+            )
+            .await?;
+            Some((nitro_provider, keys))
         } else {
             None
         };
@@ -74,13 +91,14 @@ impl Yapper {
             urls,
             interval: Duration::from_millis(tps_to_millis(cfg.tps)),
             client,
-            provider,
+            nitro,
             chain_id: cfg.chain_id,
             enc_key: cfg.threshold_enc_key,
         })
     }
 
     pub(crate) async fn yap(&self) -> Result<()> {
+        info!("starting yapper");
         let mut interval = interval(self.interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -89,10 +107,12 @@ impl Yapper {
             self.urls.iter().map(|url| url.enckey_url.clone()),
         );
 
+        let mut count = 0;
         loop {
-            let b = if let Some(ref p) = self.provider {
+            let b = if let Some((ref p, ref senders)) = self.nitro {
                 // For testing just send from the dev account to the validator address
-                let Ok(txn) = Self::prepare_txn(p, self.chain_id).await else {
+                let sender = senders[count % senders.len()].clone();
+                let Ok(txn) = Self::prepare_txn(p, sender, self.chain_id).await else {
                     warn!("failed to prepare txn");
                     continue;
                 };
@@ -134,17 +154,24 @@ impl Yapper {
                     .await
             }))
             .await;
-
+            if count % 100 == 0 {
+                debug!("submitted: {} bundles", count);
+            }
+            count += 1;
             interval.tick().await;
         }
     }
 
-    async fn prepare_txn(p: &RootProvider, chain_id: u64) -> Result<TxInfo> {
-        let nonce = p.get_transaction_count(DEV_ACCT_ADDRESS).await?;
+    async fn prepare_txn(
+        p: &RootProvider,
+        from: PrivateKeySigner,
+        chain_id: u64,
+    ) -> Result<TxInfo> {
+        let nonce = p.get_transaction_count(from.address()).await?;
         let tx = TransactionRequest::default()
             .with_chain_id(chain_id)
             .with_nonce(nonce)
-            .with_from(DEV_ACCT_ADDRESS)
+            .with_from(from.address())
             // Just choosing an address that already exists on the chain
             .with_to(VALIDATOR_ADDRESS)
             .with_value(U256::from(1));
@@ -165,7 +192,7 @@ impl Yapper {
             to: VALIDATOR_ADDRESS,
             gas_limit,
             base_fee,
-            signer: PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?,
+            signer: from,
         })
     }
 
@@ -177,6 +204,8 @@ impl Yapper {
     ) {
         let result = match bundle {
             BundleVariant::Regular(bundle) => {
+                trace!("sending rb with chain id: {:?}", bundle.chain_id());
+
                 self.client
                     .post(regular_url.clone())
                     .json(&bundle)
@@ -184,6 +213,11 @@ impl Yapper {
                     .await
             }
             BundleVariant::Priority(signed_priority_bundle) => {
+                trace!(
+                    "sending pb with chain id: {:?}",
+                    signed_priority_bundle.bundle().chain_id()
+                );
+
                 self.client
                     .post(priority_url.clone())
                     .json(&signed_priority_bundle)
@@ -204,6 +238,109 @@ impl Yapper {
             }
             Err(err) => {
                 warn!(%err, "failed to send bundle");
+            }
+        }
+    }
+
+    async fn fund_addresses(
+        parent: &RootProvider,
+        nitro: &RootProvider,
+        chain_id: u64,
+        keys: &[PrivateKeySigner],
+        bridge_addr: Address,
+    ) -> Result<()> {
+        let mut nonce = parent.get_transaction_count(DEV_ACCT_ADDRESS).await?;
+
+        for k in keys {
+            Self::fund_address(parent, chain_id, k, nonce).await?;
+            Self::bridge_funds(parent, chain_id, k, bridge_addr).await?;
+            nonce += 1;
+        }
+        info!("waiting for funds to settle on L2");
+        Self::wait_for_balances(nitro, keys).await;
+        Ok(())
+    }
+
+    async fn fund_address(
+        p: &RootProvider,
+        chain_id: u64,
+        key: &PrivateKeySigner,
+        nonce: u64,
+    ) -> Result<()> {
+        let to = key.address();
+        let one_eth_plus = U256::from_str("1100000000000000000").expect("1.1 ETH");
+        let mut tx = TxLegacy {
+            chain_id: Some(chain_id),
+            nonce,
+            gas_price: 1_000_000_000,
+            gas_limit: 21_000,
+            to: to.into(),
+            value: one_eth_plus,
+            input: alloy::primitives::Bytes::new(),
+        };
+
+        let dev_key = PrivateKeySigner::from_str(DEV_ACCT_PRIV_KEY)?;
+        let sig = dev_key.sign_transaction_sync(&mut tx)?;
+        let signed = tx.into_signed(sig);
+        let env = TxEnvelope::Legacy(signed);
+        let mut rlp = BytesMut::new();
+        env.encode(&mut rlp);
+        let raw_tx: bytes::Bytes = rlp.freeze();
+        let pending = p.send_raw_transaction(&raw_tx).await?;
+        let _ = pending.get_receipt().await;
+        Ok(())
+    }
+
+    async fn bridge_funds(
+        p: &RootProvider,
+        chain_id: u64,
+        key: &PrivateKeySigner,
+        bridge_addr: Address,
+    ) -> Result<()> {
+        let one_eth = U256::from_str("1000000000000000000").expect("1 ETH");
+
+        // ABI encode depositEth() call
+        let func_sig = alloy::hex::decode("439370b1")?;
+        let calldata = alloy::primitives::Bytes::from(func_sig);
+
+        let mut tx = TxLegacy {
+            chain_id: Some(chain_id),
+            nonce: 0,
+            gas_price: 1_000_000_000,
+            gas_limit: 100_000,
+            to: bridge_addr.into(),
+            value: one_eth,
+            input: calldata,
+        };
+
+        let sig = key.sign_transaction_sync(&mut tx)?;
+        let signed = tx.into_signed(sig);
+        let env = TxEnvelope::Legacy(signed);
+
+        let mut rlp = BytesMut::new();
+        env.encode(&mut rlp);
+        let raw_tx: bytes::Bytes = rlp.freeze();
+        let pending = p.send_raw_transaction(&raw_tx).await?;
+        let _ = pending.get_receipt().await?;
+        info!("bridged ETH to L2 for address {}", key.address());
+        Ok(())
+    }
+
+    async fn wait_for_balances(p: &RootProvider, keys: &[PrivateKeySigner]) {
+        loop {
+            let mut all_non_zero = true;
+
+            for key in keys.iter() {
+                let balance = p.get_balance(key.address()).await.unwrap();
+                if balance.is_zero() {
+                    all_non_zero = false;
+                    break;
+                }
+            }
+
+            sleep(Duration::from_secs(5)).await;
+            if all_non_zero {
+                break;
             }
         }
     }

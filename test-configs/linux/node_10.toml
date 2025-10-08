@@ -2,12 +2,12 @@ committee = 0
 stamp = "/tmp/timeboost.10.stamp"
 
 [net.public]
-address = "11.0.0.100:8000"
-http-api = "11.0.0.100:8004"
+address = "11.0.0.11:8000"
+http-api = "11.0.0.11:8004"
 
 [net.internal]
-address = "11.0.0.100:8003"
-nitro   = "11.0.1.0:55000"
+address = "11.0.0.11:8003"
+nitro = "11.0.1.0:55000"
 
 [keys.signing]
 secret = "4DXdtKDNBs1DeLGP7GeqGWeSuX3RgkRhwcT9aXKwzu9p"
