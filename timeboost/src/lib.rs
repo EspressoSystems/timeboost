@@ -135,12 +135,11 @@ impl Timeboost {
                         );
                         #[cfg(feature = "times")]
                         {
-                            times::record("tb-sequenced", *round);
                             if *round % 100 == 0 {
                                 info!(target: "times", node = %self.label, round = %*round)
                             }
                             if !dumped && *round >= self.config.times_until {
-                                self.save_all().await?;
+                                self.save_durations().await?;
                                 dumped = true
                             }
                         }
@@ -163,8 +162,6 @@ impl Timeboost {
                 blk = self.certifier.next_block() => match blk {
                     Ok(b) => {
                         info!(node = %self.label, block = %b.data().round(), "certified block");
-                        #[cfg(feature = "times")]
-                        times::record("tb-certified", *b.cert().data().round().num());
                         if let Err(e) = self.submitter.submit(b).await {
                             let e: SenderTaskDown = e;
                             return Err(e.into())
@@ -202,44 +199,50 @@ impl Timeboost {
         }
     }
 
-    /// Save the deltas between different series.
+    /// Save the durations of various phases.
     #[cfg(feature = "times")]
-    async fn save_relative_durations(&self) -> Result<()> {
+    async fn save_durations(&self) -> Result<()> {
         let Some(sf_start) = times::time_series("sf-round-start") else {
             anyhow::bail!("no time series corresponds to sf-round-start")
         };
         let Some(sf_end) = times::time_series("sf-round-end") else {
             anyhow::bail!("no time series corresponds to sf-round-end")
         };
-        let Some(tb_sequenced) = times::time_series("tb-sequenced") else {
-            anyhow::bail!("no time series corresponds to tb-sequenced")
+        let Some(tb_decrypt_start) = times::time_series("tb-decrypt-start") else {
+            anyhow::bail!("no time series corresponds to tb-decrypt-start")
         };
-        let Some(tb_certified) = times::time_series("tb-certified") else {
-            anyhow::bail!("no time series corresponds to tb-certified")
+        let Some(tb_decrypt_end) = times::time_series("tb-decrypt-end") else {
+            anyhow::bail!("no time series corresponds to tb-decrypt-end")
         };
-        let Some(tb_verified) = times::time_series("tb-verified") else {
-            anyhow::bail!("no time series corresponds to tb-verified")
+        let Some(tb_cert_start) = times::time_series("tb-certify-start") else {
+            anyhow::bail!("no time series corresponds to tb-certify-start")
+        };
+        let Some(tb_cert_end) = times::time_series("tb-certify-end") else {
+            anyhow::bail!("no time series corresponds to tb-certify-end")
         };
         let mut csv = csv::Writer::from_writer(Vec::new());
-        for (r, s) in sf_start.records() {
+        for (r, sfs) in sf_start.records() {
             let Some(sfe) = sf_end.records().get(r) else {
                 continue;
             };
-            let Some(tbs) = tb_sequenced.records().get(r) else {
+            let Some(tbds) = tb_decrypt_start.records().get(r) else {
                 continue;
             };
-            let Some(tbc) = tb_certified.records().get(r) else {
+            let Some(tbde) = tb_decrypt_end.records().get(r) else {
                 continue;
             };
-            let Some(tbv) = tb_verified.records().get(r) else {
+            let Some(tbcs) = tb_cert_start.records().get(r) else {
                 continue;
             };
-            csv.serialize(Relative {
+            let Some(tbce) = tb_cert_end.records().get(r) else {
+                continue;
+            };
+            csv.serialize(Durations {
                 round: *r,
-                consensus: sfe.duration_since(*s).as_millis() as u64,
-                sequenced: tbs.duration_since(*s).as_millis() as u64,
-                certified: tbc.duration_since(*s).as_millis() as u64,
-                verified: tbv.duration_since(*s).as_millis() as u64,
+                sailfish: sfe.duration_since(*sfs).as_millis() as u64,
+                decrypt: tbde.duration_since(*tbds).as_millis() as u64,
+                certify: tbce.duration_since(*tbcs).as_millis() as u64,
+                total: tbce.duration_since(*sfs).as_millis() as u64,
             })?
         }
         let path = std::path::Path::new("/tmp")
@@ -248,54 +251,14 @@ impl Timeboost {
         tokio::fs::write(path, csv.into_inner()?).await?;
         Ok(())
     }
-
-    /// Save the delta between successive rounds.
-    #[cfg(feature = "times")]
-    async fn save_duration(&self, name: &str, skip: usize) -> Result<()> {
-        if let Some(series) = times::time_series(name) {
-            let mut csv = csv::Writer::from_writer(Vec::new());
-            for d in series
-                .deltas()
-                .skip(skip)
-                .take(self.config.times_until as usize)
-                .map(|(k, d)| Delta {
-                    round: k,
-                    delta: d.as_millis() as u64,
-                })
-            {
-                csv.serialize(d)?
-            }
-            let path = std::path::Path::new("/tmp")
-                .join(format!("{name}-{}", self.label))
-                .with_extension("csv");
-            tokio::fs::write(path, csv.into_inner()?).await?;
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "times")]
-    async fn save_all(&self) -> Result<()> {
-        self.save_duration("sf-round-start", 1).await?;
-        self.save_duration("tb-sequenced", 0).await?;
-        self.save_duration("tb-certified", 0).await?;
-        self.save_relative_durations().await?;
-        Ok(())
-    }
 }
 
 #[cfg(feature = "times")]
 #[derive(serde::Serialize)]
-struct Delta {
+struct Durations {
     round: u64,
-    delta: u64,
-}
-
-#[cfg(feature = "times")]
-#[derive(serde::Serialize)]
-struct Relative {
-    round: u64,
-    consensus: u64,
-    sequenced: u64,
-    certified: u64,
-    verified: u64,
+    sailfish: u64,
+    decrypt: u64,
+    certify: u64,
+    total: u64,
 }

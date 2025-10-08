@@ -373,6 +373,8 @@ impl Task {
             let mut lists = Vec::new();
             while let Some(action) = actions.pop_front() {
                 if let Action::Deliver(payload) = action {
+                    #[cfg(feature = "times")]
+                    times::record_once("sf-round-end", *payload.round().num());
                     match payload.data().decode::<MAX_MESSAGE_SIZE>() {
                         Ok(data) => {
                             if let Some(dkg) = data.dkg_bundle() {
@@ -410,8 +412,6 @@ impl Task {
                 debug_assert!(self.round < round);
                 self.round = round;
                 candidates.push((round, evidence, lists));
-                #[cfg(feature = "times")]
-                times::record("sf-round-end", *round)
             }
             while let Some(action) = actions.pop_front() {
                 if action.is_deliver() {

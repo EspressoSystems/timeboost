@@ -47,8 +47,13 @@ plot-node gnuplot output csv:
     gnuplot -e "filename=\"{{csv}}\"" "{{gnuplot}}" > "{{output}}"
     xan stats -s "1:" -q "{{csv}}" | xan select mean,q1,median,q3,stddev | xan view -MR -t borderless
 
-plot-nodes dir +nodes:
+plot-durations-per-node dir +nodes:
     for node in {{nodes}}; do \
-        echo "> just plot-node single-node.gnuplot \"{{dir}}/svg/${node}.svg\" \"{{dir}}/${node}.csv\""; \
+        echo "## Node \`${node}\`"; \
+        echo ""; \
+        echo "![](svg/${node}.svg)"; \
+        echo ""; \
+        echo "\`\`\`"; \
         just plot-node single-node.gnuplot "{{dir}}/svg/${node}.svg" "{{dir}}/${node}.csv"; \
+        echo "\`\`\`"; \
     done
