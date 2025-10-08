@@ -1,5 +1,5 @@
 [nat]
-device = "enp5s0"
+device = "eth0"
 cidr   = "11.0.0.0/8"
 
 [bridge]
