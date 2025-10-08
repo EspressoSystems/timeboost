@@ -38,6 +38,6 @@ RUN chown -R timeboostuser:appgroup /app && chmod +x \
 
 USER timeboostuser
 
-ENV RUST_LOG=${RUST_LOG:-sailfish=debug,timeboost=debug,cliquenet=error}
+ENV RUST_LOG=sailfish=debug,timeboost=debug,cliquenet=error
 
 CMD ["/app/timeboost"]
