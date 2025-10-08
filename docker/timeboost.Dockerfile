@@ -29,8 +29,6 @@ COPY --from=builder /app/target/release/block-checker .
 COPY --from=builder /app/target/release/mkconfig .
 COPY --from=builder /app/scripts/deploy-contract /app/scripts/deploy-contract
 
-COPY --from=builder /app/test-configs/docker /app/configs
-
 COPY --from=builder /root/.foundry/bin/forge /usr/local/bin/forge
 COPY --from=builder /root/.foundry/bin/cast /usr/local/bin/cast
 RUN chmod +x /usr/local/bin/forge /usr/local/bin/cast

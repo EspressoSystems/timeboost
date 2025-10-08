@@ -22,10 +22,6 @@ COPY ./target/x86_64-unknown-linux-gnu/release/mkconfig .
 RUN mkdir -p /app/scripts
 COPY ./scripts/ /app/scripts/
 
-RUN mkdir -p /app/configs
-COPY ./test-configs/docker/ /app/configs/
-
-
 RUN chown -R timeboostuser:appgroup /app && chmod +x \
     /app/timeboost \
     /app/yapper \
