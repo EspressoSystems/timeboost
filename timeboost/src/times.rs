@@ -9,6 +9,7 @@ struct Durations {
     decrypt: u64,
     certify: u64,
     total: u64,
+    verified: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -63,6 +64,9 @@ impl TimesWriter {
         let Some(tb_cert_end) = times::time_series("tb-certify-end") else {
             bail!("no time series corresponds to tb-certify-end")
         };
+        let Some(tb_verified) = times::time_series("tb-verified") else {
+            bail!("no time series corresponds to tb-verified")
+        };
 
         let mut csv = csv::Writer::from_writer(Vec::new());
 
@@ -82,12 +86,16 @@ impl TimesWriter {
             let Some(tbce) = tb_cert_end.records().get(r) else {
                 continue;
             };
+            let Some(tbv) = tb_verified.records().get(r) else {
+                continue;
+            };
             csv.serialize(Durations {
                 round: *r,
                 sailfish: sfe.duration_since(*sfs).as_millis() as u64,
                 decrypt: tbde.duration_since(*tbds).as_millis() as u64,
                 certify: tbce.duration_since(*tbcs).as_millis() as u64,
                 total: tbce.duration_since(*sfs).as_millis() as u64,
+                verified: tbv.duration_since(*sfs).as_millis() as u64,
             })?
         }
 

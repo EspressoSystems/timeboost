@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         offset += start
             .clone()
             .zip(start.skip(1))
-            .take_while(|(a, b)| **a + 1 == **b)
+            .take_while(|(a, b)| a.1 + 1 == b.1)
             .count();
         info!(blocks = %offset, "validated")
     }
