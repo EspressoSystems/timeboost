@@ -456,7 +456,6 @@ impl Task {
     }
 
     /// Handle candidate lists and return the next inclusion list.
-    /// While processing candidates, will append the DKG bundles to `pending_dkgs`.
     fn next_inclusion(&mut self, candidates: &mut Candidates) -> Option<InclusionList> {
         while let Some((round, evidence, lists)) = candidates.pop_front() {
             let outcome = self.includer.inclusion_list(round, evidence, lists);
