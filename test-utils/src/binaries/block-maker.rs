@@ -59,8 +59,8 @@ impl Service {
         let client = InternalApiClient::new(Endpoint::from(to.clone()).connect_lazy());
         let mut k = key.to_string();
         k.retain(|c| c.is_ascii());
-        self.clients
-            .insert(AsciiMetadataValue::try_from(k).unwrap(), Mutex::new(client));
+        let ascii = AsciiMetadataValue::try_from(k).expect("`k` is valid ASCII string");
+        self.clients.insert(ascii, Mutex::new(client));
     }
 
     async fn serve(self, addr: SocketAddr) -> Result<()> {
