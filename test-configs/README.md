@@ -13,7 +13,7 @@ The overall workflow works as follows:
   [`deploy`](../timeboost-contract/src/binaries/deploy.rs) to deploy contracts to parent chain, and
   [`register`](../timeboost-contract/src/binaries/register.rs) to take a `committee.toml` file and
   invokes `setNextCommittee()` on the [`KeyManager` contract](../contracts/src/KeyManager.sol).
-  - This process is part of `./scripts/run_demo_[sailfish|timeboost]`.
+  - This process is part of `./scripts/run-demo_[sailfish|timeboost]`.
   - For a test blockchain, the deployed `KeyManager` contract is deterministic thus we included it
     ahead of time as part of `chain_config` in `node_i.toml` node config in the first step.
 - A timeboost/sailfish node starts with a `--config node_i.toml` flag. On startup, it will fetch
